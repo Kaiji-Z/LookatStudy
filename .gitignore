@@ -56,6 +56,9 @@ docs/OPENCHATCUT-PATTERNS.md
 docs/COMPETITOR-DEEPTUTOR.md
 docs/PRODUCT-POSITIONING.md
 
+# local-only: research notes referencing other/external projects (kept out of public repo)
+.zcode-reference/
+
 # local memory (per-developer agent memory)
 memory/
 

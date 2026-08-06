@@ -1,7 +1,7 @@
 /**
  * Agent 引擎 —— AI 导师的核心 loop（ARCHITECTURE v2 原则 1: Agent 通用，Skill 决定怎么教）。
  *
- * 结构（借鉴 OpenChatCut runtime.ts）：
+ * 结构：streamText 包一层工具调度循环，执行工具，写操作走 Proposal。
  *   buildSystemPrompt(db, BASE) → streamText({model, system, messages, tools, maxSteps})
  *   工具里凡是要改学习者持久状态的，都走 Proposal（原则 2）：
  *     - record_answer : 学习者答了题 → 提议 update_mastery（人确认后才落库）

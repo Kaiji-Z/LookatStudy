@@ -117,7 +117,7 @@ export function ensureSeedCourse(): void {
       repoName: "Awesome-FDE-Roadmap",
       title: "Forward Deployment Engineer 学习路线图",
       description:
-        "成为 FDE 的权威路线图：掌握 AI Agents、企业数据架构、战略咨询。灵感来自 Palantir / OpenAI / Scale AI 的 'Delta' 角色。",
+        "成为 Forward Deployment Engineer (FDE) 的权威路线图：掌握 AI Agents、企业数据架构、战略咨询。FDE 是把前沿 AI 能力落地到客户真实场景的工程角色。",
       version: 1,
     })
     .run();

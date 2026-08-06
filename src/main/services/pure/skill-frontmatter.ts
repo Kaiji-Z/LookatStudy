@@ -1,14 +1,11 @@
 /**
- * Pure YAML-frontmatter 解析器 —— 从 OpenChatCut 的 skill-frontmatter.ts 直接移植。
+ * Pure YAML-frontmatter 解析器（零依赖，可被测试直接 import，不走 DB/electron）。
  *
  * 处理 SKILL.md / learning-mode skill 的三种 description 形态：
  *   - plain 单行（`description: xxx`）
  *   - 双引号（`description: "xxx"`）
  *   - | block scalar（多行，缩进折叠）
- * 返回 body（`---` 之后的逐字内容）。零依赖，可被测试直接 import（不走 DB/electron）。
- *
- * 来源：移植自一个 AI 视频编辑器项目的 frontmatter 解析器（零依赖手写 YAML 子集），
- * 在 LookatStudy 里用于解析 learning-mode skill 的 Markdown + YAML frontmatter。
+ * 返回 body（`---` 之后的逐字内容）。手写 YAML 子集，不引入额外依赖。
  */
 
 export interface SkillFront {

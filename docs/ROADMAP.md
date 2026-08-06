@@ -36,7 +36,7 @@
 
 **做什么**：
 - `skills` 表 CRUD + IPC handler
-- Skill 文件格式：Markdown + YAML frontmatter（移植 OpenChatCut 的 `skill-frontmatter.ts`）
+- Skill 文件格式：Markdown + YAML frontmatter（零依赖手写 frontmatter 解析器）
 - 内置 4 个学习模式：`socratic-mode` / `exam-prep-mode` / `project-mode` / `review-mode`
 - Skill 切换 UI
 - 课程树可视化（多邻国式路径，替换当前列表视图）
@@ -47,8 +47,8 @@
 ### M2 · Agent 引擎 + Propose/Apply + BKT（2.5 周）⭐ 加深
 
 **做什么**：
-- Agent tool loop（借鉴 OpenChatCut `runtime.ts` 的 `for(;;)` + streamText）
-- Provider 抽象（借鉴 `shared/llm-providers.ts`，BYO key）
+- Agent tool loop（streamText + 工具调度循环）
+- Provider 抽象（多 provider 路由，BYO key）
 - Keystore（密钥不离开主进程）
 - Propose → Apply 流水线（`proposals` 表 + 审批 UI）
 - Capability manifest
@@ -79,7 +79,7 @@
   - 在 `content_nodes.content` 上做 SQLite FTS5 全文检索
   - Agent 回答"这个概念在哪节课讲过"类问题时调 `search_content(query)` 工具
   - 不上海量向量库（v0.1 内容规模小，FTS5 够用）
-- **🆕 记忆系统**（借鉴 DeepTutor）：
+- **🆕 记忆系统**：
   - agent 自维护一个 `SUMMARY.md`（学习历程滚动摘要）
   - 存 `settings` 或单独 `memory` 表
   - 跨会话保留（学习者下次来，AI 记得上次哪里卡过）
@@ -92,7 +92,7 @@
 
 **做什么**：
 - Course Generator 两阶段：
-  - 阶段 A：导入仓库 → 解析 markdown → LLM 生成骨架 → **走 Proposal 让用户调整**（借鉴 DeepTutor 的零配置理念）
+  - 阶段 A：导入仓库 → 解析 markdown → LLM 生成骨架 → **走 Proposal 让用户调整**（零配置理念：导入即用，可改）
   - 阶段 B：打开某节课时按需生成讲解 + 练习题（缓存）
 - LabType 自动检测（doc/code/notebook）
 - 学科知识包 Skill（System B）：

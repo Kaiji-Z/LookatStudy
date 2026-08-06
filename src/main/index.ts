@@ -29,6 +29,14 @@ const isDev = !app.isPackaged;
 // 项目根目录：从 dist-electron/main/ 退两级到项目根
 const PROJECT_ROOT = resolve(__dirname, "../..");
 
+// 关闭硬件加速。
+// 原因：Windows 上 Electron GPU 磁盘缓存创建经常因权限失败
+// （`Gpu Cache Creation failed: -2` / `Unable to move the cache: 拒绝访问`），
+// 导致渲染层 DOM 正常但合成失败 → 黑屏窗口。
+// 软件合成对本应用（无 3D / 无视频）完全够用，且更稳定。
+// 必须在 app.whenReady() 之前调用。
+app.disableHardwareAcceleration();
+
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {

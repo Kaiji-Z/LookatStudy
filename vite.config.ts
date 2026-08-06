@@ -54,8 +54,11 @@ export default defineConfig({
     ]),
   ],
   // main/preload 走 electron 自己构建（vite-plugin-electron 在生产时帮忙），
-  // 这里只配置 renderer
-  root: "src/renderer",
+  // 这里只配置 renderer。
+  // root 必须用 __dirname 绝对路径：相对值会按 process.cwd() 解析，
+  // 而 Windows 双盘映射 (C:\Users\... vs D:\users\...) 的大小写差异会让
+  // Vite 6 的 case-sensitive 路径检查误报 "Failed to load /main.tsx"。
+  root: resolve(__dirname, "src/renderer"),
   base: "./", // Electron file:// 加载需要相对路径
   resolve: {
     alias: {

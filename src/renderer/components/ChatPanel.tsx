@@ -551,8 +551,8 @@ function MessageRow({
 }) {
   if (msg.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="bg-brand/20 text-neutral-100 text-sm rounded-lg px-3 py-2 max-w-[85%]">
+      <div className="flex justify-end msg-enter">
+        <div className="bg-brand text-white text-sm rounded-2xl rounded-tr-md px-4 py-2.5 max-w-[85%] font-medium shadow-md" style={{ boxShadow: "0 2px 8px rgba(88,204,2,0.2)" }}>
           {msg.content}
         </div>
       </div>
@@ -560,57 +560,51 @@ function MessageRow({
   }
   if (msg.role === "tool") {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-neutral-500">
-        <span>🔧</span>
-        <span className="font-mono">{msg.content}</span>
+      <div className="flex items-center gap-1.5 text-[11px] text-neutral-500 msg-enter py-1">
+        <span className="bg-neutral-800 rounded px-1.5 py-0.5 font-mono">🔧 {msg.content}</span>
       </div>
     );
   }
   if (msg.role === "proposal") {
     return (
-      <div
-        className="border border-accent/40 bg-accent/5 rounded-lg p-2.5 text-xs"
-        data-testid="proposal-card"
-      >
-        <div className="text-neutral-300 mb-2">
-          📋 <span className="font-medium">AI 提议：</span>
-          {msg.content}
+      <div className="proposal-card msg-enter" data-testid="proposal-card">
+        <div className="text-neutral-200 text-xs mb-2 flex items-center gap-1.5">
+          <span className="text-sm">📋</span>
+          <span className="font-bold">AI 提议</span>
         </div>
+        <div className="text-neutral-300 text-xs mb-3">{msg.content}</div>
         {msg.proposalStatus === "pending" ? (
           <div className="flex gap-2">
             <button
               onClick={onApply}
               data-testid="proposal-apply"
-              className="bg-brand text-white px-3 py-1 rounded hover:bg-brand/80"
+              className="btn-3d-brand px-4 py-1.5 text-xs"
             >
-              应用
+              ✓ 应用
             </button>
             <button
               onClick={onReject}
               data-testid="proposal-reject"
-              className="border border-neutral-600 text-neutral-300 px-3 py-1 rounded hover:bg-neutral-800"
+              className="btn-3d-neutral px-4 py-1.5 text-xs"
             >
-              拒绝
+              ✕ 拒绝
             </button>
           </div>
         ) : (
-          <span
-            className={
-              msg.proposalStatus === "applied"
-                ? "text-brand font-medium"
-                : "text-neutral-500"
-            }
-          >
+          <span className={`text-xs font-bold ${msg.proposalStatus === "applied" ? "text-brand" : "text-neutral-500"}`}>
             {msg.proposalStatus === "applied" ? "✅ 已应用" : "❌ 已拒绝"}
           </span>
         )}
       </div>
     );
   }
-  // assistant
+  // assistant — 带头像
   return (
-    <div className="flex justify-start">
-      <div className="bg-neutral-900 text-neutral-100 text-sm rounded-lg px-3 py-2 max-w-[85%] prose prose-invert prose-sm">
+    <div className="flex justify-start gap-2 msg-enter">
+      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5" style={{ boxShadow: "0 2px 6px rgba(28,176,246,0.2)" }}>
+        AI
+      </div>
+      <div className="bg-neutral-900 text-neutral-100 text-sm rounded-2xl rounded-tl-md px-4 py-2.5 max-w-[85%] prose prose-invert prose-sm leading-relaxed">
         <ReactMarkdown>{msg.content}</ReactMarkdown>
       </div>
     </div>
@@ -635,15 +629,16 @@ function ConfigGuide({
   onSave: () => void;
 }) {
   return (
-    <div className="space-y-2" data-testid="config-guide">
-      <div className="text-xs text-neutral-400">
-        🔑 {missing ?? "未配置 LLM API key"}
+    <div className="space-y-3 py-4" data-testid="config-guide">
+      <div className="flex items-center gap-2">
+        <span className="text-lg">🔑</span>
+        <span className="text-xs text-neutral-400 font-medium">{missing ?? "未配置 LLM API key"}</span>
       </div>
       <select
         value={provider}
         onChange={(e) => setProvider(e.target.value)}
         data-testid="config-provider"
-        className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-2 py-1.5 border border-neutral-700"
+        className="w-full bg-neutral-950 text-neutral-100 text-sm rounded-xl px-3 py-2.5 border-2 border-neutral-700 focus:border-brand focus:outline-none"
       >
         <option value="glm">智谱 GLM（国内推荐）</option>
         <option value="deepseek">DeepSeek</option>
@@ -657,18 +652,18 @@ function ConfigGuide({
         onChange={(e) => setApiKey(e.target.value)}
         placeholder="粘贴 API key（sk-…）"
         data-testid="config-key-input"
-        className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-2 py-1.5 border border-neutral-700 focus:border-brand focus:outline-none"
+        className="w-full bg-neutral-950 text-neutral-100 text-sm rounded-xl px-3 py-2.5 border-2 border-neutral-700 focus:border-brand focus:outline-none"
       />
       <button
         onClick={onSave}
         disabled={!apiKey.trim()}
         data-testid="config-save"
-        className="w-full bg-brand text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-brand/80 disabled:opacity-40"
+        className="btn-3d-brand w-full py-2.5 text-sm disabled:opacity-40"
       >
         保存并连接
       </button>
-      <p className="text-[10px] text-neutral-600">
-        key 只存本地主进程，不离开你的电脑。
+      <p className="text-[11px] text-neutral-600 text-center">
+        🔒 key 只存本地主进程，不离开你的电脑
       </p>
     </div>
   );

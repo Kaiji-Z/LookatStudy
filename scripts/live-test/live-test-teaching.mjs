@@ -118,7 +118,7 @@ let testCount = 0;
 let passCount = 0;
 const qualityScores = [];
 
-async function testTeaching(label, userMessage, checks) {
+async function testTeaching(label, userMessage, checks, masteryOverride) {
   testCount++;
   console.log(`\n=== Test ${testCount}: ${label} ===`);
   console.log(`学习者: ${userMessage}`);
@@ -129,7 +129,7 @@ async function testTeaching(label, userMessage, checks) {
     const sections = db.select().from(schema.contentNodes).all()
       .filter((n) => n.courseId === "test-fde" && n.type === "section")
       .sort((a, b) => a.orderIdx - b.orderIdx);
-    const systemPrompt = buildSystemPromptForTest(testNode, course, sections, null);
+    const systemPrompt = buildSystemPromptForTest(testNode, course, sections, masteryOverride ?? null);
 
     const reply = await callGlm(systemPrompt, userMessage);
     console.log(`AI回复 (${reply.length} 字符): ${reply.slice(0, 200)}...`);
@@ -182,6 +182,93 @@ const contentKeywords = (testNode.content || "")
 const keywordToCheck = contentKeywords[0] || "";
 await testTeaching(`基于内容回答 - 检查引用课程关键词(${keywordToCheck})`, "这一课最重要的知识点是什么？", [
   { name: "回复非空", fn: (r) => r.length > 50 },
+]);
+
+// === Test 5: 答错纠错 — 学习者故意说错，AI 应纠正 ===
+await testTeaching("答错纠错 - 学习者故意说错概念", "我觉得 FDE 就是前端开发工程师，对吧？", [
+  { name: "纠正了误解", fn: (r) => !r.includes("对的") && !r.includes("是的，") && !r.includes("没错") },
+  { name: "给出正确解释", fn: (r) => r.includes("Forward Deployment") || r.includes("向前部署") || r.includes("不是前端") },
+  { name: "回复非空", fn: (r) => r.length > 50 },
+]);
+
+// === Test 6: 多轮对话连贯性 — 先问一个概念，再追问细节 ===
+console.log("\n=== Test 6: 多轮对话连贯性 ===");
+try {
+  testCount++;
+  const course = db.select().from(schema.courses).all().find((c) => c.id === "test-fde");
+  const sections = db.select().from(schema.contentNodes).all()
+    .filter((n) => n.courseId === "test-fde" && n.type === "section")
+    .sort((a, b) => a.orderIdx - b.orderIdx);
+  const systemPrompt = buildSystemPromptForTest(testNode, course, sections, null);
+
+  // 第一轮
+  const reply1 = await callGlm(systemPrompt, "这一课提到了哪些核心工具？");
+  console.log(`  第一轮 (${reply1.length} 字符): ${reply1.slice(0, 100)}...`);
+
+  // 第二轮（追问第一轮提到的工具）
+  const reply2 = await callGlm(
+    systemPrompt + `\n\n之前的对话:\n学习者: 这一课提到了哪些核心工具？\n导师: ${reply1}\n`,
+    "你能详细讲讲其中最重要的那个工具吗？",
+  );
+  console.log(`  第二轮 (${reply2.length} 字符): ${reply2.slice(0, 100)}...`);
+
+  // 硬断言: 第二轮回复应该有实质内容（不是"我不知道你在说什么"）
+  let allPass = true;
+  const checks6 = [
+    { name: "第二轮回复非空", fn: () => reply2.length > 50 },
+    { name: "第二轮不是纯拒绝", fn: () => !reply2.includes("不知道你在说") && !reply2.includes("没有上下文") },
+  ];
+  for (const c of checks6) {
+    const r = c.fn();
+    console.log(`  ${r ? "✅" : "❌"} ${c.name}`);
+    if (!r) allPass = false;
+  }
+  if (allPass) passCount++;
+} catch (e) {
+  console.log(`  ❌ 多轮对话异常: ${e.message}`);
+}
+
+// === Test 7: 掌握度过渡 — 高掌握度时 AI 应该进入检验模式 ===
+await testTeaching("掌握度过渡 - mastery=0.85 应进入检验模式", "我已经学完这一课了，你考考我吧。", [
+  { name: "回复非空", fn: (r) => r.length > 50 },
+  { name: "不是纯拒绝", fn: (r) => !r.includes("无法") },
+  // 软断言: 高掌握度策略应引导检验（出题、让学习者复述等）
+], 0.85);
+
+// === Test 8: 空内容节点处理 — AI 应诚实说"内容不在材料中" ===
+// 构造一个空内容节点的 system prompt
+console.log("\n=== Test 8: 空内容节点处理 ===");
+try {
+  testCount++;
+  const emptySystemPrompt =
+    BASE_PROMPT +
+    `\n\n课程标题：测试课程\n课程描述：测试\n课程章节结构：\n  - 空节点\n\n` +
+    `当前学习节点：空内容测试节点\n内容：(尚未生成讲解)\n` +
+    `学习者当前掌握度：未知\n教学策略指引：学习者刚开始`;
+
+  const reply = await callGlm(emptySystemPrompt, "这一课的核心内容是什么？");
+  console.log(`  AI回复 (${reply.length} 字符): ${reply.slice(0, 200)}...`);
+
+  // 硬断言: 不应编造内容
+  let allPass = true;
+  const checks8 = [
+    { name: "回复非空", fn: () => reply.length > 10 },
+    { name: "不编造大量虚假内容", fn: () => reply.length < 2000 }, // 空内容时不应长篇大论编造
+  ];
+  for (const c of checks8) {
+    const r = c.fn();
+    console.log(`  ${r ? "✅" : "❌"} ${c.name}`);
+    if (!r) allPass = false;
+  }
+  if (allPass) passCount++;
+} catch (e) {
+  console.log(`  ❌ 空内容测试异常: ${e.message}`);
+}
+
+// === Test 9: 超纲问题 — 问课程范围外的问题 ===
+await testTeaching("超纲问题 - 问课程外内容", "请给我讲讲量子力学的薛定谔方程", [
+  { name: "不假装这是课程内容", fn: (r) => !r.includes("这一课") || r.includes("不在") || r.includes("超出") },
+  { name: "回复非空", fn: (r) => r.length > 10 },
 ]);
 
 // === 汇总 ===

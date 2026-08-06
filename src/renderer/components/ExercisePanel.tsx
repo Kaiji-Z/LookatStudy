@@ -1,11 +1,7 @@
 /**
  * 练习题面板 —— AI 出题 + 作答 + 判分。
  *
- * 用法：选中一个 lesson 后，点「出题练习」→ AI 生成一道题（MCQ/填空/判断）
- * → 学习者作答 → 提交判分 → 显示对错 + 解释 → 自动创建掌握度更新 Proposal。
- *
- * 这是"结构化练习"路径（区别于 ChatPanel 的"自由对话"路径）。
- * 两种路径互补：对话用于讲解/追问，练习用于客观检验掌握度。
+ * 设计: Duolingo-style 练习卡片，3D 按钮反馈，颜色编码的判分结果。
  */
 import { useState, useCallback } from "react";
 import { api } from "../lib/api.js";
@@ -69,59 +65,80 @@ export function ExercisePanel({ node }: { node: ContentNode | null }) {
 
   if (!node) {
     return (
-      <div className="text-center py-8 text-neutral-500 text-sm" data-testid="exercise-panel">
-        先在右侧选一个 lesson，再开始练习。
+      <div className="flex flex-col items-center justify-center h-full text-center py-12">
+        <div className="text-4xl mb-3 opacity-40">🎯</div>
+        <div className="text-sm text-neutral-500">先在右侧选一个课程节点，再开始练习</div>
       </div>
     );
   }
 
+  const typeLabels: Record<ExerciseType, string> = {
+    mcq: "选择题",
+    fill_blank: "填空题",
+    true_false: "判断题",
+  };
+
   return (
     <div className="space-y-4" data-testid="exercise-panel">
+      {/* 顶部：标题 + 题型切换 */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-neutral-300">📝 练习</h3>
-        {!exercise && (
-          <div className="flex gap-1">
+        <h3 className="text-sm font-extrabold text-neutral-200">📝 练习</h3>
+        {!exercise && !busy && (
+          <div className="flex gap-1 bg-neutral-800/50 rounded-xl p-0.5">
             {(["mcq", "fill_blank", "true_false"] as ExerciseType[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setType(t)}
-                className={`text-[11px] px-2 py-1 rounded ${type === t ? "bg-brand/20 text-brand" : "text-neutral-500 hover:text-neutral-300"}`}
+                className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-colors ${
+                  type === t ? "bg-brand text-white" : "text-neutral-400 hover:text-neutral-200"
+                }`}
               >
-                {t === "mcq" ? "选择题" : t === "fill_blank" ? "填空题" : "判断题"}
+                {typeLabels[t]}
               </button>
             ))}
           </div>
         )}
       </div>
 
+      {/* 出题按钮（无题目时） */}
       {!exercise && !busy && (
         <button
           onClick={handleGenerate}
-          disabled={!node || busy}
+          disabled={!node}
           data-testid="exercise-generate"
-          className="w-full bg-brand text-white text-sm font-medium py-2.5 rounded-lg hover:bg-brand/80 disabled:opacity-40"
+          className="btn-3d-brand w-full py-3 text-sm"
         >
-          出一道{type === "mcq" ? "选择题" : type === "fill_blank" ? "填空题" : "判断题"}练习
+          出一道{typeLabels[type]}练习
         </button>
       )}
 
+      {/* 加载状态 */}
       {busy && !exercise && (
-        <div className="text-center py-4 text-sm text-neutral-500 animate-pulse">AI 出题中…</div>
-      )}
-
-      {error && (
-        <div className="bg-red-900/30 text-red-300 text-sm rounded p-2">
-          ❌ {error}
-          <div className="text-[11px] mt-1 opacity-70">请到设置页检查 API key 和网络。</div>
+        <div className="flex flex-col items-center py-8">
+          <div className="flex gap-1.5 mb-3">
+            <span className="typing-dot w-2 h-2 bg-brand rounded-full inline-block"></span>
+            <span className="typing-dot w-2 h-2 bg-brand rounded-full inline-block"></span>
+            <span className="typing-dot w-2 h-2 bg-brand rounded-full inline-block"></span>
+          </div>
+          <div className="text-sm text-neutral-500">AI 正在出题…</div>
         </div>
       )}
 
+      {/* 错误 */}
+      {error && (
+        <div className="surface-card p-3 border-red-800/50 text-sm text-red-300">
+          ❌ {error}
+          <div className="text-[11px] text-red-400/60 mt-1">请到 ⚙️设置 检查 API key 和网络</div>
+        </div>
+      )}
+
+      {/* 题目卡片 */}
       {exercise && (
-        <div className="space-y-3" data-testid="exercise-card">
+        <div className="surface-card p-4 space-y-4 msg-enter" data-testid="exercise-card">
           {/* 题型标签 */}
           <div className="flex items-center gap-2">
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400">
-              {exercise.type === "mcq" ? "选择题" : exercise.type === "fill_blank" ? "填空题" : "判断题"}
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand/15 text-brand">
+              {typeLabels[exercise.type]}
             </span>
             {exercise.aiGenerated && (
               <span className="text-[10px] text-neutral-600">AI 生成</span>
@@ -129,30 +146,42 @@ export function ExercisePanel({ node }: { node: ContentNode | null }) {
           </div>
 
           {/* 题干 */}
-          <div className="text-sm text-neutral-100 leading-relaxed">{exercise.prompt}</div>
+          <div className="text-sm text-neutral-100 leading-relaxed font-medium">{exercise.prompt}</div>
 
-          {/* 作答区 */}
+          {/* MCQ 选项 */}
           {exercise.type === "mcq" && exercise.options && (
             <div className="space-y-2" data-testid="mcq-options">
-              {exercise.options.map((opt, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => !result && setSelectedOption(idx)}
-                  disabled={!!result}
-                  data-testid={`mcq-option-${idx}`}
-                  className={`w-full text-left text-sm p-2.5 rounded-lg border transition-colors ${
-                    selectedOption === idx
-                      ? "border-brand bg-brand/10"
-                      : "border-neutral-700 hover:border-neutral-600"
-                  } ${result ? "cursor-default" : ""}`}
-                >
-                  <span className="text-neutral-500 mr-2">{String.fromCharCode(65 + idx)}.</span>
-                  {opt}
-                </button>
-              ))}
+              {exercise.options.map((opt, idx) => {
+                const isSelected = selectedOption === idx;
+                const isCorrect = result && idx === parseInt(exercise.answer);
+                const isWrongSelected = result && isSelected && !isCorrect;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => !result && setSelectedOption(idx)}
+                    disabled={!!result}
+                    data-testid={`mcq-option-${idx}`}
+                    className={`w-full text-left text-sm p-3 rounded-xl border-2 font-medium transition-all ${
+                      isCorrect
+                        ? "border-brand bg-brand/10 text-brand"
+                        : isWrongSelected
+                          ? "border-red-500 bg-red-500/10 text-red-400"
+                          : isSelected
+                            ? "border-accent bg-accent/10 text-accent"
+                            : "border-neutral-700 text-neutral-300 hover:border-neutral-600"
+                    } ${result ? "cursor-default" : "cursor-pointer hover:scale-[1.01]"}`}
+                  >
+                    <span className="font-extrabold mr-2">{String.fromCharCode(65 + idx)}</span>
+                    {opt}
+                    {isCorrect && <span className="float-right">✅</span>}
+                    {isWrongSelected && <span className="float-right">❌</span>}
+                  </button>
+                );
+              })}
             </div>
           )}
 
+          {/* 填空输入 */}
           {exercise.type === "fill_blank" && (
             <input
               type="text"
@@ -161,72 +190,80 @@ export function ExercisePanel({ node }: { node: ContentNode | null }) {
               placeholder="输入你的答案…"
               disabled={!!result}
               data-testid="fill-input"
-              className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none disabled:opacity-50"
+              className="w-full bg-neutral-950 text-neutral-100 text-sm rounded-xl px-4 py-3 border-2 border-neutral-700 focus:border-brand focus:outline-none disabled:opacity-50"
             />
           )}
 
+          {/* 判断题 */}
           {exercise.type === "true_false" && (
-            <div className="flex gap-2" data-testid="tf-options">
-              {["true", "false"].map((v) => (
-                <button
-                  key={v}
-                  onClick={() => !result && setUserAnswer(v)}
-                  disabled={!!result}
-                  data-testid={`tf-option-${v}`}
-                  className={`flex-1 text-sm py-2 rounded-lg border transition-colors ${
-                    userAnswer === v
-                      ? "border-brand bg-brand/10"
-                      : "border-neutral-700 hover:border-neutral-600"
-                  }`}
-                >
-                  {v === "true" ? "✓ 正确" : "✗ 错误"}
-                </button>
-              ))}
+            <div className="grid grid-cols-2 gap-3" data-testid="tf-options">
+              {[
+                { val: "true", label: "✓ 正确", color: "brand" },
+                { val: "false", label: "✗ 错误", color: "red" },
+              ].map((opt) => {
+                const isSelected = userAnswer === opt.val;
+                const isCorrect = result && exercise.answer === opt.val;
+                const isWrongSelected = result && isSelected && !isCorrect;
+                return (
+                  <button
+                    key={opt.val}
+                    onClick={() => !result && setUserAnswer(opt.val)}
+                    disabled={!!result}
+                    data-testid={`tf-option-${opt.val}`}
+                    className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${
+                      isCorrect
+                        ? "border-brand bg-brand/10 text-brand"
+                        : isWrongSelected
+                          ? "border-red-500 bg-red-500/10 text-red-400"
+                          : isSelected
+                            ? "border-accent bg-accent/10 text-accent"
+                            : "border-neutral-700 text-neutral-400 hover:border-neutral-600"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
             </div>
           )}
 
           {/* 判分结果 */}
           {result && (
             <div
-              className={`rounded-lg p-3 ${result.correct ? "bg-green-900/30" : "bg-red-900/30"}`}
+              className={`rounded-xl p-4 msg-enter ${result.correct ? "bg-brand/10 border-2 border-brand/30" : "bg-red-500/10 border-2 border-red-500/30"}`}
               data-testid="exercise-result"
             >
-              <div className={`text-sm font-medium ${result.correct ? "text-green-300" : "text-red-300"}`}>
+              <div className={`text-base font-extrabold ${result.correct ? "text-brand" : "text-red-400"}`}>
                 {result.correct ? "✅ 答对了！" : "❌ 答错了"}
               </div>
               {result.explanation && (
-                <div className="text-xs text-neutral-300 mt-1">{result.explanation}</div>
+                <div className="text-xs text-neutral-300 mt-2 leading-relaxed">{result.explanation}</div>
               )}
-              <div className="text-[11px] text-neutral-500 mt-1">
-                已自动生成掌握度更新提议，到聊天栏确认应用。
+              <div className="text-[11px] text-neutral-500 mt-2">
+                💡 掌握度已更新，到 💬对话 查看提议并确认
               </div>
             </div>
           )}
 
           {/* 操作按钮 */}
-          <div className="flex gap-2">
-            {!result ? (
-              <button
-                onClick={handleSubmit}
-                disabled={
-                  busy ||
-                  (exercise.type === "mcq" ? selectedOption === null : !userAnswer.trim())
-                }
-                data-testid="exercise-submit"
-                className="flex-1 bg-brand text-white text-sm font-medium py-2 rounded-lg hover:bg-brand/80 disabled:opacity-40"
-              >
-                {busy ? "判分中…" : "提交答案"}
-              </button>
-            ) : (
-              <button
-                onClick={handleNext}
-                data-testid="exercise-next"
-                className="flex-1 bg-neutral-700 text-neutral-100 text-sm font-medium py-2 rounded-lg hover:bg-neutral-600"
-              >
-                下一题
-              </button>
-            )}
-          </div>
+          {!result ? (
+            <button
+              onClick={handleSubmit}
+              disabled={busy || (exercise.type === "mcq" ? selectedOption === null : !userAnswer.trim())}
+              data-testid="exercise-submit"
+              className="btn-3d-blue w-full py-3 text-sm"
+            >
+              {busy ? "判分中…" : "提交答案"}
+            </button>
+          ) : (
+            <button
+              onClick={handleNext}
+              data-testid="exercise-next"
+              className="btn-3d-brand w-full py-3 text-sm"
+            >
+              下一题 →
+            </button>
+          )}
         </div>
       )}
     </div>

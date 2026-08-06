@@ -212,7 +212,7 @@ export function SettingsView() {
       <h2 className="text-2xl font-bold">⚙️ 设置</h2>
 
       {/* Provider 选择 */}
-      <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+      <section className="surface-card p-4">
         <h3 className="text-sm font-semibold text-neutral-300 mb-3">AI 服务商（Provider）</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" data-testid="provider-grid">
           {presets.map((p) => (
@@ -375,7 +375,7 @@ export function SettingsView() {
 
       {/* Model 选择 / 输入 */}
       {currentPreset ? (
-        <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+        <section className="surface-card p-4">
           <h3 className="text-sm font-semibold text-neutral-300 mb-3">模型（Model）</h3>
           <select
             value={activeModel}
@@ -392,7 +392,7 @@ export function SettingsView() {
           </select>
         </section>
       ) : activeCustomProvider ? (
-        <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+        <section className="surface-card p-4">
           <h3 className="text-sm font-semibold text-neutral-300 mb-3">模型（Model）</h3>
           {activeCustomProvider.models.length > 1 ? (
             <select
@@ -420,7 +420,7 @@ export function SettingsView() {
 
       {/* API Key */}
       {currentPreset && (
-        <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+        <section className="surface-card p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-neutral-300">API Key</h3>
             <a
@@ -452,14 +452,14 @@ export function SettingsView() {
       )}
 
       {/* 测试连接 */}
-      <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+      <section className="surface-card p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-neutral-300">测试连接</h3>
           <button
             onClick={handleTest}
             disabled={testing}
             data-testid="test-connection-btn"
-            className="text-sm bg-neutral-700 text-neutral-100 px-3 py-1.5 rounded hover:bg-neutral-600 disabled:opacity-40"
+            className="text-sm btn-3d-neutral px-3 py-2 text-sm disabled:opacity-40"
           >
             {testing ? "测试中…" : "测试连接"}
           </button>
@@ -478,7 +478,7 @@ export function SettingsView() {
       </section>
 
       {/* 每日目标 */}
-      <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+      <section className="surface-card p-4">
         <h3 className="text-sm font-semibold text-neutral-300 mb-3">每日学习目标（XP）</h3>
         <div className="flex gap-2 items-center">
           <input
@@ -499,7 +499,7 @@ export function SettingsView() {
         <button
           onClick={handleSave}
           data-testid="settings-save"
-          className="bg-brand text-white text-sm font-medium px-6 py-2 rounded-lg hover:bg-brand/80"
+          className="btn-3d-brand px-6 py-2.5 text-sm"
         >
           保存设置
         </button>

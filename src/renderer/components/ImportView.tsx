@@ -147,7 +147,7 @@ export function ImportView({
             onClick={handleImportUrl}
             disabled={!repoUrl.trim() || busy}
             data-testid="import-url-btn"
-            className="bg-brand text-white text-sm font-medium px-4 py-2 rounded hover:bg-brand/80 disabled:opacity-40"
+            className="btn-3d-brand px-4 py-2.5 text-sm disabled:opacity-40"
           >
             {busy ? "导入中…" : "导入"}
           </button>
@@ -186,7 +186,7 @@ export function ImportView({
             onClick={handleImportMd}
             disabled={!mdText.trim() || !repoName.trim() || busy}
             data-testid="import-md-btn"
-            className="bg-brand text-white text-sm font-medium px-4 py-2 rounded hover:bg-brand/80 disabled:opacity-40"
+            className="btn-3d-brand px-4 py-2.5 text-sm disabled:opacity-40"
           >
             {busy ? "生成中…" : "生成课程"}
           </button>
@@ -201,12 +201,12 @@ export function ImportView({
         </div>
       )}
       {error && (
-        <div className="bg-red-900/30 text-red-300 text-sm rounded p-3 whitespace-pre-wrap" data-testid="import-error">
+        <div className="surface-card p-3 border-red-800/50 text-red-300 text-sm whitespace-pre-wrap" data-testid="import-error">
           ❌ {error}
         </div>
       )}
       {success && (
-        <div className="bg-green-900/30 text-green-300 text-sm rounded p-3" data-testid="import-success">
+        <div className="surface-card p-3 border-brand/30 text-brand text-sm" data-testid="import-success">
           ✅ {success}
         </div>
       )}

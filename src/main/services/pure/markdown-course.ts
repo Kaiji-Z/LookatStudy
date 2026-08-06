@@ -45,6 +45,27 @@ export function titleToAnchor(title: string): string {
 }
 
 /**
+ * 清洗课时/章节标题 — 去 emoji、多余空格、markdown 格式符号。
+ * "🛠 The Modern FDE Stack" → "The Modern FDE Stack"
+ * "## [Pre-lecture quiz](url)" → "Pre-lecture quiz"
+ */
+export function cleanTitle(raw: string): string {
+  return raw
+    // 去 emoji（Unicode emoji 范围）
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, "")
+    // 去 markdown 链接格式 [text](url) → text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    // 去 markdown 标题符号
+    .replace(/^#+\s*/, "")
+    // 去多余空格
+    .trim()
+    .replace(/\s+/g, " ")
+    // 去首尾标点
+    .replace(/^[·\-\.\s]+|[·\-\.\s]+$/g, "")
+    .trim();
+}
+
+/**
  * 解析 markdown 为课程树。
  * 容错：H3 出现在任何 H2 之前 → 归到一个 "(前言)" section。
  */
@@ -66,13 +87,13 @@ export function parseMarkdownToCourse(md: string): ParsedCourse {
   for (const line of lines) {
     // H1 → 课程标题（取第一个）
     if (/^#\s+/.test(line) && title === "(untitled)") {
-      title = line.replace(/^#\s+/, "").trim();
+      title = cleanTitle(line.replace(/^#\s+/, "").trim());
       continue;
     }
     // H2 → 新 section
     if (/^##\s+/.test(line)) {
       flushLessonBody();
-      const sectionTitle = line.replace(/^##\s+/, "").trim();
+      const sectionTitle = cleanTitle(line.replace(/^##\s+/, "").trim());
       currentSection = {
         title: sectionTitle,
         anchor: titleToAnchor(sectionTitle),
@@ -84,7 +105,7 @@ export function parseMarkdownToCourse(md: string): ParsedCourse {
     // H3 → 当前 section 下新 lesson
     if (/^###\s+/.test(line)) {
       flushLessonBody();
-      const lessonTitle = line.replace(/^###\s+/, "").trim();
+      const lessonTitle = cleanTitle(line.replace(/^###\s+/, "").trim());
       if (!currentSection) {
         // H3 在 H2 前：建前言 section
         currentSection = {

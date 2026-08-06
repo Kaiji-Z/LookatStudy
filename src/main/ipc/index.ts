@@ -85,6 +85,8 @@ import {
 } from "../services/course-structure-service.js";
 // Starter prompts
 import { getStarterPrompts } from "../services/starter-prompts-service.js";
+// XP 系统
+import { getXpStatus } from "../services/xp-service.js";
 // 练习题服务
 import {
   generateExercise as generateExerciseService,
@@ -412,6 +414,11 @@ export function registerSettingsHandlers(): void {
       markDirty();
     },
   );
+
+  // XP 状态（今日 XP + 每日目标 + 达成百分比）
+  ipcMain.handle("xp:getStatus", async () => {
+    return getXpStatus(getDb());
+  });
 }
 
 /* ---------- Skill 系统（M1） ---------- */
@@ -540,6 +547,11 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   );
   ipcMain.handle("proposal:apply", async (_e, id: string) => {
     const result = applyProposalService(getDb(), id);
+    // 如果包含 mark_mastered 操作，把节点加入 SRS 复习队列
+    const hasMastered = result.operations?.some((op) => op.type === "mark_mastered");
+    if (hasMastered && result.nodeId) {
+      recordReview(result.nodeId, 5 as 5);
+    }
     markDirty();
     return result;
   });

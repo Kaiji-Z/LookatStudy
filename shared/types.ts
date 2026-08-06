@@ -345,6 +345,9 @@ export interface ApiExpose {
   /* 设置 */
   getSetting(key: SettingKey): Promise<string | null>;
   setSetting(key: SettingKey, value: string): Promise<void>;
+
+  /** XP 状态（今日经验值 + 每日目标 + 达成百分比） */
+  getXpStatus(): Promise<{ todayXp: number; dailyGoal: number; achieved: boolean; pct: number }>;
 }
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;

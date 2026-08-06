@@ -25,6 +25,7 @@ import {
 } from "../db/schema.js";
 import { randomUUID } from "node:crypto";
 import { updateMastery, BKT_DEFAULTS } from "./pure/bkt.js";
+import { addXpMastered } from "./xp-service.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -228,6 +229,8 @@ function executeOperation(db: Db, op: LearningOperation): void {
           })
           .run();
       }
+      // 掌握一课 +50 XP（SRS 入队在 IPC 层做，避免循环依赖）
+      addXpMastered(db);
       break;
     }
     case "set_node_status": {

@@ -38,6 +38,7 @@ export default function App() {
   const [tree, setTree] = useState<ContentNode[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, Progress>>({});
   const [streak, setStreak] = useState<Streak | null>(null);
+  const [xp, setXp] = useState<{ todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,15 +63,17 @@ export default function App() {
 
   const refreshAll = useCallback(async () => {
     try {
-      const [courseList, streakData, skillList, currentSkill] = await Promise.all([
+      const [courseList, streakData, skillList, currentSkill, xpData] = await Promise.all([
         api.listCourses(),
         api.getStreak(),
         api.listSkills(),
         api.getActiveSkill(),
+        api.getXpStatus(),
       ]);
       setCourses(courseList);
       setStreak(streakData);
       setSkills(skillList);
+      setXp(xpData);
       setActiveSkill(currentSkill);
       if (courseList.length > 0 && !selectedCourseId) {
         setSelectedCourseId(courseList[0]!.id);
@@ -83,6 +86,29 @@ export default function App() {
   useEffect(() => {
     refreshAll();
   }, [refreshAll]);
+
+  // 全局键盘快捷键
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Esc → 停止正在流的回复（如果有 selectedNodeId）
+      if (e.key === "Escape" && selectedNodeId) {
+        api.abortAgentChat(selectedNodeId).catch(() => {});
+      }
+      // Ctrl+K / Cmd+K → 切换到技能树视图
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setView("tree");
+      }
+      // 数字键 1/2/3 → 切换右栏视图（非输入框焦点时）
+      if (!e.target || !(e.target as HTMLElement).matches("input, textarea, select")) {
+        if (e.key === "1") setView("tree");
+        if (e.key === "2") setView("dashboard");
+        if (e.key === "3") setView("import");
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedNodeId]);
 
   useEffect(() => {
     if (!selectedCourseId) return;
@@ -161,7 +187,7 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col bg-neutral-950 text-neutral-100 overflow-hidden">
-      <Header streak={streak} />
+      <Header streak={streak} xp={xp} />
 
       {/* 双栏区：左聊天(AI 全部操作) + Divider + 右技能树(显示+点击) */}
       <div className="flex-1 flex min-h-0">
@@ -193,6 +219,22 @@ export default function App() {
 
           {view === "tree" ? (
             <div className="max-w-xl mx-auto mt-4" data-testid="skill-tree">
+              {/* 课程选择器 */}
+              {courses.length > 1 && (
+                <select
+                  value={selectedCourseId ?? ""}
+                  onChange={(e) => {
+                    setSelectedCourseId(e.target.value);
+                    setSelectedNodeId(null);
+                  }}
+                  data-testid="course-selector"
+                  className="mb-3 bg-neutral-900 text-neutral-300 text-xs rounded-lg px-3 py-1.5 border border-neutral-700 focus:border-brand focus:outline-none"
+                >
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>{c.title}</option>
+                  ))}
+                </select>
+              )}
               <h2 className="text-xl font-extrabold mb-0.5 text-neutral-100 tracking-tight">
                 {currentCourse?.title ?? "加载中..."}
               </h2>
@@ -234,7 +276,7 @@ export default function App() {
 
 /* ---------- 顶部栏 ---------- */
 
-function Header({ streak }: { streak: Streak | null }) {
+function Header({ streak, xp }: { streak: Streak | null; xp: { todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null }) {
   return (
     <header className="border-b border-neutral-800/50 px-6 py-2.5 flex items-center justify-between shrink-0 bg-neutral-950/80 backdrop-blur-sm">
       <div className="flex items-center gap-2.5">
@@ -243,7 +285,20 @@ function Header({ streak }: { streak: Streak | null }) {
           Lookat<span className="text-brand">Study</span>
         </h1>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-4">
+        {xp && (
+          <div className="flex items-center gap-2" data-testid="xp-bar">
+            <div className="w-24 h-2 bg-neutral-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${xp.achieved ? "bg-gold" : "bg-brand"}`}
+                style={{ width: `${Math.max(3, xp.pct)}%` }}
+              />
+            </div>
+            <span className={`text-xs font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-400"}`}>
+              {xp.todayXp}/{xp.dailyGoal} XP
+            </span>
+          </div>
+        )}
         {streak && <StreakBadge streak={streak} />}
       </div>
     </header>

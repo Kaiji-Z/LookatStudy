@@ -23,6 +23,7 @@ import * as schema from "../db/schema.js";
 import { contentNodes, exercises } from "../db/schema.js";
 import { resolveLlm } from "./agent/llm-client.js";
 import { createProposal, type LearningOperation } from "./proposal-service.js";
+import { addXpCorrect, addXpWrong } from "./xp-service.js";
 import type { Exercise, ExerciseType } from "@shared/types";
 
 type Db = SQLJsDatabase<typeof schema>;
@@ -98,11 +99,14 @@ export function submitExerciseAnswer(
   db: Db,
   exerciseId: string,
   userAnswer: string,
-): { correct: boolean; explanation: string | null; proposalId?: string } {
+): { correct: boolean; explanation: string | null; proposalId?: string; xpGained?: number; totalXp?: number } {
   const ex = db.select().from(exercises).where(eq(exercises.id, exerciseId)).get();
   if (!ex) throw new Error(`题目不存在: ${exerciseId}`);
 
   const correct = gradeAnswer(ex.type as ExerciseType, ex.answer, userAnswer, ex.optionsJson);
+
+  // 累加 XP（答对+10，答错+1）
+  const xpGained = correct ? addXpCorrect(db) : addXpWrong(db);
 
   // 生成 update_mastery Proposal（correct 传给 BKT）
   const ops: LearningOperation[] = [
@@ -118,6 +122,8 @@ export function submitExerciseAnswer(
     correct,
     explanation: ex.explanation,
     proposalId: proposal.id,
+    xpGained: correct ? 10 : 1,
+    totalXp: xpGained,
   };
 }
 

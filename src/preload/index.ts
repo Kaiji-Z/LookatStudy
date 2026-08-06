@@ -113,6 +113,8 @@ const api = {
     ipcRenderer.invoke("settings:get", key)) as ApiExpose["getSetting"],
   setSetting: ((key: SettingKey, value: string) =>
     ipcRenderer.invoke("settings:set", key, value)) as ApiExpose["setSetting"],
+  getXpStatus: (() =>
+    ipcRenderer.invoke("xp:getStatus")) as ApiExpose["getXpStatus"],
 
   /* 事件监听（main → renderer 推送） */
   on: ((channel: keyof IpcEvents, listener: (...args: any[]) => void) => {

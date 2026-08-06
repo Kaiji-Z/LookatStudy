@@ -82,6 +82,7 @@ import {
 import {
   analyzeCourseStructure,
   applyCourseStructure,
+  generateLessonSummaries,
 } from "../services/course-structure-service.js";
 // Starter prompts
 import { getStarterPrompts } from "../services/starter-prompts-service.js";
@@ -319,6 +320,15 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       "import:progress",
       `结构化完成：${result.sectionCount} 章 / ${result.lessonCount} 课 / 跳过 ${result.skippedCount} 个练习节点`,
     );
+    return result;
+  });
+
+  // LLM 生成章节摘要 + 前置依赖标记
+  ipcMain.handle("course:generateSummaries", async (_e, courseId: string) => {
+    mainWindow?.webContents.send("import:progress", "AI 正在生成章节摘要…");
+    const result = await generateLessonSummaries(getDb(), courseId);
+    markDirty();
+    mainWindow?.webContents.send("import:progress", `摘要生成完成: ${result.sectionsUpdated} 个章节`);
     return result;
   });
 

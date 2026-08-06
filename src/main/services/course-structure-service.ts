@@ -1,18 +1,11 @@
 /**
  * 课程结构化服务 —— 用 LLM 把导入的碎片节点重组成教学结构。
  *
- * 导入阶段（纯解析）产生的节点可能是 47 个碎片（lab/子课时混在一起）。
- * 本服务调 LLM 分析所有节点标题+摘要，返回合理的教学分组：
- *   - 识别 3-10 个大主题作为 section
- *   - 把 lesson 归到对应 section
- *   - 跳过 lab/翻译类节点
- *   - 按学习难度排序
+ * 功能:
+ *   1. analyzeCourseStructure: LLM 分析节点 → 教学分组（section/lesson/skip）
+ *   2. generateLessonSummaries: LLM 为每个 section 生成中文摘要
  *
- * 分离设计：导入（确定性）和结构化（LLM）解耦。
- * 没 key 的用户能导入（原始碎片结构），配 key 后再触发结构化。
- *
- * 安全：LLM 返回 JSON 后，我们验证所有 lessonId 在 DB 里真实存在才落库，
- *       防止 LLM 幻觉出不存在的 id。不存在的 id 直接丢弃。
+ * 安全：LLM 返回 JSON 后，我们验证所有 lessonId 在 DB 里真实存在才落库。
  */
 import { eq } from "drizzle-orm";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
@@ -22,6 +15,77 @@ import { contentNodes, courses } from "../db/schema.js";
 import { resolveLlm } from "./agent/llm-client.js";
 
 type Db = SQLJsDatabase<typeof schema>;
+
+/**
+ * 为课程的每个 section 生成一句话中文摘要 + 前置依赖标记。
+ * 需要 LLM key。
+ */
+export async function generateLessonSummaries(
+  db: Db,
+  courseId: string,
+): Promise<{ sectionsUpdated: number }> {
+  const llm = resolveLlm(db);
+  const course = db.select().from(courses).where(eq(courses.id, courseId)).get();
+  if (!course) throw new Error(`课程不存在: ${courseId}`);
+
+  // 取所有 section
+  const sections = db
+    .select()
+    .from(contentNodes)
+    .where(eq(contentNodes.courseId, courseId))
+    .all()
+    .filter((n) => n.type === "section")
+    .sort((a, b) => a.orderIdx - b.orderIdx);
+
+  let updated = 0;
+  for (const section of sections) {
+    // 取该 section 的所有 lesson 标题
+    const lessons = db
+      .select()
+      .from(contentNodes)
+      .all()
+      .filter((n) => n.parentId === section.id && n.type === "lesson")
+      .sort((a, b) => a.orderIdx - b.orderIdx);
+
+    if (lessons.length === 0) continue;
+
+    const lessonTitles = lessons.map((l) => `- ${l.title}`).join("\n");
+
+    const prompt = `你是课程设计专家。请为以下章节生成一句话中文摘要和前置知识标记。
+
+课程: ${course.title}
+章节: ${section.title}
+该章节的课时:
+${lessonTitles}
+
+严格返回 JSON，不要加 markdown 代码块标记:
+{
+  "summary": "这一章学什么（一句中文，30字以内）",
+  "prerequisites": "学这章前应该先学什么（如果不需要前置知识就写'无'）"
+}`;
+
+    try {
+      const result = await generateText({ model: llm.languageModel, prompt });
+      const cleaned = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      const parsed = JSON.parse(cleaned);
+
+      // 把摘要写入 section 的 content 字段
+      const summary = typeof parsed.summary === "string" ? parsed.summary : "";
+      const prereq = typeof parsed.prerequisites === "string" ? parsed.prerequisites : "";
+
+      db.update(contentNodes)
+        .set({ content: summary + (prereq && prereq !== "无" ? `\n\n📌 前置: ${prereq}` : "") })
+        .where(eq(contentNodes.id, section.id))
+        .run();
+      updated++;
+    } catch {
+      // 单个 section 失败不影响其他
+      console.error(`[generateLessonSummaries] section ${section.id} failed`);
+    }
+  }
+
+  return { sectionsUpdated: updated };
+}
 
 /** LLM 返回的结构化结果（需验证后才落库） */
 interface StructureProposal {

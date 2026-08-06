@@ -220,6 +220,8 @@ export interface ApiExpose {
     lessonCount: number;
     skippedCount: number;
   }>;
+  /** LLM 生成章节摘要 + 前置依赖标记（需要配 key） */
+  generateSummaries(courseId: string): Promise<{ sectionsUpdated: number }>;
   /** 获取某节点的 starter prompts（引导按钮） */
   getStarterPrompts(nodeId: string): Promise<StarterPrompt[]>;
   /** 获取某节点的完整内容（课程导入 UI / 详情页用） */

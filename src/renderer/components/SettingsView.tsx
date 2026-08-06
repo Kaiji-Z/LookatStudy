@@ -13,10 +13,11 @@
  */
 import { useEffect, useState, useCallback } from "react";
 import { api } from "../lib/api.js";
-import type { ProviderPresetInfo } from "@shared/types";
+import type { ProviderPresetInfo, CustomProvider } from "@shared/types";
 
 export function SettingsView() {
   const [presets, setPresets] = useState<ProviderPresetInfo[]>([]);
+  const [customProviders, setCustomProviders] = useState<CustomProvider[]>([]);
   const [activeProvider, setActiveProvider] = useState<string>("glm");
   const [activeModel, setActiveModel] = useState<string>("");
   const [keyInput, setKeyInput] = useState("");
@@ -26,25 +27,50 @@ export function SettingsView() {
   const [testResult, setTestResult] = useState<{ ok: boolean; detail: string; errorKind?: string } | null>(null);
   const [saved, setSaved] = useState(false);
 
-  // 初始化：拉预设 + 当前配置
+  // 自定义 provider 表单态
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [customLabel, setCustomLabel] = useState("");
+  const [customProtocol, setCustomProtocol] = useState<"openai-compatible" | "anthropic" | "google">("openai-compatible");
+  const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [customApiKey, setCustomApiKey] = useState("");
+  const [customModel, setCustomModel] = useState("");
+  const [customTesting, setCustomTesting] = useState(false);
+  const [customTestResult, setCustomTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+
+  // 初始化：拉预设 + 自定义 provider + 当前配置
   const load = useCallback(async () => {
     try {
-      const [ps, provider, model, goal] = await Promise.all([
+      const [ps, cps, provider, model, goal] = await Promise.all([
         api.getProviderPresets(),
+        api.listCustomProviders(),
         api.getSetting("active_provider"),
         api.getSetting("active_model"),
         api.getSetting("daily_goal_xp"),
       ]);
       setPresets(ps);
+      setCustomProviders(cps);
       const p = provider ?? "glm";
       setActiveProvider(p);
-      // 检查当前 provider 的 key 是否已配（用 masked 显示）
-      const preset = ps.find((x) => x.id === p);
-      if (preset) {
-        const existingKey = await api.getSetting(preset.apiKeySetting as Parameters<typeof api.getSetting>[0]);
-        setKeyMasked(existingKey ? `${existingKey.slice(0, 4)}…${existingKey.slice(-4)}` : null);
+      // 检查当前 provider 的 key 是否已配
+      if (!p.startsWith("custom-")) {
+        const preset = ps.find((x) => x.id === p);
+        if (preset) {
+          const existingKey = await api.getSetting(preset.apiKeySetting as Parameters<typeof api.getSetting>[0]);
+          setKeyMasked(existingKey ? `${existingKey.slice(0, 4)}…${existingKey.slice(-4)}` : null);
+        }
+      } else {
+        // 自定义 provider：key 状态从 customProviders 查
+        const cp = cps.find((c) => c.id === p);
+        setKeyMasked(cp?.hasApiKey ? "已配置" : null);
       }
-      setActiveModel(model ?? preset?.defaultModel ?? "");
+      // model：自定义 provider 的默认 model
+      if (p.startsWith("custom-")) {
+        const cp = cps.find((c) => c.id === p);
+        setActiveModel(model ?? cp?.defaultModel ?? "");
+      } else {
+        const preset = ps.find((x) => x.id === p);
+        setActiveModel(model ?? preset?.defaultModel ?? "");
+      }
       setDailyGoal(goal ?? "30");
     } catch {
       /* 忽略，用户会看到空表单 */
@@ -85,6 +111,8 @@ export function SettingsView() {
       await api.setSetting("daily_goal_xp", dailyGoal);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+      // 广播配置变更：ChatPanel 监听此事件重新检查 agentReady
+      window.dispatchEvent(new Event("llm-config-changed"));
     } catch {
       /* 忽略 */
     }
@@ -103,7 +131,81 @@ export function SettingsView() {
     }
   };
 
-  const currentPreset = presets.find((p) => p.id === activeProvider);
+  // === 自定义 provider 处理 ===
+
+  const handleTestCustom = async () => {
+    if (!customBaseUrl.trim() || !customModel.trim() || customTesting) return;
+    setCustomTesting(true);
+    setCustomTestResult(null);
+    try {
+      const r = await api.testCustomProvider({
+        label: customLabel || "(测试)",
+        protocol: customProtocol,
+        baseUrl: customBaseUrl.trim(),
+        apiKey: customApiKey.trim() || undefined,
+        defaultModel: customModel.trim(),
+      });
+      setCustomTestResult({ ok: r.ok, detail: r.detail });
+    } catch (e) {
+      setCustomTestResult({ ok: false, detail: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setCustomTesting(false);
+    }
+  };
+
+  const handleSaveCustom = async () => {
+    if (!customLabel.trim() || !customBaseUrl.trim() || !customModel.trim()) return;
+    try {
+      const created = await api.createCustomProvider({
+        label: customLabel.trim(),
+        protocol: customProtocol,
+        baseUrl: customBaseUrl.trim(),
+        apiKey: customApiKey.trim() || undefined,
+        defaultModel: customModel.trim(),
+      });
+      // 自动选中新创建的 provider + 写 active_model，这样用户保存后立即生效
+      await api.setSetting("active_provider", created.id);
+      await api.setSetting("active_model", created.defaultModel);
+      setActiveProvider(created.id);
+      setActiveModel(created.defaultModel);
+      // 清表单 + 重新加载
+      setCustomLabel("");
+      setCustomBaseUrl("");
+      setCustomApiKey("");
+      setCustomModel("");
+      setCustomProtocol("openai-compatible");
+      setCustomTestResult(null);
+      setShowCustomForm(false);
+      await load();
+      // 广播配置变更：ChatPanel 立即感知新 provider
+      window.dispatchEvent(new Event("llm-config-changed"));
+    } catch {
+      /* 忽略 */
+    }
+  };
+
+  const handleDeleteCustom = async (id: string) => {
+    if (!confirm("确定删除这个自定义 provider？")) return;
+    try {
+      await api.deleteCustomProvider(id);
+      // 如果删的是当前激活的，切回 glm
+      if (activeProvider === id) {
+        await api.setSetting("active_provider", "glm");
+        setActiveProvider("glm");
+      }
+      await load();
+    } catch {
+      /* 忽略 */
+    }
+  };
+
+  // 当前激活的是自定义 provider？
+  const activeCustomProvider = activeProvider.startsWith("custom-")
+    ? customProviders.find((c) => c.id === activeProvider)
+    : null;
+  const currentPreset = !activeProvider.startsWith("custom-")
+    ? presets.find((p) => p.id === activeProvider)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -128,11 +230,151 @@ export function SettingsView() {
               {p.note && <div className="text-[11px] text-neutral-500 mt-0.5">{p.note}</div>}
             </button>
           ))}
+          {/* 自定义 provider 卡片 */}
+          {customProviders.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => handleProviderChange(c.id)}
+              data-testid={`provider-card-${c.id}`}
+              className={`text-left p-3 rounded-lg border transition-colors ${
+                activeProvider === c.id
+                  ? "border-brand bg-brand/10"
+                  : "border-neutral-700 hover:border-neutral-600"
+              }`}
+            >
+              <div className="text-sm font-medium text-neutral-100">🔧 {c.label}</div>
+              <div className="text-[11px] text-neutral-500 mt-0.5 truncate">{c.baseUrl}</div>
+            </button>
+          ))}
+          {/* 添加自定义 provider 按钮 */}
+          <button
+            onClick={() => setShowCustomForm((s) => !s)}
+            data-testid="add-custom-provider"
+            className="text-left p-3 rounded-lg border border-dashed border-neutral-600 text-neutral-400 hover:border-neutral-500 hover:text-neutral-300"
+          >
+            <div className="text-sm">＋ 添加自定义 Provider</div>
+            <div className="text-[11px] text-neutral-600 mt-0.5">智谱 CodingPlan / Ollama / 自建代理 等</div>
+          </button>
         </div>
+
+        {/* 自定义 provider 添加表单 */}
+        {showCustomForm && (
+          <div className="mt-4 p-4 bg-neutral-900 rounded-lg border border-neutral-700 space-y-3" data-testid="custom-provider-form">
+            <h4 className="text-sm font-semibold text-neutral-200">添加自定义 Provider</h4>
+            <div>
+              <label className="text-xs text-neutral-400 block mb-1">名称（自己起个名字）</label>
+              <input
+                type="text"
+                value={customLabel}
+                onChange={(e) => setCustomLabel(e.target.value)}
+                placeholder="如：智谱 CodingPlan CN"
+                data-testid="custom-label"
+                className="w-full bg-neutral-950 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-neutral-400 block mb-1">协议</label>
+              <select
+                value={customProtocol}
+                onChange={(e) => setCustomProtocol(e.target.value as "openai-compatible" | "anthropic" | "google")}
+                data-testid="custom-protocol"
+                className="w-full bg-neutral-950 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700"
+              >
+                <option value="openai-compatible">OpenAI 兼容（大多数，含 GLM/DeepSeek/Ollama）</option>
+                <option value="anthropic">Anthropic（Claude 原生）</option>
+                <option value="google">Google（Gemini 原生）</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-neutral-400 block mb-1">Base URL（端点地址）</label>
+              <input
+                type="text"
+                value={customBaseUrl}
+                onChange={(e) => setCustomBaseUrl(e.target.value)}
+                placeholder="如 https://api.z.ai/api/coding/paas/v4"
+                data-testid="custom-baseurl"
+                className="w-full bg-neutral-950 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none font-mono"
+              />
+              <p className="text-[11px] text-neutral-600 mt-1">
+                智谱 CodingPlan CN: <code>https://api.z.ai/api/coding/paas/v4</code> ·
+                Ollama: <code>http://localhost:11434/v1</code>
+              </p>
+            </div>
+            <div>
+              <label className="text-xs text-neutral-400 block mb-1">默认模型 ID</label>
+              <input
+                type="text"
+                value={customModel}
+                onChange={(e) => setCustomModel(e.target.value)}
+                placeholder="如 glm-4.6 / gpt-4o / qwen2.5-coder:7b"
+                data-testid="custom-model"
+                className="w-full bg-neutral-950 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-neutral-400 block mb-1">API Key（本地模型可留空）</label>
+              <input
+                type="password"
+                value={customApiKey}
+                onChange={(e) => setCustomApiKey(e.target.value)}
+                placeholder="粘贴 API key（Ollama/LM Studio 不需要）"
+                data-testid="custom-apikey"
+                className="w-full bg-neutral-950 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+              />
+            </div>
+            {/* 测试结果 */}
+            {customTestResult && (
+              <div className={`text-sm rounded p-2 ${customTestResult.ok ? "bg-green-900/30 text-green-300" : "bg-red-900/30 text-red-300"}`}>
+                {customTestResult.ok ? "✅" : "❌"} {customTestResult.detail}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={handleTestCustom}
+                disabled={!customBaseUrl.trim() || !customModel.trim() || customTesting}
+                data-testid="custom-test"
+                className="text-sm bg-neutral-700 text-neutral-100 px-3 py-2 rounded hover:bg-neutral-600 disabled:opacity-40"
+              >
+                {customTesting ? "测试中…" : "测试连接"}
+              </button>
+              <button
+                onClick={handleSaveCustom}
+                disabled={!customLabel.trim() || !customBaseUrl.trim() || !customModel.trim()}
+                data-testid="custom-save"
+                className="text-sm bg-brand text-white px-3 py-2 rounded hover:bg-brand/80 disabled:opacity-40"
+              >
+                保存
+              </button>
+              <button
+                onClick={() => setShowCustomForm(false)}
+                className="text-sm text-neutral-500 hover:text-neutral-300 px-3 py-2"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 已添加的自定义 provider 列表（带删除） */}
+        {customProviders.length > 0 && (
+          <div className="mt-3 space-y-1">
+            {customProviders.map((c) => (
+              <div key={c.id} className="flex items-center justify-between text-xs bg-neutral-950/50 px-3 py-1.5 rounded">
+                <span className="text-neutral-400">🔧 {c.label} · {c.protocol}</span>
+                <button
+                  onClick={() => handleDeleteCustom(c.id)}
+                  className="text-red-400 hover:underline"
+                >
+                  删除
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
-      {/* Model 选择 */}
-      {currentPreset && (
+      {/* Model 选择 / 输入 */}
+      {currentPreset ? (
         <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
           <h3 className="text-sm font-semibold text-neutral-300 mb-3">模型（Model）</h3>
           <select
@@ -149,7 +391,32 @@ export function SettingsView() {
             ))}
           </select>
         </section>
-      )}
+      ) : activeCustomProvider ? (
+        <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+          <h3 className="text-sm font-semibold text-neutral-300 mb-3">模型（Model）</h3>
+          {activeCustomProvider.models.length > 1 ? (
+            <select
+              value={activeModel}
+              onChange={(e) => setActiveModel(e.target.value)}
+              data-testid="model-select-custom"
+              className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+            >
+              {activeCustomProvider.models.map((m) => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="text"
+              value={activeModel}
+              onChange={(e) => setActiveModel(e.target.value)}
+              placeholder="输入模型 ID"
+              data-testid="model-input-custom"
+              className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none font-mono"
+            />
+          )}
+        </section>
+      ) : null}
 
       {/* API Key */}
       {currentPreset && (

@@ -147,3 +147,121 @@ export function generateCourseFromMarkdown(
 /** 暴露解析器给外部（如 course generator UI 预览） */
 export { parseMarkdownToCourse, detectLabType };
 export type { ParsedCourse, LabType };
+
+/**
+ * 从已构建好的 ParsedCourse（多文件合并）落库。
+ *
+ * 与 generateCourseFromMarkdown 的区别:sourcePath 用真实文件路径（而非硬编码 README.md），
+ * 适用于全仓库导入场景。
+ *
+ * @param db
+ * @param parsed       repo-fetcher.buildCourseFromFiles 构建好的 ParsedCourse
+ * @param sourcePaths  每个 section 对应的源文件路径（可选，用于 sourcePath 字段）
+ * @param opts         repoUrl / repoName / courseId
+ */
+export function generateCourseFromRepoFiles(
+  db: Db,
+  parsed: ParsedCourse,
+  opts: { repoUrl?: string | null; repoName: string; courseId?: string },
+): GeneratedCourse {
+  const courseId =
+    opts.courseId ??
+    `course-${opts.repoName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`;
+
+  // 已存在则跳过（幂等）
+  const existing = db
+    .select()
+    .from(courses)
+    .where(eq(courses.id, courseId))
+    .get();
+  if (existing) {
+    const tree = db
+      .select()
+      .from(contentNodes)
+      .where(eq(contentNodes.courseId, courseId))
+      .all();
+    return {
+      courseId,
+      title: existing.title,
+      labType: (existing.labType ?? "doc") as LabType,
+      sectionCount: tree.filter((n) => n.type === "section").length,
+      lessonCount: tree.filter((n) => n.type === "lesson").length,
+    };
+  }
+
+  // 检测 labType：union 所有 section 的 body
+  const allBody = parsed.sections
+    .flatMap((s) => s.lessons.map((l) => l.body))
+    .join("\n");
+  const labType = detectLabType(allBody);
+
+  // 写 course
+  db.insert(courses)
+    .values({
+      id: courseId,
+      repoUrl: opts.repoUrl ?? null,
+      repoName: opts.repoName,
+      title: parsed.title,
+      description: `从 ${opts.repoName} 全仓库导入`,
+      version: 1,
+      labType,
+    })
+    .run();
+
+  // 写 section + lesson + 初始 progress
+  let sectionOrder = 0;
+  let totalLessons = 0;
+  let firstLessonId: string | null = null;
+
+  for (const section of parsed.sections) {
+    const sectionId = randomUUID();
+    db.insert(contentNodes)
+      .values({
+        id: sectionId,
+        courseId,
+        parentId: null,
+        type: "section",
+        title: section.title,
+        sourcePath: section.anchor ? `${section.anchor}` : null,
+        orderIdx: sectionOrder++,
+      })
+      .run();
+
+    let lessonOrder = 0;
+    for (const lesson of section.lessons) {
+      const lessonId = randomUUID();
+      const isFirstEver = firstLessonId === null;
+      db.insert(contentNodes)
+        .values({
+          id: lessonId,
+          courseId,
+          parentId: sectionId,
+          type: "lesson",
+          title: lesson.title,
+          sourcePath: lesson.anchor ? `${section.title}#${lesson.anchor}` : null,
+          orderIdx: lessonOrder++,
+          content: lesson.body || null,
+        })
+        .run();
+
+      db.insert(progressTable)
+        .values({
+          nodeId: lessonId,
+          status: isFirstEver ? "available" : "locked",
+          crownLevel: 0,
+        })
+        .run();
+
+      if (isFirstEver) firstLessonId = lessonId;
+      totalLessons++;
+    }
+  }
+
+  return {
+    courseId,
+    title: parsed.title,
+    labType,
+    sectionCount: parsed.sections.length,
+    lessonCount: totalLessons,
+  };
+}

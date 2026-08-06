@@ -10,7 +10,6 @@ import type {
 } from "@shared/types";
 import { Sidebar } from "./components/Sidebar.js";
 import { Divider } from "./components/Divider.js";
-import { SettingsView } from "./components/SettingsView.js";
 import { ImportView } from "./components/ImportView.js";
 
 type ViewTab = "tree" | "dashboard" | "settings" | "import";
@@ -29,12 +28,6 @@ const BUILTIN_SKILL_ORDER = [
   "project-mode",
   "review-mode",
 ];
-const SKILL_LABELS: Record<string, string> = {
-  "socratic-mode": "苏格拉底",
-  "exam-prep-mode": "考试冲刺",
-  "project-mode": "项目实战",
-  "review-mode": "复习",
-};
 
 const DEFAULT_CHAT_WIDTH_PCT = 38;
 const MIN_CHAT_WIDTH_PCT = 20;
@@ -111,7 +104,7 @@ export default function App() {
     api.getDashboard(selectedCourseId).then(setDashboard).catch(setErrorFromThrow);
   }, [selectedCourseId]);
 
-  // 点 lesson：标记 attempted + 设为当前选中节点（联动聊天栏）
+  // 点 lesson：标记 attempted + 解锁下一课 + 设为当前选中节点（联动聊天栏）+ 展开左栏
   const handleLessonClick = async (node: ContentNode) => {
     try {
       await api.markNodeAttempted(node.id);
@@ -124,6 +117,7 @@ export default function App() {
       }
       setStreak(newStreak);
       setSelectedNodeId(node.id); // 联动聊天栏
+      setChatCollapsed(false); // 点 lesson 自动展开左栏，让用户看到对话/练习入口
     } catch (e) {
       setErrorFromThrow(e);
     }
@@ -168,13 +162,8 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col bg-neutral-950 text-neutral-100 overflow-hidden">
       <Header streak={streak} />
-      <SkillPicker
-        skills={orderedSkills}
-        activeSkill={activeSkill}
-        onPick={handleSkillPick}
-      />
 
-      {/* 双栏区：左聊天 + Divider + 右技能树 */}
+      {/* 双栏区：左聊天(AI 全部操作) + Divider + 右技能树(显示+点击) */}
       <div className="flex-1 flex min-h-0">
         <div
           style={chatCollapsed ? undefined : { width: `${chatWidth}%` }}
@@ -184,6 +173,9 @@ export default function App() {
             collapsed={chatCollapsed}
             onToggleCollapse={() => setChatCollapsed((c) => !c)}
             selectedNode={selectedNode}
+            skills={orderedSkills}
+            activeSkill={activeSkill}
+            onPickSkill={handleSkillPick}
           />
         </div>
 
@@ -194,7 +186,7 @@ export default function App() {
           />
         )}
 
-        {/* 右栏：技能树 / 仪表盘 / 导入 / 设置 */}
+        {/* 右栏：技能树 / 仪表盘 / 导入（纯显示 + 点击操作，无 AI 配置） */}
         <main className="flex-1 overflow-auto px-6 py-6 min-w-0">
           {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
           <ViewTabs view={view} onChange={setView} />
@@ -229,13 +221,9 @@ export default function App() {
             <div className="mt-4">
               <DashboardView dashboard={dashboard} />
             </div>
-          ) : view === "import" ? (
+          ) : (
             <div className="max-w-2xl mx-auto mt-4">
               <ImportView onImported={() => { refreshAll(); setView("tree"); }} courses={courses} selectedCourseId={selectedCourseId} onSelectCourse={setSelectedCourseId} />
-            </div>
-          ) : (
-            <div className="max-w-2xl mx-auto mt-4" data-testid="settings-view">
-              <SettingsView />
             </div>
           )}
         </main>
@@ -261,48 +249,6 @@ function Header({ streak }: { streak: Streak | null }) {
   );
 }
 
-function SkillPicker({
-  skills,
-  activeSkill,
-  onPick,
-}: {
-  skills: Skill[];
-  activeSkill: string | null;
-  onPick: (name: string) => void;
-}) {
-  return (
-    <div
-      className="border-b border-neutral-800 bg-neutral-900/50 px-6 py-2 flex items-center gap-2 overflow-x-auto shrink-0"
-      data-testid="skill-picker"
-    >
-      <span className="text-xs text-neutral-500 mr-2 shrink-0">学习模式：</span>
-      {skills.length === 0 ? (
-        <span className="text-xs text-neutral-600">加载中…</span>
-      ) : (
-        skills.map((s) => {
-          const isActive = s.name === activeSkill;
-          const label = SKILL_LABELS[s.name] ?? s.name;
-          return (
-            <button
-              key={s.id}
-              onClick={() => onPick(s.name)}
-              title={s.description}
-              data-testid={`skill-pill-${s.name}`}
-              className={`shrink-0 text-xs px-3 py-1 rounded-full border transition-colors ${
-                isActive
-                  ? "border-brand bg-brand/20 text-brand font-semibold"
-                  : "border-neutral-700 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
 function ViewTabs({
   view,
   onChange,
@@ -318,7 +264,6 @@ function ViewTabs({
       <TabButton active={view === "tree"} onClick={() => onChange("tree")} label="技能树" testid="tab-tree" />
       <TabButton active={view === "dashboard"} onClick={() => onChange("dashboard")} label="仪表盘" testid="tab-dashboard" />
       <TabButton active={view === "import"} onClick={() => onChange("import")} label="导入课程" testid="tab-import" />
-      <TabButton active={view === "settings"} onClick={() => onChange("settings")} label="⚙️ 设置" testid="tab-settings" />
     </div>
   );
 }
@@ -459,7 +404,7 @@ function LessonBubble({
             ? "cursor-not-allowed"
             : "hover:scale-105 active:scale-95 shadow-lg"
         } ${isSelected ? "ring-2 ring-accent ring-offset-2 ring-offset-neutral-950 scale-105" : ""} ${status === "available" ? "animate-pulse" : ""}`}
-        title={lesson.title}
+        title={isLocked ? `🔒 ${lesson.title}（完成上一课解锁）` : lesson.title}
       >
         <div className="absolute inset-0 flex items-center justify-center text-2xl">
           {isLocked ? (

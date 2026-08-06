@@ -13,7 +13,7 @@
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import { eq } from "drizzle-orm";
 import * as schema from "../db/schema.js";
-import { progress as progressTable } from "../db/schema.js";
+import { progress as progressTable, contentNodes } from "../db/schema.js";
 import type { Progress } from "@shared/types";
 
 // 项目用 sql.js（drizzle 的同步 API）。注入式传入便于无头测试构造真实 DB。
@@ -81,6 +81,7 @@ export function updateProgress(
 
 /**
  * 标记节点已尝试：status=in_progress + lastAttemptAt=now。不存在则插入。
+ * 同时解锁同章节的下一课（Duolingo 式关卡门控：开始当前课 → 下一课变 available）。
  * 成功（被尝试）后回调 onAttempted —— 由 IPC 层接 touchStreakToday，测试可注入断言。
  */
 export function markNodeAttempted(
@@ -112,6 +113,9 @@ export function markNodeAttempted(
       .run();
   }
 
+  // 解锁同章节的下一课（按 orderIdx 排序找当前课的下一个 lesson）
+  unlockNextLesson(db, nodeId);
+
   onAttempted?.();
   return {
     nodeId,
@@ -120,4 +124,92 @@ export function markNodeAttempted(
     lastAttemptAt: iso,
     mastery: existing?.mastery ?? null,
   };
+}
+
+/**
+ * 解锁同父章节里、orderIdx 大于当前节点的第一个 lesson。
+ * 如果当前章节没有下一课了，解锁下一章节的第一课。
+ */
+function unlockNextLesson(db: Db, currentNodeId: string): void {
+  // 查当前节点（要拿到 parentId 和 orderIdx）
+  const current = db
+    .select()
+    .from(contentNodes)
+    .where(eq(contentNodes.id, currentNodeId))
+    .get();
+  if (!current) return;
+
+  // 同章节、orderIdx 更大的 lesson，取第一个
+  const siblings = db
+    .select()
+    .from(contentNodes)
+    .all()
+    .filter(
+      (n) =>
+        n.parentId === current.parentId &&
+        n.type === "lesson" &&
+        n.orderIdx > current.orderIdx,
+    )
+    .sort((a, b) => a.orderIdx - b.orderIdx);
+
+  let nextNodeId: string | null = null;
+  if (siblings.length > 0) {
+    // 同章节有下一课
+    nextNodeId = siblings[0]!.id;
+  } else {
+    // 同章节没下一课了 → 找下一章节的第一课
+    const allSections = db
+      .select()
+      .from(contentNodes)
+      .all()
+      .filter((n) => n.type === "section" && n.orderIdx > (current.parentId ? getParentOrderIdx(db, current.parentId) : -1))
+      .sort((a, b) => a.orderIdx - b.orderIdx);
+    if (allSections.length > 0) {
+      const nextSectionLessons = db
+        .select()
+        .from(contentNodes)
+        .all()
+        .filter((n) => n.parentId === allSections[0]!.id && n.type === "lesson")
+        .sort((a, b) => a.orderIdx - b.orderIdx);
+      if (nextSectionLessons.length > 0) {
+        nextNodeId = nextSectionLessons[0]!.id;
+      }
+    }
+  }
+
+  if (nextNodeId) {
+    // 如果下一课还是 locked，解锁成 available
+    const nextProgress = db
+      .select()
+      .from(progressTable)
+      .where(eq(progressTable.nodeId, nextNodeId))
+      .get() as Progress | undefined;
+    if (!nextProgress || nextProgress.status === "locked") {
+      if (nextProgress) {
+        db.update(progressTable)
+          .set({ status: "available" })
+          .where(eq(progressTable.nodeId, nextNodeId))
+          .run();
+      } else {
+        db.insert(progressTable)
+          .values({
+            nodeId: nextNodeId,
+            status: "available",
+            crownLevel: 0,
+            lastAttemptAt: null,
+          })
+          .run();
+      }
+    }
+  }
+}
+
+/** 取某 section 的 orderIdx（辅助 unlockNextLesson） */
+function getParentOrderIdx(db: Db, parentId: string): number {
+  const parent = db
+    .select()
+    .from(contentNodes)
+    .where(eq(contentNodes.id, parentId))
+    .get();
+  return parent?.orderIdx ?? -1;
 }

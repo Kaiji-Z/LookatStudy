@@ -9,7 +9,7 @@
  *
  * 还支持:课程列表（切换/删除）—— 让用户管理已导入的多门课程。
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../lib/api.js";
 import type { Course } from "@shared/types";
 
@@ -31,12 +31,20 @@ export function ImportView({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [progressMsg, setProgressMsg] = useState<string | null>(null);
+
+  // 订阅导入进度
+  useEffect(() => {
+    const off = api.on("import:progress", (msg: string) => setProgressMsg(msg));
+    return () => off();
+  }, []);
 
   const handleImportUrl = async () => {
     if (!repoUrl.trim() || busy) return;
     setBusy(true);
     setError(null);
     setSuccess(null);
+    setProgressMsg(null);
     try {
       const course = await api.importCourseFromRepo(repoUrl.trim());
       setSuccess(`导入成功：${course.title}（${course.repoName}）`);
@@ -167,6 +175,12 @@ export function ImportView({
       )}
 
       {/* 反馈 */}
+      {busy && progressMsg && (
+        <div className="bg-neutral-900/50 text-neutral-300 text-sm rounded p-3 flex items-center gap-2" data-testid="import-progress">
+          <span className="inline-block w-3 h-3 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0"></span>
+          {progressMsg}
+        </div>
+      )}
       {error && (
         <div className="bg-red-900/30 text-red-300 text-sm rounded p-3 whitespace-pre-wrap" data-testid="import-error">
           ❌ {error}

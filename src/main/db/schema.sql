@@ -165,3 +165,21 @@ CREATE TABLE IF NOT EXISTS memory (
 );
 CREATE INDEX IF NOT EXISTS idx_memory_node ON memory(node_id);
 CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category);
+
+-- ============================================================
+-- 自定义 Provider（用户自建 LLM 端点，覆盖预设无法穷举的场景）
+-- 如：智谱 CodingPlan CN/Global、各 provider 区域端点、自建代理、Ollama 本地等
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS custom_providers (
+  id TEXT PRIMARY KEY,               -- 'custom-' + uuid，也作为 active_provider 的值
+  label TEXT NOT NULL,               -- 用户起的名字，如 "智谱 CodingPlan CN"
+  protocol TEXT NOT NULL DEFAULT 'openai-compatible'
+    CHECK (protocol IN ('openai-compatible', 'anthropic', 'google')),
+  base_url TEXT NOT NULL,            -- 如 https://api.z.ai/api/coding/paas/v4
+  api_key TEXT,                      -- 可空（本地模型如 Ollama 不需要 key）
+  default_model TEXT NOT NULL,       -- 默认模型 id
+  models_json TEXT,                  -- 可选：模型列表 JSON（用户手填或测试连接回填）
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+

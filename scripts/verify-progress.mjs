@@ -93,4 +93,36 @@ assert.strictEqual(t7.status, "mastered", "T7: 不传 status 应保留 mastered"
 assert.strictEqual(t7.crownLevel, 5, "T7: crownLevel=5");
 console.log(`✓ T7 updateProgress(patch 缺 status): mastered 保留, crown→5`);
 
+// === T8: markNodeAttempted 解锁同章节下一课（Duolingo 式关卡门控）===
+// 建一个新课程 + 章节 + 3 课（用 orderIdx 排序）
+sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('c2', 'r2', 'T2')`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('sec-a', 'c2', NULL, 'section', '章节A', 0)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('les-1', 'c2', 'sec-a', 'lesson', '课1', 0)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('les-2', 'c2', 'sec-a', 'lesson', '课2', 1)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('les-3', 'c2', 'sec-a', 'lesson', '课3', 2)`);
+// 初始：课1=available, 课2=locked, 课3=locked
+updateProgress(db, "les-1", { status: "available" });
+updateProgress(db, "les-2", { status: "locked" });
+updateProgress(db, "les-3", { status: "locked" });
+
+// 点课1 → 课1 变 in_progress，课2 应解锁成 available
+markNodeAttempted(db, "les-1");
+const les1p = getProgress(db, "les-1");
+const les2p = getProgress(db, "les-2");
+const les3p = getProgress(db, "les-3");
+assert.strictEqual(les1p?.status, "in_progress", "T8: 课1 应变 in_progress");
+assert.strictEqual(les2p?.status, "available", "T8: 课2 应被解锁成 available");
+assert.strictEqual(les3p?.status, "locked", "T8: 课3 应仍 locked（只解锁紧邻的下一课）");
+console.log(`✓ T8 markNodeAttempted 解锁下一课: 课1→in_progress, 课2→available, 课3 仍 locked`);
+
+// === T9: 章节最后一课 → 解锁下一章节的第一课 ===
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('sec-b', 'c2', NULL, 'section', '章节B', 1)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('les-4', 'c2', 'sec-b', 'lesson', '课4', 0)`);
+updateProgress(db, "les-3", { status: "available" }); // 先让课3可点
+// 点课3（章节A最后一课）→ 课4（章节B第一课）应解锁
+markNodeAttempted(db, "les-3");
+const les4p = getProgress(db, "les-4");
+assert.strictEqual(les4p?.status, "available", "T9: 章节最后一课 → 下一章节第一课应解锁");
+console.log(`✓ T9 跨章节解锁: 课3(章节A末)→课4(章节B首) unlocked`);
+
 console.log("\n=== ALL PROGRESS SERVICE TESTS PASSED ✅ ===");

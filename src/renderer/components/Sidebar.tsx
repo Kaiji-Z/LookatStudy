@@ -2,19 +2,25 @@
  * 左栏容器 —— 包裹 ChatPanel，处理折叠态。
  *
  * 折叠时渲染成 46px 窄条（只有展开按钮）；
- * 展开时渲染完整 ChatPanel。
+ * 展开时渲染完整 ChatPanel（含对话/练习/设置 + 技能模式选择）。
  */
-import type { ContentNode } from "@shared/types";
+import type { ContentNode, Skill } from "@shared/types";
 import { ChatPanel } from "./ChatPanel.js";
 
 export function Sidebar({
   collapsed,
   onToggleCollapse,
   selectedNode,
+  skills,
+  activeSkill,
+  onPickSkill,
 }: {
   collapsed: boolean;
   onToggleCollapse: () => void;
   selectedNode: ContentNode | null;
+  skills: Skill[];
+  activeSkill: string | null;
+  onPickSkill: (name: string) => void;
 }) {
   if (collapsed) {
     return (
@@ -39,5 +45,13 @@ export function Sidebar({
       </div>
     );
   }
-  return <ChatPanel selectedNode={selectedNode} onToggleCollapse={onToggleCollapse} />;
+  return (
+    <ChatPanel
+      selectedNode={selectedNode}
+      onToggleCollapse={onToggleCollapse}
+      skills={skills}
+      activeSkill={activeSkill}
+      onPickSkill={onPickSkill}
+    />
+  );
 }

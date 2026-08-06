@@ -12,9 +12,10 @@
  */
 import { useEffect, useState, useRef, useCallback } from "react";
 import { api } from "../lib/api.js";
-import type { ContentNode } from "@shared/types";
+import type { ContentNode, Skill } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import { ExercisePanel } from "./ExercisePanel.js";
+import { SettingsView } from "./SettingsView.js";
 
 interface ChatMessage {
   id: string;
@@ -35,19 +36,32 @@ interface AgentReadyState {
 let msgIdCounter = 0;
 const nextMsgId = () => `msg-${++msgIdCounter}`;
 
+const SKILL_LABELS: Record<string, string> = {
+  "socratic-mode": "苏格拉底",
+  "exam-prep-mode": "考试冲刺",
+  "project-mode": "项目实战",
+  "review-mode": "复习",
+};
+
 export function ChatPanel({
   selectedNode,
   onToggleCollapse,
+  skills,
+  activeSkill,
+  onPickSkill,
 }: {
   selectedNode: ContentNode | null;
   onToggleCollapse: () => void;
+  skills: Skill[];
+  activeSkill: string | null;
+  onPickSkill: (name: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [agentReady, setAgentReady] = useState<AgentReadyState | null>(null);
   const [configMode, setConfigMode] = useState(false);
-  const [panelMode, setPanelMode] = useState<"chat" | "exercise">("chat");
+  const [panelMode, setPanelMode] = useState<"chat" | "exercise" | "settings">("chat");
   // 配置引导的本地态
   const [cfgProvider, setCfgProvider] = useState("glm");
   const [cfgKey, setCfgKey] = useState("");
@@ -66,6 +80,13 @@ export function ChatPanel({
 
   useEffect(() => {
     checkReady();
+  }, [checkReady]);
+
+  // 监听全局 "llm-config-changed" 事件：设置页保存后触发，重新检查就绪状态
+  useEffect(() => {
+    const handler = () => checkReady();
+    window.addEventListener("llm-config-changed", handler);
+    return () => window.removeEventListener("llm-config-changed", handler);
   }, [checkReady]);
 
   // 订阅流式事件（chat:token / done / error / toolCall / proposal）
@@ -309,28 +330,62 @@ export function ChatPanel({
         </button>
       </div>
 
-      {/* 模式切换：对话 / 练习（有 key 才显示） */}
-      {agentReady?.ready && selectedNode && (
-        <div className="flex border-b border-neutral-800 shrink-0">
-          <button
-            onClick={() => setPanelMode("chat")}
-            data-testid="mode-chat"
-            className={`flex-1 text-xs py-1.5 ${panelMode === "chat" ? "text-brand border-b-2 border-brand" : "text-neutral-500 hover:text-neutral-300"}`}
-          >
-            💬 对话
-          </button>
-          <button
-            onClick={() => setPanelMode("exercise")}
-            data-testid="mode-exercise"
-            className={`flex-1 text-xs py-1.5 ${panelMode === "exercise" ? "text-brand border-b-2 border-brand" : "text-neutral-500 hover:text-neutral-300"}`}
-          >
-            📝 练习
-          </button>
+      {/* 模式切换：💬对话 / 📝练习 / ⚙️设置（始终显示） */}
+      <div className="flex border-b border-neutral-800 shrink-0">
+        <button
+          onClick={() => setPanelMode("chat")}
+          data-testid="mode-chat"
+          className={`flex-1 text-xs py-1.5 ${panelMode === "chat" ? "text-brand border-b-2 border-brand" : "text-neutral-500 hover:text-neutral-300"}`}
+        >
+          💬 对话
+        </button>
+        <button
+          onClick={() => setPanelMode("exercise")}
+          data-testid="mode-exercise"
+          className={`flex-1 text-xs py-1.5 ${panelMode === "exercise" ? "text-brand border-b-2 border-brand" : "text-neutral-500 hover:text-neutral-300"}`}
+        >
+          📝 练习
+        </button>
+        <button
+          onClick={() => setPanelMode("settings")}
+          data-testid="mode-settings"
+          className={`flex-1 text-xs py-1.5 ${panelMode === "settings" ? "text-brand border-b-2 border-brand" : "text-neutral-500 hover:text-neutral-300"}`}
+        >
+          ⚙️ 设置
+        </button>
+      </div>
+
+      {/* 学习模式选择器（AI 怎么教）— 仅在非设置模式时显示 */}
+      {panelMode !== "settings" && skills.length > 0 && (
+        <div className="flex gap-1 px-3 py-1.5 border-b border-neutral-800 shrink-0 overflow-x-auto" data-testid="skill-picker-left">
+          {skills.map((s) => {
+            const isActive = s.name === activeSkill;
+            const label = SKILL_LABELS[s.name] ?? s.name;
+            return (
+              <button
+                key={s.id}
+                onClick={() => onPickSkill(s.name)}
+                title={s.description}
+                data-testid={`skill-pill-${s.name}`}
+                className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                  isActive
+                    ? "border-brand bg-brand/20 text-brand font-semibold"
+                    : "border-neutral-700 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* 练习模式：显示 ExercisePanel（替代消息列表 + 输入框） */}
-      {panelMode === "exercise" && agentReady?.ready ? (
+      {/* ⚙️ 设置模式：显示 SettingsView（滚动） */}
+      {panelMode === "settings" ? (
+        <div className="flex-1 overflow-y-auto px-3 py-3 min-h-0">
+          <SettingsView />
+        </div>
+      ) : panelMode === "exercise" && agentReady?.ready ? (
         <div className="flex-1 overflow-y-auto px-3 py-3 min-h-0">
           <ExercisePanel node={selectedNode} />
         </div>

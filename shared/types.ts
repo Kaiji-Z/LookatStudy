@@ -141,6 +141,30 @@ export interface ProviderPresetInfo {
   note?: string;
 }
 
+/* ---------- 自定义 Provider（用户自建 LLM 端点） ---------- */
+
+export interface CustomProvider {
+  id: string;
+  label: string;
+  protocol: "openai-compatible" | "anthropic" | "google";
+  baseUrl: string;
+  defaultModel: string;
+  /** 可选模型列表（解析自 modelsJson） */
+  models: ProviderModelInfo[];
+  /** 是否需要 API key（本地模型如 Ollama 不需要） */
+  hasApiKey: boolean;
+  createdAt: string;
+}
+
+export interface CustomProviderInput {
+  label: string;
+  protocol: "openai-compatible" | "anthropic" | "google";
+  baseUrl: string;
+  apiKey?: string;
+  defaultModel: string;
+  models?: ProviderModelInfo[];
+}
+
 /* ---------- 练习题（M2 exercises 表的 UI 契约） ---------- */
 
 export type ExerciseType = "mcq" | "fill_blank" | "true_false";
@@ -242,6 +266,18 @@ export interface ApiExpose {
     detail: string;
     errorKind?: "auth" | "rate-limit" | "network" | "not-configured" | "unknown";
   }>;
+  /** 测试指定自定义 provider 配置（不保存，临时验证） */
+  testCustomProvider(input: CustomProviderInput): Promise<{
+    ok: boolean;
+    detail: string;
+    models?: ProviderModelInfo[];
+    errorKind?: "auth" | "rate-limit" | "network" | "not-configured" | "unknown";
+  }>;
+  /** 自定义 provider CRUD */
+  listCustomProviders(): Promise<CustomProvider[]>;
+  createCustomProvider(input: CustomProviderInput): Promise<CustomProvider>;
+  updateCustomProvider(id: string, input: Partial<CustomProviderInput>): Promise<CustomProvider>;
+  deleteCustomProvider(id: string): Promise<void>;
 
   /* Proposal 流水线（M2） */
   listPendingProposals(): Promise<Proposal[]>;

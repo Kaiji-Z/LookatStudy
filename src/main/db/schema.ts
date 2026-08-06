@@ -207,3 +207,29 @@ export const memory = sqliteTable("memory", {
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),
 });
+
+/* ---------- 自定义 Provider（用户自建 LLM 端点） ---------- */
+
+export const customProviders = sqliteTable("custom_providers", {
+  id: text("id").primaryKey(),
+  /** 用户起的名字，如"智谱 CodingPlan CN" */
+  label: text("label").notNull(),
+  /** 协议：openai-compatible（默认，覆盖 90% 场景）/ anthropic / google */
+  protocol: text("protocol", {
+    enum: ["openai-compatible", "anthropic", "google"],
+  })
+    .notNull()
+    .default("openai-compatible"),
+  /** 端点 URL，如 https://api.z.ai/api/coding/paas/v4 */
+  baseUrl: text("base_url").notNull(),
+  /** API key（可空，本地模型如 Ollama 不需要） */
+  apiKey: text("api_key"),
+  /** 默认模型 id */
+  defaultModel: text("default_model").notNull(),
+  /** 可选模型列表 JSON（用户手填或测试连接回填） */
+  modelsJson: text("models_json"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+

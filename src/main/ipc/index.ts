@@ -25,6 +25,7 @@ import type {
   ReviewQuality,
   SettingKey,
   ExerciseType,
+  CustomProviderInput,
 } from "@shared/types";
 import {
   getDueReviewNodeIds,
@@ -47,8 +48,15 @@ import {
 } from "../services/skills/skill-service.js";
 // Agent 引擎 + Proposal（M2）
 import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory } from "../services/agent/agent-engine.js";
-import { isLlmReady, testLlmConnection } from "../services/agent/llm-client.js";
+import { isLlmReady, testLlmConnection, testCustomProvider } from "../services/agent/llm-client.js";
 import { PROVIDER_PRESETS } from "../services/agent/llm-presets.js";
+// 自定义 Provider
+import {
+  listCustomProviders as listCustomProvidersService,
+  createCustomProvider as createCustomProviderService,
+  updateCustomProvider as updateCustomProviderService,
+  deleteCustomProvider as deleteCustomProviderService,
+} from "../services/custom-provider-service.js";
 import {
   listPendingProposals as listPendingProposalsService,
   applyProposal as applyProposalService,
@@ -62,7 +70,14 @@ import {
   getMemory as getMemoryService,
 } from "../services/search-service.js";
 // M4：Course Generator
-import { generateCourseFromMarkdown as generateCourseFromMarkdownService } from "../services/course-generator.js";
+import { generateCourseFromMarkdown as generateCourseFromMarkdownService, generateCourseFromRepoFiles as generateCourseFromRepoFilesService } from "../services/course-generator.js";
+import {
+  filterLessonFiles,
+  detectRepoPattern,
+  fetchMarkdownContents,
+  buildCourseFromFiles,
+  cdnUrl,
+} from "../services/pure/repo-fetcher.js";
 // 练习题服务
 import {
   generateExercise as generateExerciseService,
@@ -72,7 +87,7 @@ import {
 
 /* ---------- 课程 ---------- */
 
-export function registerCourseHandlers(): void {
+export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle("course:list", async (): Promise<Course[]> => {
     const db = getDb();
     return db.select().from(courses).all() as Course[];
@@ -90,52 +105,118 @@ export function registerCourseHandlers(): void {
     },
   );
 
-  // M4：Course Generator —— 从 GitHub repo 拉 README.md，解析落库。
-  // 网络受限时会失败，提示用户手动提供 markdown（走 course:generateFromMarkdown）。
+  // 全仓库导入：从 GitHub repo 拉 README → 检测形态 → 拉所有课时 .md → 落库。
+  // 支持:形态 A（课程型，README 链接发现子文件）+ 形态 B（单文件型，README 自身够长）。
+  // 进度通过 import:progress 事件推给渲染层。
   ipcMain.handle(
     "course:importFromRepo",
     async (_e, repoUrl: string): Promise<Course> => {
-      // 从 repoUrl 提取 owner/repo，拼 raw README url
       const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
       if (!m) throw new Error(`无效 GitHub URL：${repoUrl}`);
-      const [, owner, repo] = m;
-      const cleanRepo = repo.replace(/\.git$/, "");
-      // 试 main 分支的 README.md（README 大小写都试）
-      const candidates = [
-        `https://raw.githubusercontent.com/${owner}/${cleanRepo}/main/README.md`,
-        `https://raw.githubusercontent.com/${owner}/${cleanRepo}/master/README.md`,
-        `https://raw.githubusercontent.com/${owner}/${cleanRepo}/main/readme.md`,
-      ];
-      let md = "";
-      let lastErr = "";
-      for (const url of candidates) {
+      const [, owner, repoRaw] = m;
+      const cleanRepo = repoRaw.replace(/\.git$/, "");
+
+      const send = (msg: string) =>
+        mainWindow?.webContents.send("import:progress", msg);
+
+      // Step 1: 拉 README（试 main + master 分支，走 CDN）
+      send("正在拉取 README…");
+      const branches = ["main", "master"];
+      let readmeMd = "";
+      let readmeBranch = "main";
+      for (const br of branches) {
         try {
+          const url = cdnUrl(owner, cleanRepo, br, "README.md");
           const res = await fetch(url);
           if (res.ok) {
-            md = await res.text();
+            readmeMd = await res.text();
+            readmeBranch = br;
             break;
           }
-          lastErr = `${res.status} ${res.statusText}`;
-        } catch (e) {
-          lastErr = e instanceof Error ? e.message : String(e);
+        } catch {
+          /* 试下一个 */
         }
       }
-      if (!md) {
+      if (!readmeMd) {
         throw new Error(
-          `拉取 README 失败（${lastErr}）。可能是网络受限或仓库私有。` +
-            `请用 course:generateFromMarkdown 手动提供 markdown 内容。`,
+          "拉取 README 失败。可能是网络受限或仓库私有。" +
+            "请改用「粘贴 Markdown」方式手动提供内容。",
         );
       }
-      const result = generateCourseFromMarkdownService(getDb(), md, {
+      send(`README 拉取成功（${readmeMd.length} 字符）`);
+
+      // Step 2: 检测仓库形态
+      const detection = detectRepoPattern(readmeMd);
+
+      if (detection.pattern === "unsupported") {
+        throw new Error(
+          `这个仓库不像学习仓库：${detection.reason}。` +
+            "LookatStudy 专为学习型仓库设计（如微软 AI-For-Beginners）。" +
+            "如果确实有学习内容，请用「粘贴 Markdown」方式手动导入。",
+        );
+      }
+
+      // Step 3a: 课程型 → 拉所有课时文件
+      if (detection.pattern === "course" && detection.lessonFiles) {
+        const lessonFiles = filterLessonFiles(detection.lessonFiles);
+        send(`检测到课程型仓库（${lessonFiles.length} 个课时文件），开始拉取…`);
+
+        const fetchResult = await fetchMarkdownContents(
+          lessonFiles,
+          owner,
+          cleanRepo,
+          readmeBranch,
+          fetch,
+          (done, total, path) => {
+            send(`拉取文件 ${done}/${total}: ${path}`);
+          },
+        );
+
+        if (fetchResult.ok.length === 0) {
+          // 所有子文件都拉失败 → 降级用 README 本身
+          send("子文件拉取全部失败，降级用 README 正文");
+          const result = generateCourseFromMarkdownService(getDb(), readmeMd, {
+            repoUrl,
+            repoName: cleanRepo,
+          });
+          markDirty();
+          const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
+          return course as unknown as Course;
+        }
+
+        // 从 README 取课程标题
+        const titleMatch = readmeMd.match(/^#\s+(.+)$/m);
+        const courseTitle = titleMatch ? titleMatch[1].trim() : cleanRepo;
+
+        // 合并所有课时文件成 ParsedCourse
+        const parsed = buildCourseFromFiles(courseTitle, fetchResult.ok);
+        send(`解析完成：${parsed.sections.length} 章节，构建课程…`);
+
+        const result = generateCourseFromRepoFilesService(getDb(), parsed, {
+          repoUrl,
+          repoName: cleanRepo,
+        });
+        markDirty();
+
+        if (fetchResult.failed.length > 0) {
+          send(`完成（${fetchResult.failed.length} 个文件拉取失败已跳过）`);
+        } else {
+          send(`导入完成：${result.sectionCount} 章 / ${result.lessonCount} 课`);
+        }
+
+        const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
+        return course as unknown as Course;
+      }
+
+      // Step 3b: 单文件型 → 走现有 generateCourseFromMarkdown
+      send("检测到单文件型仓库，用 README 正文构建课程…");
+      const result = generateCourseFromMarkdownService(getDb(), readmeMd, {
         repoUrl,
         repoName: cleanRepo,
       });
       markDirty();
-      const course = getDb()
-        .select()
-        .from(courses)
-        .where(eq(courses.id, result.courseId))
-        .get();
+      send(`导入完成：${result.sectionCount} 章 / ${result.lessonCount} 课`);
+      const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
       return course as unknown as Course;
     },
   );
@@ -390,6 +471,30 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
     return testLlmConnection(getDb());
   });
 
+  // 测试自定义 provider 配置（不保存，临时验证）
+  ipcMain.handle("agent:testCustomProvider", async (_e, input: CustomProviderInput) => {
+    return testCustomProvider(input);
+  });
+
+  // 自定义 provider CRUD
+  ipcMain.handle("customProvider:list", async () => {
+    return listCustomProvidersService(getDb());
+  });
+  ipcMain.handle("customProvider:create", async (_e, input: CustomProviderInput) => {
+    const result = createCustomProviderService(getDb(), input);
+    markDirty();
+    return result;
+  });
+  ipcMain.handle("customProvider:update", async (_e, id: string, input: Partial<CustomProviderInput>) => {
+    const result = updateCustomProviderService(getDb(), id, input);
+    markDirty();
+    return result;
+  });
+  ipcMain.handle("customProvider:delete", async (_e, id: string) => {
+    deleteCustomProviderService(getDb(), id);
+    markDirty();
+  });
+
   // Proposal 流水线
   ipcMain.handle("proposal:listPending", async () =>
     listPendingProposalsService(getDb()),
@@ -448,7 +553,7 @@ export function registerM3Handlers(): void {
 }
 
 export function registerAllHandlers(mainWindow: BrowserWindow): void {
-  registerCourseHandlers();
+  registerCourseHandlers(mainWindow);
   registerProgressHandlers();
   registerSrsHandlers();
   registerStreakHandlers();

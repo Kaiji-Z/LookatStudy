@@ -18,7 +18,9 @@ import { settings as settingsTable } from "../../db/schema.js";
 import {
   resolveProviderConfig,
   type ProviderPreset,
+  type ProviderProtocol,
 } from "./llm-presets.js";
+import { getCustomProviderRaw } from "../custom-provider-service.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -41,34 +43,79 @@ export interface ResolvedLlm {
 /**
  * 按 protocol 构造 LanguageModel。
  * 抽出来便于 testConnection 复用（验证时不走 streamText，用 generateText 发一条最小请求）。
+ * 支持 openai-compatible（自定义 baseUrl）/ anthropic / google 三类协议。
  */
-function buildLanguageModel(preset: ProviderPreset, apiKey: string, model: string): LanguageModel {
-  switch (preset.protocol) {
+function buildLanguageModel(
+  protocol: ProviderProtocol,
+  baseUrl: string | undefined,
+  apiKey: string,
+  model: string,
+): LanguageModel {
+  switch (protocol) {
     case "openai-compatible": {
-      if (!preset.baseUrl) {
-        throw new Error(`provider ${preset.id} 协议为 openai-compatible 但缺 baseUrl`);
+      if (!baseUrl) {
+        throw new Error(`openai-compatible 协议需要 baseUrl`);
       }
-      const openai = createOpenAI({ baseURL: preset.baseUrl, apiKey });
+      const openai = createOpenAI({ baseURL: baseUrl, apiKey });
       return openai.chat(model);
     }
     case "anthropic": {
-      const anthropic = createAnthropic({ apiKey });
+      // Anthropic 允许自定义 baseURL（覆盖官方端点，如代理）
+      const opts: { apiKey: string; baseURL?: string } = { apiKey };
+      if (baseUrl) opts.baseURL = baseUrl;
+      const anthropic = createAnthropic(opts);
       return anthropic(model);
     }
     case "google": {
-      const google = createGoogleGenerativeAI({ apiKey });
+      const opts: { apiKey: string; baseURL?: string } = { apiKey };
+      if (baseUrl) opts.baseURL = baseUrl;
+      const google = createGoogleGenerativeAI(opts);
       return google(model);
     }
     default:
-      throw new Error(`未知 protocol: ${(preset as { protocol: string }).protocol}`);
+      throw new Error(`未知 protocol: ${String(protocol)}`);
   }
 }
 
 /**
  * 解析当前激活 provider + 构造 LanguageModel。未配置 key 抛错。
+ *
+ * 解析顺序：先查自定义 provider（id 以 "custom-" 开头），找不到再查预设。
+ * 自定义 provider 的 apiKey/baseUrl 存在 custom_providers 表，不走 settings。
  */
 export function resolveLlm(db: Db): ResolvedLlm {
-  const cfg = resolveProviderConfig(readSettingsMap(db));
+  const settings = readSettingsMap(db);
+  const activeProvider = settings.active_provider ?? "glm";
+
+  // 自定义 provider 分支
+  if (activeProvider.startsWith("custom-")) {
+    const raw = getCustomProviderRaw(db, activeProvider);
+    if (!raw) {
+      throw new Error(`自定义 provider 不存在: ${activeProvider}（可能已被删除）`);
+    }
+    // 本地模型（Ollama 等）可以没 key：用占位符让 SDK 不报错
+    const apiKey = raw.apiKey || "no-key-needed";
+    const model = settings.active_model ?? raw.defaultModel;
+    const protocol = raw.protocol as ProviderProtocol;
+    return {
+      provider: {
+        id: raw.id,
+        label: "(自定义)",
+        protocol,
+        baseUrl: raw.baseUrl,
+        defaultModel: raw.defaultModel,
+        models: [],
+        apiKeySetting: "(custom)",
+        keyUrl: "",
+      },
+      model,
+      apiKey,
+      languageModel: buildLanguageModel(protocol, raw.baseUrl, apiKey, model),
+    };
+  }
+
+  // 预设 provider 分支
+  const cfg = resolveProviderConfig(settings);
   if (!cfg.ready || !cfg.provider || !cfg.apiKey || !cfg.model) {
     throw new Error(cfg.missing ?? "LLM provider 未就绪");
   }
@@ -76,13 +123,19 @@ export function resolveLlm(db: Db): ResolvedLlm {
     provider: cfg.provider,
     model: cfg.model,
     apiKey: cfg.apiKey,
-    languageModel: buildLanguageModel(cfg.provider, cfg.apiKey, cfg.model),
+    languageModel: buildLanguageModel(
+      cfg.provider.protocol,
+      cfg.provider.baseUrl,
+      cfg.apiKey,
+      cfg.model,
+    ),
   };
 }
 
 /**
  * 渲染层用：返回"当前 provider 是否就绪"（布尔，不含 key）。
  * 走 IPC 时渲染层只能看到这个布尔，符合密钥边界。
+ * 自定义 provider：只要表里有行就 ready（本地模型可以没 key）。
  */
 export function isLlmReady(db: Db): {
   ready: boolean;
@@ -90,7 +143,22 @@ export function isLlmReady(db: Db): {
   model?: string;
   missing?: string;
 } {
-  const cfg = resolveProviderConfig(readSettingsMap(db));
+  const settings = readSettingsMap(db);
+  const activeProvider = settings.active_provider ?? "glm";
+
+  if (activeProvider.startsWith("custom-")) {
+    const raw = getCustomProviderRaw(db, activeProvider);
+    if (!raw) {
+      return { ready: false, provider: activeProvider, missing: `自定义 provider 不存在: ${activeProvider}` };
+    }
+    return {
+      ready: true,
+      provider: raw.id,
+      model: settings.active_model ?? raw.defaultModel,
+    };
+  }
+
+  const cfg = resolveProviderConfig(settings);
   return {
     ready: cfg.ready,
     provider: cfg.provider?.id,
@@ -103,7 +171,7 @@ export function isLlmReady(db: Db): {
  * 测试连接 —— 发一条最小请求验证 key + model + 网络是否通。
  *
  * 用户在 Settings 页保存 key 后可点"测试连接"，避免"配了 key 但直到发消息才发现是坏的"。
- * 用 generateText 发 "ping" 一字请求，10s 超时。
+ * 用 generateText 发 "ping" 一字请求。
  *
  * @returns ok=true 时附 model 回声；ok=false 时附可读的中文错误分类
  */
@@ -116,16 +184,60 @@ export async function testLlmConnection(
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : String(e), errorKind: "not-configured" };
   }
+  return testLlmDirect(
+    llm.provider.protocol,
+    llm.provider.baseUrl,
+    llm.apiKey,
+    llm.model,
+    llm.provider.label,
+  );
+}
+
+/**
+ * 测试自定义 provider 配置（不保存，临时验证）。
+ * 给 Settings 页"添加自定义 provider"时的"测试"按钮用。
+ */
+export async function testCustomProvider(input: {
+  protocol: ProviderProtocol;
+  baseUrl: string;
+  apiKey?: string;
+  defaultModel: string;
+  label: string;
+}): Promise<{
+  ok: boolean;
+  detail: string;
+  models?: { id: string; label: string; contextWindow: null }[];
+  errorKind?: LlmErrorKind;
+}> {
+  const apiKey = input.apiKey || "no-key-needed";
+  const result = await testLlmDirect(
+    input.protocol,
+    input.baseUrl,
+    apiKey,
+    input.defaultModel,
+    input.label,
+  );
+  return result;
+}
+
+/** 内部：直接用 protocol/baseUrl/key/model 发 ping 请求 */
+async function testLlmDirect(
+  protocol: ProviderProtocol,
+  baseUrl: string | undefined,
+  apiKey: string,
+  model: string,
+  label: string,
+): Promise<{ ok: boolean; detail: string; errorKind?: LlmErrorKind }> {
   try {
+    const languageModel = buildLanguageModel(protocol, baseUrl, apiKey, model);
     const result = await generateText({
-      model: llm.languageModel,
+      model: languageModel,
       prompt: "ping",
-      // 让 provider 自己算 token；maxOutputTokens 给个最小值省额度
     });
     const text = (result.text ?? "").trim().slice(0, 50);
     return {
       ok: true,
-      detail: `连接成功（${llm.provider.label} · ${llm.model}${text ? ` · 回声: ${text}` : ""}）`,
+      detail: `连接成功（${label} · ${model}${text ? ` · 回声: ${text}` : ""}）`,
     };
   } catch (e) {
     const classified = classifyLlmError(e);

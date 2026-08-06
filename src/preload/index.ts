@@ -5,7 +5,7 @@
  * 渲染层通过 window.api.* 调用，无法直接访问 Node API。
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey, ExerciseType } from "@shared/types";
+import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey, ExerciseType, CustomProviderInput } from "@shared/types";
 
 const api = {
   /* 课程 */
@@ -73,6 +73,16 @@ const api = {
     ipcRenderer.invoke("agent:getProviderPresets")) as ApiExpose["getProviderPresets"],
   testLlmConnection: (() =>
     ipcRenderer.invoke("agent:testConnection")) as ApiExpose["testLlmConnection"],
+  testCustomProvider: ((input: CustomProviderInput) =>
+    ipcRenderer.invoke("agent:testCustomProvider", input)) as ApiExpose["testCustomProvider"],
+  listCustomProviders: (() =>
+    ipcRenderer.invoke("customProvider:list")) as ApiExpose["listCustomProviders"],
+  createCustomProvider: ((input: CustomProviderInput) =>
+    ipcRenderer.invoke("customProvider:create", input)) as ApiExpose["createCustomProvider"],
+  updateCustomProvider: ((id: string, input: Partial<CustomProviderInput>) =>
+    ipcRenderer.invoke("customProvider:update", id, input)) as ApiExpose["updateCustomProvider"],
+  deleteCustomProvider: ((id: string) =>
+    ipcRenderer.invoke("customProvider:delete", id)) as ApiExpose["deleteCustomProvider"],
   listPendingProposals: (() =>
     ipcRenderer.invoke("proposal:listPending")) as ApiExpose["listPendingProposals"],
   applyProposal: ((id: string) =>

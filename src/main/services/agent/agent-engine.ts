@@ -203,10 +203,10 @@ export async function handleAgentChat(
 
   const reply = await runAgentTurn(db, nodeId, history, {
     onTextDelta: (delta) => win?.webContents.send("chat:token", delta),
-    onToolCall: (name) =>
-      win?.webContents.send("import:progress", `工具调用：${name}`),
+    onToolCall: (name, args) =>
+      win?.webContents.send("chat:toolCall", name, JSON.stringify(args ?? {})),
     onProposalCreated: (id, summary) => {
-      win?.webContents.send("import:progress", `新提议：${summary}（#${id.slice(0, 8)}）`);
+      win?.webContents.send("chat:proposal", id, summary, "pending");
     },
     onError: (msg) => win?.webContents.send("chat:error", msg),
   });

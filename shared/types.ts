@@ -224,5 +224,9 @@ export interface IpcEvents {
   "chat:token": (chunk: string) => void;
   "chat:done": (fullText: string) => void;
   "chat:error": (error: string) => void;
+  /** 工具调用事件（结构化，供聊天栏渲染工具条） */
+  "chat:toolCall": (name: string, args: string) => void;
+  /** 提议创建事件（结构化，供聊天栏渲染应用/拒绝卡） */
+  "chat:proposal": (proposalId: string, summary: string, status: string) => void;
   "import:progress": (message: string) => void;
 }

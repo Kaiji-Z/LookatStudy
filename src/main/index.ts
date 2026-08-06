@@ -224,7 +224,9 @@ async function runUiTest(screenshot = false): Promise<void> {
         document.querySelector('[data-testid="skill-picker"]') !== null &&
         document.querySelectorAll('[data-testid^="skill-pill-"]').length >= 4 &&
         document.querySelectorAll('[data-testid^="section-unit-"]').length >= 1 &&
-        document.querySelectorAll('[data-testid^="lesson-bubble-"]').length >= 1
+        document.querySelectorAll('[data-testid^="lesson-bubble-"]').length >= 1 &&
+        document.querySelector('[data-testid="chat-panel"]') !== null &&
+        document.querySelector('[data-testid="divider"]') !== null
       `);
     while (Date.now() < deadline) {
       try {
@@ -389,6 +391,75 @@ async function runUiTest(screenshot = false): Promise<void> {
     name: "proposal list→reject→empty roundtrip (M2 wiring)",
     ok: proposalRoundtrip?.ok === true,
     detail: proposalRoundtrip,
+  });
+
+  // T8a (双栏): chat-panel 存在 + config-guide 显示（无 key 时）
+  const dualPane = await win.webContents.executeJavaScript(`
+    (function() {
+      const chat = document.querySelector('[data-testid="chat-panel"]');
+      const divider = document.querySelector('[data-testid="divider"]');
+      const configGuide = document.querySelector('[data-testid="config-guide"]');
+      const configProvider = document.querySelector('[data-testid="config-provider"]');
+      return {
+        chatPanel: !!chat,
+        divider: !!divider,
+        configGuide: !!configGuide,
+        configProvider: !!configProvider,
+      };
+    })()
+  `);
+  results.push({
+    name: "dual-pane: chat-panel + divider + config-guide rendered",
+    ok: dualPane?.chatPanel && dualPane?.divider && dualPane?.configGuide && dualPane?.configProvider,
+    detail: dualPane,
+  });
+
+  // T8b (双栏联动): 点一个 lesson bubble → chat-panel 顶部显示该节点标题
+  const linkage = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        const btns = document.querySelectorAll('[data-testid^="lesson-bubble-"] button');
+        let clicked = null;
+        for (const b of btns) {
+          if (!b.disabled) { b.click(); clicked = b.closest('[data-testid]').getAttribute('data-testid'); break; }
+        }
+        if (!clicked) return { ok: false, reason: "no enabled bubble" };
+        await new Promise(r => setTimeout(r, 500));
+        const nodeLabel = document.querySelector('[data-testid="chat-current-node"]');
+        return { ok: !!nodeLabel && nodeLabel.textContent.includes('📍'), clicked, label: nodeLabel?.textContent };
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    })()
+  `);
+  results.push({
+    name: "lesson click → chat-panel shows selected node (联动)",
+    ok: linkage?.ok === true,
+    detail: linkage,
+  });
+
+  // T8c (双栏折叠): 点折叠按钮 → chat-panel 消失，sidebar-collapsed 出现
+  const collapse = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        const collapseBtn = document.querySelector('[data-testid="chat-collapse-btn"]');
+        if (!collapseBtn) return { ok: false, reason: "collapse btn not found" };
+        collapseBtn.click();
+        await new Promise(r => setTimeout(r, 300));
+        const collapsed = document.querySelector('[data-testid="sidebar-collapsed"]');
+        const expandBtn = document.querySelector('[data-testid="chat-expand-btn"]');
+        // 再展开回来（不影响后续测试）
+        if (expandBtn) { expandBtn.click(); await new Promise(r => setTimeout(r, 300)); }
+        return { ok: !!collapsed && !!expandBtn };
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    })()
+  `);
+  results.push({
+    name: "chat collapse → sidebar-collapsed + expand button (折叠)",
+    ok: collapse?.ok === true,
+    detail: collapse,
   });
 
   // T9 (M3): 切到 dashboard tab → 仪表盘渲染（3 stat 卡 + 热力图行）

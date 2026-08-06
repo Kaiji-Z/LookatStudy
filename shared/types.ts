@@ -1,0 +1,228 @@
+/**
+ * 共享类型契约 —— Electron 主进程与 React 渲染层之间的协议层。
+ *
+ * 修改这里的类型 = 修改 IPC 协议。两端必须同步。
+ */
+
+/* ---------- 课程模型 ---------- */
+
+export type NodeType = "section" | "lesson" | "concept";
+
+export type NodeStatus = "locked" | "available" | "in_progress" | "mastered";
+
+export interface ContentNode {
+  id: string;
+  courseId: string;
+  parentId: string | null;
+  type: NodeType;
+  title: string;
+  /** 该节点内容来自源仓库的哪个文件 + 锚点（用于溯源） */
+  sourcePath: string | null;
+  /** 排序序号（同层兄弟节点之间） */
+  orderIdx: number;
+}
+
+export interface Course {
+  id: string;
+  repoUrl: string | null;
+  repoName: string;
+  title: string;
+  description: string | null;
+  /** 课程树版本，用于内容更新时判断是否要重新生成 */
+  version: number;
+  createdAt: string;
+}
+
+/* ---------- 学习进度 ---------- */
+
+export interface Progress {
+  nodeId: string;
+  status: NodeStatus;
+  /** 1-5，参照多邻国 crown level：每多一层是更深的复习通关 */
+  crownLevel: number;
+  lastAttemptAt: string | null;
+  /** M2: BKT 掌握度概率 0-1（NULL=从未评估） */
+  mastery: number | null;
+}
+
+/* ---------- Skill 系统（v2 / M1） ---------- */
+
+export type SkillType = "learning-mode" | "subject-pack" | "user-custom";
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  type: SkillType;
+  /** 完整 raw（含 frontmatter）。运行时用 parseSkillFrontmatter 取 body 注入 system prompt */
+  body: string;
+  isBuiltin: boolean;
+}
+
+/* ---------- Proposal 流水线（M2） ---------- */
+
+export type OperationType =
+  | "update_mastery"
+  | "mark_mastered"
+  | "set_node_status"
+  | "add_to_srs";
+
+export interface LearningOperation {
+  type: OperationType;
+  nodeId: string;
+  correct?: boolean;
+  status?: NodeStatus;
+  quality?: number;
+}
+
+export type ProposalStatus = "pending" | "applied" | "rejected" | "stale";
+
+export interface Proposal {
+  id: string;
+  nodeId: string | null;
+  operations: LearningOperation[];
+  status: ProposalStatus;
+  rationale: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  applyError?: string;
+}
+
+/* ---------- 仪表盘 + 检索（M3） ---------- */
+
+export interface SectionMastery {
+  sectionId: string;
+  sectionTitle: string;
+  avgMastery: number;
+  lessonCount: number;
+  masteredCount: number;
+}
+
+export interface DashboardData {
+  sections: SectionMastery[];
+  dueToday: number;
+  currentStreak: number;
+  freezeCount: number;
+  overallMastery: number;
+}
+
+export interface SearchHit {
+  nodeId: string;
+  title: string;
+  snippet: string;
+  rank: number;
+}
+
+/* ---------- IPC 通道协议 ---------- */
+
+/**
+ * 所有 IPC 调用都走 invoke/handle 模式。
+ * 渲染层通过 preload 暴露的 window.api 调用。
+ */
+export interface ApiExpose {
+  /* 课程 */
+  listCourses(): Promise<Course[]>;
+  getCourseTree(courseId: string): Promise<ContentNode[]>;
+  importCourseFromRepo(repoUrl: string): Promise<Course>;
+  /** M4: 从 markdown 字符串生成课程（无网络依赖） */
+  generateCourseFromMarkdown(
+    md: string,
+    repoName: string,
+    repoUrl?: string,
+  ): Promise<Course>;
+
+  /* 进度 */
+  getProgress(nodeId: string): Promise<Progress | null>;
+  updateProgress(nodeId: string, patch: Partial<Progress>): Promise<Progress>;
+  markNodeAttempted(nodeId: string): Promise<void>;
+
+  /* SRS */
+  getDueReviews(): Promise<string[]>;
+  recordReview(nodeId: string, quality: ReviewQuality): Promise<void>;
+
+  /* 打卡 */
+  getStreak(): Promise<Streak>;
+  touchStreakToday(): Promise<Streak>;
+
+  /* Agent 引擎（M2：取代原 v2 占位。agentChat 自带流式推送 via chat:token 事件） */
+  agentChat(nodeId: string, userMessage: string): Promise<string>;
+
+  /* Skill 系统（M1） */
+  listSkills(): Promise<Skill[]>;
+  getSkill(name: string): Promise<Skill | null>;
+  createSkill(input: {
+    name: string;
+    description: string;
+    type: SkillType;
+    body: string;
+  }): Promise<Skill>;
+  setActiveSkill(name: string): Promise<void>;
+  getActiveSkill(): Promise<string | null>;
+
+  /** LLM provider 是否就绪（渲染层只见布尔，不见 key） */
+  isAgentReady(): Promise<{
+    ready: boolean;
+    provider?: string;
+    model?: string;
+    missing?: string;
+  }>;
+
+  /* Proposal 流水线（M2） */
+  listPendingProposals(): Promise<Proposal[]>;
+  applyProposal(id: string): Promise<Proposal>;
+  rejectProposal(id: string): Promise<Proposal>;
+
+  /* 仪表盘 + 检索 + 记忆（M3） */
+  getDashboard(courseId: string): Promise<DashboardData>;
+  searchContent(query: string): Promise<SearchHit[]>;
+  updateMemory(input: {
+    nodeId?: string | null;
+    summary: string;
+    category: "global" | "node" | "friction_pattern";
+  }): Promise<{ id: string; nodeId: string | null; summary: string; category: string }>;
+  getMemory(
+    nodeId: string | null,
+    category?: "global" | "node" | "friction_pattern",
+  ): Promise<
+    Array<{
+      id: string;
+      nodeId: string | null;
+      summary: string;
+      category: string;
+    }>
+  >;
+
+  /* 设置 */
+  getSetting(key: SettingKey): Promise<string | null>;
+  setSetting(key: SettingKey, value: string): Promise<void>;
+}
+
+export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;
+
+export interface Streak {
+  currentStreak: number;
+  longestStreak: number;
+  /** ISO date string YYYY-MM-DD */
+  lastActiveDate: string | null;
+  freezeCount: number;
+}
+
+export type SettingKey =
+  | "openai_api_key"
+  | "anthropic_api_key"
+  | "google_api_key"
+  | "glm_api_key"
+  | "deepseek_api_key"
+  | "active_provider"
+  | "active_model"
+  | "daily_goal_xp"
+  | "user_level";
+
+/* ---------- IPC 事件（main → renderer，单向推送） ---------- */
+
+export interface IpcEvents {
+  "chat:token": (chunk: string) => void;
+  "chat:done": (fullText: string) => void;
+  "chat:error": (error: string) => void;
+  "import:progress": (message: string) => void;
+}

@@ -18,6 +18,8 @@ const api = {
     ipcRenderer.invoke("course:generateFromMarkdown", md, repoName, repoUrl)) as ApiExpose["generateCourseFromMarkdown"],
   deleteCourse: ((courseId: string) =>
     ipcRenderer.invoke("course:delete", courseId)) as ApiExpose["deleteCourse"],
+  restructureCourse: ((courseId: string) =>
+    ipcRenderer.invoke("course:restructure", courseId)) as ApiExpose["restructureCourse"],
   getNodeContent: ((nodeId: string) =>
     ipcRenderer.invoke("course:getNodeContent", nodeId)) as ApiExpose["getNodeContent"],
 

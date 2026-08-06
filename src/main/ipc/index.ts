@@ -78,6 +78,11 @@ import {
   buildCourseFromFiles,
   cdnUrl,
 } from "../services/pure/repo-fetcher.js";
+// 课程结构化服务（LLM）
+import {
+  analyzeCourseStructure,
+  applyCourseStructure,
+} from "../services/course-structure-service.js";
 // 练习题服务
 import {
   generateExercise as generateExerciseService,
@@ -292,6 +297,23 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       .where(eq(contentNodes.id, nodeId))
       .get();
     return node?.content ?? null;
+  });
+
+  // LLM 课程结构化：把导入的碎片节点重组成教学结构
+  ipcMain.handle("course:restructure", async (_e, courseId: string) => {
+    mainWindow?.webContents.send("import:progress", "AI 正在分析课程结构…");
+    const proposal = await analyzeCourseStructure(getDb(), courseId);
+    mainWindow?.webContents.send(
+      "import:progress",
+      `分析完成：${proposal.sections.length} 章节，重新组织中…`,
+    );
+    const result = applyCourseStructure(getDb(), courseId, proposal);
+    markDirty();
+    mainWindow?.webContents.send(
+      "import:progress",
+      `结构化完成：${result.sectionCount} 章 / ${result.lessonCount} 课 / 跳过 ${result.skippedCount} 个练习节点`,
+    );
+    return result;
   });
 }
 

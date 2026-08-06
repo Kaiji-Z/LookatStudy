@@ -21,6 +21,7 @@ import * as schema from "../../db/schema.js";
 import {
   contentNodes,
   progress as progressTable,
+  courses,
 } from "../../db/schema.js";
 import type { BrowserWindow } from "electron";
 import { getDb, markDirty } from "../../db/index.js";
@@ -38,7 +39,12 @@ type Db = SQLJsDatabase<typeof schema>;
 const BASE_AGENT_PROMPT =
   "你是 LookatStudy 的 AI 学习导师。学习者正在学一门由 GitHub 文档生成的课程。" +
   "你的职责是帮学习者真正理解知识，不是简单复述文档。" +
-  "用清晰、鼓励的中文回答。当学习者答错时，先肯定尝试再纠正。";
+  "用清晰、鼓励的中文回答。当学习者答错时，先肯定尝试再纠正。\n\n" +
+  "【防幻觉红线】你必须严格基于下面提供的「课程上下文」和「当前节点内容」回答。" +
+  "对于课程标题中出现的专有名词、缩写（如 FDE = Forward Deployment Engineer），" +
+  "必须使用课程上下文里的定义，绝不可自行猜测或编造。" +
+  "如果学习者问的内容超出了你掌握的上下文，明确说'这部分内容不在当前课程材料中'，" +
+  "而不是编造一个看似合理的回答。";
 
 /** 流式事件回调 */
 export interface AgentEvents {
@@ -83,8 +89,33 @@ export async function runAgentTurn(
     .where(eq(progressTable.nodeId, nodeId))
     .get();
 
+  // 课程级上下文：标题、描述、章节结构概览（防 AI 以偏概全）
+  const courseId = node?.courseId;
+  const course = courseId
+    ? db.select().from(courses).where(eq(courses.id, courseId)).get()
+    : null;
+  const courseSections = courseId
+    ? db
+        .select()
+        .from(contentNodes)
+        .where(eq(contentNodes.courseId, courseId))
+        .all()
+        .filter((n) => n.type === "section")
+        .sort((a, b) => a.orderIdx - b.orderIdx)
+    : [];
+  const courseOutline = courseSections
+    .map((s) => `  - ${s.title}`)
+    .join("\n");
+
+  const courseContext = course
+    ? `课程标题：${course.title}\n` +
+      `课程描述：${course.description ?? "(无)"}\n` +
+      `课程章节结构：\n${courseOutline || "  (无)"}\n`
+    : "(无课程级上下文)";
+
   const nodeContext = node
-    ? `当前学习节点：${node.title}（${node.type}）\n来源：${node.sourcePath ?? "(无)"}\n` +
+    ? `${courseContext}\n` +
+      `当前学习节点：${node.title}（${node.type}）\n来源：${node.sourcePath ?? "(无)"}\n` +
       `内容：${node.content ?? "(尚未生成讲解，需要时基于标题引导)"}\n` +
       `学习者当前掌握度：${nodeProgress?.mastery != null ? nodeProgress.mastery.toFixed(2) : "未知"}\n` +
       `进度状态：${nodeProgress?.status ?? "未开始"}`

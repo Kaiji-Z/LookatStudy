@@ -203,6 +203,12 @@ export interface ApiExpose {
   ): Promise<Course>;
   /** 删除课程及其全部节点/进度（用户移除不需要的课程） */
   deleteCourse(courseId: string): Promise<void>;
+  /** 用 LLM 把导入的碎片节点重组成教学结构（需要配 key） */
+  restructureCourse(courseId: string): Promise<{
+    sectionCount: number;
+    lessonCount: number;
+    skippedCount: number;
+  }>;
   /** 获取某节点的完整内容（课程导入 UI / 详情页用） */
   getNodeContent(nodeId: string): Promise<string | null>;
 

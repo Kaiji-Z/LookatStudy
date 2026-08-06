@@ -1,0 +1,209 @@
+/**
+ * SQLite Schema —— 7 张核心表。
+ *
+ * 设计原则：
+ * - 一切学习数据纯本地（无云同步）
+ * - adjacency list 表示课程树（parentId 自引用）
+ * - SRS 用 SM-2 算法字段（easeFactor + intervalDays + repetitions）
+ * - 所有金额/时间戳用 ISO string，避免 Date 序列化坑
+ */
+import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+
+/* ---------- 课程 ---------- */
+
+export const courses = sqliteTable("courses", {
+  id: text("id").primaryKey(),
+  /** 远程仓库 URL；本地导入或种子课程可为 null */
+  repoUrl: text("repo_url"),
+  repoName: text("repo_name").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  /** 内容版本，源仓库更新时递增，触发重新生成 */
+  version: integer("version").notNull().default(1),
+  /** Lab 类型：决定 AI 能否动手操作学习对象（M4 检测，M5 用） */
+  labType: text("lab_type", { enum: ["doc", "code", "notebook"] })
+    .notNull()
+    .default("doc"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+/* ---------- 课程树节点（章/节/知识点 三级，adjacency list） ---------- */
+
+export const contentNodes = sqliteTable("content_nodes", {
+  id: text("id").primaryKey(),
+  courseId: text("course_id")
+    .notNull()
+    .references(() => courses.id, { onDelete: "cascade" }),
+  parentId: text("parent_id"), // 自引用，根节点为 null
+  type: text("type", { enum: ["section", "lesson", "concept"] }).notNull(),
+  title: text("title").notNull(),
+  /** 源仓库里的相对路径（如 README.md#phase-1） */
+  sourcePath: text("source_path"),
+  orderIdx: integer("order_idx").notNull().default(0),
+  /** 按需生成的讲解内容（缓存） */
+  content: text("content"),
+});
+
+/* ---------- 练习题（按需生成后缓存） ---------- */
+
+export const exercises = sqliteTable("exercises", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id")
+    .notNull()
+    .references(() => contentNodes.id, { onDelete: "cascade" }),
+  type: text("type", {
+    enum: ["mcq", "fill_blank", "predict_output", "order_lines", "debug"],
+  }).notNull(),
+  prompt: text("prompt").notNull(),
+  /** 正确答案；MCQ 是选项字母，填空是字符串 */
+  answer: text("answer").notNull(),
+  /** 解释（答错/复盘时显示） */
+  explanation: text("explanation"),
+  /** MCQ 的选项 JSON 数组 */
+  optionsJson: text("options_json"),
+  aiGenerated: integer("ai_generated", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+/* ---------- 学习进度 ---------- */
+
+export const progress = sqliteTable("progress", {
+  nodeId: text("node_id")
+    .primaryKey()
+    .references(() => contentNodes.id, { onDelete: "cascade" }),
+  status: text("status", {
+    enum: ["locked", "available", "in_progress", "mastered"],
+  }).notNull()
+    .default("locked"),
+  /** 1-5，参照多邻国 crown level */
+  crownLevel: integer("crown_level").notNull().default(0),
+  lastAttemptAt: text("last_attempt_at"),
+  /** M2: BKT 掌握度概率 0-1（NULL=从未评估） */
+  mastery: real("mastery"),
+});
+
+/* ---------- SRS 复习项（SM-2 字段） ---------- */
+
+export const srsItems = sqliteTable("srs_items", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id")
+    .notNull()
+    .references(() => contentNodes.id, { onDelete: "cascade" }),
+  /** SM-2 easiness factor，初始 2.5，范围 [1.3, 3.0] */
+  easeFactor: integer("ease_factor").notNull().default(250), // 存整数 ×100，避免浮点
+  /** 下次复习的间隔天数 */
+  intervalDays: integer("interval_days").notNull().default(0),
+  /** 连续答对次数 */
+  repetitions: integer("repetitions").notNull().default(0),
+  /** ISO date，下次到期日 */
+  dueAt: text("due_at").notNull(),
+  lastReviewedAt: text("last_reviewed_at"),
+});
+
+/* ---------- 打卡 ---------- */
+
+export const streaks = sqliteTable("streaks", {
+  id: text("id").primaryKey().default("singleton"), // 单用户本地，固定单行
+  currentStreak: integer("current_streak").notNull().default(0),
+  longestStreak: integer("longest_streak").notNull().default(0),
+  /** ISO date YYYY-MM-DD */
+  lastActiveDate: text("last_active_date"),
+  /** 可用的 streak freeze 次数（参照多邻国） */
+  freezeCount: integer("freeze_count").notNull().default(2),
+});
+
+/* ---------- AI 对话历史 ---------- */
+
+export const chatSessions = sqliteTable("chat_sessions", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id").references(() => contentNodes.id, { onDelete: "cascade" }),
+  /** messages 数组 JSON：[{role, content}] */
+  messagesJson: text("messages_json").notNull().default("[]"),
+  /** 记录这次对话用的 Provider，便于切换时不丢上下文 */
+  provider: text("provider"),
+  /** 记录激活的 skill，便于复现教学风格 */
+  activeSkill: text("active_skill"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+/* ---------- Skill 系统（v2 新增） ---------- */
+
+export const skills = sqliteTable("skills", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description").notNull(),
+  type: text("type", {
+    enum: ["learning-mode", "subject-pack", "user-custom"],
+  }).notNull(),
+  body: text("body").notNull(),
+  isBuiltin: integer("is_builtin", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+/* ---------- Proposal 流水线（v2 新增） ---------- */
+
+export const proposals = sqliteTable("proposals", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id").references(() => contentNodes.id, { onDelete: "cascade" }),
+  /** Operation[] 数组的 JSON */
+  operationsJson: text("operations_json").notNull(),
+  status: text("status", {
+    enum: ["pending", "applied", "rejected", "stale"],
+  }).notNull()
+    .default("pending"),
+  rationale: text("rationale"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  resolvedAt: text("resolved_at"),
+});
+
+/* ---------- Friction 日志（v2 新增） ---------- */
+
+export const frictionLog = sqliteTable("friction_log", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id"),
+  category: text("category", {
+    enum: ["confused", "blocked", "frustrated", "agent_error"],
+  }).notNull(),
+  summary: text("summary"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+/* ---------- 设置（API keys 等敏感配置） ---------- */
+
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  /** value；API key 类的加密后存（v0.1 用 electron safeStorage） */
+  value: text("value").notNull(),
+  isSecret: integer("is_secret", { mode: "boolean" }).notNull().default(false),
+});
+
+/* ---------- 记忆系统（M3） ---------- */
+
+export const memory = sqliteTable("memory", {
+  id: text("id").primaryKey(),
+  /** 关联节点（可空，全局记忆） */
+  nodeId: text("node_id"),
+  summary: text("summary").notNull(),
+  category: text("category", {
+    enum: ["global", "node", "friction_pattern"],
+  }).notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});

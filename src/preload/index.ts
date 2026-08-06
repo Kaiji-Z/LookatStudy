@@ -115,6 +115,8 @@ const api = {
     ipcRenderer.invoke("settings:set", key, value)) as ApiExpose["setSetting"],
   getXpStatus: (() =>
     ipcRenderer.invoke("xp:getStatus")) as ApiExpose["getXpStatus"],
+  exportCourse: ((courseId: string, format: "json" | "markdown") =>
+    ipcRenderer.invoke("course:export", courseId, format)) as ApiExpose["exportCourse"],
 
   /* 事件监听（main → renderer 推送） */
   on: ((channel: keyof IpcEvents, listener: (...args: any[]) => void) => {

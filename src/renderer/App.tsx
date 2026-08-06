@@ -261,7 +261,7 @@ export default function App() {
             </div>
           ) : view === "dashboard" ? (
             <div className="mt-4">
-              <DashboardView dashboard={dashboard} onReviewDue={async () => {
+              <DashboardView dashboard={dashboard} courseId={selectedCourseId} onReviewDue={async () => {
                 // 跳到第一个待复习的节点
                 try {
                   const dueIds = await api.getDueReviews();
@@ -527,7 +527,7 @@ function LessonBubble({
 
 /* ---------- 仪表盘 ---------- */
 
-function DashboardView({ dashboard, onReviewDue }: { dashboard: DashboardData | null; onReviewDue?: () => void }) {
+function DashboardView({ dashboard, onReviewDue, courseId }: { dashboard: DashboardData | null; onReviewDue?: () => void; courseId: string | null }) {
   if (!dashboard) {
     return <div className="text-neutral-500 text-center py-12">仪表盘加载中…</div>;
   }
@@ -544,11 +544,50 @@ function DashboardView({ dashboard, onReviewDue }: { dashboard: DashboardData | 
         <button
           onClick={onReviewDue}
           data-testid="review-due-btn"
-          className="btn-3d-brand mb-8 px-6 py-2.5 text-sm w-full"
+          className="btn-3d-brand mb-4 px-6 py-2.5 text-sm w-full"
         >
           📖 去复习 {dashboard.dueToday} 个待复习节点 →
         </button>
       )}
+      {/* 导出学习记录 */}
+      <div className="flex gap-2 mb-8">
+        <button
+          onClick={async () => {
+            try {
+              const md = await api.exportCourse(courseId ?? "", "markdown");
+              const blob = new Blob([md], { type: "text/markdown" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `lookatstudy-report.md`;
+              a.click();
+              URL.revokeObjectURL(url);
+            } catch { /* 忽略 */ }
+          }}
+          data-testid="export-markdown"
+          className="btn-3d-neutral flex-1 px-4 py-2 text-xs"
+        >
+          📄 导出报告
+        </button>
+        <button
+          onClick={async () => {
+            try {
+              const json = await api.exportCourse(courseId ?? "", "json");
+              const blob = new Blob([json], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `lookatstudy-report.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            } catch { /* 忽略 */ }
+          }}
+          data-testid="export-json"
+          className="btn-3d-neutral flex-1 px-4 py-2 text-xs"
+        >
+          {} 导出 JSON
+        </button>
+      </div>
       <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3">
         按章节掌握度
       </h3>

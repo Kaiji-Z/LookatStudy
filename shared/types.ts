@@ -348,6 +348,8 @@ export interface ApiExpose {
 
   /** XP 状态（今日经验值 + 每日目标 + 达成百分比） */
   getXpStatus(): Promise<{ todayXp: number; dailyGoal: number; achieved: boolean; pct: number }>;
+  /** 导出学习记录（JSON / Markdown 格式） */
+  exportCourse(courseId: string, format: "json" | "markdown"): Promise<string>;
 }
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;

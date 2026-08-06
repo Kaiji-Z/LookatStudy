@@ -87,6 +87,8 @@ import {
 import { getStarterPrompts } from "../services/starter-prompts-service.js";
 // XP 系统
 import { getXpStatus } from "../services/xp-service.js";
+// 导出
+import { collectExportData, exportJson, exportMarkdown } from "../services/export-service.js";
 // 练习题服务
 import {
   generateExercise as generateExerciseService,
@@ -418,6 +420,13 @@ export function registerSettingsHandlers(): void {
   // XP 状态（今日 XP + 每日目标 + 达成百分比）
   ipcMain.handle("xp:getStatus", async () => {
     return getXpStatus(getDb());
+  });
+
+  // 导出学习记录（JSON / Markdown）
+  ipcMain.handle("course:export", async (_e, courseId: string, format: "json" | "markdown") => {
+    const data = collectExportData(getDb(), courseId);
+    if (!data) throw new Error(`课程不存在: ${courseId}`);
+    return format === "json" ? exportJson(data) : exportMarkdown(data);
   });
 }
 

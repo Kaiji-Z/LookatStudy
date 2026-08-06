@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+
+    "allowImportingTsExtensions": false,
+    "verbatimModuleSyntax": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["shared/*"]
+    },
+    "types": ["node"],
+
+    "outDir": "dist-electron",
+    "rootDir": ".",
+    "emitDeclarationOnly": false,
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": ["src/main", "src/preload", "shared"]
+}

@@ -1,0 +1,22 @@
+appId: io.lookatstudy.app
+productName: LookatStudy
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist-electron/**/*
+  - dist/renderer/**/*
+  - package.json
+  # sql.js 的 wasm 文件需要在运行时可访问
+  - node_modules/sql.js/dist/sql-wasm.wasm
+asarUnpack:
+  - "node_modules/sql.js/dist/sql-wasm.wasm"
+mac:
+  category: public.app-category.education
+  target: dmg
+win:
+  target: nsis
+linux:
+  target:
+    - AppImage
+    - deb

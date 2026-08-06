@@ -1,0 +1,61 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build outputs
+dist/
+dist-electron/
+release/
+*.app
+*.exe
+*.dmg
+
+# data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# os
+.DS_Store
+Thumbs.db
+
+# cache
+.vite/
+.turbo/
+.eslintcache
+
+# test/verification artifacts (regenerated on every run)
+.self-test-result.json
+.ui-test-result.json
+ui-screenshot.png
+
+# local-only working notes & internal reference docs (not project content)
+HANDOFF.md
+VERIFICATION.md
+docs/OPENCHATCUT-PATTERNS.md
+docs/COMPETITOR-DEEPTUTOR.md
+docs/PRODUCT-POSITIONING.md
+
+# local memory (per-developer agent memory)
+memory/
+

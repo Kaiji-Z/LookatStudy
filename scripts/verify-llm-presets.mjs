@@ -15,15 +15,20 @@ import {
   resolveProviderConfig,
 } from "../src/main/services/agent/llm-presets.ts";
 
-// T1: 预设里有 glm/openai/deepseek/anthropic/google（5 个 provider）
+// T1: 预设里有核心 provider
 const ids = PROVIDER_PRESETS.map((p) => p.id);
 assert.ok(ids.includes("glm"), "T1: 应有 glm");
-assert.ok(ids.includes("openai"), "T1: 应有 openai");
+assert.ok(ids.includes("glm-codingplan"), "T1: 应有 glm-codingplan（CodingPlan 端点）");
 assert.ok(ids.includes("deepseek"), "T1: 应有 deepseek");
-assert.ok(ids.includes("anthropic"), "T1: 应有 anthropic（原生 SDK）");
-assert.ok(ids.includes("google"), "T1: 应有 google（原生 SDK）");
-assert.ok(ids.length >= 5, `T1: 至少 5 个预设, 实际 ${ids.length}`);
-console.log(`✓ T1 预设齐全：${ids.join(", ")}（5 个 provider）`);
+assert.ok(ids.includes("kimi"), "T1: 应有 kimi");
+assert.ok(ids.includes("qwen"), "T1: 应有 qwen");
+assert.ok(ids.includes("siliconcloud"), "T1: 应有 siliconcloud");
+assert.ok(ids.includes("openrouter"), "T1: 应有 openrouter");
+assert.ok(ids.includes("openai"), "T1: 应有 openai");
+assert.ok(ids.includes("anthropic"), "T1: 应有 anthropic");
+assert.ok(ids.includes("google"), "T1: 应有 google");
+assert.ok(ids.length >= 10, `T1: 至少 10 个预设, 实际 ${ids.length}`);
+console.log(`✓ T1 预设齐全：${ids.join(", ")}（${ids.length} 个 provider）`);
 
 // T2: 每个 preset 有 protocol + apiKeySetting + defaultModel + models 列表 + keyUrl
 for (const p of PROVIDER_PRESETS) {
@@ -36,7 +41,7 @@ for (const p of PROVIDER_PRESETS) {
     assert.ok(p.baseUrl, `T2: ${p.id} (openai-compatible) 应有 baseUrl`);
     assert.doesNotThrow(() => new URL(p.baseUrl), `T2: ${p.id} baseUrl 应合法`);
   }
-  assert.ok(p.apiKeySetting.endsWith("_api_key"), `T2: ${p.id} apiKeySetting 应以 _api_key 结尾`);
+  assert.ok(p.apiKeySetting.endsWith("_key"), `T2: ${p.id} apiKeySetting 应以 _key 结尾`);
   assert.ok(p.defaultModel.length > 0, `T2: ${p.id} 应有 defaultModel`);
   assert.ok(Array.isArray(p.models) && p.models.length >= 1, `T2: ${p.id} 应有 models 列表`);
   assert.ok(p.keyUrl.startsWith("http"), `T2: ${p.id} 应有 keyUrl`);

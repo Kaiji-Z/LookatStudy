@@ -48,7 +48,7 @@ import {
 } from "../services/skills/skill-service.js";
 // Agent 引擎 + Proposal（M2）
 import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory } from "../services/agent/agent-engine.js";
-import { isLlmReady, testLlmConnection, testCustomProvider } from "../services/agent/llm-client.js";
+import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels } from "../services/agent/llm-client.js";
 import { PROVIDER_PRESETS } from "../services/agent/llm-presets.js";
 // 自定义 Provider
 import {
@@ -503,6 +503,16 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   // 测试自定义 provider 配置（不保存，临时验证）
   ipcMain.handle("agent:testCustomProvider", async (_e, input: CustomProviderInput) => {
     return testCustomProvider(input);
+  });
+
+  // OpenRouter 模型自动发现（公开 API，无需 key）
+  ipcMain.handle("agent:discoverModels", async () => {
+    return fetchOpenRouterModels();
+  });
+
+  // Provider 直连模型发现（用用户已配的 key 拉取 /v1/models）
+  ipcMain.handle("agent:discoverProviderModels", async (_e, baseUrl: string, apiKey: string) => {
+    return fetchProviderModels(baseUrl, apiKey);
   });
 
   // 自定义 provider CRUD

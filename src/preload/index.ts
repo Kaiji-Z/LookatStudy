@@ -79,6 +79,10 @@ const api = {
     ipcRenderer.invoke("agent:testConnection")) as ApiExpose["testLlmConnection"],
   testCustomProvider: ((input: CustomProviderInput) =>
     ipcRenderer.invoke("agent:testCustomProvider", input)) as ApiExpose["testCustomProvider"],
+  discoverModels: (() =>
+    ipcRenderer.invoke("agent:discoverModels")) as ApiExpose["discoverModels"],
+  discoverProviderModels: ((baseUrl: string, apiKey: string) =>
+    ipcRenderer.invoke("agent:discoverProviderModels", baseUrl, apiKey)) as ApiExpose["discoverProviderModels"],
   listCustomProviders: (() =>
     ipcRenderer.invoke("customProvider:list")) as ApiExpose["listCustomProviders"],
   createCustomProvider: ((input: CustomProviderInput) =>

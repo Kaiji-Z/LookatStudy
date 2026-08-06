@@ -292,6 +292,25 @@ export interface ApiExpose {
     models?: ProviderModelInfo[];
     errorKind?: "auth" | "rate-limit" | "network" | "not-configured" | "unknown";
   }>;
+  /** OpenRouter 模型自动发现（公开 API，无需 key） */
+  discoverModels(): Promise<{
+    ok: boolean;
+    models?: Array<{
+      id: string;
+      label: string;
+      contextWindow: number | null;
+      pricing?: { input: number | null; output: number | null };
+      capabilities?: string[];
+      inputModalities?: string[];
+    }>;
+    error?: string;
+  }>;
+  /** Provider 直连模型发现（用已配 key 拉取 /v1/models） */
+  discoverProviderModels(baseUrl: string, apiKey: string): Promise<{
+    ok: boolean;
+    models?: { id: string; label: string }[];
+    error?: string;
+  }>;
   /** 自定义 provider CRUD */
   listCustomProviders(): Promise<CustomProvider[]>;
   createCustomProvider(input: CustomProviderInput): Promise<CustomProvider>;
@@ -343,7 +362,12 @@ export type SettingKey =
   | "anthropic_api_key"
   | "google_api_key"
   | "glm_api_key"
+  | "glm_codingplan_key"
   | "deepseek_api_key"
+  | "kimi_api_key"
+  | "qwen_api_key"
+  | "siliconcloud_api_key"
+  | "openrouter_api_key"
   | "active_provider"
   | "active_model"
   | "daily_goal_xp"

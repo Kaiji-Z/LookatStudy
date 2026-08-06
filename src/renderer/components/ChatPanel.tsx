@@ -60,12 +60,8 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [agentReady, setAgentReady] = useState<AgentReadyState | null>(null);
-  const [configMode, setConfigMode] = useState(false);
   const [panelMode, setPanelMode] = useState<"chat" | "exercise" | "settings">("chat");
   const [starterPrompts, setStarterPrompts] = useState<StarterPrompt[]>([]);
-  // 配置引导的本地态
-  const [cfgProvider, setCfgProvider] = useState("glm");
-  const [cfgKey, setCfgKey] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 拉就绪状态
@@ -73,7 +69,6 @@ export function ChatPanel({
     try {
       const r = await api.isAgentReady();
       setAgentReady(r);
-      setConfigMode(!r.ready);
     } catch {
       setAgentReady({ ready: false, missing: "无法检查就绪状态" });
     }
@@ -300,33 +295,6 @@ export function ChatPanel({
     }
   };
 
-  const handleSaveConfig = async () => {
-    const keyMap: Record<string, string> = {
-      glm: "glm_api_key",
-      openai: "openai_api_key",
-      deepseek: "deepseek_api_key",
-      anthropic: "anthropic_api_key",
-      google: "google_api_key",
-    };
-    const keyField = keyMap[cfgProvider];
-    if (!keyField || !cfgKey.trim()) return;
-    try {
-      await api.setSetting(keyField as Parameters<typeof api.setSetting>[0], cfgKey.trim());
-      await api.setSetting("active_provider", cfgProvider);
-      setCfgKey("");
-      await checkReady(); // 重新检查就绪
-    } catch (e) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: nextMsgId(),
-          role: "assistant",
-          content: `⚠️ 保存配置失败：${e instanceof Error ? e.message : String(e)}`,
-        },
-      ]);
-    }
-  };
-
   return (
     <div
       className="flex flex-col h-full bg-neutral-950 border-r border-neutral-800"
@@ -444,8 +412,19 @@ export function ChatPanel({
                 </div>
               )
               : (
-                <div className="text-neutral-600 text-sm text-center mt-8">
-                  ⚙️ 配置 API key 后即可开始 AI 教学（点上方 ⚙️设置）
+                <div className="flex flex-col items-center justify-center mt-12 gap-4">
+                  <div className="text-center">
+                    <div className="text-4xl mb-3 opacity-40">🤖</div>
+                    <div className="text-sm text-neutral-400 mb-1">还没有配置 AI 模型</div>
+                    <div className="text-xs text-neutral-600">配置后即可开始 AI 导师对话和练习</div>
+                  </div>
+                  <button
+                    onClick={() => setPanelMode("settings")}
+                    data-testid="goto-settings-btn"
+                    className="btn-3d-brand px-6 py-2.5 text-sm"
+                  >
+                    ⚙️ 去配置模型
+                  </button>
                 </div>
               )
             : (
@@ -468,17 +447,18 @@ export function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 输入区 / 配置引导 */}
+      {/* 输入区 / 未配key时的引导 */}
       <div className="border-t border-neutral-800 p-3 shrink-0">
-        {configMode || !agentReady?.ready ? (
-          <ConfigGuide
-            provider={cfgProvider}
-            setProvider={setCfgProvider}
-            apiKey={cfgKey}
-            setApiKey={setCfgKey}
-            missing={agentReady?.missing}
-            onSave={handleSaveConfig}
-          />
+        {!agentReady?.ready ? (
+          <div className="flex items-center justify-center gap-3 py-2">
+            <span className="text-xs text-neutral-500">{agentReady?.missing ?? "未配置 AI 模型"}</span>
+            <button
+              onClick={() => setPanelMode("settings")}
+              className="text-xs text-brand hover:underline font-bold"
+            >
+              去配置 →
+            </button>
+          </div>
         ) : (
           <>
             <div className="flex gap-2 items-end">
@@ -611,60 +591,4 @@ function MessageRow({
   );
 }
 
-/* ---------- 配置引导（无 key 时） ---------- */
-
-function ConfigGuide({
-  provider,
-  setProvider,
-  apiKey,
-  setApiKey,
-  missing,
-  onSave,
-}: {
-  provider: string;
-  setProvider: (v: string) => void;
-  apiKey: string;
-  setApiKey: (v: string) => void;
-  missing?: string;
-  onSave: () => void;
-}) {
-  return (
-    <div className="space-y-3 py-4" data-testid="config-guide">
-      <div className="flex items-center gap-2">
-        <span className="text-lg">🔑</span>
-        <span className="text-xs text-neutral-400 font-medium">{missing ?? "未配置 LLM API key"}</span>
-      </div>
-      <select
-        value={provider}
-        onChange={(e) => setProvider(e.target.value)}
-        data-testid="config-provider"
-        className="w-full bg-neutral-950 text-neutral-100 text-sm rounded-xl px-3 py-2.5 border-2 border-neutral-700 focus:border-brand focus:outline-none"
-      >
-        <option value="glm">智谱 GLM（国内推荐）</option>
-        <option value="deepseek">DeepSeek</option>
-        <option value="openai">OpenAI</option>
-        <option value="anthropic">Anthropic Claude</option>
-        <option value="google">Google Gemini</option>
-      </select>
-      <input
-        type="password"
-        value={apiKey}
-        onChange={(e) => setApiKey(e.target.value)}
-        placeholder="粘贴 API key（sk-…）"
-        data-testid="config-key-input"
-        className="w-full bg-neutral-950 text-neutral-100 text-sm rounded-xl px-3 py-2.5 border-2 border-neutral-700 focus:border-brand focus:outline-none"
-      />
-      <button
-        onClick={onSave}
-        disabled={!apiKey.trim()}
-        data-testid="config-save"
-        className="btn-3d-brand w-full py-2.5 text-sm disabled:opacity-40"
-      >
-        保存并连接
-      </button>
-      <p className="text-[11px] text-neutral-600 text-center">
-        🔒 key 只存本地主进程，不离开你的电脑
-      </p>
-    </div>
-  );
-}
+/* ConfigGuide 已废弃——未配 key 时走引导按钮跳转设置页（见上方 goto-settings-btn）*/

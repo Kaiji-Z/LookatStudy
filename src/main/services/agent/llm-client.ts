@@ -310,3 +310,109 @@ export function classifyLlmError(e: unknown): {
 
   return { kind: "unknown", detail: msg };
 }
+
+/**
+ * OpenRouter 模型自动发现 —— 公开 API，无需 key。
+ *
+ * 调 GET https://openrouter.ai/api/v1/models 获取所有可用模型列表。
+ * 拉取完整字段: context/pricing/capabilities/modality（忠于 OpenRouter API schema）。
+ * 用户在 Settings 页点"🔄 刷新模型列表"时调用。
+ */
+export async function fetchOpenRouterModels(
+  limit = 50,
+): Promise<{
+  ok: boolean;
+  models?: {
+    id: string;
+    label: string;
+    contextWindow: number | null;
+    pricing?: { input: number | null; output: number | null };
+    capabilities?: string[];
+    inputModalities?: string[];
+  }[];
+  error?: string;
+}> {
+  try {
+    const r = await fetch("https://openrouter.ai/api/v1/models");
+    if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
+    const d = (await r.json()) as {
+      data: Array<{
+        id: string;
+        name?: string;
+        context_length?: number;
+        pricing?: { prompt?: string; completion?: string };
+        architecture?: { input_modalities?: string[] };
+        supported_parameters?: string[];
+      }>;
+    };
+    const models = (d.data || [])
+      .slice(0, limit)
+      .map((m) => {
+        // 解析 pricing（OpenRouter 返回的是 per-token USD 字符串，转成 per-million）
+        let pricing: { input: number | null; output: number | null } | undefined;
+        if (m.pricing) {
+          const input = m.pricing.prompt ? parseFloat(m.pricing.prompt) * 1_000_000 : null;
+          const output = m.pricing.completion ? parseFloat(m.pricing.completion) * 1_000_000 : null;
+          if (input !== null || output !== null) {
+            pricing = { input, output };
+          }
+        }
+        // 解析 capabilities
+        const caps: string[] = ["chat"];
+        if (m.supported_parameters?.includes("tools")) caps.push("tools");
+        if (m.supported_parameters?.includes("reasoning")) caps.push("reasoning");
+        if (m.architecture?.input_modalities?.includes("image")) caps.push("vision");
+
+        return {
+          id: m.id,
+          label: m.name || m.id,
+          contextWindow: m.context_length ?? null,
+          pricing,
+          capabilities: caps,
+          inputModalities: m.architecture?.input_modalities,
+        };
+      });
+    return { ok: true, models };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/**
+ * Provider 直连模型发现 —— 用用户已配的 key 拉取该 provider 的 /v1/models。
+ *
+ * 适用于: 用户配了某个 provider 的 key，想看该 provider 有哪些可用模型。
+ * OpenAI/DeepSeek/Kimi/Qwen 等都支持 GET /v1/models（OpenAI 兼容标准）。
+ */
+export async function fetchProviderModels(
+  baseUrl: string,
+  apiKey: string,
+): Promise<{
+  ok: boolean;
+  models?: { id: string; label: string }[];
+  error?: string;
+}> {
+  try {
+    const url = `${baseUrl.replace(/\/$/, "")}/models`;
+    const r = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
+    const d = (await r.json()) as {
+      data?: Array<{ id: string }>;
+      models?: Array<{ id: string }>;
+    };
+    const list = d.data || d.models || [];
+    return {
+      ok: true,
+      models: list.map((m) => ({ id: m.id, label: m.id })),
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+

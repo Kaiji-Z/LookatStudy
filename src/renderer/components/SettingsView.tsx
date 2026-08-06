@@ -36,6 +36,26 @@ export function SettingsView() {
   const [customModel, setCustomModel] = useState("");
   const [customTesting, setCustomTesting] = useState(false);
   const [customTestResult, setCustomTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [discoveredModels, setDiscoveredModels] = useState<{ id: string; label: string; contextWindow: number | null }[]>([]);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+
+  const handleDiscoverModels = async () => {
+    setDiscovering(true);
+    setDiscoverError(null);
+    try {
+      const r = await api.discoverModels();
+      if (r.ok && r.models) {
+        setDiscoveredModels(r.models);
+      } else {
+        setDiscoverError(r.error || "刷新失败（可能网络受限）");
+      }
+    } catch (e) {
+      setDiscoverError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDiscovering(false);
+    }
+  };
 
   // 初始化：拉预设 + 自定义 provider + 当前配置
   const load = useCallback(async () => {
@@ -376,12 +396,22 @@ export function SettingsView() {
       {/* Model 选择 / 输入 */}
       {currentPreset ? (
         <section className="surface-card p-4">
-          <h3 className="text-sm font-semibold text-neutral-300 mb-3">模型（Model）</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-neutral-300">模型（Model）</h3>
+            <button
+              onClick={handleDiscoverModels}
+              disabled={discovering}
+              data-testid="discover-models-btn"
+              className="text-[11px] text-accent hover:underline disabled:opacity-40"
+            >
+              {discovering ? "刷新中…" : "🔄 从 OpenRouter 刷新"}
+            </button>
+          </div>
           <select
             value={activeModel}
             onChange={(e) => setActiveModel(e.target.value)}
             data-testid="model-select"
-            className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+            className="w-full bg-neutral-950 text-neutral-100 text-sm rounded-xl px-3 py-2.5 border-2 border-neutral-700 focus:border-brand focus:outline-none"
           >
             {currentPreset.models.map((m) => (
               <option key={m.id} value={m.id}>
@@ -389,7 +419,15 @@ export function SettingsView() {
                 {m.contextWindow ? ` · ${Math.round(m.contextWindow / 1000)}K 上下文` : ""}
               </option>
             ))}
+            {discoveredModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}（OpenRouter）{m.contextWindow ? ` · ${Math.round(m.contextWindow / 1000)}K` : ""}
+              </option>
+            ))}
           </select>
+          {discoverError && (
+            <div className="text-[11px] text-neutral-600 mt-1">{discoverError}</div>
+          )}
         </section>
       ) : activeCustomProvider ? (
         <section className="surface-card p-4">

@@ -89,3 +89,43 @@ assert.strictEqual(completionPct, 50, "T6: 1/2 = 50%");
 console.log(`✓ T6 完成度: 1/2 = ${completionPct}%`);
 
 console.log("\n=== ALL EXPORT TESTS PASSED ✅ ===");
+
+// === 对抗性测试 ===
+console.log("\n=== 导出对抗性测试 ===");
+
+// ADV1: 超大课程（100 课时）不崩溃
+sqljs.run("INSERT INTO courses (id, repo_name, title) VALUES ('c3', 'big', '超大课程')");
+for (let i = 0; i < 100; i++) {
+  sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('big-${i}', 'c3', NULL, 'lesson', '课时${i}', ${i})`);
+}
+const bigData = collectExportData(db, "c3");
+assert.ok(bigData, "ADV1: 超大课程能导出");
+assert.strictEqual(bigData.totalLessons, 100, "ADV1: 100 课时");
+const bigMd = exportMarkdown(bigData);
+assert.ok(bigMd.length > 100, `ADV1: Markdown 非空 (${bigMd.length})`);
+console.log(`✓ ADV1 超大课程(100课): 导出成功, totalLessons=${bigData.totalLessons}`);
+
+// ADV2: 课时标题含特殊字符
+sqljs.run("INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('special', 'c1', 's1', 'lesson', '课时<特殊>&\"字符\"', 99)");
+const specialData = collectExportData(db, "c1");
+const specialJson = exportJson(specialData);
+assert.ok(specialJson.includes('课时<特殊>'), "ADV2: 特殊字符在 JSON 中保留");
+JSON.parse(specialJson); // 不崩溃
+console.log("✓ ADV2 特殊字符标题: JSON 合法不崩溃");
+
+// ADV3: 进度数据损坏（mastery > 1.0）不崩溃
+sqljs.run("INSERT INTO progress (node_id, status, crown_level, mastery) VALUES ('special', 'in_progress', 0, 999.99)");
+const corruptData = collectExportData(db, "c1");
+assert.ok(corruptData.avgMastery > 0, `ADV3: 损坏 mastery 不崩溃, avg=${corruptData.avgMastery}`);
+const corruptMd = exportMarkdown(corruptData);
+assert.ok(corruptMd.length > 0, "ADV3: 损坏数据仍能导出 Markdown");
+console.log(`✓ ADV3 损坏mastery(999.99): 不崩溃, avgMastery=${corruptData.avgMastery.toFixed(2)}`);
+
+// ADV4: JSON 导出可被重新解析（往返测试）
+const jsonRoundtrip = JSON.parse(exportJson(data));
+assert.strictEqual(jsonRoundtrip.courseTitle, data.courseTitle, "ADV4: 往返一致");
+assert.strictEqual(jsonRoundtrip.totalLessons, data.totalLessons, "ADV4: 课时数一致");
+console.log("✓ ADV4 JSON 往返: 导出→解析→字段一致");
+
+console.log("\n=== 导出对抗性测试 PASSED ✅ ===");
+

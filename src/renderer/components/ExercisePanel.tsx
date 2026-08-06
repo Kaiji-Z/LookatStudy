@@ -6,6 +6,7 @@
 import { useState, useCallback } from "react";
 import { api } from "../lib/api.js";
 import type { Exercise, ExerciseType, ContentNode } from "@shared/types";
+import { translate } from "../lib/i18n.js";
 
 export function ExercisePanel({ node }: { node: ContentNode | null }) {
   const [exercise, setExercise] = useState<Exercise | null>(null);
@@ -73,16 +74,16 @@ export function ExercisePanel({ node }: { node: ContentNode | null }) {
   }
 
   const typeLabels: Record<ExerciseType, string> = {
-    mcq: "选择题",
-    fill_blank: "填空题",
-    true_false: "判断题",
+    mcq: translate("exercise.types.mcq"),
+    fill_blank: translate("exercise.types.fill_blank"),
+    true_false: translate("exercise.types.true_false"),
   };
 
   return (
     <div className="space-y-4" data-testid="exercise-panel">
       {/* 顶部：标题 + 题型切换 */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-extrabold text-neutral-200">📝 练习</h3>
+        <h3 className="text-sm font-extrabold text-neutral-200">{translate("exercise.title")}</h3>
         {!exercise && !busy && (
           <div className="flex gap-1 bg-neutral-800/50 rounded-xl p-0.5">
             {(["mcq", "fill_blank", "true_false"] as ExerciseType[]).map((t) => (
@@ -108,7 +109,7 @@ export function ExercisePanel({ node }: { node: ContentNode | null }) {
           data-testid="exercise-generate"
           className="btn-3d-brand w-full py-3 text-sm"
         >
-          出一道{typeLabels[type]}练习
+          {translate("exercise.generate")} — {typeLabels[type]}
         </button>
       )}
 
@@ -253,7 +254,7 @@ export function ExercisePanel({ node }: { node: ContentNode | null }) {
               data-testid="exercise-submit"
               className="btn-3d-blue w-full py-3 text-sm"
             >
-              {busy ? "判分中…" : "提交答案"}
+              {busy ? "..." : translate("exercise.submit")}
             </button>
           ) : (
             <button
@@ -261,7 +262,7 @@ export function ExercisePanel({ node }: { node: ContentNode | null }) {
               data-testid="exercise-next"
               className="btn-3d-brand w-full py-3 text-sm"
             >
-              下一题 →
+              {translate("exercise.next")}
             </button>
           )}
         </div>

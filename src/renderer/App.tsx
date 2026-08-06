@@ -11,6 +11,7 @@ import type {
 import { Sidebar } from "./components/Sidebar.js";
 import { Divider } from "./components/Divider.js";
 import { ImportView } from "./components/ImportView.js";
+import { translate } from "./lib/i18n.js";
 
 type ViewTab = "tree" | "dashboard" | "settings" | "import";
 
@@ -352,9 +353,9 @@ function ViewTabs({
       className="flex gap-1 shrink-0 items-center"
       data-testid="view-tabs"
     >
-      <TabButton active={view === "tree"} onClick={() => onChange("tree")} label="技能树" testid="tab-tree" />
-      <TabButton active={view === "dashboard"} onClick={() => onChange("dashboard")} label="仪表盘" testid="tab-dashboard" />
-      <TabButton active={view === "import"} onClick={() => onChange("import")} label="导入课程" testid="tab-import" />
+      <TabButton active={view === "tree"} onClick={() => onChange("tree")} label={translate("view.tree")} testid="tab-tree" />
+      <TabButton active={view === "dashboard"} onClick={() => onChange("dashboard")} label={translate("view.dashboard")} testid="tab-dashboard" />
+      <TabButton active={view === "import"} onClick={() => onChange("import")} label={translate("view.import")} testid="tab-import" />
     </div>
   );
 }
@@ -534,11 +535,11 @@ function DashboardView({ dashboard, onReviewDue, courseId }: { dashboard: Dashbo
   const masteryPct = Math.round(dashboard.overallMastery * 100);
   return (
     <div className="max-w-2xl mx-auto" data-testid="dashboard">
-      <h2 className="text-xl font-extrabold mb-6 text-neutral-100">学习仪表盘</h2>
+      <h2 className="text-xl font-extrabold mb-6 text-neutral-100">{translate("dashboard.title")}</h2>
       <div className="grid grid-cols-3 gap-3 mb-8">
-        <StatCard testid="stat-streak" icon="🔥" value={String(dashboard.currentStreak)} label="连续天数" sub={`freeze ${dashboard.freezeCount}`} />
-        <StatCard testid="stat-due" icon="📖" value={String(dashboard.dueToday)} label="今日待复习" sub={dashboard.dueToday > 0 ? "去复习" : "已清空"} />
-        <StatCard testid="stat-mastery" icon="🎯" value={`${masteryPct}%`} label="整体掌握度" sub={masteryPct >= 70 ? "不错" : masteryPct >= 40 ? "进行中" : "刚开始"} />
+        <StatCard testid="stat-streak" icon="🔥" value={String(dashboard.currentStreak)} label={translate("dashboard.stat.streak")} sub={`freeze ${dashboard.freezeCount}`} />
+        <StatCard testid="stat-due" icon="📖" value={String(dashboard.dueToday)} label={translate("dashboard.stat.due")} sub={dashboard.dueToday > 0 ? translate("dashboard.review") : translate("dashboard.cleared")} />
+        <StatCard testid="stat-mastery" icon="🎯" value={`${masteryPct}%`} label={translate("dashboard.stat.mastery")} sub={masteryPct >= 70 ? "不错" : masteryPct >= 40 ? "进行中" : "刚开始"} />
       </div>
       {dashboard.dueToday > 0 && onReviewDue && (
         <button
@@ -546,7 +547,7 @@ function DashboardView({ dashboard, onReviewDue, courseId }: { dashboard: Dashbo
           data-testid="review-due-btn"
           className="btn-3d-brand mb-4 px-6 py-2.5 text-sm w-full"
         >
-          📖 去复习 {dashboard.dueToday} 个待复习节点 →
+          📖 {translate("dashboard.review")} {dashboard.dueToday} →
         </button>
       )}
       {/* 导出学习记录 */}
@@ -567,7 +568,7 @@ function DashboardView({ dashboard, onReviewDue, courseId }: { dashboard: Dashbo
           data-testid="export-markdown"
           className="btn-3d-neutral flex-1 px-4 py-2 text-xs"
         >
-          📄 导出报告
+          {translate("dashboard.export.md")}
         </button>
         <button
           onClick={async () => {
@@ -585,11 +586,11 @@ function DashboardView({ dashboard, onReviewDue, courseId }: { dashboard: Dashbo
           data-testid="export-json"
           className="btn-3d-neutral flex-1 px-4 py-2 text-xs"
         >
-          {} 导出 JSON
+          {translate("dashboard.export.json")}
         </button>
       </div>
       <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3">
-        按章节掌握度
+        {translate("dashboard.section_mastery")}
       </h3>
       <div className="space-y-2.5" data-testid="mastery-heatmap">
         {dashboard.sections.length === 0 ? (

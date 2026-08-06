@@ -16,6 +16,7 @@ import type { ContentNode, Skill, StarterPrompt } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import { ExercisePanel } from "./ExercisePanel.js";
 import { SettingsView } from "./SettingsView.js";
+import { translate } from "../lib/i18n.js";
 
 interface ChatMessage {
   id: string;
@@ -328,21 +329,21 @@ export function ChatPanel({
           data-testid="mode-chat"
           className={`flex-1 text-xs py-1.5 ${panelMode === "chat" ? "text-brand border-b-2 border-brand" : "text-neutral-500 hover:text-neutral-300"}`}
         >
-          💬 对话
+          {translate("mode.chat")}
         </button>
         <button
           onClick={() => setPanelMode("exercise")}
           data-testid="mode-exercise"
           className={`flex-1 text-xs py-1.5 ${panelMode === "exercise" ? "text-brand border-b-2 border-brand" : "text-neutral-500 hover:text-neutral-300"}`}
         >
-          📝 练习
+          {translate("mode.exercise")}
         </button>
         <button
           onClick={() => setPanelMode("settings")}
           data-testid="mode-settings"
           className={`flex-1 text-xs py-1.5 ${panelMode === "settings" ? "text-brand border-b-2 border-brand" : "text-neutral-500 hover:text-neutral-300"}`}
         >
-          ⚙️ 设置
+          {translate("mode.settings")}
         </button>
       </div>
 
@@ -390,7 +391,7 @@ export function ChatPanel({
               ? (
                 <div className="space-y-3 mt-4">
                   <div className="text-neutral-400 text-sm text-center">
-                    💡 从下面选一个开始，或者直接输入你的问题
+                    {translate("chat.starter.hint")}
                   </div>
                   {starterPrompts.length > 0 && (
                     <div className="grid grid-cols-1 gap-2" data-testid="starter-prompts">
@@ -415,21 +416,21 @@ export function ChatPanel({
                 <div className="flex flex-col items-center justify-center mt-12 gap-4">
                   <div className="text-center">
                     <div className="text-4xl mb-3 opacity-40">🤖</div>
-                    <div className="text-sm text-neutral-400 mb-1">还没有配置 AI 模型</div>
-                    <div className="text-xs text-neutral-600">配置后即可开始 AI 导师对话和练习</div>
+                    <div className="text-sm text-neutral-400 mb-1">{translate("chat.no_key.title")}</div>
+                    <div className="text-xs text-neutral-600">{translate("chat.no_key.desc")}</div>
                   </div>
                   <button
                     onClick={() => setPanelMode("settings")}
                     data-testid="goto-settings-btn"
                     className="btn-3d-brand px-6 py-2.5 text-sm"
                   >
-                    ⚙️ 去配置模型
+                    {translate("chat.no_key.btn")}
                   </button>
                 </div>
               )
             : (
               <div className="text-neutral-600 text-sm text-center mt-8">
-                → 点击右侧的 lesson 气泡，开始学习
+                → {translate("chat.input.no_node")}
               </div>
             )
         )}
@@ -471,11 +472,11 @@ export function ChatPanel({
                     handleSend();
                   }
                 }}
-                placeholder={
-                  selectedNode
-                    ? "问 AI 导师…（Enter 发送）"
-                    : "先在右侧选一个 lesson…"
-                }
+              placeholder={
+                selectedNode
+                  ? translate("chat.input.placeholder")
+                  : translate("chat.input.no_node")
+              }
                 disabled={streaming || !selectedNode}
                 rows={2}
                 data-testid="chat-input"
@@ -487,7 +488,7 @@ export function ChatPanel({
                   data-testid="chat-stop"
                   className="bg-red-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-red-500 shrink-0"
                 >
-                  停止
+                  {translate("chat.stop")}
                 </button>
               ) : (
                 <button
@@ -496,7 +497,7 @@ export function ChatPanel({
                   data-testid="chat-send"
                   className="bg-brand text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand/80 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                 >
-                  发送
+                  {translate("chat.send")}
                 </button>
               )}
             </div>
@@ -506,7 +507,7 @@ export function ChatPanel({
                 data-testid="chat-clear"
                 className="mt-2 text-[11px] text-neutral-600 hover:text-neutral-400"
               >
-                清空对话历史
+                {translate("chat.clear")}
               </button>
             )}
           </>

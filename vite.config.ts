@@ -13,6 +13,14 @@ export default defineConfig({
     electron([
       {
         entry: resolve(__dirname, "src/main/index.ts"),
+        // 关键：传 onstart 才能阻止 vite-plugin-electron 自动拉起 electron。
+        // 否则它会自己启动一个实例，加上 dev:electron:wait 又启动一个 = 双窗口。
+        // 这里我们不需要它代我们启动（启动交给 dev:electron:wait 的 `electron .`），
+        // 但主进程改动后希望它重启——通过自己 spawn 实现。
+        onstart() {
+          // 空实现：仅用于抑制 plugin 的自动启动。
+          // 主进程热重载由 dev:electron:wait 退出后 concurrently 触发，或手动重启。
+        },
         vite: {
           build: {
             outDir: resolve(__dirname, "dist-electron/main"),

@@ -10,7 +10,7 @@
     "dev": "vite",
     "dev:electron": "concurrently -k \"npm:dev:vite\" \"npm:dev:electron:wait\"",
     "dev:vite": "vite",
-    "dev:electron:wait": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
+    "dev:electron:wait": "wait-on http://localhost:5173/ && cross-env NODE_ENV=development electron .",
     "build": "vite build",
     "build:electron": "vite build",
     "start": "vite build && electron .",

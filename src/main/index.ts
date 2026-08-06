@@ -15,6 +15,7 @@ import { initDb, getDb } from "./db/index.js";
 import { registerAllHandlers } from "./ipc/index.js";
 import { ensureSeedCourse } from "./services/seed.js";
 import { seedBuiltinSkills } from "./services/skills/skill-service.js";
+import { createProposal } from "./services/proposal-service.js";
 import { courses, contentNodes, streaks } from "./db/schema.js";
 import { eq } from "drizzle-orm";
 
@@ -202,7 +203,6 @@ async function runUiTest(screenshot = false): Promise<void> {
   // M2 测试造数：造一条 pending proposal，让 T8 能测 listPending→reject→空 的回路
   // （渲染层没暴露 createProposal IPC——create 是 AI 发起的，学习者只 list/apply/reject）
   try {
-    const { createProposal } = await import("./services/proposal-service.js");
     createProposal(getDb(), {
       operations: [{ type: "update_mastery", nodeId: "test-seed-node", correct: true }],
       rationale: "UI test seed proposal",

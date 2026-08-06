@@ -139,18 +139,27 @@ function rowToExercise(row: typeof exercises.$inferSelect): Exercise {
 
 function buildGenerationPrompt(title: string, content: string, type: ExerciseType): string {
   const typeSpec = {
-    mcq: `出一道四选一选择题。options 是 4 个选项的数组，answer 是正确选项的下标（"0"/"1"/"2"/"3"）。干扰项要合理（基于常见误解）。`,
-    fill_blank: `出一道填空题。answer 是标准答案字符串。答案要明确唯一（避免开放性答案）。`,
-    true_false: `出一道判断题。answer 是 "true" 或 "false"。`,
+    mcq: `出一道四选一选择题。options 是 4 个选项的数组，answer 是正确选项的下标（"0"/"1"/"2"/"3"）。
+干扰项设计要求：基于学习者常犯的真实误解（不是明显错误的凑数选项），让认真学过的人能排除，没学懂的人会选错。
+题干要考"理解"而非"记忆"：不要出"X 定义是什么"这种背诵题，要出"在 Y 场景下该用 X 还是 Z"这种应用题。`,
+    fill_blank: `出一道填空题。answer 是标准答案字符串。
+答案要明确唯一（避免开放性答案）。考概念关键词或逻辑推理结果，不要考死记的数字或拼写。`,
+    true_false: `出一道判断题。answer 是 "true" 或 "false"。
+出学习者容易判断错的陈述——看似正确但有微妙错误，或看似错误但实际正确的。不要出显而易见的题。`,
   }[type];
 
   return [
-    `你是 LookatStudy 的出题官。基于下面的学习内容出一道考察理解（不是死记）的${type}题。`,
+    `你是 LookatStudy 的出题官。基于下面的学习内容出一道考察理解（不是死记硬背）的${type}题。`,
     ``,
     `学习节点：${title}`,
     `内容：${content.slice(0, 3000)}`,
     ``,
     typeSpec,
+    ``,
+    `出题红线:`,
+    `- 答案必须在提供的学习内容中有依据，不可编造内容里没有的知识`,
+    `- 题干用中文，清晰无歧义`,
+    `- 干扰项 plausible 但 definitely wrong（不能有争议）`,
     ``,
     `严格按以下 JSON 格式返回，不要加任何 markdown 代码块标记、不要解释：`,
     `{`,
@@ -160,7 +169,7 @@ function buildGenerationPrompt(title: string, content: string, type: ExerciseTyp
       : type === "true_false"
         ? `  "answer": "true",`
         : `  "answer": "标准答案",`,
-    `  "explanation": "为什么是这个答案（一句话，答错时给学习者看）"`,
+    `  "explanation": "为什么是这个答案 + 其他选项为什么错（答错时给学习者看，2-3句）"`,
     `}`,
   ].join("\n");
 }

@@ -20,6 +20,8 @@ const api = {
     ipcRenderer.invoke("course:delete", courseId)) as ApiExpose["deleteCourse"],
   restructureCourse: ((courseId: string) =>
     ipcRenderer.invoke("course:restructure", courseId)) as ApiExpose["restructureCourse"],
+  getStarterPrompts: ((nodeId: string) =>
+    ipcRenderer.invoke("course:getStarterPrompts", nodeId)) as ApiExpose["getStarterPrompts"],
   getNodeContent: ((nodeId: string) =>
     ipcRenderer.invoke("course:getNodeContent", nodeId)) as ApiExpose["getNodeContent"],
 

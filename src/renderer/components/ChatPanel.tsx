@@ -12,7 +12,7 @@
  */
 import { useEffect, useState, useRef, useCallback } from "react";
 import { api } from "../lib/api.js";
-import type { ContentNode, Skill } from "@shared/types";
+import type { ContentNode, Skill, StarterPrompt } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import { ExercisePanel } from "./ExercisePanel.js";
 import { SettingsView } from "./SettingsView.js";
@@ -62,6 +62,7 @@ export function ChatPanel({
   const [agentReady, setAgentReady] = useState<AgentReadyState | null>(null);
   const [configMode, setConfigMode] = useState(false);
   const [panelMode, setPanelMode] = useState<"chat" | "exercise" | "settings">("chat");
+  const [starterPrompts, setStarterPrompts] = useState<StarterPrompt[]>([]);
   // 配置引导的本地态
   const [cfgProvider, setCfgProvider] = useState("glm");
   const [cfgKey, setCfgKey] = useState("");
@@ -189,6 +190,15 @@ export function ChatPanel({
     };
   }, [selectedNode?.id]);
 
+  // 节点切换时加载 starter prompts
+  useEffect(() => {
+    if (!selectedNode) {
+      setStarterPrompts([]);
+      return;
+    }
+    api.getStarterPrompts(selectedNode.id).then(setStarterPrompts).catch(() => setStarterPrompts([]));
+  }, [selectedNode?.id]);
+
   const handleSend = async () => {
     if (!input.trim() || streaming || !selectedNode || !agentReady?.ready)
       return;
@@ -215,6 +225,19 @@ export function ChatPanel({
   };
 
   // 停止正在流的回复（Stop 按钮）
+  // 点击 starter prompt 按钮 → 直接发送该消息
+  const handleStarterClick = async (msg: string) => {
+    if (streaming || !selectedNode || !agentReady?.ready) return;
+    setMessages((prev) => [...prev, { id: nextMsgId(), role: "user", content: msg }]);
+    setStreaming(true);
+    try {
+      await api.agentChat(selectedNode.id, msg);
+    } catch (e) {
+      setStreaming(false);
+      setMessages((prev) => [...prev, { id: nextMsgId(), role: "assistant", content: `⚠️ ${e instanceof Error ? e.message : String(e)}` }]);
+    }
+  };
+
   const handleStop = async () => {
     if (!selectedNode || !streaming) return;
     try {
@@ -394,13 +417,42 @@ export function ChatPanel({
       {/* 消息列表 */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
         {messages.length === 0 && (
-          <div className="text-neutral-600 text-sm text-center mt-8">
-            {selectedNode
-              ? agentReady?.ready
-                ? `开始学「${selectedNode.title}」——问 AI 导师任何问题`
-                : "配置 API key 后即可开始 AI 教学"
-              : "→ 点击右侧的 lesson 气泡，开始学习"}
-          </div>
+          selectedNode
+            ? agentReady?.ready
+              ? (
+                <div className="space-y-3 mt-4">
+                  <div className="text-neutral-400 text-sm text-center">
+                    💡 从下面选一个开始，或者直接输入你的问题
+                  </div>
+                  {starterPrompts.length > 0 && (
+                    <div className="grid grid-cols-1 gap-2" data-testid="starter-prompts">
+                      {starterPrompts.map((p, i) => (
+                        <button
+                          key={i}
+                          onClick={() => handleStarterClick(p.message)}
+                          disabled={streaming}
+                          data-testid={`starter-prompt-${i}`}
+                          className="flex items-center gap-2 text-left p-3 rounded-xl border border-neutral-700 bg-neutral-900/50 hover:border-brand/50 hover:bg-brand/5 transition-all text-sm text-neutral-200 group"
+                        >
+                          <span className="text-lg shrink-0">{p.icon}</span>
+                          <span className="flex-1">{p.label}</span>
+                          <span className="text-brand opacity-0 group-hover:opacity-100 transition-opacity shrink-0">→</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+              : (
+                <div className="text-neutral-600 text-sm text-center mt-8">
+                  ⚙️ 配置 API key 后即可开始 AI 教学（点上方 ⚙️设置）
+                </div>
+              )
+            : (
+              <div className="text-neutral-600 text-sm text-center mt-8">
+                → 点击右侧的 lesson 气泡，开始学习
+              </div>
+            )
         )}
         {messages.map((m) => (
           <MessageRow

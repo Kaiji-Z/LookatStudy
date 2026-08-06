@@ -60,6 +60,23 @@ export interface ChatTurn {
 }
 
 /**
+ * 根据掌握度返回教学策略指引。
+ * 让 AI 知道"现在该怎么教"——这是 harness 的核心。
+ */
+function getTeachingStrategy(mastery: number | null): string {
+  if (mastery === null || mastery < 0.1) {
+    return "学习者刚开始学这一课。先建立直觉再讲细节：用类比引入概念，确认理解后再深入。不要一次性倾倒所有信息，分步骤引导。";
+  }
+  if (mastery < 0.4) {
+    return "学习者有初步了解但还不扎实。用提问检验理解（'你能用自己的话说说X是什么吗？'），发现误解时立即纠正。多给实际例子。";
+  }
+  if (mastery < 0.7) {
+    return "学习者基本理解了核心内容。现在要深化：对比相似概念的区别，考察边界情况，引导思考'什么时候不该用这个'。可以出一些有迷惑性的问题。";
+  }
+  return "学习者接近掌握。进入综合应用阶段：让学习者尝试教别人（费曼技巧），考察知识在更大系统中的角色。如果学习者能清晰复述并举例，考虑提议标记掌握。";
+}
+
+/**
  * 运行一轮 agent loop。
  *
  * @param nodeId       当前在学的 content node id（提供上下文）
@@ -113,12 +130,17 @@ export async function runAgentTurn(
       `课程章节结构：\n${courseOutline || "  (无)"}\n`
     : "(无课程级上下文)";
 
+  // 根据掌握度生成教学策略指引
+  const mastery = nodeProgress?.mastery ?? null;
+  const teachingStrategy = getTeachingStrategy(mastery);
+
   const nodeContext = node
     ? `${courseContext}\n` +
       `当前学习节点：${node.title}（${node.type}）\n来源：${node.sourcePath ?? "(无)"}\n` +
       `内容：${node.content ?? "(尚未生成讲解，需要时基于标题引导)"}\n` +
-      `学习者当前掌握度：${nodeProgress?.mastery != null ? nodeProgress.mastery.toFixed(2) : "未知"}\n` +
-      `进度状态：${nodeProgress?.status ?? "未开始"}`
+      `学习者当前掌握度：${mastery != null ? mastery.toFixed(2) : "未知"}\n` +
+      `进度状态：${nodeProgress?.status ?? "未开始"}\n\n` +
+      `教学策略指引：${teachingStrategy}`
     : "(无当前节点上下文)";
 
   // 工具集：只读直接返回，写操作走 proposal

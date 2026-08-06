@@ -83,6 +83,8 @@ import {
   analyzeCourseStructure,
   applyCourseStructure,
 } from "../services/course-structure-service.js";
+// Starter prompts
+import { getStarterPrompts } from "../services/starter-prompts-service.js";
 // 练习题服务
 import {
   generateExercise as generateExerciseService,
@@ -314,6 +316,11 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       `结构化完成：${result.sectionCount} 章 / ${result.lessonCount} 课 / 跳过 ${result.skippedCount} 个练习节点`,
     );
     return result;
+  });
+
+  // Starter prompts: 给学习者提供开始引导按钮
+  ipcMain.handle("course:getStarterPrompts", async (_e, nodeId: string) => {
+    return getStarterPrompts(getDb(), nodeId);
   });
 }
 

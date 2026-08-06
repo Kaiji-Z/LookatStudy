@@ -165,6 +165,17 @@ export interface CustomProviderInput {
   models?: ProviderModelInfo[];
 }
 
+/* ---------- Starter Prompts（引导按钮） ---------- */
+
+export interface StarterPrompt {
+  /** 按钮显示文字 */
+  label: string;
+  /** 点击后发送的完整消息 */
+  message: string;
+  /** 图标 emoji */
+  icon: string;
+}
+
 /* ---------- 练习题（M2 exercises 表的 UI 契约） ---------- */
 
 export type ExerciseType = "mcq" | "fill_blank" | "true_false";
@@ -209,6 +220,8 @@ export interface ApiExpose {
     lessonCount: number;
     skippedCount: number;
   }>;
+  /** 获取某节点的 starter prompts（引导按钮） */
+  getStarterPrompts(nodeId: string): Promise<StarterPrompt[]>;
   /** 获取某节点的完整内容（课程导入 UI / 详情页用） */
   getNodeContent(nodeId: string): Promise<string | null>;
 

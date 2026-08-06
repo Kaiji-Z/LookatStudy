@@ -261,7 +261,16 @@ export default function App() {
             </div>
           ) : view === "dashboard" ? (
             <div className="mt-4">
-              <DashboardView dashboard={dashboard} />
+              <DashboardView dashboard={dashboard} onReviewDue={async () => {
+                // 跳到第一个待复习的节点
+                try {
+                  const dueIds = await api.getDueReviews();
+                  if (dueIds.length > 0) {
+                    setSelectedNodeId(dueIds[0]);
+                    setView("tree");
+                  }
+                } catch { /* 忽略 */ }
+              }} />
             </div>
           ) : (
             <div className="max-w-2xl mx-auto mt-4">
@@ -492,7 +501,7 @@ function LessonBubble({
 
 /* ---------- 仪表盘 ---------- */
 
-function DashboardView({ dashboard }: { dashboard: DashboardData | null }) {
+function DashboardView({ dashboard, onReviewDue }: { dashboard: DashboardData | null; onReviewDue?: () => void }) {
   if (!dashboard) {
     return <div className="text-neutral-500 text-center py-12">仪表盘加载中…</div>;
   }
@@ -505,6 +514,15 @@ function DashboardView({ dashboard }: { dashboard: DashboardData | null }) {
         <StatCard testid="stat-due" icon="📖" value={String(dashboard.dueToday)} label="今日待复习" sub={dashboard.dueToday > 0 ? "去复习" : "已清空"} />
         <StatCard testid="stat-mastery" icon="🎯" value={`${masteryPct}%`} label="整体掌握度" sub={masteryPct >= 70 ? "不错" : masteryPct >= 40 ? "进行中" : "刚开始"} />
       </div>
+      {dashboard.dueToday > 0 && onReviewDue && (
+        <button
+          onClick={onReviewDue}
+          data-testid="review-due-btn"
+          className="btn-3d-brand mb-8 px-6 py-2.5 text-sm w-full"
+        >
+          📖 去复习 {dashboard.dueToday} 个待复习节点 →
+        </button>
+      )}
       <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3">
         按章节掌握度
       </h3>

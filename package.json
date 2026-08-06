@@ -14,6 +14,7 @@
     "build": "vite build",
     "build:electron": "vite build",
     "start": "vite build && electron .",
+    "dist": "vite build && electron-builder",
     "self-test": "vite build && electron . --self-test",
     "ui-test": "vite build && electron . --ui-test --no-sandbox",
     "preview": "vite preview",

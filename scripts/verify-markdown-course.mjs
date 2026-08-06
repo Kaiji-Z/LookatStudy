@@ -13,6 +13,7 @@ import {
   parseMarkdownToCourse,
   detectLabType,
   titleToAnchor,
+  cleanTitle,
 } from "../src/main/services/pure/markdown-course.ts";
 
 // === T1: titleToAnchor ===
@@ -120,3 +121,42 @@ assert.strictEqual(
 console.log(`✓ T11 notebook 优先于 code`);
 
 console.log("\n=== ALL MARKDOWN COURSE TESTS PASSED ✅ ===");
+
+// === 对抗性测试: cleanTitle 标题清洗 ===
+console.log("\n=== cleanTitle 对抗性测试 ===");
+
+// 正常 emoji 清洗
+assert.strictEqual(cleanTitle("🛠 The Modern FDE Stack"), "The Modern FDE Stack", "ADV1: 去 emoji");
+console.log("✓ ADV1 去 emoji: 🛠 The Modern FDE Stack → The Modern FDE Stack");
+
+// markdown 链接清洗
+assert.strictEqual(cleanTitle("[Pre-lecture quiz](https://example.com)"), "Pre-lecture quiz", "ADV2: 去 md 链接");
+console.log("✓ ADV2 去 md 链接: [Pre-lecture quiz](url) → Pre-lecture quiz");
+
+// 纯中文标题不应被清洗掉
+assert.strictEqual(cleanTitle("数据工程基础"), "数据工程基础", "ADV3: 中文标题保留");
+console.log("✓ ADV3 中文标题保留: 数据工程基础 → 数据工程基础");
+
+// 混合中英文 + emoji
+assert.strictEqual(cleanTitle("📚 第一章：数据工程"), "第一章：数据工程", "ADV4: 中文+emoji");
+console.log("✓ ADV4 中文+emoji: 📚 第一章：数据工程 → 第一章：数据工程");
+
+// 空标题不应崩溃
+assert.strictEqual(cleanTitle(""), "", "ADV5: 空标题不崩");
+assert.strictEqual(cleanTitle("   "), "", "ADV6: 纯空格不崩");
+console.log("✓ ADV5/6 空标题/纯空格: 不崩溃");
+
+// 多重 emoji
+assert.strictEqual(cleanTitle("🔥🚀🤖 AI 入门"), "AI 入门", "ADV7: 多重 emoji");
+console.log("✓ ADV7 多重emoji: 🔥🚀🤖 AI 入门 → AI 入门");
+
+// markdown 标题符号
+assert.strictEqual(cleanTitle("## Section Title"), "Section Title", "ADV8: 去 md 标题符号");
+console.log("✓ ADV8 去md符号: ## Section Title → Section Title");
+
+// 数字开头的标题不被误伤
+assert.strictEqual(cleanTitle("Phase 1: Data Engineering"), "Phase 1: Data Engineering", "ADV9: 数字标题保留");
+console.log("✓ ADV9 数字标题: Phase 1: Data Engineering → 保留");
+
+console.log("\n=== cleanTitle 对抗性测试 PASSED ✅ ===");
+

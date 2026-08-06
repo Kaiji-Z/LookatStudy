@@ -92,3 +92,37 @@ assert.strictEqual(check[0].values[0][0], 0, "T8: 旧条目已删除");
 console.log(`✓ T8 清理过期: 删除 ${deleted} 条`);
 
 console.log("\n=== ALL XP TESTS PASSED ✅ ===");
+
+// === 对抗性测试 ===
+console.log("\n=== 对抗性测试 ===");
+
+// T9: 负数 XP 应被防御为 0（防篡改）
+addXp(db, -1000);
+const afterNeg = getXpStatus(db);
+assert.ok(afterNeg.todayXp >= 0, `T9: 负数 XP 不应让 todayXp 变负, 实际 ${afterNeg.todayXp}`);
+console.log(`✓ T9 负数XP防御: addXp(-1000) → XP=${afterNeg.todayXp}（不变，防篡改）`);
+
+// T10: 非法 daily_goal_xp 值不应崩溃
+sqljs.run("UPDATE settings SET value = 'NaN' WHERE key = 'daily_goal_xp'");
+const withNan = getXpStatus(db);
+assert.ok(!Number.isNaN(withNan.dailyGoal), "T10: NaN 目标应 fallback 到默认");
+// parseInt('NaN') = NaN，fallback 到 DEFAULT_DAILY_GOAL
+assert.strictEqual(withNan.dailyGoal, 30, "T10: NaN 目标 fallback 到 30");
+console.log("✓ T10 非法 daily_goal 值: fallback 到默认 30（不崩溃）");
+
+// T11: 超大 XP 值不应崩溃
+addXp(db, 999999);
+const afterHuge = getXpStatus(db);
+assert.ok(afterHuge.todayXp > 900000, "T11: 超大 XP 正确累加");
+assert.strictEqual(afterHuge.pct, 100, "T11: pct 封顶 100");
+console.log(`✓ T11 超大 XP(${afterHuge.todayXp}): pct=100（封顶不溢出）`);
+
+// T12: getXpStatus 不应修改 DB（只读操作）
+const beforeRead = sqljs.exec("SELECT value FROM settings WHERE key='daily_goal_xp'")[0].values[0][0];
+getXpStatus(db);
+const afterRead = sqljs.exec("SELECT value FROM settings WHERE key='daily_goal_xp'")[0].values[0][0];
+assert.strictEqual(beforeRead, afterRead, "T12: getXpStatus 不应改 DB");
+console.log("✓ T12 getXpStatus 纯只读（不改 DB）");
+
+console.log("\n=== 对抗性测试 PASSED ✅ ===");
+

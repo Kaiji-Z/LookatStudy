@@ -186,7 +186,7 @@ export default function App() {
   }, [skills]);
 
   return (
-    <div className="h-screen flex flex-col bg-neutral-950 text-neutral-100 overflow-hidden">
+    <div className="h-screen flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 overflow-hidden">
       <Header streak={streak} xp={xp} />
 
       {/* 双栏区：左聊天(AI 全部操作) + Divider + 右技能树(显示+点击) */}
@@ -286,28 +286,54 @@ export default function App() {
 /* ---------- 顶部栏 ---------- */
 
 function Header({ streak, xp }: { streak: Streak | null; xp: { todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null }) {
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    if (typeof document !== "undefined") {
+      return document.documentElement.classList.contains("dark") ? "dark" : "light";
+    }
+    return "dark";
+  });
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    if (next === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+    localStorage.setItem("lookatstudy-theme", next);
+  };
+
   return (
-    <header className="border-b border-neutral-800/50 px-6 py-2.5 flex items-center justify-between shrink-0 bg-neutral-950/80 backdrop-blur-sm">
+    <header className="border-b border-neutral-800/50 dark:border-neutral-800/50 px-6 py-2.5 flex items-center justify-between shrink-0 bg-neutral-50/80 dark:bg-neutral-950/80 backdrop-blur-sm">
       <div className="flex items-center gap-2.5">
         <Logo />
-        <h1 className="text-base font-extrabold tracking-tight text-neutral-100">
+        <h1 className="text-base font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
           Lookat<span className="text-brand">Study</span>
         </h1>
       </div>
       <div className="flex items-center gap-4">
         {xp && (
           <div className="flex items-center gap-2" data-testid="xp-bar">
-            <div className="w-24 h-2 bg-neutral-800 rounded-full overflow-hidden">
+            <div className="w-24 h-2 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${xp.achieved ? "bg-gold" : "bg-brand"}`}
                 style={{ width: `${Math.max(3, xp.pct)}%` }}
               />
             </div>
-            <span className={`text-xs font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-400"}`}>
+            <span className={`text-xs font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-500 dark:text-neutral-400"}`}>
               {xp.todayXp}/{xp.dailyGoal} XP
             </span>
           </div>
         )}
+        <button
+          onClick={toggleTheme}
+          data-testid="theme-toggle"
+          className="text-neutral-500 hover:text-neutral-300 dark:hover:text-neutral-300 text-sm w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
+          title={theme === "dark" ? "切换到亮色" : "切换到暗色"}
+        >
+          {theme === "dark" ? "☀️" : "🌙"}
+        </button>
         {streak && <StreakBadge streak={streak} />}
       </div>
     </header>

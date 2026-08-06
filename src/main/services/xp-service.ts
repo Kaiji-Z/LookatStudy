@@ -36,6 +36,8 @@ function dailyXpKey(now: Date = new Date()): string {
  * 自动处理跨天重置（如果 settings 里的日期 key 不是今天，从 0 开始）。
  */
 export function addXp(db: Db, amount: number, now: Date = new Date()): number {
+  // 防御: 不允许负数 XP（防篡改）
+  const safeAmount = Math.max(0, amount);
   const key = dailyXpKey(now);
   const row = db
     .select()
@@ -43,7 +45,7 @@ export function addXp(db: Db, amount: number, now: Date = new Date()): number {
     .where(eq(settingsTable.key, key))
     .get();
   const current = row ? parseInt(row.value ?? "0", 10) : 0;
-  const next = current + amount;
+  const next = current + safeAmount;
 
   if (row) {
     db.update(settingsTable)
@@ -90,14 +92,16 @@ export function getXpStatus(db: Db, now: Date = new Date()): {
     .from(settingsTable)
     .where(eq(settingsTable.key, key))
     .get();
-  const todayXp = xpRow ? parseInt(xpRow.value ?? "0", 10) : 0;
+  const parsedXp = xpRow ? parseInt(xpRow.value ?? "0", 10) : 0;
+  const todayXp = Number.isNaN(parsedXp) ? 0 : parsedXp;
 
   const goalRow = db
     .select()
     .from(settingsTable)
     .where(eq(settingsTable.key, "daily_goal_xp"))
     .get();
-  const dailyGoal = goalRow ? parseInt(goalRow.value ?? String(DEFAULT_DAILY_GOAL), 10) : DEFAULT_DAILY_GOAL;
+  const parsedGoal = goalRow ? parseInt(goalRow.value ?? String(DEFAULT_DAILY_GOAL), 10) : DEFAULT_DAILY_GOAL;
+  const dailyGoal = Number.isNaN(parsedGoal) || parsedGoal < 1 ? DEFAULT_DAILY_GOAL : parsedGoal;
 
   return {
     todayXp,

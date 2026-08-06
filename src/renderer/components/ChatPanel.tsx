@@ -297,7 +297,7 @@ export function ChatPanel({
 
   return (
     <div
-      className="flex flex-col h-full bg-neutral-950 border-r border-neutral-800"
+      className="flex flex-col h-full bg-neutral-50 dark:bg-neutral-950 border-r border-neutral-200 dark:border-neutral-800"
       data-testid="chat-panel"
     >
       {/* 顶栏：当前节点 + 折叠按钮 */}

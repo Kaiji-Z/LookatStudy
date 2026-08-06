@@ -10,8 +10,10 @@ import type {
 } from "@shared/types";
 import { Sidebar } from "./components/Sidebar.js";
 import { Divider } from "./components/Divider.js";
+import { SettingsView } from "./components/SettingsView.js";
+import { ImportView } from "./components/ImportView.js";
 
-type ViewTab = "tree" | "dashboard";
+type ViewTab = "tree" | "dashboard" | "settings" | "import";
 
 /**
  * 双栏布局：左聊天 + 右技能树（可拖拽分隔线，可折叠）。
@@ -192,7 +194,7 @@ export default function App() {
           />
         )}
 
-        {/* 右栏：技能树 / 仪表盘 */}
+        {/* 右栏：技能树 / 仪表盘 / 导入 / 设置 */}
         <main className="flex-1 overflow-auto px-6 py-6 min-w-0">
           {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
           <ViewTabs view={view} onChange={setView} />
@@ -223,9 +225,17 @@ export default function App() {
                 </div>
               )}
             </div>
-          ) : (
+          ) : view === "dashboard" ? (
             <div className="mt-4">
               <DashboardView dashboard={dashboard} />
+            </div>
+          ) : view === "import" ? (
+            <div className="max-w-2xl mx-auto mt-4">
+              <ImportView onImported={() => { refreshAll(); setView("tree"); }} courses={courses} selectedCourseId={selectedCourseId} onSelectCourse={setSelectedCourseId} />
+            </div>
+          ) : (
+            <div className="max-w-2xl mx-auto mt-4" data-testid="settings-view">
+              <SettingsView />
             </div>
           )}
         </main>
@@ -302,11 +312,13 @@ function ViewTabs({
 }) {
   return (
     <div
-      className="flex gap-1 shrink-0"
+      className="flex gap-1 shrink-0 items-center"
       data-testid="view-tabs"
     >
       <TabButton active={view === "tree"} onClick={() => onChange("tree")} label="技能树" testid="tab-tree" />
       <TabButton active={view === "dashboard"} onClick={() => onChange("dashboard")} label="仪表盘" testid="tab-dashboard" />
+      <TabButton active={view === "import"} onClick={() => onChange("import")} label="导入课程" testid="tab-import" />
+      <TabButton active={view === "settings"} onClick={() => onChange("settings")} label="⚙️ 设置" testid="tab-settings" />
     </div>
   );
 }

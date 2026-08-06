@@ -14,6 +14,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { api } from "../lib/api.js";
 import type { ContentNode } from "@shared/types";
 import ReactMarkdown from "react-markdown";
+import { ExercisePanel } from "./ExercisePanel.js";
 
 interface ChatMessage {
   id: string;
@@ -46,6 +47,7 @@ export function ChatPanel({
   const [streaming, setStreaming] = useState(false);
   const [agentReady, setAgentReady] = useState<AgentReadyState | null>(null);
   const [configMode, setConfigMode] = useState(false);
+  const [panelMode, setPanelMode] = useState<"chat" | "exercise">("chat");
   // 配置引导的本地态
   const [cfgProvider, setCfgProvider] = useState("glm");
   const [cfgKey, setCfgKey] = useState("");
@@ -139,9 +141,31 @@ export function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 节点切换时清空消息（每个节点独立对话）
+  // 节点切换时加载持久化的聊天历史
   useEffect(() => {
-    setMessages([]);
+    if (!selectedNode) {
+      setMessages([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const history = await api.getChatHistory(selectedNode.id);
+        if (cancelled) return;
+        setMessages(
+          history.map((m) => ({
+            id: nextMsgId(),
+            role: m.role === "assistant" ? "assistant" : "user",
+            content: m.content,
+          })),
+        );
+      } catch {
+        if (!cancelled) setMessages([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedNode?.id]);
 
   const handleSend = async () => {
@@ -166,6 +190,29 @@ export function ChatPanel({
           content: `⚠️ ${e instanceof Error ? e.message : String(e)}`,
         },
       ]);
+    }
+  };
+
+  // 停止正在流的回复（Stop 按钮）
+  const handleStop = async () => {
+    if (!selectedNode || !streaming) return;
+    try {
+      await api.abortAgentChat(selectedNode.id);
+    } catch {
+      /* 忽略 */
+    }
+    setStreaming(false);
+  };
+
+  // 清空当前节点的聊天历史
+  const handleClearHistory = async () => {
+    if (!selectedNode) return;
+    if (!confirm("确定清空当前节点的对话历史？")) return;
+    try {
+      await api.clearChatHistory(selectedNode.id);
+      setMessages([]);
+    } catch {
+      /* 忽略 */
     }
   };
 
@@ -214,6 +261,8 @@ export function ChatPanel({
       glm: "glm_api_key",
       openai: "openai_api_key",
       deepseek: "deepseek_api_key",
+      anthropic: "anthropic_api_key",
+      google: "google_api_key",
     };
     const keyField = keyMap[cfgProvider];
     if (!keyField || !cfgKey.trim()) return;
@@ -260,6 +309,33 @@ export function ChatPanel({
         </button>
       </div>
 
+      {/* 模式切换：对话 / 练习（有 key 才显示） */}
+      {agentReady?.ready && selectedNode && (
+        <div className="flex border-b border-neutral-800 shrink-0">
+          <button
+            onClick={() => setPanelMode("chat")}
+            data-testid="mode-chat"
+            className={`flex-1 text-xs py-1.5 ${panelMode === "chat" ? "text-brand border-b-2 border-brand" : "text-neutral-500 hover:text-neutral-300"}`}
+          >
+            💬 对话
+          </button>
+          <button
+            onClick={() => setPanelMode("exercise")}
+            data-testid="mode-exercise"
+            className={`flex-1 text-xs py-1.5 ${panelMode === "exercise" ? "text-brand border-b-2 border-brand" : "text-neutral-500 hover:text-neutral-300"}`}
+          >
+            📝 练习
+          </button>
+        </div>
+      )}
+
+      {/* 练习模式：显示 ExercisePanel（替代消息列表 + 输入框） */}
+      {panelMode === "exercise" && agentReady?.ready ? (
+        <div className="flex-1 overflow-y-auto px-3 py-3 min-h-0">
+          <ExercisePanel node={selectedNode} />
+        </div>
+      ) : (
+        <>
       {/* 消息列表 */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
         {messages.length === 0 && (
@@ -297,37 +373,60 @@ export function ChatPanel({
             onSave={handleSaveConfig}
           />
         ) : (
-          <div className="flex gap-2 items-end">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
+          <>
+            <div className="flex gap-2 items-end">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder={
+                  selectedNode
+                    ? "问 AI 导师…（Enter 发送）"
+                    : "先在右侧选一个 lesson…"
                 }
-              }}
-              placeholder={
-                selectedNode
-                  ? "问 AI 导师…（Enter 发送）"
-                  : "先在右侧选一个 lesson…"
-              }
-              disabled={streaming || !selectedNode}
-              rows={2}
-              data-testid="chat-input"
-              className="flex-1 bg-neutral-900 text-neutral-100 text-sm rounded-lg px-3 py-2 resize-none border border-neutral-700 focus:border-brand focus:outline-none disabled:opacity-50"
-            />
-            <button
-              onClick={handleSend}
-              disabled={streaming || !input.trim() || !selectedNode}
-              data-testid="chat-send"
-              className="bg-brand text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand/80 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-            >
-              发送
-            </button>
-          </div>
+                disabled={streaming || !selectedNode}
+                rows={2}
+                data-testid="chat-input"
+                className="flex-1 bg-neutral-900 text-neutral-100 text-sm rounded-lg px-3 py-2 resize-none border border-neutral-700 focus:border-brand focus:outline-none disabled:opacity-50"
+              />
+              {streaming ? (
+                <button
+                  onClick={handleStop}
+                  data-testid="chat-stop"
+                  className="bg-red-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-red-500 shrink-0"
+                >
+                  停止
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={streaming || !input.trim() || !selectedNode}
+                  data-testid="chat-send"
+                  className="bg-brand text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand/80 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                >
+                  发送
+                </button>
+              )}
+            </div>
+            {messages.length > 0 && !streaming && (
+              <button
+                onClick={handleClearHistory}
+                data-testid="chat-clear"
+                className="mt-2 text-[11px] text-neutral-600 hover:text-neutral-400"
+              >
+                清空对话历史
+              </button>
+            )}
+          </>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }
@@ -439,9 +538,11 @@ function ConfigGuide({
         data-testid="config-provider"
         className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-2 py-1.5 border border-neutral-700"
       >
-        <option value="glm">智谱 GLM</option>
-        <option value="openai">OpenAI</option>
+        <option value="glm">智谱 GLM（国内推荐）</option>
         <option value="deepseek">DeepSeek</option>
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic Claude</option>
+        <option value="google">Google Gemini</option>
       </select>
       <input
         type="password"

@@ -24,7 +24,8 @@ import {
 } from "../../db/schema.js";
 import type { BrowserWindow } from "electron";
 import { getDb, markDirty } from "../../db/index.js";
-import { resolveLlm } from "./llm-client.js";
+import { resolveLlm, classifyLlmError } from "./llm-client.js";
+import { chatSessions } from "../../db/schema.js";
 import { buildSystemPrompt } from "../skills/prompt-builder.js";
 import {
   createProposal,
@@ -65,6 +66,7 @@ export async function runAgentTurn(
   nodeId: string,
   messages: ChatTurn[],
   events: AgentEvents = {},
+  abortSignal?: AbortSignal,
 ): Promise<string> {
   const llm = resolveLlm(db);
   const system = buildSystemPrompt(db, BASE_AGENT_PROMPT);
@@ -166,29 +168,48 @@ export async function runAgentTurn(
       })),
       tools,
       stopWhen: stepCountIs(6),
+      abortSignal,
     });
 
     let full = "";
+    let sawError = false;
     for await (const part of result.fullStream) {
       if (part.type === "text-delta") {
         full += part.text;
         events.onTextDelta?.(part.text);
       } else if (part.type === "error") {
-        const msg =
-          part.error instanceof Error ? part.error.message : String(part.error);
-        events.onError?.(msg);
+        sawError = true;
+        const classified = classifyLlmError(part.error);
+        events.onError?.(classified.detail);
       }
+    }
+    // 被中断：不报错，返回已收到的部分
+    if (abortSignal?.aborted) {
+      return full || "(已停止)";
+    }
+    // 空响应检测：既没文本也没报错 → 可能是 key 失效或被风控
+    if (!full && !sawError) {
+      events.onError?.(
+        "AI 未返回任何内容（空响应）。可能 key 失效、额度用完，或被内容风控拦截。请到设置页测试连接。",
+      );
     }
     return full;
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    events.onError?.(msg);
-    return `(Agent 出错：${msg})`;
+    // AbortError 是正常的停止，不报错
+    if (e instanceof Error && (e.name === "AbortError" || abortSignal?.aborted)) {
+      return "(已停止)";
+    }
+    const classified = classifyLlmError(e);
+    events.onError?.(classified.detail);
+    return `(Agent 出错：${classified.detail})`;
   }
 }
 
 /**
  * 主进程入口：把 IPC 调用桥到 runAgentTurn + 把事件推给渲染层窗口。
+ *
+ * 会话历史持久化到 chat_sessions 表（nodeId → messagesJson）。
+ * 中断：每个 nodeId 一个 AbortController，agent:abort 时 abort。
  */
 export async function handleAgentChat(
   win: BrowserWindow | null,
@@ -197,26 +218,95 @@ export async function handleAgentChat(
 ): Promise<string> {
   const db = getDb();
 
-  // 简单的会话历史：内存里按 nodeId 存（M3 再持久化到 chat_sessions）
-  const history = chatHistoryByNode.get(nodeId) ?? [];
+  const history = loadChatHistory(db, nodeId);
   history.push({ role: "user", content: userMessage });
 
-  const reply = await runAgentTurn(db, nodeId, history, {
-    onTextDelta: (delta) => win?.webContents.send("chat:token", delta),
-    onToolCall: (name, args) =>
-      win?.webContents.send("chat:toolCall", name, JSON.stringify(args ?? {})),
-    onProposalCreated: (id, summary) => {
-      win?.webContents.send("chat:proposal", id, summary, "pending");
+  // 为本次回复建 AbortController，登记到 map（abortAgentChat 可调）
+  const controller = new AbortController();
+  abortControllers.set(nodeId, controller);
+
+  const reply = await runAgentTurn(
+    db,
+    nodeId,
+    history,
+    {
+      onTextDelta: (delta) => win?.webContents.send("chat:token", delta),
+      onToolCall: (name, args) =>
+        win?.webContents.send("chat:toolCall", name, JSON.stringify(args ?? {})),
+      onProposalCreated: (id, summary) => {
+        win?.webContents.send("chat:proposal", id, summary, "pending");
+      },
+      onError: (msg) => win?.webContents.send("chat:error", msg),
     },
-    onError: (msg) => win?.webContents.send("chat:error", msg),
-  });
+    controller.signal,
+  );
+
+  abortControllers.delete(nodeId);
 
   history.push({ role: "assistant", content: reply });
-  chatHistoryByNode.set(nodeId, history);
+  saveChatHistory(db, nodeId, history);
   markDirty();
   win?.webContents.send("chat:done", reply);
   return reply;
 }
 
-// 内存会话历史（nodeId → turns）。M3 持久化到 chat_sessions 表。
-const chatHistoryByNode = new Map<string, ChatTurn[]>();
+/** 中断某节点正在跑的 agent 回复（Stop 按钮） */
+export function abortAgentChat(nodeId: string): void {
+  const controller = abortControllers.get(nodeId);
+  if (controller) {
+    controller.abort();
+    abortControllers.delete(nodeId);
+  }
+}
+
+/** 取某节点的聊天历史（从 chat_sessions 表读，给渲染层加载） */
+export function getChatHistory(nodeId: string): ChatTurn[] {
+  return loadChatHistory(getDb(), nodeId);
+}
+
+/** 清空某节点的聊天历史 */
+export function clearChatHistory(nodeId: string): void {
+  const db = getDb();
+  db.delete(chatSessions).where(eq(chatSessions.nodeId, nodeId)).run();
+  markDirty();
+}
+
+// nodeId → AbortController（运行中的回复才能中断）
+const abortControllers = new Map<string, AbortController>();
+
+/** 从 chat_sessions 表读历史，没有返回空数组 */
+function loadChatHistory(db: Db, nodeId: string): ChatTurn[] {
+  const row = db
+    .select()
+    .from(chatSessions)
+    .where(eq(chatSessions.nodeId, nodeId))
+    .get();
+  if (!row?.messagesJson) return [];
+  try {
+    const parsed = JSON.parse(row.messagesJson) as ChatTurn[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 写历史到 chat_sessions 表（upsert） */
+function saveChatHistory(db: Db, nodeId: string, history: ChatTurn[]): void {
+  const messagesJson = JSON.stringify(history);
+  const existing = db
+    .select({ id: chatSessions.id })
+    .from(chatSessions)
+    .where(eq(chatSessions.nodeId, nodeId))
+    .get();
+  if (existing) {
+    db.update(chatSessions)
+      .set({ messagesJson })
+      .where(eq(chatSessions.nodeId, nodeId))
+      .run();
+  } else {
+    const { randomUUID } = require("node:crypto") as { randomUUID: () => string };
+    db.insert(chatSessions)
+      .values({ id: randomUUID(), nodeId, messagesJson })
+      .run();
+  }
+}

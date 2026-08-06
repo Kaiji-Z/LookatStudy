@@ -5,7 +5,7 @@
  * 渲染层通过 window.api.* 调用，无法直接访问 Node API。
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey } from "@shared/types";
+import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey, ExerciseType } from "@shared/types";
 
 const api = {
   /* 课程 */
@@ -16,6 +16,10 @@ const api = {
     ipcRenderer.invoke("course:importFromRepo", repoUrl)) as ApiExpose["importCourseFromRepo"],
   generateCourseFromMarkdown: ((md: string, repoName: string, repoUrl?: string) =>
     ipcRenderer.invoke("course:generateFromMarkdown", md, repoName, repoUrl)) as ApiExpose["generateCourseFromMarkdown"],
+  deleteCourse: ((courseId: string) =>
+    ipcRenderer.invoke("course:delete", courseId)) as ApiExpose["deleteCourse"],
+  getNodeContent: ((nodeId: string) =>
+    ipcRenderer.invoke("course:getNodeContent", nodeId)) as ApiExpose["getNodeContent"],
 
   /* 进度 */
   getProgress: ((nodeId: string) =>
@@ -24,6 +28,14 @@ const api = {
     ipcRenderer.invoke("progress:update", nodeId, patch)) as ApiExpose["updateProgress"],
   markNodeAttempted: ((nodeId: string) =>
     ipcRenderer.invoke("progress:markAttempted", nodeId)) as ApiExpose["markNodeAttempted"],
+
+  /* 练习题 */
+  generateExercise: ((nodeId: string, type?: ExerciseType) =>
+    ipcRenderer.invoke("exercise:generate", nodeId, type)) as ApiExpose["generateExercise"],
+  listExercises: ((nodeId: string) =>
+    ipcRenderer.invoke("exercise:list", nodeId)) as ApiExpose["listExercises"],
+  submitExerciseAnswer: ((exerciseId: string, userAnswer: string) =>
+    ipcRenderer.invoke("exercise:submit", exerciseId, userAnswer)) as ApiExpose["submitExerciseAnswer"],
 
   /* SRS */
   getDueReviews: (() => ipcRenderer.invoke("srs:getDue")) as ApiExpose["getDueReviews"],
@@ -49,8 +61,18 @@ const api = {
   /* Agent 引擎 + Proposal（M2） */
   agentChat: ((nodeId: string, msg: string) =>
     ipcRenderer.invoke("agent:chat", nodeId, msg)) as ApiExpose["agentChat"],
+  abortAgentChat: ((nodeId: string) =>
+    ipcRenderer.invoke("agent:abort", nodeId)) as ApiExpose["abortAgentChat"],
+  getChatHistory: ((nodeId: string) =>
+    ipcRenderer.invoke("agent:getHistory", nodeId)) as ApiExpose["getChatHistory"],
+  clearChatHistory: ((nodeId: string) =>
+    ipcRenderer.invoke("agent:clearHistory", nodeId)) as ApiExpose["clearChatHistory"],
   isAgentReady: (() =>
     ipcRenderer.invoke("agent:isReady")) as ApiExpose["isAgentReady"],
+  getProviderPresets: (() =>
+    ipcRenderer.invoke("agent:getProviderPresets")) as ApiExpose["getProviderPresets"],
+  testLlmConnection: (() =>
+    ipcRenderer.invoke("agent:testConnection")) as ApiExpose["testLlmConnection"],
   listPendingProposals: (() =>
     ipcRenderer.invoke("proposal:listPending")) as ApiExpose["listPendingProposals"],
   applyProposal: ((id: string) =>

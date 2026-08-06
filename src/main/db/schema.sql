@@ -38,7 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_content_nodes_parent ON content_nodes(parent_id);
 CREATE TABLE IF NOT EXISTS exercises (
   id TEXT PRIMARY KEY,
   node_id TEXT NOT NULL REFERENCES content_nodes(id) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK (type IN ('mcq', 'fill_blank', 'predict_output', 'order_lines', 'debug')),
+  type TEXT NOT NULL CHECK (type IN ('mcq', 'fill_blank', 'true_false', 'predict_output', 'order_lines', 'debug')),
   prompt TEXT NOT NULL,
   answer TEXT NOT NULL,
   explanation TEXT,

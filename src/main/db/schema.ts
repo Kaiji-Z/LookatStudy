@@ -55,7 +55,7 @@ export const exercises = sqliteTable("exercises", {
     .notNull()
     .references(() => contentNodes.id, { onDelete: "cascade" }),
   type: text("type", {
-    enum: ["mcq", "fill_blank", "predict_output", "order_lines", "debug"],
+    enum: ["mcq", "fill_blank", "true_false", "predict_output", "order_lines", "debug"],
   }).notNull(),
   prompt: text("prompt").notNull(),
   /** 正确答案；MCQ 是选项字母，填空是字符串 */

@@ -15,21 +15,33 @@ import {
   resolveProviderConfig,
 } from "../src/main/services/agent/llm-presets.ts";
 
-// T1: 预设里有 glm/openai/deepseek
+// T1: 预设里有 glm/openai/deepseek/anthropic/google（5 个 provider）
 const ids = PROVIDER_PRESETS.map((p) => p.id);
 assert.ok(ids.includes("glm"), "T1: 应有 glm");
 assert.ok(ids.includes("openai"), "T1: 应有 openai");
 assert.ok(ids.includes("deepseek"), "T1: 应有 deepseek");
-assert.ok(ids.length >= 3, `T1: 至少 3 个预设, 实际 ${ids.length}`);
-console.log(`✓ T1 预设齐全：${ids.join(", ")}`);
+assert.ok(ids.includes("anthropic"), "T1: 应有 anthropic（原生 SDK）");
+assert.ok(ids.includes("google"), "T1: 应有 google（原生 SDK）");
+assert.ok(ids.length >= 5, `T1: 至少 5 个预设, 实际 ${ids.length}`);
+console.log(`✓ T1 预设齐全：${ids.join(", ")}（5 个 provider）`);
 
-// T2: 每个 preset 的 baseUrl 是合法 URL + 有 apiKeySetting
+// T2: 每个 preset 有 protocol + apiKeySetting + defaultModel + models 列表 + keyUrl
 for (const p of PROVIDER_PRESETS) {
-  assert.doesNotThrow(() => new URL(p.baseUrl), `T2: ${p.id} baseUrl 应合法`);
+  assert.ok(
+    ["openai-compatible", "anthropic", "google"].includes(p.protocol),
+    `T2: ${p.id} protocol 合法`,
+  );
+  // openai-compatible 协议必须有 baseUrl；anthropic/google 走各自 SDK 默认端点
+  if (p.protocol === "openai-compatible") {
+    assert.ok(p.baseUrl, `T2: ${p.id} (openai-compatible) 应有 baseUrl`);
+    assert.doesNotThrow(() => new URL(p.baseUrl), `T2: ${p.id} baseUrl 应合法`);
+  }
   assert.ok(p.apiKeySetting.endsWith("_api_key"), `T2: ${p.id} apiKeySetting 应以 _api_key 结尾`);
   assert.ok(p.defaultModel.length > 0, `T2: ${p.id} 应有 defaultModel`);
+  assert.ok(Array.isArray(p.models) && p.models.length >= 1, `T2: ${p.id} 应有 models 列表`);
+  assert.ok(p.keyUrl.startsWith("http"), `T2: ${p.id} 应有 keyUrl`);
 }
-console.log(`✓ T2 所有预设：baseUrl 合法 + apiKeySetting 命名规范`);
+console.log(`✓ T2 所有预设：protocol 合法 + models 列表 + keyUrl`);
 
 // T3: 默认（不指定 active_provider）→ glm
 const def = resolveProviderConfig({});

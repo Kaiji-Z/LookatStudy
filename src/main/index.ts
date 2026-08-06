@@ -499,6 +499,87 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: dashboardOk,
   });
 
+  // T10 (release): 设置页 tab 渲染 5 个 provider 卡片 + model 下拉 + key 输入 + 测试连接按钮
+  const settingsOk = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        document.querySelector('[data-testid="tab-settings"]').click();
+        for (let i = 0; i < 30; i++) {
+          if (document.querySelector('[data-testid="settings-view"]')) break;
+          await new Promise(r => setTimeout(r, 100));
+        }
+        const sv = document.querySelector('[data-testid="settings-view"]');
+        if (!sv) return { ok: false, reason: "settings-view not rendered" };
+        const providers = document.querySelectorAll('[data-testid^="provider-card-"]').length;
+        const modelSelect = !!document.querySelector('[data-testid="model-select"]');
+        const keyInput = !!document.querySelector('[data-testid="settings-key-input"]');
+        const testBtn = !!document.querySelector('[data-testid="test-connection-btn"]');
+        const goalInput = !!document.querySelector('[data-testid="daily-goal-input"]');
+        const saveBtn = !!document.querySelector('[data-testid="settings-save"]');
+        return { ok: providers >= 5 && modelSelect && keyInput && testBtn && goalInput && saveBtn, providers, modelSelect, keyInput, testBtn };
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    })()
+  `);
+  results.push({
+    name: "settings view: 5 providers + model select + key input + test connection + daily goal",
+    ok: settingsOk?.ok === true,
+    detail: settingsOk,
+  });
+
+  // T11 (release): 导入课程 tab 渲染 URL 输入 + markdown 切换 + 课程列表
+  const importOk = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        document.querySelector('[data-testid="tab-import"]').click();
+        for (let i = 0; i < 30; i++) {
+          if (document.querySelector('[data-testid="import-url-section"]')) break;
+          await new Promise(r => setTimeout(r, 100));
+        }
+        const urlSection = !!document.querySelector('[data-testid="import-url-section"]');
+        const urlInput = !!document.querySelector('[data-testid="repo-url-input"]');
+        const importBtn = !!document.querySelector('[data-testid="import-url-btn"]');
+        // 切到 markdown tab
+        document.querySelectorAll('button').forEach(b => { if (b.textContent === '粘贴 Markdown') b.click(); });
+        await new Promise(r => setTimeout(r, 200));
+        const mdSection = !!document.querySelector('[data-testid="import-md-section"]');
+        const courseList = document.querySelectorAll('[data-testid="course-list"] > *').length;
+        return { ok: urlSection && urlInput && importBtn && mdSection, urlSection, urlInput, mdSection, courseList };
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    })()
+  `);
+  results.push({
+    name: "import view: URL import + markdown paste + course list",
+    ok: importOk?.ok === true,
+    detail: importOk,
+  });
+
+  // T12 (release): chat panel 有 对话/练习 模式切换 tabs（有 key 才显示，这里没 key 所以测切换按钮在有 proposal seed 时也存在）
+  // 切回 tree view + 点 lesson → 检查 mode tabs
+  const modeTabsOk = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        document.querySelector('[data-testid="tab-tree"]').click();
+        await new Promise(r => setTimeout(r, 300));
+        // chat panel 在没 key 时不显示 mode tabs（agentReady=false），这是正确行为
+        // 验证: 不显示 mode tabs（因为没配 key）= config-guide 应该在
+        const configGuide = !!document.querySelector('[data-testid="config-guide"]');
+        const modeChat = document.querySelector('[data-testid="mode-chat"]');
+        return { ok: configGuide && !modeChat, configGuide, hasModeTabs: !!modeChat, reason: "未配 key → 应显示 config-guide，不显示 mode tabs" };
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    })()
+  `);
+  results.push({
+    name: "chat panel: no key → config-guide shown, mode tabs hidden (correct gated behavior)",
+    ok: modeTabsOk?.ok === true,
+    detail: modeTabsOk,
+  });
+
   const allOk = results.every((r) => r.ok);
   const report = { overall: allOk, results, timestamp: new Date().toISOString() };
   writeFileSync(join(process.cwd(), ".ui-test-result.json"), JSON.stringify(report, null, 2));

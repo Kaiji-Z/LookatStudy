@@ -10,6 +10,10 @@ import {
   courses,
   contentNodes,
   settings as settingsTable,
+  progress as progressTable,
+  srsItems,
+  exercises,
+  chatSessions,
 } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import type {
@@ -20,6 +24,7 @@ import type {
   Streak,
   ReviewQuality,
   SettingKey,
+  ExerciseType,
 } from "@shared/types";
 import {
   getDueReviewNodeIds,
@@ -41,8 +46,9 @@ import {
   getActiveSkill as getActiveSkillService,
 } from "../services/skills/skill-service.js";
 // Agent 引擎 + Proposal（M2）
-import { handleAgentChat } from "../services/agent/agent-engine.js";
-import { isLlmReady } from "../services/agent/llm-client.js";
+import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory } from "../services/agent/agent-engine.js";
+import { isLlmReady, testLlmConnection } from "../services/agent/llm-client.js";
+import { PROVIDER_PRESETS } from "../services/agent/llm-presets.js";
 import {
   listPendingProposals as listPendingProposalsService,
   applyProposal as applyProposalService,
@@ -57,6 +63,12 @@ import {
 } from "../services/search-service.js";
 // M4：Course Generator
 import { generateCourseFromMarkdown as generateCourseFromMarkdownService } from "../services/course-generator.js";
+// 练习题服务
+import {
+  generateExercise as generateExerciseService,
+  listExercises as listExercisesService,
+  submitExerciseAnswer as submitExerciseAnswerService,
+} from "../services/exercise-service.js";
 
 /* ---------- 课程 ---------- */
 
@@ -150,9 +162,57 @@ export function registerCourseHandlers(): void {
       return course as unknown as Course;
     },
   );
-}
 
-/* ---------- 进度 ---------- */
+  // 删除课程 + 其下全部节点/进度/练习/聊天（级联清理由 services 负责）
+  ipcMain.handle("course:delete", async (_e, courseId: string) => {
+    const db = getDb();
+    // 先收所有 nodeId（删 progress/exercises/chat_sessions 用）
+    const nodes = db
+      .select({ id: contentNodes.id })
+      .from(contentNodes)
+      .where(eq(contentNodes.courseId, courseId))
+      .all();
+    const nodeIds = nodes.map((n) => n.id);
+    db.delete(courses).where(eq(courses.id, courseId)).run();
+    db.delete(contentNodes).where(eq(contentNodes.courseId, courseId)).run();
+    // 关联数据：逐表按 nodeId 删（sql.js/drizzle 不支持复合 IN，逐条删够用）
+    if (nodeIds.length > 0) {
+      const { inArray } = await import("drizzle-orm");
+      try {
+        db.delete(progressTable).where(inArray(progressTable.nodeId, nodeIds)).run();
+      } catch {
+        /* 表可能空 */
+      }
+      try {
+        db.delete(srsItems).where(inArray(srsItems.nodeId, nodeIds)).run();
+      } catch {
+        /* 忽略 */
+      }
+      try {
+        db.delete(exercises).where(inArray(exercises.nodeId, nodeIds)).run();
+      } catch {
+        /* 忽略 */
+      }
+      try {
+        db.delete(chatSessions).where(inArray(chatSessions.nodeId, nodeIds)).run();
+      } catch {
+        /* 忽略 */
+      }
+    }
+    markDirty();
+  });
+
+  // 取某节点完整内容（课程详情 / 练习生成上下文用）
+  ipcMain.handle("course:getNodeContent", async (_e, nodeId: string) => {
+    const db = getDb();
+    const node = db
+      .select({ content: contentNodes.content })
+      .from(contentNodes)
+      .where(eq(contentNodes.id, nodeId))
+      .get();
+    return node?.content ?? null;
+  });
+}
 
 export function registerProgressHandlers(): void {
   ipcMain.handle(
@@ -292,8 +352,43 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
     },
   );
 
+  // 中断当前 agent 回复（Stop 按钮）
+  ipcMain.handle("agent:abort", async (_e, nodeId: string) => {
+    abortAgentChat(nodeId);
+  });
+
+  // 取某节点聊天历史（持久化在 chat_sessions 表）
+  ipcMain.handle("agent:getHistory", async (_e, nodeId: string) => {
+    return getChatHistory(nodeId);
+  });
+
+  // 清空某节点聊天历史
+  ipcMain.handle("agent:clearHistory", async (_e, nodeId: string) => {
+    clearChatHistory(nodeId);
+  });
+
   // provider 是否就绪（渲染层只见布尔）
   ipcMain.handle("agent:isReady", async () => isLlmReady(getDb()));
+
+  // 返回所有 provider 预设元数据（给 Settings 页做 provider/model 选择器，不含 key）
+  ipcMain.handle("agent:getProviderPresets", async () => {
+    // 剥成 ApiExpose 契约里的 ProviderPresetInfo（不含 key 字段）
+    return PROVIDER_PRESETS.map((p) => ({
+      id: p.id,
+      label: p.label,
+      protocol: p.protocol,
+      defaultModel: p.defaultModel,
+      models: p.models,
+      apiKeySetting: p.apiKeySetting,
+      keyUrl: p.keyUrl,
+      note: p.note,
+    }));
+  });
+
+  // 测试当前 provider 连接（Settings 页"测试连接"按钮）
+  ipcMain.handle("agent:testConnection", async () => {
+    return testLlmConnection(getDb());
+  });
 
   // Proposal 流水线
   ipcMain.handle("proposal:listPending", async () =>
@@ -361,6 +456,36 @@ export function registerAllHandlers(mainWindow: BrowserWindow): void {
   registerSkillHandlers();
   registerAgentHandlers(mainWindow);
   registerM3Handlers();
+  registerExerciseHandlers();
+}
+
+/* ---------- 练习题 ---------- */
+
+export function registerExerciseHandlers(): void {
+  // AI 生题（缓存到 exercises 表）
+  ipcMain.handle(
+    "exercise:generate",
+    async (_e, nodeId: string, type?: ExerciseType) => {
+      const result = await generateExerciseService(getDb(), nodeId, type);
+      markDirty();
+      return result;
+    },
+  );
+
+  // 列出某节点缓存的练习题
+  ipcMain.handle("exercise:list", async (_e, nodeId: string) => {
+    return listExercisesService(getDb(), nodeId);
+  });
+
+  // 提交答案 + 判分（触发掌握度更新 Proposal）
+  ipcMain.handle(
+    "exercise:submit",
+    async (_e, exerciseId: string, userAnswer: string) => {
+      const result = submitExerciseAnswerService(getDb(), exerciseId, userAnswer);
+      markDirty();
+      return result;
+    },
+  );
 }
 
 /**

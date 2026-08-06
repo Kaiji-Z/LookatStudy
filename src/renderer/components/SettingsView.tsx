@@ -1,0 +1,243 @@
+/**
+ * 设置页 —— provider / model / API key 管理 + 测试连接 + 每日目标。
+ *
+ * 这是 BYOK 的"完整管理入口"（ChatPanel 的 ConfigGuide 只在未配 key 时出现）。
+ * 功能:
+ *   - 选 provider（5 选 1）→ 显示该 provider 的 model 列表 → 选 model
+ *   - 输入/更新 API key（当前 provider 的 key field）
+ *   - "测试连接"按钮：调 testLlmConnection 发 ping，显示成功/失败 + 错误分类
+ *   - 每日目标（daily_goal_xp）设置
+ *
+ * 密钥边界：key 输入框是 password type；保存只走 setSetting，永不渲染层留全量 key。
+ * 已配的 key 只显示"已配置"掩码（sk-…1234），不回显完整值。
+ */
+import { useEffect, useState, useCallback } from "react";
+import { api } from "../lib/api.js";
+import type { ProviderPresetInfo } from "@shared/types";
+
+export function SettingsView() {
+  const [presets, setPresets] = useState<ProviderPresetInfo[]>([]);
+  const [activeProvider, setActiveProvider] = useState<string>("glm");
+  const [activeModel, setActiveModel] = useState<string>("");
+  const [keyInput, setKeyInput] = useState("");
+  const [keyMasked, setKeyMasked] = useState<string | null>(null);
+  const [dailyGoal, setDailyGoal] = useState<string>("30");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; detail: string; errorKind?: string } | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  // 初始化：拉预设 + 当前配置
+  const load = useCallback(async () => {
+    try {
+      const [ps, provider, model, goal] = await Promise.all([
+        api.getProviderPresets(),
+        api.getSetting("active_provider"),
+        api.getSetting("active_model"),
+        api.getSetting("daily_goal_xp"),
+      ]);
+      setPresets(ps);
+      const p = provider ?? "glm";
+      setActiveProvider(p);
+      // 检查当前 provider 的 key 是否已配（用 masked 显示）
+      const preset = ps.find((x) => x.id === p);
+      if (preset) {
+        const existingKey = await api.getSetting(preset.apiKeySetting as Parameters<typeof api.getSetting>[0]);
+        setKeyMasked(existingKey ? `${existingKey.slice(0, 4)}…${existingKey.slice(-4)}` : null);
+      }
+      setActiveModel(model ?? preset?.defaultModel ?? "");
+      setDailyGoal(goal ?? "30");
+    } catch {
+      /* 忽略，用户会看到空表单 */
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // 切 provider 时：重载该 provider 的 key 掩码 + 默认 model
+  const handleProviderChange = async (newProvider: string) => {
+    setActiveProvider(newProvider);
+    setTestResult(null);
+    setKeyInput("");
+    const preset = presets.find((p) => p.id === newProvider);
+    if (preset) {
+      const existingKey = await api.getSetting(preset.apiKeySetting as Parameters<typeof api.getSetting>[0]);
+      setKeyMasked(existingKey ? `${existingKey.slice(0, 4)}…${existingKey.slice(-4)}` : null);
+      setActiveModel(activeModel || preset.defaultModel);
+    }
+  };
+
+  // 保存 provider + model + key（如果有输入）
+  const handleSave = async () => {
+    setSaved(false);
+    try {
+      await api.setSetting("active_provider", activeProvider);
+      await api.setSetting("active_model", activeModel);
+      if (keyInput.trim()) {
+        const preset = presets.find((p) => p.id === activeProvider);
+        if (preset) {
+          await api.setSetting(preset.apiKeySetting as Parameters<typeof api.setSetting>[0], keyInput.trim());
+          setKeyMasked(`${keyInput.trim().slice(0, 4)}…${keyInput.trim().slice(-4)}`);
+          setKeyInput("");
+        }
+      }
+      await api.setSetting("daily_goal_xp", dailyGoal);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      /* 忽略 */
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await api.testLlmConnection();
+      setTestResult(r);
+    } catch (e) {
+      setTestResult({ ok: false, detail: e instanceof Error ? e.message : String(e), errorKind: "unknown" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const currentPreset = presets.find((p) => p.id === activeProvider);
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold">⚙️ 设置</h2>
+
+      {/* Provider 选择 */}
+      <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+        <h3 className="text-sm font-semibold text-neutral-300 mb-3">AI 服务商（Provider）</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" data-testid="provider-grid">
+          {presets.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => handleProviderChange(p.id)}
+              data-testid={`provider-card-${p.id}`}
+              className={`text-left p-3 rounded-lg border transition-colors ${
+                activeProvider === p.id
+                  ? "border-brand bg-brand/10"
+                  : "border-neutral-700 hover:border-neutral-600"
+              }`}
+            >
+              <div className="text-sm font-medium text-neutral-100">{p.label}</div>
+              {p.note && <div className="text-[11px] text-neutral-500 mt-0.5">{p.note}</div>}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* Model 选择 */}
+      {currentPreset && (
+        <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+          <h3 className="text-sm font-semibold text-neutral-300 mb-3">模型（Model）</h3>
+          <select
+            value={activeModel}
+            onChange={(e) => setActiveModel(e.target.value)}
+            data-testid="model-select"
+            className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+          >
+            {currentPreset.models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+                {m.contextWindow ? ` · ${Math.round(m.contextWindow / 1000)}K 上下文` : ""}
+              </option>
+            ))}
+          </select>
+        </section>
+      )}
+
+      {/* API Key */}
+      {currentPreset && (
+        <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-neutral-300">API Key</h3>
+            <a
+              href={currentPreset.keyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-brand hover:underline"
+            >
+              去获取 key →
+            </a>
+          </div>
+          {keyMasked && (
+            <div className="text-xs text-neutral-400 mb-2" data-testid="key-status">
+              ✅ 已配置：<code className="bg-neutral-800 px-1 rounded">{keyMasked}</code>
+            </div>
+          )}
+          <input
+            type="password"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            placeholder={keyMasked ? "输入新 key 覆盖…" : "粘贴 API key（sk-…）"}
+            data-testid="settings-key-input"
+            className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+          />
+          <p className="text-[11px] text-neutral-600 mt-2">
+            🔒 key 只存在本地主进程，不离开你的电脑。渲染层永远看不到完整 key。
+          </p>
+        </section>
+      )}
+
+      {/* 测试连接 */}
+      <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-neutral-300">测试连接</h3>
+          <button
+            onClick={handleTest}
+            disabled={testing}
+            data-testid="test-connection-btn"
+            className="text-sm bg-neutral-700 text-neutral-100 px-3 py-1.5 rounded hover:bg-neutral-600 disabled:opacity-40"
+          >
+            {testing ? "测试中…" : "测试连接"}
+          </button>
+        </div>
+        {testResult && (
+          <div
+            className={`text-sm rounded p-2 ${testResult.ok ? "bg-green-900/30 text-green-300" : "bg-red-900/30 text-red-300"}`}
+            data-testid="test-result"
+          >
+            {testResult.ok ? "✅" : "❌"} {testResult.detail}
+            {testResult.errorKind && testResult.errorKind !== "unknown" && (
+              <span className="block text-[11px] mt-1 opacity-70">错误类型：{testResult.errorKind}</span>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* 每日目标 */}
+      <section className="bg-neutral-900/50 rounded-lg p-4 border border-neutral-800">
+        <h3 className="text-sm font-semibold text-neutral-300 mb-3">每日学习目标（XP）</h3>
+        <div className="flex gap-2 items-center">
+          <input
+            type="number"
+            value={dailyGoal}
+            onChange={(e) => setDailyGoal(e.target.value)}
+            min="1"
+            max="500"
+            data-testid="daily-goal-input"
+            className="w-24 bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+          />
+          <span className="text-xs text-neutral-500">XP / 天（每答对一题 +10 XP）</span>
+        </div>
+      </section>
+
+      {/* 保存按钮 */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          data-testid="settings-save"
+          className="bg-brand text-white text-sm font-medium px-6 py-2 rounded-lg hover:bg-brand/80"
+        >
+          保存设置
+        </button>
+        {saved && <span className="text-sm text-green-400">✅ 已保存</span>}
+      </div>
+    </div>
+  );
+}

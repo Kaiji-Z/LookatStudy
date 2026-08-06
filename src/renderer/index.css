@@ -12,7 +12,7 @@
   body {
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
-    user-select: none; /* 桌面应用默认禁选，输入框单独开 */
+    user-select: none;
   }
 
   input,
@@ -22,10 +22,141 @@
   }
 }
 
-/* 自定义滚动条，桌面观感 */
+/* === Duolingo-inspired design system === */
+
+/* 3D push-down buttons (Duolingo signature style) */
+@layer components {
+  .btn-3d {
+    @apply relative font-bold rounded-2xl transition-all duration-150 active:translate-y-0.5;
+  }
+  .btn-3d-brand {
+    @apply btn-3d bg-brand text-white;
+    box-shadow: 0 4px 0 0 #46a302;
+  }
+  .btn-3d-brand:hover {
+    @apply bg-brand-light;
+  }
+  .btn-3d-brand:active {
+    box-shadow: 0 1px 0 0 #46a302;
+  }
+  .btn-3d-blue {
+    @apply btn-3d bg-accent text-white;
+    box-shadow: 0 4px 0 0 #0a8cdc;
+  }
+  .btn-3d-blue:active {
+    box-shadow: 0 1px 0 0 #0a8cdc;
+  }
+  .btn-3d-neutral {
+    @apply btn-3d bg-neutral-700 text-white;
+    box-shadow: 0 4px 0 0 #404040;
+  }
+  .btn-3d-neutral:active {
+    box-shadow: 0 1px 0 0 #404040;
+  }
+}
+
+/* Lesson bubble 3D depth — Duolingo's signature rounded node */
+.lesson-bubble {
+  @apply relative rounded-full transition-all duration-200;
+}
+.lesson-bubble-available {
+  @apply bg-gradient-to-br from-brand to-brand-dark text-white;
+  box-shadow: 0 6px 0 0 #46a302, 0 8px 16px rgba(88, 204, 2, 0.3);
+}
+.lesson-bubble-available:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 0 0 #46a302, 0 12px 20px rgba(88, 204, 2, 0.4);
+}
+.lesson-bubble-available:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 0 #46a302, 0 4px 8px rgba(88, 204, 2, 0.2);
+}
+.lesson-bubble-in-progress {
+  @apply bg-gradient-to-br from-accent to-accent-dark text-white;
+  box-shadow: 0 6px 0 0 #0a8cdc, 0 8px 16px rgba(28, 176, 246, 0.3);
+}
+.lesson-bubble-mastered {
+  @apply bg-gradient-to-br from-yellow-400 to-yellow-600 text-white;
+  box-shadow: 0 6px 0 0 #b8860b, 0 8px 16px rgba(255, 200, 0, 0.3);
+}
+.lesson-bubble-locked {
+  @apply bg-neutral-800 text-neutral-600;
+  box-shadow: 0 4px 0 0 #262626;
+}
+
+/* Pulse animation for available lessons */
+@keyframes bubble-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+.lesson-bubble-available {
+  animation: bubble-pulse 2s ease-in-out infinite;
+}
+
+/* Streak flame animation */
+@keyframes flame-flicker {
+  0%, 100% { transform: scale(1) rotate(-2deg); }
+  50% { transform: scale(1.1) rotate(2deg); }
+}
+.streak-flame {
+  animation: flame-flicker 1.5s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+/* Card surface */
+.surface-card {
+  @apply bg-neutral-900 border border-neutral-800 rounded-2xl;
+}
+
+/* Mode tab underline */
+.mode-tab {
+  @apply relative py-2 text-sm font-medium transition-colors duration-150;
+}
+.mode-tab-active {
+  @apply text-brand;
+}
+.mode-tab-active::after {
+  content: "";
+  @apply absolute bottom-0 left-0 right-0 h-0.5 bg-brand rounded-full;
+}
+
+/* Chat message entrance */
+@keyframes msg-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.msg-enter {
+  animation: msg-enter 200ms ease-out;
+}
+
+/* Proposal card glow */
+.proposal-card {
+  @apply surface-card p-3 border-brand/30;
+  box-shadow: 0 0 0 1px rgba(88, 204, 2, 0.1), 0 4px 12px rgba(88, 204, 2, 0.08);
+}
+
+/* Typing indicator */
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-4px); }
+}
+.typing-dot {
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+/* Progress ring */
+.progress-ring-circle {
+  transition: stroke-dashoffset 0.5s ease-out;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+/* Custom scrollbar — Duolingo style rounded */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -39,4 +170,12 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(82 82 91);
   background-clip: padding-box;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

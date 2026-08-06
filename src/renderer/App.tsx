@@ -192,11 +192,11 @@ export default function App() {
           <ViewTabs view={view} onChange={setView} />
 
           {view === "tree" ? (
-            <div className="max-w-2xl mx-auto mt-4" data-testid="skill-tree">
-              <h2 className="text-2xl font-bold mb-1">
+            <div className="max-w-xl mx-auto mt-4" data-testid="skill-tree">
+              <h2 className="text-xl font-extrabold mb-0.5 text-neutral-100 tracking-tight">
                 {currentCourse?.title ?? "加载中..."}
               </h2>
-              <p className="text-neutral-400 text-sm mb-6">
+              <p className="text-neutral-500 text-xs mb-8 leading-relaxed">
                 {currentCourse?.description}
               </p>
               {sections.length === 0 ? (
@@ -236,15 +236,16 @@ export default function App() {
 
 function Header({ streak }: { streak: Streak | null }) {
   return (
-    <header className="border-b border-neutral-800 px-6 py-3 flex items-center justify-between shrink-0">
-      <div className="flex items-center gap-3">
+    <header className="border-b border-neutral-800/50 px-6 py-2.5 flex items-center justify-between shrink-0 bg-neutral-950/80 backdrop-blur-sm">
+      <div className="flex items-center gap-2.5">
         <Logo />
-        <h1 className="text-lg font-bold tracking-tight">LookatStudy</h1>
-        <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400">
-          v0.1.0
-        </span>
+        <h1 className="text-base font-extrabold tracking-tight text-neutral-100">
+          Lookat<span className="text-brand">Study</span>
+        </h1>
       </div>
-      {streak && <StreakBadge streak={streak} />}
+      <div className="flex items-center gap-3">
+        {streak && <StreakBadge streak={streak} />}
+      </div>
     </header>
   );
 }
@@ -283,10 +284,10 @@ function TabButton({
     <button
       onClick={onClick}
       data-testid={testid}
-      className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
+      className={`px-4 py-2 text-sm font-bold rounded-xl transition-all duration-150 ${
         active
-          ? "border-brand text-brand font-semibold"
-          : "border-transparent text-neutral-400 hover:text-neutral-200"
+          ? "bg-brand/15 text-brand"
+          : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800/50"
       }`}
     >
       {label}
@@ -317,12 +318,11 @@ function SectionUnit({
 
   return (
     <section data-testid={`section-unit-${sectionIndex}`}>
-      <div className="flex items-center gap-2 mb-5">
-        <span className="text-xs font-bold text-neutral-500 uppercase tracking-wider">
-          单元 {sectionIndex + 1}
+      <div className="flex items-center gap-2 mb-6">
+        <span className="text-[10px] font-extrabold text-brand uppercase tracking-wider bg-brand/10 px-2 py-1 rounded-md">
+          UNIT {sectionIndex + 1}
         </span>
-        <span className="text-neutral-700">·</span>
-        <h3 className="text-sm font-semibold text-neutral-300">
+        <h3 className="text-sm font-bold text-neutral-300">
           {section.title}
         </h3>
       </div>
@@ -382,50 +382,52 @@ function LessonBubble({
   const alignLeft = index % 2 === 0;
   const isLocked = status === "locked";
 
-  const theme =
+  const bubbleClass =
     status === "locked"
-      ? "bg-neutral-800 border-neutral-700 text-neutral-600"
+      ? "lesson-bubble lesson-bubble-locked"
       : status === "mastered"
-        ? "bg-gradient-to-br from-yellow-500/30 to-amber-600/20 border-yellow-500/50 text-yellow-200"
+        ? "lesson-bubble lesson-bubble-mastered"
         : status === "in_progress"
-          ? "bg-gradient-to-br from-brand/30 to-brand/10 border-brand/60 text-brand"
-          : "bg-gradient-to-br from-brand/25 to-brand/5 border-brand/50 text-brand";
+          ? "lesson-bubble lesson-bubble-in-progress"
+          : "lesson-bubble lesson-bubble-available";
 
   return (
     <li
-      className={`flex ${alignLeft ? "justify-start" : "justify-end"}`}
+      className={`relative flex flex-col items-center ${alignLeft ? "self-start" : "self-end"}`}
       data-testid={`lesson-bubble-${lesson.id.slice(0, 8)}`}
+      style={{ width: "96px" }}
     >
       <button
         onClick={() => !isLocked && onClick(lesson)}
         disabled={isLocked}
-        className={`group relative w-20 h-20 rounded-full border-2 ${theme} transition-all ${
-          isLocked
-            ? "cursor-not-allowed"
-            : "hover:scale-105 active:scale-95 shadow-lg"
-        } ${isSelected ? "ring-2 ring-accent ring-offset-2 ring-offset-neutral-950 scale-105" : ""} ${status === "available" ? "animate-pulse" : ""}`}
+        className={`group relative w-20 h-20 flex items-center justify-center text-2xl ${bubbleClass} ${
+          isLocked ? "cursor-not-allowed" : "cursor-pointer"
+        } ${isSelected ? "ring-4 ring-accent ring-offset-2 ring-offset-neutral-950" : ""}`}
         title={isLocked ? `🔒 ${lesson.title}（完成上一课解锁）` : lesson.title}
       >
-        <div className="absolute inset-0 flex items-center justify-center text-2xl">
-          {isLocked ? (
-            <span aria-label="locked">🔒</span>
-          ) : status === "mastered" ? (
-            <span aria-label="mastered">👑</span>
-          ) : (
-            <span aria-label={status}>⭐</span>
-          )}
-        </div>
+        {isLocked ? (
+          <span aria-label="locked" className="opacity-50">🔒</span>
+        ) : status === "mastered" ? (
+          <span aria-label="mastered" className="drop-shadow-lg">👑</span>
+        ) : status === "in_progress" ? (
+          <span aria-label="in-progress">📘</span>
+        ) : (
+          <span aria-label="available" className="drop-shadow">⭐</span>
+        )}
         {status === "mastered" && crown > 0 && (
-          <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-yellow-500 text-neutral-900 px-1.5 rounded-full">
+          <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-gold text-neutral-900 px-1.5 py-0.5 rounded-full shadow-md whitespace-nowrap">
             Lv.{crown}
           </span>
         )}
+        {/* Selected indicator dot */}
+        {isSelected && (
+          <span className="absolute -top-1 -right-1 w-3 h-3 bg-accent rounded-full ring-2 ring-neutral-950" />
+        )}
       </button>
       <div
-        className={`absolute mt-[88px] text-xs text-neutral-500 max-w-[140px] leading-tight ${
-          alignLeft ? "text-left" : "text-right"
-        }`}
-        style={{ width: "140px" }}
+        className={`mt-3 text-[11px] text-neutral-400 max-w-[120px] leading-tight text-center font-medium ${
+          isSelected ? "text-brand" : ""
+        } ${isLocked ? "opacity-40" : ""}`}
       >
         {lesson.title}
       </div>
@@ -442,17 +444,18 @@ function DashboardView({ dashboard }: { dashboard: DashboardData | null }) {
   const masteryPct = Math.round(dashboard.overallMastery * 100);
   return (
     <div className="max-w-2xl mx-auto" data-testid="dashboard">
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <h2 className="text-xl font-extrabold mb-6 text-neutral-100">学习仪表盘</h2>
+      <div className="grid grid-cols-3 gap-3 mb-8">
         <StatCard testid="stat-streak" icon="🔥" value={String(dashboard.currentStreak)} label="连续天数" sub={`freeze ${dashboard.freezeCount}`} />
         <StatCard testid="stat-due" icon="📖" value={String(dashboard.dueToday)} label="今日待复习" sub={dashboard.dueToday > 0 ? "去复习" : "已清空"} />
         <StatCard testid="stat-mastery" icon="🎯" value={`${masteryPct}%`} label="整体掌握度" sub={masteryPct >= 70 ? "不错" : masteryPct >= 40 ? "进行中" : "刚开始"} />
       </div>
-      <h3 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-3">
-        掌握度热力图（按章节）
+      <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3">
+        按章节掌握度
       </h3>
-      <div className="space-y-2" data-testid="mastery-heatmap">
+      <div className="space-y-2.5" data-testid="mastery-heatmap">
         {dashboard.sections.length === 0 ? (
-          <div className="text-neutral-500 text-sm">暂无章节数据</div>
+          <div className="text-neutral-600 text-sm">暂无章节数据</div>
         ) : (
           dashboard.sections.map((s) => <HeatmapRow key={s.sectionId} section={s} />)
         )}
@@ -467,24 +470,28 @@ function StatCard({
   icon: string; value: string; label: string; sub?: string; testid: string;
 }) {
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3" data-testid={testid}>
-      <div className="text-xs text-neutral-500 mb-1">{icon} {label}</div>
-      <div className="text-2xl font-bold text-neutral-100">{value}</div>
-      {sub && <div className="text-[10px] text-neutral-500 mt-0.5">{sub}</div>}
+    <div className="surface-card p-4 text-center" data-testid={testid}>
+      <div className="text-lg mb-1">{icon}</div>
+      <div className="text-2xl font-extrabold text-neutral-100">{value}</div>
+      <div className="text-[11px] text-neutral-500 mt-0.5">{label}</div>
+      {sub && <div className="text-[10px] text-neutral-600 mt-0.5">{sub}</div>}
     </div>
   );
 }
 
 function HeatmapRow({ section }: { section: DashboardData["sections"][number] }) {
   const pct = Math.round(section.avgMastery * 100);
-  const barColor = pct >= 70 ? "bg-brand" : pct >= 30 ? "bg-orange-500" : "bg-red-500";
+  const barColor = pct >= 70 ? "bg-brand" : pct >= 30 ? "bg-orange-500" : "bg-neutral-700";
   return (
     <div className="flex items-center gap-3">
-      <div className="w-40 text-xs text-neutral-300 truncate" title={section.sectionTitle}>{section.sectionTitle}</div>
-      <div className="flex-1 h-6 bg-neutral-800 rounded overflow-hidden">
-        <div className={`h-full ${barColor} transition-all`} style={{ width: `${Math.max(2, pct)}%` }} />
+      <div className="w-40 text-xs text-neutral-400 truncate font-medium" title={section.sectionTitle}>{section.sectionTitle}</div>
+      <div className="flex-1 h-7 bg-neutral-850 rounded-lg overflow-hidden bg-neutral-800/50">
+        <div
+          className={`h-full ${barColor} rounded-lg transition-all duration-500`}
+          style={{ width: `${Math.max(3, pct)}%` }}
+        />
       </div>
-      <div className="w-16 text-xs text-neutral-400 text-right">{pct}% · {section.masteredCount}/{section.lessonCount}</div>
+      <div className="w-20 text-xs text-neutral-500 text-right tabular-nums">{pct}% · {section.masteredCount}/{section.lessonCount}</div>
     </div>
   );
 }
@@ -511,17 +518,25 @@ function EmptyState() {
 
 function StreakBadge({ streak }: { streak: Streak }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/30" data-testid="streak-badge">
-      <span className="text-orange-400">🔥</span>
-      <span className="text-sm font-bold text-orange-300">{streak.currentStreak}</span>
-      <span className="text-xs text-orange-400/70">天</span>
+    <div
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20"
+      data-testid="streak-badge"
+      title={`连续学习 ${streak.currentStreak} 天 · 最长 ${streak.longestStreak} 天`}
+    >
+      <span className="streak-flame text-sm">🔥</span>
+      <span className="text-sm font-extrabold text-orange-400">{streak.currentStreak}</span>
     </div>
   );
 }
 
 function Logo() {
   return (
-    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand to-accent flex items-center justify-center text-white font-bold text-sm">R</div>
+    <div
+      className="w-7 h-7 rounded-xl bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center text-white font-extrabold text-xs shadow-md"
+      style={{ boxShadow: "0 2px 8px rgba(88, 204, 2, 0.3)" }}
+    >
+      L
+    </div>
   );
 }
 

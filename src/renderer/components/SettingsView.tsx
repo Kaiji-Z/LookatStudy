@@ -39,6 +39,9 @@ export function SettingsView() {
   const [discoveredModels, setDiscoveredModels] = useState<{ id: string; label: string; contextWindow: number | null }[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const [currentLang] = useState<string>(() => {
+    try { return localStorage.getItem("lookatstudy-lang") || "zh-CN"; } catch { return "zh-CN"; }
+  });
 
   const handleDiscoverModels = async () => {
     setDiscovering(true);
@@ -92,8 +95,8 @@ export function SettingsView() {
         setActiveModel(model ?? preset?.defaultModel ?? "");
       }
       setDailyGoal(goal ?? "30");
-    } catch {
-      /* 忽略，用户会看到空表单 */
+    } catch (e) {
+      console.error("[SettingsView] load() failed:", e);
     }
   }, []);
 
@@ -529,6 +532,28 @@ export function SettingsView() {
             className="w-24 bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
           />
           <span className="text-xs text-neutral-500">XP / 天（每答对一题 +10 XP）</span>
+        </div>
+      </section>
+
+      {/* 语言选择 */}
+      <section className="surface-card p-4">
+        <h3 className="text-sm font-semibold text-neutral-300 mb-3">语言 / Language</h3>
+        <div className="flex gap-2">
+          {(["zh-CN", "en"] as const).map((l) => (
+            <button
+              key={l}
+              onClick={() => {
+                try { localStorage.setItem("lookatstudy-lang", l); } catch { /* 忽略 */ }
+                window.location.reload();
+              }}
+              data-testid={`lang-${l}`}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${
+                currentLang === l ? "bg-brand text-white" : "bg-neutral-800 text-neutral-400 hover:text-neutral-200"
+              }`}
+            >
+              {l === "zh-CN" ? "中文" : "English"}
+            </button>
+          ))}
         </div>
       </section>
 

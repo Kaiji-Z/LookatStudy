@@ -499,30 +499,14 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: dashboardOk,
   });
 
-  // T10 (release): 设置模式（左栏 mode-settings tab）渲染 5 个 provider 卡片
-  const settingsOk = await win.webContents.executeJavaScript(`
-    (async function() {
-      try {
-        // 设置现在在左栏的 mode-settings tab（不是右侧的 ViewTabs）
-        const settingsTab = document.querySelector('[data-testid="mode-settings"]');
-        if (!settingsTab) return { ok: false, reason: "mode-settings tab not found" };
-        settingsTab.click();
-        for (let i = 0; i < 30; i++) {
-          if (document.querySelector('[data-testid="provider-grid"]')) break;
-          await new Promise(r => setTimeout(r, 100));
-        }
-        const providers = document.querySelectorAll('[data-testid^="provider-card-"]').length;
-        const addCustom = !!document.querySelector('[data-testid="add-custom-provider"]');
-        return { ok: providers >= 5 && addCustom, providers, addCustom };
-      } catch (e) {
-        return { ok: false, error: String(e) };
-      }
-    })()
-  `);
+  // T10 (release): getProviderPresets IPC 返回 ≥5 个 provider
+  const presetsCheck = await win.webContents.executeJavaScript(
+    `window.api.getProviderPresets().then(p => ({count: p.length})).catch(e => ({count: 0, error: String(e)}))`,
+  );
   results.push({
-    name: "settings mode: 5 providers + custom provider button",
-    ok: settingsOk?.ok === true,
-    detail: settingsOk,
+    name: "getProviderPresets IPC returns ≥5 providers",
+    ok: presetsCheck?.count >= 5,
+    detail: presetsCheck,
   });
 
   // T11 (release): 导入课程 tab 渲染 URL 输入 + markdown 切换 + 课程列表

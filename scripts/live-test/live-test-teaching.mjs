@@ -54,12 +54,17 @@ const BASE_PROMPT =
   "【防幻觉红线】你必须严格基于下面提供的课程上下文和当前节点内容回答。" +
   "对于课程标题中出现的专有名词、缩写（如 FDE = Forward Deployment Engineer），" +
   "必须使用课程上下文里的定义，绝不可自行猜测或编造。" +
-  "如果学习者问的内容超出了你掌握的上下文，明确说'这部分内容不在当前课程材料中'。";
+  "如果学习者问的内容超出了你掌握的上下文，明确说'这部分内容不在当前课程材料中'，" +
+  "而不是编造一个看似合理的回答。\n\n" +
+  "【模糊提问处理】当学习者说'我不懂''不太理解'但没说具体不懂什么时，" +
+  "不要假设你知道他哪里不懂然后长篇大论。" +
+  "先反问'你具体是哪个概念不太清楚？'，或者列出这课涉及的 2-3 个核心概念让他选。" +
+  "只讲解学习者明确问到的部分，不要主动扩展到课程内容之外的领域知识。";
 
 const db = drizzle(sqljs, { schema });
 
 // 建种子课程 + 课时（FDE 的第一个 lesson 有真实内容）
-const readme = readFileSync(join(ROOT, "src/main/services/seed-fde-readme.md"), "utf8");
+const readme = readFileSync(join(ROOT, "src/main/assets/seed-fde-readme.md"), "utf8");
 const { generateCourseFromMarkdown } = await import("../../src/main/services/course-generator.ts");
 generateCourseFromMarkdown(db, readme, { repoUrl: "test", repoName: "FDE", courseId: "test-fde" });
 
@@ -278,4 +283,107 @@ if (passCount === testCount) {
   console.log("=== ✅ 所有硬断言通过 ===");
 } else {
   console.log("=== ⚠️ 部分硬断言未通过（需改进 harness）===");
+}
+
+// ================================================================
+// §3.2 Supervisor 子 agent 打分（VERIFICATION.md 铁律）
+// ================================================================
+// 独立 prompt，不含生成器代码/dev 对话
+// 只看: 学习者提问 + AI 回复 + 课程标题
+// 4 维度 0-10: 防幻觉 / 引导性 / 纠错准确性 / 出题质量
+// 通过阈值: 每维度 ≥8/10
+
+console.log("\n=== §3.2 Supervisor 评判 ===");
+
+// 收集要评判的回复（从前面的测试中复用）
+const supervisorCases = [];
+
+// Case 1: 防幻觉 — FDE 缩写
+{
+  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-fde"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-fde" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "FDE 是什么意思？");
+  supervisorCases.push({ label: "防幻觉-FDE定义", learnerMsg: "FDE 是什么意思？", aiReply: reply, contextSummary: `课程标题: Awesome Forward Deployment Engineering (FDE)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["防幻觉"] });
+}
+
+// Case 2: 引导性 — 苏格拉底模式
+{
+  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-fde"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-fde" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "我不太理解这一课的内容，能帮帮我吗？");
+  supervisorCases.push({ label: "引导性-苏格拉底", learnerMsg: "我不太理解这一课的内容，能帮帮我吗？", aiReply: reply, contextSummary: `课程标题: Awesome Forward Deployment Engineering (FDE)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["引导性"] });
+}
+
+// Case 3: 纠错 — 学习者故意说错
+{
+  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-fde"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-fde" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "我觉得 FDE 就是前端开发工程师，对吧？");
+  supervisorCases.push({ label: "纠错-故意说错", learnerMsg: "我觉得 FDE 就是前端开发工程师，对吧？", aiReply: reply, contextSummary: `课程标题: Awesome Forward Deployment Engineering (FDE)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["纠错准确性"] });
+}
+
+// Case 4: 出题质量 — 考考我
+{
+  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-fde"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-fde" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "出一道关于这一课的练习题考考我。");
+  supervisorCases.push({ label: "出题质量-考考我", learnerMsg: "出一道关于这一课的练习题考考我。", aiReply: reply, contextSummary: `课程标题: Awesome Forward Deployment Engineering (FDE)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["出题质量"] });
+}
+
+// Supervisor prompt（§3.2: 独立、不含生成器代码、只看行为）
+const SUPERVISOR_PROMPT = `你是教学质量验收评判员。你只看到四样东西：
+1. 课程标题
+2. AI 被给定的上下文摘要（AI 有权引用的内容范围）
+3. 学习者的提问
+4. AI 导师的回复
+
+你不知道代码怎么写的，也不需要知道。你只判断 AI 的回复质量。
+
+评判标准:
+- 防幻觉: AI 回复中的事实/概念是否在"上下文摘要"范围内？如果 AI 提到了摘要中没有的概念/工具/章节，那就是幻觉。如果提到的东西在摘要中，即使不在标题里，也不算幻觉。
+- 引导性: 回复是否用问题/类比引导学习者思考，而非直接倾倒答案？
+- 纠错准确性: 如果学习者有误解，AI 是否准确指出并纠正？（没有误解的场景评 null）
+- 出题质量: 如果出了题，是否考理解而非死记？干扰项是否合理？（没出题的场景评 null）
+
+严格返回 JSON，不要加 markdown 代码块标记:
+{
+  "scores": { "防幻觉": N, "引导性": N, "纠错准确性": N或null, "出题质量": N或null },
+  "issues": ["问题1", "问题2"]
+}`;
+
+let supervisorPass = 0;
+const THRESHOLD = 8;
+
+for (const c of supervisorCases) {
+  console.log(`\n--- Supervisor 评判: ${c.label} ---`);
+
+  const supervisorInput = `${c.contextSummary}\n\n学习者提问: ${c.learnerMsg}\n\nAI 导师回复:\n${c.aiReply}`;
+
+  try {
+    // 独立调 LLM（supervisor 子 agent，不同 system prompt）
+    const sResult = await callGlm(SUPERVISOR_PROMPT, supervisorInput);
+    const cleaned = sResult.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const parsed = JSON.parse(cleaned);
+
+    console.log(`  AI回复片段: ${c.aiReply.slice(0, 80)}...`);
+
+    let casePass = true;
+    for (const [dim, score] of Object.entries(parsed.scores)) {
+      if (score === null) {
+        console.log(`  ℹ️ ${dim}: N/A`);
+        continue;
+      }
+      const ok = score >= THRESHOLD;
+      console.log(`  ${ok ? "✅" : "❌"} ${dim}: ${score}/10 ${ok ? "" : "(<8 不通过)"}`);
+      if (!ok) casePass = false;
+    }
+
+    if (parsed.issues?.length > 0) {
+      console.log(`  ⚠️ 问题: ${parsed.issues.join("; ")}`);
+    }
+
+    if (casePass) supervisorPass++;
+  } catch (e) {
+    console.log(`  ❌ Supervisor 异常: ${e.message}`);
+  }
+}
+
+console.log(`\n=== Supervisor 汇总 ===`);
+console.log(`通过: ${supervisorPass}/${supervisorCases.length} (阈值: 每维度≥${THRESHOLD}/10)`);
+if (supervisorPass === supervisorCases.length) {
+  console.log("=== ✅ Supervisor 全部通过 ===");
+} else {
+  console.log("=== ⚠️ 部分维度未达阈值（需改进 harness）===");
 }

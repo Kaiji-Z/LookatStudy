@@ -1,6 +1,11 @@
 # AGENTS.md — LookatStudy
 
-Guidance for AI coding agents working in this repo. Read this + `README.md` + `PRODUCT.md` + `docs/` first.
+Guidance for AI coding agents working in this repo. Read this + `README.md` + `PRODUCT.md` + `VERIFICATION.md` + `docs/` first.
+
+## Mandatory protocol
+
+Before developing any feature or changing any code, read and follow `VERIFICATION.md`.
+Output that violates a red line in VERIFICATION.md §7 is void.
 
 ## What this is
 

@@ -389,27 +389,9 @@ export function ChatPanel({
           selectedNode
             ? agentReady?.ready
               ? (
-                <div className="space-y-3 mt-4">
-                  <div className="text-neutral-400 text-sm text-center">
-                    {translate("chat.starter.hint")}
-                  </div>
-                  {starterPrompts.length > 0 && (
-                    <div className="grid grid-cols-1 gap-2" data-testid="starter-prompts">
-                      {starterPrompts.map((p, i) => (
-                        <button
-                          key={i}
-                          onClick={() => handleStarterClick(p.message)}
-                          disabled={streaming}
-                          data-testid={`starter-prompt-${i}`}
-                          className="flex items-center gap-2 text-left p-3 rounded-xl border border-neutral-700 bg-neutral-900/50 hover:border-brand/50 hover:bg-brand/5 transition-all text-sm text-neutral-200 group"
-                        >
-                          <span className="text-lg shrink-0">{p.icon}</span>
-                          <span className="flex-1">{p.label}</span>
-                          <span className="text-brand opacity-0 group-hover:opacity-100 transition-opacity shrink-0">→</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                <div className="text-center mt-12">
+                  <div className="text-4xl mb-3 opacity-30">💬</div>
+                  <div className="text-neutral-500 text-sm">{translate("chat.starter.hint")}</div>
                 </div>
               )
               : (
@@ -462,6 +444,23 @@ export function ChatPanel({
           </div>
         ) : (
           <>
+            {/* 常驻 starter 按钮（输入框上方，横向可滚动） */}
+            {starterPrompts.length > 0 && selectedNode && (
+              <div className="flex gap-1.5 overflow-x-auto pb-2 mb-1 scrollbar-thin" data-testid="starter-prompts">
+                {starterPrompts.map((p, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleStarterClick(p.message)}
+                    disabled={streaming}
+                    data-testid={`starter-prompt-${i}`}
+                    className="shrink-0 flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border border-neutral-700 bg-neutral-900/50 hover:border-brand/50 hover:bg-brand/5 hover:text-brand transition-all text-neutral-400"
+                  >
+                    <span>{p.icon}</span>
+                    <span>{p.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex gap-2 items-end">
               <textarea
                 value={input}

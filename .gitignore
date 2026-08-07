@@ -50,8 +50,6 @@ Thumbs.db
 ui-screenshot.png
 
 # local-only working notes (not project content)
-HANDOFF.md
-VERIFICATION.md
 
 # local-only: research notes referencing external projects (kept out of public repo)
 .zcode-reference/

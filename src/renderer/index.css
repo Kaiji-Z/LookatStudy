@@ -88,33 +88,104 @@
   }
 }
 
-/* Lesson bubble 3D depth — Duolingo's signature rounded node */
+/* ============================================================
+ * v0.5 选关地图节点美术(多邻国 2024+ 现代风)
+ * 核心:radial-gradient 球体光照 + ::before 内高光 + ::after 发光环
+ * 四态差异最大化:locked 沉重凹陷 / available 发光脉冲 /
+ *                in_progress 进度环 / mastered 皇冠光环放大
+ * ============================================================ */
+
 .lesson-bubble {
   @apply relative rounded-full transition-all duration-200;
+  /* 球体光照:左上高光位 → 右下阴影位,模拟 3D 球 */
+  background-position: 30% 25%;
 }
+
+/* 内高光:球体顶部白色半圆(模拟光照) */
+.lesson-bubble::before {
+  content: "";
+  position: absolute;
+  top: 12%;
+  left: 22%;
+  width: 38%;
+  height: 28%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 70%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── 🔒 locked:沉重灰石头,凹陷感 ── */
+.lesson-bubble-locked {
+  background: radial-gradient(circle at 35% 30%, #4a4a52 0%, #2a2a32 60%, #1a1a20 100%);
+  box-shadow:
+    inset 0 3px 6px rgba(0,0,0,0.5),
+    inset 0 -2px 4px rgba(255,255,255,0.04),
+    0 2px 4px rgba(0,0,0,0.3);
+}
+.lesson-bubble-locked::before {
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0) 70%);
+}
+
+/* ── 🟢 available:明亮发光球,该你了 ── */
 .lesson-bubble-available {
-  @apply bg-gradient-to-br from-brand to-brand-dark text-white;
-  box-shadow: 0 6px 0 0 #46a302, 0 8px 16px rgba(88, 204, 2, 0.3);
+  background: radial-gradient(circle at 32% 28%, #8eea4a 0%, #58cc02 45%, #46a302 100%);
+  box-shadow:
+    0 0 0 4px rgba(88, 204, 2, 0.15),
+    0 0 16px rgba(88, 204, 2, 0.35),
+    0 4px 10px rgba(0,0,0,0.25);
 }
 .lesson-bubble-available:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 0 0 #46a302, 0 12px 20px rgba(88, 204, 2, 0.4);
+  transform: translateY(-3px) scale(1.03);
+  box-shadow:
+    0 0 0 5px rgba(88, 204, 2, 0.2),
+    0 0 22px rgba(88, 204, 2, 0.5),
+    0 6px 14px rgba(0,0,0,0.3);
 }
 .lesson-bubble-available:active {
-  transform: translateY(4px);
-  box-shadow: 0 2px 0 0 #46a302, 0 4px 8px rgba(88, 204, 2, 0.2);
+  transform: translateY(2px) scale(0.97);
+  box-shadow:
+    0 0 0 3px rgba(88, 204, 2, 0.15),
+    0 0 10px rgba(88, 204, 2, 0.3),
+    0 2px 6px rgba(0,0,0,0.2);
 }
+
+/* ── 🔵 in_progress:蓝色动感,进行中 ── */
 .lesson-bubble-in-progress {
-  @apply bg-gradient-to-br from-accent to-accent-dark text-white;
-  box-shadow: 0 6px 0 0 #0a8cdc, 0 8px 16px rgba(28, 176, 246, 0.3);
+  background: radial-gradient(circle at 32% 28%, #5ed4ff 0%, #1cb0f6 45%, #0a8cdc 100%);
+  box-shadow:
+    0 0 0 4px rgba(28, 176, 246, 0.15),
+    0 0 14px rgba(28, 176, 246, 0.3),
+    0 4px 10px rgba(0,0,0,0.25);
 }
+.lesson-bubble-in-progress:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow:
+    0 0 0 5px rgba(28, 176, 246, 0.2),
+    0 0 20px rgba(28, 176, 246, 0.45),
+    0 6px 14px rgba(0,0,0,0.3);
+}
+
+/* ── 🟡 mastered:金色耀眼,皇冠光环,球体放大 ── */
 .lesson-bubble-mastered {
-  @apply bg-gradient-to-br from-yellow-400 to-yellow-600 text-white;
-  box-shadow: 0 6px 0 0 #b8860b, 0 8px 16px rgba(255, 200, 0, 0.3);
+  background: radial-gradient(circle at 32% 28%, #ffe680 0%, #ffc800 45%, #d99e00 100%);
+  box-shadow:
+    0 0 0 4px rgba(255, 200, 0, 0.2),
+    0 0 22px rgba(255, 200, 0, 0.45),
+    0 0 40px rgba(255, 200, 0, 0.15),
+    0 4px 12px rgba(0,0,0,0.25);
+  transform: scale(1.1);
 }
-.lesson-bubble-locked {
-  @apply bg-neutral-800 text-neutral-600;
-  box-shadow: 0 4px 0 0 #262626;
+.lesson-bubble-mastered::before {
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 70%);
+}
+.lesson-bubble-mastered:hover {
+  transform: scale(1.13) translateY(-2px);
+  box-shadow:
+    0 0 0 5px rgba(255, 200, 0, 0.25),
+    0 0 28px rgba(255, 200, 0, 0.55),
+    0 0 50px rgba(255, 200, 0, 0.2),
+    0 6px 16px rgba(0,0,0,0.3);
 }
 
 /* v0.2: 移除 bubble-pulse / flame-flicker 无限循环装饰动效。

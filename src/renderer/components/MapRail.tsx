@@ -230,14 +230,25 @@ function MapSection({
     .filter((n) => n.parentId === section.id)
     .sort((a, b) => a.orderIdx - b.orderIdx);
 
+  // 章节背景色循环(轻微区域感:浅绿/浅蓝/浅金交替)
+  const SECTION_TINTS = [
+    "bg-brand/[0.04]",
+    "bg-accent/[0.04]",
+    "bg-gold/[0.04]",
+  ];
+  const tintClass = SECTION_TINTS[sectionIndex % SECTION_TINTS.length];
+
   return (
-    <section data-testid={`map-section-${sectionIndex}`}>
-      {/* 章节标题 */}
-      <div className="flex items-center gap-1.5 mb-3 px-1">
-        <span className="text-[9px] font-extrabold text-brand bg-brand/15 px-1.5 py-0.5 rounded uppercase tracking-wider">
-          U{sectionIndex + 1}
+    <section
+      data-testid={`map-section-${sectionIndex}`}
+      className={`${tintClass} rounded-2xl py-3 px-2`}
+    >
+      {/* 章节路牌标题(像游戏关卡指示牌) */}
+      <div className="flex items-center gap-2 mb-4 px-2 py-1.5 bg-white/60 dark:bg-neutral-900/50 rounded-xl border border-neutral-200/60 dark:border-neutral-800/60 shadow-sm">
+        <span className="w-6 h-6 rounded-lg bg-brand text-white text-[10px] font-extrabold flex items-center justify-center shrink-0">
+          {sectionIndex + 1}
         </span>
-        <span className="text-[11px] font-bold text-neutral-600 dark:text-neutral-400 truncate flex-1">
+        <span className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 truncate flex-1">
           {section.title}
         </span>
       </div>
@@ -245,22 +256,27 @@ function MapSection({
       {/* 蜿蜒路径 + 节点 */}
       <div className="relative">
         <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
-          {lessons.slice(0, -1).map((_, i) => {
+          {lessons.slice(0, -1).map((_lesson, i) => {
             const left = i % 2 === 0;
             const nextLeft = (i + 1) % 2 === 0;
             const x1 = left ? "30%" : "70%";
             const x2 = nextLeft ? "30%" : "70%";
             const y1 = `${(i / lessons.length) * 100 + 8}%`;
             const y2 = `${((i + 1) / lessons.length) * 100 - 8}%`;
+            // 路径颜色:前置节点已通过 → 走过的路(亮色实线);否则未走过(灰虚线)
+            const fromLesson = lessons[i];  // 用 _lesson 标记未用但通过索引取
+            const fromProgress = fromLesson ? progressMap[fromLesson.id] : undefined;
+            const isPassed = fromProgress?.status === "mastered" || fromProgress?.status === "in_progress" || fromProgress?.status === "available";
             return (
               <path
                 key={i}
                 d={`M ${x1} ${y1} C ${x1} ${(parseInt(y1) + parseInt(y2)) / 2}%, ${x2} ${(parseInt(y1) + parseInt(y2)) / 2}%, ${x2} ${y2}`}
-                stroke="rgb(180 180 190)"
-                strokeWidth={3}
+                stroke={isPassed ? "rgb(88 204 2)" : "rgb(200 200 210)"}
+                strokeWidth={isPassed ? 4 : 2.5}
+                strokeOpacity={isPassed ? 0.5 : 0.7}
                 fill="none"
                 strokeLinecap="round"
-                strokeDasharray="2 8"
+                strokeDasharray={isPassed ? "none" : "3 7"}
               />
             );
           })}

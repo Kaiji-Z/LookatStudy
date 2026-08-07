@@ -16,6 +16,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Check, X } from "lucide-react";
 /** 一条消息 = role + parts 数组(v0.2 parts-based)。 */
 export interface ChatMessageV2 {
   id: string;
@@ -109,7 +110,7 @@ function MessageRowV2({
   if (msg.role === "user") {
     // user:左 4px 绿色竖条 + 全宽浅绿底(扁平,非气泡)
     return (
-      <div className="msg-enter border-l-4 border-brand pl-3 py-1.5" data-testid="msg-user">
+      <div className="msg-enter bg-brand/10 dark:bg-brand/15 rounded-lg px-3 py-2 border border-brand/20" data-testid="msg-user">
         <div className="font-medium text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap" style={{ fontSize: "var(--chat-font-size, 15px)" }}>
           {msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
         </div>
@@ -254,14 +255,14 @@ function ToolCallBlock({
             data-testid="proposal-apply"
             className="btn-3d-brand px-4 py-1.5 text-xs"
           >
-            ✓ 应用
+            <Check className="w-3 h-3 inline" />应用
           </button>
           <button
             onClick={() => onRejectProposal?.(proposalData.proposalId!, msgId, toolCallIdx)}
             data-testid="proposal-reject"
             className="btn-3d-neutral px-4 py-1.5 text-xs"
           >
-            ✕ 拒绝
+            <X className="w-3 h-3 inline" />拒绝
           </button>
         </div>
       </div>

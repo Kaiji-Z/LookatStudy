@@ -35,6 +35,28 @@
 
 /* === Duolingo-inspired design system === */
 
+/* v0.4 设计 token:统一的 elevation(阴影)+ radius(圆角)语义。
+   所有组件用这些 token,禁止裸 tailwind shadow / rounded 混用。
+   规范(impeccable polish):
+     - radius: tag/button=full, card=lg(12px), panel/menu=xl(16px), input=md(8px)
+     - elevation: 浮层=shadow-elevated(仅阴影无边框), 卡片=shadow-card(细边框+微阴影二选一)
+   ghost-card 禁令:1px border + 大阴影 blur 不能同用(Codex defect)。 */
+@layer components {
+  /* elevation 语义(只用阴影,不配 border) */
+  .shadow-elevated {
+    /* 浮层/抽屉/菜单:明显抬起感 */
+    box-shadow: 0 8px 24px -4px rgb(0 0 0 / 0.18), 0 2px 6px -2px rgb(0 0 0 / 0.12);
+  }
+  .shadow-card {
+    /* 卡片:微阴影,不配 border(若需分隔用 border 单独) */
+    box-shadow: 0 1px 3px -1px rgb(0 0 0 / 0.08);
+  }
+  .shadow-pop {
+    /* 弹出菜单/tooltip:中等抬起 */
+    box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.14), 0 1px 3px -1px rgb(0 0 0 / 0.08);
+  }
+}
+
 /* 3D push-down buttons (Duolingo signature style) */
 @layer components {
   .btn-3d {

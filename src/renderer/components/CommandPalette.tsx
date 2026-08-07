@@ -8,6 +8,7 @@
  * 注:命令实际触发见 useChatStream 的 lookatstudy-command 事件监听。
  */
 import { useState, useEffect, useRef } from "react";
+import { Search } from "lucide-react";
 
 interface Command {
   id: string;
@@ -67,10 +68,10 @@ export function CommandPalette({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] px-4" data-testid="command-palette">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
+      <div className="relative w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-elevated overflow-hidden">
         {/* 搜索框 */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
-          <span className="text-neutral-400">🔍</span>
+          <Search className="w-4 h-4 text-neutral-400" />
           <input
             ref={inputRef}
             value={query}

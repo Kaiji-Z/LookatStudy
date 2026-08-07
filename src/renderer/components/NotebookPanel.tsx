@@ -14,6 +14,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../lib/api.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
+import { Pin, Trash, MapPin } from "lucide-react";
 
 export type NotebookTab = "content" | "notes" | "all";
 
@@ -110,17 +111,20 @@ export function NotebookPanel({
 function ContentTab({ selectedNode }: { selectedNode: ContentNode | null }) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (!selectedNode) {
       setContent(null);
+      setLoadError(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
+    setLoadError(false);
     api.getNodeContent(selectedNode.id)
       .then((c) => { if (!cancelled) setContent(c); })
-      .catch(() => { if (!cancelled) setContent(null); })
+      .catch(() => { if (!cancelled) { setContent(null); setLoadError(true); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [selectedNode?.id]);
@@ -144,7 +148,11 @@ function ContentTab({ selectedNode }: { selectedNode: ContentNode | null }) {
         {selectedNode.title}
       </h2>
       {loading ? (
-        <div className="text-sm text-neutral-400 dark:text-neutral-600">加载内容中…</div>
+        <div className="text-sm text-neutral-500 dark:text-neutral-400 flex items-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在加载这一节的讲解…</div>
+      ) : loadError ? (
+        <div className="text-sm text-red-500 dark:text-red-400">
+          ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
+        </div>
       ) : content ? (
         <div className="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300 leading-relaxed">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
@@ -185,7 +193,7 @@ function NotesTab({
     return <EmptyNotebook message="选一个节点后,这里显示该节点的 AI 笔记" icon="📓" />;
   }
   if (loading) {
-    return <div className="text-center py-12 text-sm text-neutral-400">加载笔记…</div>;
+    return <div className="text-center py-12 text-sm text-neutral-500 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在整理这一节的 AI 笔记…</div>;
   }
   if (items.length === 0) {
     return (
@@ -236,7 +244,7 @@ function AllTab({
   }, [courseId]);
 
   if (loading) {
-    return <div className="text-center py-12 text-sm text-neutral-400">加载笔记本…</div>;
+    return <div className="text-center py-12 text-sm text-neutral-500 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在翻开你的笔记本…</div>;
   }
   if (items.length === 0) {
     return <EmptyNotebook message="笔记本还是空的。学习时 AI 生成的产物会自动保存到这里" icon="📓" />;
@@ -292,14 +300,14 @@ function CanvasItemCard({
         <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300 flex-1 truncate">
           {item.title ?? ARTIFACT_LABEL[item.artifactType] ?? item.artifactType}
         </span>
-        {item.pinned ? <span className="text-[10px] text-brand font-bold">📌 已置顶</span> : null}
+        {item.pinned ? <span className="text-[10px] text-brand font-bold flex items-center gap-0.5"><Pin className="w-2.5 h-2.5" />已置顶</span> : null}
         <button
           onClick={() => onTogglePin(item.id)}
           className="text-[10px] text-neutral-400 hover:text-brand"
           data-testid={`canvas-pin-${item.id.slice(0, 8)}`}
           title={item.pinned ? "取消置顶" : "置顶"}
         >
-          {item.pinned ? "取消置顶" : "📌"}
+          <Pin className="w-3 h-3" />
         </button>
         <button
           onClick={() => onRemove(item.id)}
@@ -307,13 +315,13 @@ function CanvasItemCard({
           data-testid={`canvas-delete-${item.id.slice(0, 8)}`}
           title="删除"
         >
-          🗑️
+          <Trash className="w-3 h-3" />
         </button>
       </div>
 
       {/* 归属节点(全部标签才显示) */}
       {nodeTitle && (
-        <div className="text-[10px] text-neutral-400 dark:text-neutral-600 mb-1.5">📍 {nodeTitle}</div>
+        <div className="text-[10px] text-neutral-400 dark:text-neutral-600 mb-1.5 flex items-center gap-0.5"><MapPin className="w-2.5 h-2.5" />{nodeTitle}</div>
       )}
 
       {/* 产物内容 */}

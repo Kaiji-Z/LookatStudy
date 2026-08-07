@@ -55,7 +55,7 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
   const sessionCount = Math.min(totalDue, MAX_SESSION);
 
   if (loading) {
-    return <div className="text-center py-12 text-sm text-neutral-400">加载复习数据…</div>;
+    return <div className="text-center py-12 text-sm text-neutral-500 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在检查哪些课该复习了…</div>;
   }
 
   if (items.length === 0) {

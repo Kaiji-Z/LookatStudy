@@ -14,6 +14,7 @@
  * 与 v0.1 的技能树不同:这里节点更大、有星星、有路径感、有总进度。
  */
 import type { ContentNode, Progress } from "@shared/types";
+import { Map as MapIcon, FileText, ChevronLeft, ChevronRight, BookOpen } from "lucide-react";
 
 export type MapView = "map" | "import";
 
@@ -62,9 +63,9 @@ function MapRailCollapsed({
         title="展开地图"
         data-testid="map-expand"
       >
-        ›
+        <ChevronRight className="w-4 h-4" />
       </button>
-      <div className="text-lg mb-3">🗺️</div>
+      <div className="mb-3"><MapIcon className="w-5 h-5 text-brand" /></div>
       {currentNode && status && (
         <div
           className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${
@@ -108,11 +109,11 @@ function MapRailExpanded({
         <div className="flex items-center justify-between">
           <button
             onClick={onToggleCollapse}
-            className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 text-xs"
+            className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
             title="折叠地图"
             data-testid="map-collapse"
           >
-            ‹
+            <ChevronLeft className="w-4 h-4" />
           </button>
           <div className="flex gap-1">
             <MapNavBtn
@@ -120,14 +121,14 @@ function MapRailExpanded({
               onClick={() => onViewChange("map")}
               testid="map-view-map"
             >
-              🗺️
+              <MapIcon className="w-4 h-4" />
             </MapNavBtn>
             <MapNavBtn
               active={view === "import"}
               onClick={() => onViewChange("import")}
               testid="map-view-import"
             >
-              ⊕
+              <FileText className="w-4 h-4" />
             </MapNavBtn>
           </div>
         </div>
@@ -161,7 +162,7 @@ function MapRailExpanded({
                   className="flex items-center gap-1 text-orange-500 dark:text-orange-400 hover:underline"
                   data-testid="map-review-badge"
                 >
-                  <span>📖</span>
+                  <BookOpen className="w-3 h-3" />
                   <span className="font-bold">{dueCount}</span>
                   <span>待复习</span>
                 </button>

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { Settings, Sun, Moon, Flame, Target } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -25,9 +26,9 @@ import { translate } from "./lib/i18n.js";
 
 /**
  * v0.2 三栏布局(M1 重构):
- *   左 NavRail(导航 + 迷你路径 + 复习入口)
+ *   左 MapRail(选关地图 + 复习入口)
  *   中 AI 对话流(ChatStream parts-based + ChatComposer)
- *   右 ArtifactPanel(内容 / 产物 / 复习)
+ *   右 NotebookPanel(讲解 / 笔记 / 全部)
  *
  * - Header 简化:课程选择器移左栏,设置移齿轮
  * - "💬对话/📝练习/⚙️设置"三 tab 拆解:设置移 Header,练习并入对话流(M2),对话用 ChatStream
@@ -62,7 +63,7 @@ export default function App() {
   const [view, setView] = useState<MapView>("map");
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [dueCount, setDueCount] = useState(0);
-  // M3: overdue 的 nodeId 集合(供 NavRail 在路径上标记复习节点)
+  // M3: overdue 的 nodeId 集合(供 MapRail 在路径上标记复习节点)
   const [dueNodeIds, setDueNodeIds] = useState<Set<string>>(new Set());
 
   // 选中节点(联动三栏)
@@ -307,7 +308,7 @@ export default function App() {
       {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
 
       <div className="flex-1 flex min-h-0">
-        {/* 左栏:MapRail 选关地图(v0.3 替代 NavRail,合并仪表盘+技能树) */}
+        {/* 左栏:MapRail 选关地图(合并仪表盘+技能树) */}
         <MapRail
           view={view}
           onViewChange={setView}
@@ -478,39 +479,46 @@ function Header({
   return (
     <header className="border-b border-neutral-200 dark:border-neutral-800/50 px-6 py-2.5 flex items-center justify-between shrink-0 bg-neutral-50/80 dark:bg-neutral-950/80 backdrop-blur-sm">
       <div className="flex items-center gap-2.5">
-        <h1 className="text-sm font-bold tracking-tight text-neutral-700 dark:text-neutral-300">
-          {translate("view.tree")}
+        <div
+          className="w-7 h-7 rounded-xl bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center text-white font-extrabold text-xs shadow-md"
+          style={{ boxShadow: "0 2px 8px rgba(88, 204, 2, 0.3)" }}
+        >
+          L
+        </div>
+        <h1 className="text-sm font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
+          Lookat<span className="text-brand">Study</span>
         </h1>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         {xp && (
-          <div className="flex items-center gap-2" data-testid="xp-bar">
-            <div className="w-24 h-2 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
+          <div className="flex items-center gap-1.5" data-testid="xp-bar">
+            <Target className="w-3.5 h-3.5 text-neutral-400" />
+            <div className="w-20 h-2 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${xp.achieved ? "bg-gold" : "bg-brand"}`}
                 style={{ width: `${Math.max(3, xp.pct)}%` }}
               />
             </div>
             <span className={`text-xs font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-500 dark:text-neutral-400"}`}>
-              {xp.todayXp}/{xp.dailyGoal} XP
+              {xp.todayXp}/{xp.dailyGoal}
             </span>
           </div>
         )}
         <button
           onClick={toggleTheme}
           data-testid="theme-toggle"
-          className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-sm w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
+          className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
           title={theme === "dark" ? "切换到亮色" : "切换到暗色"}
         >
-          {theme === "dark" ? "☀️" : "🌙"}
+          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
         <button
           onClick={onOpenSettings}
           data-testid="header-settings"
-          className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-sm w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
+          className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
           title="设置 (Ctrl+S)"
         >
-          ⚙️
+          <Settings className="w-4 h-4" />
         </button>
         {streak && <StreakBadge streak={streak} />}
       </div>
@@ -524,7 +532,7 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="settings-drawer">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-md h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800 shadow-xl flex flex-col">
+      <div className="relative w-full max-w-md h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800 shadow-elevated flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
           <h2 className="text-sm font-bold">{translate("settings.title")}</h2>
           <button
@@ -557,7 +565,7 @@ function ReviewDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="review-drawer">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-md h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800 shadow-xl flex flex-col">
+      <div className="relative w-full max-w-md h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800 shadow-elevated flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
           <h2 className="text-sm font-bold">📖 复习</h2>
           <button
@@ -591,11 +599,11 @@ function ErrorBanner({ message, onClose }: { message: string; onClose: () => voi
 function StreakBadge({ streak }: { streak: Streak }) {
   return (
     <div
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20"
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20"
       data-testid="streak-badge"
       title={`连续学习 ${streak.currentStreak} 天 · 最长 ${streak.longestStreak} 天`}
     >
-      <span className="text-sm">🔥</span>
+      <Flame className="w-4 h-4 text-orange-500 dark:text-orange-400" />
       <span className="text-sm font-extrabold text-orange-500 dark:text-orange-400">{streak.currentStreak}</span>
     </div>
   );

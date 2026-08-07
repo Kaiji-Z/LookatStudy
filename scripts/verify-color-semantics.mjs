@@ -100,9 +100,9 @@ test("T6 关键 testid 存在(无被误删)", () => {
   const appContent = readFileSync(join(__dirname, "..", "src", "renderer", "App.tsx"), "utf-8");
   const combined = allContent + "\n" + appContent;
   const required = [
-    "nav-rail", "chat-panel", "chat-stream", "artifact-panel",
+    "map-rail", "chat-panel", "chat-stream", "notebook-panel",
     "composer", "skill-select", "xp-bar", "streak-badge",
-    "command-palette", "review-panel",
+    "command-palette", "thread-switcher",
   ];
   for (const id of required) {
     assert.ok(

@@ -12,6 +12,7 @@
  */
 import { useState, useRef, useEffect } from "react";
 import type { Thread } from "@shared/types";
+import { Plus, Settings, Edit, Archive, Trash } from "lucide-react";
 
 interface ThreadSwitcherProps {
   threads: Thread[];
@@ -133,9 +134,7 @@ export function ThreadSwitcher({
                   className="text-[10px] text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 opacity-0 group-hover:opacity-100 transition-opacity w-4 h-4 flex items-center justify-center rounded"
                   data-testid={`thread-gear-${t.id.slice(0, 8)}`}
                   title="操作"
-                >
-                  ⚙
-                </button>
+                ><Settings className="w-3 h-3" /></button>
               )}
             </div>
           );
@@ -147,7 +146,7 @@ export function ThreadSwitcher({
           className="px-3 py-2 text-neutral-500 hover:text-brand hover:bg-neutral-50 dark:hover:bg-neutral-900/60 text-sm shrink-0"
           data-testid="thread-new"
           title="新建会话"
-        >+</button>
+        ><Plus className="w-4 h-4" /></button>
       </div>
 
       {/* 齿轮菜单:fixed 定位,脱离标签条的 overflow:auto 容器,依附齿轮下方 */}
@@ -158,22 +157,22 @@ export function ThreadSwitcher({
           <div
             ref={menuRef}
             style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
-            className="z-50 w-32 bg-white dark:bg-neutral-900 rounded-lg shadow-xl border border-neutral-200 dark:border-neutral-800 py-1"
+            className="z-50 w-32 bg-white dark:bg-neutral-900 rounded-lg shadow-pop py-1"
             data-testid={`thread-menu-${t.id.slice(0, 8)}`}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => startRename(t)}
               className="w-full text-left px-3 py-1.5 text-[11px] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
-            >✎ 重命名</button>
+            ><Edit className="w-3 h-3 inline mr-1" />重命名</button>
             <button
               onClick={() => { onArchive(t.id); setMenuFor(null); setMenuPos(null); }}
               className="w-full text-left px-3 py-1.5 text-[11px] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
-            >📦 归档</button>
+            ><Archive className="w-3 h-3 inline mr-1" />归档</button>
             <button
               onClick={() => { if (confirm("删除这条会话?消息也会删除")) { onDelete(t.id); setMenuFor(null); setMenuPos(null); } }}
               className="w-full text-left px-3 py-1.5 text-[11px] text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
-            >🗑️ 删除</button>
+            ><Trash className="w-3 h-3 inline mr-1" />删除</button>
           </div>
         );
       })()}

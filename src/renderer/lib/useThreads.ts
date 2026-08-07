@@ -100,6 +100,33 @@ export function useThreads(courseId: string | null) {
     [threads],
   );
 
+  /**
+   * 软删 + undo:先从 UI 移除(乐观),返回被删 thread。
+   * 调用方拿到后弹 undo toast;若 undo 则用 restore 恢复;否则 5 秒后真删。
+   * 避免误删数据灾难。
+   */
+  const removeWithUndo = useCallback(
+    (id: string): Thread | null => {
+      const removed = threads.find((t) => t.id === id) ?? null;
+      if (!removed) return null;
+      // 乐观:先从 UI 移除
+      setThreads((prev) => prev.filter((t) => t.id !== id));
+      setActiveId((prev) => {
+        if (prev !== id) return prev;
+        const remaining = threads.filter((t) => t.id !== id);
+        return remaining[0]?.id ?? null;
+      });
+      return removed;
+    },
+    [threads],
+  );
+
+  /** 恢复被软删的 thread(undo)。 */
+  const restore = useCallback((thread: Thread) => {
+    setThreads((prev) => [thread, ...prev.filter((t) => t.id !== thread.id)]);
+    setActiveId(thread.id);
+  }, []);
+
   /** 点地图节点:跳到该节点的最近 thread,没有则只记焦点(不立即建,输入才建)。 */
   const focusNode = useCallback(
     async (nodeId: string) => {
@@ -147,6 +174,8 @@ export function useThreads(courseId: string | null) {
     create,
     update,
     remove,
+    removeWithUndo,
+    restore,
     focusNode,
     ensureThreadForSend,
   };

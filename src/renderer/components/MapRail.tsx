@@ -176,9 +176,27 @@ function MapRailExpanded({
       {view === "map" ? (
         <div className="flex-1 overflow-y-auto px-2 pb-4 min-h-0" data-testid="map-path">
           {sections.length === 0 ? (
-            <div className="text-center text-xs text-neutral-400 dark:text-neutral-600 mt-8 px-4">
-              {courseTitle ? "课程路径加载中…" : "点 ⊕ 导入一个 GitHub 仓库开始学习"}
-            </div>
+            courseTitle ? (
+              <div className="text-center text-xs text-neutral-500 dark:text-neutral-400 mt-8 px-4 flex items-center justify-center gap-2">
+                <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
+                正在生成课程路径…
+              </div>
+            ) : (
+              <button
+                onClick={() => onViewChange("import")}
+                className="block w-full mt-8 mx-auto p-4 rounded-2xl border-2 border-dashed border-brand/40 hover:border-brand hover:bg-brand/5 transition-all text-center group"
+                data-testid="map-empty-cta"
+              >
+                <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🗺️</div>
+                <div className="text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  开始你的第一门课
+                </div>
+                <div className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                  导入一个 GitHub 学习仓库,自动生成选关路径
+                </div>
+                <div className="mt-2 text-[10px] text-brand font-bold">点这里导入 →</div>
+              </button>
+            )
           ) : (
             <div className="space-y-6 pt-2">
               {sections.map((section, sIdx) => (
@@ -321,6 +339,8 @@ function MapNode({
   const stars = Math.min(3, crown); // 0-3 星(基于 crownLevel)
   const alignLeft = index % 2 === 0;
   const isLocked = status === "locked";
+  // in_progress:用 mastery 算进度环(0-1 → 0-100%)
+  const masteryPct = status === "in_progress" ? Math.round((progress?.mastery ?? 0) * 100) : 0;
 
   return (
     <li
@@ -338,14 +358,29 @@ function MapNode({
         }`}
         title={isLocked ? `🔒 ${lesson.title}` : isDue ? `📖 ${lesson.title}(待复习)` : lesson.title}
       >
+        {/* in_progress 进度环(外圈显示 mastery%) */}
+        {status === "in_progress" && (
+          <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 56 56" aria-hidden="true">
+            <circle cx="28" cy="28" r="25" fill="none" stroke="rgb(255 255 255 / 0.2)" strokeWidth="2.5" />
+            <circle
+              cx="28" cy="28" r="25"
+              fill="none"
+              stroke="white"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={`${(masteryPct / 100) * 157} 157`}
+              className="transition-all duration-500"
+            />
+          </svg>
+        )}
         {isLocked ? (
-          <span aria-label="locked" className="opacity-50">🔒</span>
+          <span aria-label="locked" className="relative z-10 opacity-50">🔒</span>
         ) : status === "mastered" ? (
-          <span aria-label="mastered" className="drop-shadow-lg">👑</span>
+          <span aria-label="mastered" className="relative z-10 drop-shadow-lg">👑</span>
         ) : status === "in_progress" ? (
-          <span aria-label="in-progress">📘</span>
+          <span aria-label="in-progress" className="relative z-10">📘</span>
         ) : (
-          <span aria-label="available" className="drop-shadow">⭐</span>
+          <span aria-label="available" className="relative z-10 drop-shadow">⭐</span>
         )}
         {/* 待复习标记 */}
         {isDue && !isLocked && (

@@ -21,6 +21,7 @@ import { SettingsView } from "./components/SettingsView.js";
 import { ImportView } from "./components/ImportView.js";
 import { useChatStream } from "./lib/useChatStream.js";
 import { useThreads } from "./lib/useThreads.js";
+import { useToast } from "./components/Toast.js";
 import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
 import { translate } from "./lib/i18n.js";
 
@@ -44,7 +45,14 @@ const BUILTIN_SKILL_ORDER = [
   "review-mode",
 ];
 
-/** 产物 tab 的中文标签(对齐 tool name) */
+/** 产物类型中文标签(toast 用) */
+const ARTIFACT_TYPE_LABEL: Record<string, string> = {
+  concept_map: "概念图",
+  quiz: "练习题",
+  compare_table: "对比表",
+  diagram: "流程图",
+  code_walkthrough: "代码讲解",
+};
 
 export default function App() {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -177,6 +185,23 @@ export default function App() {
         e.preventDefault();
         setShowCommandPalette((s) => !s);
       }
+      // Ctrl+B → 折叠/展开地图
+      if ((e.ctrlKey || e.metaKey) && e.key === "b") {
+        e.preventDefault();
+        setMapCollapsed((c) => !c);
+      }
+      // Ctrl+Tab → 切换 thread(下一个)
+      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
+        e.preventDefault();
+        const list = thread.threads;
+        if (list.length > 1) {
+          const curIdx = list.findIndex((t) => t.id === thread.activeId);
+          const nextIdx = e.shiftKey
+            ? (curIdx - 1 + list.length) % list.length
+            : (curIdx + 1) % list.length;
+          thread.setActiveId(list[nextIdx]!.id);
+        }
+      }
       // 数字键切换视图(非输入框焦点)
       if (!e.target || !(e.target as HTMLElement).matches("input, textarea, select")) {
         if (e.key === "1") setView("map");
@@ -265,6 +290,7 @@ export default function App() {
   // v0.3: 黑板笔记本(canvas_items 持久化)
   const canvas = useCanvas(selectedCourseId);
   const font = useFontSize();
+  const toast = useToast();
 
   // M2: 从对话流提取展示型 tool 产物 → 自动持久化到 canvas_items
   const artifacts = useMemo(() => extractArtifacts(chat.messages), [chat.messages]);
@@ -284,10 +310,11 @@ export default function App() {
         title: output.title ?? null,
         data: output,
       });
-      // 切到笔记标签让用户看到
+      // 切到笔记标签让用户看到 + toast 反馈
       setForceArtifactTab("notes");
+      toast.show(`已保存到笔记本 · ${ARTIFACT_TYPE_LABEL[output.artifactType] ?? "产物"}`, { duration: 3000 });
     }
-  }, [artifacts, canvas, selectedNodeId]);
+  }, [artifacts, canvas, selectedNodeId, toast]);
 
   // 视图切换时清除强制 tab
   useEffect(() => {
@@ -345,10 +372,40 @@ export default function App() {
                 activeThread={thread.activeThread}
                 focusNodeTitle={selectedNode?.title ?? null}
                 onPickThread={thread.setActiveId}
-                onCreate={() => thread.create({ focusNodeId: selectedNodeId, title: null })}
-                onRename={(id, title) => thread.update(id, { title })}
-                onArchive={(id) => thread.update(id, { status: "archived" })}
-                onDelete={thread.remove}
+                onCreate={() => {
+                  thread.create({ focusNodeId: selectedNodeId, title: null });
+                  toast.show("已新建会话");
+                }}
+                onRename={(id, title) => {
+                  thread.update(id, { title });
+                  toast.show("已重命名");
+                }}
+                onArchive={(id) => {
+                  thread.update(id, { status: "archived" });
+                  toast.show("已归档会话", {
+                    duration: 5000,
+                    action: { label: "撤销", onClick: () => thread.update(id, { status: "active" }) },
+                  });
+                }}
+                onDelete={(id) => {
+                  const removed = thread.removeWithUndo(id);
+                  if (removed) {
+                    toast.show(`已删除会话「${removed.title ?? "新会话"}」`, {
+                      duration: 5000,
+                      action: {
+                        label: "撤销",
+                        onClick: () => {
+                          thread.restore(removed);
+                          toast.show("已恢复");
+                        },
+                      },
+                    });
+                    // 5 秒后真删(若未 undo)
+                    setTimeout(() => {
+                      api.threadDelete(removed.id).catch(() => {});
+                    }, 5500);
+                  }
+                }}
               />
               <ChatStream
                 messages={chat.messages}
@@ -392,8 +449,13 @@ export default function App() {
                 loading={canvas.loading}
                 forceTab={forceArtifactTab}
                 onUserTabChange={() => setForceArtifactTab(null)}
-                onRemove={canvas.remove}
-                onTogglePin={canvas.togglePin}
+                onRemove={(id) => {
+                  canvas.remove(id);
+                  toast.show("已删除笔记");
+                }}
+                onTogglePin={(id) => {
+                  canvas.togglePin(id);
+                }}
               />
             </main>
           </>

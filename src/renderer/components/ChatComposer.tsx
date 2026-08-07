@@ -32,6 +32,9 @@ interface ChatComposerProps {
   onSend: (text: string) => void;
   onStop: () => void;
   onGotoSettings: () => void;
+  /** v0.3 字号调节 */
+  fontSize: "small" | "medium" | "large";
+  onFontBump: (dir: "up" | "down") => void;
 }
 
 export function ChatComposer({
@@ -46,6 +49,8 @@ export function ChatComposer({
   onSend,
   onStop,
   onGotoSettings,
+  fontSize,
+  onFontBump,
 }: ChatComposerProps) {
   const [input, setInput] = useState("");
 
@@ -93,9 +98,9 @@ export function ChatComposer({
         </div>
       )}
 
-      {/* 学习模式下拉(M1 收起,节省空间。M2 命令面板可替代) */}
-      {skills.length > 0 && (
-        <div className="mb-1.5" data-testid="skill-picker">
+      {/* 学习模式 + 字号调节(一行) */}
+      <div className="mb-1.5 flex items-center justify-between" data-testid="skill-picker">
+        {skills.length > 0 ? (
           <select
             value={activeSkill ?? ""}
             onChange={(e) => onPickSkill(e.target.value)}
@@ -108,8 +113,28 @@ export function ChatComposer({
               </option>
             ))}
           </select>
+        ) : <span />}
+        {/* v0.3 字号调节 */}
+        <div className="flex items-center gap-1" data-testid="font-size-control">
+          <button
+            onClick={() => onFontBump("down")}
+            disabled={fontSize === "small"}
+            data-testid="font-smaller"
+            className="text-[11px] w-6 h-6 rounded text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800/50 disabled:opacity-30 transition-colors"
+            title="缩小字号"
+          >A-</button>
+          <span className="text-[9px] text-neutral-400 w-10 text-center">
+            {fontSize === "small" ? "小" : fontSize === "large" ? "大" : "中"}
+          </span>
+          <button
+            onClick={() => onFontBump("up")}
+            disabled={fontSize === "large"}
+            data-testid="font-larger"
+            className="text-[13px] w-6 h-6 rounded text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800/50 disabled:opacity-30 transition-colors"
+            title="放大字号"
+          >A+</button>
         </div>
-      )}
+      </div>
 
       <div className="flex gap-2 items-end">
         <textarea

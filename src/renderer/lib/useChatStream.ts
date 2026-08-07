@@ -112,7 +112,7 @@ interface UseChatStreamResult {
   setMessagesForNode: (messages: ChatMessageV2[]) => void;
 }
 
-export function useChatStream(nodeId: string | null): UseChatStreamResult {
+export function useChatStream(threadId: string | null): UseChatStreamResult {
   const [messages, setMessages] = useState<ChatMessageV2[]>([]);
   const [streaming, setStreaming] = useState(false);
   // 当前正在流式追加的 assistant 消息 id。
@@ -120,18 +120,25 @@ export function useChatStream(nodeId: string | null): UseChatStreamResult {
   // (React 严格模式会双调用 updater,ref mutation 在里面会导致状态不一致)。
   const streamingMsgIdRef = useRef<string | null>(null);
 
-  // 节点切换时加载历史
+  // thread 切换时加载历史(从 chat_messages 表)
   useEffect(() => {
-    if (!nodeId) {
+    if (!threadId) {
       setMessages([]);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const history = await api.getChatHistory(nodeId);
+        const history = await api.threadGetMessages(threadId);
         if (cancelled) return;
-        setMessages(textHistoryToV2(history));
+        // chat_messages 行 → ChatMessageV2(纯文本;parts_json 暂不复原,只显示 content)
+        setMessages(
+          history.map((m) => ({
+            id: m.id,
+            role: m.role,
+            parts: [{ type: "text" as const, text: m.content }],
+          })),
+        );
       } catch {
         if (!cancelled) setMessages([]);
       }
@@ -139,7 +146,7 @@ export function useChatStream(nodeId: string | null): UseChatStreamResult {
     return () => {
       cancelled = true;
     };
-  }, [nodeId]);
+  }, [threadId]);
 
   // 订阅 chat:part 事件(parts-based,优先)
   useEffect(() => {
@@ -199,7 +206,7 @@ export function useChatStream(nodeId: string | null): UseChatStreamResult {
 
   const send = useCallback(
     async (text: string) => {
-      if (!nodeId || streaming || !text.trim()) return;
+      if (!threadId || streaming || !text.trim()) return;
       const trimmed = text.trim();
       // 乐观渲染:用户消息立刻显示(Setproduct 最佳实践)
       const userMsg: ChatMessageV2 = {
@@ -211,7 +218,7 @@ export function useChatStream(nodeId: string | null): UseChatStreamResult {
       setStreaming(true);
       streamingMsgIdRef.current = null;
       try {
-        await api.agentChat(nodeId, trimmed);
+        await api.agentChatThread(threadId, trimmed);
       } catch (e) {
         setStreaming(false);
         setMessages((prev) => [
@@ -224,25 +231,25 @@ export function useChatStream(nodeId: string | null): UseChatStreamResult {
         ]);
       }
     },
-    [nodeId, streaming],
+    [threadId, streaming],
   );
 
   const stop = useCallback(async () => {
-    if (!nodeId || !streaming) return;
+    if (!threadId || !streaming) return;
     try {
-      await api.abortAgentChat(nodeId);
+      await api.abortAgentChatThread(threadId);
     } catch {
       /* 忽略 */
     }
     setStreaming(false);
     streamingMsgIdRef.current = null;
-  }, [nodeId, streaming]);
+  }, [threadId, streaming]);
 
   const clear = useCallback(() => {
-    if (!nodeId) return;
-    api.clearChatHistory(nodeId).catch(() => {});
+    // v0.4: clear 在 thread 模型里改为"清空当前显示"(不删 DB,DB 里消息保留)
+    // 真正删除整条 thread 走 useThreads.remove
     setMessages([]);
-  }, [nodeId]);
+  }, []);
 
   // M2: 监听命令面板事件(Cmd+K 派发的预设指令)
   useEffect(() => {

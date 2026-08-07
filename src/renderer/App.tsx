@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -8,16 +8,19 @@ import type {
   Skill,
   DashboardData,
 } from "@shared/types";
-import { NavRail, type NavView } from "./components/NavRail.js";
-import { ArtifactPanel, type ArtifactTab } from "./components/ArtifactPanel.js";
+import { MapRail, type MapView } from "./components/MapRail.js";
+import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
+import { useCanvas } from "./lib/useCanvas.js";
+import { useFontSize } from "./lib/useFontSize.js";
 import { ChatStream, extractArtifacts } from "./components/ChatStream.js";
 import { ChatComposer } from "./components/ChatComposer.js";
-import { ArtifactRenderer } from "./components/artifacts/index.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { ReviewPanel } from "./components/ReviewPanel.js";
 import { SettingsView } from "./components/SettingsView.js";
 import { ImportView } from "./components/ImportView.js";
 import { useChatStream } from "./lib/useChatStream.js";
+import { useThreads } from "./lib/useThreads.js";
+import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
 import { translate } from "./lib/i18n.js";
 
 /**
@@ -41,13 +44,6 @@ const BUILTIN_SKILL_ORDER = [
 ];
 
 /** 产物 tab 的中文标签(对齐 tool name) */
-const ARTIFACT_TAB_LABEL: Record<string, string> = {
-  show_concept_map: "🗺️ 概念图",
-  generate_quiz: "📝 练习",
-  compare_table: "📊 对比表",
-  draw_diagram: "📐 流程图",
-  show_code_walkthrough: "🔍 代码讲解",
-};
 
 export default function App() {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -63,7 +59,7 @@ export default function App() {
   const [activeSkill, setActiveSkill] = useState<string | null>(null);
 
   // 视图 + 仪表盘
-  const [view, setView] = useState<NavView>("tree");
+  const [view, setView] = useState<MapView>("map");
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [dueCount, setDueCount] = useState(0);
   // M3: overdue 的 nodeId 集合(供 NavRail 在路径上标记复习节点)
@@ -72,20 +68,22 @@ export default function App() {
   // 选中节点(联动三栏)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   // 右栏强制 tab(如导航复习入口 → review)
-  const [forceArtifactTab, setForceArtifactTab] = useState<ArtifactTab | null>(null);
+  const [forceArtifactTab, setForceArtifactTab] = useState<NotebookTab | null>(null);
   // 设置弹窗(M1:设置从 tab 改为 modal/抽屉)
   const [showSettings, setShowSettings] = useState(false);
+  // v0.3: 左栏地图折叠态
+  const [mapCollapsed, setMapCollapsed] = useState(false);
   // Cmd+K 命令面板(M2)
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   // 当前在右栏聚焦的产物 index(M2)
-  const [activeArtifactIdx, setActiveArtifactIdx] = useState(0);
 
   // AI 就绪状态 + starter prompts
   const [agentReady, setAgentReady] = useState<{ ready: boolean; provider?: string; model?: string; missing?: string } | null>(null);
   const [starterPrompts, setStarterPrompts] = useState<{ icon: string; label: string; message: string }[]>([]);
 
-  // useChatStream hook 管 parts-based 对话流
-  const chat = useChatStream(selectedNodeId);
+  // v0.4: thread 模型—— useThreads 管 thread 列表, useChatStream 管当前 thread 消息
+  const thread = useThreads(selectedCourseId);
+  const chat = useChatStream(thread.activeId);
 
   const selectedNode = useMemo(
     () => tree.find((n) => n.id === selectedNodeId) ?? null,
@@ -168,8 +166,8 @@ export default function App() {
   // 全局快捷键
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && selectedNodeId) {
-        api.abortAgentChat(selectedNodeId).catch(() => {});
+      if (e.key === "Escape" && thread.activeId) {
+        api.abortAgentChatThread(thread.activeId).catch(() => {});
         setShowSettings(false);
         setShowCommandPalette(false);
       }
@@ -180,9 +178,8 @@ export default function App() {
       }
       // 数字键切换视图(非输入框焦点)
       if (!e.target || !(e.target as HTMLElement).matches("input, textarea, select")) {
-        if (e.key === "1") setView("tree");
-        if (e.key === "2") setView("dashboard");
-        if (e.key === "3") setView("import");
+        if (e.key === "1") setView("map");
+        if (e.key === "2") setView("import");
         if (e.key === "s" && (e.ctrlKey || e.metaKey)) {
           e.preventDefault();
           setShowSettings(true);
@@ -207,6 +204,8 @@ export default function App() {
       setStreak(newStreak);
       setSelectedNodeId(node.id);
       setForceArtifactTab("content");
+      // v0.4: 点节点 → 跳该节点的最近 thread(没有则新建)
+      thread.focusNode(node.id);
     } catch (e) {
       setErrorFromThrow(e);
     }
@@ -262,22 +261,40 @@ export default function App() {
     return [...builtin, ...custom];
   }, [skills]);
 
-  // M2: 从对话流提取展示型 tool 产物(Generative UI)
-  const artifacts = useMemo(() => extractArtifacts(chat.messages), [chat.messages]);
-  const activeArtifact = artifacts[activeArtifactIdx] ?? artifacts[artifacts.length - 1] ?? null;
+  // v0.3: 黑板笔记本(canvas_items 持久化)
+  const canvas = useCanvas(selectedCourseId);
+  const font = useFontSize();
 
-  // 当有新产物时自动聚焦最新
+  // M2: 从对话流提取展示型 tool 产物 → 自动持久化到 canvas_items
+  const artifacts = useMemo(() => extractArtifacts(chat.messages), [chat.messages]);
+  const savedArtifactKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (artifacts.length > 0) {
-      setActiveArtifactIdx(artifacts.length - 1);
-      setForceArtifactTab("artifact");
+    // 对每个新产物(未持久化的),自动 save 到 canvas
+    for (const art of artifacts) {
+      const output = art.output as { artifactType?: string; title?: string } | null;
+      if (!output || !output.artifactType) continue;
+      const key = art.id; // msgId-partIdx,唯一标识这次 session 的产物
+      if (savedArtifactKeysRef.current.has(key)) continue;
+      savedArtifactKeysRef.current.add(key);
+      // 自动持久化(不让用户决定,全存)
+      canvas.save({
+        nodeId: selectedNodeId,
+        artifactType: output.artifactType,
+        title: output.title ?? null,
+        data: output,
+      });
+      // 切到笔记标签让用户看到
+      setForceArtifactTab("notes");
     }
-  }, [artifacts.length]);
+  }, [artifacts, canvas, selectedNodeId]);
 
   // 视图切换时清除强制 tab
   useEffect(() => {
-    if (view !== "tree") setForceArtifactTab(null);
+    if (view !== "map") setForceArtifactTab(null);
   }, [view]);
+
+  // 复习抽屉(v0.3:复习作为 overlay,不占右栏标签)
+  const [showReviewDrawer, setShowReviewDrawer] = useState(false);
 
   return (
     <div className="h-screen flex flex-col bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 overflow-hidden">
@@ -290,8 +307,8 @@ export default function App() {
       {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
 
       <div className="flex-1 flex min-h-0">
-        {/* 左栏:NavRail(导航 + 迷你路径 + 复习) */}
-        <NavRail
+        {/* 左栏:MapRail 选关地图(v0.3 替代 NavRail,合并仪表盘+技能树) */}
+        <MapRail
           view={view}
           onViewChange={setView}
           courseTitle={currentCourse?.title ?? null}
@@ -301,31 +318,37 @@ export default function App() {
           selectedNodeId={selectedNodeId}
           dueCount={dueCount}
           dueNodeIds={dueNodeIds}
+          overallMastery={dashboard?.overallMastery ?? 0}
+          streak={streak?.currentStreak ?? 0}
+          collapsed={mapCollapsed}
+          onToggleCollapse={() => setMapCollapsed((c) => !c)}
           onJumpNode={(id) => {
             const node = tree.find((n) => n.id === id);
             if (node) handleLessonClick(node);
           }}
-          onOpenReview={() => {
-            setView("tree");
-            setForceArtifactTab("review");
-          }}
+          onOpenReview={() => setShowReviewDrawer(true)}
         />
 
-        {/* 视图层:tree 视图 = AI 对话 + 产物;dashboard/import 视图 = 全屏展示 */}
-        {view === "tree" ? (
+        {/* 视图层:map 视图 = AI 对话 + 笔记本;import 视图 = 全屏导入 */}
+        {view === "map" ? (
           <>
             {/* 中栏:AI 对话流(ChatStream + ChatComposer) */}
             <div
               className="flex flex-col h-full bg-neutral-50 dark:bg-neutral-950 border-r border-neutral-200 dark:border-neutral-800/50"
-              style={{ width: "42%" }}
+              style={{ width: "40%" }}
               data-testid="chat-panel"
             >
-              {/* 顶栏:当前节点标题 */}
-              <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-                <div className="text-xs text-neutral-600 dark:text-neutral-400 truncate" data-testid="chat-current-node">
-                  {selectedNode ? `📍 ${selectedNode.title}` : "未选择节点"}
-                </div>
-              </div>
+              {/* v0.4 顶栏:thread 切换条(焦点节点 + 会话切换) */}
+              <ThreadSwitcher
+                threads={thread.threads}
+                activeThread={thread.activeThread}
+                focusNodeTitle={selectedNode?.title ?? null}
+                onPickThread={thread.setActiveId}
+                onCreate={() => thread.create({ focusNodeId: selectedNodeId, title: null })}
+                onRename={(id, title) => thread.update(id, { title })}
+                onArchive={(id) => thread.update(id, { status: "archived" })}
+                onDelete={thread.remove}
+              />
               <ChatStream
                 messages={chat.messages}
                 streaming={chat.streaming}
@@ -341,70 +364,42 @@ export default function App() {
                 activeSkill={activeSkill}
                 starterPrompts={starterPrompts}
                 onPickSkill={handleSkillPick}
-                onSend={chat.send}
+                onSend={async (text) => {
+                  // v0.4: 首次发送时若无 active thread,自动建一条(焦点=当前节点,标题=输入截断)
+                  if (!thread.activeId) {
+                    const newId = await thread.ensureThreadForSend(text, selectedNodeId);
+                    if (newId) {
+                      setTimeout(() => chat.send(text), 0);
+                      return;
+                    }
+                  }
+                  chat.send(text);
+                }}
                 onStop={chat.stop}
                 onGotoSettings={() => setShowSettings(true)}
+                fontSize={font.size}
+                onFontBump={font.bump}
               />
             </div>
 
-            {/* 右栏:ArtifactPanel(内容/产物/复习) */}
+            {/* 右栏:NotebookPanel 黑板笔记本(讲解/笔记/全部) */}
             <main className="flex-1 min-w-0">
-              <ArtifactPanel
+              <NotebookPanel
                 selectedNode={selectedNode}
-                artifact={activeArtifact ? (
-                  <div className="space-y-3">
-                    {artifacts.length > 1 && (
-                      <div className="flex gap-1 flex-wrap">
-                        {artifacts.map((a, i) => (
-                          <button
-                            key={a.id}
-                            onClick={() => setActiveArtifactIdx(i)}
-                            data-testid={`artifact-tab-${i}`}
-                            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-                              i === activeArtifactIdx
-                                ? "border-brand bg-brand/10 text-brand font-bold"
-                                : "border-neutral-300 dark:border-neutral-700 text-neutral-500 hover:border-neutral-400"
-                            }`}
-                          >
-                            {ARTIFACT_TAB_LABEL[a.toolName] ?? a.toolName} #{i + 1}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <ArtifactRenderer data={activeArtifact.output} />
-                  </div>
-                ) : null}
-                reviewContent={
-                  <ReviewPanel
-                    tree={tree}
-                    onReviewNode={(id) => {
-                      setSelectedNodeId(id);
-                      setForceArtifactTab("content");
-                    }}
-                  />
-                }
+                courseId={selectedCourseId}
+                items={canvas.items}
+                loading={canvas.loading}
                 forceTab={forceArtifactTab}
                 onUserTabChange={() => setForceArtifactTab(null)}
+                onRemove={canvas.remove}
+                onTogglePin={canvas.togglePin}
               />
             </main>
           </>
-        ) : view === "dashboard" ? (
-          <main className="flex-1 overflow-auto px-6 py-6">
-            <DashboardView dashboard={dashboard} courseId={selectedCourseId} onReviewDue={async () => {
-              try {
-                const dueIds = await api.getDueReviews();
-                if (dueIds.length > 0) {
-                  setSelectedNodeId(dueIds[0]);
-                  setView("tree");
-                  setForceArtifactTab("review");
-                }
-              } catch { /* 忽略 */ }
-            }} />
-          </main>
         ) : (
           <main className="flex-1 overflow-auto px-6 py-6">
             <div className="max-w-2xl mx-auto">
-              <ImportView onImported={() => { refreshAll(); setView("tree"); }} courses={courses} selectedCourseId={selectedCourseId} onSelectCourse={setSelectedCourseId} />
+              <ImportView onImported={() => { refreshAll(); setView("map"); }} courses={courses} selectedCourseId={selectedCourseId} onSelectCourse={setSelectedCourseId} />
             </div>
           </main>
         )}
@@ -413,6 +408,19 @@ export default function App() {
       {/* 设置抽屉(从 tab 改为 overlay,M1) */}
       {showSettings && (
         <SettingsDrawer onClose={() => setShowSettings(false)} />
+      )}
+
+      {/* v0.3: 复习抽屉(从地图徽章唤起) */}
+      {showReviewDrawer && (
+        <ReviewDrawer
+          onClose={() => setShowReviewDrawer(false)}
+          tree={tree}
+          onPickNode={(id) => {
+            setSelectedNodeId(id);
+            setForceArtifactTab("content");
+            setShowReviewDrawer(false);
+          }}
+        />
       )}
 
       {/* Cmd+K 命令面板(M2) */}
@@ -535,113 +543,39 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
   );
 }
 
-/* ---------- 仪表盘(保留原实现) ---------- */
 
-function DashboardView({ dashboard, onReviewDue, courseId }: { dashboard: DashboardData | null; onReviewDue?: () => void; courseId: string | null }) {
-  if (!dashboard) {
-    return <div className="text-neutral-500 text-center py-12">仪表盘加载中…</div>;
-  }
-  const masteryPct = Math.round(dashboard.overallMastery * 100);
-  return (
-    <div className="max-w-2xl mx-auto" data-testid="dashboard">
-      <h2 className="text-xl font-extrabold mb-6 text-neutral-900 dark:text-neutral-100">{translate("dashboard.title")}</h2>
-      <div className="grid grid-cols-3 gap-3 mb-8">
-        <StatCard testid="stat-streak" icon="🔥" value={String(dashboard.currentStreak)} label={translate("dashboard.stat.streak")} sub={`freeze ${dashboard.freezeCount}`} />
-        <StatCard testid="stat-due" icon="📖" value={String(dashboard.dueToday)} label={translate("dashboard.stat.due")} sub={dashboard.dueToday > 0 ? translate("dashboard.review") : translate("dashboard.cleared")} />
-        <StatCard testid="stat-mastery" icon="🎯" value={`${masteryPct}%`} label={translate("dashboard.stat.mastery")} sub={masteryPct >= 70 ? "不错" : masteryPct >= 40 ? "进行中" : "刚开始"} />
-      </div>
-      {dashboard.dueToday > 0 && onReviewDue && (
-        <button
-          onClick={onReviewDue}
-          data-testid="review-due-btn"
-          className="btn-3d-brand mb-4 px-6 py-2.5 text-sm w-full"
-        >
-          📖 {translate("dashboard.review")} {dashboard.dueToday} →
-        </button>
-      )}
-      <div className="flex gap-2 mb-8">
-        <button
-          onClick={async () => {
-            try {
-              const md = await api.exportCourse(courseId ?? "", "markdown");
-              const blob = new Blob([md], { type: "text/markdown" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `lookatstudy-report.md`;
-              a.click();
-              URL.revokeObjectURL(url);
-            } catch { /* 忽略 */ }
-          }}
-          data-testid="export-markdown"
-          className="btn-3d-neutral flex-1 px-4 py-2 text-xs"
-        >
-          {translate("dashboard.export.md")}
-        </button>
-        <button
-          onClick={async () => {
-            try {
-              const json = await api.exportCourse(courseId ?? "", "json");
-              const blob = new Blob([json], { type: "application/json" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `lookatstudy-report.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-            } catch { /* 忽略 */ }
-          }}
-          data-testid="export-json"
-          className="btn-3d-neutral flex-1 px-4 py-2 text-xs"
-        >
-          {translate("dashboard.export.json")}
-        </button>
-      </div>
-      <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3">
-        {translate("dashboard.section_mastery")}
-      </h3>
-      <div className="space-y-2.5" data-testid="mastery-heatmap">
-        {dashboard.sections.length === 0 ? (
-          <div className="text-neutral-600 text-sm">暂无章节数据</div>
-        ) : (
-          dashboard.sections.map((s) => <HeatmapRow key={s.sectionId} section={s} />)
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  icon, value, label, sub, testid,
+/* ---------- 复习抽屉(v0.3) ---------- */
+function ReviewDrawer({
+  onClose,
+  tree,
+  onPickNode,
 }: {
-  icon: string; value: string; label: string; sub?: string; testid: string;
+  onClose: () => void;
+  tree: ContentNode[];
+  onPickNode: (id: string) => void;
 }) {
   return (
-    <div className="surface-card p-4 text-center" data-testid={testid}>
-      <div className="text-lg mb-1">{icon}</div>
-      <div className="text-2xl font-extrabold text-neutral-900 dark:text-neutral-100">{value}</div>
-      <div className="text-[11px] text-neutral-500 mt-0.5">{label}</div>
-      {sub && <div className="text-[10px] text-neutral-400 dark:text-neutral-600 mt-0.5">{sub}</div>}
+    <div className="fixed inset-0 z-50 flex justify-end" data-testid="review-drawer">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-md h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800 shadow-xl flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+          <h2 className="text-sm font-bold">📖 复习</h2>
+          <button
+            onClick={onClose}
+            data-testid="review-close"
+            className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <ReviewPanel tree={tree} onReviewNode={onPickNode} />
+        </div>
+      </div>
     </div>
   );
 }
 
-function HeatmapRow({ section }: { section: DashboardData["sections"][number] }) {
-  const pct = Math.round(section.avgMastery * 100);
-  const barColor = pct >= 70 ? "bg-brand" : pct >= 30 ? "bg-orange-500" : "bg-neutral-400 dark:bg-neutral-700";
-  return (
-    <div className="flex items-center gap-3">
-      <div className="w-40 text-xs text-neutral-600 dark:text-neutral-400 truncate font-medium" title={section.sectionTitle}>{section.sectionTitle}</div>
-      <div className="flex-1 h-7 rounded-lg overflow-hidden bg-neutral-200 dark:bg-neutral-800/50">
-        <div
-          className={`h-full ${barColor} rounded-lg transition-all duration-500`}
-          style={{ width: `${Math.max(3, pct)}%` }}
-        />
-      </div>
-      <div className="w-20 text-xs text-neutral-500 text-right tabular-nums">{pct}% · {section.masteredCount}/{section.lessonCount}</div>
-    </div>
-  );
-}
 
 /* ---------- 杂项 ---------- */
 

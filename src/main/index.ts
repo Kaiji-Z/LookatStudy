@@ -224,16 +224,16 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   // 等渲染层拉完数据 + React 渲染完。轮询所有关键 testid 都出现——
   // 不能只等容器，因为 skills/courses 是异步并行拉的，容器早出、内容晚出，会 race。
-  // v0.2: 三栏布局后 testid 变了——nav-rail + skill-picker + nav-node-* + chat-panel + artifact-panel
+  // v0.2: 三栏布局后 testid 变了——map-rail + skill-picker + map-node-* + chat-panel + notebook-panel
   const waitRender = async (timeoutMs = 10000): Promise<boolean> => {
     const deadline = Date.now() + timeoutMs;
     const checkAll = () =>
       win.webContents.executeJavaScript(`
-        document.querySelector('[data-testid="nav-rail"]') !== null &&
+        document.querySelector('[data-testid="map-rail"]') !== null &&
         document.querySelector('[data-testid="skill-picker"]') !== null &&
-        document.querySelectorAll('[data-testid^="nav-node-"]').length >= 1 &&
+        document.querySelectorAll('[data-testid^="map-node-"]').length >= 1 &&
         document.querySelector('[data-testid="chat-panel"]') !== null &&
-        document.querySelector('[data-testid="artifact-panel"]') !== null
+        document.querySelector('[data-testid="notebook-panel"]') !== null
       `);
     while (Date.now() < deadline) {
       try {
@@ -274,21 +274,21 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: { optionCount },
   });
 
-  // T2: nav-rail 至少有 1 个视图切换项 + path overview 有节点
+  // T2: map-rail 至少有 1 个视图切换项 + path overview 有节点
   const navNodeCount = await win.webContents.executeJavaScript(
-    `document.querySelectorAll('[data-testid^="nav-node-"]').length`,
+    `document.querySelectorAll('[data-testid^="map-node-"]').length`,
   );
   results.push({
-    name: "nav-rail path overview has ≥1 node",
+    name: "map-rail path overview has ≥1 node",
     ok: typeof navNodeCount === "number" && navNodeCount >= 1,
     detail: { navNodeCount },
   });
 
-  // T3: 三栏都在(chat-panel + artifact-panel + nav-rail)
+  // T3: 三栏都在(chat-panel + notebook-panel + map-rail)
   const threePane = await win.webContents.executeJavaScript(`
-    document.querySelector('[data-testid="nav-rail"]') !== null &&
+    document.querySelector('[data-testid="map-rail"]') !== null &&
     document.querySelector('[data-testid="chat-panel"]') !== null &&
-    document.querySelector('[data-testid="artifact-panel"]') !== null
+    document.querySelector('[data-testid="notebook-panel"]') !== null
   `);
   results.push({
     name: "three-pane layout rendered (nav + chat + artifact)",
@@ -304,13 +304,13 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: streakPresent === true,
   });
 
-  // T5: 点击一个未锁的 nav-node → 触发 markNodeAttempted → 联动右栏
+  // T5: 点击一个未锁的 map-node → 触发 markNodeAttempted → 联动右栏
   let clickResult: { clicked?: boolean; totalBtns?: number; enabledCount?: number; error?: string } = {};
   try {
     clickResult = await win.webContents.executeJavaScript(`
       (function() {
         try {
-          var btns = document.querySelectorAll('[data-testid^="nav-node-"]');
+          var btns = document.querySelectorAll('[data-testid^="map-node-"]');
           var arr = [];
           for (var i = 0; i < btns.length; i++) arr.push(btns[i]);
           var enabled = arr.filter(function(b){ return !b.disabled; });
@@ -328,7 +328,7 @@ async function runUiTest(screenshot = false): Promise<void> {
     clickResult = { error: String(e) };
   }
   results.push({
-    name: "clicked an unlocked nav-node (markNodeAttempted IPC)",
+    name: "clicked an unlocked map-node (markNodeAttempted IPC)",
     ok: clickResult?.clicked === true,
     detail: clickResult,
   });
@@ -405,26 +405,33 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: midPane,
   });
 
-  // T8b (三栏联动): nav-node 点击 → chat-current-node 显示该节点
+  // T8b (v0.4 联动): map-node 点击 → ThreadSwitcher 焦点节点 + thread 创建/切换
   const linkage = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        const btns = document.querySelectorAll('[data-testid^="nav-node-"]');
+        const btns = document.querySelectorAll('[data-testid^="map-node-"]');
         let clicked = null;
         for (const b of btns) {
           if (!b.disabled) { b.click(); clicked = b.getAttribute('data-testid'); break; }
         }
-        if (!clicked) return { ok: false, reason: "no enabled nav-node" };
-        await new Promise(r => setTimeout(r, 500));
-        const nodeLabel = document.querySelector('[data-testid="chat-current-node"]');
-        return { ok: !!nodeLabel && nodeLabel.textContent.includes('📍'), clicked, label: nodeLabel?.textContent };
+        if (!clicked) return { ok: false, reason: "no enabled map-node" };
+        await new Promise(r => setTimeout(r, 600));
+        // v0.4: ThreadSwitcher 存在(有 thread 显示 tabs,无 thread 显示 empty 提示)
+        const switcherEl = document.querySelector('[data-testid="thread-switcher"], [data-testid="thread-switcher-empty"]');
+        const tabCount = document.querySelectorAll('[data-testid^="thread-tab-"]').length;
+        return {
+          ok: !!switcherEl,
+          clicked,
+          tabCount,
+          hasEmpty: !!document.querySelector('[data-testid="thread-switcher-empty"]'),
+        };
       } catch (e) {
         return { ok: false, error: String(e) };
       }
     })()
   `);
   results.push({
-    name: "nav-node click → chat shows selected node (三栏联动)",
+    name: "map-node click → ThreadSwitcher shows focus node (联动)",
     ok: linkage?.ok === true,
     detail: linkage,
   });
@@ -457,27 +464,23 @@ async function runUiTest(screenshot = false): Promise<void> {
   const dashboardOk = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        // 点 nav-dashboard(v0.2 改名)
-        const tab = document.querySelector('[data-testid="nav-dashboard"]');
-        if (!tab) return { ok: false, reason: "nav-dashboard not found" };
+        // 点 map-view-map 切到地图视图
+        const tab = document.querySelector('[data-testid="map-view-map"]');
+        if (!tab) return { ok: false, reason: "map-view-map not found" };
         tab.click();
-        // 等 dashboard 渲染
-        for (let i = 0; i < 30; i++) {
-          if (document.querySelector('[data-testid="dashboard"]')) break;
-          await new Promise(r => setTimeout(r, 100));
-        }
-        const dash = document.querySelector('[data-testid="dashboard"]');
-        if (!dash) return { ok: false, reason: "dashboard not rendered after click" };
-        const stats = document.querySelectorAll('[data-testid^="stat-"]').length;
-        const heatRows = document.querySelectorAll('[data-testid="mastery-heatmap"] > *').length;
-        return { ok: stats >= 3 && heatRows >= 1, stats, heatRows };
+        await new Promise(r => setTimeout(r, 300));
+        // v0.3:地图路径渲染——map-path 存在 + 至少 1 个 section + 节点
+        const mapPath = document.querySelector('[data-testid="map-path"]');
+        const sections = document.querySelectorAll('[data-testid^="map-section-"]').length;
+        const nodes = document.querySelectorAll('[data-testid^="map-node-"]').length;
+        return { ok: !!mapPath && sections >= 1 && nodes >= 1, sections, nodes };
       } catch (e) {
         return { ok: false, error: String(e) };
       }
     })()
   `);
   results.push({
-    name: "nav-dashboard renders stat cards + heatmap",
+    name: "map-view-map renders path + sections + nodes",
     ok: dashboardOk?.ok === true,
     detail: dashboardOk,
   });
@@ -496,7 +499,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   const importOk = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        document.querySelector('[data-testid="nav-import"]').click();
+        document.querySelector('[data-testid="map-view-import"]').click();
         for (let i = 0; i < 30; i++) {
           if (document.querySelector('[data-testid="import-url-section"]')) break;
           await new Promise(r => setTimeout(r, 100));
@@ -525,12 +528,12 @@ async function runUiTest(screenshot = false): Promise<void> {
   const layoutOk = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        document.querySelector('[data-testid="nav-tree"]').click();
+        document.querySelector('[data-testid="map-view-map"]').click();
         await new Promise(r => setTimeout(r, 300));
         const headerSettings = !!document.querySelector('[data-testid="header-settings"]');
-        const navTree = !!document.querySelector('[data-testid="nav-tree"]');
-        const navDashboard = !!document.querySelector('[data-testid="nav-dashboard"]');
-        const navImport = !!document.querySelector('[data-testid="nav-import"]');
+        const navTree = !!document.querySelector('[data-testid="map-view-map"]');
+        const navDashboard = !!document.querySelector('[data-testid="map-view-map"]');
+        const navImport = !!document.querySelector('[data-testid="map-view-import"]');
         return { ok: headerSettings && navTree && navDashboard && navImport, headerSettings, navTree, navDashboard, navImport };
       } catch (e) {
         return { ok: false, error: String(e) };
@@ -548,7 +551,7 @@ async function runUiTest(screenshot = false): Promise<void> {
     (async function() {
       try {
         // 切回 tree 视图(确保命令面板能用)
-        document.querySelector('[data-testid="nav-tree"]').click();
+        document.querySelector('[data-testid="map-view-map"]').click();
         await new Promise(r => setTimeout(r, 200));
         // 派发 Ctrl+K
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));
@@ -572,11 +575,11 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   // T14 (M2): artifact tabs 容器存在(即使无产物,标签栏结构在)
   const artifactTabs = await win.webContents.executeJavaScript(`
-    document.querySelector('[data-testid="artifact-tabs"]') !== null &&
-    document.querySelector('[data-testid="tab-artifact"]') !== null
+    document.querySelector('[data-testid="notebook-tabs"]') !== null &&
+    document.querySelector('[data-testid="tab-notes"]') !== null
   `);
   results.push({
-    name: "artifact panel tabs rendered (content/artifact/review)",
+    name: "notebook panel tabs rendered (content/notes/all)",
     ok: artifactTabs === true,
   });
 

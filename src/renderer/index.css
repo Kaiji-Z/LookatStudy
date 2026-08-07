@@ -100,6 +100,16 @@
    overdue/available 节点改用静态视觉(颜色 + 标签)。streak 用静态 🔥 + 数字。
    保留:typing-dot(传达 AI 工作中)、msg-enter(消息入场)、tab 过渡(状态切换)。 */
 
+/* v0.3: 恢复克制的 active 节点脉冲(只在"当前可学"节点,传达"该你了"状态)。
+   比旧版更克制(幅度小、慢周期),且尊重 reduced-motion。这是趣味性钩子之一。 */
+@keyframes bubble-active-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+.lesson-bubble-available {
+  animation: bubble-active-pulse 2.4s ease-in-out infinite;
+}
+
 /* Card surface */
 .surface-card {
   @apply bg-neutral-900 border border-neutral-800 rounded-2xl;

@@ -110,7 +110,7 @@ function MessageRowV2({
     // user:左 4px 绿色竖条 + 全宽浅绿底(扁平,非气泡)
     return (
       <div className="msg-enter border-l-4 border-brand pl-3 py-1.5" data-testid="msg-user">
-        <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap">
+        <div className="font-medium text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap" style={{ fontSize: "var(--chat-font-size, 15px)" }}>
           {msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
         </div>
       </div>
@@ -158,7 +158,7 @@ function PartRenderer({
   if (part.type === "text") {
     return (
       <div
-        className="text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert max-w-none leading-relaxed"
+        className="text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert max-w-none leading-relaxed" style={{ fontSize: "var(--chat-font-size, 15px)" }}
         data-testid="part-text"
       >
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>

@@ -49,17 +49,12 @@ Thumbs.db
 .ui-test-result.json
 ui-screenshot.png
 
-# local-only working notes & internal reference docs (not project content)
+# local-only working notes (not project content)
 HANDOFF.md
 VERIFICATION.md
-docs/OPENCHATCUT-PATTERNS.md
-docs/COMPETITOR-DEEPTUTOR.md
-docs/PRODUCT-POSITIONING.md
 
-# local-only: research notes referencing other/external projects (kept out of public repo)
+# local-only: research notes referencing external projects (kept out of public repo)
 .zcode-reference/
 
 # local memory (per-developer agent memory)
 memory/
-
-fde-readme-fetched.md

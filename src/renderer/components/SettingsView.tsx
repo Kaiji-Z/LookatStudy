@@ -401,14 +401,17 @@ export function SettingsView() {
         <section className="surface-card p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-neutral-300">模型（Model）</h3>
-            <button
-              onClick={handleDiscoverModels}
-              disabled={discovering}
-              data-testid="discover-models-btn"
-              className="text-[11px] text-accent hover:underline disabled:opacity-40"
-            >
-              {discovering ? "刷新中…" : "🔄 从 OpenRouter 刷新"}
-            </button>
+            {/* 只对 OpenRouter provider 显示"从 OpenRouter 刷新" */}
+            {activeProvider === "openrouter" && (
+              <button
+                onClick={handleDiscoverModels}
+                disabled={discovering}
+                data-testid="discover-models-btn"
+                className="text-[11px] text-accent hover:underline disabled:opacity-40"
+              >
+                {discovering ? "刷新中…" : "🔄 刷新模型列表"}
+              </button>
+            )}
           </div>
           <select
             value={activeModel}
@@ -422,7 +425,8 @@ export function SettingsView() {
                 {m.contextWindow ? ` · ${Math.round(m.contextWindow / 1000)}K 上下文` : ""}
               </option>
             ))}
-            {discoveredModels.map((m) => (
+            {/* 只对 OpenRouter 显示发现的模型 */}
+            {activeProvider === "openrouter" && discoveredModels.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label}（OpenRouter）{m.contextWindow ? ` · ${Math.round(m.contextWindow / 1000)}K` : ""}
               </option>

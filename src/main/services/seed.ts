@@ -11,7 +11,7 @@ import { courses, contentNodes } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { generateCourseFromMarkdown } from "./course-generator.js";
 // vite ?raw import：构建时把 README 全文内联成字符串
-import fdeReadmeMd from "./seed-fde-readme.md?raw";
+import fdeReadmeMd from "../assets/seed-fde-readme.md?raw";
 
 const COURSE_ID = "seed-fde-roadmap";
 const COURSE_REPO_URL = "https://github.com/pierpaolo28/Awesome-FDE-Roadmap";

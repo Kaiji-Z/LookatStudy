@@ -245,6 +245,8 @@ export interface ApiExpose {
 
   /* SRS */
   getDueReviews(): Promise<string[]>;
+  /** v0.2: 所有 SRS 项详情(供四象限复习面板)。返回 intervalDays/repetitions/dueAt/overdue。 */
+  getAllSrsItems(): Promise<Array<{ nodeId: string; intervalDays: number; repetitions: number; dueAt: string; overdue: boolean }>>;
   recordReview(nodeId: string, quality: ReviewQuality): Promise<void>;
 
   /* 打卡 */
@@ -382,6 +384,18 @@ export type SettingKey =
 
 /* ---------- IPC 事件（main → renderer，单向推送） ---------- */
 
+/**
+ * v0.2 流式 part 类型（parts-based 渲染协议）。
+ * 对齐 AI SDK v5 fullStream，简化为渲染层友好形态。
+ * ChatStream 渲染层按 part.type 累积到 message.parts[]，不再字符串拼接。
+ */
+export type ChatStreamPart =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "tool-start"; toolName: string }
+  | { type: "tool-result"; toolName: string; output: unknown }
+  | { type: "tool-error"; toolName: string; error: string };
+
 export interface IpcEvents {
   "chat:token": (chunk: string) => void;
   "chat:done": (fullText: string) => void;
@@ -391,4 +405,9 @@ export interface IpcEvents {
   /** 提议创建事件（结构化，供聊天栏渲染应用/拒绝卡） */
   "chat:proposal": (proposalId: string, summary: string, status: string) => void;
   "import:progress": (message: string) => void;
+  /**
+   * v0.2 parts-based 流式协议：把 fullStream 的 part 透传给渲染层。
+   * 与 chat:token 并存（兼容期），渲染层可二选一。M2 起优先用 chat:part。
+   */
+  "chat:part": (part: ChatStreamPart) => void;
 }

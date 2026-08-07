@@ -45,6 +45,7 @@ const api = {
 
   /* SRS */
   getDueReviews: (() => ipcRenderer.invoke("srs:getDue")) as ApiExpose["getDueReviews"],
+  getAllSrsItems: (() => ipcRenderer.invoke("srs:getAll")) as ApiExpose["getAllSrsItems"],
   recordReview: ((nodeId: string, quality: ReviewQuality) =>
     ipcRenderer.invoke("srs:record", nodeId, quality)) as ApiExpose["recordReview"],
 

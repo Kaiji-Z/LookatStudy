@@ -29,6 +29,7 @@ import type {
 } from "@shared/types";
 import {
   getDueReviewNodeIds,
+  getAllSrsItems,
   recordReview,
 } from "../services/srs.js";
 import { getStreak, touchStreakToday } from "../services/streak.js";
@@ -373,6 +374,11 @@ export function registerProgressHandlers(): void {
 export function registerSrsHandlers(): void {
   ipcMain.handle("srs:getDue", async (): Promise<string[]> => {
     return getDueReviewNodeIds();
+  });
+
+  // v0.2: 详细 SRS 项(供四象限复习面板)
+  ipcMain.handle("srs:getAll", async () => {
+    return getAllSrsItems();
   });
 
   ipcMain.handle(

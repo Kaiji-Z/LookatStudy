@@ -8,21 +8,31 @@ import type {
   Skill,
   DashboardData,
 } from "@shared/types";
-import { Sidebar } from "./components/Sidebar.js";
-import { Divider } from "./components/Divider.js";
+import { NavRail, type NavView } from "./components/NavRail.js";
+import { ArtifactPanel, type ArtifactTab } from "./components/ArtifactPanel.js";
+import { ChatStream, extractArtifacts } from "./components/ChatStream.js";
+import { ChatComposer } from "./components/ChatComposer.js";
+import { ArtifactRenderer } from "./components/artifacts/index.js";
+import { CommandPalette } from "./components/CommandPalette.js";
+import { ReviewPanel } from "./components/ReviewPanel.js";
+import { SettingsView } from "./components/SettingsView.js";
 import { ImportView } from "./components/ImportView.js";
+import { useChatStream } from "./lib/useChatStream.js";
 import { translate } from "./lib/i18n.js";
 
-type ViewTab = "tree" | "dashboard" | "settings" | "import";
-
 /**
- * 双栏布局：左聊天 + 右技能树（可拖拽分隔线，可折叠）。
+ * v0.2 三栏布局(M1 重构):
+ *   左 NavRail(导航 + 迷你路径 + 复习入口)
+ *   中 AI 对话流(ChatStream parts-based + ChatComposer)
+ *   右 ArtifactPanel(内容 / 产物 / 复习)
  *
- * - 顶部：Header + SkillPicker（横跨全宽）
- * - 下方 flex 横向：Sidebar(聊天) + Divider + 右栏(技能树/仪表盘)
- * - 点右栏 lesson → 设 selectedNodeId → 左栏 ChatPanel 联动该节点的 AI 对话
+ * - Header 简化:课程选择器移左栏,设置移齿轮
+ * - "💬对话/📝练习/⚙️设置"三 tab 拆解:设置移 Header,练习并入对话流(M2),对话用 ChatStream
+ * - 仪表盘/导入 作为左栏视图切换,不再占主展示区
+ *
+ * testid 兼容:保留 skill-tree/section-unit/lesson-bubble/xp-bar/streak-badge/chat-panel 等
+ * 供 ui-test 不破。新增 nav-rail/artifact-panel/chat-stream/composer。
  */
-
 const BUILTIN_SKILL_ORDER = [
   "socratic-mode",
   "exam-prep-mode",
@@ -30,9 +40,14 @@ const BUILTIN_SKILL_ORDER = [
   "review-mode",
 ];
 
-const DEFAULT_CHAT_WIDTH_PCT = 38;
-const MIN_CHAT_WIDTH_PCT = 20;
-const MAX_CHAT_WIDTH_PCT = 60;
+/** 产物 tab 的中文标签(对齐 tool name) */
+const ARTIFACT_TAB_LABEL: Record<string, string> = {
+  show_concept_map: "🗺️ 概念图",
+  generate_quiz: "📝 练习",
+  compare_table: "📊 对比表",
+  draw_diagram: "📐 流程图",
+  show_code_walkthrough: "🔍 代码讲解",
+};
 
 export default function App() {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -43,19 +58,34 @@ export default function App() {
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Skill 系统（M1）
+  // Skill 系统
   const [skills, setSkills] = useState<Skill[]>([]);
   const [activeSkill, setActiveSkill] = useState<string | null>(null);
 
-  // M3：视图切换 + 仪表盘数据
-  const [view, setView] = useState<ViewTab>("tree");
+  // 视图 + 仪表盘
+  const [view, setView] = useState<NavView>("tree");
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [dueCount, setDueCount] = useState(0);
+  // M3: overdue 的 nodeId 集合(供 NavRail 在路径上标记复习节点)
+  const [dueNodeIds, setDueNodeIds] = useState<Set<string>>(new Set());
 
-  // 双栏布局态
-  const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_WIDTH_PCT);
-  const [chatCollapsed, setChatCollapsed] = useState(false);
-  // 当前选中的 lesson（供 ChatPanel 联动）
+  // 选中节点(联动三栏)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // 右栏强制 tab(如导航复习入口 → review)
+  const [forceArtifactTab, setForceArtifactTab] = useState<ArtifactTab | null>(null);
+  // 设置弹窗(M1:设置从 tab 改为 modal/抽屉)
+  const [showSettings, setShowSettings] = useState(false);
+  // Cmd+K 命令面板(M2)
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  // 当前在右栏聚焦的产物 index(M2)
+  const [activeArtifactIdx, setActiveArtifactIdx] = useState(0);
+
+  // AI 就绪状态 + starter prompts
+  const [agentReady, setAgentReady] = useState<{ ready: boolean; provider?: string; model?: string; missing?: string } | null>(null);
+  const [starterPrompts, setStarterPrompts] = useState<{ icon: string; label: string; message: string }[]>([]);
+
+  // useChatStream hook 管 parts-based 对话流
+  const chat = useChatStream(selectedNodeId);
 
   const selectedNode = useMemo(
     () => tree.find((n) => n.id === selectedNodeId) ?? null,
@@ -64,18 +94,21 @@ export default function App() {
 
   const refreshAll = useCallback(async () => {
     try {
-      const [courseList, streakData, skillList, currentSkill, xpData] = await Promise.all([
+      const [courseList, streakData, skillList, currentSkill, xpData, due] = await Promise.all([
         api.listCourses(),
         api.getStreak(),
         api.listSkills(),
         api.getActiveSkill(),
         api.getXpStatus(),
+        api.getDueReviews(),
       ]);
       setCourses(courseList);
       setStreak(streakData);
       setSkills(skillList);
       setXp(xpData);
       setActiveSkill(currentSkill);
+      setDueCount(due.length);
+      setDueNodeIds(new Set(due));
       if (courseList.length > 0 && !selectedCourseId) {
         setSelectedCourseId(courseList[0]!.id);
       }
@@ -88,28 +121,20 @@ export default function App() {
     refreshAll();
   }, [refreshAll]);
 
-  // 全局键盘快捷键
+  // 检查 AI 就绪 + 监听配置变更
+  const checkReady = useCallback(async () => {
+    try {
+      setAgentReady(await api.isAgentReady());
+    } catch {
+      setAgentReady({ ready: false, missing: "无法检查就绪状态" });
+    }
+  }, []);
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      // Esc → 停止正在流的回复（如果有 selectedNodeId）
-      if (e.key === "Escape" && selectedNodeId) {
-        api.abortAgentChat(selectedNodeId).catch(() => {});
-      }
-      // Ctrl+K / Cmd+K → 切换到技能树视图
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        setView("tree");
-      }
-      // 数字键 1/2/3 → 切换右栏视图（非输入框焦点时）
-      if (!e.target || !(e.target as HTMLElement).matches("input, textarea, select")) {
-        if (e.key === "1") setView("tree");
-        if (e.key === "2") setView("dashboard");
-        if (e.key === "3") setView("import");
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [selectedNodeId]);
+    checkReady();
+    const handler = () => checkReady();
+    window.addEventListener("llm-config-changed", handler);
+    return () => window.removeEventListener("llm-config-changed", handler);
+  }, [checkReady]);
 
   useEffect(() => {
     if (!selectedCourseId) return;
@@ -131,8 +156,45 @@ export default function App() {
     api.getDashboard(selectedCourseId).then(setDashboard).catch(setErrorFromThrow);
   }, [selectedCourseId]);
 
-  // 点 lesson：标记 attempted + 解锁下一课 + 设为当前选中节点（联动聊天栏）+ 展开左栏
-  const handleLessonClick = async (node: ContentNode) => {
+  // 节点切换时拉 starter prompts
+  useEffect(() => {
+    if (!selectedNodeId) {
+      setStarterPrompts([]);
+      return;
+    }
+    api.getStarterPrompts(selectedNodeId).then(setStarterPrompts).catch(() => setStarterPrompts([]));
+  }, [selectedNodeId]);
+
+  // 全局快捷键
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selectedNodeId) {
+        api.abortAgentChat(selectedNodeId).catch(() => {});
+        setShowSettings(false);
+        setShowCommandPalette(false);
+      }
+      // Cmd+K / Ctrl+K → 命令面板
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setShowCommandPalette((s) => !s);
+      }
+      // 数字键切换视图(非输入框焦点)
+      if (!e.target || !(e.target as HTMLElement).matches("input, textarea, select")) {
+        if (e.key === "1") setView("tree");
+        if (e.key === "2") setView("dashboard");
+        if (e.key === "3") setView("import");
+        if (e.key === "s" && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          setShowSettings(true);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedNodeId]);
+
+  // 点 lesson:解锁下一课 + 设选中(联动三栏)
+  const handleLessonClick = useCallback(async (node: ContentNode) => {
     try {
       await api.markNodeAttempted(node.id);
       const [progress, newStreak] = await Promise.all([
@@ -143,12 +205,12 @@ export default function App() {
         setProgressMap((m) => ({ ...m, [node.id]: progress }));
       }
       setStreak(newStreak);
-      setSelectedNodeId(node.id); // 联动聊天栏
-      setChatCollapsed(false); // 点 lesson 自动展开左栏，让用户看到对话/练习入口
+      setSelectedNodeId(node.id);
+      setForceArtifactTab("content");
     } catch (e) {
       setErrorFromThrow(e);
     }
-  };
+  }, []);
 
   const handleSkillPick = async (name: string) => {
     try {
@@ -159,14 +221,28 @@ export default function App() {
     }
   };
 
-  const handleResize = useCallback(
-    (deltaPct: number) => {
-      setChatWidth((w) => {
-        const next = w + deltaPct;
-        return Math.max(MIN_CHAT_WIDTH_PCT, Math.min(MAX_CHAT_WIDTH_PCT, next));
-      });
+  const handleApplyProposal = useCallback(
+    async (proposalId: string, msgId: string, toolCallIdx: number) => {
+      try {
+        await api.applyProposal(proposalId);
+        chat.markProposalStatus(msgId, toolCallIdx, true);
+      } catch (e) {
+        setErrorFromThrow(e);
+      }
     },
-    [],
+    [chat],
+  );
+
+  const handleRejectProposal = useCallback(
+    async (proposalId: string, msgId: string, toolCallIdx: number) => {
+      try {
+        await api.rejectProposal(proposalId);
+        chat.markProposalStatus(msgId, toolCallIdx, false);
+      } catch (e) {
+        setErrorFromThrow(e);
+      }
+    },
+    [chat],
   );
 
   const currentCourse = courses.find((c) => c.id === selectedCourseId);
@@ -186,107 +262,193 @@ export default function App() {
     return [...builtin, ...custom];
   }, [skills]);
 
+  // M2: 从对话流提取展示型 tool 产物(Generative UI)
+  const artifacts = useMemo(() => extractArtifacts(chat.messages), [chat.messages]);
+  const activeArtifact = artifacts[activeArtifactIdx] ?? artifacts[artifacts.length - 1] ?? null;
+
+  // 当有新产物时自动聚焦最新
+  useEffect(() => {
+    if (artifacts.length > 0) {
+      setActiveArtifactIdx(artifacts.length - 1);
+      setForceArtifactTab("artifact");
+    }
+  }, [artifacts.length]);
+
+  // 视图切换时清除强制 tab
+  useEffect(() => {
+    if (view !== "tree") setForceArtifactTab(null);
+  }, [view]);
+
   return (
-    <div className="h-screen flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 overflow-hidden">
-      <Header streak={streak} xp={xp} />
+    <div className="h-screen flex flex-col bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 overflow-hidden">
+      <Header
+        streak={streak}
+        xp={xp}
+        onOpenSettings={() => setShowSettings(true)}
+      />
 
-      {/* 双栏区：左聊天(AI 全部操作) + Divider + 右技能树(显示+点击) */}
+      {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
+
       <div className="flex-1 flex min-h-0">
-        <div
-          style={chatCollapsed ? undefined : { width: `${chatWidth}%` }}
-          className={chatCollapsed ? undefined : "shrink-0 min-w-0"}
-        >
-          <Sidebar
-            collapsed={chatCollapsed}
-            onToggleCollapse={() => setChatCollapsed((c) => !c)}
-            selectedNode={selectedNode}
-            skills={orderedSkills}
-            activeSkill={activeSkill}
-            onPickSkill={handleSkillPick}
-          />
-        </div>
+        {/* 左栏:NavRail(导航 + 迷你路径 + 复习) */}
+        <NavRail
+          view={view}
+          onViewChange={setView}
+          courseTitle={currentCourse?.title ?? null}
+          sections={sections}
+          tree={tree}
+          progressMap={progressMap}
+          selectedNodeId={selectedNodeId}
+          dueCount={dueCount}
+          dueNodeIds={dueNodeIds}
+          onJumpNode={(id) => {
+            const node = tree.find((n) => n.id === id);
+            if (node) handleLessonClick(node);
+          }}
+          onOpenReview={() => {
+            setView("tree");
+            setForceArtifactTab("review");
+          }}
+        />
 
-        {!chatCollapsed && (
-          <Divider
-            onResize={handleResize}
-            onDoubleClick={() => setChatWidth(DEFAULT_CHAT_WIDTH_PCT)}
-          />
-        )}
-
-        {/* 右栏：技能树 / 仪表盘 / 导入（纯显示 + 点击操作，无 AI 配置） */}
-        <main className="flex-1 overflow-auto px-6 py-6 min-w-0">
-          {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
-          <ViewTabs view={view} onChange={setView} />
-
-          {view === "tree" ? (
-            <div className="max-w-xl mx-auto mt-4" data-testid="skill-tree">
-              {/* 课程选择器 */}
-              {courses.length > 1 && (
-                <select
-                  value={selectedCourseId ?? ""}
-                  onChange={(e) => {
-                    setSelectedCourseId(e.target.value);
-                    setSelectedNodeId(null);
-                  }}
-                  data-testid="course-selector"
-                  className="mb-3 bg-neutral-900 text-neutral-300 text-xs rounded-lg px-3 py-1.5 border border-neutral-700 focus:border-brand focus:outline-none"
-                >
-                  {courses.map((c) => (
-                    <option key={c.id} value={c.id}>{c.title}</option>
-                  ))}
-                </select>
-              )}
-              <h2 className="text-xl font-extrabold mb-0.5 text-neutral-100 tracking-tight">
-                {currentCourse?.title ?? "加载中..."}
-              </h2>
-              <p className="text-neutral-500 text-xs mb-8 leading-relaxed">
-                {currentCourse?.description}
-              </p>
-              {sections.length === 0 ? (
-                <EmptyState />
-              ) : (
-                <div className="space-y-10">
-                  {sections.map((section, sIdx) => (
-                    <SectionUnit
-                      key={section.id}
-                      section={section}
-                      sectionIndex={sIdx}
-                      tree={tree}
-                      progressMap={progressMap}
-                      selectedNodeId={selectedNodeId}
-                      onLessonClick={handleLessonClick}
-                    />
-                  ))}
+        {/* 视图层:tree 视图 = AI 对话 + 产物;dashboard/import 视图 = 全屏展示 */}
+        {view === "tree" ? (
+          <>
+            {/* 中栏:AI 对话流(ChatStream + ChatComposer) */}
+            <div
+              className="flex flex-col h-full bg-neutral-50 dark:bg-neutral-950 border-r border-neutral-200 dark:border-neutral-800/50"
+              style={{ width: "42%" }}
+              data-testid="chat-panel"
+            >
+              {/* 顶栏:当前节点标题 */}
+              <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+                <div className="text-xs text-neutral-600 dark:text-neutral-400 truncate" data-testid="chat-current-node">
+                  {selectedNode ? `📍 ${selectedNode.title}` : "未选择节点"}
                 </div>
-              )}
+              </div>
+              <ChatStream
+                messages={chat.messages}
+                streaming={chat.streaming}
+                onApplyProposal={handleApplyProposal}
+                onRejectProposal={handleRejectProposal}
+              />
+              <ChatComposer
+                nodeId={selectedNodeId}
+                agentReady={agentReady?.ready ?? false}
+                missingHint={agentReady?.missing}
+                streaming={chat.streaming}
+                skills={orderedSkills}
+                activeSkill={activeSkill}
+                starterPrompts={starterPrompts}
+                onPickSkill={handleSkillPick}
+                onSend={chat.send}
+                onStop={chat.stop}
+                onGotoSettings={() => setShowSettings(true)}
+              />
             </div>
-          ) : view === "dashboard" ? (
-            <div className="mt-4">
-              <DashboardView dashboard={dashboard} courseId={selectedCourseId} onReviewDue={async () => {
-                // 跳到第一个待复习的节点
-                try {
-                  const dueIds = await api.getDueReviews();
-                  if (dueIds.length > 0) {
-                    setSelectedNodeId(dueIds[0]);
-                    setView("tree");
-                  }
-                } catch { /* 忽略 */ }
-              }} />
-            </div>
-          ) : (
-            <div className="max-w-2xl mx-auto mt-4">
+
+            {/* 右栏:ArtifactPanel(内容/产物/复习) */}
+            <main className="flex-1 min-w-0">
+              <ArtifactPanel
+                selectedNode={selectedNode}
+                artifact={activeArtifact ? (
+                  <div className="space-y-3">
+                    {artifacts.length > 1 && (
+                      <div className="flex gap-1 flex-wrap">
+                        {artifacts.map((a, i) => (
+                          <button
+                            key={a.id}
+                            onClick={() => setActiveArtifactIdx(i)}
+                            data-testid={`artifact-tab-${i}`}
+                            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                              i === activeArtifactIdx
+                                ? "border-brand bg-brand/10 text-brand font-bold"
+                                : "border-neutral-300 dark:border-neutral-700 text-neutral-500 hover:border-neutral-400"
+                            }`}
+                          >
+                            {ARTIFACT_TAB_LABEL[a.toolName] ?? a.toolName} #{i + 1}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <ArtifactRenderer data={activeArtifact.output} />
+                  </div>
+                ) : null}
+                reviewContent={
+                  <ReviewPanel
+                    tree={tree}
+                    onReviewNode={(id) => {
+                      setSelectedNodeId(id);
+                      setForceArtifactTab("content");
+                    }}
+                  />
+                }
+                forceTab={forceArtifactTab}
+                onUserTabChange={() => setForceArtifactTab(null)}
+              />
+            </main>
+          </>
+        ) : view === "dashboard" ? (
+          <main className="flex-1 overflow-auto px-6 py-6">
+            <DashboardView dashboard={dashboard} courseId={selectedCourseId} onReviewDue={async () => {
+              try {
+                const dueIds = await api.getDueReviews();
+                if (dueIds.length > 0) {
+                  setSelectedNodeId(dueIds[0]);
+                  setView("tree");
+                  setForceArtifactTab("review");
+                }
+              } catch { /* 忽略 */ }
+            }} />
+          </main>
+        ) : (
+          <main className="flex-1 overflow-auto px-6 py-6">
+            <div className="max-w-2xl mx-auto">
               <ImportView onImported={() => { refreshAll(); setView("tree"); }} courses={courses} selectedCourseId={selectedCourseId} onSelectCourse={setSelectedCourseId} />
             </div>
-          )}
-        </main>
+          </main>
+        )}
       </div>
+
+      {/* 设置抽屉(从 tab 改为 overlay,M1) */}
+      {showSettings && (
+        <SettingsDrawer onClose={() => setShowSettings(false)} />
+      )}
+
+      {/* Cmd+K 命令面板(M2) */}
+      {showCommandPalette && (
+        <CommandPalette
+          onClose={() => setShowCommandPalette(false)}
+          onPick={(action) => {
+            setShowCommandPalette(false);
+            handleCommandAction(action);
+          }}
+          hasNode={!!selectedNodeId}
+        />
+      )}
     </div>
   );
 }
 
-/* ---------- 顶部栏 ---------- */
+/** 命令面板动作分发。 */
+function handleCommandAction(action: string): void {
+  // action 值见 CommandPalette 的 onPick
+  // 这些直接触发 chat.send,需要 selectedNodeId(没有则忽略)
+  // 注:这里通过 window 事件让 useChatStream 接收,避免 prop 透传复杂化
+  window.dispatchEvent(new CustomEvent("lookatstudy-command", { detail: action }));
+}
 
-function Header({ streak, xp }: { streak: Streak | null; xp: { todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null }) {
+/* ---------- Header(简化) ---------- */
+
+function Header({
+  streak,
+  xp,
+  onOpenSettings,
+}: {
+  streak: Streak | null;
+  xp: { todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null;
+  onOpenSettings: () => void;
+}) {
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     if (typeof document !== "undefined") {
       return document.documentElement.classList.contains("dark") ? "dark" : "light";
@@ -306,11 +468,10 @@ function Header({ streak, xp }: { streak: Streak | null; xp: { todayXp: number; 
   };
 
   return (
-    <header className="border-b border-neutral-800/50 dark:border-neutral-800/50 px-6 py-2.5 flex items-center justify-between shrink-0 bg-neutral-50/80 dark:bg-neutral-950/80 backdrop-blur-sm">
+    <header className="border-b border-neutral-200 dark:border-neutral-800/50 px-6 py-2.5 flex items-center justify-between shrink-0 bg-neutral-50/80 dark:bg-neutral-950/80 backdrop-blur-sm">
       <div className="flex items-center gap-2.5">
-        <Logo />
-        <h1 className="text-base font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
-          Lookat<span className="text-brand">Study</span>
+        <h1 className="text-sm font-bold tracking-tight text-neutral-700 dark:text-neutral-300">
+          {translate("view.tree")}
         </h1>
       </div>
       <div className="flex items-center gap-4">
@@ -330,10 +491,18 @@ function Header({ streak, xp }: { streak: Streak | null; xp: { todayXp: number; 
         <button
           onClick={toggleTheme}
           data-testid="theme-toggle"
-          className="text-neutral-500 hover:text-neutral-300 dark:hover:text-neutral-300 text-sm w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
+          className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-sm w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
           title={theme === "dark" ? "切换到亮色" : "切换到暗色"}
         >
           {theme === "dark" ? "☀️" : "🌙"}
+        </button>
+        <button
+          onClick={onOpenSettings}
+          data-testid="header-settings"
+          className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-sm w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
+          title="设置 (Ctrl+S)"
+        >
+          ⚙️
         </button>
         {streak && <StreakBadge streak={streak} />}
       </div>
@@ -341,192 +510,32 @@ function Header({ streak, xp }: { streak: Streak | null; xp: { todayXp: number; 
   );
 }
 
-function ViewTabs({
-  view,
-  onChange,
-}: {
-  view: ViewTab;
-  onChange: (v: ViewTab) => void;
-}) {
+/* ---------- 设置抽屉 ---------- */
+
+function SettingsDrawer({ onClose }: { onClose: () => void }) {
   return (
-    <div
-      className="flex gap-1 shrink-0 items-center"
-      data-testid="view-tabs"
-    >
-      <TabButton active={view === "tree"} onClick={() => onChange("tree")} label={translate("view.tree")} testid="tab-tree" />
-      <TabButton active={view === "dashboard"} onClick={() => onChange("dashboard")} label={translate("view.dashboard")} testid="tab-dashboard" />
-      <TabButton active={view === "import"} onClick={() => onChange("import")} label={translate("view.import")} testid="tab-import" />
+    <div className="fixed inset-0 z-50 flex justify-end" data-testid="settings-drawer">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-md h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800 shadow-xl flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+          <h2 className="text-sm font-bold">{translate("settings.title")}</h2>
+          <button
+            onClick={onClose}
+            data-testid="settings-close"
+            className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <SettingsView />
+        </div>
+      </div>
     </div>
   );
 }
 
-function TabButton({
-  active,
-  onClick,
-  label,
-  testid,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  testid: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      data-testid={testid}
-      className={`px-4 py-2 text-sm font-bold rounded-xl transition-all duration-150 ${
-        active
-          ? "bg-brand/15 text-brand"
-          : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800/50"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
-/* ---------- 技能树（右栏） ---------- */
-
-function SectionUnit({
-  section,
-  sectionIndex,
-  tree,
-  progressMap,
-  selectedNodeId,
-  onLessonClick,
-}: {
-  section: ContentNode;
-  sectionIndex: number;
-  tree: ContentNode[];
-  progressMap: Record<string, Progress>;
-  selectedNodeId: string | null;
-  onLessonClick: (n: ContentNode) => void;
-}) {
-  const lessons = tree
-    .filter((n) => n.parentId === section.id)
-    .sort((a, b) => a.orderIdx - b.orderIdx);
-
-  return (
-    <section data-testid={`section-unit-${sectionIndex}`}>
-      <div className="flex items-center gap-2 mb-6">
-        <span className="text-[10px] font-extrabold text-brand uppercase tracking-wider bg-brand/10 px-2 py-1 rounded-md">
-          UNIT {sectionIndex + 1}
-        </span>
-        <h3 className="text-sm font-bold text-neutral-300">
-          {section.title}
-        </h3>
-      </div>
-      <div className="relative">
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
-          {lessons.slice(0, -1).map((_, i) => {
-            const left = i % 2 === 0;
-            const nextLeft = (i + 1) % 2 === 0;
-            const x1 = left ? "32%" : "68%";
-            const x2 = nextLeft ? "32%" : "68%";
-            const y1 = `${(i / lessons.length) * 100 + 6}%`;
-            const y2 = `${((i + 1) / lessons.length) * 100 - 6}%`;
-            return (
-              <path
-                key={i}
-                d={`M ${x1} ${y1} C ${x1} ${(parseInt(y1) + parseInt(y2)) / 2}%, ${x2} ${(parseInt(y1) + parseInt(y2)) / 2}%, ${x2} ${y2}`}
-                stroke="rgb(63 63 70)"
-                strokeWidth={2}
-                fill="none"
-                strokeDasharray="4 4"
-              />
-            );
-          })}
-        </svg>
-        <ol className="relative space-y-5">
-          {lessons.map((lesson, i) => (
-            <LessonBubble
-              key={lesson.id}
-              lesson={lesson}
-              index={i}
-              progress={progressMap[lesson.id]}
-              isSelected={lesson.id === selectedNodeId}
-              onClick={onLessonClick}
-            />
-          ))}
-        </ol>
-      </div>
-    </section>
-  );
-}
-
-function LessonBubble({
-  lesson,
-  index,
-  progress,
-  isSelected,
-  onClick,
-}: {
-  lesson: ContentNode;
-  index: number;
-  progress?: Progress;
-  isSelected: boolean;
-  onClick: (n: ContentNode) => void;
-}) {
-  const status = progress?.status ?? "locked";
-  const crown = progress?.crownLevel ?? 0;
-  const alignLeft = index % 2 === 0;
-  const isLocked = status === "locked";
-
-  const bubbleClass =
-    status === "locked"
-      ? "lesson-bubble lesson-bubble-locked"
-      : status === "mastered"
-        ? "lesson-bubble lesson-bubble-mastered"
-        : status === "in_progress"
-          ? "lesson-bubble lesson-bubble-in-progress"
-          : "lesson-bubble lesson-bubble-available";
-
-  return (
-    <li
-      className={`relative flex flex-col items-center ${alignLeft ? "self-start" : "self-end"}`}
-      data-testid={`lesson-bubble-${lesson.id.slice(0, 8)}`}
-      style={{ width: "96px" }}
-    >
-      <button
-        onClick={() => !isLocked && onClick(lesson)}
-        disabled={isLocked}
-        className={`group relative w-20 h-20 flex items-center justify-center text-2xl ${bubbleClass} ${
-          isLocked ? "cursor-not-allowed" : "cursor-pointer"
-        } ${isSelected ? "ring-4 ring-accent ring-offset-2 ring-offset-neutral-950" : ""}`}
-        title={isLocked ? `🔒 ${lesson.title}（完成上一课解锁）` : lesson.title}
-      >
-        {isLocked ? (
-          <span aria-label="locked" className="opacity-50">🔒</span>
-        ) : status === "mastered" ? (
-          <span aria-label="mastered" className="drop-shadow-lg">👑</span>
-        ) : status === "in_progress" ? (
-          <span aria-label="in-progress">📘</span>
-        ) : (
-          <span aria-label="available" className="drop-shadow">⭐</span>
-        )}
-        {status === "mastered" && crown > 0 && (
-          <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-gold text-neutral-900 px-1.5 py-0.5 rounded-full shadow-md whitespace-nowrap">
-            Lv.{crown}
-          </span>
-        )}
-        {/* Selected indicator dot */}
-        {isSelected && (
-          <span className="absolute -top-1 -right-1 w-3 h-3 bg-accent rounded-full ring-2 ring-neutral-950" />
-        )}
-      </button>
-      <div
-        className={`mt-3 text-[11px] text-neutral-400 max-w-[120px] leading-tight text-center font-medium ${
-          isSelected ? "text-brand" : ""
-        } ${isLocked ? "opacity-40" : ""}`}
-      >
-        {lesson.title}
-      </div>
-    </li>
-  );
-}
-
-/* ---------- 仪表盘 ---------- */
+/* ---------- 仪表盘(保留原实现) ---------- */
 
 function DashboardView({ dashboard, onReviewDue, courseId }: { dashboard: DashboardData | null; onReviewDue?: () => void; courseId: string | null }) {
   if (!dashboard) {
@@ -535,7 +544,7 @@ function DashboardView({ dashboard, onReviewDue, courseId }: { dashboard: Dashbo
   const masteryPct = Math.round(dashboard.overallMastery * 100);
   return (
     <div className="max-w-2xl mx-auto" data-testid="dashboard">
-      <h2 className="text-xl font-extrabold mb-6 text-neutral-100">{translate("dashboard.title")}</h2>
+      <h2 className="text-xl font-extrabold mb-6 text-neutral-900 dark:text-neutral-100">{translate("dashboard.title")}</h2>
       <div className="grid grid-cols-3 gap-3 mb-8">
         <StatCard testid="stat-streak" icon="🔥" value={String(dashboard.currentStreak)} label={translate("dashboard.stat.streak")} sub={`freeze ${dashboard.freezeCount}`} />
         <StatCard testid="stat-due" icon="📖" value={String(dashboard.dueToday)} label={translate("dashboard.stat.due")} sub={dashboard.dueToday > 0 ? translate("dashboard.review") : translate("dashboard.cleared")} />
@@ -550,7 +559,6 @@ function DashboardView({ dashboard, onReviewDue, courseId }: { dashboard: Dashbo
           📖 {translate("dashboard.review")} {dashboard.dueToday} →
         </button>
       )}
-      {/* 导出学习记录 */}
       <div className="flex gap-2 mb-8">
         <button
           onClick={async () => {
@@ -611,20 +619,20 @@ function StatCard({
   return (
     <div className="surface-card p-4 text-center" data-testid={testid}>
       <div className="text-lg mb-1">{icon}</div>
-      <div className="text-2xl font-extrabold text-neutral-100">{value}</div>
+      <div className="text-2xl font-extrabold text-neutral-900 dark:text-neutral-100">{value}</div>
       <div className="text-[11px] text-neutral-500 mt-0.5">{label}</div>
-      {sub && <div className="text-[10px] text-neutral-600 mt-0.5">{sub}</div>}
+      {sub && <div className="text-[10px] text-neutral-400 dark:text-neutral-600 mt-0.5">{sub}</div>}
     </div>
   );
 }
 
 function HeatmapRow({ section }: { section: DashboardData["sections"][number] }) {
   const pct = Math.round(section.avgMastery * 100);
-  const barColor = pct >= 70 ? "bg-brand" : pct >= 30 ? "bg-orange-500" : "bg-neutral-700";
+  const barColor = pct >= 70 ? "bg-brand" : pct >= 30 ? "bg-orange-500" : "bg-neutral-400 dark:bg-neutral-700";
   return (
     <div className="flex items-center gap-3">
-      <div className="w-40 text-xs text-neutral-400 truncate font-medium" title={section.sectionTitle}>{section.sectionTitle}</div>
-      <div className="flex-1 h-7 bg-neutral-850 rounded-lg overflow-hidden bg-neutral-800/50">
+      <div className="w-40 text-xs text-neutral-600 dark:text-neutral-400 truncate font-medium" title={section.sectionTitle}>{section.sectionTitle}</div>
+      <div className="flex-1 h-7 rounded-lg overflow-hidden bg-neutral-200 dark:bg-neutral-800/50">
         <div
           className={`h-full ${barColor} rounded-lg transition-all duration-500`}
           style={{ width: `${Math.max(3, pct)}%` }}
@@ -639,18 +647,9 @@ function HeatmapRow({ section }: { section: DashboardData["sections"][number] })
 
 function ErrorBanner({ message, onClose }: { message: string; onClose: () => void }) {
   return (
-    <div className="mb-4 p-3 rounded-lg bg-red-950/50 border border-red-900 text-red-200 text-sm">
-      ⚠️ {message}
-      <button className="ml-3 underline text-red-300" onClick={onClose}>关闭</button>
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="text-neutral-500 text-center py-12">
-      <p>课程树为空。</p>
-      <p className="text-xs mt-2">检查主进程 ensureSeedCourse() 是否执行。</p>
+    <div className="px-4 py-2 bg-red-50 dark:bg-red-950/50 border-b border-red-200 dark:border-red-900 text-red-700 dark:text-red-200 text-sm flex items-center justify-between">
+      <span>⚠️ {message}</span>
+      <button className="ml-3 underline text-red-600 dark:text-red-300" onClick={onClose}>关闭</button>
     </div>
   );
 }
@@ -662,24 +661,12 @@ function StreakBadge({ streak }: { streak: Streak }) {
       data-testid="streak-badge"
       title={`连续学习 ${streak.currentStreak} 天 · 最长 ${streak.longestStreak} 天`}
     >
-      <span className="streak-flame text-sm">🔥</span>
-      <span className="text-sm font-extrabold text-orange-400">{streak.currentStreak}</span>
-    </div>
-  );
-}
-
-function Logo() {
-  return (
-    <div
-      className="w-7 h-7 rounded-xl bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center text-white font-extrabold text-xs shadow-md"
-      style={{ boxShadow: "0 2px 8px rgba(88, 204, 2, 0.3)" }}
-    >
-      L
+      <span className="text-sm">🔥</span>
+      <span className="text-sm font-extrabold text-orange-500 dark:text-orange-400">{streak.currentStreak}</span>
     </div>
   );
 }
 
 function setErrorFromThrow(e: unknown) {
-  // eslint-disable-next-line no-console
   console.error(e);
 }

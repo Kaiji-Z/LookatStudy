@@ -95,24 +95,10 @@
   box-shadow: 0 4px 0 0 #262626;
 }
 
-/* Pulse animation for available lessons */
-@keyframes bubble-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-}
-.lesson-bubble-available {
-  animation: bubble-pulse 2s ease-in-out infinite;
-}
-
-/* Streak flame animation */
-@keyframes flame-flicker {
-  0%, 100% { transform: scale(1) rotate(-2deg); }
-  50% { transform: scale(1.1) rotate(2deg); }
-}
-.streak-flame {
-  animation: flame-flicker 1.5s ease-in-out infinite;
-  transform-origin: bottom center;
-}
+/* v0.2: 移除 bubble-pulse / flame-flicker 无限循环装饰动效。
+   理由:product register "motion 传达状态非装饰"。无限脉冲违反此原则。
+   overdue/available 节点改用静态视觉(颜色 + 标签)。streak 用静态 🔥 + 数字。
+   保留:typing-dot(传达 AI 工作中)、msg-enter(消息入场)、tab 过渡(状态切换)。 */
 
 /* Card surface */
 .surface-card {

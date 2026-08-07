@@ -32,6 +32,20 @@ import {
   getAllSrsItems,
   recordReview,
 } from "../services/srs.js";
+import {
+  saveCanvasItem,
+  listCanvasItems,
+  deleteCanvasItem,
+  togglePinCanvasItem,
+} from "../services/canvas-service.js";
+import {
+  listThreads,
+  createThread,
+  updateThread,
+  deleteThread,
+  getThreadMessages,
+  findRecentThreadByNode,
+} from "../services/thread-service.js";
 import { getStreak, touchStreakToday } from "../services/streak.js";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
 import {
@@ -48,7 +62,7 @@ import {
   getActiveSkill as getActiveSkillService,
 } from "../services/skills/skill-service.js";
 // Agent 引擎 + Proposal（M2）
-import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory } from "../services/agent/agent-engine.js";
+import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory, handleAgentChatThread, abortAgentChatThread } from "../services/agent/agent-engine.js";
 import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels } from "../services/agent/llm-client.js";
 import { PROVIDER_PRESETS } from "../services/agent/llm-presets.js";
 // 自定义 Provider
@@ -499,6 +513,17 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
     abortAgentChat(nodeId);
   });
 
+  // v0.4: Thread 模式 agent 对话(传 threadId,从 thread 装配上下文)
+  ipcMain.handle(
+    "agent:chatThread",
+    async (_e, threadId: string, userMessage: string) => {
+      return handleAgentChatThread(mainWindow, threadId, userMessage);
+    },
+  );
+  ipcMain.handle("agent:abortThread", async (_e, threadId: string) => {
+    abortAgentChatThread(threadId);
+  });
+
   // 取某节点聊天历史（持久化在 chat_sessions 表）
   ipcMain.handle("agent:getHistory", async (_e, nodeId: string) => {
     return getChatHistory(nodeId);
@@ -638,6 +663,62 @@ export function registerAllHandlers(mainWindow: BrowserWindow): void {
   registerAgentHandlers(mainWindow);
   registerM3Handlers();
   registerExerciseHandlers();
+  registerCanvasHandlers();
+  registerThreadHandlers();
+}
+
+/* ---------- v0.4: Thread 会话 ---------- */
+
+export function registerThreadHandlers(): void {
+  ipcMain.handle(
+    "thread:list",
+    async (_e, courseId: string, status?: "active" | "archived") => {
+      return listThreads(courseId, status);
+    },
+  );
+  ipcMain.handle("thread:create", async (_e, input) => {
+    return createThread(input);
+  });
+  ipcMain.handle("thread:update", async (_e, id: string, patch) => {
+    return updateThread(id, patch);
+  });
+  ipcMain.handle("thread:delete", async (_e, id: string) => {
+    deleteThread(id);
+  });
+  ipcMain.handle("thread:getMessages", async (_e, threadId: string) => {
+    return getThreadMessages(threadId);
+  });
+  ipcMain.handle(
+    "thread:findRecentByNode",
+    async (_e, courseId: string, nodeId: string) => {
+      return findRecentThreadByNode(courseId, nodeId);
+    },
+  );
+  // 注:发消息走 agent:chat(threadId, msg)——在 registerAgentHandlers 里桥接,
+  // 因为要复用 streamText + chat:part 流式协议(M1 改造)。
+}
+
+/* ---------- v0.3: Canvas 画布(黑板笔记本) ---------- */
+
+export function registerCanvasHandlers(): void {
+  ipcMain.handle(
+    "canvas:list",
+    async (_e, courseId: string, nodeId?: string | null) => {
+      return listCanvasItems(courseId, nodeId ?? undefined);
+    },
+  );
+  ipcMain.handle(
+    "canvas:save",
+    async (_e, input) => {
+      return saveCanvasItem(input);
+    },
+  );
+  ipcMain.handle("canvas:delete", async (_e, id: string) => {
+    deleteCanvasItem(id);
+  });
+  ipcMain.handle("canvas:togglePin", async (_e, id: string) => {
+    return togglePinCanvasItem(id);
+  });
 }
 
 /* ---------- 练习题 ---------- */

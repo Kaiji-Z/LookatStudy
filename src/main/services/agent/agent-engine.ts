@@ -22,12 +22,17 @@ import {
   contentNodes,
   progress as progressTable,
   courses,
+  threads,
 } from "../../db/schema.js";
 import type { BrowserWindow } from "electron";
 import { getDb, markDirty } from "../../db/index.js";
 import { resolveLlm, classifyLlmError } from "./llm-client.js";
 import { chatSessions } from "../../db/schema.js";
 import type { ChatStreamPart } from "@shared/types";
+import {
+  getThreadMessages,
+  appendMessage,
+} from "../thread-service.js";
 import { buildSystemPrompt } from "../skills/prompt-builder.js";
 import {
   createProposal,
@@ -562,5 +567,81 @@ function saveChatHistory(db: Db, nodeId: string, history: ChatTurn[]): void {
     db.insert(chatSessions)
       .values({ id: randomUUID(), nodeId, messagesJson })
       .run();
+  }
+}
+
+/* ============================================================
+ * v0.4: Thread 模型入口(类 Cursor 项目-会话)
+ * 旧 handleAgentChat(nodeId) 保留不动(向后兼容);
+ * 新 handleAgentChatThread(threadId) 从 thread 取历史 + 焦点节点,
+ * 回复写入 chat_messages 表(不再用 chat_sessions 的 messagesJson 一团)。
+ * ============================================================ */
+
+/**
+ * v0.4: 按 thread 跑一轮 agent。上下文 = thread 的所有消息 + 焦点节点 + 课程级 memory。
+ *
+ * @param threadId  会话线程 id
+ * @returns         assistant 的完整文本回复
+ */
+export async function handleAgentChatThread(
+  win: BrowserWindow | null,
+  threadId: string,
+  userMessage: string,
+): Promise<string> {
+  const db = getDb();
+
+  // 从 thread 拉历史 + 焦点节点
+  const rawMsgs = getThreadMessages(threadId);
+  const history: ChatTurn[] = rawMsgs.map((m) => ({ role: m.role, content: m.content }));
+  history.push({ role: "user", content: userMessage });
+
+  // 先把 user 消息持久化(乐观:用户消息立刻入库)
+  appendMessage(threadId, "user", userMessage);
+
+  // 找焦点节点(从 thread.focusNodeId,通过 threads 表查)
+  // 注意:thread-service 没暴露 getThread,这里直接查表
+  const threadRow = db
+    .select()
+    .from(threads)
+    .where(eq(threads.id, threadId))
+    .get();
+  const focusNodeId = threadRow?.focusNodeId ?? threadId; // fallback:无焦点就用 threadId(不理想,但防崩)
+
+  // AbortController 按 threadId 登记
+  const controller = new AbortController();
+  abortControllers.set(`thread:${threadId}`, controller);
+
+  const reply = await runAgentTurn(
+    db,
+    focusNodeId,
+    history,
+    {
+      onTextDelta: (delta) => win?.webContents.send("chat:token", delta),
+      onToolCall: (name, args) =>
+        win?.webContents.send("chat:toolCall", name, JSON.stringify(args ?? {})),
+      onProposalCreated: (id, summary) => {
+        win?.webContents.send("chat:proposal", id, summary, "pending");
+      },
+      onError: (msg) => win?.webContents.send("chat:error", msg),
+      onPart: (part) => win?.webContents.send("chat:part", part),
+    },
+    controller.signal,
+  );
+
+  abortControllers.delete(`thread:${threadId}`);
+
+  // assistant 回复入库
+  appendMessage(threadId, "assistant", reply);
+  markDirty();
+  win?.webContents.send("chat:done", reply);
+  return reply;
+}
+
+/** v0.4: 中断某 thread 正在跑的 agent 回复 */
+export function abortAgentChatThread(threadId: string): void {
+  const controller = abortControllers.get(`thread:${threadId}`);
+  if (controller) {
+    controller.abort();
+    abortControllers.delete(`thread:${threadId}`);
   }
 }

@@ -183,3 +183,54 @@ CREATE TABLE IF NOT EXISTS custom_providers (
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 
+
+-- ============================================================
+-- canvas_items: AI 产物画布(v0.3 黑板笔记本)
+-- 所有 Generative UI 产物(概念图/对比表/练习/代码讲解/流程图)自动持久化,
+-- 用户可单删/置顶,按节点或课程翻阅。这是"学习笔记本"的数据基础。
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS canvas_items (
+  id TEXT PRIMARY KEY,               -- uuid
+  node_id TEXT,                      -- 关联的课时(可空表示课程级产物)
+  course_id TEXT NOT NULL,           -- 关联课程
+  artifact_type TEXT NOT NULL,       -- concept_map / quiz / compare_table / diagram / code_walkthrough
+  title TEXT,                        -- 产物标题
+  data TEXT NOT NULL,                -- JSON 序列化的产物数据(与 tool execute 返回一致)
+  pinned INTEGER DEFAULT 0,          -- 用户置顶(0/1)
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  notes TEXT                         -- 用户备注(后续扩展)
+);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_node ON canvas_items(node_id);
+CREATE INDEX IF NOT EXISTS idx_canvas_course ON canvas_items(course_id);
+CREATE INDEX IF NOT EXISTS idx_canvas_created ON canvas_items(created_at);
+
+-- ============================================================
+-- threads + chat_messages: v0.4 会话 Thread 模型(类 Cursor 项目-会话)
+-- 把"节点即会话"升级为"课程(项目)→ 多 thread(会话)→ 节点是素材"。
+-- AI 上下文 = thread 的所有消息 + 焦点节点内容 + 课程级 memory。
+-- 旧 chat_sessions 表保留不动(向后兼容,新代码不读写)。
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS threads (
+  id TEXT PRIMARY KEY,               -- thread id (uuid)
+  course_id TEXT NOT NULL,           -- 属于哪个课程(项目)
+  title TEXT,                        -- 用户起的名,如"注意力机制深挖"
+  focus_node_id TEXT,                -- 主焦点节点(可空,影响 AI 注入的节点上下文)
+  status TEXT NOT NULL DEFAULT 'active',  -- active / archived
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  message_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_threads_course ON threads(course_id, status, updated_at);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY,               -- uuid
+  thread_id TEXT NOT NULL,           -- 关联 thread
+  role TEXT NOT NULL,                -- user / assistant
+  content TEXT NOT NULL,             -- 文本内容
+  parts_json TEXT,                   -- v0.2 parts 产物/tool/reasoning(JSON,可空)
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+CREATE INDEX IF NOT EXISTS idx_messages_thread ON chat_messages(thread_id, created_at);

@@ -261,6 +261,10 @@ export interface ApiExpose {
   getChatHistory(nodeId: string): Promise<ChatMessage[]>;
   /** 清空某节点的聊天历史 */
   clearChatHistory(nodeId: string): Promise<void>;
+  /** v0.4: Thread 模式发消息(传 threadId,从 thread 装配上下文) */
+  agentChatThread(threadId: string, userMessage: string): Promise<string>;
+  /** v0.4: 中断某 thread 的 agent 回复 */
+  abortAgentChatThread(threadId: string): Promise<void>;
 
   /* Skill 系统（M1） */
   listSkills(): Promise<Skill[]>;
@@ -354,6 +358,55 @@ export interface ApiExpose {
   getXpStatus(): Promise<{ todayXp: number; dailyGoal: number; achieved: boolean; pct: number }>;
   /** 导出学习记录（JSON / Markdown 格式） */
   exportCourse(courseId: string, format: "json" | "markdown"): Promise<string>;
+
+  /* v0.3: Canvas 画布(黑板笔记本)—— AI 产物持久化 */
+  canvasList(courseId: string, nodeId?: string | null): Promise<CanvasItem[]>;
+  canvasSave(input: { nodeId?: string | null; courseId: string; artifactType: string; title?: string | null; data: unknown }): Promise<CanvasItem>;
+  canvasDelete(id: string): Promise<void>;
+  canvasTogglePin(id: string): Promise<CanvasItem | null>;
+
+  /* v0.4: Thread 会话(类 Cursor 项目-会话) */
+  threadList(courseId: string, status?: "active" | "archived"): Promise<Thread[]>;
+  threadCreate(input: { courseId: string; focusNodeId?: string | null; title?: string | null }): Promise<Thread>;
+  threadUpdate(id: string, patch: { title?: string; status?: "active" | "archived"; focusNodeId?: string | null }): Promise<Thread | null>;
+  threadDelete(id: string): Promise<void>;
+  threadGetMessages(threadId: string): Promise<ChatMessageRow[]>;
+  threadFindRecentByNode(courseId: string, nodeId: string): Promise<Thread | null>;
+}
+
+/** v0.4: 会话线程 */
+export interface Thread {
+  id: string;
+  courseId: string;
+  title: string | null;
+  focusNodeId: string | null;
+  status: "active" | "archived";
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+/** v0.4: 单条对话消息 */
+export interface ChatMessageRow {
+  id: string;
+  threadId: string;
+  role: "user" | "assistant";
+  content: string;
+  partsJson: string | null;
+  createdAt: string;
+}
+
+/** v0.3: canvas_items 表的一行(对齐 DB schema)。 */
+export interface CanvasItem {
+  id: string;
+  nodeId: string | null;
+  courseId: string;
+  artifactType: string;
+  title: string | null;
+  data: string;
+  pinned: number;
+  createdAt: string;
+  notes: string | null;
 }
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;

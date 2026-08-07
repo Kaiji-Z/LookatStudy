@@ -74,6 +74,10 @@ const api = {
     ipcRenderer.invoke("agent:getHistory", nodeId)) as ApiExpose["getChatHistory"],
   clearChatHistory: ((nodeId: string) =>
     ipcRenderer.invoke("agent:clearHistory", nodeId)) as ApiExpose["clearChatHistory"],
+  agentChatThread: ((threadId: string, msg: string) =>
+    ipcRenderer.invoke("agent:chatThread", threadId, msg)) as ApiExpose["agentChatThread"],
+  abortAgentChatThread: ((threadId: string) =>
+    ipcRenderer.invoke("agent:abortThread", threadId)) as ApiExpose["abortAgentChatThread"],
   isAgentReady: (() =>
     ipcRenderer.invoke("agent:isReady")) as ApiExpose["isAgentReady"],
   getProviderPresets: (() =>
@@ -120,6 +124,30 @@ const api = {
     ipcRenderer.invoke("xp:getStatus")) as ApiExpose["getXpStatus"],
   exportCourse: ((courseId: string, format: "json" | "markdown") =>
     ipcRenderer.invoke("course:export", courseId, format)) as ApiExpose["exportCourse"],
+
+  /* v0.3: Canvas 画布 */
+  canvasList: ((courseId: string, nodeId?: string | null) =>
+    ipcRenderer.invoke("canvas:list", courseId, nodeId)) as ApiExpose["canvasList"],
+  canvasSave: ((input) =>
+    ipcRenderer.invoke("canvas:save", input)) as ApiExpose["canvasSave"],
+  canvasDelete: ((id: string) =>
+    ipcRenderer.invoke("canvas:delete", id)) as ApiExpose["canvasDelete"],
+  canvasTogglePin: ((id: string) =>
+    ipcRenderer.invoke("canvas:togglePin", id)) as ApiExpose["canvasTogglePin"],
+
+  /* v0.4: Thread 会话 */
+  threadList: ((courseId: string, status?: "active" | "archived") =>
+    ipcRenderer.invoke("thread:list", courseId, status)) as ApiExpose["threadList"],
+  threadCreate: ((input) =>
+    ipcRenderer.invoke("thread:create", input)) as ApiExpose["threadCreate"],
+  threadUpdate: ((id: string, patch) =>
+    ipcRenderer.invoke("thread:update", id, patch)) as ApiExpose["threadUpdate"],
+  threadDelete: ((id: string) =>
+    ipcRenderer.invoke("thread:delete", id)) as ApiExpose["threadDelete"],
+  threadGetMessages: ((threadId: string) =>
+    ipcRenderer.invoke("thread:getMessages", threadId)) as ApiExpose["threadGetMessages"],
+  threadFindRecentByNode: ((courseId: string, nodeId: string) =>
+    ipcRenderer.invoke("thread:findRecentByNode", courseId, nodeId)) as ApiExpose["threadFindRecentByNode"],
 
   /* 事件监听（main → renderer 推送） */
   on: ((channel: keyof IpcEvents, listener: (...args: any[]) => void) => {

@@ -233,3 +233,72 @@ export const customProviders = sqliteTable("custom_providers", {
     .default(sql`(CURRENT_TIMESTAMP)`),
 });
 
+/* ---------- AI 产物画布(v0.3 黑板笔记本) ---------- */
+
+/** AI 产物类型(对齐 agent-engine 的展示型 tool) */
+export type ArtifactType =
+  | "concept_map"
+  | "quiz"
+  | "compare_table"
+  | "diagram"
+  | "code_walkthrough";
+
+/** v0.3:所有 Generative UI 产物持久化到这张表,构成"学习笔记本"。 */
+export const canvasItems = sqliteTable("canvas_items", {
+  id: text("id").primaryKey(),
+  /** 关联的课时(可空表示课程级产物) */
+  nodeId: text("node_id"),
+  /** 关联课程 */
+  courseId: text("course_id").notNull(),
+  /** 产物类型 */
+  artifactType: text("artifact_type").notNull(),
+  /** 产物标题 */
+  title: text("title"),
+  /** JSON 序列化的产物数据(与 tool execute 返回一致) */
+  data: text("data").notNull(),
+  /** 用户置顶(0/1) */
+  pinned: integer("pinned").notNull().default(0),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  /** 用户备注(后续扩展) */
+  notes: text("notes"),
+});
+
+/* ---------- v0.4: 会话 Thread 模型(类 Cursor 项目-会话) ---------- */
+
+export type ThreadStatus = "active" | "archived";
+
+/** v0.4: 会话线程。课程(项目)→ 多 thread(会话)→ 节点是素材。 */
+export const threads = sqliteTable("threads", {
+  id: text("id").primaryKey(),
+  courseId: text("course_id").notNull(),
+  /** 用户起的名,如"注意力机制深挖" */
+  title: text("title"),
+  /** 主焦点节点(可空,影响 AI 注入的节点上下文) */
+  focusNodeId: text("focus_node_id"),
+  status: text("status", { enum: ["active", "archived"] as const })
+    .notNull()
+    .default("active"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  messageCount: integer("message_count").notNull().default(0),
+});
+
+/** v0.4: 单条对话消息(替代旧 chat_sessions 的 messagesJson 一团)。 */
+export const chatMessages = sqliteTable("chat_messages", {
+  id: text("id").primaryKey(),
+  threadId: text("thread_id").notNull(),
+  role: text("role", { enum: ["user", "assistant"] as const }).notNull(),
+  content: text("content").notNull(),
+  /** v0.2 parts 产物/tool/reasoning(JSON,可空——纯文本消息没有) */
+  partsJson: text("parts_json"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+

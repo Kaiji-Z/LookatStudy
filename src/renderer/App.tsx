@@ -461,6 +461,7 @@ export default function App() {
                 onRejectProposal={handleRejectProposal}
                 summary={nodeSummary}
                 onStartLearning={handleStartLearning}
+                hasNode={!!selectedNode}
               />
               <ChatComposer
                 nodeId={selectedNodeId}

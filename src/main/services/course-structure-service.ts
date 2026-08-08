@@ -17,6 +17,44 @@ import { resolveLlm } from "./agent/llm-client.js";
 type Db = SQLJsDatabase<typeof schema>;
 
 /**
+ * 懒生成:为单个 lesson 节点实时生成 1-2 句中文摘要,缓存到 summary 字段。
+ * 用于用户首次点节点时(getNodeSummary IPC 检测到 summary 为空时调)。
+ * 已有 summary 的节点不会调本函数(幂等)。
+ */
+export async function generateLessonSummary(db: Db, nodeId: string): Promise<string | null> {
+  const node = db.select().from(contentNodes).where(eq(contentNodes.id, nodeId)).get();
+  if (!node || node.type !== "lesson") return null;
+  // 已有摘要不重复生成
+  if (node.summary) return node.summary;
+
+  const llm = resolveLlm(db);
+  const course = db.select().from(courses).where(eq(courses.id, node.courseId)).get();
+  const content = node.content ?? "";
+  if (content.trim().length < 20) return null; // 内容太短不生成
+
+  const prompt = `你是课程设计专家。为以下课时生成 1-2 句中文摘要:这课学什么 + 核心要点,让学习者快速判断要不要学、学完能掌握什么。30-60 字。
+
+课程: ${course?.title ?? "(未知)"}
+课时: ${node.title}
+
+课时内容(前 800 字):
+${content.slice(0, 800)}
+
+直接返回摘要文字,不要加 JSON、不要加 markdown 代码块标记、不要加"摘要:"前缀。`;
+
+  const result = await generateText({ model: llm.languageModel, prompt });
+  const summary = result.text.replace(/^```.*\n?/i, "").replace(/\s*```$/i, "").trim();
+  if (!summary) return null;
+
+  // 缓存到 DB
+  db.update(contentNodes)
+    .set({ summary })
+    .where(eq(contentNodes.id, nodeId))
+    .run();
+  return summary;
+}
+
+/**
  * 为课程的每个 section 生成一句话中文摘要 + 前置依赖标记,
  * 并为每个 lesson 生成 1-2 句摘要(存 summary 字段,不覆盖 content)。
  * 需要 LLM key。

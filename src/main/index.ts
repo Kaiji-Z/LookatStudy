@@ -281,13 +281,13 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   // 等渲染层拉完数据 + React 渲染完。轮询所有关键 testid 都出现——
   // 不能只等容器，因为 skills/courses 是异步并行拉的，容器早出、内容晚出，会 race。
-  // v0.2: 三栏布局后 testid 变了——map-rail + skill-picker + map-node-* + chat-panel + notebook-panel
+  // v0.2: 三栏布局后 testid 变了——map-rail + map-node-* + chat-panel + notebook-panel
+  // 注:skill-picker 在 ChatComposer 内,需选中节点才渲染,不在初始等待条件里。
   const waitRender = async (timeoutMs = 10000): Promise<boolean> => {
     const deadline = Date.now() + timeoutMs;
     const checkAll = () =>
       win.webContents.executeJavaScript(`
         document.querySelector('[data-testid="map-rail"]') !== null &&
-        document.querySelector('[data-testid="skill-picker"]') !== null &&
         document.querySelectorAll('[data-testid^="map-node-"]').length >= 1 &&
         document.querySelector('[data-testid="chat-panel"]') !== null &&
         document.querySelector('[data-testid="notebook-panel"]') !== null

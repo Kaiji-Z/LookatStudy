@@ -46,9 +46,11 @@ interface ChatStreamProps {
   summary?: string | null;
   /** 点"开始学习"→ 发学习方法请求,建立会话 */
   onStartLearning?: () => void;
+  /** 是否已选中节点(false 时空状态显示"选节点"引导) */
+  hasNode?: boolean;
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, hasNode = true }: ChatStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // 用户是否"贴底"——只在贴底时自动跟随,避免用户上滑翻历史被强拉回来。
   // 用 ref 存判断结果(useEffect 里读,无需触发重渲染)。
@@ -106,38 +108,53 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       >
         {messages.length === 0 && (
           <div className="mt-10 mx-auto max-w-md" data-testid="chat-empty-state">
-            <div className="text-center mb-5">
-              <div className="text-4xl mb-3 opacity-30">📖</div>
-              <div className="text-neutral-500 dark:text-neutral-400 text-sm">这是这一课的概览</div>
-            </div>
-            {/* 摘要卡片 */}
-            {summary ? (
-              <div className="surface-card p-4 mb-5">
-                <div className="text-[10px] font-bold text-brand uppercase tracking-wider mb-2">本课摘要</div>
-                <div className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
-                  {summary}
+            {hasNode ? (
+              <>
+                <div className="text-center mb-5">
+                  <div className="text-4xl mb-3 opacity-30">📖</div>
+                  <div className="text-neutral-500 dark:text-neutral-400 text-sm">这是这一课的概览</div>
+                </div>
+                {/* 摘要卡片 */}
+                {summary ? (
+                  <div className="surface-card p-4 mb-5">
+                    <div className="text-[10px] font-bold text-brand uppercase tracking-wider mb-2">本课摘要</div>
+                    <div className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
+                      {summary}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="surface-card p-4 mb-5 text-center">
+                    <div className="text-sm text-neutral-500 dark:text-neutral-400">暂无摘要,点开始学习让 AI 帮你了解这一课</div>
+                  </div>
+                )}
+                {/* 开始学习按钮 */}
+                {onStartLearning && (
+                  <button
+                    onClick={onStartLearning}
+                    disabled={streaming}
+                    data-testid="start-learning-btn"
+                    className="btn-3d-brand w-full py-3 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40"
+                  >
+                    <span>🚀</span>
+                    <span>开始学习</span>
+                  </button>
+                )}
+                <div className="text-center mt-4 text-[11px] text-neutral-500 dark:text-neutral-500">
+                  或从下面的快捷按钮选一个
+                </div>
+              </>
+            ) : (
+              /* 未选节点:引导选节点(此时 ChatComposer 仍渲染,skill-picker 可见) */
+              <div className="text-center mt-16" data-testid="no-node-selected">
+                <div className="text-5xl mb-3 opacity-25">🗺️</div>
+                <div className="text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  从左侧地图选一个节点
+                </div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-500 max-w-xs mx-auto">
+                  点击圆球节点开始学习。绿色=可学,金色=已掌握,紫色 🎯=章节考试
                 </div>
               </div>
-            ) : (
-              <div className="surface-card p-4 mb-5 text-center">
-                <div className="text-sm text-neutral-500 dark:text-neutral-400">暂无摘要,点开始学习让 AI 帮你了解这一课</div>
-              </div>
             )}
-            {/* 开始学习按钮 */}
-            {onStartLearning && (
-              <button
-                onClick={onStartLearning}
-                disabled={streaming}
-                data-testid="start-learning-btn"
-                className="btn-3d-brand w-full py-3 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40"
-              >
-                <span>🚀</span>
-                <span>开始学习</span>
-              </button>
-            )}
-            <div className="text-center mt-4 text-[11px] text-neutral-500 dark:text-neutral-500">
-              或从下面的快捷按钮选一个
-            </div>
           </div>
         )}
 

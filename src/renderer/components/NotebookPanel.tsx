@@ -178,7 +178,7 @@ function ContentTab({ selectedNode, onQuoteToChat }: { selectedNode: ContentNode
     );
   }
   return (
-    <div className="p-5 max-w-2xl mx-auto" data-testid="node-content" ref={contentRef} onMouseUp={handleMouseUp}>
+    <div className="p-5 max-w-2xl mx-auto relative" data-testid="node-content" ref={contentRef} onMouseUp={handleMouseUp}>
       <div className="text-[10px] font-bold text-brand uppercase tracking-wider mb-1">
         {selectedNode.type === "section" ? "章节" : selectedNode.type === "concept" ? "概念" : "课时"}
       </div>

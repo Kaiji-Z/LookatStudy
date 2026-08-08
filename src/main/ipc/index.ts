@@ -104,6 +104,7 @@ import {
   analyzeCourseStructure,
   applyCourseStructure,
   generateLessonSummaries,
+  generateLessonSummary,
 } from "../services/course-structure-service.js";
 // Starter prompts
 import { getStarterPrompts } from "../services/starter-prompts-service.js";
@@ -408,15 +409,26 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     return node?.content ?? null;
   });
 
-  // 取节点摘要(导入时批量生成,空会话时中栏显示)
+  // 取节点摘要(懒生成:DB 没有则实时生成 lesson 摘要并缓存;section 用结构化时的摘要)
   ipcMain.handle("course:getNodeSummary", async (_e, nodeId: string) => {
     const db = getDb();
     const node = db
-      .select({ summary: contentNodes.summary })
+      .select()
       .from(contentNodes)
       .where(eq(contentNodes.id, nodeId))
       .get();
-    return node?.summary ?? null;
+    if (!node) return null;
+    // 已有摘要直接返回
+    if (node.summary) return node.summary;
+    // section 节点:结构化时已带 summary,没有就不生成(避免空 section 调 LLM)
+    if (node.type !== "lesson") return null;
+    // lesson 节点:懒生成(基于 content 正文,1-2 句中文摘要)
+    try {
+      const summary = await generateLessonSummary(db, nodeId);
+      return summary;
+    } catch {
+      return null; // 生成失败不阻塞,中栏显示"暂无摘要"
+    }
   });
 
   // LLM 课程结构化：把导入的碎片节点重组成教学结构
@@ -770,13 +782,8 @@ async function autoStructureCourse(courseId: string, send: (msg: string) => void
   // 结构化重建了 section,exam 节点需补回
   ensureExamNodesForExistingCourses(getDb());
   markDirty();
-  send("AI 正在生成章节摘要…");
-  try {
-    await generateLessonSummaries(getDb(), courseId);
-    markDirty();
-  } catch {
-    // 摘要失败不致命(结构化已成功)
-  }
+  // lesson 摘要不在这里批量生成(大课程会卡很久)——改为点节点时懒生成(getNodeSummary IPC)。
+  // section 摘要也不批量(applyCourseStructure 已从 LLM 结构化结果带入 sec.summary)。
   send("AI 结构化完成");
 }
 

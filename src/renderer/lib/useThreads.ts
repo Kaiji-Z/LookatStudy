@@ -127,7 +127,13 @@ export function useThreads(courseId: string | null) {
     setActiveId(thread.id);
   }, []);
 
-  /** 点地图节点:跳到该节点的最近 thread,没有则只记焦点(不立即建,输入才建)。 */
+  /**
+   * 点地图节点:跳到该节点的最近 thread。
+   * 逻辑:
+   *   - 有 focusNodeId=该节点的 thread → 切过去
+   *   - 没有 → 不清空当前会话(避免用户丢失上下文),只更新当前 thread 的焦点
+   *     (若当前无 thread,保持 null,首次发送时 ensureThreadForSend 建)
+   */
   const focusNode = useCallback(
     async (nodeId: string) => {
       if (!courseId) return;
@@ -135,16 +141,17 @@ export function useThreads(courseId: string | null) {
         const recent = await api.threadFindRecentByNode(courseId, nodeId);
         if (recent) {
           setActiveId(recent.id);
-        } else {
-          // 首次:不立即建,清空 activeId,ThreadSwitcher 显示"输入问题开始新会话"
-          // 实际 thread 在首次发送消息时由 ensureThreadForSend 创建
-          setActiveId(null);
+        } else if (activeId) {
+          // 没有该节点的 thread,但有当前 thread → 更新当前 thread 的焦点为该节点
+          // 这样用户能在同一会话里切换学习内容,不丢失对话上下文
+          await update(activeId, { focusNodeId: nodeId });
         }
+        // 若无 activeId,保持 null(首次发送时建)
       } catch {
         /* 忽略 */
       }
     },
-    [courseId],
+    [courseId, activeId, update],
   );
 
   /**

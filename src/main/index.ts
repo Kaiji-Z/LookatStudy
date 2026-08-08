@@ -77,6 +77,25 @@ function createWindow(): void {
   }
 }
 
+// 单实例锁:防止用户开多个主窗口(Windows 双击图标多次 / dev 叠加)。
+// 测试模式(--self-test / --ui-test)是独立 headless 实例,绕过锁,不和主窗口互斥。
+const isTestMode = process.argv.includes("--self-test") || process.argv.includes("--ui-test");
+if (!isTestMode) {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    // 自己是第二个实例,立即退出
+    app.quit();
+  } else {
+    app.on("second-instance", () => {
+      // 有人试图开第二个实例 → 把已有窗口提到前台
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+    });
+  }
+}
+
 app.whenReady().then(async () => {
   try {
     // 加载 .env(可选,已 gitignore)。读不到静默跳过。

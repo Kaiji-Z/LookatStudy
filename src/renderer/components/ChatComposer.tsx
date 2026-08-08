@@ -104,11 +104,11 @@ export function ChatComposer({
           <select
             value={activeSkill ?? ""}
             onChange={(e) => onPickSkill(e.target.value)}
-            className="text-[11px] bg-transparent text-neutral-600 dark:text-neutral-400 border-none focus:outline-none cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-300"
+            className="text-[11px] bg-transparent text-neutral-600 dark:text-neutral-400 border-none focus:outline-none cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-700 dark:text-neutral-300"
             data-testid="skill-select"
           >
             {skills.map((s) => (
-              <option key={s.id} value={s.name} className="bg-neutral-900 text-neutral-200">
+              <option key={s.id} value={s.name} className="bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200">
                 模式:{SKILL_LABELS[s.name] ?? s.name}
               </option>
             ))}
@@ -120,7 +120,7 @@ export function ChatComposer({
             onClick={() => onFontBump("down")}
             disabled={fontSize === "small"}
             data-testid="font-smaller"
-            className="text-[11px] w-6 h-6 rounded text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800/50 disabled:opacity-30 transition-colors"
+            className="text-[11px] w-6 h-6 rounded text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800/50 disabled:opacity-30 transition-colors"
             title="缩小字号"
           >A-</button>
           <span className="text-[9px] text-neutral-400 w-10 text-center">
@@ -130,7 +130,7 @@ export function ChatComposer({
             onClick={() => onFontBump("up")}
             disabled={fontSize === "large"}
             data-testid="font-larger"
-            className="text-[13px] w-6 h-6 rounded text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800/50 disabled:opacity-30 transition-colors"
+            className="text-[13px] w-6 h-6 rounded text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800/50 disabled:opacity-30 transition-colors"
             title="放大字号"
           >A+</button>
         </div>

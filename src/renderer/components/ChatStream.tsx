@@ -199,7 +199,7 @@ function ReasoningBlock({ text }: { text: string }) {
     >
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-700 dark:text-neutral-300 transition-colors"
       >
         <span>{open ? "▾" : "▸"} 思考过程</span>
         <span className="text-neutral-400 dark:text-neutral-600 font-normal">{text.length} 字</span>
@@ -339,7 +339,7 @@ function CodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreElement>)
 
   return (
     <div className="relative group my-3" data-testid="md-codeblock">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-neutral-850 dark:bg-neutral-900 border border-b-0 border-neutral-700 dark:border-neutral-800 rounded-t-md">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-neutral-850 dark:bg-neutral-900 border border-b-0 border-neutral-300 dark:border-neutral-700 dark:border-neutral-800 rounded-t-md">
         <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider">
           {lang || "code"}
         </span>

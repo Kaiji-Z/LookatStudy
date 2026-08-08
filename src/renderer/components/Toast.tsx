@@ -58,7 +58,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className="pointer-events-auto flex items-center gap-3 px-4 py-2.5 rounded-xl bg-neutral-900 dark:bg-neutral-800 text-neutral-100 text-sm shadow-elevated msg-enter max-w-md"
+            className="pointer-events-auto flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white dark:bg-neutral-900 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm shadow-elevated msg-enter max-w-md"
             data-testid={`toast-${t.id}`}
           >
             <span className="flex-1">{t.message}</span>
@@ -76,7 +76,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             )}
             <button
               onClick={() => dismiss(t.id)}
-              className="text-neutral-500 hover:text-neutral-300 shrink-0 ml-1"
+              className="text-neutral-500 hover:text-neutral-700 dark:text-neutral-300 shrink-0 ml-1"
               aria-label="关闭"
             >
               ✕

@@ -56,7 +56,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
                     <span className="select-none text-neutral-600 pr-3 pl-3 text-right w-10 shrink-0 border-r border-neutral-800">
                       {lineNum}
                     </span>
-                    <span className="text-neutral-300 pl-3 whitespace-pre">{line || " "}</span>
+                    <span className="text-neutral-700 dark:text-neutral-300 pl-3 whitespace-pre">{line || " "}</span>
                   </div>
                 );
               })}
@@ -77,7 +77,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
               className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
                 activeAnnotation === i
                   ? "border-brand bg-brand/10"
-                  : "border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700"
+                  : "border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-300 dark:border-neutral-700"
               }`}
             >
               <div className="text-[10px] font-bold text-brand mb-0.5">

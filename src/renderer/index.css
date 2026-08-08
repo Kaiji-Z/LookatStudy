@@ -205,7 +205,7 @@
 
 /* Card surface */
 .surface-card {
-  @apply bg-neutral-900 border border-neutral-800 rounded-2xl;
+  @apply bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl;
 }
 
 /* Mode tab underline */

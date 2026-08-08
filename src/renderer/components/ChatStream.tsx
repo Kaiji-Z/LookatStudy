@@ -16,7 +16,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, X } from "lucide-react";
+import { Check, X, ChevronDown } from "lucide-react";
 /** 一条消息 = role + parts 数组(v0.2 parts-based)。 */
 export interface ChatMessageV2 {
   id: string;
@@ -47,8 +47,11 @@ interface ChatStreamProps {
 export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal }: ChatStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // 用户是否"贴底"——只在贴底时自动跟随,避免用户上滑翻历史被强拉回来。
-  // 用 ref 存判断结果(setState 会触发不必要的重渲染),useEffect 里读它。
+  // 用 ref 存判断结果(useEffect 里读,无需触发重渲染)。
   const stickToBottomRef = useRef(true);
+  // "回到底部"按钮可见性——这个必须用 state(驱动 JSX 渲染)。
+  // 只在阈值翻转时 set,避免每次 scroll 触发重渲染。
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -56,6 +59,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
     // 80px 容差:轻微上滑(如点代码块复制按钮)仍算贴底。
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     stickToBottomRef.current = atBottom;
+    setShowScrollBtn((prev) => (prev === !atBottom ? prev : !atBottom));
   }, []);
 
   // 贴底时滚动到底。触发条件:
@@ -70,44 +74,71 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
   }, [messages, streaming]);
 
   // 用户发出新消息(send) → 无条件滚到底(用户刚发,必然想看回复)。
-  // 检测:最后一条是 user → 强制贴底 + 立即滚。
+  // 检测:最后一条是 user → 强制贴底 + 立即滚 + 隐藏回到底部按钮。
   const lastIsUser = messages.length > 0 && messages[messages.length - 1].role === "user";
   useEffect(() => {
     if (!lastIsUser) return;
     stickToBottomRef.current = true;
+    setShowScrollBtn(false);
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [lastIsUser]);
 
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    stickToBottomRef.current = true;
+    setShowScrollBtn(false);
+  }, []);
+
   return (
-    <div
-      ref={scrollRef}
-      onScroll={handleScroll}
-      className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0"
-      data-testid="chat-stream"
-    >
-      {messages.length === 0 && (
-        <div className="text-center mt-16">
-          <div className="text-4xl mb-3 opacity-30">💬</div>
-          <div className="text-neutral-600 dark:text-neutral-400 text-sm">从下面选一个开始,或直接问</div>
-        </div>
-      )}
+    <div className="relative flex-1 min-h-0">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="h-full overflow-y-auto px-4 py-4 space-y-4"
+        data-testid="chat-stream"
+      >
+        {messages.length === 0 && (
+          <div className="text-center mt-16">
+            <div className="text-4xl mb-3 opacity-30">💬</div>
+            <div className="text-neutral-600 dark:text-neutral-400 text-sm">从下面选一个开始,或直接问</div>
+          </div>
+        )}
 
-      {messages.map((msg) => (
-        <MessageRowV2
-          key={msg.id}
-          msg={msg}
-          onApplyProposal={onApplyProposal}
-          onRejectProposal={onRejectProposal}
-        />
-      ))}
+        {messages.map((msg) => (
+          <MessageRowV2
+            key={msg.id}
+            msg={msg}
+            onApplyProposal={onApplyProposal}
+            onRejectProposal={onRejectProposal}
+          />
+        ))}
 
-      {streaming && (
-        <div className="flex items-center gap-1.5 text-xs text-brand">
-          <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
-          <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
-          <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
-        </div>
+        {streaming && (
+          <div className="flex items-center gap-1.5 text-xs text-brand">
+            <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
+            <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
+            <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
+          </div>
+        )}
+      </div>
+
+      {/* 回到底部按钮:用户上滑翻历史时出现;流式中有新输出时按钮带红点提示 */}
+      {showScrollBtn && messages.length > 0 && (
+        <button
+          onClick={scrollToBottom}
+          data-testid="scroll-to-bottom"
+          aria-label="回到底部"
+          title="回到底部"
+          className="absolute bottom-4 right-4 w-9 h-9 rounded-full bg-neutral-900 dark:bg-neutral-100 text-neutral-100 dark:text-neutral-900 shadow-elevated flex items-center justify-center hover:scale-105 active:scale-95 transition-transform msg-enter"
+        >
+          <ChevronDown className="w-5 h-5" />
+          {streaming && (
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-brand rounded-full border-2 border-neutral-950 animate-pulse" />
+          )}
+        </button>
       )}
     </div>
   );

@@ -205,10 +205,11 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
-      if (!threadId || streaming || !text.trim()) return;
+    async (text: string, overrideThreadId?: string) => {
+      // 优先用 overrideThreadId(首次建 thread 后立刻发,不等 prop 更新)
+      const tid = overrideThreadId ?? threadId;
+      if (!tid || streaming || !text.trim()) return;
       const trimmed = text.trim();
-      // 乐观渲染:用户消息立刻显示(Setproduct 最佳实践)
       const userMsg: ChatMessageV2 = {
         id: nextMsgId(),
         role: "user",
@@ -218,7 +219,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       setStreaming(true);
       streamingMsgIdRef.current = null;
       try {
-        await api.agentChatThread(threadId, trimmed);
+        await api.agentChatThread(tid, trimmed);
       } catch (e) {
         setStreaming(false);
         setMessages((prev) => [

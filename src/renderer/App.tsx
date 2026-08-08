@@ -422,11 +422,11 @@ export default function App() {
                 starterPrompts={starterPrompts}
                 onPickSkill={handleSkillPick}
                 onSend={async (text) => {
-                  // v0.4: 首次发送时若无 active thread,自动建一条(焦点=当前节点,标题=输入截断)
+                  // v0.5: 首次发送时若无 active thread,建一条并立刻发送(零延迟,一步完成)
                   if (!thread.activeId) {
                     const newId = await thread.ensureThreadForSend(text);
                     if (newId) {
-                      setTimeout(() => chat.send(text), 0);
+                      chat.send(text, newId);
                       return;
                     }
                   }

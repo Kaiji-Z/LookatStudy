@@ -43,16 +43,16 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 ```
 ┌─────────────┬──────────────────────────┬──────────────────┐
 │ MapRail     │ ThreadSwitcher (tabs)     │ NotebookPanel    │
-│ (skill map, │ ───────────────────────   │ (黑板: 讲解/笔记)  │
-│  nodes =    │ ChatStream (AI parts)     │ persisted canvas │
-│  session    │ ───────────────────────   │ items            │
-│  groups)    │ ChatComposer + commands   │                  │
+│ (skill map, │ ───────────────────────   │ (康奈尔笔记本:    │
+│  nodes =    │ ChatStream (AI parts)     │  讲解 / 笔记)     │
+│  session    │ ───────────────────────   │ persisted canvas │
+│  groups)    │ ChatComposer + commands   │ + user 画线笔记   │
 └─────────────┴──────────────────────────┴──────────────────┘
 ```
 
 - **Left (MapRail)**: Duolingo-style skill map. A node is a *session group*: clicking it filters the middle pane's threads by `focus_node_id`. Node states: locked / available / in_progress / mastered. Collapsible (`Ctrl+B`).
 - **Middle (chat)**: `ThreadSwitcher` (Chrome-style horizontal tabs, one thread per tab) + `ChatStream` (parts rendering) + `ChatComposer` (input + font size + skill mode + starter prompts). `Ctrl+K` opens the command palette; `Ctrl+Tab` cycles threads.
-- **Right (NotebookPanel)**: AI artifacts (`canvas_items` table) — concept maps, quizzes, compare tables, Mermaid diagrams, code walkthroughs. Pinned items survive across threads; unpinned roll with the active thread.
+- **Right (NotebookPanel)**: 康奈尔笔记法三区(讲解/笔记)。讲解 tab 显示节点 markdown + 支持选区画线(`✏️ 加笔记`)。笔记 tab 三区:🗺️理解区(AI 产物:概念图/对比表/流程图/代码讲解)、✏️笔记区(用户画线 user_note,带溯源跳转)、📝练习区(quiz + last_result 答题记录)。画线用 `highlightText.ts` 的文本搜索方案(不依赖 DOM offset 稳定性)。
 - **Focus lock**: while the AI is streaming, node/thread switching is blocked so the learner stays in one context. Do not remove this without an explicit off switch the user controls.
 - **HMR rule**: renderer-only changes (CSS/TSX) auto-hot-reload via Vite — no restart needed. Main process or preload changes require `taskkill electron + npm run dev:electron`.
 
@@ -106,7 +106,8 @@ npm run verify:core && npx vite build && npm run self-test
 | LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection`, `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels` |
 | LLM presets | `services/agent/llm-presets.ts` | 10 provider presets (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google) |
 | Threads | `services/thread-service.ts` | CRUD for `threads` + `chat_messages`; `findRecentThreadByNode`; thread is node-bound (`focus_node_id`) |
-| Canvas | `services/canvas-service.ts` | Save / list / delete / pin AI artifacts (`canvas_items`); tied to thread + course |
+| Canvas | `services/canvas-service.ts` | 康奈尔笔记本:AI 产物 + user_note 画线 + quiz 答题记录 (`canvas_items`);byZone 三区筛选(understand/note/practice);溯源字段(source_type/source_anchor) |
+| Highlight | `lib/highlightText.ts` | 画线定位:getTextModel + 文本搜索(applyPersistentMarksByText)+ 跨节点包裹(wrapRangeWithMark)+ 闪烁(flashMark)。**不依赖 DOM offset**(ReactMarkdown 重渲染不稳定),用 indexOf 在纯文本上定位 |
 | Custom providers | `services/custom-provider-service.ts` | BYO user-defined provider rows; bypass preset settings, resolved by `custom-` prefix |
 | Course generator | `services/course-generator.ts` | `generateCourseFromMarkdown` + `generateCourseFromRepoFiles` |
 | Course structure | `services/course-structure-service.ts` | LLM-based course restructuring + `generateLessonSummaries` + prerequisite edges |

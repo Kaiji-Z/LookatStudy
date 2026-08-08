@@ -163,7 +163,7 @@ npm run verify:core && npx vite build && npm run self-test
 
 ## Status
 
-M1–M4 (v0.1 core learning loop) are complete and verified: **course generation → skill map UI → AI agent with BKT + Propose/Apply → RAG + memory + dashboard**. The v0.5 release added a three-pane layout (skill map · chat · notebook), thread sessions, Generative UI, and Duolingo-style map art. See `CHANGELOG.md` for the full version history.
+M1–M4 (v0.1 core learning loop) are complete and verified: **course generation → skill map UI → AI agent with BKT + Propose/Apply → RAG + memory + dashboard**. The v0.5 release added a three-pane layout (skill map · chat · notebook), thread sessions, Generative UI (concept maps / quizzes / Mermaid diagrams / compare tables / code walkthroughs), Duolingo-style map art, and a Cornell-style notebook (understand / notes / practice zones with highlight-and-source-trace). See `CHANGELOG.md` for the full version history.
 
 ## License
 

@@ -89,10 +89,16 @@ export function ChatComposer({
               onClick={() => !streaming && onSend(p.message)}
               disabled={streaming}
               data-testid={`starter-prompt-${i}`}
-              className="shrink-0 flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900/50 hover:border-brand/50 hover:bg-brand/5 hover:text-brand transition-colors text-neutral-600 dark:text-neutral-400 disabled:opacity-40"
+              className={`shrink-0 flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-40 ${
+                p.advancesMastery
+                  ? "border-brand/40 bg-brand/10 text-brand hover:border-brand hover:bg-brand/15 font-semibold"
+                  : "border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900/50 hover:border-brand/50 hover:bg-brand/5 hover:text-brand text-neutral-600 dark:text-neutral-400"
+              }`}
+              title={p.advancesMastery ? "出题测验,答对能涨掌握度" : undefined}
             >
               <span>{p.icon}</span>
               <span>{p.label}</span>
+              {p.advancesMastery && <span className="text-[9px] opacity-70">📈</span>}
             </button>
           ))}
         </div>

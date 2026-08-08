@@ -174,6 +174,8 @@ export interface StarterPrompt {
   message: string;
   /** 图标 emoji */
   icon: string;
+  /** 标记:点这个按钮能涨掌握度(渲染层加视觉提示) */
+  advancesMastery?: boolean;
 }
 
 /* ---------- 练习题（M2 exercises 表的 UI 契约） ---------- */

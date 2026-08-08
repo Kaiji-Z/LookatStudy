@@ -24,6 +24,9 @@ export interface StarterPrompt {
   message: string;
   /** 图标 emoji */
   icon: string;
+  /** 标记:点这个按钮能涨掌握度(AI 会出题/判定 → record_answer proposal)。
+   *  渲染时给这类按钮加视觉标记,让用户知道"点这个能涨进度"。 */
+  advancesMastery?: boolean;
 }
 
 /**
@@ -66,14 +69,15 @@ export function getStarterPrompts(db: Db, nodeId: string): StarterPrompt[] {
         message: `「${node.title}」有哪些必须掌握的关键知识点？`,
       },
       {
-        icon: "🧩",
-        label: "前置知识",
-        message: `学「${node.title}」之前需要什么基础？我需要先补什么？`,
-      },
-      {
         icon: "💡",
         label: "为什么学这个",
         message: `为什么「${node.title}」很重要？在实际中有什么用？`,
+      },
+      {
+        icon: "📝",
+        label: "考考我",
+        message: `出一道关于「${node.title}」的选择题考考我,我答完后请判断对错。`,
+        advancesMastery: true,
       },
     ];
   }
@@ -92,14 +96,15 @@ export function getStarterPrompts(db: Db, nodeId: string): StarterPrompt[] {
         message: `「${node.title}」里的核心概念之间有什么区别和联系？`,
       },
       {
+        icon: "📝",
+        label: "考考我",
+        message: `出一道关于「${node.title}」的选择题考考我,我答完后请判断对错。`,
+        advancesMastery: true,
+      },
+      {
         icon: "🎯",
         label: "实际应用",
         message: `「${node.title}」的知识在实际项目中怎么用？举个例子。`,
-      },
-      {
-        icon: "📝",
-        label: "考考我",
-        message: `出一道关于「${node.title}」的练习题考考我。`,
       },
     ];
   }
@@ -112,6 +117,12 @@ export function getStarterPrompts(db: Db, nodeId: string): StarterPrompt[] {
       message: `帮我总结「${node.title}」的核心要点，检验我是否真的掌握了。`,
     },
     {
+      icon: "📝",
+      label: "最终测验",
+      message: `「${node.title}」我学得差不多了,出几道有难度的题检验我,根据我的回答判断是否掌握。`,
+      advancesMastery: true,
+    },
+    {
       icon: "🔗",
       label: "知识关联",
       message: `「${node.title}」和课程其他内容有什么关联？在整个体系里起什么作用？`,
@@ -120,11 +131,6 @@ export function getStarterPrompts(db: Db, nodeId: string): StarterPrompt[] {
       icon: "🚀",
       label: "进阶挑战",
       message: `「${node.title}」我已经基本掌握了，有什么更进阶的挑战或拓展？`,
-    },
-    {
-      icon: "👨‍🏫",
-      label: "我来教你",
-      message: `让我用自己的话复述「${node.title}」的内容，你来判断我理解得对不对。`,
     },
   ];
 }

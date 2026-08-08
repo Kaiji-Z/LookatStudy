@@ -154,7 +154,7 @@ npm run verify:core && npx vite build && npm run self-test
 |---|---|---|
 | Language | TypeScript | Single language across main + renderer |
 | Renderer | React 19 + Vite 6 + Tailwind v3 | |
-| Desktop | Electron 33 (CJS output) | Cross-platform desktop; see `docs/BUILD-NOTES.md` for the CJS reasoning |
+| Desktop | Electron 33 (CJS output) | Cross-platform desktop (CJS main process — avoids vite-plugin-electron ESM edge cases) |
 | AI | Vercel AI SDK v5 + @ai-sdk/openai/anthropic/google | 5 providers: GLM/DeepSeek/OpenAI (OpenAI-compatible), Claude (native), Gemini (native) |
 | Tool schemas | zod v3 | Required by AI SDK v5 |
 | DB | sql.js (SQLite → WASM) + Drizzle ORM | Zero native compilation (better-sqlite3 was a Windows build trap) |
@@ -163,7 +163,7 @@ npm run verify:core && npx vite build && npm run self-test
 
 ## Status
 
-M1–M4 (v0.1 core learning loop) are complete and verified: **course generation → skill tree UI → AI agent with BKT + Propose/Apply → RAG + memory + dashboard**. See `docs/ROADMAP.md` for the full milestone plan and v0.2 direction (IRT, full-vector RAG, CodeLab).
+M1–M4 (v0.1 core learning loop) are complete and verified: **course generation → skill map UI → AI agent with BKT + Propose/Apply → RAG + memory + dashboard**. The v0.5 release added a three-pane layout (skill map · chat · notebook), thread sessions, Generative UI, and Duolingo-style map art. See `CHANGELOG.md` for the full version history.
 
 ## License
 

@@ -49,10 +49,15 @@ Thumbs.db
 .ui-test-result.json
 ui-screenshot.png
 
-# local-only working notes (not project content)
-
 # local-only: research notes referencing external projects (kept out of public repo)
 .zcode-reference/
+
+# local agent working files (plans, session state) — per-developer, not project content
+.zcode/
+
+# development-process docs (architecture, build notes, roadmap, historical design plans)
+# NOT user-facing. User-facing docs live in docs/. See AGENTS.md "Project rules".
+dev-docs/
 
 # local memory (per-developer agent memory)
 memory/

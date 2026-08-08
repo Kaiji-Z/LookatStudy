@@ -4,7 +4,7 @@
  * M1 内置（HANDOFF §8.1）：socratic-mode（默认）/ exam-prep-mode / project-mode / review-mode
  * 每条用 parseSkillFrontmatter 解析后塞进 skills 表（is_builtin=1）。
  *
- * 设计原则（来自 docs/ARCHITECTURE.md v2）：
+ * 设计原则（来自 dev-docs/ARCHITECTURE.md v2）：
  *   - Agent 引擎通用，Skill 决定"怎么教" —— 换 skill = 换老师
  *   - 这些 body 会作为 system prompt 的前缀注入（见 prompt-builder.ts）
  *   - 苏格拉底模式是默认 + 差异化护城河（vs DeepTutor 教学法写死）

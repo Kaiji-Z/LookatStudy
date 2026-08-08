@@ -14,11 +14,13 @@
  * 注意:本组件只负责"展示"。输入由 ChatComposer 负责。
  */
 import { useState, useRef, useEffect, useCallback } from "react";
+import type { CanvasItem } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, X, ChevronDown } from "lucide-react";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { api } from "../lib/api.js";
+import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 /** 一条消息 = role + parts 数组(v0.2 parts-based)。 */
 export interface ChatMessageV2 {
   id: string;
@@ -54,11 +56,13 @@ interface ChatStreamProps {
   selectedNodeId?: string | null;
   /** 当前 thread id(用于对话画线笔记的溯源锚点) */
   threadId?: string | null;
-  /** 对话流画线加笔记:选 assistant 消息文字 → 存 user_note(溯源到本消息) */
-  onSaveChatNote?: (text: string, msgId: string) => void;
+  /** 对话流画线加笔记:选消息文字 → 存 user_note(溯源到本消息,带消息内字符偏移) */
+  onSaveChatNote?: (text: string, msgId: string, startOffset?: number, endOffset?: number) => void;
+  /** 所有 user_note(用于对话流持久画线渲染)。按 msgId 分组应用 mark */
+  chatNotes?: CanvasItem[];
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, hasNode = true, selectedNodeId, threadId, onSaveChatNote }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes }: ChatStreamProps) {
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
     (_q: { prompt: string }, _idx: number, correct: boolean) => {
@@ -76,26 +80,71 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
   // 只在阈值翻转时 set,避免每次 scroll 触发重渲染。
   const [showScrollBtn, setShowScrollBtn] = useState(false);
 
-  // 笔记溯源跳转:笔记卡点击 → 滚动到对应消息 + 高亮闪烁
+  // 笔记溯源跳转(legacy/无 offset 的旧笔记):滚动到消息 + ring 高亮。
+  // 有 offset 的笔记走 jump-to-chat-note(持久画线 mark,更精准)。
   useEffect(() => {
     const handler = (e: Event) => {
-      const msgId = (e as CustomEvent<string>).detail;
-      if (!msgId) return;
-      const el = document.querySelector(`[data-msg-id="${msgId}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.classList.add("ring-2", "ring-accent", "rounded-lg");
-        setTimeout(() => {
-          el.classList.remove("ring-2", "ring-accent", "rounded-lg");
-        }, 2500);
-      }
+      const detail = (e as CustomEvent<{ msgId: string }>).detail;
+      if (!detail?.msgId) return;
+      const el = document.querySelector(`[data-msg-id="${detail.msgId}"]`) as HTMLElement | null;
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-accent", "rounded-lg");
+      setTimeout(() => el.classList.remove("ring-2", "ring-accent", "rounded-lg"), 2500);
     };
     window.addEventListener("lookatstudy-highlight-message", handler);
     return () => window.removeEventListener("lookatstudy-highlight-message", handler);
   }, []);
 
+  // 对话流持久画线:messages + chatNotes 都就绪后,按 msgId + offset 在每条消息内画 <mark>。
+  // 只在非流式时画(streaming 中 DOM 会被 React 频繁重渲染,画的 mark 会被冲掉且冲突)。
+  useEffect(() => {
+    if (streaming) return; // 流式中不画,等 done 后 DOM 稳定再画
+    if (!scrollRef.current || !chatNotes || chatNotes.length === 0) return;
+    const t = setTimeout(() => {
+      if (!scrollRef.current) return;
+      // v0.3.3:改用文本搜索方案。按 msgId 分组,传 text + 前后文
+      const byMsg = new Map<string, { noteId: string; text: string; surrounding?: string }[]>();
+      for (const item of chatNotes) {
+        try {
+          const anchor = JSON.parse(item.sourceAnchor!) as { type: string; msgId?: string };
+          if (anchor.type === "chat" && anchor.msgId) {
+            const text = (JSON.parse(item.data) as { text?: string }).text ?? "";
+            if (text) {
+              const arr = byMsg.get(anchor.msgId) ?? [];
+              arr.push({ noteId: item.id, text });
+              byMsg.set(anchor.msgId, arr);
+            }
+          }
+        } catch {
+          /* 跳过坏 anchor */
+        }
+      }
+      // 对每条消息 DOM 应用画线
+      for (const [msgId, notes] of byMsg) {
+        const msgEl = scrollRef.current.querySelector(`[data-msg-id="${msgId}"]`) as HTMLElement | null;
+        if (msgEl) {
+          applyPersistentMarksByText(msgEl, notes);
+        }
+      }
+    }, 150);
+    return () => clearTimeout(t);
+  }, [messages, chatNotes, streaming]);
+
+  // 监听溯源跳转(noteId):找到对应画线 mark,scrollIntoView + 闪烁
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const noteId = (e as CustomEvent<string>).detail;
+      if (!noteId) return;
+      const mark = scrollRef.current?.querySelector(`mark[data-note-id="${noteId}"]`) as HTMLElement | null;
+      if (mark) flashMark(mark);
+    };
+    window.addEventListener("lookatstudy-jump-to-chat-note", handler);
+    return () => window.removeEventListener("lookatstudy-jump-to-chat-note", handler);
+  }, []);
+
   // 对话流画线加笔记:选 assistant 消息文字 → 浮出"✏️ 加笔记"按钮
-  const [chatNoteBtn, setChatNoteBtn] = useState<{ x: number; y: number; text: string; msgId: string } | null>(null);
+  const [chatNoteBtn, setChatNoteBtn] = useState<{ x: number; y: number; text: string; msgId: string; startOffset?: number; endOffset?: number } | null>(null);
   const handleChatMouseUp = useCallback(() => {
     if (!onSaveChatNote || !threadId) return;
     const sel = window.getSelection();
@@ -114,15 +163,19 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
     }
     // 向上找最近的 [data-msg-id](可能是 user 或 assistant 消息)
     let node: Node | null = range.commonAncestorContainer;
-    let msgId: string | null = null;
+    let msgEl: HTMLElement | null = null;
     while (node && node !== container) {
       if (node instanceof HTMLElement && node.dataset.msgId) {
-        msgId = node.dataset.msgId;
+        msgEl = node;
         break;
       }
       node = node.parentNode;
     }
-    if (!msgId) { setChatNoteBtn(null); return; }
+    if (!msgEl) { setChatNoteBtn(null); return; }
+    const msgId = msgEl.dataset.msgId!;
+    // 用 Range-based 偏移(精准,不依赖 indexOf;过滤空白节点后索引空间一致)
+    const model = getTextModel(msgEl);
+    const offsets = rangeToOffsets(range, model);
     const rect = range.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
     setChatNoteBtn({
@@ -130,13 +183,15 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       y: rect.top - containerRect.top - 8,
       text,
       msgId,
+      startOffset: offsets?.start,
+      endOffset: offsets?.end,
     });
   }, [onSaveChatNote, threadId]);
 
   const handleSaveChatNote = useCallback(() => {
     if (!chatNoteBtn || !onSaveChatNote) return;
     const text = chatNoteBtn.text.length > 200 ? chatNoteBtn.text.slice(0, 200) + "…" : chatNoteBtn.text;
-    onSaveChatNote(text, chatNoteBtn.msgId);
+    onSaveChatNote(text, chatNoteBtn.msgId, chatNoteBtn.startOffset, chatNoteBtn.endOffset);
     setChatNoteBtn(null);
     window.getSelection()?.removeAllRanges();
   }, [chatNoteBtn, onSaveChatNote]);
@@ -328,7 +383,7 @@ function MessageRowV2({
     // user:左 4px 绿色竖条 + 全宽浅绿底(扁平,非气泡)
     return (
       <div className="msg-enter bg-brand/10 dark:bg-brand/15 rounded-lg px-3 py-2 border border-brand/20" data-testid="msg-user" data-msg-id={msg.id}>
-        <div className="font-medium text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap" style={{ fontSize: "var(--chat-font-size, 15px)" }}>
+        <div className="font-medium text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap select-text" style={{ fontSize: "var(--chat-font-size, 15px)" }}>
           {msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
         </div>
       </div>
@@ -379,7 +434,7 @@ function PartRenderer({
   if (part.type === "text") {
     return (
       <div
-        className="text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert max-w-none leading-relaxed" style={{ fontSize: "var(--chat-font-size, 15px)" }}
+        className="text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert max-w-none leading-relaxed select-text" style={{ fontSize: "var(--chat-font-size, 15px)" }}
         data-testid="part-text"
       >
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>

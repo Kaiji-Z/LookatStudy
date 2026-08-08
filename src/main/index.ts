@@ -136,6 +136,14 @@ app.whenReady().then(async () => {
     return;
   }
 
+  // 画线往返测试:npm run test:highlight,验证 rangeToOffsets→offsetsToRange→applyPersistentMarks
+  // 在各种 DOM 结构(标题/列表/代码块/嵌套 span/空白)下的精度。真 Chromium DOM。
+  if (process.argv.includes("--test-highlight")) {
+    await runHighlightTest();
+    app.quit();
+    return;
+  }
+
   if (mainWindow) {
     registerAllHandlers(mainWindow);
   } else {
@@ -657,4 +665,164 @@ async function runUiTest(screenshot = false): Promise<void> {
   }
 
   if (!allOk) process.exitCode = 1;
+}
+
+/**
+ * 画线往返测试:npm run test:highlight
+ *
+ * 验证 getTextModel → rangeToOffsets → offsetsToRange → applyPersistentMarks 在各种
+ * DOM 结构下的精度。真 Chromium DOM(不是 jsdom 模拟)。
+ *
+ * 测试方法:注入带边界情况的 HTML(标题/列表/代码块/嵌套 span/空白/emoji),
+ * 模拟"用户选中第 N 个字 → 保存 offset → 清空选区 → 用 offset 还原 Range → 画 mark
+ * → 检查 mark 的 textContent 是否等于原选区文字"。
+ *
+ * 每个测试用例覆盖一种 DOM 结构的若干选区位置(开头/中间/结尾/跨节点)。
+ */
+async function runHighlightTest(): Promise<void> {
+  const results: Array<{ name: string; ok: boolean; detail?: unknown }> = [];
+
+  const win = new BrowserWindow({
+    width: 800,
+    height: 600,
+    show: false,
+    webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false },
+  });
+
+  // 用 esbuild 把 highlightText.ts 编译成纯 JS(比正则去类型可靠),注入测试页。
+  // format:iife + globalName:HL → 函数挂到 window.HL,测试代码通过 HL.fn 访问。
+  const tsPath = join(PROJECT_ROOT, "src/renderer/lib/highlightText.ts");
+  let jsSrc = "";
+  try {
+    const { build } = await import("esbuild");
+    const out = await build({
+      entryPoints: [tsPath],
+      bundle: false,
+      write: false,
+      format: "iife",
+      globalName: "HL",
+      target: "es2020",
+    });
+    jsSrc = new TextDecoder().decode(out.outputFiles[0].contents);
+  } catch (e) {
+    const errResult = { overall: false, results: [{ name: "esbuild compile", ok: false, detail: String(e) }] };
+    writeFileSync(join(process.cwd(), ".highlight-test-result.json"), JSON.stringify(errResult, null, 2));
+    process.exitCode = 1;
+    return;
+  }
+
+  await win.loadURL("about:blank");
+  // 先注入编译好的函数,验证 HL 全局挂载成功
+  await win.webContents.executeJavaScript(jsSrc);
+  const hlReady = await win.webContents.executeJavaScript("typeof window.HL === 'object' && typeof window.HL.getTextModel === 'function'");
+  if (!hlReady) {
+    const errResult = { overall: false, results: [{ name: "HL global mounted", ok: false, detail: "window.HL.getTextModel not a function" }] };
+    writeFileSync(join(process.cwd(), ".highlight-test-result.json"), JSON.stringify(errResult, null, 2));
+    process.exitCode = 1;
+    return;
+  }
+
+  const runCase = async (name: string, html: string, selections: { desc: string; startText: string; len: number }[]) => {
+    for (const sel of selections) {
+      const result = await win.webContents.executeJavaScript(`(function() {
+        try {
+          const container = document.body;
+          container.innerHTML = ${JSON.stringify(html)};
+          container.normalize();
+          const fullText = container.textContent || "";
+          const idx = fullText.indexOf(${JSON.stringify(sel.startText)});
+          if (idx < 0) return { ok: false, reason: "startText not found: " + ${JSON.stringify(sel.startText)} };
+          const range = document.createRange();
+          let acc = 0, startNode = null, startOff = 0, endNode = null, endOff = 0;
+          const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+          let n;
+          while ((n = walker.nextNode())) {
+            const t = n.textContent || "";
+            if (!startNode && idx >= acc && idx < acc + t.length) { startNode = n; startOff = idx - acc; }
+            if (!endNode && idx + ${sel.len} > acc && idx + ${sel.len} <= acc + t.length) { endNode = n; endOff = idx + ${sel.len} - acc; }
+            acc += t.length;
+          }
+          if (!startNode || !endNode) return { ok: false, reason: "cannot map idx to text node", idx };
+          range.setStart(startNode, startOff);
+          range.setEnd(endNode, endOff);
+          const expectedText = range.toString();
+          const model = window.HL.getTextModel(container);
+          const offsets = window.HL.rangeToOffsets(range, model);
+          if (!offsets) return { ok: false, reason: "rangeToOffsets null", expected: expectedText };
+          window.getSelection().removeAllRanges();
+          const backRange = window.HL.offsetsToRange(model, offsets.start, offsets.end);
+          if (!backRange) return { ok: false, reason: "offsetsToRange null", offsets };
+          const actualText = backRange.toString();
+          if (actualText !== expectedText) {
+            return { ok: false, reason: "text mismatch", expected: expectedText, actual: actualText, offsets };
+          }
+          const marks = window.HL.applyPersistentMarks(container, [{ noteId: "n1", startOffset: offsets.start, endOffset: offsets.end }]);
+          const markEl = marks.get("n1");
+          if (!markEl) return { ok: false, reason: "no mark", offsets };
+          const markText = markEl.textContent;
+          if (markText !== expectedText) {
+            return { ok: false, reason: "mark text mismatch", expected: expectedText, actual: markText };
+          }
+          return { ok: true, expected: expectedText };
+        } catch (e) {
+          return { ok: false, reason: "exception: " + (e && e.message || String(e)) };
+        }
+      })()`);
+      results.push({ name: `${name} — ${sel.desc}`, ok: result.ok, detail: result });
+    }
+  };
+
+  await runCase("simple paragraph", '<p>Deploying GPT-4 in production systems.</p>', [
+    { desc: "开头 deploying", startText: "Deploying", len: 9 },
+    { desc: "中间 GPT-4", startText: "GPT-4", len: 5 },
+    { desc: "结尾 production", startText: "production", len: 10 },
+    { desc: "跨空格 GPT-4 in", startText: "GPT-4 in", len: 8 },
+  ]);
+  await runCase("nested spans", '<div><span>AI</span><p>The <strong>quick brown</strong> fox jumps.</p></div>', [
+    { desc: "The quick", startText: "The quick", len: 9 },
+    { desc: "quick brown", startText: "quick brown", len: 11 },
+    { desc: "fox jumps", startText: "fox jumps", len: 9 },
+  ]);
+  await runCase("list items", '<ul><li>First item here</li><li>Second item there</li></ul>', [
+    { desc: "First", startText: "First", len: 5 },
+    { desc: "Second", startText: "Second", len: 6 },
+    { desc: "跨 li item there", startText: "item there", len: 10 },
+  ]);
+  await runCase("code block", '<pre><code>const x = 42;\nconst y = x + 1;</code></pre>', [
+    { desc: "const x", startText: "const x", len: 7 },
+    { desc: "跨行 x + 1", startText: "x + 1", len: 5 },
+  ]);
+  await runCase("heading + paragraph", '<h2>Section Title</h2><p>Some body text follows.</p>', [
+    { desc: "Section", startText: "Section", len: 7 },
+    { desc: "body text", startText: "body text", len: 9 },
+    { desc: "跨元素 Title Some", startText: "Title", len: 10 },
+  ]);
+  await runCase("whitespace nodes", '<div>\n  <p>Hello world</p>\n</div>', [
+    { desc: "Hello", startText: "Hello", len: 5 },
+    { desc: "world", startText: "world", len: 5 },
+  ]);
+  await runCase("chinese text", '<p>大语言模型通过注意力机制处理序列数据。</p>', [
+    { desc: "大语言", startText: "大语言", len: 3 },
+    { desc: "注意力机制", startText: "注意力机制", len: 5 },
+    { desc: "序列数据", startText: "序列数据", len: 4 },
+  ]);
+  await runCase("emoji mixed", '<p>✅ Correct! The answer is 42.</p>', [
+    { desc: "Correct", startText: "Correct", len: 7 },
+    { desc: "answer is", startText: "answer is", len: 9 },
+  ]);
+  await runCase("blockquote", '<blockquote><p>Quoted text inside.</p></blockquote>', [
+    { desc: "Quoted", startText: "Quoted", len: 6 },
+    { desc: "inside", startText: "inside", len: 6 },
+  ]);
+
+  win.close();
+  const passed = results.filter((r) => r.ok).length;
+  const failed = results.length - passed;
+  for (const r of results) {
+    console.log(`${r.ok ? "✓" : "✗"} ${r.name}${r.ok ? "" : " — " + JSON.stringify(r.detail)}`);
+  }
+  console.log(`\n=== highlight roundtrip: ${passed}/${results.length} 通过 ${failed === 0 ? "✅" : "❌"} ===`);
+  writeFileSync(join(process.cwd(), ".highlight-test-result.json"), JSON.stringify({ overall: failed === 0, results }, null, 2));
+  console.error("HIGHLIGHT_TEST_RESULT=" + JSON.stringify({ overall: failed === 0, passed, total: results.length }));
+  if (failed > 0) process.exitCode = 1;
 }

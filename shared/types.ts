@@ -467,8 +467,8 @@ export type CanvasZone = "understand" | "note" | "practice";
 
 /** 用户画线笔记的溯源锚点 */
 export type NoteSourceAnchor =
-  | { type: "content"; surroundingText: string } // 讲解区:选区前后文字片段
-  | { type: "chat"; threadId: string; msgId: string }; // 对话流:thread + 消息 id
+  | { type: "content"; surroundingText: string; startOffset?: number; endOffset?: number } // 讲解区:字符偏移(稳定通道)+ surroundingText(回退)
+  | { type: "chat"; threadId: string; msgId: string; startOffset?: number; endOffset?: number }; // 对话流:thread + 消息 id + 消息内字符偏移
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -512,7 +512,7 @@ export type ChatStreamPart =
 
 export interface IpcEvents {
   "chat:token": (chunk: string) => void;
-  "chat:done": (fullText: string) => void;
+  "chat:done": (fullText: string, ids?: { userMessageId?: string; assistantMessageId?: string }) => void;
   "chat:error": (error: string) => void;
   /** 工具调用事件（结构化，供聊天栏渲染工具条） */
   "chat:toolCall": (name: string, args: string) => void;

@@ -504,7 +504,7 @@ export async function handleAgentChat(
   history.push({ role: "assistant", content: reply });
   saveChatHistory(db, nodeId, history);
   markDirty();
-  win?.webContents.send("chat:done", reply);
+  win?.webContents.send("chat:done", reply, {});
   return reply;
 }
 
@@ -595,7 +595,7 @@ export async function handleAgentChatThread(
   history.push({ role: "user", content: userMessage });
 
   // 先把 user 消息持久化(乐观:用户消息立刻入库)
-  appendMessage(threadId, "user", userMessage);
+  const savedUserMsg = appendMessage(threadId, "user", userMessage);
 
   // 找焦点节点(从 thread.focusNodeId,通过 threads 表查)
   // 注意:thread-service 没暴露 getThread,这里直接查表
@@ -630,9 +630,14 @@ export async function handleAgentChatThread(
   abortControllers.delete(`thread:${threadId}`);
 
   // assistant 回复入库
-  appendMessage(threadId, "assistant", reply);
+  const savedAssistantMsg = appendMessage(threadId, "assistant", reply);
   markDirty();
-  win?.webContents.send("chat:done", reply);
+  // chat:done 带上两条消息的真实 DB id(前端用它替换流式时的临时 msg-v2-N id,
+  // 让"对话画线笔记"的溯源 msgId 跨重载稳定匹配)
+  win?.webContents.send("chat:done", reply, {
+    userMessageId: savedUserMsg.id,
+    assistantMessageId: savedAssistantMsg.id,
+  });
   return reply;
 }
 

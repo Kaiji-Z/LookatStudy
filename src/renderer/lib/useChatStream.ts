@@ -184,11 +184,33 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     return off;
   }, []);
 
-  // 订阅 chat:done(流式结束)
+  // 订阅 chat:done(流式结束)。后端带回两条消息的真实 DB id,
+  // 用它替换流式时的临时 msg-v2-N id,让"对话画线笔记"的溯源 msgId 跨重载稳定匹配。
   useEffect(() => {
-    const off = api.on("chat:done", () => {
+    const off = api.on("chat:done", (_fullText: string, ids?: { userMessageId?: string; assistantMessageId?: string }) => {
       setStreaming(false);
       streamingMsgIdRef.current = null;
+      if (ids && (ids.userMessageId || ids.assistantMessageId)) {
+        setMessages((prev) => {
+          // 找最后一条 user 消息 + 最后一条 assistant 消息,替换它们的 id
+          let lastUserIdx = -1;
+          let lastAssistantIdx = -1;
+          for (let i = prev.length - 1; i >= 0; i--) {
+            if (prev[i].role === "user" && lastUserIdx === -1) lastUserIdx = i;
+            if (prev[i].role === "assistant" && lastAssistantIdx === -1) lastAssistantIdx = i;
+            if (lastUserIdx !== -1 && lastAssistantIdx !== -1) break;
+          }
+          return prev.map((m, i) => {
+            if (i === lastUserIdx && ids.userMessageId) {
+              return { ...m, id: ids.userMessageId };
+            }
+            if (i === lastAssistantIdx && ids.assistantMessageId) {
+              return { ...m, id: ids.assistantMessageId };
+            }
+            return m;
+          });
+        });
+      }
     });
     return off;
   }, []);

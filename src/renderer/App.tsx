@@ -104,22 +104,38 @@ export default function App() {
   }, []);
 
   // 笔记卡溯源跳转:点击 → 切到讲解/对话原位 + 高亮
-  const handleJumpToSource = useCallback((anchor: NoteSourceAnchor) => {
+  const handleJumpToSource = useCallback((anchor: NoteSourceAnchor, _noteText?: string, noteId?: string) => {
     if (anchor.type === "content") {
-      // 切到讲解 tab,发事件让 ContentTab 搜索 surroundingText + 高亮
+      // 切到讲解 tab,发 noteId 让 ContentTab 跳到对应的持久画线 mark(直接定位,不搜索)
       setForceArtifactTab("content");
-      // 延迟一帧让 tab 切换生效后再发事件
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("lookatstudy-highlight-content", { detail: anchor.surroundingText }));
-      }, 50);
+      if (noteId) {
+        // 轮询等 ContentTab mount + 画线渲染完,再发跳转事件
+        const tryJump = (attempts: number) => {
+          const mark = document.querySelector(`mark[data-note-id="${noteId}"]`);
+          if (mark) {
+            window.dispatchEvent(new CustomEvent("lookatstudy-jump-to-note", { detail: noteId }));
+          } else if (attempts > 0) {
+            setTimeout(() => tryJump(attempts - 1), 150);
+          }
+        };
+        setTimeout(() => tryJump(10), 100);
+      }
     } else {
-      // chat 源:切到对应 thread(如果不同)+ 发事件让 ChatStream 滚动到 msgId 高亮
+      // chat 源:切到对应 thread(如果不同)+ 发 noteId 让 ChatStream 跳到对应持久画线 mark
       if (anchor.threadId !== thread.activeId) {
         thread.setActiveId(anchor.threadId);
       }
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("lookatstudy-highlight-message", { detail: anchor.msgId }));
-      }, 80);
+      if (noteId) {
+        const tryJump = (attempts: number) => {
+          const mark = document.querySelector(`mark[data-note-id="${noteId}"]`);
+          if (mark) {
+            window.dispatchEvent(new CustomEvent("lookatstudy-jump-to-chat-note", { detail: noteId }));
+          } else if (attempts > 0) {
+            setTimeout(() => tryJump(attempts - 1), 150);
+          }
+        };
+        setTimeout(() => tryJump(10), 120);
+      }
     }
   }, [thread]);
 
@@ -510,13 +526,16 @@ export default function App() {
                 hasNode={!!selectedNode}
                 selectedNodeId={selectedNodeId}
                 threadId={thread.activeId}
-                onSaveChatNote={(text, msgId) => {
+                chatNotes={canvas.items.filter(
+                  (i) => i.artifactType === "user_note" && i.sourceAnchor,
+                )}
+                onSaveChatNote={(text, msgId, startOffset, endOffset) => {
                   if (!selectedNode || !thread.activeId) return;
                   canvas.saveUserNote({
                     nodeId: selectedNode.id,
                     text,
                     sourceType: "chat",
-                    sourceAnchor: { type: "chat", threadId: thread.activeId, msgId },
+                    sourceAnchor: { type: "chat", threadId: thread.activeId, msgId, startOffset, endOffset },
                   });
                   toast.show("已加到笔记 · 笔记区", { duration: 2000 });
                 }}

@@ -15,6 +15,7 @@ import type { ContentNode, CanvasItem, NoteSourceAnchor } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../lib/api.js";
+import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { Pin, Trash, ChevronDown } from "lucide-react";
 
@@ -32,8 +33,8 @@ interface NotebookPanelProps {
   onRecordQuizResult: (id: string, correct: boolean) => void;
   /** 用户从讲解区画线加笔记 */
   onSaveContentNote: (text: string, anchor: NoteSourceAnchor) => void;
-  /** 笔记卡溯源跳转:点击 → 切到讲解/对话定位高亮 */
-  onJumpToSource?: (anchor: NoteSourceAnchor) => void;
+  /** 笔记卡溯源跳转:点击 → 切到讲解/对话定位高亮。noteText 用于消息内文字级定位,noteId 用于画线定位 */
+  onJumpToSource?: (anchor: NoteSourceAnchor, noteText?: string, noteId?: string) => void;
   /** 选中文字后"提问这段"→ 插入聊天框(哪里不会点哪里) */
   onQuoteToChat?: (text: string) => void;
 }
@@ -91,6 +92,9 @@ export function NotebookPanel({
         {tab === "content" ? (
           <ContentTab
             selectedNode={selectedNode}
+            contentNotes={nodeItems.filter(
+              (i) => i.artifactType === "user_note" && i.sourceAnchor,
+            )}
             onQuoteToChat={onQuoteToChat}
             onSaveContentNote={onSaveContentNote}
           />
@@ -113,19 +117,23 @@ export function NotebookPanel({
 /* ---------- 讲解标签 ---------- */
 function ContentTab({
   selectedNode,
+  contentNotes,
   onQuoteToChat,
   onSaveContentNote,
 }: {
   selectedNode: ContentNode | null;
+  /** 该节点的 user_note(用于持久画线渲染) */
+  contentNotes: CanvasItem[];
   onQuoteToChat?: (text: string) => void;
   onSaveContentNote: (text: string, anchor: NoteSourceAnchor) => void;
 }) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  // 选区浮按钮:选中文字后显示,位置跟选区。带 surroundingText 用于笔记溯源
-  const [quoteBtn, setQuoteBtn] = useState<{ x: number; y: number; text: string; surrounding: string } | null>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+  // 选区浮按钮:选中文字后显示。带 offsets(Range-based 偏移,精准)和 surroundingText(legacy 回退)
+  const [quoteBtn, setQuoteBtn] = useState<{ x: number; y: number; text: string; surrounding: string; offsets?: { start: number; end: number } } | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null); // 整个讲解容器(标题+正文+提示)
+  const proseRef = useRef<HTMLDivElement>(null); // 仅 Markdown 正文(offset 计算和画线基于此,避免标题/提示污染偏移)
 
   useEffect(() => {
     if (!selectedNode) {
@@ -143,24 +151,41 @@ function ContentTab({
     return () => { cancelled = true; };
   }, [selectedNode?.id]);
 
-  // 监听溯源跳转事件:笔记卡点击 → 搜索 surroundingText + 高亮闪烁
+  // 持久画线:content + contentNotes 都就绪后,按偏移在讲解区画 <mark>(像书上画线)
+  // 用 setTimeout 等 ReactMarkdown 渲染完 DOM 再画
+  useEffect(() => {
+    if (!content || !contentRef.current) return;
+    // v0.3.3:改用文本搜索方案(不依赖 DOM offset 稳定性)
+    const notes: { noteId: string; text: string; surrounding?: string }[] = [];
+    for (const item of contentNotes) {
+      try {
+        const anchor = JSON.parse(item.sourceAnchor!) as NoteSourceAnchor;
+        if (anchor.type === "content") {
+          const text = (JSON.parse(item.data) as { text?: string }).text ?? "";
+          if (text) notes.push({ noteId: item.id, text, surrounding: anchor.surroundingText });
+        }
+      } catch {
+        /* 跳过坏 anchor */
+      }
+    }
+    const t = setTimeout(() => {
+      if (proseRef.current) {
+        applyPersistentMarksByText(proseRef.current, notes);
+      }
+    }, 80);
+    return () => clearTimeout(t);
+  }, [content, contentNotes]);
+
+  // 监听溯源跳转事件:按 noteId 找到对应画线 mark,scrollIntoView + 闪烁
   useEffect(() => {
     const handler = (e: Event) => {
-      const searchText = (e as CustomEvent<string>).detail;
-      if (!searchText || !contentRef.current) return;
-      // 用 window.find 在讲解区搜索定位(Chromium 支持,会真的选中匹配文字并滚动)
-      // 先清除已有选区
-      window.getSelection()?.removeAllRanges();
-      // window.find 是非标准但 Chromium 支持,适合本场景(本地桌面应用)
-      const found = (window as unknown as { find?: (s: string) => boolean }).find?.(searchText);
-      if (!found) {
-        // 找不到:用 surroundingText 的前 20 字再试(讲解内容可能微调过)
-        const shortSearch = searchText.slice(0, 20);
-        (window as unknown as { find?: (s: string) => boolean }).find?.(shortSearch);
-      }
+      const noteId = (e as CustomEvent<string>).detail;
+      if (!noteId) return;
+      const mark = proseRef.current?.querySelector(`mark[data-note-id="${noteId}"]`) as HTMLElement | null;
+      if (mark) flashMark(mark);
     };
-    window.addEventListener("lookatstudy-highlight-content", handler);
-    return () => window.removeEventListener("lookatstudy-highlight-content", handler);
+    window.addEventListener("lookatstudy-jump-to-note", handler);
+    return () => window.removeEventListener("lookatstudy-jump-to-note", handler);
   }, []);
 
   // 鼠标松开时检查选区(哪里不会点哪里 + 加到笔记)
@@ -180,15 +205,24 @@ function ContentTab({
     }
     const rect = range.getBoundingClientRect();
     const containerRect = contentRef.current.getBoundingClientRect();
-    // 溯源:用选区在讲解纯文本里的位置,取前后各 30 字作为锚点(重渲染后搜索定位)
-    const fullText = contentRef.current.textContent ?? "";
-    const startIdx = fullText.indexOf(text);
-    const surrounding = startIdx >= 0 ? fullText.slice(Math.max(0, startIdx - 30), startIdx + text.length + 30) : text;
+    // 用 Range-based 偏移(精准,不依赖 indexOf 文本匹配)。
+    // 选区必须在 prose 正文容器内(避免选到标题/提示的偏移污染)
+    const proseEl = proseRef.current;
+    let offsets: { start: number; end: number } | null = null;
+    if (proseEl && proseEl.contains(range.commonAncestorContainer)) {
+      const model = getTextModel(proseEl);
+      offsets = rangeToOffsets(range, model);
+    }
+    // surroundingText 作为 legacy 回退(旧笔记搜索用),用 model.text 取(已过滤空白)
+    const modelText = proseEl ? getTextModel(proseEl).text : text;
+    const startIdx = offsets ? offsets.start : modelText.indexOf(text);
+    const surrounding = startIdx >= 0 ? modelText.slice(Math.max(0, startIdx - 30), startIdx + text.length + 30) : text;
     setQuoteBtn({
       x: rect.left + rect.width / 2 - containerRect.left,
       y: rect.top - containerRect.top - 8,
       text,
       surrounding,
+      offsets: offsets ?? undefined,
     });
   }, [onQuoteToChat, onSaveContentNote]);
 
@@ -204,7 +238,13 @@ function ContentTab({
     if (!quoteBtn || !onSaveContentNote || !selectedNode) return;
     // 截断到 200 字(画线太长意义不大)
     const text = quoteBtn.text.length > 200 ? quoteBtn.text.slice(0, 200) + "…" : quoteBtn.text;
-    onSaveContentNote(text, { type: "content", surroundingText: quoteBtn.surrounding });
+    // 用 mouseUp 时用 Range 算好的 offsets(精准,不依赖 indexOf)
+    onSaveContentNote(text, {
+      type: "content",
+      surroundingText: quoteBtn.surrounding,
+      startOffset: quoteBtn.offsets?.start,
+      endOffset: quoteBtn.offsets?.end,
+    });
     setQuoteBtn(null);
     window.getSelection()?.removeAllRanges();
   }, [quoteBtn, onSaveContentNote, selectedNode]);
@@ -234,7 +274,7 @@ function ContentTab({
           ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
         </div>
       ) : content ? (
-        <div className="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300 leading-relaxed select-text">
+        <div ref={proseRef} className="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300 leading-relaxed select-text">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
       ) : (
@@ -462,7 +502,7 @@ function CanvasItemCard({
   onRemove: (id: string) => void;
   onTogglePin: (id: string) => void;
   onRecordQuizResult: (id: string, correct: boolean) => void;
-  onJumpToSource?: (anchor: NoteSourceAnchor) => void;
+  onJumpToSource?: (anchor: NoteSourceAnchor, noteText?: string, noteId?: string) => void;
 }) {
   // quiz 产物答题 → 触发 mastery 更新 + 记录 last_result
   const handleQuizAnswered = useCallback(
@@ -523,7 +563,7 @@ function CanvasItemCard({
             {/* 溯源跳转 */}
             {noteAnchor && onJumpToSource && (
               <button
-                onClick={() => onJumpToSource(noteAnchor!)}
+                onClick={() => onJumpToSource(noteAnchor!, noteText, item.id)}
                 className="mt-2 inline-flex items-center gap-1 text-[10px] text-accent hover:underline font-bold"
                 data-testid={`note-source-${item.id.slice(0, 8)}`}
               >

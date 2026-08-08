@@ -429,6 +429,9 @@ export default function App() {
                       chat.send(text, newId);
                       return;
                     }
+                    // 建失败:不阻塞,让用户知道
+                    toast.show("会话创建失败,请重试");
+                    return;
                   }
                   chat.send(text);
                 }}

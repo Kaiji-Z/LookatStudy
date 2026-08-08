@@ -91,7 +91,7 @@ export default function App() {
   const [starterPrompts, setStarterPrompts] = useState<{ icon: string; label: string; message: string }[]>([]);
 
   // v0.4: thread 模型—— useThreads 管 thread 列表, useChatStream 管当前 thread 消息
-  const thread = useThreads(selectedCourseId);
+  const thread = useThreads(selectedCourseId, selectedNodeId);
   const chat = useChatStream(thread.activeId);
 
   const selectedNode = useMemo(
@@ -230,8 +230,7 @@ export default function App() {
       setStreak(newStreak);
       setSelectedNodeId(node.id);
       setForceArtifactTab("content");
-      // v0.4: 点节点 → 跳该节点的最近 thread(没有则新建)
-      thread.focusNode(node.id);
+      // v0.5: 点节点 → selectedNodeId 变化 → useThreads(selectedCourseId, selectedNodeId) 自动 reload 该节点的 thread
     } catch (e) {
       setErrorFromThrow(e);
     }
@@ -373,7 +372,7 @@ export default function App() {
                 focusNodeTitle={selectedNode?.title ?? null}
                 onPickThread={thread.setActiveId}
                 onCreate={() => {
-                  thread.create({ focusNodeId: selectedNodeId, title: null });
+                  thread.create({ title: null });
                   toast.show("已新建会话");
                 }}
                 onRename={(id, title) => {
@@ -425,7 +424,7 @@ export default function App() {
                 onSend={async (text) => {
                   // v0.4: 首次发送时若无 active thread,自动建一条(焦点=当前节点,标题=输入截断)
                   if (!thread.activeId) {
-                    const newId = await thread.ensureThreadForSend(text, selectedNodeId);
+                    const newId = await thread.ensureThreadForSend(text);
                     if (newId) {
                       setTimeout(() => chat.send(text), 0);
                       return;

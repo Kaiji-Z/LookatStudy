@@ -91,14 +91,14 @@ export function ChatComposer({
               data-testid={`starter-prompt-${i}`}
               className={`shrink-0 flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-40 ${
                 p.advancesMastery
-                  ? "border-brand/50 bg-brand/10 text-brand hover:border-brand hover:bg-brand/20 font-semibold"
-                  : "border-brand/30 bg-brand/5 text-brand hover:border-brand hover:bg-brand/10"
+                  ? "border-brand bg-brand/15 text-brand hover:bg-brand/25 font-bold"
+                  : "border-neutral-600 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 hover:border-brand hover:text-brand"
               }`}
               title={p.hint ?? p.label}
             >
               <span>{p.icon}</span>
               <span>{p.label}</span>
-              {p.advancesMastery && <span className="text-[9px] opacity-70">📈</span>}
+              {p.advancesMastery && <span className="text-[9px] opacity-80">📈</span>}
             </button>
           ))}
         </div>

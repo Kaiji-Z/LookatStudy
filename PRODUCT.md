@@ -17,15 +17,19 @@ This is a hybrid register. It inherits Product's discipline (state semantics, co
 The line we hold: **game-like feedback serves learning motivation, not engagement extraction.** No gems shop, no loot-box animations, no loss-aversion streaks, no leaderboards that punish. Streaks use free monthly freezes, not virtual currency. Stars reflect real mastery (BKT-driven), not grinding.
 
 ## Color strategy
-**Full palette** — five named roles, each used deliberately. Duolingo-inspired on dark surfaces.
+**Full palette** — six named roles, each used deliberately. Duolingo-inspired on dark surfaces.
 
 | Role | Color | Token | Used for | Never for |
 |------|-------|-------|----------|-----------|
 | **Progress** | `#58cc02` | `brand` | advancing / correct / primary action / current selection / "your turn" pulse | decoration, links, warnings |
 | **Interact** | `#1cb0f6` | `accent` | clickable text, secondary actions, links, in-progress state | progress, mastery, errors |
 | **Mastery** | `#ffc800` | `gold` | crowns, mastered nodes, achieved daily goal, stars filled | progress, interaction |
-| **Review** | `#ff4b4b` → `#ff7a00` | `warning`/`orange` | overdue SRS items, wrong answers, destructive actions | progress, mastery |
+| **Error** | `#ff4b4b` | `warning` | wrong answers, destructive actions, errors | progress, mastery, streak |
+| **Review** | `#ff7a1a` | `review` | overdue SRS items, streak flame, "due" badges (warm, non-error) | errors, progress |
+| **Exam** | `#a855f7` | `exam` | chapter-exam boss nodes (6th role) | normal lessons, progress |
 | **Neutral** | neutral-50 → 950 | `neutral` | surfaces, text, borders, disabled, locked | semantic emphasis |
+
+The single source of truth is `:root` in `src/renderer/index.css` (OKLCH variables). Tailwind colors reference them via `rgb(var(--xxx-rgb) / <alpha-value>)`. To change a color, edit only the `:root` variable — all utilities (`text-brand`, `bg-exam`, `border-review`) and component classes update automatically. `scripts/verify-color-semantics.mjs` enforces the semantic rules (no raw `red`/`orange`/`green`/`purple` in classNames).
 
 Dark-only (neutral-950 base). Light mode is not supported in v0.5 — it will be added as a dedicated milestone with systematic theme pairing (not ad-hoc fixes). Every text/background pair must hit ≥4.5:1 contrast (≥3:1 for large/bold).
 

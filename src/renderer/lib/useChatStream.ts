@@ -104,7 +104,7 @@ export function textHistoryToV2(
 interface UseChatStreamResult {
   messages: ChatMessageV2[];
   streaming: boolean;
-  send: (text: string) => Promise<void>;
+  send: (text: string, overrideThreadId?: string) => Promise<void>;
   stop: () => Promise<void>;
   clear: () => void;
   /** 把 proposal 消息内的 tool-call 标记为已应用/拒绝 */
@@ -124,6 +124,8 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   useEffect(() => {
     if (!threadId) {
       setMessages([]);
+      setStreaming(false); // 切到空 thread 时重置 streaming(防卡死输入框)
+      streamingMsgIdRef.current = null;
       return;
     }
     let cancelled = false;

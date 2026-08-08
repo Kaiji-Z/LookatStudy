@@ -8,18 +8,36 @@ export default {
   theme: {
     extend: {
       colors: {
-        // 多邻国风格的活力色 + 深色底
+        // 多邻国风格的活力色 + 深色底。真源在 src/renderer/index.css :root。
+        // 用 rgb(var(--xxx-rgb) / <alpha-value>) 形式让 Tailwind 的 /opacity
+        // 修饰符(bg-brand/10、border-brand/30)正常工作。
+        // --xxx(OKLCH)用于 CSS 渐变/发光;--xxx-rgb 用于 Tailwind 工具类。
         brand: {
-          DEFAULT: "#58cc02", // 多邻国绿
-          dark: "#46a302",
-          light: "#7ed957",
+          DEFAULT: "rgb(var(--brand-rgb) / <alpha-value>)",
+          dark: "rgb(var(--brand-dark-rgb) / <alpha-value>)",
+          light: "rgb(var(--brand-light-rgb) / <alpha-value>)",
         },
         accent: {
-          DEFAULT: "#1cb0f6", // 多邻国蓝
-          dark: "#0a8cdc",
+          DEFAULT: "rgb(var(--accent-rgb) / <alpha-value>)",
+          dark: "rgb(var(--accent-dark-rgb) / <alpha-value>)",
+          light: "rgb(var(--accent-light-rgb) / <alpha-value>)",
         },
-        warning: "#ff4b4b",
-        gold: "#ffc800",
+        gold: {
+          DEFAULT: "rgb(var(--gold-rgb) / <alpha-value>)",
+          dark: "rgb(var(--gold-dark-rgb) / <alpha-value>)",
+          light: "rgb(var(--gold-light-rgb) / <alpha-value>)",
+        },
+        warning: {
+          DEFAULT: "rgb(var(--warning-rgb) / <alpha-value>)",
+          dark: "rgb(var(--warning-dark-rgb) / <alpha-value>)",
+          light: "rgb(var(--warning-light-rgb) / <alpha-value>)",
+        },
+        review: "rgb(var(--review-rgb) / <alpha-value>)", // SRS 复习/streak 连击(橙)
+        exam: {
+          DEFAULT: "rgb(var(--exam-rgb) / <alpha-value>)",
+          dark: "rgb(var(--exam-dark-rgb) / <alpha-value>)",
+          light: "rgb(var(--exam-light-rgb) / <alpha-value>)",
+        },
       },
       fontFamily: {
         sans: ['"DIN Round"', "system-ui", "-apple-system", "sans-serif"],

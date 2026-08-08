@@ -160,7 +160,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         data-testid="mermaid-render-area"
       >
         {state.status === "loading" && (
-          <div className="flex items-center gap-2 text-xs text-neutral-500 my-8 justify-center" data-testid="mermaid-loading">
+          <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400 my-8 justify-center" data-testid="mermaid-loading">
             <span className="typing-dot w-1.5 h-1.5 bg-accent rounded-full inline-block" />
             <span>渲染图中…</span>
           </div>
@@ -204,7 +204,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         )}
         {state.status === "error" && (
           <div className="w-full text-center my-4" data-testid="mermaid-fallback">
-            <div className="text-xs text-red-500 dark:text-red-400 mb-2">
+            <div className="text-xs text-warning mb-2">
               ⚠️ 渲染失败,显示源码(可复制到 mermaid.live 查看)
             </div>
             <pre className="text-[11px] bg-neutral-100 dark:bg-neutral-900/60 rounded p-2 overflow-x-auto text-neutral-700 dark:text-neutral-300 font-mono text-left">

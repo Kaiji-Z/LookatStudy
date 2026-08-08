@@ -697,7 +697,7 @@ function Header({
         <button
           onClick={onOpenSettings}
           data-testid="header-settings"
-          className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
+          className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
           title="设置 (Ctrl+S)"
         >
           <Settings className="w-4 h-4" />
@@ -720,7 +720,7 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
           <button
             onClick={onClose}
             data-testid="settings-close"
-            className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
+            className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
           >
             ✕
           </button>
@@ -753,7 +753,7 @@ function ReviewDrawer({
           <button
             onClick={onClose}
             data-testid="review-close"
-            className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
+            className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
           >
             ✕
           </button>
@@ -771,9 +771,9 @@ function ReviewDrawer({
 
 function ErrorBanner({ message, onClose }: { message: string; onClose: () => void }) {
   return (
-    <div className="px-4 py-2 bg-red-50 dark:bg-red-950/50 border-b border-red-200 dark:border-red-900 text-red-700 dark:text-red-200 text-sm flex items-center justify-between">
+    <div className="px-4 py-2 border-b border-warning-tint-border text-warning text-sm flex items-center justify-between" style={{ backgroundColor: "var(--warning-tint)" }}>
       <span>⚠️ {message}</span>
-      <button className="ml-3 underline text-red-600 dark:text-red-300" onClick={onClose}>关闭</button>
+      <button className="ml-3 underline text-warning-light" onClick={onClose}>关闭</button>
     </div>
   );
 }
@@ -781,12 +781,13 @@ function ErrorBanner({ message, onClose }: { message: string; onClose: () => voi
 function StreakBadge({ streak }: { streak: Streak }) {
   return (
     <div
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20"
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-review/20"
+      style={{ backgroundColor: "var(--review-tint)" }}
       data-testid="streak-badge"
       title={`连续学习 ${streak.currentStreak} 天 · 最长 ${streak.longestStreak} 天`}
     >
-      <Flame className="w-4 h-4 text-orange-500 dark:text-orange-400" />
-      <span className="text-sm font-extrabold text-orange-500 dark:text-orange-400">{streak.currentStreak}</span>
+      <Flame className="w-4 h-4 text-review" />
+      <span className="text-sm font-extrabold text-review">{streak.currentStreak}</span>
     </div>
   );
 }

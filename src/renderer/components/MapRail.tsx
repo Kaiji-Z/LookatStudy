@@ -60,7 +60,7 @@ function MapRailCollapsed({
     >
       <button
         onClick={onToggleCollapse}
-        className="text-neutral-500 hover:text-brand mb-3"
+        className="text-neutral-500 dark:text-neutral-400 hover:text-brand mb-3"
         title="展开地图"
         data-testid="map-expand"
       >
@@ -152,16 +152,16 @@ function MapRailExpanded({
                 {masteryPct}%
               </span>
             </div>
-            <div className="flex items-center justify-between mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-500">
+            <div className="flex items-center justify-between mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-400">
               <span className="flex items-center gap-0.5">
-                <span className="text-orange-500">🔥</span>
-                <span className="font-bold text-orange-500 dark:text-orange-400">{streak}</span>
+                <span className="text-review">🔥</span>
+                <span className="font-bold text-review">{streak}</span>
                 <span>天连击</span>
               </span>
               {dueCount > 0 && (
                 <button
                   onClick={onOpenReview}
-                  className="flex items-center gap-1 text-orange-500 dark:text-orange-400 hover:underline"
+                  className="flex items-center gap-1 text-review hover:underline"
                   data-testid="map-review-badge"
                 >
                   <BookOpen className="w-3 h-3" />
@@ -431,7 +431,7 @@ function MapNode({
         )}
         {/* 待复习标记(仅普通课) */}
         {isDue && !isLocked && !isExam && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] flex items-center justify-center font-bold border-2 border-neutral-50 dark:border-neutral-950">
+          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-review text-white text-[9px] flex items-center justify-center font-bold border-2 border-neutral-50 dark:border-neutral-950">
             !
           </span>
         )}
@@ -497,7 +497,7 @@ function MapNavBtn({
 function statusClass(status: string): string {
   switch (status) {
     case "locked":
-      return "bg-neutral-300 dark:bg-neutral-800 text-neutral-500";
+      return "bg-neutral-300 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400";
     case "available":
       return "bg-brand text-white";
     case "in_progress":

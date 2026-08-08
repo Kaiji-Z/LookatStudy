@@ -76,7 +76,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             )}
             <button
               onClick={() => dismiss(t.id)}
-              className="text-neutral-500 hover:text-neutral-700 dark:text-neutral-300 shrink-0 ml-1"
+              className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:text-neutral-300 shrink-0 ml-1"
               aria-label="关闭"
             >
               ✕

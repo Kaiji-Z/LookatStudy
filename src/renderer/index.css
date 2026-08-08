@@ -2,6 +2,100 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+ * 设计 token —— 单一真源(PRODUCT.md 是语义权威,本块是实现)
+ *
+ * 改色只需改这里:Tailwind colors(var() 引用)+ 所有组件类全部联动。
+ * 全部用 OKLCH(感知均匀,深浅同源色 hue 一致),消灭魔法常量。
+ *
+ * 5 语义色(PRODUCT.md color strategy):
+ *   brand  = 进度/正确/主操作/选中  (绿 hue 137)
+ *   accent = 交互/进行中/链接       (蓝 hue 237)
+ *   gold   = mastery/皇冠/达成      (黄 hue 88)
+ *   warning= 错误/破坏性/overdue    (红 hue 25)
+ *   exam   = 章节考试节点(第6色)    (紫 hue 304)
+ * neutral surface ramp 用于表面/文字/边框。
+ * 深色优先(v0.5 dark-only);浅色 token 预留,恢复时填 html:not(.dark) 块。
+ * ============================================================ */
+:root {
+  /* —— brand 绿(进度/正确/主操作)—— */
+  --brand: oklch(0.748 0.229 137.6);       /* #58cc02 */
+  --brand-rgb: 88 204 2;                   /* 同色 sRGB 通道,供 Tailwind /opacity */
+  --brand-dark: oklch(0.633 0.193 137.5);  /* #46a302 按下阴影/深源色 */
+  --brand-dark-rgb: 70 163 2;
+  --brand-light: oklch(0.801 0.188 137.5); /* #7ed957 hover/浅源色 */
+  --brand-light-rgb: 126 217 87;
+  --brand-glow: oklch(0.748 0.229 137.6 / 0.35);
+  --brand-ring: oklch(0.748 0.229 137.6 / 0.15);
+
+  /* —— accent 蓝(交互/进行中/链接)—— */
+  --accent: oklch(0.718 0.151 237.1);      /* #1cb0f6 */
+  --accent-rgb: 28 176 246;
+  --accent-dark: oklch(0.619 0.155 245.4); /* #0a8cdc */
+  --accent-dark-rgb: 10 140 220;
+  --accent-light: oklch(0.79 0.13 237);    /* #5ed4ff 高光位 */
+  --accent-light-rgb: 94 212 255;
+  --accent-glow: oklch(0.718 0.151 237.1 / 0.3);
+  --accent-ring: oklch(0.718 0.151 237.1 / 0.15);
+
+  /* —— gold 黄(mastery/皇冠/达成)—— */
+  --gold: oklch(0.857 0.175 88.5);         /* #ffc800 */
+  --gold-rgb: 255 200 0;
+  --gold-dark: oklch(0.72 0.16 80);        /* #d99e00 */
+  --gold-dark-rgb: 217 158 0;
+  --gold-light: oklch(0.92 0.16 90);       /* #ffe680 高光位 */
+  --gold-light-rgb: 255 230 128;
+  --gold-glow: oklch(0.857 0.175 88.5 / 0.45);
+  --gold-ring: oklch(0.857 0.175 88.5 / 0.2);
+
+  /* —— warning 红(错误/破坏性/overdue SRS)—— */
+  --warning: oklch(0.671 0.217 25.2);      /* #ff4b4b */
+  --warning-rgb: 255 75 75;
+  --warning-dark: oklch(0.55 0.21 25);     /* 深源色 */
+  --warning-dark-rgb: 230 43 43;
+  --warning-light: oklch(0.74 0.18 25);    /* 浅源色 */
+  --warning-light-rgb: 255 117 117;
+  --warning-glow: oklch(0.671 0.217 25.2 / 0.3);
+  --warning-ring: oklch(0.671 0.217 25.2 / 0.15);
+  --warning-tint: oklch(0.671 0.217 25.2 / 0.1);   /* 错误背景晕 */
+  --warning-tint-border: oklch(0.671 0.217 25.2 / 0.25);
+
+  /* —— review 橙(SRS 复习/streak 连击,暖端独立于 warning 红)—— */
+  /* PRODUCT.md 原 warning #ff4b4b→#ff7a00 渐变,这里拆为两色:warning=红(错误),
+     review=橙(连击/复习提醒,非错误)。避免 streak 连击被误读为错误。 */
+  --review: oklch(0.7 0.19 45);            /* #ff7a1a 橙 */
+  --review-rgb: 255 122 26;
+  --review-glow: oklch(0.7 0.19 45 / 0.15);
+  --review-tint: oklch(0.7 0.19 45 / 0.1);
+
+  /* —— exam 紫(章节考试节点,第6语义色)—— */
+  --exam: oklch(0.627 0.233 303.9);        /* #a855f7 */
+  --exam-rgb: 168 85 247;
+  --exam-dark: oklch(0.496 0.237 301.9);  /* #7e22ce */
+  --exam-dark-rgb: 126 34 206;
+  --exam-light: oklch(0.722 0.177 305.5); /* #c084fc 高光位 */
+  --exam-light-rgb: 192 132 252;
+  --exam-locked: oklch(0.42 0.06 300);    /* #4a3f6b 锁定暗灰紫 */
+  --exam-glow: oklch(0.627 0.233 303.9 / 0.35);
+  --exam-ring: oklch(0.627 0.233 303.9 / 0.15);
+
+  /* —— neutral surface ramp(深色优先)—— */
+  --surface-0: oklch(0.16 0.005 270);      /* neutral-950 最深底 */
+  --surface-1: oklch(0.2 0.005 270);       /* neutral-900 卡片底 */
+  --surface-2: oklch(0.245 0.005 270);     /* neutral-800 hover/elevated */
+  --surface-3: oklch(0.29 0.005 270);      /* neutral-700 边框/分隔 */
+  --ink: oklch(0.96 0.003 270);            /* neutral-100 主文字 */
+  --ink-strong: oklch(0.985 0 0);          /* neutral-50 标题/强调 */
+  --ink-muted: oklch(0.7 0.005 270);       /* neutral-400 次文字 */
+  --ink-faint: oklch(0.55 0.005 270);      /* neutral-500 弱文字(time stamp) */
+  --border: oklch(0.27 0.005 270);         /* neutral-800 边框 */
+  --border-faint: oklch(0.22 0.005 270);   /* neutral-850 弱边框 */
+
+  /* —— 通用发光/阴影 —— */
+  --shadow-rgb: 0 0 0;
+  --inner-highlight: rgb(255 255 255 / 0.55);  /* 球体内高光 */
+}
+
 @layer base {
   html,
   body,
@@ -21,8 +115,9 @@
     user-select: text;
   }
 
-  /* v0.5: 浅色模式已移除,专注深色。浅色相关覆盖代码清理。
-     后续若恢复浅色,需系统实现(非散修)。 */
+  /* v0.5: 浅色模式已移除,专注深色。浅色 token 已在 :root 预留(深色值),
+     恢复浅色时新增 html.light 块覆盖 --surface-0..3, --ink, --ink-muted, --border
+     等中性层即可;5 个语义色深浅模式同源(hue 不变),无需双套。 */
 }
 
 /* === Duolingo-inspired design system === */
@@ -37,46 +132,46 @@
   /* elevation 语义(只用阴影,不配 border) */
   .shadow-elevated {
     /* 浮层/抽屉/菜单:明显抬起感 */
-    box-shadow: 0 8px 24px -4px rgb(0 0 0 / 0.18), 0 2px 6px -2px rgb(0 0 0 / 0.12);
+    box-shadow: 0 8px 24px -4px rgb(var(--shadow-rgb) / 0.18), 0 2px 6px -2px rgb(var(--shadow-rgb) / 0.12);
   }
   .shadow-card {
     /* 卡片:微阴影,不配 border(若需分隔用 border 单独) */
-    box-shadow: 0 1px 3px -1px rgb(0 0 0 / 0.08);
+    box-shadow: 0 1px 3px -1px rgb(var(--shadow-rgb) / 0.08);
   }
   .shadow-pop {
     /* 弹出菜单/tooltip:中等抬起 */
-    box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.14), 0 1px 3px -1px rgb(0 0 0 / 0.08);
+    box-shadow: 0 4px 12px -2px rgb(var(--shadow-rgb) / 0.14), 0 1px 3px -1px rgb(var(--shadow-rgb) / 0.08);
   }
 }
 
-/* 3D push-down buttons (Duolingo signature style) */
+/* 3D push down buttons (Duolingo signature style) */
 @layer components {
   .btn-3d {
     @apply relative font-bold rounded-2xl transition-all duration-150 active:translate-y-0.5;
   }
   .btn-3d-brand {
     @apply btn-3d bg-brand text-white;
-    box-shadow: 0 4px 0 0 #46a302;
+    box-shadow: 0 4px 0 0 var(--brand-dark);
   }
   .btn-3d-brand:hover {
     @apply bg-brand-light;
   }
   .btn-3d-brand:active {
-    box-shadow: 0 1px 0 0 #46a302;
+    box-shadow: 0 1px 0 0 var(--brand-dark);
   }
   .btn-3d-blue {
     @apply btn-3d bg-accent text-white;
-    box-shadow: 0 4px 0 0 #0a8cdc;
+    box-shadow: 0 4px 0 0 var(--accent-dark);
   }
   .btn-3d-blue:active {
-    box-shadow: 0 1px 0 0 #0a8cdc;
+    box-shadow: 0 1px 0 0 var(--accent-dark);
   }
   .btn-3d-neutral {
     @apply btn-3d bg-neutral-700 text-white;
-    box-shadow: 0 4px 0 0 #404040;
+    box-shadow: 0 4px 0 0 var(--surface-3);
   }
   .btn-3d-neutral:active {
-    box-shadow: 0 1px 0 0 #404040;
+    box-shadow: 0 1px 0 0 var(--surface-3);
   }
 }
 
@@ -102,108 +197,108 @@
   width: 38%;
   height: 28%;
   border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 70%);
+  background: radial-gradient(ellipse at center, var(--inner-highlight) 0%, rgb(255 255 255 / 0) 70%);
   pointer-events: none;
   z-index: 1;
 }
 
 /* ── 🔒 locked:沉重灰石头,凹陷感 ── */
 .lesson-bubble-locked {
-  background: radial-gradient(circle at 35% 30%, #4a4a52 0%, #2a2a32 60%, #1a1a20 100%);
+  background: radial-gradient(circle at 35% 30%, var(--surface-3) 0%, var(--surface-2) 60%, var(--surface-1) 100%);
   box-shadow:
-    inset 0 3px 6px rgba(0,0,0,0.5),
-    inset 0 -2px 4px rgba(255,255,255,0.04),
-    0 2px 4px rgba(0,0,0,0.3);
+    inset 0 3px 6px rgb(var(--shadow-rgb) / 0.5),
+    inset 0 -2px 4px rgb(255 255 255 / 0.04),
+    0 2px 4px rgb(var(--shadow-rgb) / 0.3);
 }
 .lesson-bubble-locked::before {
-  background: radial-gradient(ellipse at center, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0) 70%);
+  background: radial-gradient(ellipse at center, rgb(255 255 255 / 0.12) 0%, rgb(255 255 255 / 0) 70%);
 }
 
 /* ── 🟢 available:明亮发光球,该你了 ── */
 .lesson-bubble-available {
-  background: radial-gradient(circle at 32% 28%, #8eea4a 0%, #58cc02 45%, #46a302 100%);
+  background: radial-gradient(circle at 32% 28%, var(--brand-light) 0%, var(--brand) 45%, var(--brand-dark) 100%);
   box-shadow:
-    0 0 0 4px rgba(88, 204, 2, 0.15),
-    0 0 16px rgba(88, 204, 2, 0.35),
-    0 4px 10px rgba(0,0,0,0.25);
+    0 0 0 4px var(--brand-ring),
+    0 0 16px var(--brand-glow),
+    0 4px 10px rgb(var(--shadow-rgb) / 0.25);
 }
 .lesson-bubble-available:hover {
   transform: translateY(-3px) scale(1.03);
   box-shadow:
-    0 0 0 5px rgba(88, 204, 2, 0.2),
-    0 0 22px rgba(88, 204, 2, 0.5),
-    0 6px 14px rgba(0,0,0,0.3);
+    0 0 0 5px oklch(0.748 0.229 137.6 / 0.2),
+    0 0 22px oklch(0.748 0.229 137.6 / 0.5),
+    0 6px 14px rgb(var(--shadow-rgb) / 0.3);
 }
 .lesson-bubble-available:active {
   transform: translateY(2px) scale(0.97);
   box-shadow:
-    0 0 0 3px rgba(88, 204, 2, 0.15),
-    0 0 10px rgba(88, 204, 2, 0.3),
-    0 2px 6px rgba(0,0,0,0.2);
+    0 0 0 3px var(--brand-ring),
+    0 0 10px oklch(0.748 0.229 137.6 / 0.3),
+    0 2px 6px rgb(var(--shadow-rgb) / 0.2);
 }
 
 /* ── 🔵 in_progress:蓝色动感,进行中 ── */
 .lesson-bubble-in-progress {
-  background: radial-gradient(circle at 32% 28%, #5ed4ff 0%, #1cb0f6 45%, #0a8cdc 100%);
+  background: radial-gradient(circle at 32% 28%, var(--accent-light) 0%, var(--accent) 45%, var(--accent-dark) 100%);
   box-shadow:
-    0 0 0 4px rgba(28, 176, 246, 0.15),
-    0 0 14px rgba(28, 176, 246, 0.3),
-    0 4px 10px rgba(0,0,0,0.25);
+    0 0 0 4px var(--accent-ring),
+    0 0 14px var(--accent-glow),
+    0 4px 10px rgb(var(--shadow-rgb) / 0.25);
 }
 .lesson-bubble-in-progress:hover {
   transform: translateY(-2px) scale(1.03);
   box-shadow:
-    0 0 0 5px rgba(28, 176, 246, 0.2),
-    0 0 20px rgba(28, 176, 246, 0.45),
-    0 6px 14px rgba(0,0,0,0.3);
+    0 0 0 5px oklch(0.718 0.151 237.1 / 0.2),
+    0 0 20px oklch(0.718 0.151 237.1 / 0.45),
+    0 6px 14px rgb(var(--shadow-rgb) / 0.3);
 }
 
 /* ── 🟡 mastered:金色耀眼,皇冠光环,球体放大 ── */
 .lesson-bubble-mastered {
-  background: radial-gradient(circle at 32% 28%, #ffe680 0%, #ffc800 45%, #d99e00 100%);
+  background: radial-gradient(circle at 32% 28%, var(--gold-light) 0%, var(--gold) 45%, var(--gold-dark) 100%);
   box-shadow:
-    0 0 0 4px rgba(255, 200, 0, 0.2),
-    0 0 22px rgba(255, 200, 0, 0.45),
-    0 0 40px rgba(255, 200, 0, 0.15),
-    0 4px 12px rgba(0,0,0,0.25);
+    0 0 0 4px var(--gold-ring),
+    0 0 22px var(--gold-glow),
+    0 0 40px oklch(0.857 0.175 88.5 / 0.15),
+    0 4px 12px rgb(var(--shadow-rgb) / 0.25);
   transform: scale(1.1);
 }
 .lesson-bubble-mastered::before {
-  background: radial-gradient(ellipse at center, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 70%);
+  background: radial-gradient(ellipse at center, rgb(255 255 255 / 0.7) 0%, rgb(255 255 255 / 0) 70%);
 }
 .lesson-bubble-mastered:hover {
   transform: scale(1.13) translateY(-2px);
   box-shadow:
-    0 0 0 5px rgba(255, 200, 0, 0.25),
-    0 0 28px rgba(255, 200, 0, 0.55),
-    0 0 50px rgba(255, 200, 0, 0.2),
-    0 6px 16px rgba(0,0,0,0.3);
+    0 0 0 5px oklch(0.857 0.175 88.5 / 0.25),
+    0 0 28px oklch(0.857 0.175 88.5 / 0.55),
+    0 0 50px oklch(0.857 0.175 88.5 / 0.2),
+    0 6px 16px rgb(var(--shadow-rgb) / 0.3);
 }
 
 /* ── 🟣 exam:章节考试节点(关底 boss),紫色专属色区分于普通课 ── */
 .exam-bubble {
-  background: radial-gradient(circle at 32% 28%, #c084fc 0%, #a855f7 45%, #7e22ce 100%);
+  background: radial-gradient(circle at 32% 28%, var(--exam-light) 0%, var(--exam) 45%, var(--exam-dark) 100%);
   box-shadow:
-    0 0 0 4px rgba(168, 85, 247, 0.15),
-    0 0 16px rgba(168, 85, 247, 0.35),
-    0 4px 10px rgba(0,0,0,0.25);
+    0 0 0 4px var(--exam-ring),
+    0 0 16px var(--exam-glow),
+    0 4px 10px rgb(var(--shadow-rgb) / 0.25);
 }
 /* 锁定的考试节点(本章 lesson 未全部 mastery≥0.5):暗灰紫,凹陷感 */
 .exam-bubble-locked {
-  background: radial-gradient(circle at 35% 30%, #6b5b95 0%, #4a3f6b 60%, #2e2650 100%);
+  background: radial-gradient(circle at 35% 30%, var(--exam-locked) 0%, color-mix(in oklch, var(--exam-locked) 60%, var(--surface-1)) 60%, var(--surface-1) 100%);
   box-shadow:
-    inset 0 3px 6px rgba(0,0,0,0.5),
-    inset 0 -2px 4px rgba(255,255,255,0.04),
-    0 2px 4px rgba(0,0,0,0.3);
+    inset 0 3px 6px rgb(var(--shadow-rgb) / 0.5),
+    inset 0 -2px 4px rgb(255 255 255 / 0.04),
+    0 2px 4px rgb(var(--shadow-rgb) / 0.3);
 }
 /* 已通过(有星)的考试:更亮 + 金色光环 */
 .exam-bubble-passed {
-  background: radial-gradient(circle at 32% 28%, #e9d5ff 0%, #c084fc 40%, #9333ea 100%);
+  background: radial-gradient(circle at 32% 28%, oklch(0.85 0.08 305) 0%, var(--exam-light) 40%, var(--exam) 100%);
   box-shadow:
-    0 0 0 4px rgba(255, 200, 0, 0.2),
-    0 0 18px rgba(168, 85, 247, 0.4),
-    0 0 28px rgba(255, 200, 0, 0.15),
-    0 4px 12px rgba(0,0,0,0.25);
+    0 0 0 4px var(--gold-ring),
+    0 0 18px var(--exam-glow),
+    0 0 28px oklch(0.857 0.175 88.5 / 0.15),
+    0 4px 12px rgb(var(--shadow-rgb) / 0.25);
 }
 
 /* v0.3: 恢复克制的 active 节点脉冲(只在"当前可学"节点,传达"该你了"状态)。
@@ -245,7 +340,7 @@
 /* Proposal card glow */
 .proposal-card {
   @apply surface-card p-3 border-brand/30;
-  box-shadow: 0 0 0 1px rgba(88, 204, 2, 0.1), 0 4px 12px rgba(88, 204, 2, 0.08);
+  box-shadow: 0 0 0 1px var(--brand-ring), 0 4px 12px oklch(0.748 0.229 137.6 / 0.08);
 }
 
 /* Typing indicator */

@@ -42,7 +42,7 @@ export function QuizArtifact({
         <div className="text-sm font-bold text-neutral-800 dark:text-neutral-200">
           {score.correct}/{score.total} 答对
         </div>
-        <div className="text-[11px] text-neutral-500 mt-1">
+        <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">
           {score.correct === score.total ? "全部答对,掌握度已提议更新" : "再练一组巩固一下"}
         </div>
       </div>
@@ -99,7 +99,7 @@ export function QuizArtifact({
                 isAnswer
                   ? "border-brand bg-brand/10 text-brand"
                   : isWrongSelected
-                    ? "border-red-500 bg-red-500/10 text-red-500 dark:text-red-400"
+                    ? "border-warning bg-warning/10 text-warning"
                     : isSelected
                       ? "border-accent bg-accent/10 text-accent"
                       : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600"
@@ -119,7 +119,7 @@ export function QuizArtifact({
           className={`rounded-lg p-3 mb-3 text-xs leading-relaxed ${
             isCorrect
               ? "bg-brand/10 border border-brand/30 text-brand"
-              : "bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400"
+              : "bg-warning/10 border border-warning/30 text-warning"
           }`}
           data-testid="quiz-explanation"
         >

@@ -250,7 +250,7 @@ export function SettingsView() {
               }`}
             >
               <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{p.label}</div>
-              {p.note && <div className="text-[11px] text-neutral-500 mt-0.5">{p.note}</div>}
+              {p.note && <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">{p.note}</div>}
             </button>
           ))}
           {/* 自定义 provider 卡片 */}
@@ -266,7 +266,7 @@ export function SettingsView() {
               }`}
             >
               <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">🔧 {c.label}</div>
-              <div className="text-[11px] text-neutral-500 mt-0.5 truncate">{c.baseUrl}</div>
+              <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">{c.baseUrl}</div>
             </button>
           ))}
           {/* 添加自定义 provider 按钮 */}
@@ -347,7 +347,7 @@ export function SettingsView() {
             </div>
             {/* 测试结果 */}
             {customTestResult && (
-              <div className={`text-sm rounded p-2 ${customTestResult.ok ? "bg-green-900/30 text-green-300" : "bg-red-900/30 text-red-300"}`}>
+              <div className={`text-sm rounded p-2 ${customTestResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning-light"}`}>
                 {customTestResult.ok ? "✅" : "❌"} {customTestResult.detail}
               </div>
             )}
@@ -370,7 +370,7 @@ export function SettingsView() {
               </button>
               <button
                 onClick={() => setShowCustomForm(false)}
-                className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-300 px-3 py-2"
+                className="text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:text-neutral-300 px-3 py-2"
               >
                 取消
               </button>
@@ -386,7 +386,7 @@ export function SettingsView() {
                 <span className="text-neutral-400">🔧 {c.label} · {c.protocol}</span>
                 <button
                   onClick={() => handleDeleteCustom(c.id)}
-                  className="text-red-400 hover:underline"
+                  className="text-warning hover:underline"
                 >
                   删除
                 </button>
@@ -511,7 +511,7 @@ export function SettingsView() {
         </div>
         {testResult && (
           <div
-            className={`text-sm rounded p-2 ${testResult.ok ? "bg-green-900/30 text-green-300" : "bg-red-900/30 text-red-300"}`}
+            className={`text-sm rounded p-2 ${testResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning-light"}`}
             data-testid="test-result"
           >
             {testResult.ok ? "✅" : "❌"} {testResult.detail}
@@ -535,7 +535,7 @@ export function SettingsView() {
             data-testid="daily-goal-input"
             className="w-24 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
           />
-          <span className="text-xs text-neutral-500">XP / 天（每答对一题 +10 XP）</span>
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">XP / 天（每答对一题 +10 XP）</span>
         </div>
       </section>
 
@@ -570,7 +570,7 @@ export function SettingsView() {
         >
           保存设置
         </button>
-        {saved && <span className="text-sm text-green-400">✅ 已保存</span>}
+        {saved && <span className="text-sm text-brand">✅ 已保存</span>}
       </div>
     </div>
   );

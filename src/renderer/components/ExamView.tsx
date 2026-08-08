@@ -135,7 +135,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
   if (phase === "error") {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" data-testid="exam-error">
-        <AlertCircle className="w-10 h-10 text-red-500 mb-3" />
+        <AlertCircle className="w-10 h-10 text-warning mb-3" />
         <div className="text-sm font-bold text-neutral-800 dark:text-neutral-200 mb-1">考试加载失败</div>
         <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-4 max-w-xs">{errorMsg}</div>
         <button
@@ -305,14 +305,14 @@ function ExamResultCard({
           return (
             <div
               key={pq.exerciseId}
-              className={`rounded-lg p-2.5 border ${pq.correct ? "border-brand/30 bg-brand/5" : "border-red-500/30 bg-red-500/5"}`}
+              className={`rounded-lg p-2.5 border ${pq.correct ? "border-brand/30 bg-brand/5" : "border-warning/30 bg-warning/5"}`}
               data-testid={`exam-review-${i}`}
             >
               <div className="flex items-start gap-2 mb-1">
                 {pq.correct ? (
                   <Check className="w-4 h-4 text-brand shrink-0 mt-0.5" />
                 ) : (
-                  <X className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                  <X className="w-4 h-4 text-warning shrink-0 mt-0.5" />
                 )}
                 <div className="text-xs text-neutral-800 dark:text-neutral-200 font-medium leading-relaxed">
                   {ex?.prompt ?? `(题目 ${i + 1})`}
@@ -320,7 +320,7 @@ function ExamResultCard({
               </div>
               {!pq.correct && ex?.options && (
                 <div className="text-[11px] text-neutral-600 dark:text-neutral-400 ml-6 mb-1">
-                  <span className="text-red-500 dark:text-red-400">你的答案:</span>{" "}
+                  <span className="text-warning">你的答案:</span>{" "}
                   {ex.options[Number.parseInt(pq.userAnswer)] ?? pq.userAnswer ?? "(未答)"}{" "}
                   <span className="text-neutral-400">·</span>{" "}
                   <span className="text-brand">正确:</span>{" "}

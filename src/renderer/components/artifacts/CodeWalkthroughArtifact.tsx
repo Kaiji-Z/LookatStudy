@@ -87,7 +87,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
 
         {/* 讲解列表 */}
         <div className="space-y-2">
-          <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+          <div className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
             逐段讲解(点击定位代码)
           </div>
           {d.annotations.map((a, i) => (

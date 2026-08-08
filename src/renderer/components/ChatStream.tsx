@@ -277,7 +277,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                     <span>开始学习</span>
                   </button>
                 )}
-                <div className="text-center mt-4 text-[11px] text-neutral-500 dark:text-neutral-500">
+                <div className="text-center mt-4 text-[11px] text-neutral-500 dark:text-neutral-400">
                   或从下面的快捷按钮选一个
                 </div>
               </>
@@ -288,7 +288,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                 <div className="text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                   从左侧地图选一个节点
                 </div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-500 max-w-xs mx-auto">
+                <div className="text-xs text-neutral-500 dark:text-neutral-400 max-w-xs mx-auto">
                   点击圆球节点开始学习。绿色=可学,金色=已掌握,紫色 🎯=章节考试
                 </div>
               </div>
@@ -478,7 +478,7 @@ function ReasoningBlock({ text }: { text: string }) {
         className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
       >
         <span>{open ? "▾" : "▸"} 思考过程</span>
-        <span className="text-neutral-500 dark:text-neutral-500 font-normal">{text.length} 字</span>
+        <span className="text-neutral-500 dark:text-neutral-400 font-normal">{text.length} 字</span>
       </button>
       {open && (
         <div className="px-3 pb-2.5 text-[11px] text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap leading-relaxed border-t border-neutral-200 dark:border-neutral-800/60 pt-2">
@@ -584,11 +584,11 @@ function ToolCallBlock({
       ) : state === "output-error" ? (
         <>
           <span>❌</span>
-          <span className="text-red-500 dark:text-red-400">{label}: {error}</span>
+          <span className="text-warning">{label}: {error}</span>
         </>
       ) : (
         <>
-          <span className="text-neutral-400 dark:text-neutral-500">🔧</span>
+          <span className="text-neutral-400 dark:text-neutral-500 dark:text-neutral-400">🔧</span>
           <span className="text-neutral-600 dark:text-neutral-400">{label}</span>
         </>
       )}

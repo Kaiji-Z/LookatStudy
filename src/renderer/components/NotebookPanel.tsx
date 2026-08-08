@@ -274,7 +274,7 @@ function ContentTab({
       {loading ? (
         <div className="text-sm text-neutral-500 dark:text-neutral-400 flex items-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在加载这一节的讲解…</div>
       ) : loadError ? (
-        <div className="text-sm text-red-500 dark:text-red-400">
+        <div className="text-sm text-warning">
           ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
         </div>
       ) : content ? (
@@ -282,7 +282,7 @@ function ContentTab({
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
       ) : (
-        <div className="text-sm text-neutral-500 dark:text-neutral-500">
+        <div className="text-sm text-neutral-500 dark:text-neutral-400">
           这一节还没有讲解内容。问 AI 导师:「给我讲讲这一节」
         </div>
       )}
@@ -503,11 +503,11 @@ function ZoneSection({
         className="w-full flex items-center gap-2 px-3 py-2.5 bg-neutral-100 dark:bg-neutral-900/50 hover:bg-neutral-200/60 dark:hover:bg-neutral-900 transition-colors text-left"
         data-testid={`${testid}-toggle`}
       >
-        <ChevronDown className={`w-4 h-4 text-neutral-500 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <ChevronDown className={`w-4 h-4 text-neutral-500 dark:text-neutral-400 transition-transform ${open ? "" : "-rotate-90"}`} />
         <span className="text-sm">{icon}</span>
         <span className="text-sm font-bold text-neutral-800 dark:text-neutral-200">{title}</span>
         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-brand/15 text-brand">{count}</span>
-        <span className="text-[11px] text-neutral-500 dark:text-neutral-500 ml-auto truncate">{subtitle}</span>
+        <span className="text-[11px] text-neutral-500 dark:text-neutral-400 ml-auto truncate">{subtitle}</span>
       </button>
       {open && <div className="p-3 space-y-3">{children}</div>}
     </section>
@@ -680,7 +680,7 @@ function CanvasItemCard({
               <span className="text-[10px] text-neutral-400 dark:text-neutral-600">{timeStr}</span>
               <button
                 onClick={() => onRemove(item.id)}
-                className="text-[10px] text-neutral-400 hover:text-red-500"
+                className="text-[10px] text-neutral-400 hover:text-warning"
                 data-testid={`canvas-delete-${item.id.slice(0, 8)}`}
                 title="删除"
               >
@@ -708,7 +708,7 @@ function CanvasItemCard({
         {/* quiz 上次结果徽章 */}
         {item.artifactType === "quiz" && item.lastResult && (
           <span
-            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.lastResult === "correct" ? "bg-brand/15 text-brand" : "bg-red-500/15 text-red-500 dark:text-red-400"}`}
+            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.lastResult === "correct" ? "bg-brand/15 text-brand" : "bg-warning/15 text-warning"}`}
             data-testid={`quiz-result-${item.id.slice(0, 8)}`}
           >
             {item.lastResult === "correct" ? "✅ 上次答对" : "❌ 上次答错"}
@@ -725,7 +725,7 @@ function CanvasItemCard({
         </button>
         <button
           onClick={() => onRemove(item.id)}
-          className="text-[10px] text-neutral-400 hover:text-red-500"
+          className="text-[10px] text-neutral-400 hover:text-warning"
           data-testid={`canvas-delete-${item.id.slice(0, 8)}`}
           title="删除"
         >
@@ -775,12 +775,12 @@ function TabBtn({
       className={`flex-1 text-xs py-2 font-bold transition-colors duration-150 border-b-2 flex items-center justify-center gap-1.5 ${
         active
           ? "text-brand border-brand"
-          : "text-neutral-500 dark:text-neutral-500 border-transparent hover:text-neutral-700 dark:hover:text-neutral-300"
+          : "text-neutral-500 dark:text-neutral-400 border-transparent hover:text-neutral-700 dark:hover:text-neutral-300"
       }`}
     >
       <span>{label}</span>
       {badge && (
-        <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${active ? "bg-brand text-white" : "bg-neutral-200 dark:bg-neutral-800 text-neutral-500"}`}>
+        <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${active ? "bg-brand text-white" : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400"}`}>
           {badge}
         </span>
       )}

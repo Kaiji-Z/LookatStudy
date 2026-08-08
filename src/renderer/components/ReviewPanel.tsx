@@ -62,7 +62,7 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
     return (
       <div className="text-center py-16" data-testid="review-empty">
         <div className="text-4xl mb-3 opacity-30">📖</div>
-        <div className="text-sm text-neutral-500">还没有复习项</div>
+        <div className="text-sm text-neutral-500 dark:text-neutral-400">还没有复习项</div>
         <div className="text-[11px] text-neutral-400 mt-1">完成一些练习后,这里会出现间隔复习提醒</div>
       </div>
     );
@@ -73,7 +73,7 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-extrabold text-neutral-900 dark:text-neutral-100">复习</h2>
         {totalDue > 0 && (
-          <span className="text-xs font-bold text-orange-500 dark:text-orange-400" data-testid="review-due-count">
+          <span className="text-xs font-bold text-review" data-testid="review-due-count">
             {totalDue} 个待复习
           </span>
         )}
@@ -156,7 +156,7 @@ function Quadrant({
   testid: string;
 }) {
   const accentClass = {
-    orange: "border-orange-500/30 bg-orange-500/5",
+    orange: "border-review/30 bg-review/5",
     gold: "border-gold/30 bg-gold/5",
     brand: "border-brand/30 bg-brand/5",
     neutral: "border-neutral-200 dark:border-neutral-800",
@@ -169,7 +169,7 @@ function Quadrant({
           <span>{icon}</span>
           <span>{title}</span>
         </span>
-        <span className="text-xs font-extrabold text-neutral-500 tabular-nums">{count}</span>
+        <span className="text-xs font-extrabold text-neutral-500 dark:text-neutral-400 tabular-nums">{count}</span>
       </div>
       {count === 0 ? (
         <div className="text-[11px] text-neutral-400 py-2 text-center">—</div>
@@ -234,7 +234,7 @@ export function SelfRatingCard({
 
   return (
     <div className="border-t border-neutral-200 dark:border-neutral-800 pt-3 mt-3" data-testid="self-rating">
-      <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-2 text-center">
+      <div className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2 text-center">
         复习完了吗?给自己打分
       </div>
       <div className="grid grid-cols-3 gap-2">
@@ -242,7 +242,7 @@ export function SelfRatingCard({
           onClick={() => rate(1)}
           disabled={busy}
           data-testid="rate-again"
-          className="text-[11px] py-2 rounded-lg border border-red-500/40 text-red-500 dark:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+          className="text-[11px] py-2 rounded-lg border border-warning/40 text-warning hover:bg-warning/10 transition-colors disabled:opacity-40"
         >
           再来一次
         </button>

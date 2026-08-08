@@ -85,13 +85,16 @@ import {
   getMemory as getMemoryService,
 } from "../services/search-service.js";
 // M4：Course Generator
-import { generateCourseFromMarkdown as generateCourseFromMarkdownService, generateCourseFromRepoFiles as generateCourseFromRepoFilesService } from "../services/course-generator.js";
+import { generateCourseFromMarkdown as generateCourseFromMarkdownService, generateCourseFromRepoFiles as generateCourseFromRepoFilesService, ensureExamNodesForExistingCourses } from "../services/course-generator.js";
 import {
   filterLessonFiles,
   detectRepoPattern,
   fetchMarkdownContents,
   buildCourseFromFiles,
   cdnUrl,
+  fetchRepoFileTree,
+  discoverFromReadmeRecursively,
+  pathsToDiscoveredFiles,
 } from "../services/pure/repo-fetcher.js";
 // 课程结构化服务（LLM）
 import {
@@ -188,11 +191,43 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
         );
       }
 
-      // Step 3a: 课程型 → 拉所有课时文件
+      // Step 3a: 课程型 → 文件发现(主:全仓 Tree API;fallback:README 链接)+ 拉取
       if (detection.pattern === "course" && detection.lessonFiles) {
-        const lessonFiles = filterLessonFiles(detection.lessonFiles);
-        send(`检测到课程型仓库（${lessonFiles.length} 个课时文件），开始拉取…`);
+        let lessonFiles = filterLessonFiles(detection.lessonFiles);
 
+        // 文件发现升级:先尝试全仓 Tree API(发现 README 没链接的 .md 文件),
+        // 失败降级到 README 链接发现 + 一层递归。
+        try {
+          send("正在扫描仓库文件树(GitHub API)…");
+          const tree = await fetchRepoFileTree(owner, cleanRepo, readmeBranch, fetch);
+          if (tree.paths.length > 0) {
+            send(`GitHub API 发现 ${tree.paths.length} 个 .md 文件(${tree.source})`);
+            const discovered = pathsToDiscoveredFiles(tree.paths);
+            if (discovered.length > lessonFiles.length) {
+              lessonFiles = discovered; // Tree API 发现更多,用它的
+            }
+          } else {
+            // Tree API 没拿到 → 试 README 递归发现
+            send("GitHub API 不可用,改用 README 链接递归发现…");
+            const recursive = await discoverFromReadmeRecursively(
+              readmeMd, owner, cleanRepo, readmeBranch, fetch, 1, send,
+            );
+            if (recursive.paths.length > lessonFiles.length) {
+              lessonFiles = pathsToDiscoveredFiles(recursive.paths);
+            }
+          }
+        } catch (e) {
+          // 网络抖动:降级到 README 直接链接(detection 已有的)
+          send(`文件树扫描失败(${e instanceof Error ? e.message : "网络问题"}),用 README 链接`);
+        }
+
+        // 上限 80 个文件(防爆)
+        if (lessonFiles.length > 80) {
+          send(`文件数 ${lessonFiles.length} 超过上限,截断到 80 个`);
+          lessonFiles = lessonFiles.slice(0, 80);
+        }
+
+        send(`检测到课程型仓库（${lessonFiles.length} 个课时文件），开始拉取…`);
         const fetchResult = await fetchMarkdownContents(
           lessonFiles,
           owner,
@@ -236,6 +271,11 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
           send(`导入完成：${result.sectionCount} 章 / ${result.lessonCount} 课`);
         }
 
+        // Step 4: 自动 AI 结构化(有 key 时)。失败不阻塞,降级到纯确定性导入结果。
+        await autoStructureCourse(result.courseId, send).catch((e) => {
+          send(`AI 结构化跳过(${e instanceof Error ? e.message : "无 key 或出错"})`);
+        });
+
         const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
         return course as unknown as Course;
       }
@@ -248,6 +288,9 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       });
       markDirty();
       send(`导入完成：${result.sectionCount} 章 / ${result.lessonCount} 课`);
+      await autoStructureCourse(result.courseId, send).catch((e) => {
+        send(`AI 结构化跳过(${e instanceof Error ? e.message : "无 key 或出错"})`);
+      });
       const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
       return course as unknown as Course;
     },
@@ -656,6 +699,35 @@ export function registerM3Handlers(): void {
       category?: "global" | "node" | "friction_pattern",
     ) => getMemoryService(getDb(), nodeId, category),
   );
+}
+
+/**
+ * 导入后自动 AI 结构化(有 API key 时)。
+ * 流程:analyzeCourseStructure → applyCourseStructure → 补 exam 节点 → generateLessonSummaries。
+ * 失败不阻塞(调用方 catch),用户仍得到纯确定性导入的课程。
+ * 无 key → 直接返回(降级)。
+ */
+async function autoStructureCourse(courseId: string, send: (msg: string) => void): Promise<void> {
+  const ready = isLlmReady(getDb());
+  if (!ready.ready) {
+    return; // 无 key,跳过(不报错,用户可后续手动结构化)
+  }
+  send("AI 正在分析课程结构…");
+  const proposal = await analyzeCourseStructure(getDb(), courseId);
+  send(`AI 重组章节(${proposal.sections.length} 章)…`);
+  applyCourseStructure(getDb(), courseId, proposal);
+  markDirty();
+  // 结构化重建了 section,exam 节点需补回
+  ensureExamNodesForExistingCourses(getDb());
+  markDirty();
+  send("AI 正在生成章节摘要…");
+  try {
+    await generateLessonSummaries(getDb(), courseId);
+    markDirty();
+  } catch {
+    // 摘要失败不致命(结构化已成功)
+  }
+  send("AI 结构化完成");
 }
 
 export function registerAllHandlers(mainWindow: BrowserWindow): void {

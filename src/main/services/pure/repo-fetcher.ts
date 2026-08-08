@@ -201,66 +201,210 @@ export async function fetchMarkdownContents(
  *
  * 如果文件没有 H2/H3，整个文件作为一个 lesson。
  */
+/**
+ * 把课程型仓库的多个课时文件合并成 ParsedCourse 结构。
+ *
+ * v2 改进(2026-08-08):按**顶层目录**分组,减少碎片。
+ *   - lessons/3-NeuralNetworks/03-Perceptron/README.md 和
+ *     lessons/3-NeuralNetworks/04-Deep/README.md 归到同一 "3-NeuralNetworks" section
+ *     (而不是各自一个 section → 47 碎片)
+ *   - 根目录的 .md / 扁平结构的 .md 各自独立成 section
+ *
+ * 每个文件的内部 H2/H3 → 该 section 下的 lessons;无 H2/H3 则整个文件作一个 lesson。
+ */
 export function buildCourseFromFiles(
   courseTitle: string,
   files: FetchedFile[],
 ): ParsedCourse {
-  const sections: ParsedSection[] = [];
+  // 第一步:给每个文件算"分组键"(=顶层目录名)和"lesson 候选"
+  interface FileGroup {
+    sectionTitle: string;
+    orderKey: string; // 用于排序(保持原路径顺序)
+    files: { title: string; body: string }[];
+  }
+  const groupMap = new Map<string, FileGroup>();
+  const groupOrder: string[] = [];
 
   for (const file of files) {
-    // 用文件路径推断章节标题
-    // lessons/3-NeuralNetworks/03-Perceptron/README.md → "3-NeuralNetworks / 03-Perceptron"
     const parts = file.path.split("/").filter(Boolean);
     // 去掉末尾的 README.md / index.md
     const dirParts = parts[parts.length - 1]?.match(/^readme/i) || parts[parts.length - 1] === "index.md"
       ? parts.slice(0, -1)
       : parts;
 
-    // 从路径构造章节标题
+    // 分组键 + section 标题:用"第一个非通用目录"做章节分组键。
+    //   - lessons/1-Intro/README.md → 键 "1-Intro"(跳过通用 "lessons")
+    //   - lessons/3-NN/03-Perceptron/README.md → 键 "3-NN"(跳过 "lessons",用第一个具体目录)
+    //   - docs/api.md → 键 "docs"("docs" 虽通用但没更深的目录,用它)
+    //   - 根目录 README.md → 键 = 文件名(各自独立)
+    //   - 纯 file.md(无目录) → 键 = 文件名
+    const GENERIC_DIRS = new Set(["lessons", "docs", "doc", "src", "content", "modules", "chapters", "lessons"]);
+    let groupKey: string;
     let sectionTitle: string;
-    if (dirParts.length >= 2) {
-      // lessons/N-Topic/SubLesson → "N-Topic / SubLesson"
-      sectionTitle = dirParts.slice(-2).join(" / ").replace(/\.md$/i, "");
+    // 找第一个非通用目录(跳过 lessons/docs/src 等容器目录,用具体章节目录)
+    const specificDir = dirParts.find((p) => !GENERIC_DIRS.has(p.toLowerCase()) && !/\.(md|mdx)$/i.test(p));
+    if (dirParts.length >= 2 && specificDir) {
+      groupKey = specificDir.replace(/\.md$/i, "");
+      sectionTitle = groupKey;
+    } else if (dirParts.length === 1) {
+      // 单层目录或单文件 → 各自独立成 section
+      groupKey = file.path;
+      sectionTitle = dirParts[0]!.replace(/\.md$/i, "") || file.title;
     } else {
-      sectionTitle = dirParts.join("/").replace(/\.md$/i, "") || file.title;
+      // 无目录(纯文件名,根目录)
+      groupKey = file.path;
+      sectionTitle = file.title;
     }
 
-    // 解析这个文件的内部结构
+    // lesson 候选:解析文件内部 H2/H3,或整个文件作一 lesson
     const parsed = parseMarkdownToCourse(file.md);
     const parsedLessonCount = parsed.sections.reduce((sum, s) => sum + s.lessons.length, 0);
+    const lessonCandidates: { title: string; body: string }[] =
+      parsedLessonCount > 0
+        ? parsed.sections
+            .filter((s) => s.lessons.length > 0)
+            .flatMap((s) => s.lessons.map((l) => ({ title: l.title, body: l.body })))
+        : (() => {
+            const h1Match = file.md.match(/^#\s+(.+)$/m);
+            const lessonTitle = h1Match ? h1Match[1]!.trim() : file.title;
+            return [{ title: lessonTitle, body: file.md }];
+          })();
 
-    // 如果文件有 H2/H3 结构且产生了 lesson，用它
-    if (parsedLessonCount > 0) {
-      for (const s of parsed.sections) {
-        if (s.lessons.length === 0) continue; // 跳过没有 lesson 的空 section
-        sections.push({
-          title: `${sectionTitle} · ${s.title}`,
-          anchor: s.anchor,
-          lessons: s.lessons.map((l) => ({
-            title: l.title,
-            anchor: l.anchor,
-            body: l.body,
-          })),
-        });
+    if (!groupMap.has(groupKey)) {
+      const g: FileGroup = { sectionTitle, orderKey: file.path, files: [] };
+      groupMap.set(groupKey, g);
+      groupOrder.push(groupKey);
+    }
+    groupMap.get(groupKey)!.files.push(...lessonCandidates);
+  }
+
+  // 第二步:每个分组 → 一个 section(files 按原路径顺序已稳定)
+  const sections: ParsedSection[] = groupOrder.map((key) => {
+    const g = groupMap.get(key)!;
+    return {
+      title: g.sectionTitle,
+      anchor: g.sectionTitle.toLowerCase().replace(/\s+/g, "-"),
+      lessons: g.files.map((l) => ({
+        title: l.title,
+        anchor: l.title.toLowerCase().replace(/\s+/g, "-"),
+        body: l.body,
+      })),
+    };
+  });
+
+  return { title: courseTitle, sections };
+}
+
+/* ============================================================
+ * 文件发现:GitHub Tree API(主)→ jsdelivr 文件列表(fallback)→ README 链接(兜底)
+ *
+ * 用户网络只是偶尔不稳,不屏蔽 API。设计以最优方式为主,降级防抖。
+ * ============================================================ */
+
+/** 文件发现的来源标记(供进度提示 + 测试断言)。 */
+export type FileDiscoverySource = "github-tree-api" | "jsdelivr-list" | "readme-links" | "none";
+
+export interface DiscoveredTree {
+  paths: string[];
+  source: FileDiscoverySource;
+}
+
+/** 从 .md 路径列表构造 DiscoveredFile[](复用 filterLessonFiles 排除规则 + 标题推断)。 */
+export function pathsToDiscoveredFiles(paths: string[]): DiscoveredFile[] {
+  const files: DiscoveredFile[] = [];
+  const seen = new Set<string>();
+  for (const p of paths) {
+    const lower = p.toLowerCase();
+    if (seen.has(p)) continue;
+    let kind: DiscoveredFile["kind"] = "other";
+    if (lower.endsWith(".md") || lower.endsWith(".mdx")) kind = "md";
+    else if (lower.endsWith(".ipynb")) kind = "ipynb";
+    else continue;
+    // 排除非教学内容
+    if (lower.includes("node_modules/") || lower.startsWith(".git/") || lower.includes("translations/")) continue;
+    if (lower.endsWith("license.md") || lower.endsWith("contributing.md") || lower.endsWith("code_of_conduct.md")) continue;
+    seen.add(p);
+    // 标题用文件名(去扩展名)或最后一层目录名
+    const parts = p.split("/").filter(Boolean);
+    const last = parts[parts.length - 1] ?? p;
+    const title = last.replace(/\.(md|mdx|ipynb)$/i, "").replace(/^readme$/i, parts[parts.length - 2] ?? last);
+    files.push({ path: p, title, kind });
+  }
+  return files;
+}
+
+/**
+ * 主方式:GitHub Tree API 一次拿全仓文件树。
+ * https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1
+ * 返回 { tree: [{ path, type }] }。筛 blob + .md/.ipynb。
+ * 网络失败/限流 → 抛错(由调用方降级)。
+ */
+export async function fetchRepoFileTree(
+  owner: string,
+  repo: string,
+  branch: string,
+  fetchFn: typeof fetch,
+): Promise<DiscoveredTree> {
+  // GitHub Tree API
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+  const apiRes = await fetchFn(apiUrl);
+  if (apiRes.ok) {
+    const data = (await apiRes.json()) as { tree?: Array<{ path: string; type: string }> };
+    const mdPaths = (data.tree ?? [])
+      .filter((n) => n.type === "blob" && /\.(md|mdx)$/i.test(n.path))
+      .map((n) => n.path);
+    if (mdPaths.length > 0) return { paths: mdPaths, source: "github-tree-api" };
+  }
+
+  // Fallback:jsdelivr 文件列表 API
+  const jsUrl = `https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${branch}`;
+  const jsRes = await fetchFn(jsUrl);
+  if (jsRes.ok) {
+    const data = (await jsRes.json()) as { files?: Array<{ name: string; type: string }> };
+    // jsdelivr 返回扁平/嵌套结构不一,兼容:收所有 .md 路径
+    const mdPaths: string[] = [];
+    const walk = (nodes: Array<{ name: string; type: string; files?: unknown }>, prefix: string) => {
+      for (const n of nodes) {
+        const full = prefix ? `${prefix}/${n.name}` : n.name;
+        if (n.type === "file" && /\.(md|mdx)$/i.test(n.name)) mdPaths.push(full);
       }
-    } else {
-      // 文件没有 H2/H3，整个文件作为一个 lesson
-      // 取第一个 H1 作为 lesson 标题，没有就用文件标题
-      const h1Match = file.md.match(/^#\s+(.+)$/m);
-      const lessonTitle = h1Match ? h1Match[1].trim() : file.title;
-      sections.push({
-        title: sectionTitle,
-        anchor: sectionTitle.toLowerCase().replace(/\s+/g, "-"),
-        lessons: [
-          {
-            title: lessonTitle,
-            anchor: lessonTitle.toLowerCase().replace(/\s+/g, "-"),
-            body: file.md,
-          },
-        ],
-      });
+    };
+    if (Array.isArray(data.files)) walk(data.files, "");
+    if (mdPaths.length > 0) return { paths: mdPaths, source: "jsdelivr-list" };
+  }
+
+  return { paths: [], source: "none" };
+}
+
+/**
+ * 兜底:从 README 链接发现 + 一层递归(读到的 .md 文件内部再找链接)。
+ * 用于 Tree API + jsdelivr 都失败时,或网络不稳的场景。
+ */
+export async function discoverFromReadmeRecursively(
+  readmeMd: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  fetchFn: typeof fetch,
+  maxDepth = 1,
+  onProgress?: (msg: string) => void,
+): Promise<DiscoveredTree> {
+  const direct = filterLessonFiles(extractInternalLinks(readmeMd)).filter((f) => f.kind === "md");
+  if (direct.length === 0) return { paths: [], source: "readme-links" };
+
+  const allPaths = new Set<string>(direct.map((f) => f.path));
+
+  // 一层递归:拉取直接链接的文件,从其内部再找 .md 链接
+  if (maxDepth >= 1) {
+    onProgress?.(`README 发现 ${direct.length} 个文件,递归扫描子链接…`);
+    const fetched = await fetchMarkdownContents(direct, owner, repo, branch, fetchFn);
+    for (const f of fetched.ok) {
+      const subLinks = filterLessonFiles(extractInternalLinks(f.md)).filter((s) => s.kind === "md");
+      for (const s of subLinks) {
+        if (!allPaths.has(s.path)) allPaths.add(s.path);
+      }
     }
   }
 
-  return { title: courseTitle, sections };
+  return { paths: Array.from(allPaths), source: "readme-links" };
 }

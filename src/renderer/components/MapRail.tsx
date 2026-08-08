@@ -257,6 +257,13 @@ function MapSection({
     .filter((n) => n.parentId === section.id)
     .sort((a, b) => a.orderIdx - b.orderIdx);
 
+  // 考试解锁条件:同 section 的所有 lesson 节点 mastery 都 ≥ 0.5(整章通关感)。
+  // 考试节点是可选支线,但要求"先学完本章才能挑战"。
+  const chapterLessonNodes = lessons.filter((n) => n.type === "lesson");
+  const chapterLessonsMastered =
+    chapterLessonNodes.length > 0 &&
+    chapterLessonNodes.every((l) => (progressMap[l.id]?.mastery ?? 0) >= 0.5);
+
   // 章节背景色循环(轻微区域感:浅绿/浅蓝/浅金交替)
   const SECTION_TINTS = [
     "bg-brand/[0.04]",
@@ -318,6 +325,7 @@ function MapSection({
               progress={progressMap[lesson.id]}
               isSelected={lesson.id === selectedNodeId}
               isDue={dueNodeIds.has(lesson.id)}
+              chapterLessonsMastered={chapterLessonsMastered}
               onClick={() => onJumpNode(lesson.id)}
             />
           ))}
@@ -334,6 +342,7 @@ function MapNode({
   progress,
   isSelected,
   isDue,
+  chapterLessonsMastered,
   onClick,
 }: {
   lesson: ContentNode;
@@ -341,6 +350,8 @@ function MapNode({
   progress?: Progress;
   isSelected: boolean;
   isDue: boolean;
+  /** 同 section 所有 lesson mastery 都 ≥0.5(考试解锁条件)。 */
+  chapterLessonsMastered: boolean;
   onClick: () => void;
 }) {
   const status = progress?.status ?? "locked";
@@ -349,10 +360,13 @@ function MapNode({
   // 考试节点的星数 = crownLevel(1-3,考试得分)。普通课节点不再用星(crown 只在 mastered 时=5)。
   const examStars = Math.min(3, crown);
   const alignLeft = index % 2 === 0;
-  // 考试节点总是 available(可选支线),从不禁用。
-  const isLocked = !isExam && status === "locked";
+  // 锁定逻辑:
+  //   - 普通课:status === "locked"(受 mastery≥0.5 硬门控解锁)
+  //   - 考试:要求同 section 所有 lesson 都 mastery≥0.5 才解锁(整章通关感)
+  const isLocked = isExam ? !chapterLessonsMastered : status === "locked";
+  const examLocked = isExam && isLocked; // 考试专属锁定态(用于样式/文案)
   // in_progress(仅普通课):用 mastery 算进度环(0-1 → 0-100%)
-  const masteryPct = status === "in_progress" ? Math.round((progress?.mastery ?? 0) * 100) : 0;
+  const masteryPct = status === "in_progress" && !isExam ? Math.round((progress?.mastery ?? 0) * 100) : 0;
 
   return (
     <li
@@ -364,11 +378,25 @@ function MapNode({
         disabled={isLocked}
         data-testid={`${isExam ? "exam-node" : "map-node"}-${lesson.id.slice(0, 8)}`}
         className={`group relative w-14 h-14 flex items-center justify-center text-2xl rounded-full transition-all duration-200 ${
-          isExam ? examBubbleClass(crown > 0) : bubbleClass(status)
+          isExam
+            ? examLocked
+              ? "lesson-bubble exam-bubble-locked"
+              : examBubbleClass(crown > 0)
+            : bubbleClass(status)
         } ${isLocked ? "cursor-not-allowed" : "cursor-pointer hover:scale-105"} ${
           isSelected ? "ring-4 ring-accent ring-offset-2 ring-offset-neutral-50 dark:ring-offset-neutral-950" : ""
         }`}
-        title={isExam ? `🎯 ${lesson.title}` : isLocked ? `🔒 ${lesson.title}` : isDue ? `📖 ${lesson.title}(待复习)` : lesson.title}
+        title={
+          examLocked
+            ? `🔒 ${lesson.title}(完成本章所有课时后解锁)`
+            : isExam
+              ? `🎯 ${lesson.title}`
+              : isLocked
+                ? `🔒 ${lesson.title}`
+                : isDue
+                  ? `📖 ${lesson.title}(待复习)`
+                  : lesson.title
+        }
       >
         {/* in_progress 进度环(仅普通课;考试不画进度环) */}
         {status === "in_progress" && !isExam && (
@@ -386,8 +414,12 @@ function MapNode({
           </svg>
         )}
         {isExam ? (
-          // 考试节点:🎯 图标(关底 boss)
-          <Target aria-label="exam" className="relative z-10 w-6 h-6 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]" strokeWidth={2.5} />
+          // 考试节点:锁定态显示 🔒,解锁后 🎯
+          examLocked ? (
+            <span aria-label="exam-locked" className="relative z-10 opacity-60">🔒</span>
+          ) : (
+            <Target aria-label="exam" className="relative z-10 w-6 h-6 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]" strokeWidth={2.5} />
+          )
         ) : isLocked ? (
           <span aria-label="locked" className="relative z-10 opacity-50">🔒</span>
         ) : status === "mastered" ? (

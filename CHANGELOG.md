@@ -17,6 +17,28 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **整仓 .md 递归导入**:URL 导入现在优先用 GitHub Tree API 一次性发现全仓 .md 文件
+  (不只 README 链接的),自动降级:jsdelivr 文件列表 → README 链接 + 一层递归 → 报错。
+  文件上限 80 个(防爆)。适配网络偶发不稳:每级失败自动降级 + 进度提示当前在用哪条路。
+- **导入后自动 AI 结构化**:course 型导入成功后,若已配 API key,自动跑
+  analyzeCourseStructure → applyCourseStructure → 补 exam 节点 → generateLessonSummaries。
+  无 key 则跳过(降级到纯确定性导入,可后续手动结构化)。失败不阻塞。
+
+### Changed
+- **buildCourseFromFiles 按顶层目录分组**(减碎片):同章节目录的文件归到一个 section
+  (如 `lessons/3-NN/03-Perceptron` 和 `lessons/3-NN/04-Deep` 归 "3-NN"),
+  不再每文件一个 section(之前 AI-For-Beginners 47 碎片)。
+- **考试节点需本章通关才解锁**:同 section 所有 lesson mastery≥0.5 才能进入考试
+  (之前一开始就能进)。锁定态显示暗灰紫球 + 🔒。course-generator exam seed 改 locked。
+
+### Fixed
+- **考试结算 16 题 bug**:React StrictMode 双调用 ExamView 导致 startExam 并发两次,
+  两次都在对方插入前读到 0 题 → 双重生 8 题 = 16 行;ExamView 显示前 8 题,submit 读
+  16 行 → 后 8 题无答案判错。修法:startExam 用 examNode.content 字段做 DB 级生成锁
+  (写 `__exam_generating:<时间>__`,2 分钟 TTL,轮询等待)。sql.js 同步写,StrictMode
+  第二次调用读到锁态 → 等第一个完成 → 返回同一批题。
+
+### Added(之前提交的功能)
 - **章节考试节点(关底 boss)**:把纠缠的进度环/星星/皇冠拆成两种正交节点类型。
   - **普通课节点**(type=lesson):只保留进度环(mastery)+ 满皇冠(mastered),**删掉星星**。
   - **章节考试节点**(type=exam,每章末尾自动生成):可选支线,不限时一组选择题,

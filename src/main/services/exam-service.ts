@@ -35,6 +35,63 @@ const ONE_STAR_THRESHOLD = 0.6;
 const TWO_STAR_THRESHOLD = 0.8;
 const THREE_STAR_THRESHOLD = 0.95;
 
+/** 生成锁:写入 examNode.content 字段防 StrictMode 双调用双重生题。
+ *  格式 `__exam_generating:<ISO>__`,2 分钟过期(防进程崩溃留死锁)。 */
+const LOCK_PREFIX = "__exam_generating:";
+const LOCK_TTL_MS = 2 * 60 * 1000;
+const LOCK_POLL_MS = 400;
+const LOCK_WAIT_MAX_MS = 40 * 1000;
+
+/** 读 examNode.content 判断锁状态:返回 null(无锁/已生题) 或 锁的 ISO 时间。 */
+function readLock(content: string | null): string | null {
+  if (!content || !content.startsWith(LOCK_PREFIX)) return null;
+  return content.slice(LOCK_PREFIX.length, -2); // 去掉结尾 __
+}
+
+/** 写锁(覆盖 content 字段)。sql.js 同步写,StrictMode 第二次调用立即可见。 */
+function writeLock(db: Db, examNodeId: string): void {
+  const lockValue = `${LOCK_PREFIX}${new Date().toISOString()}__`;
+  db.update(contentNodes)
+    .set({ content: lockValue })
+    .where(eq(contentNodes.id, examNodeId))
+    .run();
+}
+
+/** 清锁(还原 content 为 null)。题目已插入或生成失败都清,防死锁。 */
+function clearLock(db: Db, examNodeId: string): void {
+  db.update(contentNodes)
+    .set({ content: null })
+    .where(eq(contentNodes.id, examNodeId))
+    .run();
+}
+
+/** 等待别人的锁释放(轮询)。锁 stale(>TTL)则抢锁返回 false(调用方继续生成)。
+ *  返回 true = 等到了(题目应该已由对方生成,调用方应直接读);false = 抢到锁,该自己生成。 */
+async function waitForLockOrTake(db: Db, examNodeId: string): Promise<boolean> {
+  const deadline = Date.now() + LOCK_WAIT_MAX_MS;
+  while (Date.now() < deadline) {
+    const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
+    const lockIso = readLock(node?.content ?? null);
+    if (!lockIso) return false; // 无锁,该自己生成
+    const lockAge = Date.now() - new Date(lockIso).getTime();
+    if (lockAge > LOCK_TTL_MS) {
+      // 锁 stale,抢锁
+      writeLock(db, examNodeId);
+      return false;
+    }
+    // 别人在生成,等。期间题目可能已被对方插入 → 检查一下
+    if (listExamExercises(db, examNodeId).length > 0) {
+      return true; // 对方已完成,题目已就绪
+    }
+    await sleep(LOCK_POLL_MS);
+  }
+  throw new Error("考试题目生成等待超时(另一并发请求卡住)");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 export interface ExamStartResult {
   exercises: Exercise[];
 }
@@ -66,6 +123,24 @@ export async function startExam(db: Db, examNodeId: string): Promise<ExamStartRe
   const existing = listExamExercises(db, examNodeId);
   if (existing.length > 0) return { exercises: existing };
 
+  // 生成锁:防 StrictMode 双调用并发双重生题(两次都在对方插入前读到 0 题)。
+  // waitForLockOrTake:有锁等对方完成 → 返回 true(题目已就绪);无锁/锁 stale → 抢锁返回 false。
+  const waitedForOther = await waitForLockOrTake(db, examNodeId);
+  if (waitedForOther) {
+    // 对方已生成,直接读
+    const ready = listExamExercises(db, examNodeId);
+    if (ready.length > 0) return { exercises: ready };
+    // 罕见:对方清了锁但没插入(出错?)→ 自己重新走生成流程
+  } else {
+    // 抢到锁,再查一次(防 race:等待期间对方已完成)
+    const ready = listExamExercises(db, examNodeId);
+    if (ready.length > 0) {
+      clearLock(db, examNodeId);
+      return { exercises: ready };
+    }
+    writeLock(db, examNodeId);
+  }
+
   // 拼合同章节所有 lesson 作为出题上下文
   const sectionId = examNode.parentId;
   const siblingLessons = sectionId
@@ -74,6 +149,7 @@ export async function startExam(db: Db, examNodeId: string): Promise<ExamStartRe
       )
     : [];
   if (siblingLessons.length === 0) {
+    clearLock(db, examNodeId); // 清锁防死锁
     throw new Error("本章没有课时,无法生成考试题");
   }
 
@@ -84,38 +160,45 @@ export async function startExam(db: Db, examNodeId: string): Promise<ExamStartRe
   const llm = resolveLlm(db);
   const prompt = buildExamPrompt(examNode.title, chapterContext, EXAM_QUESTION_COUNT);
 
-  const result = await generateText({ model: llm.languageModel, prompt });
-  const raw = result.text.trim();
-  const parsed = parseExamJson(raw, EXAM_QUESTION_COUNT);
-  if (!parsed.ok) throw new Error(`考试出题格式错误: ${parsed.error}`);
+  let created: Exercise[] = [];
+  try {
+    const result = await generateText({ model: llm.languageModel, prompt });
+    const raw = result.text.trim();
+    const parsed = parseExamJson(raw, EXAM_QUESTION_COUNT);
+    if (!parsed.ok) throw new Error(`考试出题格式错误: ${parsed.error}`);
 
-  // 存 exercises 表(node_id = 考试节点 id)
-  const created: Exercise[] = [];
-  for (const q of parsed.questions) {
-    const id = randomUUID();
-    db.insert(exercisesTable)
-      .values({
+    // 存 exercises 表(node_id = 考试节点 id)
+    for (const q of parsed.questions) {
+      const id = randomUUID();
+      db.insert(exercisesTable)
+        .values({
+          id,
+          nodeId: examNodeId,
+          type: "mcq",
+          prompt: q.prompt,
+          answer: q.answer,
+          explanation: q.explanation ?? null,
+          optionsJson: JSON.stringify(q.options),
+          aiGenerated: true,
+        })
+        .run();
+      created.push({
         id,
         nodeId: examNodeId,
         type: "mcq",
         prompt: q.prompt,
+        options: q.options,
         answer: q.answer,
         explanation: q.explanation ?? null,
-        optionsJson: JSON.stringify(q.options),
         aiGenerated: true,
-      })
-      .run();
-    created.push({
-      id,
-      nodeId: examNodeId,
-      type: "mcq",
-      prompt: q.prompt,
-      options: q.options,
-      answer: q.answer,
-      explanation: q.explanation ?? null,
-      aiGenerated: true,
-      createdAt: new Date().toISOString(),
-    });
+        createdAt: new Date().toISOString(),
+      });
+    }
+  } catch (e) {
+    clearLock(db, examNodeId); // 出错清锁,防下次卡死
+    throw e;
+  } finally {
+    clearLock(db, examNodeId);
   }
 
   return { exercises: created };

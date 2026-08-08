@@ -77,14 +77,14 @@ assert.strictEqual(lessons.length, 3, `T3: 3 lesson`);
 assert.strictEqual(exams.length, 2, `T3: 2 exam(每章末尾一个)`);
 console.log(`✓ T3 content_nodes：2 section + 3 lesson + 2 exam`);
 
-// === T4: 第一个 lesson available,其余 lesson locked,exam 节点总是 available ===
+// === T4: 第一个 lesson available,其余 lesson locked,exam 节点 locked(本章通关才解锁) ===
 const progress = db.select().from(schema.progress).all();
 const available = progress.filter((p) => p.status === "available");
 const locked = progress.filter((p) => p.status === "locked");
-// 1 lesson(首发) + 2 exam = 3 available;2 lesson = locked
-assert.strictEqual(available.length, 3, `T4: 3 available(1 首发 lesson + 2 exam)`);
-assert.strictEqual(locked.length, 2, `T4: 2 locked(其余 lesson)`);
-console.log(`✓ T4 初始 progress：3 available(含 exam) + 2 locked`);
+// 1 lesson(首发) = available;2 lesson + 2 exam = locked
+assert.strictEqual(available.length, 1, `T4: 1 available(首发 lesson)`);
+assert.strictEqual(locked.length, 4, `T4: 4 locked(2 其余 lesson + 2 exam,exam 需通关解锁)`);
+console.log(`✓ T4 初始 progress：1 available + 4 locked(exam 初始 locked,渲染层按通关条件解锁)`);
 
 // === T5: lesson content 写进去了（供 RAG）===
 const lessonWithContent = lessons.find((l) => l.content && l.content.includes("hello"));

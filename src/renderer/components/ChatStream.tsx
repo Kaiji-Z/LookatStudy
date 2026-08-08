@@ -42,9 +42,13 @@ interface ChatStreamProps {
   /** 对 proposal 消息内的 tool-call(record_answer/mark_mastered)应用提议 */
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
+  /** 当前节点摘要(空会话时显示,帮用户快速了解这课) */
+  summary?: string | null;
+  /** 点"开始学习"→ 发学习方法请求,建立会话 */
+  onStartLearning?: () => void;
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning }: ChatStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // 用户是否"贴底"——只在贴底时自动跟随,避免用户上滑翻历史被强拉回来。
   // 用 ref 存判断结果(useEffect 里读,无需触发重渲染)。
@@ -101,9 +105,39 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         data-testid="chat-stream"
       >
         {messages.length === 0 && (
-          <div className="text-center mt-16">
-            <div className="text-4xl mb-3 opacity-30">💬</div>
-            <div className="text-neutral-600 dark:text-neutral-400 text-sm">从下面选一个开始,或直接问</div>
+          <div className="mt-10 mx-auto max-w-md" data-testid="chat-empty-state">
+            <div className="text-center mb-5">
+              <div className="text-4xl mb-3 opacity-30">📖</div>
+              <div className="text-neutral-500 dark:text-neutral-400 text-sm">这是这一课的概览</div>
+            </div>
+            {/* 摘要卡片 */}
+            {summary ? (
+              <div className="surface-card p-4 mb-5">
+                <div className="text-[10px] font-bold text-brand uppercase tracking-wider mb-2">本课摘要</div>
+                <div className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
+                  {summary}
+                </div>
+              </div>
+            ) : (
+              <div className="surface-card p-4 mb-5 text-center">
+                <div className="text-sm text-neutral-500 dark:text-neutral-400">暂无摘要,点开始学习让 AI 帮你了解这一课</div>
+              </div>
+            )}
+            {/* 开始学习按钮 */}
+            {onStartLearning && (
+              <button
+                onClick={onStartLearning}
+                disabled={streaming}
+                data-testid="start-learning-btn"
+                className="btn-3d-brand w-full py-3 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40"
+              >
+                <span>🚀</span>
+                <span>开始学习</span>
+              </button>
+            )}
+            <div className="text-center mt-4 text-[11px] text-neutral-500 dark:text-neutral-500">
+              或从下面的快捷按钮选一个
+            </div>
           </div>
         )}
 

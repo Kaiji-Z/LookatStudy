@@ -28,6 +28,8 @@ const api = {
     ipcRenderer.invoke("course:getStarterPrompts", nodeId)) as ApiExpose["getStarterPrompts"],
   getNodeContent: ((nodeId: string) =>
     ipcRenderer.invoke("course:getNodeContent", nodeId)) as ApiExpose["getNodeContent"],
+  getNodeSummary: ((nodeId: string) =>
+    ipcRenderer.invoke("course:getNodeSummary", nodeId)) as ApiExpose["getNodeSummary"],
 
   /* 进度 */
   getProgress: ((nodeId: string) =>

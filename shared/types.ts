@@ -20,6 +20,8 @@ export interface ContentNode {
   sourcePath: string | null;
   /** 排序序号（同层兄弟节点之间） */
   orderIdx: number;
+  /** LLM 生成的课节摘要(1-2 句,空会话时中栏显示;导入时批量生成) */
+  summary?: string | null;
 }
 
 export interface Course {
@@ -232,6 +234,8 @@ export interface ApiExpose {
   getStarterPrompts(nodeId: string): Promise<StarterPrompt[]>;
   /** 获取某节点的完整内容（课程导入 UI / 详情页用） */
   getNodeContent(nodeId: string): Promise<string | null>;
+  /** 取节点摘要(导入时生成,空会话时中栏显示) */
+  getNodeSummary(nodeId: string): Promise<string | null>;
 
   /* 进度 */
   getProgress(nodeId: string): Promise<Progress | null>;

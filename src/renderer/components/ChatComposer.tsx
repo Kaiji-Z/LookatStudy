@@ -9,7 +9,7 @@
  *
  * 未配 key 时显示引导(去设置)。
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Skill, StarterPrompt } from "@shared/types";
 import { translate } from "../lib/i18n.js";
 
@@ -35,6 +35,8 @@ interface ChatComposerProps {
   /** v0.3 字号调节 */
   fontSize: "small" | "medium" | "large";
   onFontBump: (dir: "up" | "down") => void;
+  /** 外部注入文字(哪里不会点哪里:右栏选中→追加到输入框)。每次变化触发追加。 */
+  insertText?: string;
 }
 
 export function ChatComposer({
@@ -51,8 +53,16 @@ export function ChatComposer({
   onGotoSettings,
   fontSize,
   onFontBump,
+  insertText,
 }: ChatComposerProps) {
   const [input, setInput] = useState("");
+
+  // 外部插入文字(哪里不会点哪里:右栏选中→注入提问)。每次 insertText 变化时追加到输入框。
+  useEffect(() => {
+    if (insertText) {
+      setInput((prev) => (prev.trim() ? `${prev}\n\n${insertText}` : insertText));
+    }
+  }, [insertText]);
 
   const handleSend = () => {
     if (!input.trim() || streaming || !nodeId || !agentReady) return;
@@ -91,14 +101,14 @@ export function ChatComposer({
               data-testid={`starter-prompt-${i}`}
               className={`shrink-0 flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-40 ${
                 p.advancesMastery
-                  ? "border-brand bg-brand/15 text-brand hover:bg-brand/25 font-bold"
-                  : "border-neutral-600 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 hover:border-brand hover:text-brand"
+                  ? "border-brand/50 bg-brand/10 text-brand hover:border-brand hover:bg-brand/20 font-semibold"
+                  : "border-brand/30 bg-brand/5 text-brand hover:border-brand hover:bg-brand/10"
               }`}
               title={p.hint ?? p.label}
             >
               <span>{p.icon}</span>
               <span>{p.label}</span>
-              {p.advancesMastery && <span className="text-[9px] opacity-80">📈</span>}
+              {p.advancesMastery && <span className="text-[9px] opacity-70">📈</span>}
             </button>
           ))}
         </div>

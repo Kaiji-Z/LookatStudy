@@ -17,13 +17,14 @@ import { resolveLlm } from "./agent/llm-client.js";
 type Db = SQLJsDatabase<typeof schema>;
 
 /**
- * 为课程的每个 section 生成一句话中文摘要 + 前置依赖标记。
+ * 为课程的每个 section 生成一句话中文摘要 + 前置依赖标记,
+ * 并为每个 lesson 生成 1-2 句摘要(存 summary 字段,不覆盖 content)。
  * 需要 LLM key。
  */
 export async function generateLessonSummaries(
   db: Db,
   courseId: string,
-): Promise<{ sectionsUpdated: number }> {
+): Promise<{ sectionsUpdated: number; lessonsUpdated: number }> {
   const llm = resolveLlm(db);
   const course = db.select().from(courses).where(eq(courses.id, courseId)).get();
   if (!course) throw new Error(`课程不存在: ${courseId}`);
@@ -37,9 +38,10 @@ export async function generateLessonSummaries(
     .filter((n) => n.type === "section")
     .sort((a, b) => a.orderIdx - b.orderIdx);
 
-  let updated = 0;
+  let sectionsUpdated = 0;
+  let lessonsUpdated = 0;
   for (const section of sections) {
-    // 取该 section 的所有 lesson 标题
+    // 取该 section 的所有 lesson
     const lessons = db
       .select()
       .from(contentNodes)
@@ -49,9 +51,9 @@ export async function generateLessonSummaries(
 
     if (lessons.length === 0) continue;
 
+    // ── Section 摘要(用 lesson 标题列表)──
     const lessonTitles = lessons.map((l) => `- ${l.title}`).join("\n");
-
-    const prompt = `你是课程设计专家。请为以下章节生成一句话中文摘要和前置知识标记。
+    const sectionPrompt = `你是课程设计专家。请为以下章节生成一句话中文摘要和前置知识标记。
 
 课程: ${course.title}
 章节: ${section.title}
@@ -65,26 +67,66 @@ ${lessonTitles}
 }`;
 
     try {
-      const result = await generateText({ model: llm.languageModel, prompt });
+      const result = await generateText({ model: llm.languageModel, prompt: sectionPrompt });
       const cleaned = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
       const parsed = JSON.parse(cleaned);
-
-      // 把摘要写入 section 的 content 字段
       const summary = typeof parsed.summary === "string" ? parsed.summary : "";
       const prereq = typeof parsed.prerequisites === "string" ? parsed.prerequisites : "";
-
+      // 写 summary 字段(不再覆盖 content 原文)
+      const sectionSummary = summary + (prereq && prereq !== "无" ? `\n\n📌 前置: ${prereq}` : "");
       db.update(contentNodes)
-        .set({ content: summary + (prereq && prereq !== "无" ? `\n\n📌 前置: ${prereq}` : "") })
+        .set({ summary: sectionSummary })
         .where(eq(contentNodes.id, section.id))
         .run();
-      updated++;
+      sectionsUpdated++;
     } catch {
-      // 单个 section 失败不影响其他
       console.error(`[generateLessonSummaries] section ${section.id} failed`);
+    }
+
+    // ── Lesson 摘要(批量:每批 5 个 lesson,基于 content 正文)──
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < lessons.length; i += BATCH_SIZE) {
+      const batch = lessons.slice(i, i + BATCH_SIZE);
+      const lessonInputs = batch
+        .map((l, idx) => `${idx + 1}. [${l.id}] ${l.title}\n${(l.content ?? "").slice(0, 300).replace(/\n/g, " ").trim()}`)
+        .join("\n\n");
+
+      const lessonPrompt = `你是课程设计专家。为以下每个课时生成 1-2 句中文摘要(这课学什么 + 核心要点),用户据此快速判断要不要学。
+
+课程: ${course.title}
+章节: ${section.title}
+
+课时:
+${lessonInputs}
+
+严格返回 JSON 数组,不要加 markdown 代码块标记,每项 id 必须和上面一致:
+[
+  { "id": "${batch[0]!.id}", "summary": "1-2 句中文摘要" }
+]`;
+
+      try {
+        const result = await generateText({ model: llm.languageModel, prompt: lessonPrompt });
+        const cleaned = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+        const arr = JSON.parse(cleaned) as Array<{ id: string; summary: string }>;
+        for (const item of arr) {
+          if (typeof item.id === "string" && typeof item.summary === "string" && item.summary.trim()) {
+            // 验证 id 在本批次(防 LLM 编 id)
+            if (batch.some((b) => b.id === item.id)) {
+              db.update(contentNodes)
+                .set({ summary: item.summary.trim() })
+                .where(eq(contentNodes.id, item.id))
+                .run();
+              lessonsUpdated++;
+            }
+          }
+        }
+      } catch {
+        console.error(`[generateLessonSummaries] lesson batch ${i} failed`);
+      }
     }
   }
 
-  return { sectionsUpdated: updated };
+  return { sectionsUpdated, lessonsUpdated };
 }
 
 /** LLM 返回的结构化结果（需验证后才落库） */
@@ -198,7 +240,7 @@ export function applyCourseStructure(
         title: sec.title,
         sourcePath: null,
         orderIdx: sectionOrder++,
-        content: sec.summary || null, // section 摘要存 content 字段
+        summary: sec.summary || null, // section 摘要存 summary 字段(不覆盖 content)
       })
       .run();
 

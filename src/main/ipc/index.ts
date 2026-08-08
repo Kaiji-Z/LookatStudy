@@ -408,6 +408,17 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     return node?.content ?? null;
   });
 
+  // 取节点摘要(导入时批量生成,空会话时中栏显示)
+  ipcMain.handle("course:getNodeSummary", async (_e, nodeId: string) => {
+    const db = getDb();
+    const node = db
+      .select({ summary: contentNodes.summary })
+      .from(contentNodes)
+      .where(eq(contentNodes.id, nodeId))
+      .get();
+    return node?.summary ?? null;
+  });
+
   // LLM 课程结构化：把导入的碎片节点重组成教学结构
   ipcMain.handle("course:restructure", async (_e, courseId: string) => {
     mainWindow?.webContents.send("import:progress", "AI 正在分析课程结构…");
@@ -430,7 +441,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     mainWindow?.webContents.send("import:progress", "AI 正在生成章节摘要…");
     const result = await generateLessonSummaries(getDb(), courseId);
     markDirty();
-    mainWindow?.webContents.send("import:progress", `摘要生成完成: ${result.sectionsUpdated} 个章节`);
+    mainWindow?.webContents.send("import:progress", `摘要生成完成: ${result.sectionsUpdated} 章节 / ${result.lessonsUpdated} 课时`);
     return result;
   });
 

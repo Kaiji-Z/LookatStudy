@@ -96,10 +96,31 @@ export default function App() {
   const thread = useThreads(selectedCourseId, selectedNodeId);
   const chat = useChatStream(thread.activeId);
 
+  // 哪里不会点哪里:右栏选中文字 → 注入聊天框。用自增 key 触发 ChatComposer 的 effect(同一段话连点两次也要触发)。
+  const [quoteText, setQuoteText] = useState<string>("");
+  const handleQuoteToChat = useCallback((text: string) => {
+    setQuoteText(text); // 新值会触发 ChatComposer insertText effect
+  }, []);
+
+  // 当前节点摘要(空会话时中栏显示,导入时生成)
+  const [nodeSummary, setNodeSummary] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedNodeId) { setNodeSummary(null); return; }
+    let cancelled = false;
+    api.getNodeSummary(selectedNodeId).then((s) => { if (!cancelled) setNodeSummary(s); }).catch(() => { if (!cancelled) setNodeSummary(null); });
+    return () => { cancelled = true; };
+  }, [selectedNodeId]);
+
   const selectedNode = useMemo(
     () => tree.find((n) => n.id === selectedNodeId) ?? null,
     [tree, selectedNodeId],
   );
+
+  // "开始学习"→ 发学习方法请求,建立会话(空会话时点的大按钮)
+  const handleStartLearning = useCallback(() => {
+    if (!selectedNode || chat.streaming) return;
+    chat.send(`请给我学习「${selectedNode.title}」的方法建议:应该按什么顺序学、重点关注什么、怎么检验自己学会了。简短给出学习路径。`);
+  }, [selectedNode, chat]);
 
   const refreshAll = useCallback(async () => {
     try {
@@ -438,6 +459,8 @@ export default function App() {
                 streaming={chat.streaming}
                 onApplyProposal={handleApplyProposal}
                 onRejectProposal={handleRejectProposal}
+                summary={nodeSummary}
+                onStartLearning={handleStartLearning}
               />
               <ChatComposer
                 nodeId={selectedNodeId}
@@ -466,6 +489,7 @@ export default function App() {
                 onGotoSettings={() => setShowSettings(true)}
                 fontSize={font.size}
                 onFontBump={font.bump}
+                insertText={quoteText}
               />
                 </>
               )}
@@ -487,6 +511,7 @@ export default function App() {
                 onTogglePin={(id) => {
                   canvas.togglePin(id);
                 }}
+                onQuoteToChat={handleQuoteToChat}
               />
             </main>
           </>

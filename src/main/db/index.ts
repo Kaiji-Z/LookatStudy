@@ -124,6 +124,8 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("chat_sessions", "active_skill", "TEXT");
   // M2 新列：BKT 掌握度
   addColumnIfMissing("progress", "mastery", "REAL");
+  // 课节摘要(LLM 生成,导入时批量填)
+  addColumnIfMissing("content_nodes", "summary", "TEXT");
 
   // 考试节点(type='exam'):老库的 content_nodes CHECK 约束不含 'exam',
   // 需重建表加约束(SQLite 不能 ALTER CHECK)。幂等:检测现有 CHECK 是否已含 'exam'。

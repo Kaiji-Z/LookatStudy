@@ -8,7 +8,7 @@
  *
  * 核心隐喻:教室黑板 + 学习笔记本。AI 产物自动留存,可翻阅。
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { ContentNode, CanvasItem } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -24,9 +24,11 @@ interface NotebookPanelProps {
   items: CanvasItem[];
   loading: boolean;
   forceTab?: NotebookTab | null;
-  onUserTabChange?: () => void;
+  onUserTabChange: () => void;
   onRemove: (id: string) => void;
   onTogglePin: (id: string) => void;
+  /** 选中文字后"提问这段"→ 插入聊天框(哪里不会点哪里) */
+  onQuoteToChat?: (text: string) => void;
 }
 
 export function NotebookPanel({
@@ -38,6 +40,7 @@ export function NotebookPanel({
   onUserTabChange,
   onRemove,
   onTogglePin,
+  onQuoteToChat,
 }: NotebookPanelProps) {
   const [internalTab, setInternalTab] = useState<NotebookTab>("content");
   const tab = forceTab ?? internalTab;
@@ -84,7 +87,7 @@ export function NotebookPanel({
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {tab === "content" ? (
-          <ContentTab selectedNode={selectedNode} />
+          <ContentTab selectedNode={selectedNode} onQuoteToChat={onQuoteToChat} />
         ) : tab === "notes" ? (
           <NotesTab
             items={nodeItems}
@@ -108,10 +111,13 @@ export function NotebookPanel({
 }
 
 /* ---------- 讲解标签 ---------- */
-function ContentTab({ selectedNode }: { selectedNode: ContentNode | null }) {
+function ContentTab({ selectedNode, onQuoteToChat }: { selectedNode: ContentNode | null; onQuoteToChat?: (text: string) => void }) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // 选区浮按钮:选中文字后显示,位置跟选区
+  const [quoteBtn, setQuoteBtn] = useState<{ x: number; y: number; text: string } | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!selectedNode) {
@@ -129,6 +135,38 @@ function ContentTab({ selectedNode }: { selectedNode: ContentNode | null }) {
     return () => { cancelled = true; };
   }, [selectedNode?.id]);
 
+  // 鼠标松开时检查选区(哪里不会点哪里)
+  const handleMouseUp = useCallback(() => {
+    if (!onQuoteToChat) return;
+    const sel = window.getSelection();
+    const text = sel?.toString().trim() ?? "";
+    if (text.length < 2 || text.length > 500) {
+      setQuoteBtn(null);
+      return;
+    }
+    // 选区必须在 content 区域内
+    const range = sel?.getRangeAt(0);
+    if (!range || !contentRef.current?.contains(range.commonAncestorContainer)) {
+      setQuoteBtn(null);
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    const containerRect = contentRef.current.getBoundingClientRect();
+    setQuoteBtn({
+      x: rect.left + rect.width / 2 - containerRect.left,
+      y: rect.top - containerRect.top - 8,
+      text,
+    });
+  }, [onQuoteToChat]);
+
+  const handleQuoteClick = useCallback(() => {
+    if (!quoteBtn || !onQuoteToChat) return;
+    const truncated = quoteBtn.text.length > 200 ? quoteBtn.text.slice(0, 200) + "…" : quoteBtn.text;
+    onQuoteToChat(`关于这段内容「${truncated}」,我不太懂,请帮我解释:`);
+    setQuoteBtn(null);
+    window.getSelection()?.removeAllRanges();
+  }, [quoteBtn, onQuoteToChat]);
+
   if (!selectedNode) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-6">
@@ -140,7 +178,7 @@ function ContentTab({ selectedNode }: { selectedNode: ContentNode | null }) {
     );
   }
   return (
-    <div className="p-5 max-w-2xl mx-auto" data-testid="node-content">
+    <div className="p-5 max-w-2xl mx-auto" data-testid="node-content" ref={contentRef} onMouseUp={handleMouseUp}>
       <div className="text-[10px] font-bold text-brand uppercase tracking-wider mb-1">
         {selectedNode.type === "section" ? "章节" : selectedNode.type === "concept" ? "概念" : "课时"}
       </div>
@@ -154,13 +192,24 @@ function ContentTab({ selectedNode }: { selectedNode: ContentNode | null }) {
           ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
         </div>
       ) : content ? (
-        <div className="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300 leading-relaxed">
+        <div className="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300 leading-relaxed select-text">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
       ) : (
         <div className="text-sm text-neutral-500 dark:text-neutral-500">
           这一节还没有讲解内容。问 AI 导师:「给我讲讲这一节」
         </div>
+      )}
+      {/* 哪里不会点哪里:选区浮按钮 */}
+      {quoteBtn && (
+        <button
+          onClick={handleQuoteClick}
+          data-testid="quote-to-chat-btn"
+          style={{ left: quoteBtn.x, top: quoteBtn.y, transform: "translate(-50%, -100%)" }}
+          className="absolute z-20 px-3 py-1.5 rounded-lg bg-brand text-white text-xs font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition-colors msg-enter"
+        >
+          💬 提问这段
+        </button>
       )}
       {selectedNode.sourcePath && (
         <div className="mt-6 pt-3 border-t border-neutral-200 dark:border-neutral-800 text-[11px] text-neutral-400 dark:text-neutral-600">

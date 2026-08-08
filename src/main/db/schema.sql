@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS content_nodes (
   title TEXT NOT NULL,
   source_path TEXT,
   order_idx INTEGER NOT NULL DEFAULT 0,
-  content TEXT
+  content TEXT,
+  summary TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_content_nodes_course ON content_nodes(course_id);
 CREATE INDEX IF NOT EXISTS idx_content_nodes_parent ON content_nodes(parent_id);

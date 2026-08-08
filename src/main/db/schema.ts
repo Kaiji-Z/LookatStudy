@@ -45,6 +45,8 @@ export const contentNodes = sqliteTable("content_nodes", {
   orderIdx: integer("order_idx").notNull().default(0),
   /** 按需生成的讲解内容（缓存） */
   content: text("content"),
+  /** LLM 生成的课节摘要(1-2 句,空会话时中栏显示;导入时批量生成) */
+  summary: text("summary"),
 });
 
 /* ---------- 练习题（按需生成后缓存） ---------- */

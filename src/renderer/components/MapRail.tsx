@@ -15,7 +15,15 @@
  */
 import type { ContentNode, Progress } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Map as MapIcon, FileText, ChevronLeft, ChevronRight, BookOpen, Target } from "lucide-react";
+import {
+  computeSectionLayout,
+  sectionHeight,
+  segmentToPath,
+  LAYOUT_MODES,
+  type MapLayoutMode,
+} from "../lib/mapLayout.js";
 
 export type MapView = "map" | "import";
 
@@ -102,6 +110,22 @@ function MapRailExpanded({
 }: MapRailProps) {
   const masteryPct = Math.round(overallMastery * 100);
 
+  // 布局模式(zigzag/linear/compact),持久化到 localStorage。
+  // 默认 zigzag(Duolingo 经典);用户切换后记住选择。
+  const [layoutMode, setLayoutMode] = useState<MapLayoutMode>(
+    () => (typeof localStorage !== "undefined" &&
+      (localStorage.getItem("lookatstudy:mapLayout") as MapLayoutMode | null)) ||
+      "zigzag",
+  );
+  const switchLayout = useCallback((m: MapLayoutMode) => {
+    setLayoutMode(m);
+    try {
+      localStorage.setItem("lookatstudy:mapLayout", m);
+    } catch {
+      /* 忽略:隐私模式/配额 */
+    }
+  }, []);
+
   return (
     <nav
       className="h-full flex flex-col bg-gradient-to-b from-brand/5 to-transparent dark:from-brand/5 dark:to-neutral-950 border-r border-neutral-200 dark:border-neutral-800/50 w-[300px] shrink-0"
@@ -171,6 +195,25 @@ function MapRailExpanded({
                 </button>
               )}
             </div>
+            {/* 布局模式切换:蜿蜒/直线/紧凑。克制的小段控件,不抢主视觉。 */}
+            <div className="flex items-center gap-1 mt-2" data-testid="map-layout-switcher">
+              {LAYOUT_MODES.map(({ mode, label, icon }) => (
+                <button
+                  key={mode}
+                  onClick={() => switchLayout(mode)}
+                  data-testid={`map-layout-${mode}`}
+                  title={`${label}布局`}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                    layoutMode === mode
+                      ? "bg-brand/15 text-brand"
+                      : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-800"
+                  }`}
+                >
+                  <span className="mr-0.5">{icon}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
           </>
         )}
       </div>
@@ -218,6 +261,7 @@ function MapRailExpanded({
                   progressMap={progressMap}
                   selectedNodeId={selectedNodeId}
                   dueNodeIds={dueNodeIds}
+                  layoutMode={layoutMode}
                   onJumpNode={onJumpNode}
                 />
               ))}
@@ -244,6 +288,7 @@ function MapSection({
   progressMap,
   selectedNodeId,
   dueNodeIds,
+  layoutMode,
   onJumpNode,
 }: {
   section: ContentNode;
@@ -252,6 +297,7 @@ function MapSection({
   progressMap: Record<string, Progress>;
   selectedNodeId: string | null;
   dueNodeIds: Set<string>;
+  layoutMode: MapLayoutMode;
   onJumpNode: (nodeId: string) => void;
 }) {
   const lessons = tree
@@ -259,27 +305,46 @@ function MapSection({
     .sort((a, b) => a.orderIdx - b.orderIdx);
 
   // 考试解锁条件:同 section 的所有 lesson 节点 mastery 都 ≥ UNLOCK_MASTERY_THRESHOLD(整章通关感)。
-  // 考试节点是可选支线,但要求"先学完本章才能挑战"。阈值与主进程共享单一真源。
   const chapterLessonNodes = lessons.filter((n) => n.type === "lesson");
   const chapterLessonsMastered =
     chapterLessonNodes.length > 0 &&
     chapterLessonNodes.every((l) => (progressMap[l.id]?.mastery ?? 0) >= UNLOCK_MASTERY_THRESHOLD);
 
   // 章节背景色循环(轻微区域感:浅绿/浅蓝/浅金交替)
-  const SECTION_TINTS = [
-    "bg-brand/[0.04]",
-    "bg-accent/[0.04]",
-    "bg-gold/[0.04]",
-  ];
+  const SECTION_TINTS = ["bg-brand/[0.04]", "bg-accent/[0.04]", "bg-gold/[0.04]"];
   const tintClass = SECTION_TINTS[sectionIndex % SECTION_TINTS.length];
+
+  // 测量章节路径容器宽度,供布局引擎算 x 坐标。
+  // 容器宽度稳定(map-rail 固定 300px),用 ref + state 测一次即可。
+  const pathRef = useRef<HTMLDivElement>(null);
+  const [containerW, setContainerW] = useState(268);
+  useEffect(() => {
+    if (!pathRef.current) return;
+    const measure = () => {
+      const w = pathRef.current?.clientWidth ?? 268;
+      setContainerW(w > 0 ? w : 268);
+    };
+    measure();
+    // 章节折叠/展开后宽度可能变,监听 resize
+    const ro = new ResizeObserver(measure);
+    ro.observe(pathRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // 用布局引擎算节点坐标(像素)。修原 bug:旧代码 % 拼进 SVG path,非法单位,
+  // 节点位置(margin)与路径(%)是两套独立计算,永远对不齐。现在统一像素坐标。
+  const layout = computeSectionLayout(lessons.length, layoutMode, containerW);
+  const pathHeight = sectionHeight(lessons.length, layoutMode);
+  const NODE_W = 110; // MapNode 卡片宽(球+名字)
+  const NODE_H = 76;  // 球 56 + 名字行 20
 
   return (
     <section
-      data-testid={`map-section-${sectionIndex}`}
+      data-testid={`map-section-${section.id.slice(0, 8)}`}
       className={`${tintClass} rounded-2xl py-3 px-2`}
     >
       {/* 章节路牌标题(像游戏关卡指示牌) */}
-      <div className="flex items-center gap-2 mb-4 px-2 py-1.5 bg-white/60 dark:bg-neutral-900/50 rounded-xl border border-neutral-200/60 dark:border-neutral-800/60 shadow-sm">
+      <div className="flex items-center gap-2 mb-3 px-2 py-1.5 bg-white/60 dark:bg-neutral-900/50 rounded-xl border border-neutral-200/60 dark:border-neutral-800/60 shadow-sm">
         <span className="w-6 h-6 rounded-lg bg-brand text-white text-[10px] font-extrabold flex items-center justify-center shrink-0">
           {sectionIndex + 1}
         </span>
@@ -288,49 +353,68 @@ function MapSection({
         </span>
       </div>
 
-      {/* 蜿蜒路径 + 节点 */}
-      <div className="relative">
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
-          {lessons.slice(0, -1).map((_lesson, i) => {
-            const left = i % 2 === 0;
-            const nextLeft = (i + 1) % 2 === 0;
-            const x1 = left ? "30%" : "70%";
-            const x2 = nextLeft ? "30%" : "70%";
-            const y1 = `${(i / lessons.length) * 100 + 8}%`;
-            const y2 = `${((i + 1) / lessons.length) * 100 - 8}%`;
-            // 路径颜色:前置节点已通过 → 走过的路(亮色实线);否则未走过(灰虚线)
-            const fromLesson = lessons[i];  // 用 _lesson 标记未用但通过索引取
+      {/* 路径 + 节点:绝对定位,统一像素坐标系 */}
+      <div ref={pathRef} className="relative" style={{ minHeight: pathHeight }}>
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          aria-hidden="true"
+          style={{ height: pathHeight }}
+        >
+          {layout.segments.map((seg) => {
+            // 路径颜色:前置节点已通过 → 走过的路(brand 实线);否则未走过(灰虚线)
+            const fromLesson = lessons[seg.index];
             const fromProgress = fromLesson ? progressMap[fromLesson.id] : undefined;
-            const isPassed = fromProgress?.status === "mastered" || fromProgress?.status === "in_progress" || fromProgress?.status === "available";
+            const isPassed =
+              fromProgress?.status === "mastered" ||
+              fromProgress?.status === "in_progress" ||
+              fromProgress?.status === "available";
             return (
               <path
-                key={i}
-                d={`M ${x1} ${y1} C ${x1} ${(parseInt(y1) + parseInt(y2)) / 2}%, ${x2} ${(parseInt(y1) + parseInt(y2)) / 2}%, ${x2} ${y2}`}
-                stroke={isPassed ? "rgb(88 204 2)" : "rgb(200 200 210)"}
+                key={seg.index}
+                d={segmentToPath(seg)}
+                stroke={isPassed ? "var(--brand)" : "var(--ink-faint)"}
                 strokeWidth={isPassed ? 4 : 2.5}
-                strokeOpacity={isPassed ? 0.5 : 0.7}
+                strokeOpacity={isPassed ? 0.5 : 0.6}
                 fill="none"
                 strokeLinecap="round"
                 strokeDasharray={isPassed ? "none" : "3 7"}
+                // 走过的路渐进绘制(PROPERTY.md motion:状态传达);用 pathLength=1 归一化
+                style={
+                  isPassed
+                    ? { pathLength: 1, animation: "path-draw 500ms var(--ease-out-expo)" }
+                    : undefined
+                }
               />
             );
           })}
         </svg>
 
-        <ol className="relative space-y-3">
-          {lessons.map((lesson, i) => (
-            <MapNode
+        {/* 节点:绝对定位居中于 layout.x/layout.y */}
+        {lessons.map((lesson, i) => {
+          const node = layout.nodes[i];
+          if (!node) return null;
+          return (
+            <div
               key={lesson.id}
-              lesson={lesson}
-              index={i}
-              progress={progressMap[lesson.id]}
-              isSelected={lesson.id === selectedNodeId}
-              isDue={dueNodeIds.has(lesson.id)}
-              chapterLessonsMastered={chapterLessonsMastered}
-              onClick={() => onJumpNode(lesson.id)}
-            />
-          ))}
-        </ol>
+              className="absolute"
+              style={{
+                left: node.x - NODE_W / 2,
+                top: node.y - NODE_H / 2 + 12, // +12 补 SVG 顶部留白对齐球心
+                width: NODE_W,
+              }}
+            >
+              <MapNode
+                lesson={lesson}
+                index={i}
+                progress={progressMap[lesson.id]}
+                isSelected={lesson.id === selectedNodeId}
+                isDue={dueNodeIds.has(lesson.id)}
+                chapterLessonsMastered={chapterLessonsMastered}
+                onClick={() => onJumpNode(lesson.id)}
+              />
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -360,7 +444,6 @@ function MapNode({
   const isExam = lesson.type === "exam";
   // 考试节点的星数 = crownLevel(1-3,考试得分)。普通课节点不再用星(crown 只在 mastered 时=5)。
   const examStars = Math.min(3, crown);
-  const alignLeft = index % 2 === 0;
   // 锁定逻辑:
   //   - 普通课:status === "locked"(受 mastery≥0.5 硬门控解锁)
   //   - 考试:要求同 section 所有 lesson 都 mastery≥0.5 才解锁(整章通关感)
@@ -368,12 +451,11 @@ function MapNode({
   const examLocked = isExam && isLocked; // 考试专属锁定态(用于样式/文案)
   // in_progress(仅普通课):用 mastery 算进度环(0-1 → 0-100%)
   const masteryPct = status === "in_progress" && !isExam ? Math.round((progress?.mastery ?? 0) * 100) : 0;
+  // 节点位置由外层布局引擎(MapSection)绝对定位决定,这里只管自身样式。
+  // index 仅用于 testid/可访问性,不参与定位(原 alignLeft/margin 逻辑已废弃)。
 
   return (
-    <li
-      className={`relative flex flex-col items-center ${alignLeft ? "self-start" : "self-end"}`}
-      style={{ width: "110px", marginLeft: alignLeft ? "8%" : "auto", marginRight: alignLeft ? "auto" : "8%" }}
-    >
+    <div className="relative flex flex-col items-center w-full">
       <button
         onClick={() => !isLocked && onClick()}
         disabled={isLocked}
@@ -464,7 +546,7 @@ function MapNode({
       >
         {lesson.title}
       </div>
-    </li>
+    </div>
   );
 }
 

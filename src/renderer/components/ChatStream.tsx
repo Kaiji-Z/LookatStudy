@@ -13,7 +13,7 @@
  *
  * 注意:本组件只负责"展示"。输入由 ChatComposer 负责。
  */
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, X } from "lucide-react";
@@ -45,8 +45,44 @@ interface ChatStreamProps {
 }
 
 export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal }: ChatStreamProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // 用户是否"贴底"——只在贴底时自动跟随,避免用户上滑翻历史被强拉回来。
+  // 用 ref 存判断结果(setState 会触发不必要的重渲染),useEffect 里读它。
+  const stickToBottomRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // 80px 容差:轻微上滑(如点代码块复制按钮)仍算贴底。
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    stickToBottomRef.current = atBottom;
+  }, []);
+
+  // 贴底时滚动到底。触发条件:
+  //   - messages 变化(新消息行 / 最后一条消息 parts 增长)
+  //   - streaming 切换(开始流式 → 跟随;结束 → 不必动)
+  // 用 instant(非 smooth):流式期间 smooth 会被高频打断,产生抖动。
+  useEffect(() => {
+    if (!stickToBottomRef.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, streaming]);
+
+  // 用户发出新消息(send) → 无条件滚到底(用户刚发,必然想看回复)。
+  // 检测:最后一条是 user → 强制贴底 + 立即滚。
+  const lastIsUser = messages.length > 0 && messages[messages.length - 1].role === "user";
+  useEffect(() => {
+    if (!lastIsUser) return;
+    stickToBottomRef.current = true;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lastIsUser]);
+
   return (
     <div
+      ref={scrollRef}
+      onScroll={handleScroll}
       className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0"
       data-testid="chat-stream"
     >

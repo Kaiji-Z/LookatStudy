@@ -4,7 +4,7 @@
  * 组织方式：按领域分 register* 函数，由 main/index.ts 统一调用。
  * 通道名规范：domain:action（如 course:list, streak:touch）
  */
-import { ipcMain, type BrowserWindow } from "electron";
+import { ipcMain, type BrowserWindow, dialog } from "electron";
 import { getDb, markDirty } from "../db/index.js";
 import {
   courses,
@@ -96,6 +96,9 @@ import {
   discoverFromReadmeRecursively,
   pathsToDiscoveredFiles,
 } from "../services/pure/repo-fetcher.js";
+// 本地文件夹导入(通用扫描器)
+import { scanFolder } from "../services/pure/local-folder-scanner.js";
+import { importLocalFolder } from "../services/local-import-service.js";
 // 课程结构化服务（LLM）
 import {
   analyzeCourseStructure,
@@ -318,6 +321,42 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       return course as unknown as Course;
     },
   );
+
+  // 导入本地文件夹(通用扫描器:递归扫 .txt/.md/.html/.pdf → 落库 → 自动结构化)
+  ipcMain.handle("import:localFolder", async (): Promise<Course | null> => {
+    const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+    // 1. Electron 文件选择对话框(选文件夹)
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openDirectory"],
+      title: "选择要导入的课程文件夹",
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const folderPath = result.filePaths[0];
+    const folderName = folderPath.split(/[\\/]/).pop() ?? "local-course";
+
+    // 2. 扫描(递归读 txt/md/html/pdf,中文优先去重)
+    send("正在扫描文件夹…");
+    const docs = await scanFolder(folderPath, (n) => {
+      if (n % 20 === 0) send(`已扫描 ${n} 个文件…`);
+    });
+    if (docs.length === 0) {
+      throw new Error("文件夹里没有找到可识别的文本内容(.txt/.md/.html/.pdf)");
+    }
+    send(`扫描完成:${docs.length} 个文档,正在构建课程…`);
+
+    // 3. 落库(按目录分组 → ParsedCourse → generateCourseFromRepoFiles)
+    const result2 = importLocalFolder(getDb(), docs, folderName);
+    markDirty();
+    send(`导入完成:${result2.sectionCount} 章 / ${result2.lessonCount} 课`);
+
+    // 4. 自动 AI 结构化(有 key 时)
+    await autoStructureCourse(result2.courseId, send).catch((e) => {
+      send(`AI 结构化跳过(${e instanceof Error ? e.message : "无 key 或出错"})`);
+    });
+
+    const course = getDb().select().from(courses).where(eq(courses.id, result2.courseId)).get();
+    return course as unknown as Course;
+  });
 
   // 删除课程 + 其下全部节点/进度/练习/聊天（级联清理由 services 负责）
   ipcMain.handle("course:delete", async (_e, courseId: string) => {

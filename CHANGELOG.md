@@ -17,6 +17,15 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **导入本地文件夹(第三种导入方式)**:支持把任意本地课程文件夹(如 Coursera/edX
+  下载包)转为课程。用 Electron 文件选择对话框选目录,递归扫描 .txt/.md/.html/.pdf,
+  提取内容,落库,再走 LLM 结构化。
+  - 通用扫描器:`local-folder-scanner.ts` 不硬编码任何文件夹结构,递归收所有文本类文件。
+  - 中文优先去重:同内容的 .zh-CN 和 .en 只保留中文版。
+  - HTML 转纯文本(`<co-content>` 富文本质量足够);PDF 用 `pdf-parse` 提取文字。
+  - 文件名 NN_ 前缀自然排序;排除 node_modules/.git/translations。
+  - 新依赖 `pdf-parse`(纯 JS,无 native,vite external)。
+  - ImportView 加"本地文件夹"tab;`import:localFolder` IPC + dialog.showOpenDialog。
 - **整仓 .md 递归导入**:URL 导入现在优先用 GitHub Tree API 一次性发现全仓 .md 文件
   (不只 README 链接的),自动降级:jsdelivr 文件列表 → README 链接 + 一层递归 → 报错。
   文件上限 80 个(防爆)。适配网络偶发不稳:每级失败自动降级 + 进度提示当前在用哪条路。

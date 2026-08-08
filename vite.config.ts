@@ -26,7 +26,8 @@ export default defineConfig({
             outDir: resolve(__dirname, "dist-electron/main"),
             rollupOptions: {
               // sql.js 用 require.resolve 运行时定位 wasm，不能被 bundle
-              external: ["sql.js", "drizzle-orm/sql-js", "electron"],
+              // pdf-parse 内部用 require 动态加载,external 避免打包冲突
+              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse"],
               output: {
                 format: "cjs", // CJS 让 __dirname 天然可用，避免 ESM 路径坑
               },

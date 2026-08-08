@@ -24,7 +24,7 @@ export function ImportView({
   selectedCourseId: string | null;
   onSelectCourse: (id: string) => void;
 }) {
-  const [tab, setTab] = useState<"url" | "markdown">("url");
+  const [tab, setTab] = useState<"url" | "markdown" | "folder">("url");
   const [repoUrl, setRepoUrl] = useState("");
   const [mdText, setMdText] = useState("");
   const [repoName, setRepoName] = useState("");
@@ -71,6 +71,28 @@ export function ImportView({
         repoName.trim(),
       );
       setSuccess(`生成成功：${course.title}`);
+      setTimeout(() => onImported(), 800);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleImportFolder = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    setProgressMsg(null);
+    try {
+      const course = await api.importLocalFolder();
+      if (!course) {
+        // 用户取消选择
+        setBusy(false);
+        return;
+      }
+      setSuccess(`导入成功：${course.title}（${course.repoName}）`);
       setTimeout(() => onImported(), 800);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -130,6 +152,12 @@ export function ImportView({
         >
           粘贴 Markdown
         </button>
+        <button
+          onClick={() => setTab("folder")}
+          className={`px-4 py-2 text-sm border-b-2 ${tab === "folder" ? "border-brand text-brand" : "border-transparent text-neutral-500 hover:text-neutral-700 dark:text-neutral-300"}`}
+        >
+          本地文件夹
+        </button>
       </div>
 
       {tab === "url" ? (
@@ -155,7 +183,7 @@ export function ImportView({
             会拉取仓库根目录的 README.md（自动试 main/master 分支）。
           </p>
         </section>
-      ) : (
+      ) : tab === "markdown" ? (
         <section className="space-y-3" data-testid="import-md-section">
           <div>
             <label className="text-sm text-neutral-700 dark:text-neutral-300 block mb-1">课程名称</label>
@@ -190,6 +218,25 @@ export function ImportView({
           >
             {busy ? "生成中…" : "生成课程"}
           </button>
+        </section>
+      ) : (
+        <section className="space-y-3" data-testid="import-folder-section">
+          <label className="text-sm text-neutral-700 dark:text-neutral-300 block">选择本地课程文件夹</label>
+          <p className="text-[11px] text-neutral-600 leading-relaxed">
+            递归扫描文件夹下的 .txt / .md / .html / .pdf,自动提取内容转为课程。
+            适合已下载的课程资料包(如 Coursera/edX 下载内容)。同内容的中文版(.zh-CN)优先于英文版(.en)。
+          </p>
+          <button
+            onClick={handleImportFolder}
+            disabled={busy}
+            data-testid="import-folder-btn"
+            className="btn-3d-brand px-4 py-2.5 text-sm disabled:opacity-40"
+          >
+            {busy ? "处理中…" : "📁 选择文件夹并导入"}
+          </button>
+          <p className="text-[11px] text-neutral-600">
+            导入后会自动用 AI 重组章节结构(需配 API key;无 key 则按文件夹目录结构切分)。
+          </p>
         </section>
       )}
 

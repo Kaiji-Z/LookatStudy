@@ -206,6 +206,8 @@ export interface ApiExpose {
   listCourses(): Promise<Course[]>;
   getCourseTree(courseId: string): Promise<ContentNode[]>;
   importCourseFromRepo(repoUrl: string): Promise<Course>;
+  /** 从本地文件夹导入:Electron 选目录 → 递归扫描 txt/md/html/pdf → 落库 → 自动结构化。push import:progress。用户取消返回 null */
+  importLocalFolder(): Promise<Course | null>;
   /** M4: 从 markdown 字符串生成课程（无网络依赖） */
   generateCourseFromMarkdown(
     md: string,

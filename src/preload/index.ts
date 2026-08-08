@@ -14,6 +14,8 @@ const api = {
     ipcRenderer.invoke("course:getTree", courseId)) as ApiExpose["getCourseTree"],
   importCourseFromRepo: ((repoUrl: string) =>
     ipcRenderer.invoke("course:importFromRepo", repoUrl)) as ApiExpose["importCourseFromRepo"],
+  importLocalFolder: (() =>
+    ipcRenderer.invoke("import:localFolder")) as ApiExpose["importLocalFolder"],
   generateCourseFromMarkdown: ((md: string, repoName: string, repoUrl?: string) =>
     ipcRenderer.invoke("course:generateFromMarkdown", md, repoName, repoUrl)) as ApiExpose["generateCourseFromMarkdown"],
   deleteCourse: ((courseId: string) =>

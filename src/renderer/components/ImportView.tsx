@@ -112,25 +112,6 @@ export function ImportView({
     }
   };
 
-  const [restructuring, setRestructuring] = useState<string | null>(null);
-  const handleRestructure = async (courseId: string) => {
-    if (restructuring) return;
-    setRestructuring(courseId);
-    setError(null);
-    setSuccess(null);
-    setProgressMsg(null);
-    try {
-      const r = await api.restructureCourse(courseId);
-      setSuccess(`结构化完成：${r.sectionCount} 章 / ${r.lessonCount} 课`);
-      onImported();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRestructuring(null);
-      setProgressMsg(null);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold">📚 导入课程</h2>
@@ -277,34 +258,6 @@ export function ImportView({
                   <div className="text-[11px] text-neutral-500">{c.repoName}</div>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button
-                    onClick={() => handleRestructure(c.id)}
-                    disabled={restructuring !== null}
-                    className="text-xs text-accent hover:underline disabled:opacity-40"
-                    title="用 AI 分析课程内容，重新组织章节结构（需要配 API key）"
-                  >
-                    {restructuring === c.id ? "结构化中…" : "🤖 AI 结构化"}
-                  </button>
-                  <button
-                    onClick={async () => {
-                      try {
-                        setSuccess(null);
-                        setError(null);
-                        setProgressMsg("AI 正在生成章节摘要…");
-                        const r = await api.generateSummaries(c.id);
-                        setProgressMsg(null);
-                        setSuccess(`摘要生成完成: ${r.sectionsUpdated} 个章节`);
-                        onImported();
-                      } catch (e) {
-                        setProgressMsg(null);
-                        setError(e instanceof Error ? e.message : String(e));
-                      }
-                    }}
-                    className="text-xs text-accent hover:underline"
-                    title="用 AI 生成每个章节的摘要和前置依赖"
-                  >
-                    📝 生成摘要
-                  </button>
                   {c.id !== selectedCourseId && (
                     <button
                       onClick={() => {

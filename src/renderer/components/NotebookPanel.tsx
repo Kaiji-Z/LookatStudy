@@ -478,6 +478,21 @@ function ZoneSection({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  // 运行时内容新增 → 自动展开,让用户立刻看到刚加的笔记/产物。
+  // 用 ref 跳过首次挂载(尊重 defaultOpen,不把历史已有内容误判为"新增")。
+  const firstRun = useRef(true);
+  const prevCount = useRef(count);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      prevCount.current = count;
+      return;
+    }
+    if (count > prevCount.current) {
+      setOpen(true);
+    }
+    prevCount.current = count;
+  }, [count]);
   return (
     <section
       className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden"
@@ -600,7 +615,11 @@ function CanvasItemCard({
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   rows={2}
-                  placeholder="写下你的注释…(留空保存=删除注释)"
+                  placeholder={
+                    existingComment
+                      ? "编辑注释…(清空保存即可删除)"
+                      : "写下你对这段画线的注释…"
+                  }
                   className="w-full text-[11px] leading-relaxed p-2 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 resize-none focus:outline-none focus:border-brand"
                   data-testid={`note-comment-textarea-${item.id.slice(0, 8)}`}
                 />

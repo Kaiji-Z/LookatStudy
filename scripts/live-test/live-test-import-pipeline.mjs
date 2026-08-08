@@ -8,6 +8,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import "./_load-env.mjs"; // 把 .env 的 Z_AI_API_KEY 灌进 process.env
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../../src/main/db/schema.ts";

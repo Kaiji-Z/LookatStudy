@@ -12,6 +12,7 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import "./_load-env.mjs"; // 把 .env 的 Z_AI_API_KEY 灌进 process.env
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "../..");

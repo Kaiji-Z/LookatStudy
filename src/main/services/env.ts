@@ -69,13 +69,14 @@ function findProjectRoot(): string {
   return process.cwd();
 }
 
-/** 便捷读取:拿 ZAI 配置(供 ui-test seed / live-test 用)。读不到返回 null。 */
+/** 便捷读取:拿 ZAI 配置(供 ui-test seed / live-test 用)。读不到返回 null。
+ * 变量名 Z_AI_API_KEY 与 live-test 既有约定对齐。 */
 export function getZaiConfig(): { apiKey: string; baseUrl: string; model: string } | null {
-  const apiKey = process.env.ZAI_API_KEY;
+  const apiKey = process.env.Z_AI_API_KEY;
   if (!apiKey) return null;
   return {
     apiKey,
-    baseUrl: process.env.ZAI_BASE_URL ?? "https://api.z.ai/api/coding/paas/v4",
-    model: process.env.ZAI_MODEL ?? "glm-4.5",
+    baseUrl: process.env.Z_AI_BASE_URL ?? "https://api.z.ai/api/coding/paas/v4",
+    model: process.env.Z_AI_MODEL ?? "glm-4.5",
   };
 }

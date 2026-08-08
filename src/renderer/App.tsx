@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Settings, Sun, Moon, Flame, Target } from "lucide-react";
+import { Settings, Flame, Target } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -528,24 +528,6 @@ function Header({
   xp: { todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null;
   onOpenSettings: () => void;
 }) {
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    if (typeof document !== "undefined") {
-      return document.documentElement.classList.contains("dark") ? "dark" : "light";
-    }
-    return "dark";
-  });
-
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    if (next === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    localStorage.setItem("lookatstudy-theme", next);
-  };
-
   return (
     <header className="border-b border-neutral-200 dark:border-neutral-800/50 px-6 py-2.5 flex items-center justify-between shrink-0 bg-neutral-50/80 dark:bg-neutral-950/80 backdrop-blur-sm">
       <div className="flex items-center gap-2.5">
@@ -574,14 +556,6 @@ function Header({
             </span>
           </div>
         )}
-        <button
-          onClick={toggleTheme}
-          data-testid="theme-toggle"
-          className="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
-          title={theme === "dark" ? "切换到亮色" : "切换到暗色"}
-        >
-          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </button>
         <button
           onClick={onOpenSettings}
           data-testid="header-settings"

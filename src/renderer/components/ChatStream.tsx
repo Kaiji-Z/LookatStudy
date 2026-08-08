@@ -52,9 +52,13 @@ interface ChatStreamProps {
   hasNode?: boolean;
   /** 当前节点 id(用于内联 quiz 产物的答题 → mastery 更新) */
   selectedNodeId?: string | null;
+  /** 当前 thread id(用于对话画线笔记的溯源锚点) */
+  threadId?: string | null;
+  /** 对话流画线加笔记:选 assistant 消息文字 → 存 user_note(溯源到本消息) */
+  onSaveChatNote?: (text: string, msgId: string) => void;
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, hasNode = true, selectedNodeId }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, hasNode = true, selectedNodeId, threadId, onSaveChatNote }: ChatStreamProps) {
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
     (_q: { prompt: string }, _idx: number, correct: boolean) => {
@@ -71,6 +75,71 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
   // "回到底部"按钮可见性——这个必须用 state(驱动 JSX 渲染)。
   // 只在阈值翻转时 set,避免每次 scroll 触发重渲染。
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+
+  // 笔记溯源跳转:笔记卡点击 → 滚动到对应消息 + 高亮闪烁
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const msgId = (e as CustomEvent<string>).detail;
+      if (!msgId) return;
+      const el = document.querySelector(`[data-msg-id="${msgId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-accent", "rounded-lg");
+        setTimeout(() => {
+          el.classList.remove("ring-2", "ring-accent", "rounded-lg");
+        }, 2500);
+      }
+    };
+    window.addEventListener("lookatstudy-highlight-message", handler);
+    return () => window.removeEventListener("lookatstudy-highlight-message", handler);
+  }, []);
+
+  // 对话流画线加笔记:选 assistant 消息文字 → 浮出"✏️ 加笔记"按钮
+  const [chatNoteBtn, setChatNoteBtn] = useState<{ x: number; y: number; text: string; msgId: string } | null>(null);
+  const handleChatMouseUp = useCallback(() => {
+    if (!onSaveChatNote || !threadId) return;
+    const sel = window.getSelection();
+    const text = sel?.toString().trim() ?? "";
+    if (text.length < 2 || text.length > 500) {
+      setChatNoteBtn(null);
+      return;
+    }
+    // 选区必须在 chat-stream 内,且找到所属 msg 元素(取 data-msg-id)
+    const range = sel?.getRangeAt(0);
+    if (!range) { setChatNoteBtn(null); return; }
+    const container = scrollRef.current;
+    if (!container?.contains(range.commonAncestorContainer)) {
+      setChatNoteBtn(null);
+      return;
+    }
+    // 向上找最近的 [data-msg-id](可能是 user 或 assistant 消息)
+    let node: Node | null = range.commonAncestorContainer;
+    let msgId: string | null = null;
+    while (node && node !== container) {
+      if (node instanceof HTMLElement && node.dataset.msgId) {
+        msgId = node.dataset.msgId;
+        break;
+      }
+      node = node.parentNode;
+    }
+    if (!msgId) { setChatNoteBtn(null); return; }
+    const rect = range.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    setChatNoteBtn({
+      x: rect.left + rect.width / 2 - containerRect.left,
+      y: rect.top - containerRect.top - 8,
+      text,
+      msgId,
+    });
+  }, [onSaveChatNote, threadId]);
+
+  const handleSaveChatNote = useCallback(() => {
+    if (!chatNoteBtn || !onSaveChatNote) return;
+    const text = chatNoteBtn.text.length > 200 ? chatNoteBtn.text.slice(0, 200) + "…" : chatNoteBtn.text;
+    onSaveChatNote(text, chatNoteBtn.msgId);
+    setChatNoteBtn(null);
+    window.getSelection()?.removeAllRanges();
+  }, [chatNoteBtn, onSaveChatNote]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -116,7 +185,8 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto px-4 py-4 space-y-4"
+        onMouseUp={handleChatMouseUp}
+        className="h-full overflow-y-auto px-4 py-4 space-y-4 relative"
         data-testid="chat-stream"
       >
         {messages.length === 0 && (
@@ -205,6 +275,19 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
           )}
         </button>
       )}
+
+      {/* 对话画线加笔记按钮:选 assistant 消息文字后浮出 */}
+      {chatNoteBtn && (
+        <button
+          onClick={handleSaveChatNote}
+          data-testid="save-chat-note-btn"
+          style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: "translate(-50%, -100%)" }}
+          className="absolute z-20 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-bold shadow-elevated flex items-center gap-1 hover:brightness-110 transition msg-enter"
+          title="把这段对话存到笔记区"
+        >
+          ✏️ 加笔记
+        </button>
+      )}
     </div>
   );
 }
@@ -244,7 +327,7 @@ function MessageRowV2({
   if (msg.role === "user") {
     // user:左 4px 绿色竖条 + 全宽浅绿底(扁平,非气泡)
     return (
-      <div className="msg-enter bg-brand/10 dark:bg-brand/15 rounded-lg px-3 py-2 border border-brand/20" data-testid="msg-user">
+      <div className="msg-enter bg-brand/10 dark:bg-brand/15 rounded-lg px-3 py-2 border border-brand/20" data-testid="msg-user" data-msg-id={msg.id}>
         <div className="font-medium text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap" style={{ fontSize: "var(--chat-font-size, 15px)" }}>
           {msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
         </div>
@@ -254,7 +337,7 @@ function MessageRowV2({
 
   // assistant:全宽无背景,带小 AI 头像。parts 按 type 分别渲染。
   return (
-    <div className="msg-enter flex gap-2.5" data-testid="msg-assistant">
+    <div className="msg-enter flex gap-2.5" data-testid="msg-assistant" data-msg-id={msg.id}>
       <div
         className="w-7 h-7 rounded-full bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5"
         style={{ boxShadow: "0 2px 6px rgba(28,176,246,0.2)" }}

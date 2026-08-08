@@ -393,11 +393,22 @@ export interface ApiExpose {
   /** 导出学习记录（JSON / Markdown 格式） */
   exportCourse(courseId: string, format: "json" | "markdown"): Promise<string>;
 
-  /* v0.3: Canvas 画布(黑板笔记本)—— AI 产物持久化 */
-  canvasList(courseId: string, nodeId?: string | null): Promise<CanvasItem[]>;
+  /* v0.3: Canvas 画布(康奈尔式笔记本)—— AI 产物 + 用户画线 + 练习记录 */
+  /** zone 可选:不传=全部 / 'understand'=理解区 / 'note'=笔记区 / 'practice'=练习区 */
+  canvasList(courseId: string, nodeId?: string | null, zone?: CanvasZone): Promise<CanvasItem[]>;
   canvasSave(input: { nodeId?: string | null; courseId: string; artifactType: string; title?: string | null; data: unknown }): Promise<CanvasItem>;
   canvasDelete(id: string): Promise<void>;
   canvasTogglePin(id: string): Promise<CanvasItem | null>;
+  /** 用户画线加笔记(user_note),带溯源(content/chat) */
+  canvasSaveUserNote(input: {
+    nodeId: string;
+    courseId: string;
+    text: string;
+    sourceType: "content" | "chat";
+    sourceAnchor: NoteSourceAnchor;
+  }): Promise<CanvasItem>;
+  /** quiz 重做后更新 last_result(只保留最近一次) */
+  canvasRecordQuizResult(id: string, correct: boolean): Promise<CanvasItem | null>;
 
   /* v0.4: Thread 会话(类 Cursor 项目-会话) */
   threadList(courseId: string, status?: "active" | "archived"): Promise<Thread[]>;
@@ -441,7 +452,23 @@ export interface CanvasItem {
   pinned: number;
   createdAt: string;
   notes: string | null;
+  /** v0.3 溯源:'ai' / 'content'(讲解画线) / 'chat'(对话画线) */
+  sourceType: string | null;
+  /** 溯源锚点 JSON:content={surroundingText} / chat={threadId,msgId} */
+  sourceAnchor: string | null;
+  /** 仅 quiz:最近一次答题 'correct'/'wrong' */
+  lastResult: string | null;
+  /** 仅 quiz:答题时间 */
+  resultAt: string | null;
 }
+
+/** 康奈尔笔记三区 */
+export type CanvasZone = "understand" | "note" | "practice";
+
+/** 用户画线笔记的溯源锚点 */
+export type NoteSourceAnchor =
+  | { type: "content"; surroundingText: string } // 讲解区:选区前后文字片段
+  | { type: "chat"; threadId: string; msgId: string }; // 对话流:thread + 消息 id
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;
 

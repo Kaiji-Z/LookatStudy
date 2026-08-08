@@ -195,12 +195,17 @@ CREATE TABLE IF NOT EXISTS canvas_items (
   id TEXT PRIMARY KEY,               -- uuid
   node_id TEXT,                      -- 关联的课时(可空表示课程级产物)
   course_id TEXT NOT NULL,           -- 关联课程
-  artifact_type TEXT NOT NULL,       -- concept_map / quiz / compare_table / diagram / code_walkthrough
+  artifact_type TEXT NOT NULL,       -- concept_map / quiz / compare_table / diagram / code_walkthrough / user_note
   title TEXT,                        -- 产物标题
   data TEXT NOT NULL,                -- JSON 序列化的产物数据(与 tool execute 返回一致)
   pinned INTEGER DEFAULT 0,          -- 用户置顶(0/1)
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-  notes TEXT                         -- 用户备注(后续扩展)
+  notes TEXT,                        -- 用户备注(后续扩展)
+  -- v0.3 康奈尔笔记法:溯源 + 练习记录
+  source_type TEXT,                  -- 'ai'(产物默认) / 'content'(讲解画线) / 'chat'(对话画线)
+  source_anchor TEXT,                -- 溯源锚点 JSON:content={surroundingText} / chat={threadId,msgId}
+  last_result TEXT,                  -- 仅 quiz:最近一次答题 'correct'/'wrong'
+  result_at TEXT                     -- 仅 quiz:答题时间
 );
 
 CREATE INDEX IF NOT EXISTS idx_canvas_node ON canvas_items(node_id);

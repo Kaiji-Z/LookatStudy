@@ -9,6 +9,7 @@ import type {
   Skill,
   DashboardData,
   StarterPrompt,
+  NoteSourceAnchor,
 } from "@shared/types";
 import { MapRail, type MapView } from "./components/MapRail.js";
 import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
@@ -101,6 +102,26 @@ export default function App() {
   const handleQuoteToChat = useCallback((text: string) => {
     setQuoteText(text); // 新值会触发 ChatComposer insertText effect
   }, []);
+
+  // 笔记卡溯源跳转:点击 → 切到讲解/对话原位 + 高亮
+  const handleJumpToSource = useCallback((anchor: NoteSourceAnchor) => {
+    if (anchor.type === "content") {
+      // 切到讲解 tab,发事件让 ContentTab 搜索 surroundingText + 高亮
+      setForceArtifactTab("content");
+      // 延迟一帧让 tab 切换生效后再发事件
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("lookatstudy-highlight-content", { detail: anchor.surroundingText }));
+      }, 50);
+    } else {
+      // chat 源:切到对应 thread(如果不同)+ 发事件让 ChatStream 滚动到 msgId 高亮
+      if (anchor.threadId !== thread.activeId) {
+        thread.setActiveId(anchor.threadId);
+      }
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("lookatstudy-highlight-message", { detail: anchor.msgId }));
+      }, 80);
+    }
+  }, [thread]);
 
   // 当前节点摘要(空会话时中栏显示,导入时生成)
   const [nodeSummary, setNodeSummary] = useState<string | null>(null);
@@ -488,6 +509,17 @@ export default function App() {
                 onStartLearning={handleStartLearning}
                 hasNode={!!selectedNode}
                 selectedNodeId={selectedNodeId}
+                threadId={thread.activeId}
+                onSaveChatNote={(text, msgId) => {
+                  if (!selectedNode || !thread.activeId) return;
+                  canvas.saveUserNote({
+                    nodeId: selectedNode.id,
+                    text,
+                    sourceType: "chat",
+                    sourceAnchor: { type: "chat", threadId: thread.activeId, msgId },
+                  });
+                  toast.show("已加到笔记 · 笔记区", { duration: 2000 });
+                }}
               />
               <ChatComposer
                 nodeId={selectedNodeId}
@@ -509,11 +541,10 @@ export default function App() {
               )}
             </div>
 
-            {/* 右栏:NotebookPanel 黑板笔记本(讲解/笔记/全部) */}
+            {/* 右栏:NotebookPanel 康奈尔笔记本(讲解/笔记) */}
             <main className="flex-1 min-w-0">
               <NotebookPanel
                 selectedNode={selectedNode}
-                courseId={selectedCourseId}
                 items={canvas.items}
                 loading={canvas.loading}
                 forceTab={forceArtifactTab}
@@ -525,6 +556,20 @@ export default function App() {
                 onTogglePin={(id) => {
                   canvas.togglePin(id);
                 }}
+                onRecordQuizResult={(id, correct) => {
+                  canvas.recordQuizResult(id, correct);
+                }}
+                onSaveContentNote={(text, anchor) => {
+                  if (!selectedNode) return;
+                  canvas.saveUserNote({
+                    nodeId: selectedNode.id,
+                    text,
+                    sourceType: "content",
+                    sourceAnchor: anchor,
+                  });
+                  toast.show("已加到笔记 · 笔记区", { duration: 2000 });
+                }}
+                onJumpToSource={handleJumpToSource}
                 onQuoteToChat={handleQuoteToChat}
               />
             </main>

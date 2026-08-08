@@ -1,18 +1,17 @@
 /**
- * useCanvas —— v0.3 黑板笔记本数据 hook。
+ * useCanvas —— v0.3 康奈尔式学习笔记本数据 hook。
  *
- * 管 canvas_items 的 CRUD + 自动持久化 AI 产物。
- *   - load: 按 courseId(+nodeId)拉产物列表
- *   - save: AI 产物生成时自动调(不让用户决定,全存)
- *   - remove: 用户单删
- *   - togglePin: 用户置顶
- *
- * 产物自动持久化触发点:agent-engine 的展示型 tool execute 后,
- * App.tsx 监听 chat:part 的 tool-result,调 saveCanvas。
+ * 管 canvas_items 的 CRUD + 自动持久化 + 用户画线 + quiz 记录。
+ *   - load: 按 courseId 拉全部产物/笔记(含 user_note)
+ *   - save: AI 产物生成时自动调
+ *   - saveUserNote: 用户画线加笔记(带溯源)
+ *   - recordQuizResult: quiz 重做后更新 last_result
+ *   - remove / togglePin: 单删 / 置顶
+ *   - byZone: 按康奈尔三区筛选(理解区/笔记区/练习区)
  */
 import { useState, useEffect, useCallback } from "react";
 import { api } from "./api.js";
-import type { CanvasItem } from "@shared/types";
+import type { CanvasItem, CanvasZone, NoteSourceAnchor } from "@shared/types";
 
 export function useCanvas(courseId: string | null) {
   const [items, setItems] = useState<CanvasItem[]>([]);
@@ -57,6 +56,39 @@ export function useCanvas(courseId: string | null) {
     [courseId],
   );
 
+  /** 用户画线加笔记(user_note),带溯源(content/chat) */
+  const saveUserNote = useCallback(
+    async (input: {
+      nodeId: string;
+      text: string;
+      sourceType: "content" | "chat";
+      sourceAnchor: NoteSourceAnchor;
+    }) => {
+      if (!courseId) return null;
+      try {
+        const item = await api.canvasSaveUserNote({ ...input, courseId });
+        setItems((prev) => [item, ...prev]);
+        return item;
+      } catch {
+        return null;
+      }
+    },
+    [courseId],
+  );
+
+  /** quiz 重做后更新 last_result(只保留最近一次) */
+  const recordQuizResult = useCallback(async (id: string, correct: boolean) => {
+    try {
+      const updated = await api.canvasRecordQuizResult(id, correct);
+      if (updated) {
+        setItems((prev) => prev.map((i) => (i.id === id ? updated : i)));
+      }
+      return updated;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const remove = useCallback(async (id: string) => {
     try {
       await api.canvasDelete(id);
@@ -71,7 +103,6 @@ export function useCanvas(courseId: string | null) {
       const updated = await api.canvasTogglePin(id);
       if (updated) {
         setItems((prev) => {
-          // 重新排序:pinned 优先 + 时间倒序
           const next = prev.map((i) => (i.id === id ? updated : i));
           return next.sort((a, b) => {
             if (b.pinned !== a.pinned) return b.pinned - a.pinned;
@@ -84,7 +115,7 @@ export function useCanvas(courseId: string | null) {
     }
   }, []);
 
-  /** 按节点过滤的产物(置顶优先 + 时间倒序,已是默认排序)。 */
+  /** 按节点过滤的产物。 */
   const byNode = useCallback(
     (nodeId: string | null) => {
       if (nodeId === null) return items;
@@ -93,5 +124,33 @@ export function useCanvas(courseId: string | null) {
     [items],
   );
 
-  return { items, loading, reload, save, remove, togglePin, byNode };
+  /** 按康奈尔三区筛选(在一个节点内):
+   *  understand=理解区(非 quiz 非 user_note 的 AI 产物)
+   *  note=笔记区(user_note)
+   *  practice=练习区(quiz) */
+  const byZone = useCallback(
+    (nodeId: string | null, zone: CanvasZone): CanvasItem[] => {
+      const nodeItems = nodeId === null ? items : items.filter((i) => i.nodeId === nodeId);
+      if (zone === "note") return nodeItems.filter((i) => i.artifactType === "user_note");
+      if (zone === "practice") return nodeItems.filter((i) => i.artifactType === "quiz");
+      // understand
+      return nodeItems.filter((i) =>
+        ["concept_map", "compare_table", "diagram", "code_walkthrough"].includes(i.artifactType),
+      );
+    },
+    [items],
+  );
+
+  return {
+    items,
+    loading,
+    reload,
+    save,
+    saveUserNote,
+    recordQuizResult,
+    remove,
+    togglePin,
+    byNode,
+    byZone,
+  };
 }

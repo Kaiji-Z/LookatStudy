@@ -126,6 +126,11 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("progress", "mastery", "REAL");
   // 课节摘要(LLM 生成,导入时批量填)
   addColumnIfMissing("content_nodes", "summary", "TEXT");
+  // v0.3 康奈尔笔记法:canvas_items 加溯源 + 练习记录字段
+  addColumnIfMissing("canvas_items", "source_type", "TEXT");
+  addColumnIfMissing("canvas_items", "source_anchor", "TEXT");
+  addColumnIfMissing("canvas_items", "last_result", "TEXT");
+  addColumnIfMissing("canvas_items", "result_at", "TEXT");
 
   // 考试节点(type='exam'):老库的 content_nodes CHECK 约束不含 'exam',
   // 需重建表加约束(SQLite 不能 ALTER CHECK)。幂等:检测现有 CHECK 是否已含 'exam'。

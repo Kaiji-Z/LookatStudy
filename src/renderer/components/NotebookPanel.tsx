@@ -1,45 +1,54 @@
 /**
- * NotebookPanel —— v0.3 黑板笔记本(替代 ArtifactPanel)。
+ * NotebookPanel —— v0.3 康奈尔式学习笔记本。
  *
- * 三标签:
- *   - 讲解(默认):当前节点 markdown 内容
- *   - 笔记:当前节点的 AI 产物(canvas_items,持久化,可删可置顶)
- *   - 全部:跨节点时间线(翻整本笔记本)
+ * 两标签:
+ *   - 讲解(默认):当前节点 markdown 内容,选区可"提问这段"或"加到笔记"
+ *   - 笔记:康奈尔笔记法三区
+ *     · 🗺️ 理解区(线索区):AI 产物(概念图/对比表/流程图/代码讲解)—— 知识结构
+ *     · ✏️ 笔记区(笔记区):用户画线笔记(user_note,带溯源跳转)—— 个人内化
+ *     · 📝 练习区(总结区):quiz 产物,可重做,显示上次答对/答错 —— 检验
  *
- * 核心隐喻:教室黑板 + 学习笔记本。AI 产物自动留存,可翻阅。
+ * 砍掉了"全部"tab —— 笔记跟随节点,跨节点靠左侧地图切换。
  */
-import { useState, useEffect, useRef, useCallback } from "react";
-import type { ContentNode, CanvasItem } from "@shared/types";
+import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
+import type { ContentNode, CanvasItem, NoteSourceAnchor } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../lib/api.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
-import { Pin, Trash, MapPin } from "lucide-react";
+import { Pin, Trash, ChevronDown } from "lucide-react";
 
-export type NotebookTab = "content" | "notes" | "all";
+export type NotebookTab = "content" | "notes";
 
 interface NotebookPanelProps {
   selectedNode: ContentNode | null;
-  courseId: string | null;
   items: CanvasItem[];
   loading: boolean;
   forceTab?: NotebookTab | null;
   onUserTabChange: () => void;
   onRemove: (id: string) => void;
   onTogglePin: (id: string) => void;
+  /** quiz 重做后更新 last_result */
+  onRecordQuizResult: (id: string, correct: boolean) => void;
+  /** 用户从讲解区画线加笔记 */
+  onSaveContentNote: (text: string, anchor: NoteSourceAnchor) => void;
+  /** 笔记卡溯源跳转:点击 → 切到讲解/对话定位高亮 */
+  onJumpToSource?: (anchor: NoteSourceAnchor) => void;
   /** 选中文字后"提问这段"→ 插入聊天框(哪里不会点哪里) */
   onQuoteToChat?: (text: string) => void;
 }
 
 export function NotebookPanel({
   selectedNode,
-  courseId,
   items,
   loading,
   forceTab,
   onUserTabChange,
   onRemove,
   onTogglePin,
+  onRecordQuizResult,
+  onSaveContentNote,
+  onJumpToSource,
   onQuoteToChat,
 }: NotebookPanelProps) {
   const [internalTab, setInternalTab] = useState<NotebookTab>("content");
@@ -75,34 +84,25 @@ export function NotebookPanel({
           testid="tab-notes"
           badge={nodeItems.length > 0 ? String(nodeItems.length) : undefined}
         />
-        <TabBtn
-          label="全部"
-          active={tab === "all"}
-          onClick={() => handleTabClick("all")}
-          testid="tab-all"
-          badge={items.length > 0 ? String(items.length) : undefined}
-        />
       </div>
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {tab === "content" ? (
-          <ContentTab selectedNode={selectedNode} onQuoteToChat={onQuoteToChat} />
-        ) : tab === "notes" ? (
+          <ContentTab
+            selectedNode={selectedNode}
+            onQuoteToChat={onQuoteToChat}
+            onSaveContentNote={onSaveContentNote}
+          />
+        ) : (
           <NotesTab
             items={nodeItems}
             loading={loading}
             selectedNode={selectedNode}
             onRemove={onRemove}
             onTogglePin={onTogglePin}
-          />
-        ) : (
-          <AllTab
-            items={items}
-            loading={loading}
-            courseId={courseId}
-            onRemove={onRemove}
-            onTogglePin={onTogglePin}
+            onRecordQuizResult={onRecordQuizResult}
+            onJumpToSource={onJumpToSource}
           />
         )}
       </div>
@@ -111,12 +111,20 @@ export function NotebookPanel({
 }
 
 /* ---------- 讲解标签 ---------- */
-function ContentTab({ selectedNode, onQuoteToChat }: { selectedNode: ContentNode | null; onQuoteToChat?: (text: string) => void }) {
+function ContentTab({
+  selectedNode,
+  onQuoteToChat,
+  onSaveContentNote,
+}: {
+  selectedNode: ContentNode | null;
+  onQuoteToChat?: (text: string) => void;
+  onSaveContentNote: (text: string, anchor: NoteSourceAnchor) => void;
+}) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  // 选区浮按钮:选中文字后显示,位置跟选区
-  const [quoteBtn, setQuoteBtn] = useState<{ x: number; y: number; text: string } | null>(null);
+  // 选区浮按钮:选中文字后显示,位置跟选区。带 surroundingText 用于笔记溯源
+  const [quoteBtn, setQuoteBtn] = useState<{ x: number; y: number; text: string; surrounding: string } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -135,9 +143,29 @@ function ContentTab({ selectedNode, onQuoteToChat }: { selectedNode: ContentNode
     return () => { cancelled = true; };
   }, [selectedNode?.id]);
 
-  // 鼠标松开时检查选区(哪里不会点哪里)
+  // 监听溯源跳转事件:笔记卡点击 → 搜索 surroundingText + 高亮闪烁
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const searchText = (e as CustomEvent<string>).detail;
+      if (!searchText || !contentRef.current) return;
+      // 用 window.find 在讲解区搜索定位(Chromium 支持,会真的选中匹配文字并滚动)
+      // 先清除已有选区
+      window.getSelection()?.removeAllRanges();
+      // window.find 是非标准但 Chromium 支持,适合本场景(本地桌面应用)
+      const found = (window as unknown as { find?: (s: string) => boolean }).find?.(searchText);
+      if (!found) {
+        // 找不到:用 surroundingText 的前 20 字再试(讲解内容可能微调过)
+        const shortSearch = searchText.slice(0, 20);
+        (window as unknown as { find?: (s: string) => boolean }).find?.(shortSearch);
+      }
+    };
+    window.addEventListener("lookatstudy-highlight-content", handler);
+    return () => window.removeEventListener("lookatstudy-highlight-content", handler);
+  }, []);
+
+  // 鼠标松开时检查选区(哪里不会点哪里 + 加到笔记)
   const handleMouseUp = useCallback(() => {
-    if (!onQuoteToChat) return;
+    if (!onQuoteToChat && !onSaveContentNote) return;
     const sel = window.getSelection();
     const text = sel?.toString().trim() ?? "";
     if (text.length < 2 || text.length > 500) {
@@ -152,12 +180,17 @@ function ContentTab({ selectedNode, onQuoteToChat }: { selectedNode: ContentNode
     }
     const rect = range.getBoundingClientRect();
     const containerRect = contentRef.current.getBoundingClientRect();
+    // 溯源:用选区在讲解纯文本里的位置,取前后各 30 字作为锚点(重渲染后搜索定位)
+    const fullText = contentRef.current.textContent ?? "";
+    const startIdx = fullText.indexOf(text);
+    const surrounding = startIdx >= 0 ? fullText.slice(Math.max(0, startIdx - 30), startIdx + text.length + 30) : text;
     setQuoteBtn({
       x: rect.left + rect.width / 2 - containerRect.left,
       y: rect.top - containerRect.top - 8,
       text,
+      surrounding,
     });
-  }, [onQuoteToChat]);
+  }, [onQuoteToChat, onSaveContentNote]);
 
   const handleQuoteClick = useCallback(() => {
     if (!quoteBtn || !onQuoteToChat) return;
@@ -166,6 +199,15 @@ function ContentTab({ selectedNode, onQuoteToChat }: { selectedNode: ContentNode
     setQuoteBtn(null);
     window.getSelection()?.removeAllRanges();
   }, [quoteBtn, onQuoteToChat]);
+
+  const handleSaveNoteClick = useCallback(() => {
+    if (!quoteBtn || !onSaveContentNote || !selectedNode) return;
+    // 截断到 200 字(画线太长意义不大)
+    const text = quoteBtn.text.length > 200 ? quoteBtn.text.slice(0, 200) + "…" : quoteBtn.text;
+    onSaveContentNote(text, { type: "content", surroundingText: quoteBtn.surrounding });
+    setQuoteBtn(null);
+    window.getSelection()?.removeAllRanges();
+  }, [quoteBtn, onSaveContentNote, selectedNode]);
 
   if (!selectedNode) {
     return (
@@ -200,16 +242,30 @@ function ContentTab({ selectedNode, onQuoteToChat }: { selectedNode: ContentNode
           这一节还没有讲解内容。问 AI 导师:「给我讲讲这一节」
         </div>
       )}
-      {/* 哪里不会点哪里:选区浮按钮 */}
+      {/* 选区浮按钮:提问 + 加到笔记 */}
       {quoteBtn && (
-        <button
-          onClick={handleQuoteClick}
-          data-testid="quote-to-chat-btn"
+        <div
           style={{ left: quoteBtn.x, top: quoteBtn.y, transform: "translate(-50%, -100%)" }}
-          className="absolute z-20 px-3 py-1.5 rounded-lg bg-brand text-white text-xs font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition-colors msg-enter"
+          className="absolute z-20 flex items-center gap-1 msg-enter"
         >
-          💬 提问这段
-        </button>
+          {onQuoteToChat && (
+            <button
+              onClick={handleQuoteClick}
+              data-testid="quote-to-chat-btn"
+              className="px-3 py-1.5 rounded-lg bg-brand text-white text-xs font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition-colors"
+            >
+              💬 提问
+            </button>
+          )}
+          <button
+            onClick={handleSaveNoteClick}
+            data-testid="save-note-btn"
+            className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-bold shadow-elevated flex items-center gap-1 hover:brightness-110 transition"
+            title="把选中文字存到笔记区,带溯源跳转"
+          >
+            ✏️ 加笔记
+          </button>
+        </div>
       )}
       {selectedNode.sourcePath && (
         <div className="mt-6 pt-3 border-t border-neutral-200 dark:border-neutral-800 text-[11px] text-neutral-400 dark:text-neutral-600">
@@ -218,148 +274,300 @@ function ContentTab({ selectedNode, onQuoteToChat }: { selectedNode: ContentNode
       )}
       {/* 笔记提示 */}
       <div className="mt-4 p-3 rounded-lg bg-accent/5 border border-accent/20 text-xs text-neutral-600 dark:text-neutral-400">
-        💡 AI 生成的概念图、对比表、练习卡会自动保存到「笔记」标签,随时可翻阅
+        💡 选中讲解文字可「✏️ 加笔记」;AI 生成的概念图/对比表/练习卡会自动进「笔记」标签
       </div>
     </div>
   );
 }
 
-/* ---------- 笔记标签(当前节点的产物) ---------- */
+/* ---------- 笔记标签(康奈尔笔记法三区) ---------- */
 function NotesTab({
   items,
   loading,
   selectedNode,
   onRemove,
   onTogglePin,
+  onRecordQuizResult,
+  onJumpToSource,
 }: {
   items: CanvasItem[];
   loading: boolean;
   selectedNode: ContentNode | null;
   onRemove: (id: string) => void;
   onTogglePin: (id: string) => void;
+  onRecordQuizResult: (id: string, correct: boolean) => void;
+  onJumpToSource?: (anchor: NoteSourceAnchor) => void;
 }) {
   if (!selectedNode) {
-    return <EmptyNotebook message="选一个节点后,这里显示该节点的 AI 笔记" icon="📓" />;
+    return <EmptyNotebook message="选一个节点后,这里显示该节点的学习笔记" icon="📓" />;
   }
   if (loading) {
-    return <div className="text-center py-12 text-sm text-neutral-500 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在整理这一节的 AI 笔记…</div>;
+    return <div className="text-center py-12 text-sm text-neutral-500 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在整理这一节的笔记…</div>;
   }
-  if (items.length === 0) {
+
+  // 三区筛选
+  const understandItems = items.filter((i) =>
+    ["concept_map", "compare_table", "diagram", "code_walkthrough"].includes(i.artifactType),
+  );
+  const noteItems = items.filter((i) => i.artifactType === "user_note");
+  const practiceItems = items.filter((i) => i.artifactType === "quiz");
+  const total = items.length;
+  // 练习统计:上次答对/答错/未做
+  const correctCount = practiceItems.filter((i) => i.lastResult === "correct").length;
+  const wrongCount = practiceItems.filter((i) => i.lastResult === "wrong").length;
+
+  if (total === 0) {
     return (
       <EmptyNotebook
-        message="这一节还没有笔记。问 AI:「画个概念图」「出 3 道题」「做个对比表」"
+        message="这一节还没有笔记。选中讲解文字「✏️ 加笔记」,或问 AI「画个概念图」「出 3 道题」「做个对比表」"
         icon="🧩"
       />
     );
   }
+
   return (
     <div className="p-4 space-y-3 max-w-2xl mx-auto" data-testid="notes-list">
-      {items.map((item) => (
-        <CanvasItemCard
-          key={item.id}
-          item={item}
-          onRemove={onRemove}
-          onTogglePin={onTogglePin}
-        />
-      ))}
+      {/* 🗺️ 理解区(线索区) */}
+      <ZoneSection
+        title="理解"
+        icon="🗺️"
+        subtitle="AI 帮你梳理的知识结构"
+        count={understandItems.length}
+        testid="zone-understand"
+      >
+        {understandItems.length === 0 ? (
+          <ZoneEmpty hint="问 AI「画个概念图」「做个对比表」梳理这一节" />
+        ) : (
+          understandItems.map((item) => (
+            <CanvasItemCard
+              key={item.id}
+              item={item}
+              onRemove={onRemove}
+              onTogglePin={onTogglePin}
+              onRecordQuizResult={onRecordQuizResult}
+              onJumpToSource={onJumpToSource}
+            />
+          ))
+        )}
+      </ZoneSection>
+
+      {/* ✏️ 笔记区(笔记区) */}
+      <ZoneSection
+        title="笔记"
+        icon="✏️"
+        subtitle="你的画线,点击可跳回原位"
+        count={noteItems.length}
+        testid="zone-note"
+      >
+        {noteItems.length === 0 ? (
+          <ZoneEmpty hint="选中讲解或对话的文字,点「✏️ 加笔记」存到这里" />
+        ) : (
+          noteItems.map((item) => (
+            <CanvasItemCard
+              key={item.id}
+              item={item}
+              onRemove={onRemove}
+              onTogglePin={onTogglePin}
+              onRecordQuizResult={onRecordQuizResult}
+              onJumpToSource={onJumpToSource}
+            />
+          ))
+        )}
+      </ZoneSection>
+
+      {/* 📝 练习区(总结区) */}
+      <ZoneSection
+        title="练习"
+        icon="📝"
+        subtitle={
+          practiceItems.length > 0
+            ? `${practiceItems.length} 题 · 上次答对 ${correctCount} · 答错 ${wrongCount}`
+            : "做题检验掌握,可重做"
+        }
+        count={practiceItems.length}
+        testid="zone-practice"
+      >
+        {practiceItems.length === 0 ? (
+          <ZoneEmpty hint="问 AI「出 3 道题考考我」,题目会自动进这里" />
+        ) : (
+          practiceItems.map((item) => (
+            <CanvasItemCard
+              key={item.id}
+              item={item}
+              onRemove={onRemove}
+              onTogglePin={onTogglePin}
+              onRecordQuizResult={onRecordQuizResult}
+              onJumpToSource={onJumpToSource}
+            />
+          ))
+        )}
+      </ZoneSection>
     </div>
   );
 }
 
-/* ---------- 全部标签(跨节点时间线) ---------- */
-function AllTab({
-  items,
-  loading,
-  courseId,
-  onRemove,
-  onTogglePin,
+/** 可折叠的区域(三区共用) */
+function ZoneSection({
+  title,
+  icon,
+  subtitle,
+  count,
+  testid,
+  children,
 }: {
-  items: CanvasItem[];
-  loading: boolean;
-  courseId: string | null;
-  onRemove: (id: string) => void;
-  onTogglePin: (id: string) => void;
+  title: string;
+  icon: string;
+  subtitle: string;
+  count: number;
+  testid: string;
+  children: ReactNode;
 }) {
-  const [nodeTitles, setNodeTitles] = useState<Record<string, string>>({});
-
-  // 拉所有节点标题(用于显示产物的归属节点)
-  useEffect(() => {
-    if (!courseId) return;
-    api.getCourseTree(courseId).then((tree) => {
-      const map: Record<string, string> = {};
-      for (const n of tree) map[n.id] = n.title;
-      setNodeTitles(map);
-    }).catch(() => {});
-  }, [courseId]);
-
-  if (loading) {
-    return <div className="text-center py-12 text-sm text-neutral-500 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在翻开你的笔记本…</div>;
-  }
-  if (items.length === 0) {
-    return <EmptyNotebook message="笔记本还是空的。学习时 AI 生成的产物会自动保存到这里" icon="📓" />;
-  }
-
+  const [open, setOpen] = useState(true);
   return (
-    <div className="p-4 space-y-3 max-w-2xl mx-auto" data-testid="all-notes-list">
-      <div className="text-xs text-neutral-500 dark:text-neutral-500 mb-2">
-        共 {items.length} 条笔记(置顶优先,按时间倒序)
-      </div>
-      {items.map((item) => (
-        <CanvasItemCard
-          key={item.id}
-          item={item}
-          nodeTitle={item.nodeId ? nodeTitles[item.nodeId] : null}
-          onRemove={onRemove}
-          onTogglePin={onTogglePin}
-        />
-      ))}
-    </div>
+    <section
+      className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden"
+      data-testid={testid}
+    >
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 bg-neutral-100 dark:bg-neutral-900/50 hover:bg-neutral-200/60 dark:hover:bg-neutral-900 transition-colors text-left"
+        data-testid={`${testid}-toggle`}
+      >
+        <ChevronDown className={`w-4 h-4 text-neutral-500 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <span className="text-sm">{icon}</span>
+        <span className="text-sm font-bold text-neutral-800 dark:text-neutral-200">{title}</span>
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-brand/15 text-brand">{count}</span>
+        <span className="text-[11px] text-neutral-500 dark:text-neutral-500 ml-auto truncate">{subtitle}</span>
+      </button>
+      {open && <div className="p-3 space-y-3">{children}</div>}
+    </section>
+  );
+}
+
+function ZoneEmpty({ hint }: { hint: string }) {
+  return (
+    <div className="text-center py-3 text-xs text-neutral-400 dark:text-neutral-600">{hint}</div>
   );
 }
 
 /* ---------- 单条笔记卡 ---------- */
 function CanvasItemCard({
   item,
-  nodeTitle,
   onRemove,
   onTogglePin,
+  onRecordQuizResult,
+  onJumpToSource,
 }: {
   item: CanvasItem;
-  nodeTitle?: string | null;
   onRemove: (id: string) => void;
   onTogglePin: (id: string) => void;
+  onRecordQuizResult: (id: string, correct: boolean) => void;
+  onJumpToSource?: (anchor: NoteSourceAnchor) => void;
 }) {
-  // quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
+  // quiz 产物答题 → 触发 mastery 更新 + 记录 last_result
   const handleQuizAnswered = useCallback(
     (_q: { prompt: string }, _idx: number, correct: boolean) => {
       if (item.nodeId) {
-        api.recordQuizAnswer(item.nodeId, correct).catch(() => {
-          /* 静默失败:笔记里答题不应阻塞 UI */
-        });
+        api.recordQuizAnswer(item.nodeId, correct).catch(() => {});
       }
+      onRecordQuizResult(item.id, correct);
     },
-    [item.nodeId],
+    [item.nodeId, item.id, onRecordQuizResult],
   );
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(item.data);
-  } catch {
-    parsed = null;
+
+  // 解析 user_note 的文字 + 溯源锚点
+  const isUserNote = item.artifactType === "user_note";
+  let noteText = "";
+  let noteAnchor: NoteSourceAnchor | null = null;
+  if (isUserNote) {
+    try {
+      noteText = (JSON.parse(item.data) as { text?: string }).text ?? "";
+    } catch {
+      noteText = item.title ?? "";
+    }
+    try {
+      if (item.sourceAnchor) {
+        const a = JSON.parse(item.sourceAnchor) as NoteSourceAnchor;
+        noteAnchor = a;
+      }
+    } catch {
+      noteAnchor = null;
+    }
+  }
+
+  // 解析 AI 产物数据
+  let parsed: unknown = null;
+  if (!isUserNote) {
+    try {
+      parsed = JSON.parse(item.data);
+    } catch {
+      parsed = null;
+    }
   }
   const created = new Date(item.createdAt);
   const timeStr = `${created.getMonth() + 1}/${created.getDate()} ${created.getHours().toString().padStart(2, "0")}:${created.getMinutes().toString().padStart(2, "0")}`;
 
+  // user_note 卡:简洁的画线 + 溯源跳转
+  if (isUserNote) {
+    return (
+      <div
+        className={`surface-card p-3 relative ${item.pinned ? "border-brand/40 bg-brand/5" : ""}`}
+        data-testid={`canvas-item-${item.id.slice(0, 8)}`}
+      >
+        <div className="flex items-start gap-2">
+          <span className="text-accent text-sm shrink-0 mt-0.5">❝</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs text-neutral-800 dark:text-neutral-200 leading-relaxed whitespace-pre-wrap">
+              {noteText}
+            </div>
+            {/* 溯源跳转 */}
+            {noteAnchor && onJumpToSource && (
+              <button
+                onClick={() => onJumpToSource(noteAnchor!)}
+                className="mt-2 inline-flex items-center gap-1 text-[10px] text-accent hover:underline font-bold"
+                data-testid={`note-source-${item.id.slice(0, 8)}`}
+              >
+                {noteAnchor.type === "content" ? "📖 跳到讲解原位" : "💬 跳到对话原位"}
+              </button>
+            )}
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-[10px] text-neutral-400 dark:text-neutral-600">{timeStr}</span>
+              <button
+                onClick={() => onRemove(item.id)}
+                className="text-[10px] text-neutral-400 hover:text-red-500"
+                data-testid={`canvas-delete-${item.id.slice(0, 8)}`}
+                title="删除"
+              >
+                <Trash className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // AI 产物卡(理解区 / 练习区)
   return (
     <div
       className={`surface-card p-3 relative ${item.pinned ? "border-brand/40 bg-brand/5" : ""}`}
       data-testid={`canvas-item-${item.id.slice(0, 8)}`}
     >
-      {/* 卡顶:类型 + 标题 + 操作 */}
+      {/* 卡顶:类型 + 标题 + last_result 徽章 + 操作 */}
       <div className="flex items-center gap-2 mb-2">
         <span className="text-sm">{ARTIFACT_ICON[item.artifactType] ?? "🧩"}</span>
         <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300 flex-1 truncate">
           {item.title ?? ARTIFACT_LABEL[item.artifactType] ?? item.artifactType}
         </span>
+        {/* quiz 上次结果徽章 */}
+        {item.artifactType === "quiz" && item.lastResult && (
+          <span
+            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.lastResult === "correct" ? "bg-brand/15 text-brand" : "bg-red-500/15 text-red-500 dark:text-red-400"}`}
+            data-testid={`quiz-result-${item.id.slice(0, 8)}`}
+          >
+            {item.lastResult === "correct" ? "✅ 上次答对" : "❌ 上次答错"}
+          </span>
+        )}
         {item.pinned ? <span className="text-[10px] text-brand font-bold flex items-center gap-0.5"><Pin className="w-2.5 h-2.5" />已置顶</span> : null}
         <button
           onClick={() => onTogglePin(item.id)}
@@ -378,11 +586,6 @@ function CanvasItemCard({
           <Trash className="w-3 h-3" />
         </button>
       </div>
-
-      {/* 归属节点(全部标签才显示) */}
-      {nodeTitle && (
-        <div className="text-[10px] text-neutral-400 dark:text-neutral-600 mb-1.5 flex items-center gap-0.5"><MapPin className="w-2.5 h-2.5" />{nodeTitle}</div>
-      )}
 
       {/* 产物内容 */}
       <div className="text-xs">

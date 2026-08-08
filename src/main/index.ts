@@ -630,13 +630,13 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: cmdPalette,
   });
 
-  // T14 (M2): artifact tabs 容器存在(即使无产物,标签栏结构在)
+  // T14 (M2): notebook tabs 容器存在(讲解/笔记 两标签结构在)
   const artifactTabs = await win.webContents.executeJavaScript(`
     document.querySelector('[data-testid="notebook-tabs"]') !== null &&
     document.querySelector('[data-testid="tab-notes"]') !== null
   `);
   results.push({
-    name: "notebook panel tabs rendered (content/notes/all)",
+    name: "notebook panel tabs rendered (content/notes)",
     ok: artifactTabs === true,
   });
 

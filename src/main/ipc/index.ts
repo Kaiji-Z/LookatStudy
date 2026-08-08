@@ -37,7 +37,12 @@ import {
   listCanvasItems,
   deleteCanvasItem,
   togglePinCanvasItem,
+  saveUserNote,
+  recordQuizResult,
+  type CanvasZone,
 } from "../services/canvas-service.js";
+
+type CanvasZoneOpt = CanvasZone | undefined;
 import {
   listThreads,
   createThread,
@@ -852,10 +857,11 @@ export function registerThreadHandlers(): void {
 /* ---------- v0.3: Canvas 画布(黑板笔记本) ---------- */
 
 export function registerCanvasHandlers(): void {
+  // zone 可选:undefined=全部 / 'understand'=理解区 / 'note'=笔记区 / 'practice'=练习区
   ipcMain.handle(
     "canvas:list",
-    async (_e, courseId: string, nodeId?: string | null) => {
-      return listCanvasItems(courseId, nodeId ?? undefined);
+    async (_e, courseId: string, nodeId?: string | null, zone?: string) => {
+      return listCanvasItems(courseId, nodeId ?? undefined, zone as CanvasZoneOpt);
     },
   );
   ipcMain.handle(
@@ -869,6 +875,14 @@ export function registerCanvasHandlers(): void {
   });
   ipcMain.handle("canvas:togglePin", async (_e, id: string) => {
     return togglePinCanvasItem(id);
+  });
+  // 用户画线加笔记(user_note),带溯源
+  ipcMain.handle("canvas:saveUserNote", async (_e, input) => {
+    return saveUserNote(input);
+  });
+  // quiz 重做后更新 last_result(只保留最近一次)
+  ipcMain.handle("canvas:recordQuizResult", async (_e, id: string, correct: boolean) => {
+    return recordQuizResult(id, correct);
   });
 }
 

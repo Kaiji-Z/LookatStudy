@@ -237,15 +237,16 @@ export const customProviders = sqliteTable("custom_providers", {
 
 /* ---------- AI 产物画布(v0.3 黑板笔记本) ---------- */
 
-/** AI 产物类型(对齐 agent-engine 的展示型 tool) */
+/** AI 产物类型(对齐 agent-engine 的展示型 tool) + 用户画线笔记 */
 export type ArtifactType =
   | "concept_map"
   | "quiz"
   | "compare_table"
   | "diagram"
-  | "code_walkthrough";
+  | "code_walkthrough"
+  | "user_note"; // v0.3 康奈尔笔记区:用户从讲解/对话画线加的笔记
 
-/** v0.3:所有 Generative UI 产物持久化到这张表,构成"学习笔记本"。 */
+/** v0.3:所有 Generative UI 产物 + 用户笔记持久化到这张表,构成康奈尔式"学习笔记本"。 */
 export const canvasItems = sqliteTable("canvas_items", {
   id: text("id").primaryKey(),
   /** 关联的课时(可空表示课程级产物) */
@@ -265,6 +266,14 @@ export const canvasItems = sqliteTable("canvas_items", {
     .default(sql`(CURRENT_TIMESTAMP)`),
   /** 用户备注(后续扩展) */
   notes: text("notes"),
+  /** v0.3 溯源:'ai'(产物默认) / 'content'(讲解画线) / 'chat'(对话画线) */
+  sourceType: text("source_type"),
+  /** 溯源锚点 JSON:content={surroundingText} / chat={threadId,msgId} */
+  sourceAnchor: text("source_anchor"),
+  /** 仅 quiz:最近一次答题 'correct'/'wrong' */
+  lastResult: text("last_result"),
+  /** 仅 quiz:答题时间 */
+  resultAt: text("result_at"),
 });
 
 /* ---------- v0.4: 会话 Thread 模型(类 Cursor 项目-会话) ---------- */

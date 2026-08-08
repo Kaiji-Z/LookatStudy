@@ -5,7 +5,7 @@
  * 渲染层通过 window.api.* 调用，无法直接访问 Node API。
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey, ExerciseType, CustomProviderInput } from "@shared/types";
+import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey, ExerciseType, CustomProviderInput, CanvasZone, NoteSourceAnchor } from "@shared/types";
 
 const api = {
   /* 课程 */
@@ -137,15 +137,27 @@ const api = {
   exportCourse: ((courseId: string, format: "json" | "markdown") =>
     ipcRenderer.invoke("course:export", courseId, format)) as ApiExpose["exportCourse"],
 
-  /* v0.3: Canvas 画布 */
-  canvasList: ((courseId: string, nodeId?: string | null) =>
-    ipcRenderer.invoke("canvas:list", courseId, nodeId)) as ApiExpose["canvasList"],
+  /* v0.3: Canvas 画布(康奈尔式笔记本) */
+  canvasList: ((courseId: string, nodeId?: string | null, zone?: CanvasZone) =>
+    ipcRenderer.invoke("canvas:list", courseId, nodeId, zone)) as ApiExpose["canvasList"],
   canvasSave: ((input) =>
     ipcRenderer.invoke("canvas:save", input)) as ApiExpose["canvasSave"],
   canvasDelete: ((id: string) =>
     ipcRenderer.invoke("canvas:delete", id)) as ApiExpose["canvasDelete"],
   canvasTogglePin: ((id: string) =>
     ipcRenderer.invoke("canvas:togglePin", id)) as ApiExpose["canvasTogglePin"],
+  /** 用户画线加笔记(user_note),带溯源(content/chat) */
+  canvasSaveUserNote: ((input: {
+    nodeId: string;
+    courseId: string;
+    text: string;
+    sourceType: "content" | "chat";
+    sourceAnchor: NoteSourceAnchor;
+  }) =>
+    ipcRenderer.invoke("canvas:saveUserNote", input)) as ApiExpose["canvasSaveUserNote"],
+  /** quiz 重做后更新 last_result(只保留最近一次) */
+  canvasRecordQuizResult: ((id: string, correct: boolean) =>
+    ipcRenderer.invoke("canvas:recordQuizResult", id, correct)) as ApiExpose["canvasRecordQuizResult"],
 
   /* v0.4: Thread 会话 */
   threadList: ((courseId: string, status?: "active" | "archived") =>

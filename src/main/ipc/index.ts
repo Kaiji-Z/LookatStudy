@@ -111,6 +111,11 @@ import {
   listExercises as listExercisesService,
   submitExerciseAnswer as submitExerciseAnswerService,
 } from "../services/exercise-service.js";
+// 章节考试服务(关底 boss)
+import {
+  startExam,
+  submitExam,
+} from "../services/exam-service.js";
 
 /* ---------- 课程 ---------- */
 
@@ -663,6 +668,7 @@ export function registerAllHandlers(mainWindow: BrowserWindow): void {
   registerAgentHandlers(mainWindow);
   registerM3Handlers();
   registerExerciseHandlers();
+  registerExamHandlers();
   registerCanvasHandlers();
   registerThreadHandlers();
 }
@@ -744,6 +750,26 @@ export function registerExerciseHandlers(): void {
     "exercise:submit",
     async (_e, exerciseId: string, userAnswer: string) => {
       const result = submitExerciseAnswerService(getDb(), exerciseId, userAnswer);
+      markDirty();
+      return result;
+    },
+  );
+}
+
+/** 章节考试(关底 boss)IPC handlers */
+export function registerExamHandlers(): void {
+  // 开始/继续考试:生成或读取题目
+  ipcMain.handle("exam:start", async (_e, examNodeId: string) => {
+    const result = await startExam(getDb(), examNodeId);
+    markDirty();
+    return result;
+  });
+
+  // 提交考试:判分 + 算星数 + 写 progress.crownLevel
+  ipcMain.handle(
+    "exam:submit",
+    async (_e, examNodeId: string, answers: Record<string, string>) => {
+      const result = submitExam(getDb(), examNodeId, answers);
       markDirty();
       return result;
     },

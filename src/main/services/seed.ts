@@ -17,7 +17,7 @@ const COURSE_ID = "seed-fde-roadmap";
 const COURSE_REPO_URL = "https://github.com/pierpaolo28/Awesome-FDE-Roadmap";
 // 种子版本号：bump 这个数字会触发种子课程重建（删旧内容节点重新生成）。
 // 用户自定义 provider / 进度 / 其他课程不受影响。
-const SEED_VERSION = 2;
+const SEED_VERSION = 3;
 
 export function ensureSeedCourse(): void {
   const db = getDb();

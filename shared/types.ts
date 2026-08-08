@@ -6,7 +6,7 @@
 
 /* ---------- 课程模型 ---------- */
 
-export type NodeType = "section" | "lesson" | "concept";
+export type NodeType = "section" | "lesson" | "concept" | "exam";
 
 export type NodeStatus = "locked" | "available" | "in_progress" | "mastered";
 
@@ -242,6 +242,28 @@ export interface ApiExpose {
     exerciseId: string,
     userAnswer: string,
   ): Promise<{ correct: boolean; explanation: string | null; proposalId?: string }>;
+
+  /* 章节考试（关底 boss，可选支线，正确率分档给 1-3 星） */
+  /** 开始/继续考试：已生成过题目则直接返回，否则调 LLM 生成整章综合题 */
+  examStart(examNodeId: string): Promise<{ exercises: Exercise[] }>;
+  /** 提交考试：逐题判分，算正确率，给星数（取最高），写 progress.crownLevel */
+  examSubmit(
+    examNodeId: string,
+    answers: Record<string, string>,
+  ): Promise<{
+    correctCount: number;
+    totalCount: number;
+    accuracy: number;
+    stars: number;
+    bestStars: number;
+    perQuestion: Array<{
+      exerciseId: string;
+      correct: boolean;
+      userAnswer: string;
+      correctAnswer: string;
+      explanation: string | null;
+    }>;
+  }>;
 
   /* SRS */
   getDueReviews(): Promise<string[]>;

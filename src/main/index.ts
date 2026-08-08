@@ -11,9 +11,11 @@
 import { app, BrowserWindow, shell } from "electron";
 import { join, resolve } from "node:path";
 import { writeFileSync } from "node:fs";
-import { initDb, getDb } from "./db/index.js";
+import { initDb, getDb, markDirty } from "./db/index.js";
 import { registerAllHandlers } from "./ipc/index.js";
 import { ensureSeedCourse } from "./services/seed.js";
+import { ensureExamNodesForExistingCourses } from "./services/course-generator.js";
+import { loadEnv, getZaiConfig } from "./services/env.js";
 import { seedBuiltinSkills } from "./services/skills/skill-service.js";
 import { createProposal } from "./services/proposal-service.js";
 import { courses, contentNodes, streaks } from "./db/schema.js";
@@ -77,10 +79,18 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   try {
+    // 加载 .env(可选,已 gitignore)。读不到静默跳过。
+    loadEnv();
     await initDb();
     console.error("[lookatstudy] DB initialized");
     ensureSeedCourse();
     console.error("[lookatstudy] seed course ensured");
+    // 给老库(本功能上线前导入的课程)补章节考试节点。幂等,已含 exam 的 section 跳过。
+    const { patched } = ensureExamNodesForExistingCourses(getDb());
+    if (patched > 0) {
+      console.error(`[lookatstudy] 补了 ${patched} 个章节考试节点`);
+      markDirty();
+    }
     // M1: 幂等 seed 4 个内置 learning-mode skill
     seedBuiltinSkills(getDb());
     console.error("[lookatstudy] builtin skills ensured");
@@ -217,6 +227,34 @@ async function runUiTest(screenshot = false): Promise<void> {
     });
   } catch (e) {
     console.error("[lookatstudy] ui-test proposal seed failed:", e);
+  }
+  // 造一个 custom provider + active 设置(让 agentReady=true,ChatComposer 渲染 skill-picker)。
+  // 优先用 .env 里的真实 ZAI key(让 ui-test 能真实出题/答题);没有则用占位假 key(只验证渲染)。
+  try {
+    const { settings: settingsTable, customProviders } = await import("./db/schema.js");
+    const { getDb } = await import("./db/index.js");
+    const zai = getZaiConfig();
+    const PROVIDER_ID = "custom-ui-test-provider";
+    const existingProvider = getDb().select().from(customProviders).all();
+    if (existingProvider.length === 0) {
+      getDb().insert(customProviders).values({
+        id: PROVIDER_ID,
+        label: zai ? "ZAI (env)" : "UI Test Provider",
+        baseUrl: zai?.baseUrl ?? "https://example.com/v1",
+        apiKey: zai?.apiKey ?? "test-key",
+        defaultModel: zai?.model ?? "test-model",
+      }).run();
+    }
+    // active_provider 用 upsert(确保指向存在的 provider id)。用户已配置则保留。
+    const activeRow = getDb().select().from(settingsTable).where(eq(settingsTable.key, "active_provider")).get();
+    const desiredValue = PROVIDER_ID;
+    if (!activeRow) {
+      getDb().insert(settingsTable).values({ key: "active_provider", value: desiredValue }).run();
+    } else if (activeRow.value !== desiredValue && !activeRow.value.startsWith("custom-")) {
+      getDb().update(settingsTable).set({ value: desiredValue }).where(eq(settingsTable.key, "active_provider")).run();
+    }
+  } catch (e) {
+    console.error("[lookatstudy] ui-test provider seed failed:", e);
   }
 
   // 加载构建产物（不依赖 vite dev server，CI 友好）

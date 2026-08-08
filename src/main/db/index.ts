@@ -124,4 +124,37 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("chat_sessions", "active_skill", "TEXT");
   // M2 新列：BKT 掌握度
   addColumnIfMissing("progress", "mastery", "REAL");
+
+  // 考试节点(type='exam'):老库的 content_nodes CHECK 约束不含 'exam',
+  // 需重建表加约束(SQLite 不能 ALTER CHECK)。幂等:检测现有 CHECK 是否已含 'exam'。
+  ensureExamTypeAllowed(db);
+}
+
+/** 重建 content_nodes 表以加入 'exam' 到 type CHECK 约束(SQLite 不能直接改 CHECK)。
+ *  幂等:若现有 CHECK 已含 'exam' 则跳过。 */
+function ensureExamTypeAllowed(db: Database): void {
+  // 查现有表 schema,看 CHECK 里有没有 'exam'
+  const schemaRows = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='content_nodes'`);
+  if (schemaRows.length === 0) return; // 表不存在(新库由 schema.sql 建,已含 exam)
+  const currentSchema = String(schemaRows[0].values[0][0] ?? "");
+  if (currentSchema.includes("'exam'")) return; // 已有 exam 约束,无需迁移
+
+  // SQLite 重建表标准流程:建临时表 → 复制 → 删旧 → 重命名。
+  // 外键引用(threads.focus_node_id 等)在 sql.js 下不受影响(没有 ON UPDATE CASCADE 需求,id 不变)。
+  db.run(`CREATE TABLE content_nodes_new (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    parent_id TEXT,
+    type TEXT NOT NULL CHECK (type IN ('section', 'lesson', 'concept', 'exam')),
+    title TEXT NOT NULL,
+    source_path TEXT,
+    order_idx INTEGER NOT NULL DEFAULT 0,
+    content TEXT
+  )`);
+  db.run(`INSERT INTO content_nodes_new SELECT * FROM content_nodes`);
+  db.run(`DROP TABLE content_nodes`);
+  db.run(`ALTER TABLE content_nodes_new RENAME TO content_nodes`);
+  // 重建索引(原索引随 DROP TABLE 消失)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_content_nodes_course ON content_nodes(course_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_content_nodes_parent ON content_nodes(parent_id)`);
 }

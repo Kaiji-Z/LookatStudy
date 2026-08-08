@@ -28,6 +28,41 @@ export interface GeneratedCourse {
   labType: LabType;
   sectionCount: number;
   lessonCount: number;
+  examCount: number;
+}
+
+/**
+ * 给某 section 末尾插一个"章节考试"节点(关底 boss,可选)。
+ * - type=exam, parentId=sectionId, orderIdx 排在所有课之后
+ * - progress 行:status=available(考试总是可选,不受 mastery 门控),crownLevel=0(0 星=未考)
+ * 幂等:同 section 已有 exam 节点则跳过(供 ensureExamNodesForExistingCourses 复用)。
+ */
+function insertExamNode(db: Db, courseId: string, sectionId: string, sectionTitle: string, orderIdx: number): string | null {
+  // 幂等:同 section 已有 exam 节点则不重复建
+  const existing = db.select().from(contentNodes).all().find(
+    (n) => n.parentId === sectionId && n.type === "exam",
+  );
+  if (existing) return null;
+
+  const examId = randomUUID();
+  db.insert(contentNodes)
+    .values({
+      id: examId,
+      courseId,
+      parentId: sectionId,
+      type: "exam",
+      title: `${sectionTitle} · 章节测验`,
+      orderIdx,
+    })
+    .run();
+  db.insert(progressTable)
+    .values({
+      nodeId: examId,
+      status: "available",
+      crownLevel: 0,
+    })
+    .run();
+  return examId;
 }
 
 /**
@@ -70,6 +105,7 @@ export function generateCourseFromMarkdown(
       labType: (existing.labType ?? "doc") as LabType,
       sectionCount: tree.filter((n) => n.type === "section").length,
       lessonCount: tree.filter((n) => n.type === "lesson").length,
+      examCount: tree.filter((n) => n.type === "exam").length,
     };
   }
 
@@ -89,6 +125,7 @@ export function generateCourseFromMarkdown(
   // 写 section + lesson + 初始 progress（第一个 lesson available）
   let sectionOrder = 0;
   let totalLessons = 0;
+  let totalExams = 0;
   let firstLessonId: string | null = null;
 
   for (const section of parsed.sections) {
@@ -133,6 +170,11 @@ export function generateCourseFromMarkdown(
       if (isFirstEver) firstLessonId = lessonId;
       totalLessons++;
     }
+
+    // 章节末尾:考试节点(可选关底 boss,正确率分档给 1-3 星)
+    if (section.lessons.length > 0 && insertExamNode(db, courseId, sectionId, section.title, lessonOrder)) {
+      totalExams++;
+    }
   }
 
   return {
@@ -141,6 +183,7 @@ export function generateCourseFromMarkdown(
     labType,
     sectionCount: parsed.sections.length,
     lessonCount: totalLessons,
+    examCount: totalExams,
   };
 }
 
@@ -186,6 +229,7 @@ export function generateCourseFromRepoFiles(
       labType: (existing.labType ?? "doc") as LabType,
       sectionCount: tree.filter((n) => n.type === "section").length,
       lessonCount: tree.filter((n) => n.type === "lesson").length,
+      examCount: tree.filter((n) => n.type === "exam").length,
     };
   }
 
@@ -211,6 +255,7 @@ export function generateCourseFromRepoFiles(
   // 写 section + lesson + 初始 progress
   let sectionOrder = 0;
   let totalLessons = 0;
+  let totalExams = 0;
   let firstLessonId: string | null = null;
 
   for (const section of parsed.sections) {
@@ -255,6 +300,11 @@ export function generateCourseFromRepoFiles(
       if (isFirstEver) firstLessonId = lessonId;
       totalLessons++;
     }
+
+    // 章节末尾:考试节点(可选关底 boss,正确率分档给 1-3 星)
+    if (section.lessons.length > 0 && insertExamNode(db, courseId, sectionId, section.title, lessonOrder)) {
+      totalExams++;
+    }
   }
 
   return {
@@ -263,5 +313,28 @@ export function generateCourseFromRepoFiles(
     labType,
     sectionCount: parsed.sections.length,
     lessonCount: totalLessons,
+    examCount: totalExams,
   };
+}
+
+/**
+ * 幂等补丁:给所有已存在课程里"没有 exam 节点的 section"补一个章节考试节点。
+ * 用途:老库(本功能上线前导入的课程)迁移——新课程由 generateCourseFrom* 自动含 exam。
+ * 在 app 启动时调一次(见 main/index.ts)。已含 exam 的 section 跳过(insertExamNode 幂等)。
+ */
+export function ensureExamNodesForExistingCourses(db: Db): { patched: number } {
+  const sections = db.select().from(contentNodes).all().filter((n) => n.type === "section");
+  let patched = 0;
+  for (const sec of sections) {
+    const hasLessons = db.select().from(contentNodes).all().some(
+      (n) => n.parentId === sec.id && n.type === "lesson",
+    );
+    if (!hasLessons) continue;
+    const children = db.select().from(contentNodes).all().filter((n) => n.parentId === sec.id);
+    const maxOrder = children.reduce((m, n) => Math.max(m, n.orderIdx), -1);
+    if (insertExamNode(db, sec.courseId, sec.id, sec.title, maxOrder + 1)) {
+      patched++;
+    }
+  }
+  return { patched };
 }

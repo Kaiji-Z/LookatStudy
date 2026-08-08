@@ -24,7 +24,7 @@ import {
   srsItems,
 } from "../db/schema.js";
 import { randomUUID } from "node:crypto";
-import { updateMastery, BKT_DEFAULTS, masteryToCrown } from "./pure/bkt.js";
+import { updateMastery, BKT_DEFAULTS } from "./pure/bkt.js";
 import { addXpMastered } from "./xp-service.js";
 import { unlockNextLessonIfEligible } from "./progress-service.js";
 
@@ -194,28 +194,24 @@ function executeOperation(db: Db, op: LearningOperation): void {
         .get();
       const prevMastery = existing?.mastery ?? null;
       const newMastery = updateMastery(prevMastery, op.correct ?? false, BKT_DEFAULTS);
-      // 派生 crownLevel(BKT mastery → 1-5 crown)——让星星出现 1-2-3 中间态。
-      // mark_mastered 会直接设 5,这里只在未达自动毕业阈值时按 BKT 映射。
-      const newCrown = masteryToCrown(newMastery);
       // 自动毕业:mastery ≥ 0.9 → status 转 mastered,发 +50 XP(与 mark_mastered 同等待遇)。
+      // 注:crownLevel 不再从 mastery 派生——星星归考试节点专用,普通课只在 mastered 时 crown=5。
       const autoMastered = newMastery >= MASTERED_MASTERY_THRESHOLD;
-      const patch: { mastery: number; crownLevel: number; status?: "mastered" } = {
-        mastery: newMastery,
-        crownLevel: autoMastered ? 5 : newCrown,
-      };
-      if (autoMastered) patch.status = "mastered";
       if (existing) {
         db.update(progressTable)
-          .set(patch)
+          .set(
+            autoMastered
+              ? { mastery: newMastery, status: "mastered", crownLevel: 5 }
+              : { mastery: newMastery },
+          )
           .where(eq(progressTable.nodeId, op.nodeId))
           .run();
       } else {
-        // 节点没进度行时建一条(mastery 驱动 status/crown)
         db.insert(progressTable)
           .values({
             nodeId: op.nodeId,
             status: autoMastered ? "mastered" : "in_progress",
-            crownLevel: patch.crownLevel,
+            crownLevel: autoMastered ? 5 : 0,
             mastery: newMastery,
           })
           .run();

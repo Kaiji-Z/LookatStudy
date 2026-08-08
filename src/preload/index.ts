@@ -43,6 +43,12 @@ const api = {
   submitExerciseAnswer: ((exerciseId: string, userAnswer: string) =>
     ipcRenderer.invoke("exercise:submit", exerciseId, userAnswer)) as ApiExpose["submitExerciseAnswer"],
 
+  /* 章节考试（关底 boss） */
+  examStart: ((examNodeId: string) =>
+    ipcRenderer.invoke("exam:start", examNodeId)) as ApiExpose["examStart"],
+  examSubmit: ((examNodeId: string, answers: Record<string, string>) =>
+    ipcRenderer.invoke("exam:submit", examNodeId, answers)) as ApiExpose["examSubmit"],
+
   /* SRS */
   getDueReviews: (() => ipcRenderer.invoke("srs:getDue")) as ApiExpose["getDueReviews"],
   getAllSrsItems: (() => ipcRenderer.invoke("srs:getAll")) as ApiExpose["getAllSrsItems"],

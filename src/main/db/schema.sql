@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS content_nodes (
   id TEXT PRIMARY KEY,
   course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
   parent_id TEXT,
-  type TEXT NOT NULL CHECK (type IN ('section', 'lesson', 'concept')),
+  type TEXT NOT NULL CHECK (type IN ('section', 'lesson', 'concept', 'exam')),
   title TEXT NOT NULL,
   source_path TEXT,
   order_idx INTEGER NOT NULL DEFAULT 0,

@@ -15,6 +15,7 @@ import { useCanvas } from "./lib/useCanvas.js";
 import { useFontSize } from "./lib/useFontSize.js";
 import { ChatStream, extractArtifacts } from "./components/ChatStream.js";
 import { ChatComposer } from "./components/ChatComposer.js";
+import { ExamView } from "./components/ExamView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { ReviewPanel } from "./components/ReviewPanel.js";
 import { SettingsView } from "./components/SettingsView.js";
@@ -147,7 +148,7 @@ export default function App() {
     if (!selectedCourseId) return;
     api.getCourseTree(selectedCourseId).then(async (nodes) => {
       setTree(nodes);
-      const lessons = nodes.filter((n) => n.type === "lesson");
+      const lessons = nodes.filter((n) => n.type === "lesson" || n.type === "exam");
       const entries = await Promise.all(
         lessons.map(async (l) => {
           const p = await api.getProgress(l.id);
@@ -219,6 +220,12 @@ export default function App() {
   // 点 lesson:解锁下一课 + 设选中(联动三栏)
   const handleLessonClick = useCallback(async (node: ContentNode) => {
     try {
+      // 考试节点:只选中,不走 markNodeAttempted(考试不走 BKT/解锁),中栏渲染 ExamView
+      if (node.type === "exam") {
+        setSelectedNodeId(node.id);
+        setForceArtifactTab("content");
+        return;
+      }
       await api.markNodeAttempted(node.id);
       const [progress, newStreak] = await Promise.all([
         api.getProgress(node.id),
@@ -361,12 +368,25 @@ export default function App() {
         {/* 视图层:map 视图 = AI 对话 + 笔记本;import 视图 = 全屏导入 */}
         {view === "map" ? (
           <>
-            {/* 中栏:AI 对话流(ChatStream + ChatComposer) */}
+            {/* 中栏:AI 对话流(ChatStream + ChatComposer) / 考试节点(ExamView) */}
             <div
               className="flex flex-col h-full bg-neutral-50 dark:bg-neutral-950 border-r border-neutral-200 dark:border-neutral-800/50"
               style={{ width: "40%" }}
               data-testid="chat-panel"
             >
+              {selectedNode?.type === "exam" ? (
+                /* 考试节点:渲染 ExamView 替代 chat(关底 boss,独立 UI) */
+                <ExamView
+                  examNode={selectedNode}
+                  onExamCompleted={() => {
+                    // 考试完成 → 刷新该考试节点的 progress(更新地图星数)
+                    api.getProgress(selectedNode.id).then((p) => {
+                      if (p) setProgressMap((m) => ({ ...m, [selectedNode.id]: p }));
+                    });
+                  }}
+                />
+              ) : (
+                <>
               {/* v0.4 顶栏:thread 切换条(焦点节点 + 会话切换) */}
               <ThreadSwitcher
                 threads={thread.threads}
@@ -446,6 +466,8 @@ export default function App() {
                 fontSize={font.size}
                 onFontBump={font.bump}
               />
+                </>
+              )}
             </div>
 
             {/* 右栏:NotebookPanel 黑板笔记本(讲解/笔记/全部) */}

@@ -67,21 +67,24 @@ assert.strictEqual(courseRow.length, 1, "T2: 1 course 行");
 assert.strictEqual(courseRow[0].labType, "code", "T2: course.labType=code");
 console.log(`✓ T2 course 行：labType=${courseRow[0].labType}`);
 
-// === T3: content_nodes 行数 = 2 section + 3 lesson ===
+// === T3: content_nodes 行数 = 2 section + 3 lesson + 2 exam(每章末尾一个考试节点) ===
 const nodes = db.select().from(schema.contentNodes).all();
 const sections = nodes.filter((n) => n.type === "section");
 const lessons = nodes.filter((n) => n.type === "lesson");
+const exams = nodes.filter((n) => n.type === "exam");
 assert.strictEqual(sections.length, 2, `T3: 2 section`);
 assert.strictEqual(lessons.length, 3, `T3: 3 lesson`);
-console.log(`✓ T3 content_nodes：2 section + 3 lesson`);
+assert.strictEqual(exams.length, 2, `T3: 2 exam(每章末尾一个)`);
+console.log(`✓ T3 content_nodes：2 section + 3 lesson + 2 exam`);
 
-// === T4: 第一个 lesson available，其余 locked ===
+// === T4: 第一个 lesson available,其余 lesson locked,exam 节点总是 available ===
 const progress = db.select().from(schema.progress).all();
 const available = progress.filter((p) => p.status === "available");
 const locked = progress.filter((p) => p.status === "locked");
-assert.strictEqual(available.length, 1, `T4: 1 available`);
-assert.strictEqual(locked.length, 2, `T4: 2 locked`);
-console.log(`✓ T4 初始 progress：1 available + 2 locked`);
+// 1 lesson(首发) + 2 exam = 3 available;2 lesson = locked
+assert.strictEqual(available.length, 3, `T4: 3 available(1 首发 lesson + 2 exam)`);
+assert.strictEqual(locked.length, 2, `T4: 2 locked(其余 lesson)`);
+console.log(`✓ T4 初始 progress：3 available(含 exam) + 2 locked`);
 
 // === T5: lesson content 写进去了（供 RAG）===
 const lessonWithContent = lessons.find((l) => l.content && l.content.includes("hello"));

@@ -210,8 +210,8 @@ function parseExerciseJson(
   return { ok: true, prompt, answer, explanation };
 }
 
-/** 判分：按题型归一化比较 */
-function gradeAnswer(
+/** 判分：按题型归一化比较。导出供 exam-service 复用(考试逐题判分)。 */
+export function gradeAnswer(
   type: ExerciseType,
   correctAnswer: string,
   userAnswer: string,

@@ -180,10 +180,23 @@
     0 6px 16px rgba(0,0,0,0.3);
 }
 
-/* v0.2: 移除 bubble-pulse / flame-flicker 无限循环装饰动效。
-   理由:product register "motion 传达状态非装饰"。无限脉冲违反此原则。
-   overdue/available 节点改用静态视觉(颜色 + 标签)。streak 用静态 🔥 + 数字。
-   保留:typing-dot(传达 AI 工作中)、msg-enter(消息入场)、tab 过渡(状态切换)。 */
+/* ── 🟣 exam:章节考试节点(关底 boss),紫色专属色区分于普通课 ── */
+.exam-bubble {
+  background: radial-gradient(circle at 32% 28%, #c084fc 0%, #a855f7 45%, #7e22ce 100%);
+  box-shadow:
+    0 0 0 4px rgba(168, 85, 247, 0.15),
+    0 0 16px rgba(168, 85, 247, 0.35),
+    0 4px 10px rgba(0,0,0,0.25);
+}
+/* 已通过(有星)的考试:更亮 + 金色光环 */
+.exam-bubble-passed {
+  background: radial-gradient(circle at 32% 28%, #e9d5ff 0%, #c084fc 40%, #9333ea 100%);
+  box-shadow:
+    0 0 0 4px rgba(255, 200, 0, 0.2),
+    0 0 18px rgba(168, 85, 247, 0.4),
+    0 0 28px rgba(255, 200, 0, 0.15),
+    0 4px 12px rgba(0,0,0,0.25);
+}
 
 /* v0.3: 恢复克制的 active 节点脉冲(只在"当前可学"节点,传达"该你了"状态)。
    比旧版更克制(幅度小、慢周期),且尊重 reduced-motion。这是趣味性钩子之一。 */

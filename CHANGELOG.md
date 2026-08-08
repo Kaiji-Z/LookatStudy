@@ -16,7 +16,30 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **章节考试节点(关底 boss)**:把纠缠的进度环/星星/皇冠拆成两种正交节点类型。
+  - **普通课节点**(type=lesson):只保留进度环(mastery)+ 满皇冠(mastered),**删掉星星**。
+  - **章节考试节点**(type=exam,每章末尾自动生成):可选支线,不限时一组选择题,
+    正确率分档给 1-3 星(≥60%→1,≥80%→2,≥95%→3),完全独立不影响下一章解锁。
+    星数取最高(可重考)。考试题目复用 exercises 表(node_id=考试节点),整章 lesson
+    作为出题上下文。
+  - 新增 `exam-service.ts`(start/submit + 正确率分档 `accuracyToStars`)、
+    `ExamView.tsx`(考试 UI:答题 + 进度条 + 得分卡 + 逐题回顾)、`exam:start`/`exam:submit` IPC。
+  - course-generator 给每个 section 末尾插 exam 节点;`ensureExamNodesForExistingCourses`
+    幂等补丁给老库导入的课程补 exam 节点(启动时自动跑)。
+  - MapRail 考试节点用紫色专属气泡(`exam-bubble`)区分于普通课,🎯 图标 + 星星。
+  - 点击考试节点 → 中栏渲染 ExamView 替代 ChatStream(不进 chat,进考试)。
+- **`.env` 支持**:新增轻量零依赖 env 加载器(`src/main/services/env.ts`),
+  主进程启动时读 `.env`(已 gitignore)。`getZaiConfig()` 供 ui-test seed provider 用。
+- `verify-exam.mjs`(8 测试:accuracyToStars 分档、submitExam 判分、重考不降星、
+  ensureExamNodes 幂等、考试不污染 dashboard、按节点隔离)。
+
 ### Changed
+- **普通课节点不再显示星星**:星星归考试节点专用。`update_mastery` proposal 不再派生
+  crownLevel(回退上一提交的设计);普通课 crown 只在 mark_mastered 时设 5(满皇冠)。
+  自动毕业(mastery≥0.9)、解锁硬门控(mastery≥0.5)、dashboard 混合指标 保留。
+- ui-test 加 provider seed:启动时若库无 provider 则造一个(优先用 `.env` 的真实 ZAI key),
+  让 `agentReady=true`、ChatComposer 渲染 skill-picker,测试不再依赖用户手动配 provider。
 - **迷你地图驱动逻辑闭环**:打通 progress 字段写入链路,让进度环/星星/总进度
   条都能随学习动作真正动起来(之前多处断点)。
   - `markNodeAttempted`(点节点)首次尝试时初始化 `mastery = BKT pInit(0.5)`,

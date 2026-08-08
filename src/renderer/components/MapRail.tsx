@@ -14,7 +14,7 @@
  * 与 v0.1 的技能树不同:这里节点更大、有星星、有路径感、有总进度。
  */
 import type { ContentNode, Progress } from "@shared/types";
-import { Map as MapIcon, FileText, ChevronLeft, ChevronRight, BookOpen } from "lucide-react";
+import { Map as MapIcon, FileText, ChevronLeft, ChevronRight, BookOpen, Target } from "lucide-react";
 
 export type MapView = "map" | "import";
 
@@ -345,10 +345,13 @@ function MapNode({
 }) {
   const status = progress?.status ?? "locked";
   const crown = progress?.crownLevel ?? 0;
-  const stars = Math.min(3, crown); // 0-3 星(基于 crownLevel)
+  const isExam = lesson.type === "exam";
+  // 考试节点的星数 = crownLevel(1-3,考试得分)。普通课节点不再用星(crown 只在 mastered 时=5)。
+  const examStars = Math.min(3, crown);
   const alignLeft = index % 2 === 0;
-  const isLocked = status === "locked";
-  // in_progress:用 mastery 算进度环(0-1 → 0-100%)
+  // 考试节点总是 available(可选支线),从不禁用。
+  const isLocked = !isExam && status === "locked";
+  // in_progress(仅普通课):用 mastery 算进度环(0-1 → 0-100%)
   const masteryPct = status === "in_progress" ? Math.round((progress?.mastery ?? 0) * 100) : 0;
 
   return (
@@ -359,16 +362,16 @@ function MapNode({
       <button
         onClick={() => !isLocked && onClick()}
         disabled={isLocked}
-        data-testid={`map-node-${lesson.id.slice(0, 8)}`}
+        data-testid={`${isExam ? "exam-node" : "map-node"}-${lesson.id.slice(0, 8)}`}
         className={`group relative w-14 h-14 flex items-center justify-center text-2xl rounded-full transition-all duration-200 ${
-          bubbleClass(status)
+          isExam ? examBubbleClass(crown > 0) : bubbleClass(status)
         } ${isLocked ? "cursor-not-allowed" : "cursor-pointer hover:scale-105"} ${
           isSelected ? "ring-4 ring-accent ring-offset-2 ring-offset-neutral-50 dark:ring-offset-neutral-950" : ""
         }`}
-        title={isLocked ? `🔒 ${lesson.title}` : isDue ? `📖 ${lesson.title}(待复习)` : lesson.title}
+        title={isExam ? `🎯 ${lesson.title}` : isLocked ? `🔒 ${lesson.title}` : isDue ? `📖 ${lesson.title}(待复习)` : lesson.title}
       >
-        {/* in_progress 进度环(外圈显示 mastery%) */}
-        {status === "in_progress" && (
+        {/* in_progress 进度环(仅普通课;考试不画进度环) */}
+        {status === "in_progress" && !isExam && (
           <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 56 56" aria-hidden="true">
             <circle cx="28" cy="28" r="25" fill="none" stroke="rgb(255 255 255 / 0.2)" strokeWidth="2.5" />
             <circle
@@ -382,7 +385,10 @@ function MapNode({
             />
           </svg>
         )}
-        {isLocked ? (
+        {isExam ? (
+          // 考试节点:🎯 图标(关底 boss)
+          <Target aria-label="exam" className="relative z-10 w-6 h-6 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]" strokeWidth={2.5} />
+        ) : isLocked ? (
           <span aria-label="locked" className="relative z-10 opacity-50">🔒</span>
         ) : status === "mastered" ? (
           <span aria-label="mastered" className="relative z-10 drop-shadow-lg">👑</span>
@@ -391,21 +397,21 @@ function MapNode({
         ) : (
           <span aria-label="available" className="relative z-10 drop-shadow">⭐</span>
         )}
-        {/* 待复习标记 */}
-        {isDue && !isLocked && (
+        {/* 待复习标记(仅普通课) */}
+        {isDue && !isLocked && !isExam && (
           <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] flex items-center justify-center font-bold border-2 border-neutral-50 dark:border-neutral-950">
             !
           </span>
         )}
       </button>
 
-      {/* 星星进度(0-3) */}
-      {!isLocked && (
+      {/* 星星(仅考试节点:显示考试得分 1-3 星)。普通课节点不再显示星星。 */}
+      {isExam && (
         <div className="flex gap-0.5 mt-1" data-testid={`map-stars-${lesson.id.slice(0, 8)}`}>
           {[0, 1, 2].map((s) => (
             <span
               key={s}
-              className={`text-[10px] ${s < stars ? "text-gold" : "text-neutral-300 dark:text-neutral-700"}`}
+              className={`text-[10px] ${s < examStars ? "text-gold" : "text-neutral-300 dark:text-neutral-700"}`}
             >
               ★
             </span>
@@ -488,4 +494,8 @@ function bubbleClass(status: string): string {
     case "mastered": return "lesson-bubble lesson-bubble-mastered";
     default: return "lesson-bubble lesson-bubble-locked";
   }
+}
+/** 考试节点气泡:紫色(关底 boss 专属色),已通过(有星)时更亮。 */
+function examBubbleClass(passed: boolean): string {
+  return passed ? "lesson-bubble exam-bubble-passed" : "lesson-bubble exam-bubble";
 }

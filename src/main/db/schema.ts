@@ -38,7 +38,7 @@ export const contentNodes = sqliteTable("content_nodes", {
     .notNull()
     .references(() => courses.id, { onDelete: "cascade" }),
   parentId: text("parent_id"), // 自引用，根节点为 null
-  type: text("type", { enum: ["section", "lesson", "concept"] }).notNull(),
+  type: text("type", { enum: ["section", "lesson", "concept", "exam"] }).notNull(),
   title: text("title").notNull(),
   /** 源仓库里的相对路径（如 README.md#phase-1） */
   sourcePath: text("source_path"),

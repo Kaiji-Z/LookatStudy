@@ -31,6 +31,7 @@ interface MapRailProps {
   overallMastery: number; // 0-1,顶部进度条
   streak: number; // 连击天数
   collapsed: boolean;
+  streaming: boolean; // AI 输出中(锁定节点切换)
   onToggleCollapse: () => void;
   onJumpNode: (nodeId: string) => void;
   onOpenReview: () => void;
@@ -93,6 +94,7 @@ function MapRailExpanded({
   dueNodeIds,
   overallMastery,
   streak,
+  streaming,
   onToggleCollapse,
   onJumpNode,
   onOpenReview,
@@ -175,6 +177,13 @@ function MapRailExpanded({
       {/* 主体:地图 / 导入视图 */}
       {view === "map" ? (
         <div className="flex-1 overflow-y-auto px-2 pb-4 min-h-0" data-testid="map-path">
+          {/* AI 输出中提示(专注当下,锁定节点切换) */}
+          {streaming && (
+            <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-[11px] text-brand font-medium" data-testid="streaming-notice">
+              <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
+              AI 正在回答,完成后可切换节点
+            </div>
+          )}
           {sections.length === 0 ? (
             courseTitle ? (
               <div className="text-center text-xs text-neutral-500 dark:text-neutral-400 mt-8 px-4 flex items-center justify-center gap-2">

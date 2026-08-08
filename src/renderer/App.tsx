@@ -348,8 +348,10 @@ export default function App() {
           overallMastery={dashboard?.overallMastery ?? 0}
           streak={streak?.currentStreak ?? 0}
           collapsed={mapCollapsed}
+          streaming={chat.streaming}
           onToggleCollapse={() => setMapCollapsed((c) => !c)}
           onJumpNode={(id) => {
+            if (chat.streaming) return; // 输出中拒绝切换(专注当下)
             const node = tree.find((n) => n.id === id);
             if (node) handleLessonClick(node);
           }}
@@ -370,8 +372,12 @@ export default function App() {
                 threads={thread.threads}
                 activeThread={thread.activeThread}
                 focusNodeTitle={selectedNode?.title ?? null}
-                onPickThread={thread.setActiveId}
+                onPickThread={(id) => {
+                  if (chat.streaming) return; // 输出中拒绝切换
+                  thread.setActiveId(id);
+                }}
                 onCreate={() => {
+                  if (chat.streaming) return;
                   thread.create({ title: null });
                   toast.show("已新建会话");
                 }}

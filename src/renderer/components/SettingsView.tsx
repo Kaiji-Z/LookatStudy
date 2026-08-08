@@ -356,7 +356,7 @@ export function SettingsView() {
                 onClick={handleTestCustom}
                 disabled={!customBaseUrl.trim() || !customModel.trim() || customTesting}
                 data-testid="custom-test"
-                className="text-sm bg-neutral-700 text-neutral-900 dark:text-neutral-100 px-3 py-2 rounded hover:bg-neutral-600 disabled:opacity-40"
+                className="text-sm bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 px-3 py-2 rounded hover:bg-neutral-600 disabled:opacity-40"
               >
                 {customTesting ? "测试中…" : "测试连接"}
               </button>
@@ -479,7 +479,7 @@ export function SettingsView() {
           </div>
           {keyMasked && (
             <div className="text-xs text-neutral-400 mb-2" data-testid="key-status">
-              ✅ 已配置：<code className="bg-neutral-800 px-1 rounded">{keyMasked}</code>
+              ✅ 已配置：<code className="bg-neutral-200 dark:bg-neutral-800 px-1 rounded">{keyMasked}</code>
             </div>
           )}
           <input

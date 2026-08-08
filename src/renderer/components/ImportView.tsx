@@ -117,7 +117,7 @@ export function ImportView({
       </p>
 
       {/* 方式切换 */}
-      <div className="flex gap-2 border-b border-neutral-800">
+      <div className="flex gap-2 border-b border-neutral-200 dark:border-neutral-800">
         <button
           onClick={() => setTab("url")}
           className={`px-4 py-2 text-sm border-b-2 ${tab === "url" ? "border-brand text-brand" : "border-transparent text-neutral-500 hover:text-neutral-700 dark:text-neutral-300"}`}
@@ -212,7 +212,7 @@ export function ImportView({
       )}
 
       {/* 已导入课程列表 */}
-      <section className="pt-4 border-t border-neutral-800">
+      <section className="pt-4 border-t border-neutral-200 dark:border-neutral-800">
         <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">已导入的课程</h3>
         {courses.length === 0 ? (
           <p className="text-xs text-neutral-600">还没有课程。用上面的方式导入第一个吧。</p>

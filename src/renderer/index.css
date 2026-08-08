@@ -94,6 +94,16 @@
   /* —— 通用发光/阴影 —— */
   --shadow-rgb: 0 0 0;
   --inner-highlight: rgb(255 255 255 / 0.55);  /* 球体内高光 */
+
+  /* —— 动效曲线(PRODUCT.md: 指数 ease-out,150-250ms;reduced-motion 全局降级)—— */
+  /* ease-out-expo:状态入场/反馈(消息、面板、答题结果),无回弹,干脆 */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  /* ease-out-back:轻回弹(卡片入场、解锁动画),克制不弹过头 */
+  --ease-out-back: cubic-bezier(0.34, 1.2, 0.64, 1);
+  /* ease-spring:按钮按下回弹(btn-3d active 回弹),Duolingo 标志性手感 */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* ease-out-quart:通用状态过渡(hover/focus),比默认 ease 更利落 */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 @layer base {
@@ -147,7 +157,8 @@
 /* 3D push down buttons (Duolingo signature style) */
 @layer components {
   .btn-3d {
-    @apply relative font-bold rounded-2xl transition-all duration-150 active:translate-y-0.5;
+    /* spring 曲线让按下/回弹有 Duolingo 标志性手感(原默认 ease 偏软) */
+    @apply relative font-bold rounded-2xl transition-all duration-150 ease-spring active:translate-y-0.5;
   }
   .btn-3d-brand {
     @apply btn-3d bg-brand text-white;
@@ -183,7 +194,7 @@
  * ============================================================ */
 
 .lesson-bubble {
-  @apply relative rounded-full transition-all duration-200;
+  @apply relative rounded-full transition-all duration-200 ease-out-back;
   /* 球体光照:左上高光位 → 右下阴影位,模拟 3D 球 */
   background-position: 30% 25%;
 }
@@ -334,7 +345,7 @@
   to { opacity: 1; transform: translateY(0); }
 }
 .msg-enter {
-  animation: msg-enter 200ms ease-out;
+  animation: msg-enter 200ms var(--ease-out-expo);
 }
 
 /* Proposal card glow */
@@ -356,7 +367,7 @@
 
 /* Progress ring */
 .progress-ring-circle {
-  transition: stroke-dashoffset 0.5s ease-out;
+  transition: stroke-dashoffset 0.5s var(--ease-out-expo);
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
 }

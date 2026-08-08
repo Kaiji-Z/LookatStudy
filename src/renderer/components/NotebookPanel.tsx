@@ -90,8 +90,8 @@ export function NotebookPanel({
         />
       </div>
 
-      {/* 内容区 */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      {/* 内容区:tab 切换时内容滑入(PROPERTY.md motion: 状态传达,150-250ms) */}
+      <div className="flex-1 overflow-y-auto min-h-0 animate-tab-slide" key={tab}>
         {tab === "content" ? (
           <ContentTab
             selectedNode={selectedNode}
@@ -503,13 +503,27 @@ function ZoneSection({
         className="w-full flex items-center gap-2 px-3 py-2.5 bg-neutral-100 dark:bg-neutral-900/50 hover:bg-neutral-200/60 dark:hover:bg-neutral-900 transition-colors text-left"
         data-testid={`${testid}-toggle`}
       >
-        <ChevronDown className={`w-4 h-4 text-neutral-500 dark:text-neutral-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <ChevronDown className={`w-4 h-4 text-neutral-500 dark:text-neutral-400 transition-transform duration-200 ease-out-back ${open ? "" : "-rotate-90"}`} />
         <span className="text-sm">{icon}</span>
         <span className="text-sm font-bold text-neutral-800 dark:text-neutral-200">{title}</span>
         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-brand/15 text-brand">{count}</span>
         <span className="text-[11px] text-neutral-500 dark:text-neutral-400 ml-auto truncate">{subtitle}</span>
       </button>
-      {open && <div className="p-3 space-y-3">{children}</div>}
+      {/*
+        折叠用 grid-template-rows 0fr↔1fr 过渡(CSS 动画高度的标准技巧)。
+        内容始终在 DOM(不像 {open && ...} 卸载),所以:
+          - headless/隐藏 tab 也能读到内容(testid 不丢)
+          - 折叠/展开是平滑过渡而非瞬时显隐
+        impeccable 规则:reveal 动画必须增强"已可见的默认",不能 gate 内容可见性。
+      */}
+      <div
+        className="grid transition-all duration-200 ease-out-expo"
+        style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
+      >
+        <div className="overflow-hidden">
+          <div className="p-3 space-y-3">{children}</div>
+        </div>
+      </div>
     </section>
   );
 }

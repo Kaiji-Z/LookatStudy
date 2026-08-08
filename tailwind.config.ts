@@ -42,6 +42,76 @@ export default {
       fontFamily: {
         sans: ['"DIN Round"', "system-ui", "-apple-system", "sans-serif"],
       },
+      // 动效曲线:与 index.css :root 的 --ease-* 同值。Tailwind 用字符串字面量,
+      // 改曲线两处同步(index.css 用 var() 给 component class,Tailwind 给 utility)。
+      transitionTimingFunction: {
+        "out-expo": "cubic-bezier(0.16, 1, 0.3, 1)",   // 状态入场/反馈
+        "out-back": "cubic-bezier(0.34, 1.2, 0.64, 1)", // 轻回弹(卡片/解锁)
+        spring: "cubic-bezier(0.34, 1.56, 0.64, 1)",    // 按钮按下回弹
+        "out-quart": "cubic-bezier(0.25, 1, 0.5, 1)",   // 通用 hover/focus
+      },
+      // keyframes:注册进 Tailwind,可用 animate-* 工具类。
+      // PRODUCT.md motion 规范:150-250ms,状态传达非装饰,reduced-motion 全局降级。
+      keyframes: {
+        // 已有(从 index.css 迁移,统一管理)
+        "msg-enter": {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "typing-dot": {
+          "0%, 60%, 100%": { opacity: "0.3", transform: "translateY(0)" },
+          "30%": { opacity: "1", transform: "translateY(-4px)" },
+        },
+        "bubble-pulse": {
+          "0%, 100%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.04)" },
+        },
+        // PRODUCT.md 承诺但原未实现的:
+        "tab-slide": {
+          from: { opacity: "0", transform: "translateX(8px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
+        "panel-collapse": {
+          from: { opacity: "0", transform: "scaleY(0.96)" },
+          to: { opacity: "1", transform: "scaleY(1)" },
+        },
+        "artifact-render": {
+          from: { opacity: "0", transform: "translateY(6px) scale(0.98)" },
+          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        // 答题反馈(状态传达:对/错瞬间,非循环)
+        "answer-correct": {
+          "0%": { transform: "scale(1)" },
+          "40%": { transform: "scale(1.05)" },
+          "100%": { transform: "scale(1)" },
+        },
+        "answer-wrong": {
+          "0%, 100%": { transform: "translateX(0)" },
+          "20%, 60%": { transform: "translateX(-3px)" },
+          "40%, 80%": { transform: "translateX(3px)" },
+        },
+        // 节点解锁瞬间(一次性 scale-up,非循环;循环脉冲走 bubble-pulse)
+        "node-unlock": {
+          from: { transform: "scale(0.85)", opacity: "0.6" },
+          to: { transform: "scale(1)", opacity: "1)" },
+        },
+        // 地图路径渐进绘制(阶段3 用)
+        "path-draw": {
+          from: { strokeDashoffset: "1" },
+          to: { strokeDashoffset: "0" },
+        },
+      },
+      animation: {
+        "msg-enter": "msg-enter 200ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "typing-dot": "typing-dot 1.2s ease-in-out infinite",
+        "bubble-pulse": "bubble-pulse 2.4s ease-in-out infinite",
+        "tab-slide": "tab-slide 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "panel-collapse": "panel-collapse 200ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "artifact-render": "artifact-render 220ms cubic-bezier(0.34, 1.2, 0.64, 1)",
+        "answer-correct": "answer-correct 350ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "answer-wrong": "answer-wrong 320ms ease-in-out",
+        "node-unlock": "node-unlock 280ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+      },
       // v0.2: AI 输出 Markdown 排版(配合 @tailwindcss/typography 的 prose)
       // 学习场景的版式:标题层级清晰、代码块醒目、表格紧凑、列表有节奏
       typography: {

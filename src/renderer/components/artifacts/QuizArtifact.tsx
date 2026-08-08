@@ -97,9 +97,9 @@ export function QuizArtifact({
               data-testid={`quiz-option-${idx}`}
               className={`w-full text-left text-sm p-2.5 rounded-lg border-2 font-medium transition-colors ${
                 isAnswer
-                  ? "border-brand bg-brand/10 text-brand"
+                  ? "border-brand bg-brand/10 text-brand animate-answer-correct"
                   : isWrongSelected
-                    ? "border-warning bg-warning/10 text-warning"
+                    ? "border-warning bg-warning/10 text-warning animate-answer-wrong"
                     : isSelected
                       ? "border-accent bg-accent/10 text-accent"
                       : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600"
@@ -116,12 +116,12 @@ export function QuizArtifact({
 
       {submitted && (
         <div
-          className={`rounded-lg p-3 mb-3 text-xs leading-relaxed ${
-            isCorrect
-              ? "bg-brand/10 border border-brand/30 text-brand"
-              : "bg-warning/10 border border-warning/30 text-warning"
-          }`}
-          data-testid="quiz-explanation"
+            className={`rounded-lg p-3 mb-3 text-xs leading-relaxed animate-artifact-render ${
+              isCorrect
+                ? "bg-brand/10 border border-brand/30 text-brand"
+                : "bg-warning/10 border border-warning/30 text-warning"
+            }`}
+            data-testid="quiz-explanation"
         >
           <div className="font-bold mb-1">{isCorrect ? "✅ 答对了" : "❌ 答错了"}</div>
           <div className="text-neutral-700 dark:text-neutral-300">{q.explanation}</div>

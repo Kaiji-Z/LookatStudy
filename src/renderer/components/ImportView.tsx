@@ -5,7 +5,7 @@
  *   A) GitHub URL：粘贴 repo URL → 后端拉 README.md → 解析成章节/课时树
  *   B) Markdown 粘贴：直接贴 markdown 文本（适合网络受限/私有 repo/本地文档）
  *
- * 导入成功后自动选中新课程并跳回技能树视图（由父组件 onImported 回调控制）。
+ * 导入成功后自动选中新课程并留在原地刷新课程列表（不跳转回主界面）。
  *
  * 还支持:课程列表（切换/删除）—— 让用户管理已导入的多门课程。
  */
@@ -14,14 +14,16 @@ import { api } from "../lib/api.js";
 import type { Course } from "@shared/types";
 
 export function ImportView({
-  onImported,
+  onCoursesChanged,
   courses,
   selectedCourseId,
   onSelectCourse,
 }: {
-  onImported: () => void;
+  /** 课程列表有变动(导入/删除)时调,只刷新列表,不跳转回主界面 */
+  onCoursesChanged: () => void;
   courses: Course[];
   selectedCourseId: string | null;
+  /** 切换当前课程(用户点了"切换"按钮,会跳转回地图) */
   onSelectCourse: (id: string) => void;
 }) {
   const [tab, setTab] = useState<"url" | "markdown" | "folder">("url");
@@ -48,7 +50,7 @@ export function ImportView({
     try {
       const course = await api.importCourseFromRepo(repoUrl.trim());
       setSuccess(`导入成功：${course.title}（${course.repoName}）`);
-      setTimeout(() => onImported(), 800);
+      setTimeout(() => onCoursesChanged(), 800);
     } catch (e) {
       setError(
         e instanceof Error
@@ -71,7 +73,7 @@ export function ImportView({
         repoName.trim(),
       );
       setSuccess(`生成成功：${course.title}`);
-      setTimeout(() => onImported(), 800);
+      setTimeout(() => onCoursesChanged(), 800);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -93,7 +95,7 @@ export function ImportView({
         return;
       }
       setSuccess(`导入成功：${course.title}（${course.repoName}）`);
-      setTimeout(() => onImported(), 800);
+      setTimeout(() => onCoursesChanged(), 800);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -106,7 +108,7 @@ export function ImportView({
     try {
       await api.deleteCourse(courseId);
       setSuccess(`已删除：${title}`);
-      onImported();
+      onCoursesChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -262,7 +264,7 @@ export function ImportView({
                     <button
                       onClick={() => {
                         onSelectCourse(c.id);
-                        onImported();
+                        onCoursesChanged();
                       }}
                       className="text-xs text-brand hover:underline"
                     >

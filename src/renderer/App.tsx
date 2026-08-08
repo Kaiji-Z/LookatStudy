@@ -492,7 +492,12 @@ export default function App() {
         ) : (
           <main className="flex-1 overflow-auto px-6 py-6">
             <div className="max-w-2xl mx-auto">
-              <ImportView onImported={() => { refreshAll(); setView("map"); }} courses={courses} selectedCourseId={selectedCourseId} onSelectCourse={setSelectedCourseId} />
+              <ImportView
+                onCoursesChanged={() => { refreshAll(); }}
+                courses={courses}
+                selectedCourseId={selectedCourseId}
+                onSelectCourse={(id) => { setSelectedCourseId(id); refreshAll(); setView("map"); }}
+              />
             </div>
           </main>
         )}

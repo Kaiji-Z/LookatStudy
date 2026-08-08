@@ -24,8 +24,9 @@ export interface StarterPrompt {
   message: string;
   /** 图标 emoji */
   icon: string;
-  /** 标记:点这个按钮能涨掌握度(AI 会出题/判定 → record_answer proposal)。
-   *  渲染时给这类按钮加视觉标记,让用户知道"点这个能涨进度"。 */
+  /** hover 提示(说明这个按钮做什么) */
+  hint: string;
+  /** 标记:点这个按钮能涨掌握度(AI 会出题/判定 → record_answer proposal)。 */
   advancesMastery?: boolean;
 }
 
@@ -62,21 +63,25 @@ export function getStarterPrompts(db: Db, nodeId: string): StarterPrompt[] {
         icon: "📖",
         label: "讲讲这一课",
         message: `请帮我理解「${node.title}」的核心概念，用简单的方式讲解。`,
+        hint: "让 AI 用大白话讲解这一课的核心",
       },
       {
         icon: "🔑",
         label: "关键知识点",
         message: `「${node.title}」有哪些必须掌握的关键知识点？`,
+        hint: "列出这一课必须掌握的知识点",
       },
       {
         icon: "💡",
         label: "为什么学这个",
         message: `为什么「${node.title}」很重要？在实际中有什么用？`,
+        hint: "讲讲这个知识的实际用途",
       },
       {
         icon: "📝",
         label: "考考我",
         message: `出一道关于「${node.title}」的选择题考考我,我答完后请判断对错。`,
+        hint: "出题测验,答对能涨掌握度",
         advancesMastery: true,
       },
     ];
@@ -89,22 +94,26 @@ export function getStarterPrompts(db: Db, nodeId: string): StarterPrompt[] {
         icon: "❓",
         label: "我有疑问",
         message: `关于「${node.title}」，我有些地方不太懂，能不能帮我深入讲解？`,
+        hint: "针对不懂的地方深入提问",
       },
       {
         icon: "🔄",
         label: "对比辨析",
         message: `「${node.title}」里的核心概念之间有什么区别和联系？`,
+        hint: "对比容易混淆的概念",
       },
       {
         icon: "📝",
         label: "考考我",
         message: `出一道关于「${node.title}」的选择题考考我,我答完后请判断对错。`,
+        hint: "出题测验,答对能涨掌握度",
         advancesMastery: true,
       },
       {
         icon: "🎯",
         label: "实际应用",
         message: `「${node.title}」的知识在实际项目中怎么用？举个例子。`,
+        hint: "用实际案例帮助理解",
       },
     ];
   }
@@ -115,22 +124,26 @@ export function getStarterPrompts(db: Db, nodeId: string): StarterPrompt[] {
       icon: "🏆",
       label: "总结回顾",
       message: `帮我总结「${node.title}」的核心要点，检验我是否真的掌握了。`,
+      hint: "回顾这一课的核心要点",
     },
     {
       icon: "📝",
       label: "最终测验",
       message: `「${node.title}」我学得差不多了,出几道有难度的题检验我,根据我的回答判断是否掌握。`,
+      hint: "出难题检验,答对可标记掌握",
       advancesMastery: true,
     },
     {
       icon: "🔗",
       label: "知识关联",
       message: `「${node.title}」和课程其他内容有什么关联？在整个体系里起什么作用？`,
+      hint: "把这一课放进整个知识体系",
     },
     {
       icon: "🚀",
       label: "进阶挑战",
       message: `「${node.title}」我已经基本掌握了，有什么更进阶的挑战或拓展？`,
+      hint: "挑战更难的内容",
     },
   ];
 }

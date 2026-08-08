@@ -125,4 +125,34 @@ const les4p = getProgress(db, "les-4");
 assert.strictEqual(les4p?.status, "available", "T9: 章节最后一课 → 下一章节第一课应解锁");
 console.log(`✓ T9 跨章节解锁: 课3(章节A末)→课4(章节B首) unlocked`);
 
+// === T10: 跳关守卫 —— locked 节点拒绝 markNodeAttempted,不解锁下一课 ===
+// 场景:绕过 UI disabled(键盘/deep link)直接对 locked 节点调 markNodeAttempted。
+// 守卫应拒绝:locked 节点 status 不变,下一课不解锁。
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('les-5', 'c2', 'sec-b', 'lesson', '课5', 1)`);
+updateProgress(db, "les-5", { status: "locked" }); // les-5 初始 locked
+// 直接对 locked 的 les-5 调 markNodeAttempted(模拟绕过 UI)
+const lockedResult = markNodeAttempted(db, "les-5");
+assert.strictEqual(lockedResult.status, "locked", "T10: locked 节点应拒绝,status 保持 locked");
+// 验证 les-5 的 status 在 DB 里也保持 locked(没被改成 in_progress)
+const les5db = getProgress(db, "les-5");
+assert.strictEqual(les5db?.status, "locked", "T10: DB 里 les-5 status 仍 locked(守卫生效)");
+console.log(`✓ T10 跳关守卫: locked 节点拒绝 markNodeAttempted, status 保持 locked`);
+
+// === T11: 跨章节跳空 section —— 下一 section 无 lesson 时继续往后找 ===
+// 场景:les-5 在 sec-b(orderIdx=1,是 sec-b 最后一课),sec-c(orderIdx=2)只有 exam 无 lesson,
+// sec-d(orderIdx=3)才有 lesson。les-5(章节B末)通关 → 应跳过 sec-c 解锁 sec-d 的 les-6。
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('sec-c', 'c2', NULL, 'section', '空章节C', 2)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('exam-c', 'c2', 'sec-c', 'exam', '空章节考试', 0)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('sec-d', 'c2', NULL, 'section', '章节D', 3)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('les-6', 'c2', 'sec-d', 'lesson', '课6', 0)`);
+updateProgress(db, "les-6", { status: "locked" });
+// T10 把 les-5 置成 locked 验证守卫;这里先恢复成 available 再点击测跨空 section。
+updateProgress(db, "les-5", { status: "available" });
+// les-5 是 sec-b 最后一课(orderIdx=1,无更高 orderIdx 的 lesson)。
+// 通关后:sec-b 无下课后 → 找后续 section;sec-c 只有 exam(无 lesson)→ 跳过 → sec-d 的 les-6
+markNodeAttempted(db, "les-5");
+const les6p = getProgress(db, "les-6");
+assert.strictEqual(les6p?.status, "available", "T11: 跨空 section 解锁 —— les-5→跳过sec-c→les-6 unlocked");
+console.log(`✓ T11 跨空 section: les-5(sec-b末)→跳过 sec-c(仅exam)→les-6(sec-d) unlocked`);
+
 console.log("\n=== ALL PROGRESS SERVICE TESTS PASSED ✅ ===");

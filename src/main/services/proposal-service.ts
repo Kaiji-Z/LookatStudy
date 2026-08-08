@@ -27,11 +27,11 @@ import { randomUUID } from "node:crypto";
 import { updateMastery, BKT_DEFAULTS } from "./pure/bkt.js";
 import { addXpMastered } from "./xp-service.js";
 import { unlockNextLessonIfEligible } from "./progress-service.js";
+import { MASTERED_MASTERY_THRESHOLD } from "@shared/types";
 
 type Db = SQLJsDatabase<typeof schema>;
 
-/** mastery 自动毕业阈值:超过此值 update_mastery 自动把 status 转 mastered。 */
-const MASTERED_MASTERY_THRESHOLD = 0.9;
+// MASTERED_MASTERY_THRESHOLD 现从 @shared/types 导入(主进程+渲染层共享单一真源)
 
 /* ---------- 类型 ---------- */
 

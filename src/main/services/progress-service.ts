@@ -15,13 +15,13 @@ import { eq } from "drizzle-orm";
 import * as schema from "../db/schema.js";
 import { progress as progressTable, contentNodes } from "../db/schema.js";
 import type { Progress } from "@shared/types";
+import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { BKT_DEFAULTS } from "./pure/bkt.js";
 
 // 项目用 sql.js（drizzle 的同步 API）。注入式传入便于无头测试构造真实 DB。
 type Db = SQLJsDatabase<typeof schema>;
 
-/** 解锁硬门控阈值:当前课 mastery 达到此值才解锁下一课。 */
-const UNLOCK_MASTERY_THRESHOLD = 0.5;
+// UNLOCK_MASTERY_THRESHOLD 现从 @shared/types 导入(主进程+渲染层共享单一真源)
 
 /**
  * 读取某节点的进度。不存在返回 null。
@@ -101,6 +101,20 @@ export function markNodeAttempted(
     .from(progressTable)
     .where(eq(progressTable.nodeId, nodeId))
     .get() as Progress | undefined;
+
+  // 跳关守卫:节点处于 locked 状态时拒绝标记(防 IPC 被绕过解锁任意节点)。
+  // 正常路径:UI map-node disabled,isLocked 时按钮点不动。这里是兜底硬守卫,
+  // 防键盘快捷键/deep link/未来新入口绕过按钮 disabled 直接调 IPC 跳关。
+  // 设计:locked 节点"不存在进度"(返回 null-like 占位),不触发任何解锁级联。
+  if (existing?.status === "locked") {
+    return {
+      nodeId,
+      status: "locked",
+      crownLevel: existing.crownLevel ?? 0,
+      lastAttemptAt: existing.lastAttemptAt ?? null,
+      mastery: existing.mastery ?? null,
+    };
+  }
 
   // 首次尝试:mastery 用 BKT pInit 作为起点(0.5),不是 null/0。
   // 已有 mastery 的保留(BKT 累积值不被尝试动作重置)。
@@ -188,22 +202,26 @@ function unlockNextLesson(db: Db, currentNodeId: string): void {
     // 同章节有下一课
     nextNodeId = siblings[0]!.id;
   } else {
-    // 同章节没下一课了 → 找下一章节的第一课
-    const allSections = db
+    // 同章节没下一课了 → 找下一章节的第一课。遍历所有后续 section,
+    // 跳过没有 lesson 的空 section(原 bug:只看第一个 next section,若它
+    // 全是 exam/skip 就停止,导致整条后续链路被锁死)。
+    const parentOrderIdx = current.parentId ? getParentOrderIdx(db, current.parentId) : -1;
+    const laterSections = db
       .select()
       .from(contentNodes)
       .all()
-      .filter((n) => n.type === "section" && n.orderIdx > (current.parentId ? getParentOrderIdx(db, current.parentId) : -1))
+      .filter((n) => n.type === "section" && n.orderIdx > parentOrderIdx)
       .sort((a, b) => a.orderIdx - b.orderIdx);
-    if (allSections.length > 0) {
-      const nextSectionLessons = db
+    for (const sec of laterSections) {
+      const sectionLessons = db
         .select()
         .from(contentNodes)
         .all()
-        .filter((n) => n.parentId === allSections[0]!.id && n.type === "lesson")
+        .filter((n) => n.parentId === sec.id && n.type === "lesson")
         .sort((a, b) => a.orderIdx - b.orderIdx);
-      if (nextSectionLessons.length > 0) {
-        nextNodeId = nextSectionLessons[0]!.id;
+      if (sectionLessons.length > 0) {
+        nextNodeId = sectionLessons[0]!.id;
+        break; // 找到第一个有课的 section 就停
       }
     }
   }

@@ -10,6 +10,14 @@ export type NodeType = "section" | "lesson" | "concept" | "exam";
 
 export type NodeStatus = "locked" | "available" | "in_progress" | "mastered";
 
+/* ---------- 掌握度阈值(主进程 + 渲染层共享,改这里两端联动) ----------
+ * 单一真源:progress-service / proposal-service / MapRail 都从这里 import,
+ * 避免 DB 认为该解锁了但 UI 还锁着(或反之)的漂移 bug。 */
+/** 解锁硬门控:当前课 mastery ≥ 此值才解锁下一课(首次尝试 mastery=pInit=0.5 刚好达标)。 */
+export const UNLOCK_MASTERY_THRESHOLD = 0.5;
+/** 自动毕业:mastery ≥ 此值 → status 转 mastered。 */
+export const MASTERED_MASTERY_THRESHOLD = 0.9;
+
 export interface ContentNode {
   id: string;
   courseId: string;

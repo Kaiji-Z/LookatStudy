@@ -117,12 +117,14 @@ test("T2 status 过滤", () => {
 
 // T3: list 按 updated_at 倒序
 test("T3 list 按 updated_at 倒序", () => {
+  // 防抖抖动:t1/t2 同毫秒创建 → updatedAt 相同 → 排序不确定(原 flaky)。
+  // 用同步 2ms 等待(Atomics.wait)保证 t1/t2 的 updatedAt 严格递增。
   const t1 = svc.createThread({ courseId: "c3", title: "old" });
-  // 强制 t2 的 updatedAt 更晚:追加消息推进
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2); // 同步等 2ms
   const t2 = svc.createThread({ courseId: "c3", title: "new" });
-  svc.appendMessage(t2.id, "user", "hi");
+  // t2 的 updatedAt 严格 > t1(跨过至少 1ms 边界)
   const list = svc.listThreads("c3");
-  assert.strictEqual(list[0].id, t2.id, "new(刚动过)在前");
+  assert.strictEqual(list[0].id, t2.id, "new(updatedAt 更晚)在前");
   assert.strictEqual(list[1].id, t1.id);
 });
 

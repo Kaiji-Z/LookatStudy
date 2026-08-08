@@ -14,6 +14,7 @@
  * 与 v0.1 的技能树不同:这里节点更大、有星星、有路径感、有总进度。
  */
 import type { ContentNode, Progress } from "@shared/types";
+import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { Map as MapIcon, FileText, ChevronLeft, ChevronRight, BookOpen, Target } from "lucide-react";
 
 export type MapView = "map" | "import";
@@ -257,12 +258,12 @@ function MapSection({
     .filter((n) => n.parentId === section.id)
     .sort((a, b) => a.orderIdx - b.orderIdx);
 
-  // 考试解锁条件:同 section 的所有 lesson 节点 mastery 都 ≥ 0.5(整章通关感)。
-  // 考试节点是可选支线,但要求"先学完本章才能挑战"。
+  // 考试解锁条件:同 section 的所有 lesson 节点 mastery 都 ≥ UNLOCK_MASTERY_THRESHOLD(整章通关感)。
+  // 考试节点是可选支线,但要求"先学完本章才能挑战"。阈值与主进程共享单一真源。
   const chapterLessonNodes = lessons.filter((n) => n.type === "lesson");
   const chapterLessonsMastered =
     chapterLessonNodes.length > 0 &&
-    chapterLessonNodes.every((l) => (progressMap[l.id]?.mastery ?? 0) >= 0.5);
+    chapterLessonNodes.every((l) => (progressMap[l.id]?.mastery ?? 0) >= UNLOCK_MASTERY_THRESHOLD);
 
   // 章节背景色循环(轻微区域感:浅绿/浅蓝/浅金交替)
   const SECTION_TINTS = [

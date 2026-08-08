@@ -123,4 +123,23 @@ assert.strictEqual(mastered.crownLevel, 5, "T8: crown=5");
 assert.ok(mastered.mastery && mastered.mastery >= 0.9, "T8: mastery≥0.9");
 console.log(`✓ T8 mark_mastered: status=mastered, crown=5, mastery=${mastered.mastery}`);
 
+// === T9: update_mastery 跨过 0.5 阈值 → 级联解锁下一课(填原测试缺口)===
+// 原 T3 只测 mastery 变化,没测 proposal 路径的解锁级联。这里补:建章节+2课,
+// apply update_mastery(correct=true)让课1 mastery 涨过 0.5 → 课2 应解锁 available。
+const { db: db4, sqljs: sqljs4 } = await makeDb();
+sqljs4.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('sec-x','c1',NULL,'section','X',0)`);
+sqljs4.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('px-1','c1','sec-x','lesson','PX1',0)`);
+sqljs4.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('px-2','c1','sec-x','lesson','PX2',1)`);
+sqljs4.run(`INSERT INTO progress (node_id, status, crown_level) VALUES ('px-1','available',0)`);
+sqljs4.run(`INSERT INTO progress (node_id, status, crown_level) VALUES ('px-2','locked',0)`);
+const p5 = createProposal(db4, {
+  operations: [{ type: "update_mastery", nodeId: "px-1", correct: true }],
+});
+applyProposal(db4, p5.id);
+const px1mastery = getProgress(db4, "px-1")?.mastery ?? 0;
+const px2status = getProgress(db4, "px-2")?.status;
+assert.ok(px1mastery >= 0.5, `T9: 课1 mastery 应 ≥0.5, 实际 ${px1mastery}`);
+assert.strictEqual(px2status, "available", "T9: proposal update_mastery 级联 → 课2 应解锁 available");
+console.log(`✓ T9 proposal 级联解锁: update_mastery(px-1)→mastery=${px1mastery.toFixed(2)}→px-2 unlocked`);
+
 console.log("\n=== ALL PROPOSAL TESTS PASSED ✅ ===");

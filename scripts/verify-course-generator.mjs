@@ -77,14 +77,16 @@ assert.strictEqual(lessons.length, 3, `T3: 3 lesson`);
 assert.strictEqual(exams.length, 2, `T3: 2 exam(每章末尾一个)`);
 console.log(`✓ T3 content_nodes：2 section + 3 lesson + 2 exam`);
 
-// === T4: 第一个 lesson available,其余 lesson locked,exam 节点 locked(本章通关才解锁) ===
+// === T4: 第一个 lesson available,其余 lesson locked;exam 节点 available(可选,渲染层按通关条件锁) ===
+// exam DB status=available 是设计:渲染层 MapRail 用 chapterLessonsMastered 运行时算锁定,
+// 不读 DB status。DB status=available 保证 export-service 显示一致(不显示 🔒)。
 const progress = db.select().from(schema.progress).all();
 const available = progress.filter((p) => p.status === "available");
 const locked = progress.filter((p) => p.status === "locked");
-// 1 lesson(首发) = available;2 lesson + 2 exam = locked
-assert.strictEqual(available.length, 1, `T4: 1 available(首发 lesson)`);
-assert.strictEqual(locked.length, 4, `T4: 4 locked(2 其余 lesson + 2 exam,exam 需通关解锁)`);
-console.log(`✓ T4 初始 progress：1 available + 4 locked(exam 初始 locked,渲染层按通关条件解锁)`);
+// 1 lesson(首发) + 2 exam = available;2 其余 lesson = locked
+assert.strictEqual(available.length, 3, `T4: 3 available(首发 lesson + 2 exam 可选)`);
+assert.strictEqual(locked.length, 2, `T4: 2 locked(2 其余 lesson,exam DB 态 available)`);
+console.log(`✓ T4 初始 progress：3 available(1 lesson+2 exam) + 2 locked(其余 lesson)`);
 
 // === T5: lesson content 写进去了（供 RAG）===
 const lessonWithContent = lessons.find((l) => l.content && l.content.includes("hello"));

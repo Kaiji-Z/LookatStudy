@@ -289,6 +289,12 @@ export default function App() {
         setForceArtifactTab("content");
         return;
       }
+      // 跳关守卫(渲染层):locked 节点拒绝点击。UI 已 disabled,这里是兜底
+      // (防键盘/deep link 绕过)。主进程 markNodeAttempted 还有第二道守卫。
+      if (progressMap[node.id]?.status === "locked") {
+        setSelectedNodeId(null);
+        return;
+      }
       await api.markNodeAttempted(node.id);
       const [progress, newStreak] = await Promise.all([
         api.getProgress(node.id),
@@ -304,7 +310,7 @@ export default function App() {
     } catch (e) {
       setErrorFromThrow(e);
     }
-  }, []);
+  }, [progressMap]);
 
   const handleSkillPick = async (name: string) => {
     try {

@@ -58,7 +58,7 @@ function insertExamNode(db: Db, courseId: string, sectionId: string, sectionTitl
   db.insert(progressTable)
     .values({
       nodeId: examId,
-      status: "locked",
+      status: "available",
       crownLevel: 0,
     })
     .run();

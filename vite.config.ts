@@ -22,6 +22,12 @@ export default defineConfig({
           // 主进程热重载由 dev:electron:wait 退出后 concurrently 触发，或手动重启。
         },
         vite: {
+          resolve: {
+            // 主进程也能 import @shared/types 的值(不只 type)。与 renderer 别名一致。
+            alias: {
+              "@shared": resolve(__dirname, "shared"),
+            },
+          },
           build: {
             outDir: resolve(__dirname, "dist-electron/main"),
             rollupOptions: {

@@ -329,6 +329,17 @@ function CanvasItemCard({
   onRemove: (id: string) => void;
   onTogglePin: (id: string) => void;
 }) {
+  // quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
+  const handleQuizAnswered = useCallback(
+    (_q: { prompt: string }, _idx: number, correct: boolean) => {
+      if (item.nodeId) {
+        api.recordQuizAnswer(item.nodeId, correct).catch(() => {
+          /* 静默失败:笔记里答题不应阻塞 UI */
+        });
+      }
+    },
+    [item.nodeId],
+  );
   let parsed: unknown;
   try {
     parsed = JSON.parse(item.data);
@@ -375,7 +386,7 @@ function CanvasItemCard({
 
       {/* 产物内容 */}
       <div className="text-xs">
-        {parsed ? <ArtifactRenderer data={parsed} /> : <div className="text-neutral-400">产物数据损坏</div>}
+        {parsed ? <ArtifactRenderer data={parsed} onQuizAnswered={handleQuizAnswered} /> : <div className="text-neutral-400">产物数据损坏</div>}
       </div>
 
       {/* 时间 */}

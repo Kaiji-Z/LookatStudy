@@ -17,6 +17,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, X, ChevronDown } from "lucide-react";
+import { ArtifactRenderer } from "./artifacts/index.js";
+import { api } from "../lib/api.js";
 /** 一条消息 = role + parts 数组(v0.2 parts-based)。 */
 export interface ChatMessageV2 {
   id: string;
@@ -48,9 +50,20 @@ interface ChatStreamProps {
   onStartLearning?: () => void;
   /** 是否已选中节点(false 时空状态显示"选节点"引导) */
   hasNode?: boolean;
+  /** 当前节点 id(用于内联 quiz 产物的答题 → mastery 更新) */
+  selectedNodeId?: string | null;
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, hasNode = true }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, hasNode = true, selectedNodeId }: ChatStreamProps) {
+  // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
+  const handleQuizAnswered = useCallback(
+    (_q: { prompt: string }, _idx: number, correct: boolean) => {
+      if (selectedNodeId) {
+        api.recordQuizAnswer(selectedNodeId, correct).catch(() => {});
+      }
+    },
+    [selectedNodeId],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   // 用户是否"贴底"——只在贴底时自动跟随,避免用户上滑翻历史被强拉回来。
   // 用 ref 存判断结果(useEffect 里读,无需触发重渲染)。
@@ -164,6 +177,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
             msg={msg}
             onApplyProposal={onApplyProposal}
             onRejectProposal={onRejectProposal}
+            onQuizAnswered={handleQuizAnswered}
           />
         ))}
 
@@ -220,10 +234,12 @@ function MessageRowV2({
   msg,
   onApplyProposal,
   onRejectProposal,
+  onQuizAnswered,
 }: {
   msg: ChatMessageV2;
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
+  onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
 }) {
   if (msg.role === "user") {
     // user:左 4px 绿色竖条 + 全宽浅绿底(扁平,非气泡)
@@ -254,6 +270,7 @@ function MessageRowV2({
             toolCallIdx={idx}
             onApplyProposal={onApplyProposal}
             onRejectProposal={onRejectProposal}
+            onQuizAnswered={onQuizAnswered}
           />
         ))}
       </div>
@@ -267,12 +284,14 @@ function PartRenderer({
   toolCallIdx,
   onApplyProposal,
   onRejectProposal,
+  onQuizAnswered,
 }: {
   part: ChatMessagePart;
   msgId: string;
   toolCallIdx: number;
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
+  onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
 }) {
   if (part.type === "text") {
     return (
@@ -303,6 +322,7 @@ function PartRenderer({
       toolCallIdx={toolCallIdx}
       onApplyProposal={onApplyProposal}
       onRejectProposal={onRejectProposal}
+      onQuizAnswered={onQuizAnswered}
     />
   );
 }
@@ -341,6 +361,7 @@ function ToolCallBlock({
   toolCallIdx,
   onApplyProposal,
   onRejectProposal,
+  onQuizAnswered,
 }: {
   toolName: string;
   state: "input-available" | "output-available" | "output-error";
@@ -350,6 +371,7 @@ function ToolCallBlock({
   toolCallIdx: number;
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
+  onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
 }) {
   // proposal 类工具(record_answer/mark_mastered):output 里有 proposalId + summary
   const isProposal = toolName === "record_answer" || toolName === "mark_mastered";
@@ -383,6 +405,26 @@ function ToolCallBlock({
             <X className="w-3 h-3 inline" />拒绝
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // 展示型 tool(output 含 artifactType):内联渲染产物,而不是小徽章
+  // loading 态仍走徽章,只有 output-available 才内联渲染
+  const isArtifact =
+    state === "output-available" &&
+    output &&
+    typeof output === "object" &&
+    "artifactType" in (output as object);
+  if (isArtifact) {
+    const artifactType = (output as { artifactType: string }).artifactType;
+    return (
+      <div
+        className="my-1 max-w-full"
+        data-testid={`inline-artifact-${artifactType}`}
+        data-tool={toolName}
+      >
+        <ArtifactRenderer data={output} onQuizAnswered={onQuizAnswered} />
       </div>
     );
   }

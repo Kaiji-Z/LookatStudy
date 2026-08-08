@@ -19,10 +19,12 @@ import { CodeWalkthroughArtifact } from "./CodeWalkthroughArtifact.js";
 
 export interface ArtifactProps {
   data: unknown;
+  /** quiz 产物答题回调(可选)。父组件接上后,答题会触发 mastery 更新。 */
+  onQuizAnswered?: (question: { prompt: string }, selectedIndex: number, correct: boolean) => void;
 }
 
 /** 按 artifactType 路由到对应组件。未识别类型返回 fallback。 */
-export function ArtifactRenderer({ data }: ArtifactProps) {
+export function ArtifactRenderer({ data, onQuizAnswered }: ArtifactProps) {
   const d = data as { artifactType?: string } | null;
   if (!d || !d.artifactType) {
     return <UnknownArtifact data={data} />;
@@ -31,7 +33,7 @@ export function ArtifactRenderer({ data }: ArtifactProps) {
     case "concept_map":
       return <ConceptMapArtifact data={data} />;
     case "quiz":
-      return <QuizArtifact data={data} />;
+      return <QuizArtifact data={data} onAnswered={onQuizAnswered} />;
     case "compare_table":
       return <CompareTableArtifact data={data} />;
     case "diagram":

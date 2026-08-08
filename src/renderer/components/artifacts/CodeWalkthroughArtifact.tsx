@@ -1,11 +1,15 @@
 /**
- * CodeWalkthroughArtifact —— 代码逐段讲解产物(M2)。
+ * CodeWalkthroughArtifact —— 代码逐段讲解产物(M2, v0.2.1 交互优化)。
  *
  * tool show_code_walkthrough 返回 { code, annotations }。
- * 渲染:带行号的代码 + 每段标注(点击高亮对应行)。
- * 仿 Cursor / GitHub 的代码块样式。
+ * 渲染:带行号的代码 + 每段标注(点击高亮 + 自动滚动到对应行)。
+ *
+ * v0.2.1 优化:
+ *   - 点击标注 → 代码块自动滚动到对应行(scrollIntoView)
+ *   - 移动端单列布局(代码在上,讲解在下);大屏双列
+ *   - harness 警告展示
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 interface Annotation {
   lineStart: number;
@@ -18,17 +22,31 @@ interface CodeWalkthroughData {
   language: string;
   code: string;
   annotations: Annotation[];
+  /** harness 可能注入的修复警告 */
+  warnings?: string[];
 }
 
 export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
   const d = data as CodeWalkthroughData;
   const [activeAnnotation, setActiveAnnotation] = useState<number | null>(null);
+  const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
   const lines = d.code.split("\n");
 
   const isLineHighlighted = (lineNum: number) => {
     if (activeAnnotation === null) return false;
     const a = d.annotations[activeAnnotation];
     return a && lineNum >= a.lineStart && lineNum <= a.lineEnd;
+  };
+
+  const handleAnnotationClick = (i: number) => {
+    const next = activeAnnotation === i ? null : i;
+    setActiveAnnotation(next);
+    if (next !== null) {
+      // 滚动代码块到标注的起始行
+      const a = d.annotations[next];
+      const el = lineRefs.current[a.lineStart - 1];
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   };
 
   return (
@@ -43,7 +61,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* 代码块(带行号) */}
-        <div className="bg-neutral-950 rounded-lg overflow-hidden border border-neutral-800">
+        <div className="bg-neutral-950 rounded-lg overflow-hidden border border-neutral-800 max-h-[420px] overflow-y-auto">
           <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto">
             <code>
               {lines.map((line, i) => {
@@ -51,6 +69,9 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
                 return (
                   <div
                     key={i}
+                    ref={(el) => {
+                      lineRefs.current[i] = el;
+                    }}
                     className={`flex ${isLineHighlighted(lineNum) ? "bg-brand/15" : ""}`}
                   >
                     <span className="select-none text-neutral-600 pr-3 pl-3 text-right w-10 shrink-0 border-r border-neutral-800">
@@ -67,17 +88,17 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
         {/* 讲解列表 */}
         <div className="space-y-2">
           <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
-            逐段讲解
+            逐段讲解(点击定位代码)
           </div>
           {d.annotations.map((a, i) => (
             <button
               key={i}
-              onClick={() => setActiveAnnotation(activeAnnotation === i ? null : i)}
+              onClick={() => handleAnnotationClick(i)}
               data-testid={`annotation-${i}`}
               className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
                 activeAnnotation === i
                   ? "border-brand bg-brand/10"
-                  : "border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-300 dark:border-neutral-700"
+                  : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-500"
               }`}
             >
               <div className="text-[10px] font-bold text-brand mb-0.5">
@@ -90,6 +111,12 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
           ))}
         </div>
       </div>
+
+      {d.warnings && d.warnings.length > 0 && (
+        <div className="mt-2 text-[10px] text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
+          ⚠️ {d.warnings.join("; ")}
+        </div>
+      )}
     </div>
   );
 }

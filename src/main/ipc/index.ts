@@ -76,6 +76,7 @@ import {
   listPendingProposals as listPendingProposalsService,
   applyProposal as applyProposalService,
   rejectProposal as rejectProposalService,
+  createProposal as createProposalService,
 } from "../services/proposal-service.js";
 // M3：仪表盘 + 检索 + 记忆
 import { getDashboard as getDashboardService } from "../services/dashboard-service.js";
@@ -719,6 +720,21 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
     const result = rejectProposalService(getDb(), id);
     markDirty();
     return result;
+  });
+  // quiz 产物本地评分 → 自动建+应用 update_mastery 提案。
+  // 答题观测是确定性的(无需 LLM 判断/人审),直接 apply。
+  ipcMain.handle("quiz:recordAnswer", async (_e, nodeId: string, correct: boolean) => {
+    if (!nodeId) return { applied: false };
+    const proposal = createProposalService(getDb(), {
+      nodeId,
+      operations: [{ type: "update_mastery", nodeId, correct }],
+      rationale: correct ? "quiz 产物答对" : "quiz 产物答错",
+    });
+    applyProposalService(getDb(), proposal.id);
+    markDirty();
+    // 读回新 mastery(UI 可选展示)
+    const row = getDb().select().from(progressTable).where(eq(progressTable.nodeId, nodeId)).get();
+    return { applied: true, newMastery: row?.mastery ?? undefined };
   });
 }
 

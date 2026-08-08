@@ -114,6 +114,8 @@ const api = {
     ipcRenderer.invoke("proposal:apply", id)) as ApiExpose["applyProposal"],
   rejectProposal: ((id: string) =>
     ipcRenderer.invoke("proposal:reject", id)) as ApiExpose["rejectProposal"],
+  recordQuizAnswer: ((nodeId: string, correct: boolean) =>
+    ipcRenderer.invoke("quiz:recordAnswer", nodeId, correct)) as ApiExpose["recordQuizAnswer"],
 
   /* 仪表盘 + 检索 + 记忆（M3） */
   getDashboard: ((courseId: string) =>

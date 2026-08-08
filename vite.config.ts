@@ -71,6 +71,12 @@ export default defineConfig({
     outDir: resolve(__dirname, "dist/renderer"),
     emptyOutDir: true,
   },
+  // mermaid v11 是大型纯 ESM 包(含 d3/cytoscape/elkjs/dagre 等子依赖)。
+  // dev 模式下 dynamic import 一个未预构建的 ESM 包会因内部 bare import 解析失败 → 渲染报错。
+  // 显式 include 让 vite 预转换为浏览器可用的 ESM。生产 build 不受影响(rollup 会处理)。
+  optimizeDeps: {
+    include: ["mermaid"],
+  },
   server: {
     host: true,
     port: 5173,

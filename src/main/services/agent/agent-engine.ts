@@ -17,6 +17,7 @@ import { streamText, tool, stepCountIs, type ToolSet } from "ai";
 import { z } from "zod";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import { eq } from "drizzle-orm";
+import { sanitizeArtifact, QUALITY_GUIDE } from "../artifact-harness.js";
 import * as schema from "../../db/schema.js";
 import {
   contentNodes,
@@ -255,7 +256,8 @@ export async function runAgentTurn(
       description:
         "生成一个概念图,理清当前节点的核心概念之间的关系。" +
         "当你判断学习者需要可视化结构来理解时调用(如架构图、依赖关系、分类树)。" +
-        "返回的 nodes/edges 会渲染成可交互的概念图产物。",
+        "返回的 nodes/edges 会渲染成可交互的概念图产物。\n\n" +
+        QUALITY_GUIDE.concept_map,
       inputSchema: z.object({
         title: z.string().describe("概念图标题(如'Transformer 架构')"),
         nodes: z
@@ -280,19 +282,19 @@ export async function runAgentTurn(
       }),
       execute: async (input) => {
         events.onToolCall?.("show_concept_map", input);
-        return {
-          artifactType: "concept_map",
-          title: input.title,
-          nodes: input.nodes,
-          edges: input.edges,
-        };
+        const { data, warnings } = sanitizeArtifact(
+          { ...input, artifactType: "concept_map" },
+          "concept_map",
+        );
+        return warnings.length > 0 ? { ...(data as Record<string, unknown>), warnings } : data;
       },
     }),
     generate_quiz: tool({
       description:
         "生成一组练习题(选择题/判断题),用于巩固当前节点的学习。" +
         "当学习者需要检验理解、或主动要求练习时调用。" +
-        "返回的题目会渲染成可交互的练习卡产物(提交后自动判分 + 触发 ExplainCard)。",
+        "返回的题目会渲染成可交互的练习卡产物(提交后自动判分 + 触发 ExplainCard)。\n\n" +
+        QUALITY_GUIDE.quiz,
       inputSchema: z.object({
         questions: z
           .array(
@@ -309,17 +311,16 @@ export async function runAgentTurn(
       }),
       execute: async (input) => {
         events.onToolCall?.("generate_quiz", input);
-        return {
-          artifactType: "quiz",
-          questions: input.questions,
-        };
+        const { data, warnings } = sanitizeArtifact({ ...input, artifactType: "quiz" }, "quiz");
+        return warnings.length > 0 ? { ...(data as Record<string, unknown>), warnings } : data;
       },
     }),
     compare_table: tool({
       description:
         "生成一个对比表,对比两个或多个概念/方案/技术的异同。" +
         "当学习者问'A 和 B 有什么区别'、或需要横向对比时调用。" +
-        "返回的表格会渲染成对比表产物。",
+        "返回的表格会渲染成对比表产物。\n\n" +
+        QUALITY_GUIDE.compare_table,
       inputSchema: z.object({
         title: z.string().describe("对比表标题(如'SQL vs NoSQL')"),
         headers: z.array(z.string()).min(2).describe("表头列名(第一列通常是维度名)"),
@@ -330,19 +331,19 @@ export async function runAgentTurn(
       }),
       execute: async (input) => {
         events.onToolCall?.("compare_table", input);
-        return {
-          artifactType: "compare_table",
-          title: input.title,
-          headers: input.headers,
-          rows: input.rows,
-        };
+        const { data, warnings } = sanitizeArtifact(
+          { ...input, artifactType: "compare_table" },
+          "compare_table",
+        );
+        return warnings.length > 0 ? { ...(data as Record<string, unknown>), warnings } : data;
       },
     }),
     draw_diagram: tool({
       description:
         "用 Mermaid 语法画一个流程图/时序图/状态图。" +
         "当需要展示流程、时序、状态转换等结构化图示时调用。" +
-        "返回的 mermaid 代码会渲染成图(支持 flowchart/sequence/state)。注意只返回合法 mermaid 语法。",
+        "返回的 mermaid 代码会渲染成图(支持 flowchart/sequence/state)。注意只返回合法 mermaid 语法。\n\n" +
+        QUALITY_GUIDE.diagram,
       inputSchema: z.object({
         title: z.string().describe("图标题"),
         diagramType: z
@@ -354,18 +355,18 @@ export async function runAgentTurn(
       }),
       execute: async (input) => {
         events.onToolCall?.("draw_diagram", input);
-        return {
-          artifactType: "diagram",
-          title: input.title,
-          diagramType: input.diagramType,
-          mermaid: input.mermaid,
-        };
+        const { data, warnings } = sanitizeArtifact(
+          { ...input, artifactType: "diagram" },
+          "diagram",
+        );
+        return warnings.length > 0 ? { ...(data as Record<string, unknown>), warnings } : data;
       },
     }),
     show_code_walkthrough: tool({
       description:
         "对一段代码做逐行/分段讲解。当学习者问'这段代码什么意思'、" +
-        "或当前节点含代码需要拆解时调用。返回带行号标注的代码 + 每段讲解。",
+        "或当前节点含代码需要拆解时调用。返回带行号标注的代码 + 每段讲解。\n\n" +
+        QUALITY_GUIDE.code_walkthrough,
       inputSchema: z.object({
         title: z.string().describe("讲解标题"),
         language: z.string().describe("代码语言(如'typescript'/'python')"),
@@ -383,13 +384,11 @@ export async function runAgentTurn(
       }),
       execute: async (input) => {
         events.onToolCall?.("show_code_walkthrough", input);
-        return {
-          artifactType: "code_walkthrough",
-          title: input.title,
-          language: input.language,
-          code: input.code,
-          annotations: input.annotations,
-        };
+        const { data, warnings } = sanitizeArtifact(
+          { ...input, artifactType: "code_walkthrough" },
+          "code_walkthrough",
+        );
+        return warnings.length > 0 ? { ...(data as Record<string, unknown>), warnings } : data;
       },
     }),
   };

@@ -17,6 +17,8 @@ interface QuizQuestion {
 interface QuizData {
   artifactType: "quiz";
   questions: QuizQuestion[];
+  /** harness 可能注入的修复警告 */
+  warnings?: string[];
 }
 
 export function QuizArtifact({
@@ -143,6 +145,12 @@ export function QuizArtifact({
         >
           {current + 1 < d.questions.length ? "下一题 →" : "完成练习"}
         </button>
+      )}
+
+      {d.warnings && d.warnings.length > 0 && (
+        <div className="mt-2 text-[10px] text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
+          ⚠️ {d.warnings.join("; ")}
+        </div>
       )}
     </div>
   );

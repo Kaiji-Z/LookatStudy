@@ -117,10 +117,14 @@ export default function App() {
   );
 
   // "开始学习"→ 发学习方法请求,建立会话(空会话时点的大按钮)
+  // 实际的 sendMessage 定义在 toast 声明之后(下面),通过 ref 桥接避免 TDZ。
+  const sendRef = useRef<((t: string) => Promise<void>) | null>(null);
   const handleStartLearning = useCallback(() => {
-    if (!selectedNode || chat.streaming) return;
-    chat.send(`请给我学习「${selectedNode.title}」的方法建议:应该按什么顺序学、重点关注什么、怎么检验自己学会了。简短给出学习路径。`);
-  }, [selectedNode, chat]);
+    if (!selectedNode) return;
+    void sendRef.current?.(
+      `请给我学习「${selectedNode.title}」的方法建议:应该按什么顺序学、重点关注什么、怎么检验自己学会了。简短给出学习路径。`,
+    );
+  }, [selectedNode]);
 
   const refreshAll = useCallback(async () => {
     try {
@@ -320,6 +324,27 @@ export default function App() {
   const font = useFontSize();
   const toast = useToast();
 
+  // 统一的"发送一条消息"流程:首次发送自动建 thread,之后直接发。
+  // ChatComposer 的 onSend 和 handleStartLearning 都走这条,避免重复逻辑和"忘了建 thread"的坑。
+  const sendMessage = useCallback(
+    async (text: string) => {
+      if (!text.trim() || chat.streaming) return;
+      if (!thread.activeId) {
+        const newId = await thread.ensureThreadForSend(text);
+        if (newId) {
+          chat.send(text, newId);
+          return;
+        }
+        toast.show("会话创建失败,请重试");
+        return;
+      }
+      chat.send(text);
+    },
+    [chat, thread, toast],
+  );
+  // ref 桥接:让 handleStartLearning(定义在 toast 之前)能调用 sendMessage(定义在 toast 之后)
+  sendRef.current = sendMessage;
+
   // M2: 从对话流提取展示型 tool 产物 → 自动持久化到 canvas_items
   const artifacts = useMemo(() => extractArtifacts(chat.messages), [chat.messages]);
   const savedArtifactKeysRef = useRef<Set<string>>(new Set());
@@ -462,6 +487,7 @@ export default function App() {
                 summary={nodeSummary}
                 onStartLearning={handleStartLearning}
                 hasNode={!!selectedNode}
+                selectedNodeId={selectedNodeId}
               />
               <ChatComposer
                 nodeId={selectedNodeId}
@@ -472,20 +498,7 @@ export default function App() {
                 activeSkill={activeSkill}
                 starterPrompts={starterPrompts}
                 onPickSkill={handleSkillPick}
-                onSend={async (text) => {
-                  // v0.5: 首次发送时若无 active thread,建一条并立刻发送(零延迟,一步完成)
-                  if (!thread.activeId) {
-                    const newId = await thread.ensureThreadForSend(text);
-                    if (newId) {
-                      chat.send(text, newId);
-                      return;
-                    }
-                    // 建失败:不阻塞,让用户知道
-                    toast.show("会话创建失败,请重试");
-                    return;
-                  }
-                  chat.send(text);
-                }}
+                onSend={sendMessage}
                 onStop={chat.stop}
                 onGotoSettings={() => setShowSettings(true)}
                 fontSize={font.size}

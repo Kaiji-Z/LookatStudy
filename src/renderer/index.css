@@ -21,16 +21,8 @@
     user-select: text;
   }
 
-  /* 亮色模式：覆盖 dark-first 的中性色变量 */
-  html:not(.dark) body {
-    @apply bg-neutral-50 text-neutral-900;
-  }
-  html:not(.dark) ::-webkit-scrollbar-thumb {
-    background: rgb(212 212 216);
-  }
-  html:not(.dark) ::-webkit-scrollbar-thumb:hover {
-    background: rgb(161 161 170);
-  }
+  /* v0.5: 浅色模式已移除,专注深色。浅色相关覆盖代码清理。
+     后续若恢复浅色,需系统实现(非散修)。 */
 }
 
 /* === Duolingo-inspired design system === */

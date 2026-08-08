@@ -27,7 +27,7 @@ The line we hold: **game-like feedback serves learning motivation, not engagemen
 | **Review** | `#ff4b4b` → `#ff7a00` | `warning`/`orange` | overdue SRS items, wrong answers, destructive actions | progress, mastery |
 | **Neutral** | neutral-50 → 950 | `neutral` | surfaces, text, borders, disabled, locked | semantic emphasis |
 
-Dark-first (neutral-950 base). Light mode supported (neutral-50 base). Every text/background pair must hit ≥4.5:1 contrast (≥3:1 for large/bold).
+Dark-only (neutral-950 base). Light mode is not supported in v0.5 — it will be added as a dedicated milestone with systematic theme pairing (not ad-hoc fixes). Every text/background pair must hit ≥4.5:1 contrast (≥3:1 for large/bold).
 
 ## Typography
 Single sans family (system-ui stack). Fixed rem scale. Tight hierarchy: lesson titles 1.25rem, body 0.875rem, labels 0.75rem. No display fonts — this is a tool, not a magazine. **User-adjustable** body size in the chat panel (A- / A+ small/medium/large), persisted to localStorage.

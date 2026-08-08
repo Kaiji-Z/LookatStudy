@@ -8,6 +8,7 @@ import type {
   Streak,
   Skill,
   DashboardData,
+  StarterPrompt,
 } from "@shared/types";
 import { MapRail, type MapView } from "./components/MapRail.js";
 import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
@@ -89,7 +90,7 @@ export default function App() {
 
   // AI 就绪状态 + starter prompts
   const [agentReady, setAgentReady] = useState<{ ready: boolean; provider?: string; model?: string; missing?: string } | null>(null);
-  const [starterPrompts, setStarterPrompts] = useState<{ icon: string; label: string; message: string }[]>([]);
+  const [starterPrompts, setStarterPrompts] = useState<StarterPrompt[]>([]);
 
   // v0.4: thread 模型—— useThreads 管 thread 列表, useChatStream 管当前 thread 消息
   const thread = useThreads(selectedCourseId, selectedNodeId);

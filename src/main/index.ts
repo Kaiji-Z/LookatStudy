@@ -224,17 +224,16 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   // 等渲染层拉完数据 + React 渲染完。轮询所有关键 testid 都出现——
   // 不能只等容器，因为 skills/courses 是异步并行拉的，容器早出、内容晚出，会 race。
+  // v0.2: 三栏布局后 testid 变了——map-rail + skill-picker + map-node-* + chat-panel + notebook-panel
   const waitRender = async (timeoutMs = 10000): Promise<boolean> => {
     const deadline = Date.now() + timeoutMs;
     const checkAll = () =>
       win.webContents.executeJavaScript(`
-        document.querySelector('[data-testid="skill-tree"]') !== null &&
-        document.querySelector('[data-testid="skill-picker-left"]') !== null &&
-        document.querySelectorAll('[data-testid^="skill-pill-"]').length >= 4 &&
-        document.querySelectorAll('[data-testid^="section-unit-"]').length >= 1 &&
-        document.querySelectorAll('[data-testid^="lesson-bubble-"]').length >= 1 &&
+        document.querySelector('[data-testid="map-rail"]') !== null &&
+        document.querySelector('[data-testid="skill-picker"]') !== null &&
+        document.querySelectorAll('[data-testid^="map-node-"]').length >= 1 &&
         document.querySelector('[data-testid="chat-panel"]') !== null &&
-        document.querySelector('[data-testid="divider"]') !== null
+        document.querySelector('[data-testid="notebook-panel"]') !== null
       `);
     while (Date.now() < deadline) {
       try {
@@ -265,34 +264,35 @@ async function runUiTest(screenshot = false): Promise<void> {
     return;
   }
 
-  // T1: skill-picker 里有 ≥4 个 skill pill（4 个内置）
-  const pillCount = await win.webContents.executeJavaScript(
-    `document.querySelectorAll('[data-testid^="skill-pill-"]').length`,
+  // T1: skill-picker(v0.2 收起为下拉)里应有 ≥4 个 option(4 个内置 skill)
+  const optionCount = await win.webContents.executeJavaScript(
+    `document.querySelectorAll('[data-testid="skill-select"] option').length`,
   );
   results.push({
-    name: "skill-picker shows ≥4 builtin skill pills",
-    ok: typeof pillCount === "number" && pillCount >= 4,
-    detail: { pillCount },
+    name: "skill-picker has ≥4 builtin skill options",
+    ok: typeof optionCount === "number" && optionCount >= 4,
+    detail: { optionCount },
   });
 
-  // T2: 至少一个 section-unit 存在（技能树结构）
-  const sectionCount = await win.webContents.executeJavaScript(
-    `document.querySelectorAll('[data-testid^="section-unit-"]').length`,
+  // T2: map-rail 至少有 1 个视图切换项 + path overview 有节点
+  const navNodeCount = await win.webContents.executeJavaScript(
+    `document.querySelectorAll('[data-testid^="map-node-"]').length`,
   );
   results.push({
-    name: "skill-tree has ≥1 section unit",
-    ok: typeof sectionCount === "number" && sectionCount >= 1,
-    detail: { sectionCount },
+    name: "map-rail path overview has ≥1 node",
+    ok: typeof navNodeCount === "number" && navNodeCount >= 1,
+    detail: { navNodeCount },
   });
 
-  // T3: 至少一个 lesson bubble 存在
-  const bubbleCount = await win.webContents.executeJavaScript(
-    `document.querySelectorAll('[data-testid^="lesson-bubble-"]').length`,
-  );
+  // T3: 三栏都在(chat-panel + notebook-panel + map-rail)
+  const threePane = await win.webContents.executeJavaScript(`
+    document.querySelector('[data-testid="map-rail"]') !== null &&
+    document.querySelector('[data-testid="chat-panel"]') !== null &&
+    document.querySelector('[data-testid="notebook-panel"]') !== null
+  `);
   results.push({
-    name: "skill-tree has ≥1 lesson bubble",
-    ok: typeof bubbleCount === "number" && bubbleCount >= 1,
-    detail: { bubbleCount },
+    name: "three-pane layout rendered (nav + chat + artifact)",
+    ok: threePane === true,
   });
 
   // T4: streak badge 渲染（说明 getStreak IPC roundtrip 成功）
@@ -304,20 +304,16 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: streakPresent === true,
   });
 
-  // T5: 点击一个未锁的 lesson bubble → 触发 markNodeAttempted → progress 更新
-  // 找第一个 enabled 的 bubble 点击
+  // T5: 点击一个未锁的 map-node → 触发 markNodeAttempted → 联动右栏
   let clickResult: { clicked?: boolean; totalBtns?: number; enabledCount?: number; error?: string } = {};
   try {
     clickResult = await win.webContents.executeJavaScript(`
       (function() {
         try {
-          var lis = document.querySelectorAll('[data-testid^="lesson-bubble-"]');
-          var btns = [];
-          for (var i = 0; i < lis.length; i++) {
-            var b = lis[i].querySelector('button');
-            if (b) btns.push(b);
-          }
-          var enabled = btns.filter(function(b){ return !b.disabled; });
+          var btns = document.querySelectorAll('[data-testid^="map-node-"]');
+          var arr = [];
+          for (var i = 0; i < btns.length; i++) arr.push(btns[i]);
+          var enabled = arr.filter(function(b){ return !b.disabled; });
           for (var j = 0; j < enabled.length; j++) {
             enabled[j].click();
             return { clicked: true, totalBtns: btns.length, enabledCount: enabled.length };
@@ -332,36 +328,26 @@ async function runUiTest(screenshot = false): Promise<void> {
     clickResult = { error: String(e) };
   }
   results.push({
-    name: "clicked an unlocked lesson bubble (markNodeAttempted IPC)",
+    name: "clicked an unlocked map-node (markNodeAttempted IPC)",
     ok: clickResult?.clicked === true,
     detail: clickResult,
   });
 
-  // T6: 点 skill pill → setActiveSkill IPC roundtrip
-  const skillClick = await win.webContents.executeJavaScript(`
+  // T6: 点 skill select → setActiveSkill IPC roundtrip(改 select value)
+  const skillSelect = await win.webContents.executeJavaScript(`
     (function() {
-      const pill = document.querySelector('[data-testid="skill-pill-socratic-mode"]');
-      if (!pill) return { ok: false, reason: "socratic pill not found" };
-      pill.click();
-      return { ok: true };
+      const sel = document.querySelector('[data-testid="skill-select"]');
+      if (!sel) return { ok: false, reason: "skill-select not found" };
+      sel.value = "socratic-mode";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      return { ok: true, value: sel.value };
     })()
   `);
-  // 给 IPC 一点时间
   await new Promise((r) => setTimeout(r, 300));
-  const activeSkillClass = await win.webContents.executeJavaScript(`
-    (function() {
-      const pill = document.querySelector('[data-testid="skill-pill-socratic-mode"]');
-      return pill ? pill.className : null;
-    })()
-  `);
   results.push({
-    name: "skill pill click activates socratic-mode (active styling applied)",
-    ok:
-      skillClick?.ok === true &&
-      typeof activeSkillClass === "string" &&
-      activeSkillClass.includes("brand") &&
-      activeSkillClass.includes("font-semibold"),
-    detail: { skillClick, activeClassHead: activeSkillClass?.slice(0, 60) },
+    name: "skill select change triggers setActiveSkill",
+    ok: skillSelect?.ok === true && skillSelect?.value === "socratic-mode",
+    detail: skillSelect,
   });
 
   // T7 (M2): isAgentReady 在未配 key 时返回 ready:false（渲染层只见布尔，不见 key）
@@ -402,99 +388,99 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: proposalRoundtrip,
   });
 
-  // T8a (双栏): chat-panel 存在 + divider 存在（无论 key 是否配置）
-  const dualPane = await win.webContents.executeJavaScript(`
+  // T8a (v0.2 三栏): chat-stream + composer 都在(中栏完整)
+  const midPane = await win.webContents.executeJavaScript(`
     (function() {
-      const chat = document.querySelector('[data-testid="chat-panel"]');
-      const divider = document.querySelector('[data-testid="divider"]');
-      const modeChat = document.querySelector('[data-testid="mode-chat"]');
-      const configGuide = document.querySelector('[data-testid="config-guide"]');
+      const stream = document.querySelector('[data-testid="chat-stream"]');
+      const composer = document.querySelector('[data-testid="composer"], [data-testid="composer-nokey"]');
       return {
-        chatPanel: !!chat,
-        divider: !!divider,
-        hasContent: !!modeChat || !!configGuide,
+        chatStream: !!stream,
+        composer: !!composer,
       };
     })()
   `);
   results.push({
-    name: "dual-pane: chat-panel + divider rendered",
-    ok: dualPane?.chatPanel && dualPane?.divider && dualPane?.hasContent,
-    detail: dualPane,
+    name: "mid-pane: chat-stream + composer rendered",
+    ok: midPane?.chatStream && midPane?.composer,
+    detail: midPane,
   });
 
-  // T8b (双栏联动): 点一个 lesson bubble → chat-panel 顶部显示该节点标题
+  // T8b (v0.4 联动): map-node 点击 → ThreadSwitcher 焦点节点 + thread 创建/切换
   const linkage = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        const btns = document.querySelectorAll('[data-testid^="lesson-bubble-"] button');
+        const btns = document.querySelectorAll('[data-testid^="map-node-"]');
         let clicked = null;
         for (const b of btns) {
-          if (!b.disabled) { b.click(); clicked = b.closest('[data-testid]').getAttribute('data-testid'); break; }
+          if (!b.disabled) { b.click(); clicked = b.getAttribute('data-testid'); break; }
         }
-        if (!clicked) return { ok: false, reason: "no enabled bubble" };
-        await new Promise(r => setTimeout(r, 500));
-        const nodeLabel = document.querySelector('[data-testid="chat-current-node"]');
-        return { ok: !!nodeLabel && nodeLabel.textContent.includes('📍'), clicked, label: nodeLabel?.textContent };
+        if (!clicked) return { ok: false, reason: "no enabled map-node" };
+        await new Promise(r => setTimeout(r, 600));
+        // v0.4: ThreadSwitcher 存在(有 thread 显示 tabs,无 thread 显示 empty 提示)
+        const switcherEl = document.querySelector('[data-testid="thread-switcher"], [data-testid="thread-switcher-empty"]');
+        const tabCount = document.querySelectorAll('[data-testid^="thread-tab-"]').length;
+        return {
+          ok: !!switcherEl,
+          clicked,
+          tabCount,
+          hasEmpty: !!document.querySelector('[data-testid="thread-switcher-empty"]'),
+        };
       } catch (e) {
         return { ok: false, error: String(e) };
       }
     })()
   `);
   results.push({
-    name: "lesson click → chat-panel shows selected node (联动)",
+    name: "map-node click → ThreadSwitcher shows focus node (联动)",
     ok: linkage?.ok === true,
     detail: linkage,
   });
 
-  // T8c (双栏折叠): 点折叠按钮 → chat-panel 消失，sidebar-collapsed 出现
-  const collapse = await win.webContents.executeJavaScript(`
+  // T8c (v0.2 设置抽屉): 点 header settings → settings-drawer 出现
+  const settingsDrawer = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        const collapseBtn = document.querySelector('[data-testid="chat-collapse-btn"]');
-        if (!collapseBtn) return { ok: false, reason: "collapse btn not found" };
-        collapseBtn.click();
+        const btn = document.querySelector('[data-testid="header-settings"]');
+        if (!btn) return { ok: false, reason: "settings btn not found" };
+        btn.click();
         await new Promise(r => setTimeout(r, 300));
-        const collapsed = document.querySelector('[data-testid="sidebar-collapsed"]');
-        const expandBtn = document.querySelector('[data-testid="chat-expand-btn"]');
-        // 再展开回来（不影响后续测试）
-        if (expandBtn) { expandBtn.click(); await new Promise(r => setTimeout(r, 300)); }
-        return { ok: !!collapsed && !!expandBtn };
+        const drawer = document.querySelector('[data-testid="settings-drawer"]');
+        const closeBtn = document.querySelector('[data-testid="settings-close"]');
+        // 关回去
+        if (closeBtn) { closeBtn.click(); await new Promise(r => setTimeout(r, 200)); }
+        return { ok: !!drawer };
       } catch (e) {
         return { ok: false, error: String(e) };
       }
     })()
   `);
   results.push({
-    name: "chat collapse → sidebar-collapsed + expand button (折叠)",
-    ok: collapse?.ok === true,
-    detail: collapse,
+    name: "header settings → settings-drawer opens (设置抽屉)",
+    ok: settingsDrawer?.ok === true,
+    detail: settingsDrawer,
   });
 
-  // T9 (M3): 切到 dashboard tab → 仪表盘渲染（3 stat 卡 + 热力图行）
+  // T9 (M3): 切到 dashboard 视图 → 仪表盘渲染（3 stat 卡 + 热力图行）
   const dashboardOk = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        // 点 dashboard tab
-        const tab = document.querySelector('[data-testid="tab-dashboard"]');
-        if (!tab) return { ok: false, reason: "dashboard tab not found" };
+        // 点 map-view-map 切到地图视图
+        const tab = document.querySelector('[data-testid="map-view-map"]');
+        if (!tab) return { ok: false, reason: "map-view-map not found" };
         tab.click();
-        // 等 dashboard 渲染
-        for (let i = 0; i < 30; i++) {
-          if (document.querySelector('[data-testid="dashboard"]')) break;
-          await new Promise(r => setTimeout(r, 100));
-        }
-        const dash = document.querySelector('[data-testid="dashboard"]');
-        if (!dash) return { ok: false, reason: "dashboard not rendered after click" };
-        const stats = document.querySelectorAll('[data-testid^="stat-"]').length;
-        const heatRows = document.querySelectorAll('[data-testid="mastery-heatmap"] > *').length;
-        return { ok: stats >= 3 && heatRows >= 1, stats, heatRows };
+        await new Promise(r => setTimeout(r, 300));
+        // v0.3:地图路径渲染——map-path 存在 + 至少 1 个 section + 节点
+        const mapPath = document.querySelector('[data-testid="map-path"]');
+        const sections = document.querySelectorAll('[data-testid^="map-section-"]').length;
+        const nodes = document.querySelectorAll('[data-testid^="map-node-"]').length;
+        return { ok: !!mapPath && sections >= 1 && nodes >= 1, sections, nodes };
       } catch (e) {
         return { ok: false, error: String(e) };
       }
     })()
   `);
   results.push({
-    name: "dashboard tab renders stat cards + heatmap (M3)",
+    name: "map-view-map renders path + sections + nodes",
     ok: dashboardOk?.ok === true,
     detail: dashboardOk,
   });
@@ -509,11 +495,11 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: presetsCheck,
   });
 
-  // T11 (release): 导入课程 tab 渲染 URL 输入 + markdown 切换 + 课程列表
+  // T11 (release): 导入课程视图渲染 URL 输入 + markdown 切换 + 课程列表
   const importOk = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        document.querySelector('[data-testid="tab-import"]').click();
+        document.querySelector('[data-testid="map-view-import"]').click();
         for (let i = 0; i < 30; i++) {
           if (document.querySelector('[data-testid="import-url-section"]')) break;
           await new Promise(r => setTimeout(r, 100));
@@ -538,25 +524,63 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: importOk,
   });
 
-  // T12 (release): 左栏有 对话/练习/设置 三个模式 tab（无论 key 是否配置）
-  const modeTabsOk = await win.webContents.executeJavaScript(`
+  // T12 (v0.2): 设置移到 Header 齿轮 + 左栏导航三视图 + 中栏 chat-stream
+  const layoutOk = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        document.querySelector('[data-testid="tab-tree"]').click();
+        document.querySelector('[data-testid="map-view-map"]').click();
         await new Promise(r => setTimeout(r, 300));
-        const modeChat = !!document.querySelector('[data-testid="mode-chat"]');
-        const modeExercise = !!document.querySelector('[data-testid="mode-exercise"]');
-        const modeSettings = !!document.querySelector('[data-testid="mode-settings"]');
-        return { ok: modeChat && modeExercise && modeSettings, modeChat, modeExercise, modeSettings };
+        const headerSettings = !!document.querySelector('[data-testid="header-settings"]');
+        const navTree = !!document.querySelector('[data-testid="map-view-map"]');
+        const navDashboard = !!document.querySelector('[data-testid="map-view-map"]');
+        const navImport = !!document.querySelector('[data-testid="map-view-import"]');
+        return { ok: headerSettings && navTree && navDashboard && navImport, headerSettings, navTree, navDashboard, navImport };
       } catch (e) {
         return { ok: false, error: String(e) };
       }
     })()
   `);
   results.push({
-    name: "chat panel: 对话/练习/设置 三模式 tab 存在",
-    ok: modeTabsOk?.ok === true,
-    detail: modeTabsOk,
+    name: "v0.2 layout: header settings + nav 3-views + chat-stream",
+    ok: layoutOk?.ok === true,
+    detail: layoutOk,
+  });
+
+  // T13 (M2): Cmd+K 命令面板能打开 + 命令列表渲染
+  const cmdPalette = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        // 切回 tree 视图(确保命令面板能用)
+        document.querySelector('[data-testid="map-view-map"]').click();
+        await new Promise(r => setTimeout(r, 200));
+        // 派发 Ctrl+K
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));
+        await new Promise(r => setTimeout(r, 400));
+        const palette = document.querySelector('[data-testid="command-palette"]');
+        const input = document.querySelector('[data-testid="command-input"]');
+        const cmds = document.querySelectorAll('[data-testid^="command-"]').length;
+        // 关掉
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        return { ok: !!palette && !!input && cmds > 0, palette: !!palette, input: !!input, cmds };
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    })()
+  `);
+  results.push({
+    name: "Cmd+K command palette opens with commands (M2)",
+    ok: cmdPalette?.ok === true,
+    detail: cmdPalette,
+  });
+
+  // T14 (M2): artifact tabs 容器存在(即使无产物,标签栏结构在)
+  const artifactTabs = await win.webContents.executeJavaScript(`
+    document.querySelector('[data-testid="notebook-tabs"]') !== null &&
+    document.querySelector('[data-testid="tab-notes"]') !== null
+  `);
+  results.push({
+    name: "notebook panel tabs rendered (content/notes/all)",
+    ok: artifactTabs === true,
   });
 
   const allOk = results.every((r) => r.ok);

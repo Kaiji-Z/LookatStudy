@@ -85,3 +85,37 @@ export function getDueReviewNodeIds(now: Date = new Date()): string[] {
     .all();
   return rows.map((r: { nodeId: string }) => r.nodeId);
 }
+
+/**
+ * v0.2: 查询所有 SRS 项的详细信息(供四象限分组)。
+ * 返回每个复习项的 nodeId + intervalDays + repetitions + dueAt + 是否逾期。
+ *
+ * 四象限分组逻辑(渲染层做,这里只供数据):
+ *   - overdue: dueAt <= now
+ *   - short-term: intervalDays <= 7(近期巩固)
+ *   - long-term: intervalDays > 7(长期记忆)
+ *   - inactive: repetitions === 0(从未复习过,但有 srs 记录——通常不会出现)
+ */
+export interface SrsItemDetail {
+  nodeId: string;
+  intervalDays: number;
+  repetitions: number;
+  dueAt: string;
+  overdue: boolean;
+}
+
+export function getAllSrsItems(now: Date = new Date()): SrsItemDetail[] {
+  const db = getDb();
+  const nowIso = now.toISOString();
+  const rows = db
+    .select()
+    .from(srsItems)
+    .all();
+  return rows.map((r) => ({
+    nodeId: r.nodeId,
+    intervalDays: r.intervalDays,
+    repetitions: r.repetitions,
+    dueAt: r.dueAt,
+    overdue: r.dueAt <= nowIso,
+  }));
+}

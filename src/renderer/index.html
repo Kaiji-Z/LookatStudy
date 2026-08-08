@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,17 +8,7 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:5173 ws://localhost:5173"
     />
     <title>LookatStudy</title>
-    <!-- 主题初始化：在 React 渲染前从 localStorage 读取，避免闪屏 -->
-    <script>
-      (function () {
-        var saved = localStorage.getItem("lookatstudy-theme");
-        var prefersLight = window.matchMedia("(prefers-color-scheme: light)").matches;
-        var theme = saved || (prefersLight ? "light" : "dark");
-        if (theme === "dark") {
-          document.documentElement.classList.add("dark");
-        }
-      })();
-    </script>
+    <!-- v0.5: 强制深色模式(html class="dark" 已在 <html> 标签上) -->
   </head>
   <body>
     <div id="root"></div>

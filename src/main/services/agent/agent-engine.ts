@@ -22,11 +22,17 @@ import {
   contentNodes,
   progress as progressTable,
   courses,
+  threads,
 } from "../../db/schema.js";
 import type { BrowserWindow } from "electron";
 import { getDb, markDirty } from "../../db/index.js";
 import { resolveLlm, classifyLlmError } from "./llm-client.js";
 import { chatSessions } from "../../db/schema.js";
+import type { ChatStreamPart } from "@shared/types";
+import {
+  getThreadMessages,
+  appendMessage,
+} from "../thread-service.js";
 import { buildSystemPrompt } from "../skills/prompt-builder.js";
 import {
   createProposal,
@@ -48,7 +54,23 @@ const BASE_AGENT_PROMPT =
   "【模糊提问处理】当学习者说'我不懂''不太理解'但没说具体不懂什么时，" +
   "不要假设你知道他哪里不懂然后长篇大论。" +
   "先反问'你具体是哪个概念不太清楚？'，或者列出这课涉及的 2-3 个核心概念让他选。" +
-  "只讲解学习者明确问到的部分，不要主动扩展到课程内容之外的领域知识。";
+  "只讲解学习者明确问到的部分，不要主动扩展到课程内容之外的领域知识。\n\n" +
+  "【Generative UI 教学工具】你有几个能生成可视化学习产物的工具，适时使用能大幅提升理解：" +
+  "- show_concept_map:理清概念间关系(架构/依赖/分类),学习者说'理不清''有什么关系'时用;" +
+  "- generate_quiz:出题检验,学习者说'考考我''出题'时,或讲完一节主动出 2-3 题巩固;" +
+  "- compare_table:对比 A vs B,学习者问'区别''对比'时用;" +
+  "- draw_diagram:画流程/时序/状态图,讲流程类内容时用;" +
+  "- show_code_walkthrough:逐段讲解代码,学习者问'这段代码'时用。" +
+  "工具是手段不是目的:能用工具让知识更清晰就用,否则正常文字讲解即可。一次回复最多用 1 个工具,避免过载。\n\n" +
+  "【回答排版规范】你的回答支持完整 Markdown 渲染(标题/列表/表格/代码块/引用/粗斜体),请充分利用结构化排版让内容更易读:" +
+  "- 用 ##/### 划分段落,不要一整块文字;" +
+  "- 并列要点用无序列表(- ),有顺序的步骤用有序列表(1. );" +
+  "- 对比、属性、规格用 GFM 表格(| 列1 | 列2 |),不要堆文字;" +
+  "- 重要结论用 **粗体**,术语首次出现用 *斜体*;" +
+  "- 命令/代码/文件名用 `行内代码`,多行代码用 ```language 代码块;" +
+  "- 提示、警告、补充说明用 > 引用块;" +
+  "- 避免长段落(超过 4 行就考虑拆分或转列表)。" +
+  "好的排版 = 学习者更容易抓住重点,这是教学效果的一部分。";
 
 /** 流式事件回调 */
 export interface AgentEvents {
@@ -56,6 +78,19 @@ export interface AgentEvents {
   onToolCall?: (name: string, args: unknown) => void;
   onProposalCreated?: (proposalId: string, summary: string) => void;
   onError?: (message: string) => void;
+  /**
+   * v0.2 parts-based 流式协议：把 fullStream 里每种 part 类型透传给渲染层。
+   * 渲染层按 part.type 累积到 message.parts[]，不再字符串拼接。
+   * 这是 Generative UI + thinking trace 的基础。
+   *
+   * part.type 取值：
+   *   "text"        { type, text }              ← 文本增量（与 onTextDelta 同源，二选一）
+   *   "reasoning"   { type, text }              ← 思考过程（可折叠展示）
+   *   "tool-start"  { type, toolName }          ← 工具开始执行（loading 态）
+   *   "tool-result" { type, toolName, output }  ← 工具返回数据（Generative UI 产物）
+   *   "tool-error"  { type, toolName, error }   ← 工具执行失败
+   */
+  onPart?: (part: ChatStreamPart) => void;
 }
 
 export interface ChatTurn {
@@ -213,6 +248,150 @@ export async function runAgentTurn(
         return { proposalId: proposal.id, status: "pending" };
       },
     }),
+    // ===== v0.2 展示型 tool(Generative UI)=====
+    // 安全模型:模型只选 tool + 提供 input(zod 校验),execute 只返回数据,
+    // 不改持久状态。前端按 toolName 渲染预注册的 Artifact 组件。
+    show_concept_map: tool({
+      description:
+        "生成一个概念图,理清当前节点的核心概念之间的关系。" +
+        "当你判断学习者需要可视化结构来理解时调用(如架构图、依赖关系、分类树)。" +
+        "返回的 nodes/edges 会渲染成可交互的概念图产物。",
+      inputSchema: z.object({
+        title: z.string().describe("概念图标题(如'Transformer 架构')"),
+        nodes: z
+          .array(
+            z.object({
+              id: z.string().describe("节点唯一 id(如'attention')"),
+              label: z.string().describe("节点显示文本"),
+            }),
+          )
+          .min(2)
+          .describe("概念节点列表"),
+        edges: z
+          .array(
+            z.object({
+              from: z.string().describe("起点节点 id"),
+              to: z.string().describe("终点节点 id"),
+              label: z.string().optional().describe("边标签(可选,如'输入'/'包含')"),
+            }),
+          )
+          .min(1)
+          .describe("节点间的关系边"),
+      }),
+      execute: async (input) => {
+        events.onToolCall?.("show_concept_map", input);
+        return {
+          artifactType: "concept_map",
+          title: input.title,
+          nodes: input.nodes,
+          edges: input.edges,
+        };
+      },
+    }),
+    generate_quiz: tool({
+      description:
+        "生成一组练习题(选择题/判断题),用于巩固当前节点的学习。" +
+        "当学习者需要检验理解、或主动要求练习时调用。" +
+        "返回的题目会渲染成可交互的练习卡产物(提交后自动判分 + 触发 ExplainCard)。",
+      inputSchema: z.object({
+        questions: z
+          .array(
+            z.object({
+              prompt: z.string().describe("题干"),
+              options: z.array(z.string()).min(2).describe("选项列表"),
+              answer: z.number().describe("正确选项的索引(从 0 开始)"),
+              explanation: z.string().describe("为什么这个答案对(答题反馈时展示)"),
+            }),
+          )
+          .min(1)
+          .max(5)
+          .describe("题目列表(1-5 题)"),
+      }),
+      execute: async (input) => {
+        events.onToolCall?.("generate_quiz", input);
+        return {
+          artifactType: "quiz",
+          questions: input.questions,
+        };
+      },
+    }),
+    compare_table: tool({
+      description:
+        "生成一个对比表,对比两个或多个概念/方案/技术的异同。" +
+        "当学习者问'A 和 B 有什么区别'、或需要横向对比时调用。" +
+        "返回的表格会渲染成对比表产物。",
+      inputSchema: z.object({
+        title: z.string().describe("对比表标题(如'SQL vs NoSQL')"),
+        headers: z.array(z.string()).min(2).describe("表头列名(第一列通常是维度名)"),
+        rows: z
+          .array(z.array(z.string()))
+          .min(1)
+          .describe("表格行,每行单元格数 = headers.length"),
+      }),
+      execute: async (input) => {
+        events.onToolCall?.("compare_table", input);
+        return {
+          artifactType: "compare_table",
+          title: input.title,
+          headers: input.headers,
+          rows: input.rows,
+        };
+      },
+    }),
+    draw_diagram: tool({
+      description:
+        "用 Mermaid 语法画一个流程图/时序图/状态图。" +
+        "当需要展示流程、时序、状态转换等结构化图示时调用。" +
+        "返回的 mermaid 代码会渲染成图(支持 flowchart/sequence/state)。注意只返回合法 mermaid 语法。",
+      inputSchema: z.object({
+        title: z.string().describe("图标题"),
+        diagramType: z
+          .enum(["flowchart", "sequence", "state"])
+          .describe("图类型"),
+        mermaid: z
+          .string()
+          .describe("Mermaid 语法代码(不含外层```),如 'flowchart TD\\n  A-->B'"),
+      }),
+      execute: async (input) => {
+        events.onToolCall?.("draw_diagram", input);
+        return {
+          artifactType: "diagram",
+          title: input.title,
+          diagramType: input.diagramType,
+          mermaid: input.mermaid,
+        };
+      },
+    }),
+    show_code_walkthrough: tool({
+      description:
+        "对一段代码做逐行/分段讲解。当学习者问'这段代码什么意思'、" +
+        "或当前节点含代码需要拆解时调用。返回带行号标注的代码 + 每段讲解。",
+      inputSchema: z.object({
+        title: z.string().describe("讲解标题"),
+        language: z.string().describe("代码语言(如'typescript'/'python')"),
+        code: z.string().describe("要讲解的代码"),
+        annotations: z
+          .array(
+            z.object({
+              lineStart: z.number().describe("起始行号(从 1 开始)"),
+              lineEnd: z.number().describe("结束行号"),
+              note: z.string().describe("这段代码的讲解"),
+            }),
+          )
+          .min(1)
+          .describe("逐段讲解"),
+      }),
+      execute: async (input) => {
+        events.onToolCall?.("show_code_walkthrough", input);
+        return {
+          artifactType: "code_walkthrough",
+          title: input.title,
+          language: input.language,
+          code: input.code,
+          annotations: input.annotations,
+        };
+      },
+    }),
   };
 
   try {
@@ -234,6 +413,27 @@ export async function runAgentTurn(
       if (part.type === "text-delta") {
         full += part.text;
         events.onTextDelta?.(part.text);
+        // v0.2 parts 协议：文本增量同时走 onPart（兼容期内 onTextDelta 也保留）
+        events.onPart?.({ type: "text", text: part.text });
+      } else if (part.type === "reasoning-delta") {
+        // 思考过程增量（extended thinking / reasoning models）
+        events.onPart?.({ type: "reasoning", text: part.text });
+      } else if (part.type === "tool-input-start") {
+        // 工具开始：渲染层可显示 loading 态
+        events.onPart?.({ type: "tool-start", toolName: part.toolName });
+      } else if (part.type === "tool-result") {
+        // 工具返回数据 → Generative UI 产物（M2 的 concept_map/quiz 等从这里来）
+        events.onPart?.({
+          type: "tool-result",
+          toolName: part.toolName,
+          output: part.output,
+        });
+      } else if (part.type === "tool-error") {
+        events.onPart?.({
+          type: "tool-error",
+          toolName: part.toolName,
+          error: String(part.error ?? "工具执行失败"),
+        });
       } else if (part.type === "error") {
         sawError = true;
         const classified = classifyLlmError(part.error);
@@ -294,6 +494,8 @@ export async function handleAgentChat(
         win?.webContents.send("chat:proposal", id, summary, "pending");
       },
       onError: (msg) => win?.webContents.send("chat:error", msg),
+      // v0.2 parts 协议：把 reasoning/tool-start/tool-result/tool-error 透传给渲染层
+      onPart: (part) => win?.webContents.send("chat:part", part),
     },
     controller.signal,
   );
@@ -365,5 +567,81 @@ function saveChatHistory(db: Db, nodeId: string, history: ChatTurn[]): void {
     db.insert(chatSessions)
       .values({ id: randomUUID(), nodeId, messagesJson })
       .run();
+  }
+}
+
+/* ============================================================
+ * v0.4: Thread 模型入口(类 Cursor 项目-会话)
+ * 旧 handleAgentChat(nodeId) 保留不动(向后兼容);
+ * 新 handleAgentChatThread(threadId) 从 thread 取历史 + 焦点节点,
+ * 回复写入 chat_messages 表(不再用 chat_sessions 的 messagesJson 一团)。
+ * ============================================================ */
+
+/**
+ * v0.4: 按 thread 跑一轮 agent。上下文 = thread 的所有消息 + 焦点节点 + 课程级 memory。
+ *
+ * @param threadId  会话线程 id
+ * @returns         assistant 的完整文本回复
+ */
+export async function handleAgentChatThread(
+  win: BrowserWindow | null,
+  threadId: string,
+  userMessage: string,
+): Promise<string> {
+  const db = getDb();
+
+  // 从 thread 拉历史 + 焦点节点
+  const rawMsgs = getThreadMessages(threadId);
+  const history: ChatTurn[] = rawMsgs.map((m) => ({ role: m.role, content: m.content }));
+  history.push({ role: "user", content: userMessage });
+
+  // 先把 user 消息持久化(乐观:用户消息立刻入库)
+  appendMessage(threadId, "user", userMessage);
+
+  // 找焦点节点(从 thread.focusNodeId,通过 threads 表查)
+  // 注意:thread-service 没暴露 getThread,这里直接查表
+  const threadRow = db
+    .select()
+    .from(threads)
+    .where(eq(threads.id, threadId))
+    .get();
+  const focusNodeId = threadRow?.focusNodeId ?? threadId; // fallback:无焦点就用 threadId(不理想,但防崩)
+
+  // AbortController 按 threadId 登记
+  const controller = new AbortController();
+  abortControllers.set(`thread:${threadId}`, controller);
+
+  const reply = await runAgentTurn(
+    db,
+    focusNodeId,
+    history,
+    {
+      onTextDelta: (delta) => win?.webContents.send("chat:token", delta),
+      onToolCall: (name, args) =>
+        win?.webContents.send("chat:toolCall", name, JSON.stringify(args ?? {})),
+      onProposalCreated: (id, summary) => {
+        win?.webContents.send("chat:proposal", id, summary, "pending");
+      },
+      onError: (msg) => win?.webContents.send("chat:error", msg),
+      onPart: (part) => win?.webContents.send("chat:part", part),
+    },
+    controller.signal,
+  );
+
+  abortControllers.delete(`thread:${threadId}`);
+
+  // assistant 回复入库
+  appendMessage(threadId, "assistant", reply);
+  markDirty();
+  win?.webContents.send("chat:done", reply);
+  return reply;
+}
+
+/** v0.4: 中断某 thread 正在跑的 agent 回复 */
+export function abortAgentChatThread(threadId: string): void {
+  const controller = abortControllers.get(`thread:${threadId}`);
+  if (controller) {
+    controller.abort();
+    abortControllers.delete(`thread:${threadId}`);
   }
 }

@@ -236,7 +236,7 @@ export function SettingsView() {
 
       {/* Provider 选择 */}
       <section className="surface-card p-4">
-        <h3 className="text-sm font-semibold text-neutral-300 mb-3">AI 服务商（Provider）</h3>
+        <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">AI 服务商（Provider）</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" data-testid="provider-grid">
           {presets.map((p) => (
             <button
@@ -246,10 +246,10 @@ export function SettingsView() {
               className={`text-left p-3 rounded-lg border transition-colors ${
                 activeProvider === p.id
                   ? "border-brand bg-brand/10"
-                  : "border-neutral-700 hover:border-neutral-600"
+                  : "border-neutral-300 dark:border-neutral-700 hover:border-neutral-600"
               }`}
             >
-              <div className="text-sm font-medium text-neutral-100">{p.label}</div>
+              <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{p.label}</div>
               {p.note && <div className="text-[11px] text-neutral-500 mt-0.5">{p.note}</div>}
             </button>
           ))}
@@ -262,10 +262,10 @@ export function SettingsView() {
               className={`text-left p-3 rounded-lg border transition-colors ${
                 activeProvider === c.id
                   ? "border-brand bg-brand/10"
-                  : "border-neutral-700 hover:border-neutral-600"
+                  : "border-neutral-300 dark:border-neutral-700 hover:border-neutral-600"
               }`}
             >
-              <div className="text-sm font-medium text-neutral-100">🔧 {c.label}</div>
+              <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">🔧 {c.label}</div>
               <div className="text-[11px] text-neutral-500 mt-0.5 truncate">{c.baseUrl}</div>
             </button>
           ))}
@@ -273,7 +273,7 @@ export function SettingsView() {
           <button
             onClick={() => setShowCustomForm((s) => !s)}
             data-testid="add-custom-provider"
-            className="text-left p-3 rounded-lg border border-dashed border-neutral-600 text-neutral-400 hover:border-neutral-500 hover:text-neutral-300"
+            className="text-left p-3 rounded-lg border border-dashed border-neutral-600 text-neutral-400 hover:border-neutral-500 hover:text-neutral-700 dark:text-neutral-300"
           >
             <div className="text-sm">＋ 添加自定义 Provider</div>
             <div className="text-[11px] text-neutral-600 mt-0.5">智谱 CodingPlan / Ollama / 自建代理 等</div>
@@ -282,8 +282,8 @@ export function SettingsView() {
 
         {/* 自定义 provider 添加表单 */}
         {showCustomForm && (
-          <div className="mt-4 p-4 bg-neutral-900 rounded-lg border border-neutral-700 space-y-3" data-testid="custom-provider-form">
-            <h4 className="text-sm font-semibold text-neutral-200">添加自定义 Provider</h4>
+          <div className="mt-4 p-4 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-300 dark:border-neutral-700 space-y-3" data-testid="custom-provider-form">
+            <h4 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">添加自定义 Provider</h4>
             <div>
               <label className="text-xs text-neutral-400 block mb-1">名称（自己起个名字）</label>
               <input
@@ -292,7 +292,7 @@ export function SettingsView() {
                 onChange={(e) => setCustomLabel(e.target.value)}
                 placeholder="如：智谱 CodingPlan CN"
                 data-testid="custom-label"
-                className="w-full bg-neutral-950 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
               />
             </div>
             <div>
@@ -301,7 +301,7 @@ export function SettingsView() {
                 value={customProtocol}
                 onChange={(e) => setCustomProtocol(e.target.value as "openai-compatible" | "anthropic" | "google")}
                 data-testid="custom-protocol"
-                className="w-full bg-neutral-950 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700"
+                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700"
               >
                 <option value="openai-compatible">OpenAI 兼容（大多数，含 GLM/DeepSeek/Ollama）</option>
                 <option value="anthropic">Anthropic（Claude 原生）</option>
@@ -316,7 +316,7 @@ export function SettingsView() {
                 onChange={(e) => setCustomBaseUrl(e.target.value)}
                 placeholder="如 https://api.z.ai/api/coding/paas/v4"
                 data-testid="custom-baseurl"
-                className="w-full bg-neutral-950 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none font-mono"
+                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono"
               />
               <p className="text-[11px] text-neutral-600 mt-1">
                 智谱 CodingPlan CN: <code>https://api.z.ai/api/coding/paas/v4</code> ·
@@ -331,7 +331,7 @@ export function SettingsView() {
                 onChange={(e) => setCustomModel(e.target.value)}
                 placeholder="如 glm-4.6 / gpt-4o / qwen2.5-coder:7b"
                 data-testid="custom-model"
-                className="w-full bg-neutral-950 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none font-mono"
+                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono"
               />
             </div>
             <div>
@@ -342,7 +342,7 @@ export function SettingsView() {
                 onChange={(e) => setCustomApiKey(e.target.value)}
                 placeholder="粘贴 API key（Ollama/LM Studio 不需要）"
                 data-testid="custom-apikey"
-                className="w-full bg-neutral-950 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
               />
             </div>
             {/* 测试结果 */}
@@ -356,7 +356,7 @@ export function SettingsView() {
                 onClick={handleTestCustom}
                 disabled={!customBaseUrl.trim() || !customModel.trim() || customTesting}
                 data-testid="custom-test"
-                className="text-sm bg-neutral-700 text-neutral-100 px-3 py-2 rounded hover:bg-neutral-600 disabled:opacity-40"
+                className="text-sm bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 px-3 py-2 rounded hover:bg-neutral-600 disabled:opacity-40"
               >
                 {customTesting ? "测试中…" : "测试连接"}
               </button>
@@ -370,7 +370,7 @@ export function SettingsView() {
               </button>
               <button
                 onClick={() => setShowCustomForm(false)}
-                className="text-sm text-neutral-500 hover:text-neutral-300 px-3 py-2"
+                className="text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-300 px-3 py-2"
               >
                 取消
               </button>
@@ -382,7 +382,7 @@ export function SettingsView() {
         {customProviders.length > 0 && (
           <div className="mt-3 space-y-1">
             {customProviders.map((c) => (
-              <div key={c.id} className="flex items-center justify-between text-xs bg-neutral-950/50 px-3 py-1.5 rounded">
+              <div key={c.id} className="flex items-center justify-between text-xs bg-neutral-100 dark:bg-neutral-950/50 px-3 py-1.5 rounded">
                 <span className="text-neutral-400">🔧 {c.label} · {c.protocol}</span>
                 <button
                   onClick={() => handleDeleteCustom(c.id)}
@@ -400,7 +400,7 @@ export function SettingsView() {
       {currentPreset ? (
         <section className="surface-card p-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-neutral-300">模型（Model）</h3>
+            <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">模型（Model）</h3>
             {/* 只对 OpenRouter provider 显示"从 OpenRouter 刷新" */}
             {activeProvider === "openrouter" && (
               <button
@@ -417,7 +417,7 @@ export function SettingsView() {
             value={activeModel}
             onChange={(e) => setActiveModel(e.target.value)}
             data-testid="model-select"
-            className="w-full bg-neutral-950 text-neutral-100 text-sm rounded-xl px-3 py-2.5 border-2 border-neutral-700 focus:border-brand focus:outline-none"
+            className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded-xl px-3 py-2.5 border-2 border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
           >
             {currentPreset.models.map((m) => (
               <option key={m.id} value={m.id}>
@@ -438,13 +438,13 @@ export function SettingsView() {
         </section>
       ) : activeCustomProvider ? (
         <section className="surface-card p-4">
-          <h3 className="text-sm font-semibold text-neutral-300 mb-3">模型（Model）</h3>
+          <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">模型（Model）</h3>
           {activeCustomProvider.models.length > 1 ? (
             <select
               value={activeModel}
               onChange={(e) => setActiveModel(e.target.value)}
               data-testid="model-select-custom"
-              className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+              className="w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
             >
               {activeCustomProvider.models.map((m) => (
                 <option key={m.id} value={m.id}>{m.label}</option>
@@ -457,7 +457,7 @@ export function SettingsView() {
               onChange={(e) => setActiveModel(e.target.value)}
               placeholder="输入模型 ID"
               data-testid="model-input-custom"
-              className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none font-mono"
+              className="w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono"
             />
           )}
         </section>
@@ -467,7 +467,7 @@ export function SettingsView() {
       {currentPreset && (
         <section className="surface-card p-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-neutral-300">API Key</h3>
+            <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">API Key</h3>
             <a
               href={currentPreset.keyUrl}
               target="_blank"
@@ -479,7 +479,7 @@ export function SettingsView() {
           </div>
           {keyMasked && (
             <div className="text-xs text-neutral-400 mb-2" data-testid="key-status">
-              ✅ 已配置：<code className="bg-neutral-800 px-1 rounded">{keyMasked}</code>
+              ✅ 已配置：<code className="bg-neutral-200 dark:bg-neutral-800 px-1 rounded">{keyMasked}</code>
             </div>
           )}
           <input
@@ -488,7 +488,7 @@ export function SettingsView() {
             onChange={(e) => setKeyInput(e.target.value)}
             placeholder={keyMasked ? "输入新 key 覆盖…" : "粘贴 API key（sk-…）"}
             data-testid="settings-key-input"
-            className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+            className="w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
           />
           <p className="text-[11px] text-neutral-600 mt-2">
             🔒 key 只存在本地主进程，不离开你的电脑。渲染层永远看不到完整 key。
@@ -499,7 +499,7 @@ export function SettingsView() {
       {/* 测试连接 */}
       <section className="surface-card p-4">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-neutral-300">测试连接</h3>
+          <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">测试连接</h3>
           <button
             onClick={handleTest}
             disabled={testing}
@@ -524,7 +524,7 @@ export function SettingsView() {
 
       {/* 每日目标 */}
       <section className="surface-card p-4">
-        <h3 className="text-sm font-semibold text-neutral-300 mb-3">每日学习目标（XP）</h3>
+        <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">每日学习目标（XP）</h3>
         <div className="flex gap-2 items-center">
           <input
             type="number"
@@ -533,7 +533,7 @@ export function SettingsView() {
             min="1"
             max="500"
             data-testid="daily-goal-input"
-            className="w-24 bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+            className="w-24 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
           />
           <span className="text-xs text-neutral-500">XP / 天（每答对一题 +10 XP）</span>
         </div>
@@ -541,7 +541,7 @@ export function SettingsView() {
 
       {/* 语言选择 */}
       <section className="surface-card p-4">
-        <h3 className="text-sm font-semibold text-neutral-300 mb-3">语言 / Language</h3>
+        <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">语言 / Language</h3>
         <div className="flex gap-2">
           {(["zh-CN", "en"] as const).map((l) => (
             <button
@@ -552,7 +552,7 @@ export function SettingsView() {
               }}
               data-testid={`lang-${l}`}
               className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${
-                currentLang === l ? "bg-brand text-white" : "bg-neutral-800 text-neutral-400 hover:text-neutral-200"
+                currentLang === l ? "bg-brand text-white" : "bg-neutral-800 text-neutral-400 hover:text-neutral-700 dark:text-neutral-200"
               }`}
             >
               {l === "zh-CN" ? "中文" : "English"}

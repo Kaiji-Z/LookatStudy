@@ -117,16 +117,16 @@ export function ImportView({
       </p>
 
       {/* 方式切换 */}
-      <div className="flex gap-2 border-b border-neutral-800">
+      <div className="flex gap-2 border-b border-neutral-200 dark:border-neutral-800">
         <button
           onClick={() => setTab("url")}
-          className={`px-4 py-2 text-sm border-b-2 ${tab === "url" ? "border-brand text-brand" : "border-transparent text-neutral-500 hover:text-neutral-300"}`}
+          className={`px-4 py-2 text-sm border-b-2 ${tab === "url" ? "border-brand text-brand" : "border-transparent text-neutral-500 hover:text-neutral-700 dark:text-neutral-300"}`}
         >
           GitHub URL
         </button>
         <button
           onClick={() => setTab("markdown")}
-          className={`px-4 py-2 text-sm border-b-2 ${tab === "markdown" ? "border-brand text-brand" : "border-transparent text-neutral-500 hover:text-neutral-300"}`}
+          className={`px-4 py-2 text-sm border-b-2 ${tab === "markdown" ? "border-brand text-brand" : "border-transparent text-neutral-500 hover:text-neutral-700 dark:text-neutral-300"}`}
         >
           粘贴 Markdown
         </button>
@@ -134,14 +134,14 @@ export function ImportView({
 
       {tab === "url" ? (
         <section className="space-y-3" data-testid="import-url-section">
-          <label className="text-sm text-neutral-300 block">GitHub 仓库 URL</label>
+          <label className="text-sm text-neutral-700 dark:text-neutral-300 block">GitHub 仓库 URL</label>
           <input
             type="text"
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
             placeholder="https://github.com/owner/repo"
             data-testid="repo-url-input"
-            className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+            className="w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
           />
           <button
             onClick={handleImportUrl}
@@ -158,25 +158,25 @@ export function ImportView({
       ) : (
         <section className="space-y-3" data-testid="import-md-section">
           <div>
-            <label className="text-sm text-neutral-300 block mb-1">课程名称</label>
+            <label className="text-sm text-neutral-700 dark:text-neutral-300 block mb-1">课程名称</label>
             <input
               type="text"
               value={repoName}
               onChange={(e) => setRepoName(e.target.value)}
               placeholder="例如：React 学习指南"
               data-testid="md-name-input"
-              className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none"
+              className="w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
             />
           </div>
           <div>
-            <label className="text-sm text-neutral-300 block mb-1">Markdown 内容</label>
+            <label className="text-sm text-neutral-700 dark:text-neutral-300 block mb-1">Markdown 内容</label>
             <textarea
               value={mdText}
               onChange={(e) => setMdText(e.target.value)}
               placeholder={"# 课程标题\n\n## 第一章\n\n### 课时1：基础\n内容...\n\n### 课时2：进阶\n..."}
               rows={10}
               data-testid="md-text-input"
-              className="w-full bg-neutral-900 text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-700 focus:border-brand focus:outline-none font-mono"
+              className="w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono"
             />
             <p className="text-[11px] text-neutral-600 mt-1">
               H2 (##) → 章节，H3 (###) → 课时。支持 GitHub Flavored Markdown。
@@ -195,7 +195,7 @@ export function ImportView({
 
       {/* 反馈 */}
       {busy && progressMsg && (
-        <div className="bg-neutral-900/50 text-neutral-300 text-sm rounded p-3 flex items-center gap-2" data-testid="import-progress">
+        <div className="bg-neutral-100 dark:bg-neutral-900/50 text-neutral-700 dark:text-neutral-300 text-sm rounded p-3 flex items-center gap-2" data-testid="import-progress">
           <span className="inline-block w-3 h-3 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0"></span>
           {progressMsg}
         </div>
@@ -212,8 +212,8 @@ export function ImportView({
       )}
 
       {/* 已导入课程列表 */}
-      <section className="pt-4 border-t border-neutral-800">
-        <h3 className="text-sm font-semibold text-neutral-300 mb-3">已导入的课程</h3>
+      <section className="pt-4 border-t border-neutral-200 dark:border-neutral-800">
+        <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">已导入的课程</h3>
         {courses.length === 0 ? (
           <p className="text-xs text-neutral-600">还没有课程。用上面的方式导入第一个吧。</p>
         ) : (
@@ -226,7 +226,7 @@ export function ImportView({
                 }`}
               >
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-neutral-100 truncate">{c.title}</div>
+                  <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">{c.title}</div>
                   <div className="text-[11px] text-neutral-500">{c.repoName}</div>
                 </div>
                 <div className="flex gap-2 shrink-0">

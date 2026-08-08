@@ -21,19 +21,33 @@
     user-select: text;
   }
 
-  /* 亮色模式：覆盖 dark-first 的中性色变量 */
-  html:not(.dark) body {
-    @apply bg-neutral-50 text-neutral-900;
-  }
-  html:not(.dark) ::-webkit-scrollbar-thumb {
-    background: rgb(212 212 216);
-  }
-  html:not(.dark) ::-webkit-scrollbar-thumb:hover {
-    background: rgb(161 161 170);
-  }
+  /* v0.5: 浅色模式已移除,专注深色。浅色相关覆盖代码清理。
+     后续若恢复浅色,需系统实现(非散修)。 */
 }
 
 /* === Duolingo-inspired design system === */
+
+/* v0.4 设计 token:统一的 elevation(阴影)+ radius(圆角)语义。
+   所有组件用这些 token,禁止裸 tailwind shadow / rounded 混用。
+   规范(impeccable polish):
+     - radius: tag/button=full, card=lg(12px), panel/menu=xl(16px), input=md(8px)
+     - elevation: 浮层=shadow-elevated(仅阴影无边框), 卡片=shadow-card(细边框+微阴影二选一)
+   ghost-card 禁令:1px border + 大阴影 blur 不能同用(Codex defect)。 */
+@layer components {
+  /* elevation 语义(只用阴影,不配 border) */
+  .shadow-elevated {
+    /* 浮层/抽屉/菜单:明显抬起感 */
+    box-shadow: 0 8px 24px -4px rgb(0 0 0 / 0.18), 0 2px 6px -2px rgb(0 0 0 / 0.12);
+  }
+  .shadow-card {
+    /* 卡片:微阴影,不配 border(若需分隔用 border 单独) */
+    box-shadow: 0 1px 3px -1px rgb(0 0 0 / 0.08);
+  }
+  .shadow-pop {
+    /* 弹出菜单/tooltip:中等抬起 */
+    box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.14), 0 1px 3px -1px rgb(0 0 0 / 0.08);
+  }
+}
 
 /* 3D push-down buttons (Duolingo signature style) */
 @layer components {
@@ -66,57 +80,124 @@
   }
 }
 
-/* Lesson bubble 3D depth — Duolingo's signature rounded node */
+/* ============================================================
+ * v0.5 选关地图节点美术(多邻国 2024+ 现代风)
+ * 核心:radial-gradient 球体光照 + ::before 内高光 + ::after 发光环
+ * 四态差异最大化:locked 沉重凹陷 / available 发光脉冲 /
+ *                in_progress 进度环 / mastered 皇冠光环放大
+ * ============================================================ */
+
 .lesson-bubble {
   @apply relative rounded-full transition-all duration-200;
+  /* 球体光照:左上高光位 → 右下阴影位,模拟 3D 球 */
+  background-position: 30% 25%;
 }
+
+/* 内高光:球体顶部白色半圆(模拟光照) */
+.lesson-bubble::before {
+  content: "";
+  position: absolute;
+  top: 12%;
+  left: 22%;
+  width: 38%;
+  height: 28%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 70%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── 🔒 locked:沉重灰石头,凹陷感 ── */
+.lesson-bubble-locked {
+  background: radial-gradient(circle at 35% 30%, #4a4a52 0%, #2a2a32 60%, #1a1a20 100%);
+  box-shadow:
+    inset 0 3px 6px rgba(0,0,0,0.5),
+    inset 0 -2px 4px rgba(255,255,255,0.04),
+    0 2px 4px rgba(0,0,0,0.3);
+}
+.lesson-bubble-locked::before {
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0) 70%);
+}
+
+/* ── 🟢 available:明亮发光球,该你了 ── */
 .lesson-bubble-available {
-  @apply bg-gradient-to-br from-brand to-brand-dark text-white;
-  box-shadow: 0 6px 0 0 #46a302, 0 8px 16px rgba(88, 204, 2, 0.3);
+  background: radial-gradient(circle at 32% 28%, #8eea4a 0%, #58cc02 45%, #46a302 100%);
+  box-shadow:
+    0 0 0 4px rgba(88, 204, 2, 0.15),
+    0 0 16px rgba(88, 204, 2, 0.35),
+    0 4px 10px rgba(0,0,0,0.25);
 }
 .lesson-bubble-available:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 0 0 #46a302, 0 12px 20px rgba(88, 204, 2, 0.4);
+  transform: translateY(-3px) scale(1.03);
+  box-shadow:
+    0 0 0 5px rgba(88, 204, 2, 0.2),
+    0 0 22px rgba(88, 204, 2, 0.5),
+    0 6px 14px rgba(0,0,0,0.3);
 }
 .lesson-bubble-available:active {
-  transform: translateY(4px);
-  box-shadow: 0 2px 0 0 #46a302, 0 4px 8px rgba(88, 204, 2, 0.2);
-}
-.lesson-bubble-in-progress {
-  @apply bg-gradient-to-br from-accent to-accent-dark text-white;
-  box-shadow: 0 6px 0 0 #0a8cdc, 0 8px 16px rgba(28, 176, 246, 0.3);
-}
-.lesson-bubble-mastered {
-  @apply bg-gradient-to-br from-yellow-400 to-yellow-600 text-white;
-  box-shadow: 0 6px 0 0 #b8860b, 0 8px 16px rgba(255, 200, 0, 0.3);
-}
-.lesson-bubble-locked {
-  @apply bg-neutral-800 text-neutral-600;
-  box-shadow: 0 4px 0 0 #262626;
+  transform: translateY(2px) scale(0.97);
+  box-shadow:
+    0 0 0 3px rgba(88, 204, 2, 0.15),
+    0 0 10px rgba(88, 204, 2, 0.3),
+    0 2px 6px rgba(0,0,0,0.2);
 }
 
-/* Pulse animation for available lessons */
-@keyframes bubble-pulse {
+/* ── 🔵 in_progress:蓝色动感,进行中 ── */
+.lesson-bubble-in-progress {
+  background: radial-gradient(circle at 32% 28%, #5ed4ff 0%, #1cb0f6 45%, #0a8cdc 100%);
+  box-shadow:
+    0 0 0 4px rgba(28, 176, 246, 0.15),
+    0 0 14px rgba(28, 176, 246, 0.3),
+    0 4px 10px rgba(0,0,0,0.25);
+}
+.lesson-bubble-in-progress:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow:
+    0 0 0 5px rgba(28, 176, 246, 0.2),
+    0 0 20px rgba(28, 176, 246, 0.45),
+    0 6px 14px rgba(0,0,0,0.3);
+}
+
+/* ── 🟡 mastered:金色耀眼,皇冠光环,球体放大 ── */
+.lesson-bubble-mastered {
+  background: radial-gradient(circle at 32% 28%, #ffe680 0%, #ffc800 45%, #d99e00 100%);
+  box-shadow:
+    0 0 0 4px rgba(255, 200, 0, 0.2),
+    0 0 22px rgba(255, 200, 0, 0.45),
+    0 0 40px rgba(255, 200, 0, 0.15),
+    0 4px 12px rgba(0,0,0,0.25);
+  transform: scale(1.1);
+}
+.lesson-bubble-mastered::before {
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 70%);
+}
+.lesson-bubble-mastered:hover {
+  transform: scale(1.13) translateY(-2px);
+  box-shadow:
+    0 0 0 5px rgba(255, 200, 0, 0.25),
+    0 0 28px rgba(255, 200, 0, 0.55),
+    0 0 50px rgba(255, 200, 0, 0.2),
+    0 6px 16px rgba(0,0,0,0.3);
+}
+
+/* v0.2: 移除 bubble-pulse / flame-flicker 无限循环装饰动效。
+   理由:product register "motion 传达状态非装饰"。无限脉冲违反此原则。
+   overdue/available 节点改用静态视觉(颜色 + 标签)。streak 用静态 🔥 + 数字。
+   保留:typing-dot(传达 AI 工作中)、msg-enter(消息入场)、tab 过渡(状态切换)。 */
+
+/* v0.3: 恢复克制的 active 节点脉冲(只在"当前可学"节点,传达"该你了"状态)。
+   比旧版更克制(幅度小、慢周期),且尊重 reduced-motion。这是趣味性钩子之一。 */
+@keyframes bubble-active-pulse {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+  50% { transform: scale(1.04); }
 }
 .lesson-bubble-available {
-  animation: bubble-pulse 2s ease-in-out infinite;
-}
-
-/* Streak flame animation */
-@keyframes flame-flicker {
-  0%, 100% { transform: scale(1) rotate(-2deg); }
-  50% { transform: scale(1.1) rotate(2deg); }
-}
-.streak-flame {
-  animation: flame-flicker 1.5s ease-in-out infinite;
-  transform-origin: bottom center;
+  animation: bubble-active-pulse 2.4s ease-in-out infinite;
 }
 
 /* Card surface */
 .surface-card {
-  @apply bg-neutral-900 border border-neutral-800 rounded-2xl;
+  @apply bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl;
 }
 
 /* Mode tab underline */

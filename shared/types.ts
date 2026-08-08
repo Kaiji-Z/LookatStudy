@@ -245,6 +245,8 @@ export interface ApiExpose {
 
   /* SRS */
   getDueReviews(): Promise<string[]>;
+  /** v0.2: 所有 SRS 项详情(供四象限复习面板)。返回 intervalDays/repetitions/dueAt/overdue。 */
+  getAllSrsItems(): Promise<Array<{ nodeId: string; intervalDays: number; repetitions: number; dueAt: string; overdue: boolean }>>;
   recordReview(nodeId: string, quality: ReviewQuality): Promise<void>;
 
   /* 打卡 */
@@ -259,6 +261,10 @@ export interface ApiExpose {
   getChatHistory(nodeId: string): Promise<ChatMessage[]>;
   /** 清空某节点的聊天历史 */
   clearChatHistory(nodeId: string): Promise<void>;
+  /** v0.4: Thread 模式发消息(传 threadId,从 thread 装配上下文) */
+  agentChatThread(threadId: string, userMessage: string): Promise<string>;
+  /** v0.4: 中断某 thread 的 agent 回复 */
+  abortAgentChatThread(threadId: string): Promise<void>;
 
   /* Skill 系统（M1） */
   listSkills(): Promise<Skill[]>;
@@ -352,6 +358,55 @@ export interface ApiExpose {
   getXpStatus(): Promise<{ todayXp: number; dailyGoal: number; achieved: boolean; pct: number }>;
   /** 导出学习记录（JSON / Markdown 格式） */
   exportCourse(courseId: string, format: "json" | "markdown"): Promise<string>;
+
+  /* v0.3: Canvas 画布(黑板笔记本)—— AI 产物持久化 */
+  canvasList(courseId: string, nodeId?: string | null): Promise<CanvasItem[]>;
+  canvasSave(input: { nodeId?: string | null; courseId: string; artifactType: string; title?: string | null; data: unknown }): Promise<CanvasItem>;
+  canvasDelete(id: string): Promise<void>;
+  canvasTogglePin(id: string): Promise<CanvasItem | null>;
+
+  /* v0.4: Thread 会话(类 Cursor 项目-会话) */
+  threadList(courseId: string, status?: "active" | "archived"): Promise<Thread[]>;
+  threadCreate(input: { courseId: string; focusNodeId?: string | null; title?: string | null }): Promise<Thread>;
+  threadUpdate(id: string, patch: { title?: string; status?: "active" | "archived"; focusNodeId?: string | null }): Promise<Thread | null>;
+  threadDelete(id: string): Promise<void>;
+  threadGetMessages(threadId: string): Promise<ChatMessageRow[]>;
+  threadFindRecentByNode(courseId: string, nodeId: string): Promise<Thread | null>;
+}
+
+/** v0.4: 会话线程 */
+export interface Thread {
+  id: string;
+  courseId: string;
+  title: string | null;
+  focusNodeId: string | null;
+  status: "active" | "archived";
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+/** v0.4: 单条对话消息 */
+export interface ChatMessageRow {
+  id: string;
+  threadId: string;
+  role: "user" | "assistant";
+  content: string;
+  partsJson: string | null;
+  createdAt: string;
+}
+
+/** v0.3: canvas_items 表的一行(对齐 DB schema)。 */
+export interface CanvasItem {
+  id: string;
+  nodeId: string | null;
+  courseId: string;
+  artifactType: string;
+  title: string | null;
+  data: string;
+  pinned: number;
+  createdAt: string;
+  notes: string | null;
 }
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;
@@ -382,6 +437,18 @@ export type SettingKey =
 
 /* ---------- IPC 事件（main → renderer，单向推送） ---------- */
 
+/**
+ * v0.2 流式 part 类型（parts-based 渲染协议）。
+ * 对齐 AI SDK v5 fullStream，简化为渲染层友好形态。
+ * ChatStream 渲染层按 part.type 累积到 message.parts[]，不再字符串拼接。
+ */
+export type ChatStreamPart =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "tool-start"; toolName: string }
+  | { type: "tool-result"; toolName: string; output: unknown }
+  | { type: "tool-error"; toolName: string; error: string };
+
 export interface IpcEvents {
   "chat:token": (chunk: string) => void;
   "chat:done": (fullText: string) => void;
@@ -391,4 +458,9 @@ export interface IpcEvents {
   /** 提议创建事件（结构化，供聊天栏渲染应用/拒绝卡） */
   "chat:proposal": (proposalId: string, summary: string, status: string) => void;
   "import:progress": (message: string) => void;
+  /**
+   * v0.2 parts-based 流式协议：把 fullStream 的 part 透传给渲染层。
+   * 与 chat:token 并存（兼容期），渲染层可二选一。M2 起优先用 chat:part。
+   */
+  "chat:part": (part: ChatStreamPart) => void;
 }

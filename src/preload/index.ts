@@ -146,18 +146,22 @@ const api = {
     ipcRenderer.invoke("canvas:delete", id)) as ApiExpose["canvasDelete"],
   canvasTogglePin: ((id: string) =>
     ipcRenderer.invoke("canvas:togglePin", id)) as ApiExpose["canvasTogglePin"],
-  /** 用户画线加笔记(user_note),带溯源(content/chat) */
+  /** 用户画线加笔记(user_note),带溯源(content/chat)。comment 为可选初始注释 */
   canvasSaveUserNote: ((input: {
     nodeId: string;
     courseId: string;
     text: string;
     sourceType: "content" | "chat";
     sourceAnchor: NoteSourceAnchor;
+    comment?: string;
   }) =>
     ipcRenderer.invoke("canvas:saveUserNote", input)) as ApiExpose["canvasSaveUserNote"],
   /** quiz 重做后更新 last_result(只保留最近一次) */
   canvasRecordQuizResult: ((id: string, correct: boolean) =>
     ipcRenderer.invoke("canvas:recordQuizResult", id, correct)) as ApiExpose["canvasRecordQuizResult"],
+  /** 更新 user_note 的用户注释(空串=删除) */
+  canvasUpdateUserNoteComment: ((id: string, comment: string) =>
+    ipcRenderer.invoke("canvas:updateUserNoteComment", id, comment)) as ApiExpose["canvasUpdateUserNoteComment"],
 
   /* v0.4: Thread 会话 */
   threadList: ((courseId: string, status?: "active" | "archived") =>

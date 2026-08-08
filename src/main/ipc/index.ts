@@ -39,6 +39,7 @@ import {
   togglePinCanvasItem,
   saveUserNote,
   recordQuizResult,
+  updateUserNoteComment,
   type CanvasZone,
 } from "../services/canvas-service.js";
 
@@ -883,6 +884,10 @@ export function registerCanvasHandlers(): void {
   // quiz 重做后更新 last_result(只保留最近一次)
   ipcMain.handle("canvas:recordQuizResult", async (_e, id: string, correct: boolean) => {
     return recordQuizResult(id, correct);
+  });
+  // 更新 user_note 的用户注释(canvas_items.notes 列)
+  ipcMain.handle("canvas:updateUserNoteComment", async (_e, id: string, comment: string) => {
+    return updateUserNoteComment(id, comment);
   });
 }
 

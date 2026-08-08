@@ -5,7 +5,7 @@
  *   - 讲解(默认):当前节点 markdown 内容,选区可"提问这段"或"加到笔记"
  *   - 笔记:康奈尔笔记法三区
  *     · 🗺️ 理解区(线索区):AI 产物(概念图/对比表/流程图/代码讲解)—— 知识结构
- *     · ✏️ 笔记区(笔记区):用户画线笔记(user_note,带溯源跳转)—— 个人内化
+ *     · ✏️ 记录区(笔记区):用户画线笔记(user_note,带溯源跳转)—— 个人内化
  *     · 📝 练习区(总结区):quiz 产物,可重做,显示上次答对/答错 —— 检验
  *
  * 砍掉了"全部"tab —— 笔记跟随节点,跨节点靠左侧地图切换。
@@ -17,7 +17,7 @@ import remarkGfm from "remark-gfm";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
-import { Pin, Trash, ChevronDown } from "lucide-react";
+import { Pin, Trash, ChevronDown, Pencil, Check, X } from "lucide-react";
 
 export type NotebookTab = "content" | "notes";
 
@@ -33,6 +33,8 @@ interface NotebookPanelProps {
   onRecordQuizResult: (id: string, correct: boolean) => void;
   /** 用户从讲解区画线加笔记 */
   onSaveContentNote: (text: string, anchor: NoteSourceAnchor) => void;
+  /** 更新 user_note 的用户注释(空串=删除) */
+  onUpdateNoteComment?: (id: string, comment: string) => void;
   /** 笔记卡溯源跳转:点击 → 切到讲解/对话定位高亮。noteText 用于消息内文字级定位,noteId 用于画线定位 */
   onJumpToSource?: (anchor: NoteSourceAnchor, noteText?: string, noteId?: string) => void;
   /** 选中文字后"提问这段"→ 插入聊天框(哪里不会点哪里) */
@@ -49,6 +51,7 @@ export function NotebookPanel({
   onTogglePin,
   onRecordQuizResult,
   onSaveContentNote,
+  onUpdateNoteComment,
   onJumpToSource,
   onQuoteToChat,
 }: NotebookPanelProps) {
@@ -106,6 +109,7 @@ export function NotebookPanel({
             onRemove={onRemove}
             onTogglePin={onTogglePin}
             onRecordQuizResult={onRecordQuizResult}
+            onUpdateNoteComment={onUpdateNoteComment}
             onJumpToSource={onJumpToSource}
           />
         )}
@@ -301,7 +305,7 @@ function ContentTab({
             onClick={handleSaveNoteClick}
             data-testid="save-note-btn"
             className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-bold shadow-elevated flex items-center gap-1 hover:brightness-110 transition"
-            title="把选中文字存到笔记区,带溯源跳转"
+            title="把选中文字存到记录区,带溯源跳转"
           >
             ✏️ 加笔记
           </button>
@@ -328,6 +332,7 @@ function NotesTab({
   onRemove,
   onTogglePin,
   onRecordQuizResult,
+  onUpdateNoteComment,
   onJumpToSource,
 }: {
   items: CanvasItem[];
@@ -336,6 +341,7 @@ function NotesTab({
   onRemove: (id: string) => void;
   onTogglePin: (id: string) => void;
   onRecordQuizResult: (id: string, correct: boolean) => void;
+  onUpdateNoteComment?: (id: string, comment: string) => void;
   onJumpToSource?: (anchor: NoteSourceAnchor) => void;
 }) {
   if (!selectedNode) {
@@ -374,6 +380,7 @@ function NotesTab({
         subtitle="AI 帮你梳理的知识结构"
         count={understandItems.length}
         testid="zone-understand"
+        defaultOpen={false}
       >
         {understandItems.length === 0 ? (
           <ZoneEmpty hint="问 AI「画个概念图」「做个对比表」梳理这一节" />
@@ -385,19 +392,21 @@ function NotesTab({
               onRemove={onRemove}
               onTogglePin={onTogglePin}
               onRecordQuizResult={onRecordQuizResult}
+              onUpdateNoteComment={onUpdateNoteComment}
               onJumpToSource={onJumpToSource}
             />
           ))
         )}
       </ZoneSection>
 
-      {/* ✏️ 笔记区(笔记区) */}
+      {/* ✏️ 记录区(笔记区:user_note) */}
       <ZoneSection
-        title="笔记"
+        title="记录"
         icon="✏️"
         subtitle="你的画线,点击可跳回原位"
         count={noteItems.length}
         testid="zone-note"
+        defaultOpen={false}
       >
         {noteItems.length === 0 ? (
           <ZoneEmpty hint="选中讲解或对话的文字,点「✏️ 加笔记」存到这里" />
@@ -409,6 +418,7 @@ function NotesTab({
               onRemove={onRemove}
               onTogglePin={onTogglePin}
               onRecordQuizResult={onRecordQuizResult}
+              onUpdateNoteComment={onUpdateNoteComment}
               onJumpToSource={onJumpToSource}
             />
           ))
@@ -426,6 +436,7 @@ function NotesTab({
         }
         count={practiceItems.length}
         testid="zone-practice"
+        defaultOpen={false}
       >
         {practiceItems.length === 0 ? (
           <ZoneEmpty hint="问 AI「出 3 道题考考我」,题目会自动进这里" />
@@ -437,6 +448,7 @@ function NotesTab({
               onRemove={onRemove}
               onTogglePin={onTogglePin}
               onRecordQuizResult={onRecordQuizResult}
+              onUpdateNoteComment={onUpdateNoteComment}
               onJumpToSource={onJumpToSource}
             />
           ))
@@ -453,6 +465,7 @@ function ZoneSection({
   subtitle,
   count,
   testid,
+  defaultOpen = true,
   children,
 }: {
   title: string;
@@ -460,9 +473,11 @@ function ZoneSection({
   subtitle: string;
   count: number;
   testid: string;
+  /** 初始展开/折叠;默认展开。三区默认折叠以减少视觉噪音 */
+  defaultOpen?: boolean;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <section
       className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden"
@@ -496,14 +511,19 @@ function CanvasItemCard({
   onRemove,
   onTogglePin,
   onRecordQuizResult,
+  onUpdateNoteComment,
   onJumpToSource,
 }: {
   item: CanvasItem;
   onRemove: (id: string) => void;
   onTogglePin: (id: string) => void;
   onRecordQuizResult: (id: string, correct: boolean) => void;
+  onUpdateNoteComment?: (id: string, comment: string) => void;
   onJumpToSource?: (anchor: NoteSourceAnchor, noteText?: string, noteId?: string) => void;
 }) {
+  // user_note 注释编辑态(本地 state,保存/取消即退出)
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item.notes ?? "");
   // quiz 产物答题 → 触发 mastery 更新 + 记录 last_result
   const handleQuizAnswered = useCallback(
     (_q: { prompt: string }, _idx: number, correct: boolean) => {
@@ -547,8 +567,21 @@ function CanvasItemCard({
   const created = new Date(item.createdAt);
   const timeStr = `${created.getMonth() + 1}/${created.getDate()} ${created.getHours().toString().padStart(2, "0")}:${created.getMinutes().toString().padStart(2, "0")}`;
 
-  // user_note 卡:简洁的画线 + 溯源跳转
+  // user_note 卡:画线 + 溯源跳转 + 用户注释
   if (isUserNote) {
+    const existingComment = item.notes && item.notes.trim().length > 0 ? item.notes : null;
+    const handleStartEdit = () => {
+      setDraft(existingComment ?? "");
+      setEditing(true);
+    };
+    const handleCancelEdit = () => {
+      setDraft(existingComment ?? "");
+      setEditing(false);
+    };
+    const handleSaveComment = () => {
+      onUpdateNoteComment?.(item.id, draft);
+      setEditing(false);
+    };
     return (
       <div
         className={`surface-card p-3 relative ${item.pinned ? "border-brand/40 bg-brand/5" : ""}`}
@@ -560,6 +593,60 @@ function CanvasItemCard({
             <div className="text-xs text-neutral-800 dark:text-neutral-200 leading-relaxed whitespace-pre-wrap">
               {noteText}
             </div>
+            {/* 用户注释:已有 → 显示引用块 + 编辑;编辑态 → textarea */}
+            {onUpdateNoteComment && editing ? (
+              <div className="mt-2 space-y-1.5" data-testid={`note-comment-edit-${item.id.slice(0, 8)}`}>
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  rows={2}
+                  placeholder="写下你的注释…(留空保存=删除注释)"
+                  className="w-full text-[11px] leading-relaxed p-2 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 resize-none focus:outline-none focus:border-brand"
+                  data-testid={`note-comment-textarea-${item.id.slice(0, 8)}`}
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSaveComment}
+                    className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-brand hover:bg-brand/90 px-2 py-0.5 rounded"
+                    data-testid={`note-comment-save-${item.id.slice(0, 8)}`}
+                  >
+                    <Check className="w-3 h-3" /> 保存
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="inline-flex items-center gap-1 text-[10px] text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    data-testid={`note-comment-cancel-${item.id.slice(0, 8)}`}
+                  >
+                    <X className="w-3 h-3" /> 取消
+                  </button>
+                </div>
+              </div>
+            ) : existingComment ? (
+              <div className="mt-2 pl-2 border-l-2 border-accent/40">
+                <div className="text-[11px] text-neutral-600 dark:text-neutral-400 italic leading-relaxed whitespace-pre-wrap">
+                  {existingComment}
+                </div>
+                {onUpdateNoteComment && (
+                  <button
+                    onClick={handleStartEdit}
+                    className="mt-1 inline-flex items-center gap-0.5 text-[10px] text-neutral-400 hover:text-accent"
+                    data-testid={`note-comment-edit-btn-${item.id.slice(0, 8)}`}
+                    title="编辑注释"
+                  >
+                    <Pencil className="w-2.5 h-2.5" /> 编辑注释
+                  </button>
+                )}
+              </div>
+            ) : onUpdateNoteComment ? (
+              <button
+                onClick={handleStartEdit}
+                className="mt-2 inline-flex items-center gap-0.5 text-[10px] text-neutral-400 hover:text-accent"
+                data-testid={`note-comment-add-${item.id.slice(0, 8)}`}
+                title="加注释"
+              >
+                <Pencil className="w-2.5 h-2.5" /> 加注释
+              </button>
+            ) : null}
             {/* 溯源跳转 */}
             {noteAnchor && onJumpToSource && (
               <button

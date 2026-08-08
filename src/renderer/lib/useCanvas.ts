@@ -47,7 +47,12 @@ export function useCanvas(courseId: string | null) {
       if (!courseId) return null;
       try {
         const item = await api.canvasSave({ ...input, courseId });
-        setItems((prev) => [item, ...prev]);
+        // 后端已按 (courseId,nodeId,type,data) 幂等去重,命中会返回旧行。
+        // 本地 setItems 需同步去重,否则旧行被复制一份到顶部。
+        setItems((prev) => {
+          if (prev.some((i) => i.id === item.id)) return prev;
+          return [item, ...prev];
+        });
         return item;
       } catch {
         return null;
@@ -56,13 +61,14 @@ export function useCanvas(courseId: string | null) {
     [courseId],
   );
 
-  /** 用户画线加笔记(user_note),带溯源(content/chat) */
+  /** 用户画线加笔记(user_note),带溯源(content/chat)。comment 为可选初始注释 */
   const saveUserNote = useCallback(
     async (input: {
       nodeId: string;
       text: string;
       sourceType: "content" | "chat";
       sourceAnchor: NoteSourceAnchor;
+      comment?: string;
     }) => {
       if (!courseId) return null;
       try {
@@ -80,6 +86,19 @@ export function useCanvas(courseId: string | null) {
   const recordQuizResult = useCallback(async (id: string, correct: boolean) => {
     try {
       const updated = await api.canvasRecordQuizResult(id, correct);
+      if (updated) {
+        setItems((prev) => prev.map((i) => (i.id === id ? updated : i)));
+      }
+      return updated;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /** 更新 user_note 的用户注释(空串=删除)。返回更新后的 item 或 null */
+  const updateUserNoteComment = useCallback(async (id: string, comment: string) => {
+    try {
+      const updated = await api.canvasUpdateUserNoteComment(id, comment);
       if (updated) {
         setItems((prev) => prev.map((i) => (i.id === id ? updated : i)));
       }
@@ -148,6 +167,7 @@ export function useCanvas(courseId: string | null) {
     save,
     saveUserNote,
     recordQuizResult,
+    updateUserNoteComment,
     remove,
     togglePin,
     byNode,

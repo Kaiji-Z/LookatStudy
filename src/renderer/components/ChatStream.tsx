@@ -338,7 +338,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
           data-testid="save-chat-note-btn"
           style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: "translate(-50%, -100%)" }}
           className="absolute z-20 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-bold shadow-elevated flex items-center gap-1 hover:brightness-110 transition msg-enter"
-          title="把这段对话存到笔记区"
+          title="把这段对话存到记录区"
         >
           ✏️ 加笔记
         </button>

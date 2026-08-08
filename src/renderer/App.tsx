@@ -390,10 +390,14 @@ export default function App() {
     for (const art of artifacts) {
       const output = art.output as { artifactType?: string; title?: string } | null;
       if (!output || !output.artifactType) continue;
-      const key = art.id; // msgId-partIdx,唯一标识这次 session 的产物
+      // 稳定内容 key:artifactType + output 序列化。
+      // 不用 art.id(msgId-partIdx),因为 chat:done 会把临时 msg id 替换成 DB uuid,
+      // 导致同一产物产生两个 id → 被 saveCanvasItem 写两次。内容 key 跨 id 漂移保持稳定,
+      // 配合后端 (courseId,nodeId,type,data) 去重,根治重复保存。
+      const key = `${output.artifactType}:${JSON.stringify(output)}`;
       if (savedArtifactKeysRef.current.has(key)) continue;
       savedArtifactKeysRef.current.add(key);
-      // 自动持久化(不让用户决定,全存)
+      // 自动持久化(不让用户决定,全存)。后端按内容幂等去重,重复调用安全。
       canvas.save({
         nodeId: selectedNodeId,
         artifactType: output.artifactType,
@@ -537,7 +541,7 @@ export default function App() {
                     sourceType: "chat",
                     sourceAnchor: { type: "chat", threadId: thread.activeId, msgId, startOffset, endOffset },
                   });
-                  toast.show("已加到笔记 · 笔记区", { duration: 2000 });
+                  toast.show("已加到笔记 · 记录区", { duration: 2000 });
                 }}
               />
               <ChatComposer
@@ -578,6 +582,9 @@ export default function App() {
                 onRecordQuizResult={(id, correct) => {
                   canvas.recordQuizResult(id, correct);
                 }}
+                onUpdateNoteComment={(id, comment) => {
+                  canvas.updateUserNoteComment(id, comment);
+                }}
                 onSaveContentNote={(text, anchor) => {
                   if (!selectedNode) return;
                   canvas.saveUserNote({
@@ -586,7 +593,7 @@ export default function App() {
                     sourceType: "content",
                     sourceAnchor: anchor,
                   });
-                  toast.show("已加到笔记 · 笔记区", { duration: 2000 });
+                  toast.show("已加到笔记 · 记录区", { duration: 2000 });
                 }}
                 onJumpToSource={handleJumpToSource}
                 onQuoteToChat={handleQuoteToChat}

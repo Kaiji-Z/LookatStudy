@@ -648,6 +648,47 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: artifactTabs === true,
   });
 
+  // T15 (v0.3.4): 切到笔记 tab → 三区(理解/记录/练习)toggle 存在且初始折叠
+  // 验证:defaultOpen=false 生效(箭头带 -rotate-90 表示折叠态)
+  let zoneCollapse: { switched?: boolean; zones?: number; collapsed?: number; titles?: string[]; error?: string } = {};
+  try {
+    zoneCollapse = await win.webContents.executeJavaScript(`
+      (function() {
+        try {
+          var tabBtn = document.querySelector('[data-testid="tab-notes"]');
+          if (tabBtn) tabBtn.click();
+          return { switched: true };
+        } catch (e) { return { error: String(e) }; }
+      })()
+    `);
+    await new Promise((r) => setTimeout(r, 400));
+    // 等 React 渲染后,检查三区 toggle 的折叠状态
+    const zoneDetail = await win.webContents.executeJavaScript(`
+      (function() {
+        var ids = ["zone-understand-toggle", "zone-note-toggle", "zone-practice-toggle"];
+        var toggles = ids.map(function(id){ return document.querySelector('[data-testid="' + id + '"]'); });
+        var found = toggles.filter(Boolean);
+        // 折叠态:ChevronDown 带 -rotate-90 class;初始应全部折叠
+        var collapsed = toggles.filter(function(t){
+          return t && t.querySelector('svg.lucide-chevron-down, svg[class*="chevron-down"]');
+        }).filter(function(t){
+          var svg = t.querySelector('svg');
+          return svg && svg.className && svg.className.baseVal && svg.className.baseVal.indexOf('-rotate-90') >= 0;
+        }).length;
+        var titles = toggles.map(function(t){ return t ? t.textContent : null; });
+        return { zones: found.length, collapsed: collapsed, titles: titles };
+      })()
+    `);
+    zoneCollapse = { ...zoneCollapse, ...zoneDetail };
+  } catch (e) {
+    zoneCollapse = { error: String(e) };
+  }
+  results.push({
+    name: "three zones (理解/记录/练习) collapsed by default after switching to notes tab",
+    ok: zoneCollapse?.switched === true && zoneCollapse?.zones === 3 && zoneCollapse?.collapsed === 3,
+    detail: zoneCollapse,
+  });
+
   const allOk = results.every((r) => r.ok);
   const report = { overall: allOk, results, timestamp: new Date().toISOString() };
   writeFileSync(join(process.cwd(), ".ui-test-result.json"), JSON.stringify(report, null, 2));

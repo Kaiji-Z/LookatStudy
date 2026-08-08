@@ -50,6 +50,16 @@ export function getDb(): SQLJsDatabase<typeof schema> {
 }
 
 /**
+ * 测试专用:注入一个内存 DB,绕过依赖 Electron app 的 initDb()。
+ * 仅 verify-*.mjs 脚本使用;生产代码绝不调用。返回前一次的 db(便于还原)。
+ */
+export function setDbForTesting(db: SQLJsDatabase<typeof schema>): SQLJsDatabase<typeof schema> | null {
+  const prev = _db;
+  _db = db;
+  return prev;
+}
+
+/**
  * 标记数据库已修改，触发防抖保存。
  * 所有写 IPC handler 在 mutation 后调一次。
  */

@@ -399,16 +399,19 @@ export interface ApiExpose {
   canvasSave(input: { nodeId?: string | null; courseId: string; artifactType: string; title?: string | null; data: unknown }): Promise<CanvasItem>;
   canvasDelete(id: string): Promise<void>;
   canvasTogglePin(id: string): Promise<CanvasItem | null>;
-  /** 用户画线加笔记(user_note),带溯源(content/chat) */
+  /** 用户画线加笔记(user_note),带溯源(content/chat)。comment 为可选初始注释 */
   canvasSaveUserNote(input: {
     nodeId: string;
     courseId: string;
     text: string;
     sourceType: "content" | "chat";
     sourceAnchor: NoteSourceAnchor;
+    comment?: string;
   }): Promise<CanvasItem>;
   /** quiz 重做后更新 last_result(只保留最近一次) */
   canvasRecordQuizResult(id: string, correct: boolean): Promise<CanvasItem | null>;
+  /** 更新 user_note 的用户注释(空串=删除)。找不到返回 null */
+  canvasUpdateUserNoteComment(id: string, comment: string): Promise<CanvasItem | null>;
 
   /* v0.4: Thread 会话(类 Cursor 项目-会话) */
   threadList(courseId: string, status?: "active" | "archived"): Promise<Thread[]>;

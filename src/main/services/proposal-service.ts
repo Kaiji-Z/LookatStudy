@@ -24,10 +24,14 @@ import {
   srsItems,
 } from "../db/schema.js";
 import { randomUUID } from "node:crypto";
-import { updateMastery, BKT_DEFAULTS } from "./pure/bkt.js";
+import { updateMastery, BKT_DEFAULTS, masteryToCrown } from "./pure/bkt.js";
 import { addXpMastered } from "./xp-service.js";
+import { unlockNextLessonIfEligible } from "./progress-service.js";
 
 type Db = SQLJsDatabase<typeof schema>;
+
+/** mastery 自动毕业阈值:超过此值 update_mastery 自动把 status 转 mastered。 */
+const MASTERED_MASTERY_THRESHOLD = 0.9;
 
 /* ---------- 类型 ---------- */
 
@@ -190,22 +194,36 @@ function executeOperation(db: Db, op: LearningOperation): void {
         .get();
       const prevMastery = existing?.mastery ?? null;
       const newMastery = updateMastery(prevMastery, op.correct ?? false, BKT_DEFAULTS);
+      // 派生 crownLevel(BKT mastery → 1-5 crown)——让星星出现 1-2-3 中间态。
+      // mark_mastered 会直接设 5,这里只在未达自动毕业阈值时按 BKT 映射。
+      const newCrown = masteryToCrown(newMastery);
+      // 自动毕业:mastery ≥ 0.9 → status 转 mastered,发 +50 XP(与 mark_mastered 同等待遇)。
+      const autoMastered = newMastery >= MASTERED_MASTERY_THRESHOLD;
+      const patch: { mastery: number; crownLevel: number; status?: "mastered" } = {
+        mastery: newMastery,
+        crownLevel: autoMastered ? 5 : newCrown,
+      };
+      if (autoMastered) patch.status = "mastered";
       if (existing) {
         db.update(progressTable)
-          .set({ mastery: newMastery })
+          .set(patch)
           .where(eq(progressTable.nodeId, op.nodeId))
           .run();
       } else {
-        // 节点没进度行时也建一条（只放 mastery）
+        // 节点没进度行时建一条(mastery 驱动 status/crown)
         db.insert(progressTable)
           .values({
             nodeId: op.nodeId,
-            status: "in_progress",
-            crownLevel: 0,
+            status: autoMastered ? "mastered" : "in_progress",
+            crownLevel: patch.crownLevel,
             mastery: newMastery,
           })
           .run();
       }
+      // 自动毕业发 XP(与 mark_mastered 对齐)
+      if (autoMastered) addXpMastered(db);
+      // 硬门控:mastery 跨过 0.5 → 解锁下一课(首次答题/答对都可能触发)
+      unlockNextLessonIfEligible(db, op.nodeId);
       break;
     }
     case "mark_mastered": {
@@ -214,9 +232,12 @@ function executeOperation(db: Db, op: LearningOperation): void {
         .from(progressTable)
         .where(eq(progressTable.nodeId, op.nodeId))
         .get();
+      // 尊重 BKT 累积:如果已有更高的 mastery,不向下覆盖(mark_mastered 是"提前毕业",
+      // 不该抹掉学习者答题累积出的真实掌握度)。至少给 0.95(满足 mastered 语义)。
+      const preservedMastery = Math.max(existing?.mastery ?? 0, 0.95);
       if (existing) {
         db.update(progressTable)
-          .set({ status: "mastered", crownLevel: 5, mastery: 0.95 })
+          .set({ status: "mastered", crownLevel: 5, mastery: preservedMastery })
           .where(eq(progressTable.nodeId, op.nodeId))
           .run();
       } else {
@@ -225,12 +246,14 @@ function executeOperation(db: Db, op: LearningOperation): void {
             nodeId: op.nodeId,
             status: "mastered",
             crownLevel: 5,
-            mastery: 0.95,
+            mastery: preservedMastery,
           })
           .run();
       }
       // 掌握一课 +50 XP（SRS 入队在 IPC 层做，避免循环依赖）
       addXpMastered(db);
+      // 硬门控:mastered 必然 ≥ 阈值,解锁下一课。
+      unlockNextLessonIfEligible(db, op.nodeId);
       break;
     }
     case "set_node_status": {

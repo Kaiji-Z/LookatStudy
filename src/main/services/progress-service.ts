@@ -15,9 +15,13 @@ import { eq } from "drizzle-orm";
 import * as schema from "../db/schema.js";
 import { progress as progressTable, contentNodes } from "../db/schema.js";
 import type { Progress } from "@shared/types";
+import { BKT_DEFAULTS } from "./pure/bkt.js";
 
 // 项目用 sql.js（drizzle 的同步 API）。注入式传入便于无头测试构造真实 DB。
 type Db = SQLJsDatabase<typeof schema>;
+
+/** 解锁硬门控阈值:当前课 mastery 达到此值才解锁下一课。 */
+const UNLOCK_MASTERY_THRESHOLD = 0.5;
 
 /**
  * 读取某节点的进度。不存在返回 null。
@@ -80,8 +84,9 @@ export function updateProgress(
 }
 
 /**
- * 标记节点已尝试：status=in_progress + lastAttemptAt=now。不存在则插入。
- * 同时解锁同章节的下一课（Duolingo 式关卡门控：开始当前课 → 下一课变 available）。
+ * 标记节点已尝试：status=in_progress + lastAttemptAt=now + mastery 初始化为 BKT pInit。
+ * 首次尝试时 mastery=pInit(0.5) ≥ UNLOCK_MASTERY_THRESHOLD → 触发硬门控解锁下一课。
+ * （设计:mastery 不从 null/0 起步,让进度环有初始弧度、首次答题即可推进解锁。）
  * 成功（被尝试）后回调 onAttempted —— 由 IPC 层接 touchStreakToday，测试可注入断言。
  */
 export function markNodeAttempted(
@@ -97,9 +102,14 @@ export function markNodeAttempted(
     .where(eq(progressTable.nodeId, nodeId))
     .get() as Progress | undefined;
 
+  // 首次尝试:mastery 用 BKT pInit 作为起点(0.5),不是 null/0。
+  // 已有 mastery 的保留(BKT 累积值不被尝试动作重置)。
+  const mastery = existing?.mastery ?? BKT_DEFAULTS.pInit;
+  const crownLevel = existing?.crownLevel ?? 0;
+
   if (existing) {
     db.update(progressTable)
-      .set({ lastAttemptAt: iso, status: "in_progress" })
+      .set({ lastAttemptAt: iso, status: "in_progress", mastery })
       .where(eq(progressTable.nodeId, nodeId))
       .run();
   } else {
@@ -107,28 +117,49 @@ export function markNodeAttempted(
       .values({
         nodeId,
         status: "in_progress",
-        crownLevel: 0,
+        crownLevel,
+        mastery,
         lastAttemptAt: iso,
       })
       .run();
   }
 
-  // 解锁同章节的下一课（按 orderIdx 排序找当前课的下一个 lesson）
-  unlockNextLesson(db, nodeId);
+  // 硬门控:当前节点 mastery ≥ 阈值才解锁下一课。
+  // 首次尝试 mastery=pInit(0.5) 刚好达到 0.5 阈值 → 给用户"开始就能往下走"的顺畅感。
+  if (mastery >= UNLOCK_MASTERY_THRESHOLD) {
+    unlockNextLesson(db, nodeId);
+  }
 
   onAttempted?.();
   return {
     nodeId,
     status: "in_progress",
-    crownLevel: existing?.crownLevel ?? 0,
+    crownLevel,
     lastAttemptAt: iso,
-    mastery: existing?.mastery ?? null,
+    mastery,
   };
+}
+
+/**
+ * 硬门控解锁:检查当前节点 mastery ≥ 阈值,是则解锁下一课。
+ * 供 proposal-service 在 update_mastery 后调用(mastery 增长可能跨过阈值)。
+ * 返回是否触了解锁(供测试断言)。
+ */
+export function unlockNextLessonIfEligible(db: Db, currentNodeId: string): boolean {
+  const p = db
+    .select()
+    .from(progressTable)
+    .where(eq(progressTable.nodeId, currentNodeId))
+    .get() as Progress | undefined;
+  if (!p || (p.mastery ?? 0) < UNLOCK_MASTERY_THRESHOLD) return false;
+  unlockNextLesson(db, currentNodeId);
+  return true;
 }
 
 /**
  * 解锁同父章节里、orderIdx 大于当前节点的第一个 lesson。
  * 如果当前章节没有下一课了，解锁下一章节的第一课。
+ * 硬门控:调用方负责判断 mastery 是否达标(见 markNodeAttempted / update_mastery 应用)。
  */
 function unlockNextLesson(db: Db, currentNodeId: string): void {
   // 查当前节点（要拿到 parentId 和 orderIdx）

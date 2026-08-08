@@ -16,7 +16,26 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
-Empty — work currently targets the next milestone before being logged here.
+### Changed
+- **迷你地图驱动逻辑闭环**:打通 progress 字段写入链路,让进度环/星星/总进度
+  条都能随学习动作真正动起来(之前多处断点)。
+  - `markNodeAttempted`(点节点)首次尝试时初始化 `mastery = BKT pInit(0.5)`,
+    进度环不再从空开始,有初始弧度。
+  - `update_mastery` proposal 应用后派生 `crownLevel`(用已有的 `masteryToCrown()`,
+    mastery→1-5 crown),**星星出现 1-2-3 中间态**(之前只有全灰/全亮两态)。
+  - `update_mastery` 应用后若 `mastery ≥ 0.9` **自动转 `mastered`** 并发 +50 XP,
+    不再只靠 AI `mark_mastered` 一锤定音。
+  - **硬门控解锁**:下一课的解锁条件从"点上一课"改为"上一课 mastery ≥ 0.5"。
+    `markNodeAttempted` 和 `update_mastery` 应用后都检查阈值(首次尝试 pInit=0.5
+    刚好达标,保留"开始就能往下走"的顺畅感)。
+  - `mark_mastered` 不再硬编码覆盖 mastery,尊重 BKT 累积值(`max(已有, 0.95)`)。
+  - `dashboard.overallMastery` 改为**混合指标**(mastered=1.0 / in_progress=mastery /
+    available=0.1 / locked=0 的全课平均),点课(available→in_progress)立刻推进总进度条
+    (之前纯 mastery 平均,点课无反馈)。
+
+### Fixed
+- `in_progress` 节点中心的 `📘` emoji(蓝色书)和蓝色球体背景撞色,看起来像凹陷的
+  矩形坑。改用白色 lucide `BookOpen` 图标 + drop-shadow,对比清晰。
 
 ## [0.5.0] — 2026-08-07
 

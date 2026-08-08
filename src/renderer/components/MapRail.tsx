@@ -387,7 +387,7 @@ function MapNode({
         ) : status === "mastered" ? (
           <span aria-label="mastered" className="relative z-10 drop-shadow-lg">👑</span>
         ) : status === "in_progress" ? (
-          <span aria-label="in-progress" className="relative z-10">📘</span>
+          <BookOpen aria-label="in-progress" className="relative z-10 w-6 h-6 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]" strokeWidth={2.5} />
         ) : (
           <span aria-label="available" className="relative z-10 drop-shadow">⭐</span>
         )}
@@ -474,7 +474,7 @@ function statusIcon(status: string): string {
   switch (status) {
     case "locked": return "🔒";
     case "available": return "⭐";
-    case "in_progress": return "📘";
+    case "in_progress": return "📖"; // 折叠态小圆球里用书 emoji(白色书页,对比足够)
     case "mastered": return "👑";
     default: return "•";
   }

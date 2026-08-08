@@ -56,14 +56,34 @@ export function getDashboard(
   const sections = nodes.filter((n) => n.type === "section");
   const progressRows = db.select().from(progressTable).all();
 
-  const progressByNode = new Map<string, number>();
+  // 进度混合指标:不只看 mastery,而是按 status 给权重,让"点课"也能推进总进度条。
+  //   mastered    → 1.0(满)
+  //   in_progress → mastery(BKT 累积值,首次答题会从 pInit=0.5 起步)
+  //   available   → 0.1(用户能看见这课了,算一点"发现"进度)
+  //   locked/无行 → 0
+  const progressByNode = new Map<string, { mastery: number; status: string }>();
   for (const p of progressRows) {
-    progressByNode.set(p.nodeId, p.mastery ?? 0);
-  }
+    progressByNode.set(p.nodeId, {
+      mastery: p.mastery ?? 0,
+      status: p.status ?? "locked",
+    });
+  };
+
+  /** 把单节点进度行映射成 0-1 的"进度贡献"。 */
+  const progressContribution = (nodeId: string): number => {
+    const p = progressByNode.get(nodeId);
+    if (!p) return 0;
+    if (p.status === "mastered") return 1.0;
+    if (p.status === "in_progress") return p.mastery;
+    if (p.status === "available") return 0.1;
+    return 0;
+  };
 
   const sectionAggs: SectionMastery[] = sections.map((sec) => {
     const lessons = nodes.filter((n) => n.parentId === sec.id && n.type === "lesson");
-    const masteries = lessons.map((l) => progressByNode.get(l.id) ?? 0);
+    // avgMastery 仍报真实 BKT mastery(仪表盘的"掌握度"语义不变),
+    // 但 overall 用 progressContribution(下方),让"点课"也能推进总进度条。
+    const masteries = lessons.map((l) => progressByNode.get(l.id)?.mastery ?? 0);
     const avg =
       masteries.length > 0
         ? masteries.reduce((a, b) => a + b, 0) / masteries.length
@@ -93,10 +113,13 @@ export function getDashboard(
     .where(eq(streaks.id, "singleton"))
     .get();
 
-  // 4. 整体平均（各 section avgMastery 的平均）
+  // 4. 整体进度 = 所有 lesson 的 progressContribution 的平均。
+  //    用混合指标(非纯 mastery 平均):点课(available→in_progress)立刻推进总进度条,
+  //    mastered 满分,in_progress 按 BKT mastery 累积。让用户感觉"每个动作都有反馈"。
+  const allLessons = nodes.filter((n) => n.type === "lesson");
   const overall =
-    sectionAggs.length > 0
-      ? sectionAggs.reduce((a, s) => a + s.avgMastery, 0) / sectionAggs.length
+    allLessons.length > 0
+      ? allLessons.reduce((sum, l) => sum + progressContribution(l.id), 0) / allLessons.length
       : 0;
 
   return {

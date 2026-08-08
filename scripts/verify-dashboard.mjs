@@ -3,8 +3,8 @@
  *
  * 不变量：
  *   - sections 聚合：每个 section 有 avgMastery / lessonCount / masteredCount
- *   - mastery>=0.7 算 mastered
- *   - 整体平均 = 各 section avg 的平均
+ *   - mastery>=0.7 算 mastered（section 维度，保留旧语义）
+ *   - 整体进度 = 全课 progressContribution 平均(mastered=1.0 / in_progress=mastery / available=0.1 / locked=0)
  *   - SRS 到期数 = due_at <= now 的行数
  *   - streak 透传
  */
@@ -64,12 +64,14 @@ assert.ok(Math.abs(s2.avgMastery - 0.4) < 0.001, `T3: S2 avg 应 0.4 ((0.8+0)/2)
 assert.strictEqual(s2.masteredCount, 1, "T3: S2 mastered 应 1");
 console.log(`✓ T3 S2: avg=${s2.avgMastery.toFixed(2)}（NULL 算 0）, mastered=1`);
 
-// === T4: 整体平均 = (0.65 + 0.4) / 2 ===
+// === T4: 整体进度 = 混合指标(mastered=1.0 / in_progress=mastery / locked=0) 的全课平均
+//   l1=mastered→1.0, l2=in_progress 0.4→0.4, l3=mastered→1.0, l4=locked→0
+//   (1.0+0.4+1.0+0)/4 = 0.6。比纯 mastery 平均(0.525)更能反映"开始学"的进度。
 assert.ok(
-  Math.abs(dash.overallMastery - 0.525) < 0.001,
-  `T4: overall 应 0.525, 实际 ${dash.overallMastery}`,
+  Math.abs(dash.overallMastery - 0.6) < 0.001,
+  `T4: overall 应 0.6(混合指标), 实际 ${dash.overallMastery}`,
 );
-console.log(`✓ T4 overall: ${dash.overallMastery.toFixed(3)}`);
+console.log(`✓ T4 overall: ${dash.overallMastery.toFixed(3)} (混合: mastered=1.0, in_progress=mastery, locked=0)`);
 
 // === T5: streak 透传 ===
 assert.ok(dash.currentStreak >= 0, "T5: streak >= 0");

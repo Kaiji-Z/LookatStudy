@@ -104,6 +104,18 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   /* ease-out-quart:通用状态过渡(hover/focus),比默认 ease 更利落 */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+
+  /* —— 滚动叙事天空(6 阶段,深色优先)——
+     左栏地图背景,随滚动进度在黎明→朝阳→白昼→晚霞→日落→星空之间连续插值。
+     全部压在 L 0.13-0.34 深色区间:天空是氛围层,气球(高饱和 brand/accent/gold)
+     永远更亮 → 主视觉永远在气球,不靠主观调。 */
+  --sky-dawn:    oklch(0.28 0.08 25);   /* 黎明:深暖橙,低亮度 */
+  --sky-sunrise: oklch(0.34 0.12 50);   /* 朝阳:暖金橙 */
+  --sky-day:     oklch(0.30 0.09 240);  /* 白昼:深青蓝(夜化处理,保持深色基调) */
+  --sky-dusk:    oklch(0.32 0.12 350);  /* 晚霞:紫红 */
+  --sky-sunset:  oklch(0.26 0.14 20);   /* 日落:深红橙 */
+  --sky-night:   oklch(0.13 0.03 270);  /* 星空:近黑靛 */
+  --star:        oklch(0.96 0.02 240);  /* 星点:暖白 */
 }
 
 @layer base {
@@ -365,6 +377,103 @@
 .typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .typing-dot:nth-child(3) { animation-delay: 0.3s; }
 
+/* —— 滚动叙事天空(canvas 版,MapRail v0.6)——
+   canvas 是 nav 的 absolute 子元素(inset-0),铺满整个左栏含 header 区域;
+   skyCanvas.ts 每帧按 map-path 的 scrollProgress 重绘整张天。
+   关键:canvas 在 nav 层 → 天空延伸到 header(修原 bug:原在 map-path 内到不了 header)。 */
+.map-sky-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  display: block;
+}
+/* map-path 透明,让 nav 层 canvas 透出来 */
+.map-path {
+  background: transparent;
+}
+.map-sky-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* 顶部卷轴头部:透明背景,天空由 nav 层 canvas 直接提供。
+   底部细渐变把头部内容柔和过渡到下方,文字靠 drop-shadow 保可读性。 */
+.map-header {
+  position: relative;
+  z-index: 10;
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.28) 0%, rgb(0 0 0 / 0.08) 75%, transparent 100%);
+}
+
+/* 课程标题:默认单行省略,hover 展开全文(换行)+ 高 z 盖住下方 */
+.map-title {
+  position: relative;
+  cursor: default;
+}
+.map-title__text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: max-height 0.3s var(--ease-out-quart);
+  max-height: 1.3em;
+}
+.map-title:hover {
+  z-index: 20;
+}
+.map-title:hover .map-title__text {
+  white-space: normal;
+  overflow: visible;
+  max-height: 6em;
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: 8px;
+}
+
+/* 节点名:默认隐藏(气球散布后防重叠),hover 整个气球或选中时显示 */
+.map-node-label {
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.18s var(--ease-out-quart), transform 0.18s var(--ease-out-quart);
+  pointer-events: none;
+}
+.group:hover .map-node-label,
+.map-node-label--always {
+  opacity: 1;
+  transform: translateY(0);
+}
+.map-signpost {
+  background: rgb(20 16 28 / 0.55);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  border: 1px solid rgb(255 200 0 / 0.18);
+  border-top-color: rgb(255 200 0 / 0.35);
+  box-shadow:
+    0 2px 8px rgb(0 0 0 / 0.35),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+/* 气球节点漂浮:轻微上下浮动,每节点不同相位/周期(用 --bob-delay/--bob-duration 错峰) */
+@keyframes balloon-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.balloon-bob {
+  animation: balloon-bob var(--bob-duration, 6s) ease-in-out infinite;
+  animation-delay: var(--bob-delay, 0s);
+}
+
+/* 地图路径渐进绘制(走过路径动画);从 tailwind.config 迁到 CSS,
+   让 MapRail 内联 `animation: "path-draw ..."` 真正生效。 */
+@keyframes path-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
 /* Progress ring */
 .progress-ring-circle {
   transition: stroke-dashoffset 0.5s var(--ease-out-expo);
@@ -397,4 +506,5 @@
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+  /* 天空 canvas:skyCanvas.ts 检测 reduced-motion 后只画单帧(不跑连续 rAF) */
 }

@@ -1,29 +1,33 @@
 /**
- * MapRail —— v0.3 选关地图(替代 v0.2 的 NavRail 列表)。
+ * MapRail —— v0.6 选关地图(气球节点 + 滚动叙事天空)。
  *
- * 核心隐喻:游戏选关界面。打开应用第一眼看到的是地图,不是菜单。
- *   - 顶部:课程总进度条(合并仪表盘的 overallMastery)+ 连击
- *   - 主体:蜿蜒垂直路径,每个节点是多邻国式 3D 大圆球(56px)
+ * 核心隐喻:左栏是一段从黎明滚到星夜的学习旅程。
+ *   - 节点 = 气球:种子确定性抖动飘在空中(不整齐但不乱),轻微上下浮动呼吸
+ *   - 路径 = 绳子:下垂的贝塞尔把气球串起来(模拟重力),不再是 S 形箭头
+ *   - 背景 = 天空:随滚动进度在 黎明→朝阳→白昼→晚霞→日落→星空 间连续插值,
+ *     一颗发光天体沿弧线划过(日/月),夜里星点淡入
+ *   - 顶部:课程总进度条 + 连击
  *   - 节点状态:锁(灰)/ 可学(绿脉冲)/ 进行中(蓝)/ 已掌握(金+皇冠)
- *   - 节点下:星星进度(0-3)+ 节点名
- *   - 底部:今日待复习徽章(可点)+ 折叠按钮
  *
  * 折叠态:48px 窄条,只显示 🗺️ + 当前节点小圆球。
  *
- * 多邻国路径:节点左右交替(zig-zag),用 SVG 贝塞尔曲线连接。
- * 与 v0.1 的技能树不同:这里节点更大、有星星、有路径感、有总进度。
+ * 技术要点:
+ *   - 天空渐变用 background-attachment: local 随内容滚动,零 JS、丝滑
+ *   - 天体位置/星点透明度用单个 rAF 节流的 onScroll 写 --sky-progress(0→1)驱动
+ *   - 气球位置用 section id 哈希抖动 → 每次渲染位置稳定,不乱跳
+ *   - 解锁逻辑零改动:onJumpNode → handleLessonClick → api.markNodeAttempted 链路保留
  */
 import type { ContentNode, Progress } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Map as MapIcon, FileText, ChevronLeft, ChevronRight, BookOpen, Target } from "lucide-react";
 import {
-  computeSectionLayout,
+  computeBalloonLayout,
   sectionHeight,
-  segmentToPath,
-  LAYOUT_MODES,
-  type MapLayoutMode,
+  balloonSegmentToPath,
+  hashStr,
 } from "../lib/mapLayout.js";
+import { attachSky } from "../lib/skyCanvas.js";
 
 export type MapView = "map" | "import";
 
@@ -110,33 +114,28 @@ function MapRailExpanded({
 }: MapRailProps) {
   const masteryPct = Math.round(overallMastery * 100);
 
-  // 布局模式(zigzag/linear/compact),持久化到 localStorage。
-  // 默认 zigzag(Duolingo 经典);用户切换后记住选择。
-  const [layoutMode, setLayoutMode] = useState<MapLayoutMode>(
-    () => (typeof localStorage !== "undefined" &&
-      (localStorage.getItem("lookatstudy:mapLayout") as MapLayoutMode | null)) ||
-      "zigzag",
-  );
-  const switchLayout = useCallback((m: MapLayoutMode) => {
-    setLayoutMode(m);
-    try {
-      localStorage.setItem("lookatstudy:mapLayout", m);
-    } catch {
-      /* 忽略:隐私模式/配额 */
-    }
-  }, []);
+  // v0.6:天空 canvas attach 到这个滚动容器(skyCanvas.ts 内部自己管 rAF + resize + scroll)。
+  // canvas 是 nav 的子元素(position: absolute 铺满整个左栏含 header),不是 map-path 的子元素,
+  // 否则天空到不了 header 区域。attachSky 仍读 mapPathRef 的 scrollTop。
+  const mapPathRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
 
   return (
     <nav
-      className="h-full flex flex-col bg-gradient-to-b from-brand/5 to-transparent dark:from-brand/5 dark:to-neutral-950 border-r border-neutral-200 dark:border-neutral-800/50 w-[300px] shrink-0"
+      ref={navRef}
+      className="relative h-full flex flex-col bg-neutral-950 border-r border-neutral-800/60 w-[300px] shrink-0 overflow-hidden"
       data-testid="map-rail"
     >
-      {/* 顶部:课程标题 + 总进度 */}
-      <div className="px-4 pt-3 pb-2 shrink-0">
+      {/* 滚动叙事天空:canvas 铺满整个左栏(nav 的 absolute 子元素,含 header 区域),
+          sticky 到 nav 顶部,每帧按 map-path 的 scrollProgress 重绘整张天。 */}
+      {view === "map" && <MapSkyCanvas scrollRef={mapPathRef} navRef={navRef} />}
+
+      {/* 顶部:探险地图卷轴头部。透明背景让天空透出来,像地图上的题词栏 */}
+      <div className="map-header relative z-10 px-4 pt-3 pb-3 shrink-0">
         <div className="flex items-center justify-between">
           <button
             onClick={onToggleCollapse}
-            className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/10 transition-colors"
             title="折叠地图"
             data-testid="map-collapse"
           >
@@ -162,111 +161,97 @@ function MapRailExpanded({
 
         {view === "map" && (
           <>
-            <h2 className="text-sm font-extrabold text-neutral-900 dark:text-neutral-100 mt-2 truncate" title={courseTitle ?? ""}>
-              {courseTitle ?? "未选择课程"}
+            {/* 课程标题:像卷轴上的铭文。过长默认省略,hover 展开全文(换行) */}
+            <h2
+              className="map-title text-sm font-extrabold text-white mt-2.5 drop-shadow-[0_1px_4px_rgba(0,0,0,0.6)]"
+              title={courseTitle ?? ""}
+            >
+              <span className="map-title__text">{courseTitle ?? "未选择课程"}</span>
             </h2>
-            {/* 总进度条(合并仪表盘核心) */}
+            {/* 旅程完成度:毛玻璃进度条,brand 实时进度 */}
             <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-2.5 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
+              <div className="flex-1 h-2.5 bg-black/40 rounded-full overflow-hidden ring-1 ring-white/10">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ${masteryPct >= 100 ? "bg-gold" : "bg-brand"}`}
                   style={{ width: `${Math.max(3, masteryPct)}%` }}
                 />
               </div>
-              <span className="text-xs font-extrabold tabular-nums text-neutral-700 dark:text-neutral-300">
+              <span className="text-xs font-extrabold tabular-nums text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">
                 {masteryPct}%
               </span>
             </div>
-            <div className="flex items-center justify-between mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-400">
-              <span className="flex items-center gap-0.5">
-                <span className="text-review">🔥</span>
-                <span className="font-bold text-review">{streak}</span>
-                <span>天连击</span>
-              </span>
+            <div className="flex items-center justify-end mt-2 text-[10px]">
               {dueCount > 0 && (
                 <button
                   onClick={onOpenReview}
-                  className="flex items-center gap-1 text-review hover:underline"
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-review/20 ring-1 ring-review/30 hover:bg-review/30 transition-colors"
                   data-testid="map-review-badge"
                 >
-                  <BookOpen className="w-3 h-3" />
-                  <span className="font-bold">{dueCount}</span>
-                  <span>待复习</span>
+                  <BookOpen className="w-3 h-3 text-review" />
+                  <span className="font-extrabold text-review">{dueCount}</span>
+                  <span className="text-review/80">待复习</span>
                 </button>
               )}
-            </div>
-            {/* 布局模式切换:蜿蜒/直线/紧凑。克制的小段控件,不抢主视觉。 */}
-            <div className="flex items-center gap-1 mt-2" data-testid="map-layout-switcher">
-              {LAYOUT_MODES.map(({ mode, label, icon }) => (
-                <button
-                  key={mode}
-                  onClick={() => switchLayout(mode)}
-                  data-testid={`map-layout-${mode}`}
-                  title={`${label}布局`}
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
-                    layoutMode === mode
-                      ? "bg-brand/15 text-brand"
-                      : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-800"
-                  }`}
-                >
-                  <span className="mr-0.5">{icon}</span>
-                  {label}
-                </button>
-              ))}
             </div>
           </>
         )}
       </div>
 
-      {/* 主体:地图 / 导入视图 */}
+      {/* 主体:地图 / 导入视图。透明背景,天空由 nav 级 canvas 提供 */}
       {view === "map" ? (
-        <div className="flex-1 overflow-y-auto px-2 pb-4 min-h-0" data-testid="map-path">
-          {/* AI 输出中提示(专注当下,锁定节点切换) */}
-          {streaming && (
-            <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-[11px] text-brand font-medium" data-testid="streaming-notice">
-              <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
-              AI 正在回答,完成后可切换节点
-            </div>
-          )}
-          {sections.length === 0 ? (
-            courseTitle ? (
-              <div className="text-center text-xs text-neutral-500 dark:text-neutral-400 mt-8 px-4 flex items-center justify-center gap-2">
+        <div
+          ref={mapPathRef}
+          className="map-path relative z-10 flex-1 overflow-y-auto px-2 pb-4 min-h-0"
+          data-testid="map-path"
+        >
+          {/* 内容层:气球节点 + 章节浮在天空之上(canvas 在 nav 层,这里透明) */}
+          <div className="map-sky-content">
+            {/* AI 输出中提示(专注当下,锁定节点切换) */}
+            {streaming && (
+              <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-[11px] text-brand font-medium backdrop-blur-sm" data-testid="streaming-notice">
                 <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
-                正在生成课程路径…
+                AI 正在回答,完成后可切换节点
               </div>
+            )}
+            {sections.length === 0 ? (
+              courseTitle ? (
+                <div className="text-center text-xs text-neutral-500 dark:text-neutral-400 mt-8 px-4 flex items-center justify-center gap-2">
+                  <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
+                  正在生成课程路径…
+                </div>
+              ) : (
+                <button
+                  onClick={() => onViewChange("import")}
+                  className="block w-full mt-8 mx-auto p-4 rounded-2xl border-2 border-dashed border-brand/40 hover:border-brand hover:bg-brand/5 transition-all text-center group"
+                  data-testid="map-empty-cta"
+                >
+                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🗺️</div>
+                  <div className="text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    开始你的第一门课
+                  </div>
+                  <div className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                    导入一个 GitHub 学习仓库,自动生成选关路径
+                  </div>
+                  <div className="mt-2 text-[10px] text-brand font-bold">点这里导入 →</div>
+                </button>
+              )
             ) : (
-              <button
-                onClick={() => onViewChange("import")}
-                className="block w-full mt-8 mx-auto p-4 rounded-2xl border-2 border-dashed border-brand/40 hover:border-brand hover:bg-brand/5 transition-all text-center group"
-                data-testid="map-empty-cta"
-              >
-                <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🗺️</div>
-                <div className="text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                  开始你的第一门课
-                </div>
-                <div className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                  导入一个 GitHub 学习仓库,自动生成选关路径
-                </div>
-                <div className="mt-2 text-[10px] text-brand font-bold">点这里导入 →</div>
-              </button>
-            )
-          ) : (
-            <div className="space-y-6 pt-2">
-              {sections.map((section, sIdx) => (
-                <MapSection
-                  key={section.id}
-                  section={section}
-                  sectionIndex={sIdx}
-                  tree={tree}
-                  progressMap={progressMap}
-                  selectedNodeId={selectedNodeId}
-                  dueNodeIds={dueNodeIds}
-                  layoutMode={layoutMode}
-                  onJumpNode={onJumpNode}
-                />
-              ))}
-            </div>
-          )}
+              <div className="space-y-6 pt-2">
+                {sections.map((section, sIdx) => (
+                  <MapSection
+                    key={section.id}
+                    section={section}
+                    sectionIndex={sIdx}
+                    tree={tree}
+                    progressMap={progressMap}
+                    selectedNodeId={selectedNodeId}
+                    dueNodeIds={dueNodeIds}
+                    onJumpNode={onJumpNode}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto px-3 py-3 text-xs text-neutral-500 dark:text-neutral-400">
@@ -280,7 +265,37 @@ function MapRailExpanded({
   );
 }
 
-/* ---------- 章节单元(含蜿蜒路径) ---------- */
+/* ---------- 滚动叙事天空(canvas 版,参照 A Day in One Scroll)----------
+   canvas 是 nav 的 absolute 子元素(inset-0),铺满整个左栏含 header 区域;
+   attachSky 读 map-path 的 scrollProgress 驱动整张天重绘。
+   关键:canvas 在 nav 层而非 map-path 内 → 天空延伸到 header(修原 bug)。 */
+function MapSkyCanvas({
+  scrollRef,
+  navRef,
+}: {
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  navRef: React.RefObject<HTMLElement | null>;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const scroll = scrollRef.current;
+    const nav = navRef.current;
+    if (!canvas || !scroll || !nav) return;
+    // canvas 尺寸跟 nav 走(整个左栏),滚动进度跟 map-path 走
+    const detach = attachSky(canvas, scroll, nav);
+    return detach;
+  }, [scrollRef, navRef]);
+  return (
+    <canvas
+      ref={canvasRef}
+      className="map-sky-canvas"
+      aria-hidden="true"
+    />
+  );
+}
+
+/* ---------- 章节单元(含气球路径) ---------- */
 function MapSection({
   section,
   sectionIndex,
@@ -288,7 +303,6 @@ function MapSection({
   progressMap,
   selectedNodeId,
   dueNodeIds,
-  layoutMode,
   onJumpNode,
 }: {
   section: ContentNode;
@@ -297,7 +311,6 @@ function MapSection({
   progressMap: Record<string, Progress>;
   selectedNodeId: string | null;
   dueNodeIds: Set<string>;
-  layoutMode: MapLayoutMode;
   onJumpNode: (nodeId: string) => void;
 }) {
   const lessons = tree
@@ -310,12 +323,7 @@ function MapSection({
     chapterLessonNodes.length > 0 &&
     chapterLessonNodes.every((l) => (progressMap[l.id]?.mastery ?? 0) >= UNLOCK_MASTERY_THRESHOLD);
 
-  // 章节背景色循环(轻微区域感:浅绿/浅蓝/浅金交替)
-  const SECTION_TINTS = ["bg-brand/[0.04]", "bg-accent/[0.04]", "bg-gold/[0.04]"];
-  const tintClass = SECTION_TINTS[sectionIndex % SECTION_TINTS.length];
-
   // 测量章节路径容器宽度,供布局引擎算 x 坐标。
-  // 容器宽度稳定(map-rail 固定 300px),用 ref + state 测一次即可。
   const pathRef = useRef<HTMLDivElement>(null);
   const [containerW, setContainerW] = useState(268);
   useEffect(() => {
@@ -325,35 +333,33 @@ function MapSection({
       setContainerW(w > 0 ? w : 268);
     };
     measure();
-    // 章节折叠/展开后宽度可能变,监听 resize
     const ro = new ResizeObserver(measure);
     ro.observe(pathRef.current);
     return () => ro.disconnect();
   }, []);
 
-  // 用布局引擎算节点坐标(像素)。修原 bug:旧代码 % 拼进 SVG path,非法单位,
-  // 节点位置(margin)与路径(%)是两套独立计算,永远对不齐。现在统一像素坐标。
-  const layout = computeSectionLayout(lessons.length, layoutMode, containerW);
-  const pathHeight = sectionHeight(lessons.length, layoutMode);
+  // v0.6:气球布局(种子确定性抖动)。同 section id 每次渲染位置稳定。
+  const layout = computeBalloonLayout(lessons.length, containerW, section.id);
+  const pathHeight = sectionHeight(lessons.length);
   const NODE_W = 110; // MapNode 卡片宽(球+名字)
   const NODE_H = 76;  // 球 56 + 名字行 20
 
   return (
     <section
       data-testid={`map-section-${section.id.slice(0, 8)}`}
-      className={`${tintClass} rounded-2xl py-3 px-2`}
+      className="py-3 px-2"
     >
-      {/* 章节路牌标题(像游戏关卡指示牌) */}
-      <div className="flex items-center gap-2 mb-3 px-2 py-1.5 bg-white/60 dark:bg-neutral-900/50 rounded-xl border border-neutral-200/60 dark:border-neutral-800/60 shadow-sm">
-        <span className="w-6 h-6 rounded-lg bg-brand text-white text-[10px] font-extrabold flex items-center justify-center shrink-0">
+      {/* 章节路牌:像游戏关卡指示牌(羊皮纸/木牌感)。毛玻璃 + 金边圆牌数字 */}
+      <div className="map-signpost flex items-center gap-2 mb-3 px-2.5 py-1.5 rounded-lg shadow-sm">
+        <span className="w-6 h-6 rounded-full bg-gold text-neutral-900 text-[10px] font-extrabold flex items-center justify-center shrink-0 ring-2 ring-gold/40 shadow-sm">
           {sectionIndex + 1}
         </span>
-        <span className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 truncate flex-1">
+        <span className="text-[11px] font-bold text-white truncate flex-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">
           {section.title}
         </span>
       </div>
 
-      {/* 路径 + 节点:绝对定位,统一像素坐标系 */}
+      {/* 绳子 + 气球:绝对定位,统一像素坐标系 */}
       <div ref={pathRef} className="relative" style={{ minHeight: pathHeight }}>
         <svg
           className="absolute inset-0 w-full h-full pointer-events-none"
@@ -361,7 +367,7 @@ function MapSection({
           style={{ height: pathHeight }}
         >
           {layout.segments.map((seg) => {
-            // 路径颜色:前置节点已通过 → 走过的路(brand 实线);否则未走过(灰虚线)
+            // 绳子颜色:前置节点已通过 → 走过的路(brand 实线);否则未走过(灰虚线)
             const fromLesson = lessons[seg.index];
             const fromProgress = fromLesson ? progressMap[fromLesson.id] : undefined;
             const isPassed =
@@ -371,17 +377,16 @@ function MapSection({
             return (
               <path
                 key={seg.index}
-                d={segmentToPath(seg)}
+                d={balloonSegmentToPath(seg)}
                 stroke={isPassed ? "var(--brand)" : "var(--ink-faint)"}
                 strokeWidth={isPassed ? 4 : 2.5}
-                strokeOpacity={isPassed ? 0.5 : 0.6}
+                strokeOpacity={isPassed ? 0.6 : 0.5}
                 fill="none"
                 strokeLinecap="round"
                 strokeDasharray={isPassed ? "none" : "3 7"}
-                // 走过的路渐进绘制(PROPERTY.md motion:状态传达);用 pathLength=1 归一化
                 style={
                   isPassed
-                    ? { pathLength: 1, animation: "path-draw 500ms var(--ease-out-expo)" }
+                    ? { pathLength: 1, animation: "path-draw 600ms var(--ease-out-expo)" }
                     : undefined
                 }
               />
@@ -389,18 +394,24 @@ function MapSection({
           })}
         </svg>
 
-        {/* 节点:绝对定位居中于 layout.x/layout.y */}
+        {/* 气球节点:绝对定位居中于 layout.x/layout.y,加漂浮动画(每节点相位/周期错峰) */}
         {lessons.map((lesson, i) => {
           const node = layout.nodes[i];
           if (!node) return null;
+          const h = hashStr(lesson.id);
+          const bobDelay = `${(h % 40) / 10}s`;
+          const bobDuration = `${5 + (h % 30) / 10}s`;
           return (
             <div
               key={lesson.id}
-              className="absolute"
+              className="absolute balloon-bob hover:z-30"
               style={{
                 left: node.x - NODE_W / 2,
-                top: node.y - NODE_H / 2 + 12, // +12 补 SVG 顶部留白对齐球心
+                top: node.y - NODE_H / 2 + 12,
                 width: NODE_W,
+                // @ts-expect-error CSS custom props
+                "--bob-delay": bobDelay,
+                "--bob-duration": bobDuration,
               }}
             >
               <MapNode
@@ -455,7 +466,7 @@ function MapNode({
   // index 仅用于 testid/可访问性,不参与定位(原 alignLeft/margin 逻辑已废弃)。
 
   return (
-    <div className="relative flex flex-col items-center w-full">
+    <div className="group relative flex flex-col items-center w-full">
       <button
         onClick={() => !isLocked && onClick()}
         disabled={isLocked}
@@ -534,14 +545,16 @@ function MapNode({
         </div>
       )}
 
-      {/* 节点名 */}
+      {/* 节点名:默认隐藏(防气球散布后互相重叠遮挡),hover/选中时显示。
+          半透明胶囊 + 模糊背板保证在多变天空背景上可读。
+          外层 group-hover 让 hover 整个气球区域都触发,不只 hover 文字本身。 */}
       <div
-        className={`mt-0.5 text-[10px] text-center leading-tight max-w-[110px] font-medium ${
+        className={`map-node-label mt-1 text-[10px] text-center leading-tight max-w-[120px] font-medium px-1.5 py-0.5 rounded-md backdrop-blur-sm ${
           isSelected
-            ? "text-brand font-bold"
+            ? "map-node-label--always bg-brand/90 text-white font-bold shadow-sm"
             : isLocked
-              ? "text-neutral-400 dark:text-neutral-600"
-              : "text-neutral-600 dark:text-neutral-400"
+              ? "bg-black/55 text-neutral-300"
+              : "bg-black/65 text-white"
         }`}
       >
         {lesson.title}

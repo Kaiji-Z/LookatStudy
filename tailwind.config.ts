@@ -95,11 +95,7 @@ export default {
           from: { transform: "scale(0.85)", opacity: "0.6" },
           to: { transform: "scale(1)", opacity: "1)" },
         },
-        // 地图路径渐进绘制(阶段3 用)
-        "path-draw": {
-          from: { strokeDashoffset: "1" },
-          to: { strokeDashoffset: "0" },
-        },
+        // path-draw 已迁到 index.css(MapRail 内联 animation 用,统一管理)
       },
       animation: {
         "msg-enter": "msg-enter 200ms cubic-bezier(0.16, 1, 0.3, 1)",

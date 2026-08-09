@@ -1,21 +1,14 @@
 /**
  * mapLayout —— 选关地图节点布局引擎(纯函数,易测易调)。
  *
- * v0.3.5:从 MapRail 的 inline `index % 2` 之字形抽出来,支持多布局模式。
- * 返回每个节点(相对章节容器的)相对坐标 + 连接路径定义,SVG 用绝对像素绘制
- * (修原 bug:旧代码把 % 拼进 SVG path d 值,非法单位,节点与路径对不齐)。
- *
- * 三种布局(用户可切,按 lessons 数量自动选默认):
- *   - zigzag(默认,≥5 课):左右交替蜿蜒,Duolingo 经典
- *   - linear(≤4 课或手动选):中轴直线,短章节清晰
- *   - compact(手动选):双列紧凑,章节内课多时省纵向空间
+ * v0.6:从"三布局模式 + 手动切换器"重做为单一"漂浮气球"布局。
+ * 节点像飘在空中的气球,位置带轻微种子确定性抖动(用 section id 哈希),
+ * 每次渲染位置完全一致,不会乱跳,但又不整齐规整。
+ * 连接用下垂的贝塞尔绳子(模拟重力),不再是 S 形箭头。
  *
  * 坐标系:相对章节容器左上角(0,0),x 横向 y 纵向,单位 px。
  * 节点尺寸:球 56px(w-14 h-14),卡片宽 110px(含名字)。
- * MapSection 用 useLayoutEffect 测量实际 DOM 后画 SVG(见 mapLayoutToPaths)。
  */
-
-export type MapLayoutMode = "zigzag" | "linear" | "compact";
 
 /** 单个节点的布局结果(相对章节容器)。 */
 export interface NodeLayout {
@@ -45,42 +38,66 @@ export interface SectionLayout {
 /** 容器宽度(章节内可用宽度,扣除 padding)。MapRail 章节容器 px-2。 */
 const CONTAINER_WIDTH = 268; // 300px rail - padding
 const NODE_RADIUS = 28; // w-14 h-14 = 56px,半径 28
-const NODE_SPACING_Y = 84; // 节点间纵向间距(含名字行 ~20px)
-const ZIGZAG_MARGIN = 40; // 之字形左右留白
+const NODE_SPACING_Y = 96; // 节点间纵向间距(含名字行 ~20px);v0.6 加大留漂浮空间
+const BALLOON_MARGIN = 18; // 气球左右留白(减小让抖动幅度更明显,不再呆板直线)
+/** 绳子下垂量(px,模拟重力)。让贝塞尔像被拽下来的绳子,而非 S 形箭头。 */
+const ROPE_SAG = 22;
+/** y 轴抖动幅度(px),让气球高低参差而非排成一列。与 NODE_SPACING_Y 协调(不超半距防重叠)。 */
+const Y_JITTER = 30;
 
 /**
- * 算某布局下某 section 的节点坐标 + 连接路径。
- * 容器高度由 nodes 数量决定(调用方据此设容器 min-height)。
+ * 确定性字符串哈希(FNV-1a 变体,32-bit)。
+ * 同输入永远同输出 → 同一节点 id 每次渲染算出的抖动相同 → 气球位置稳定不跳。
+ * 用于气球横向抖动 + bob 相位 + 星点位置 + 天体色切。
  */
-export function computeSectionLayout(
+export function hashStr(s: string): number {
+  let h = 0x811c9dc5; // FNV offset basis
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    // 等价 h *= 16777619,用 Math.imul 避免 32-bit 溢出丢精度
+    h = Math.imul(h, 0x01000193);
+  }
+  // 雪崩搅拌(avalanche finalizer):FNV-1a 对"末位递增"输入(seed:0, seed:1, seed:2…)
+  // 输出近乎线性相关 → 相邻气球哈希接近 → 排成直线。加 xorshift + imul 搅拌彻底打散。
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+/**
+ * 算某 section 的气球节点坐标 + 绳子连接路径。
+ * 容器高度由 nodes 数量决定(调用方据此设容器 min-height)。
+ *
+ * 抖动算法:v0.6 同时在 x 和 y 两轴抖动 → 气球真正"飘"在空中,
+ * 不再是呆板的直线/微弯列。x 大幅抖动(用满容器宽度),y 在基线上下 ±Y_JITTER。
+ * 两个独立哈希(x 用 seed:i,y 用 seed:i:y)→ 抖动方向不相关,分布更自然。
+ */
+export function computeBalloonLayout(
   lessonCount: number,
-  mode: MapLayoutMode,
   containerWidth: number = CONTAINER_WIDTH,
+  seed: string = "",
 ): SectionLayout {
   const nodes: NodeLayout[] = [];
   const centerX = containerWidth / 2;
+  const maxDrift = containerWidth / 2 - BALLOON_MARGIN - NODE_RADIUS;
 
   for (let i = 0; i < lessonCount; i++) {
-    const y = NODE_RADIUS + i * NODE_SPACING_Y + 10; // 顶部 10px 留白
-    let x = centerX;
-    if (mode === "zigzag") {
-      // 左右交替:偶数偏左,奇数偏右(对称于中轴)
-      const offset = (containerWidth / 2) - ZIGZAG_MARGIN - NODE_RADIUS;
-      x = i % 2 === 0 ? centerX - offset : centerX + offset;
-    } else if (mode === "linear") {
-      x = centerX; // 全在中轴
-    } else {
-      // compact:双列紧凑(左列偶数,右列奇数),纵向间距减半
-      const compactY = NODE_RADIUS + Math.floor(i / 2) * (NODE_SPACING_Y * 0.7) + 10;
-      const offset = (containerWidth / 2) - ZIGZAG_MARGIN - NODE_RADIUS;
-      x = i % 2 === 0 ? centerX - offset : centerX + offset;
-      nodes.push({ x, y: compactY, index: i });
-      continue;
-    }
+    const baseY = NODE_RADIUS + i * NODE_SPACING_Y + 10; // 顶部 10px 留白
+    // x 抖动:哈希归一化到 [-1,1],×maxDrift → 大幅左右飘
+    const hx = hashStr(`${seed}:${i}`);
+    const normX = (hx / 0xffffffff) * 2 - 1; // [-1, 1]
+    const x = centerX + normX * maxDrift;
+    // y 抖动:另一独立哈希,±Y_JITTER 围绕基线 → 高低参差
+    const hy = hashStr(`${seed}:${i}:y`);
+    const normY = (hy / 0xffffffff) * 2 - 1; // [-1, 1]
+    const y = baseY + normY * Y_JITTER;
     nodes.push({ x, y, index: i });
   }
 
-  // 连接段:相邻节点
+  // 绳子段:相邻节点
   const segments: PathSegment[] = [];
   for (let i = 0; i < nodes.length - 1; i++) {
     segments.push({ from: nodes[i]!, to: nodes[i + 1]!, index: i });
@@ -89,36 +106,20 @@ export function computeSectionLayout(
   return { nodes, segments };
 }
 
-/** 容器需要的最小高度(供 MapSection 设 min-height,SVG 撑满)。 */
-export function sectionHeight(lessonCount: number, mode: MapLayoutMode): number {
+/** 容器需要的最小高度(供 MapSection 设 min-height,SVG 撑满)。
+ *  v0.6 含 y 抖动余量(顶部+底部各 Y_JITTER,防边缘节点被裁)。 */
+export function sectionHeight(lessonCount: number): number {
   if (lessonCount === 0) return 40;
-  if (mode === "compact") {
-    const rows = Math.ceil(lessonCount / 2);
-    return NODE_RADIUS * 2 + (rows - 1) * (NODE_SPACING_Y * 0.7) + 40;
-  }
-  return NODE_RADIUS * 2 + (lessonCount - 1) * NODE_SPACING_Y + 40;
+  return NODE_RADIUS * 2 + (lessonCount - 1) * NODE_SPACING_Y + 40 + Y_JITTER * 2;
 }
 
 /**
- * 两点间平滑贝塞尔路径(S 形过渡)。
- * 控制点:取两点 y 中点,水平方向用各自 x → 平滑 S 曲线。
+ * 两节点间的绳子贝塞尔(下垂)。
+ * 控制点:y 中点 + ROPE_SAG(向下垂,模拟重力);x 用各自端点 x。
+ * 比原 S 形软,像被拽下来的绳子。
  */
-export function segmentToPath(seg: PathSegment): string {
+export function balloonSegmentToPath(seg: PathSegment): string {
   const { from, to } = seg;
-  const midY = (from.y + to.y) / 2;
-  // 三次贝塞尔:两个控制点都在中点 y,x 分别用起终点 x
-  return `M ${from.x} ${from.y} C ${from.x} ${midY}, ${to.x} ${midY}, ${to.x} ${to.y}`;
+  const controlY = (from.y + to.y) / 2 + ROPE_SAG;
+  return `M ${from.x} ${from.y} C ${from.x} ${controlY}, ${to.x} ${controlY}, ${to.x} ${to.y}`;
 }
-
-/** 按 lessons 数量推荐默认布局(用户可手动覆盖,持久化在 localStorage)。 */
-export function recommendMode(lessonCount: number): MapLayoutMode {
-  if (lessonCount <= 4) return "linear";
-  return "zigzag";
-}
-
-/** 布局模式中文标签 + 图标标识(供切换 UI)。 */
-export const LAYOUT_MODES: { mode: MapLayoutMode; label: string; icon: string }[] = [
-  { mode: "zigzag", label: "蜿蜒", icon: "〰️" },
-  { mode: "linear", label: "直线", icon: "│" },
-  { mode: "compact", label: "紧凑", icon: "▦" },
-];

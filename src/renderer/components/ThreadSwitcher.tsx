@@ -129,7 +129,7 @@ export function ThreadSwitcher({
                   data-testid="thread-rename-input"
                 />
               ) : (
-                <span className={`text-label max-w-[120px] truncate ${isActive ? "font-semibold" : "font-normal"}`}>
+                <span className={`text-label max-w-[120px] truncate ${isActive ? "font-semibold" : "font-normal"}`} data-tooltip={t.title || "新会话"}>
                   {t.title || "新会话"}
                 </span>
               )}

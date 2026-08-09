@@ -9,6 +9,7 @@ import type { ContentNode, Progress, Course } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { useState, useEffect, useRef } from "react";
 import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check } from "lucide-react";
+import { ConfirmCard } from "./ConfirmCard.js";
 import {
   computeBalloonLayout,
   sectionHeight,
@@ -163,6 +164,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [progressMsg, setProgressMsg] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string; rect: DOMRect } | null>(null);
 
   useEffect(() => { const off = api.on("import:progress", (msg: string) => setProgressMsg(msg)); return () => off(); }, []);
 
@@ -195,7 +197,6 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   };
   const handleDelete = async (courseId: string, title: string) => {
-    if (!confirm(`确定删除课程「${title}」？所有进度和练习都会被清除。`)) return;
     try { await api.deleteCourse(courseId); setSuccess(`已删除：${title}`); onCoursesChanged(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
 
@@ -217,7 +218,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
                   {isCurrent && <span className="shrink-0 w-5 h-5 rounded-full bg-brand flex items-center justify-center"><Check className="w-3 h-3 text-white" /></span>}
                 </div>
                 {!isCurrent && (
-                  <button onClick={(e) => { e.stopPropagation(); handleDelete(c.id, c.title); }} className="mt-2 text-caption text-neutral-600 hover:text-warning flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={(e) => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setConfirmDelete({ id: c.id, title: c.title, rect }); }} className="mt-2 text-caption text-neutral-600 hover:text-warning flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Trash2 className="w-2.5 h-2.5" /> 删除
                   </button>
                 )}
@@ -262,6 +263,19 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
           </div>
         )}
       </div>
+
+      {/* 删除课程的内联确认(替代 native confirm) */}
+      {confirmDelete && (
+        <ConfirmCard
+          anchorRect={confirmDelete.rect}
+          message={`删除课程「${confirmDelete.title}」?所有进度和练习都会清除,无法撤销。`}
+          danger
+          confirmLabel="删除"
+          testid="course-delete-confirm"
+          onConfirm={() => { handleDelete(confirmDelete.id, confirmDelete.title); setConfirmDelete(null); }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </>
   );
 }

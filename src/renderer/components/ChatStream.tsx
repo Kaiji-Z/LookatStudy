@@ -17,7 +17,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { CanvasItem } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, X, ChevronDown, Pencil } from "lucide-react";
+import { Check, X, ChevronDown, Pencil, XCircle, Wrench } from "lucide-react";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
@@ -585,12 +585,12 @@ function ToolCallBlock({
         </>
       ) : state === "output-error" ? (
         <>
-          <span>❌</span>
+          <XCircle className="w-3.5 h-3.5 text-warning shrink-0" />
           <span className="text-warning">{label}: {error}</span>
         </>
       ) : (
         <>
-          <span className="text-neutral-400 dark:text-neutral-500">🔧</span>
+          <Wrench className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
           <span className="text-neutral-600 dark:text-neutral-400">{label}</span>
         </>
       )}

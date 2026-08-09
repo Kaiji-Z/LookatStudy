@@ -793,8 +793,8 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="settings-drawer">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-md h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800 shadow-elevated flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+      <div className="relative w-full max-w-md h-full bg-surface-0 border-l border-neutral-800 shadow-elevated flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 shrink-0">
           <h2 className="text-body font-bold">{translate("settings.title")}</h2>
           <button
             onClick={onClose}
@@ -826,8 +826,8 @@ function ReviewDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="review-drawer">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-md h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800 shadow-elevated flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+      <div className="relative w-full max-w-md h-full bg-surface-0 border-l border-neutral-800 shadow-elevated flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 shrink-0">
           <h2 className="text-body font-bold">📖 复习</h2>
           <button
             onClick={onClose}

@@ -68,45 +68,49 @@ export function MapRail(props: MapRailProps) {
         </>
       )}
 
-      {/* tab 栏(透明,浮在天空之上) */}
-      <div className="shrink-0 px-2 pt-2 pb-1.5 z-30 relative">
-        <div className="flex p-1 bg-black/30 backdrop-blur-sm rounded-lg gap-1">
-          <button onClick={() => setPanel("map")} data-testid="map-tab-map" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[11px] font-bold transition-colors ${panel === "map" ? "bg-brand/15 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
+      {/* tab 栏 + 标题:都悬浮(absolute),不占文档流。
+          map-path 全高滚动,球和内容从屏幕边缘(tab 顶部)才开始被遮。 */}
+      <div className="absolute top-0 left-0 right-0 z-40 px-2 pt-2 pb-2 pointer-events-none [&_button]:pointer-events-auto">
+        {/* tab 胶囊 */}
+        <div className="flex p-1 rounded-lg gap-1 mb-2" style={{ background: "rgba(8,10,20,0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
+          <button onClick={() => setPanel("map")} data-testid="map-tab-map" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[11px] font-bold transition-colors ${panel === "map" ? "bg-brand/20 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
             <MapIcon className="w-3 h-3" /> 课程地图
           </button>
-          <button onClick={() => setPanel("import")} data-testid="map-tab-import" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[11px] font-bold transition-colors ${panel === "import" ? "bg-brand/15 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
+          <button onClick={() => setPanel("import")} data-testid="map-tab-import" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[11px] font-bold transition-colors ${panel === "import" ? "bg-brand/20 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
             <FileText className="w-3 h-3" /> 导入课程
           </button>
         </div>
+        {/* 标题/进度条(仅地图面板显示) */}
+        {panel === "map" && (
+          <div className="px-3 py-2 rounded-lg pointer-events-auto" style={{ background: "rgba(8,10,20,0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
+            <h2 className="text-sm font-extrabold text-white truncate" data-tooltip={props.courseTitle ?? ""}>
+              {props.courseTitle ?? "未选择课程"}
+            </h2>
+            <div className="mt-1.5 flex items-center gap-2">
+              <div className="flex-1 h-2.5 bg-black/40 rounded-full overflow-hidden ring-1 ring-white/10">
+                <div className={`h-full rounded-full transition-all duration-500 ${masteryPct >= 100 ? "bg-gold" : "bg-brand"}`} style={{ width: `${Math.max(3, masteryPct)}%` }} />
+              </div>
+              <span className="text-xs font-extrabold tabular-nums text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">{masteryPct}%</span>
+            </div>
+            <div className="flex items-center justify-end mt-1.5 text-[10px]">
+              {props.dueCount > 0 && (
+                <button onClick={props.onOpenReview} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-review/20 ring-1 ring-review/30 hover:bg-review/30 transition-colors" data-testid="map-review-badge">
+                  <BookOpen className="w-3 h-3 text-review" />
+                  <span className="font-extrabold text-review">{props.dueCount}</span>
+                  <span className="text-review/80">待复习</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 滑动内容区(透明,天空由 nav 层 canvas 提供) */}
-      <div className="relative flex-1 overflow-hidden z-10">
+      {/* 滑动内容区(透明,天空由 nav 层 canvas 提供)。全高,tab/标题悬浮其上。 */}
+      <div className="absolute inset-0 overflow-hidden z-10">
         <div className="flex h-full transition-transform duration-300" style={{ transform: panel === "map" ? "translateX(0)" : "translateX(-50%)", width: "200%" }}>
-          {/* 地图面板(透明) */}
-          <div className="w-1/2 h-full flex flex-col min-h-0 relative">
-            <div className="relative z-20 px-3 pt-2 pb-2 bg-black/30 backdrop-blur-sm shrink-0 pointer-events-auto">
-              <h2 className="map-title text-sm font-extrabold text-white truncate" title={props.courseTitle ?? ""}>
-                <span className="map-title__text">{props.courseTitle ?? "未选择课程"}</span>
-                <span className="map-title__full">{props.courseTitle ?? "未选择课程"}</span>
-              </h2>
-              <div className="mt-1.5 flex items-center gap-2">
-                <div className="flex-1 h-2.5 bg-black/40 rounded-full overflow-hidden ring-1 ring-white/10">
-                  <div className={`h-full rounded-full transition-all duration-500 ${masteryPct >= 100 ? "bg-gold" : "bg-brand"}`} style={{ width: `${Math.max(3, masteryPct)}%` }} />
-                </div>
-                <span className="text-xs font-extrabold tabular-nums text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">{masteryPct}%</span>
-              </div>
-              <div className="flex items-center justify-end mt-1.5 text-[10px]">
-                {props.dueCount > 0 && (
-                  <button onClick={props.onOpenReview} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-review/20 ring-1 ring-review/30 hover:bg-review/30 transition-colors" data-testid="map-review-badge">
-                    <BookOpen className="w-3 h-3 text-review" />
-                    <span className="font-extrabold text-review">{props.dueCount}</span>
-                    <span className="text-review/80">待复习</span>
-                  </button>
-                )}
-              </div>
-            </div>
-            <div ref={mapPathRef} className="map-path relative z-10 flex-1 overflow-y-auto px-2 pb-4 min-h-0" data-testid="map-path">
+          {/* 地图面板(透明)。map-path 全高滚动(pt-24 留出 tab+标题悬浮空间)。 */}
+          <div className="w-1/2 h-full relative">
+            <div ref={mapPathRef} className="map-path h-full overflow-y-auto px-2 pt-24 pb-4" data-testid="map-path">
               <div className={`map-sky-content ${skyPreset ? `env-${skyPreset.season} env-${skyPreset.weather}` : ""}`}>
                 {props.streaming && (
                   <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-[11px] text-brand font-medium backdrop-blur-sm" data-testid="streaming-notice">
@@ -138,8 +142,8 @@ export function MapRail(props: MapRailProps) {
               </div>
             </div>
           </div>
-          {/* 导入面板(透明,共享天空背景) */}
-          <div className="w-1/2 h-full overflow-y-auto px-3 py-3 space-y-2.5">
+          {/* 导入面板(透明,共享天空背景)。pt-24 避开悬浮 tab 区域 */}
+          <div className="w-1/2 h-full overflow-y-auto px-3 pt-24 pb-3 space-y-2.5">
             <ImportPanel courses={props.courses} selectedCourseId={props.courseId} onSelectCourse={(id) => { props.onSelectCourse(id); setPanel("map"); }} onCoursesChanged={props.onCoursesChanged} />
           </div>
         </div>
@@ -303,13 +307,14 @@ function MapOrbWeatherCanvas({
     const nav = navRef.current;
     const scroll = scrollRef.current;
     if (!canvas || !nav || !scroll) return;
+    // canvas 在 nav 层 → 坐标相对 nav 算
     const getOrbs = (): OrbPos[] => {
       const navRect = nav.getBoundingClientRect();
       const btns = scroll.querySelectorAll<HTMLButtonElement>(".lesson-bubble");
       const out: OrbPos[] = [];
       btns.forEach((b) => {
         const r = b.getBoundingClientRect();
-        if (r.bottom < navRect.top || r.top > navRect.bottom) return; // 视口外跳过
+        if (r.bottom < navRect.top || r.top > navRect.bottom) return;
         out.push({
           x: r.left - navRect.left + r.width / 2,
           y: r.top - navRect.top + r.height / 2,
@@ -511,7 +516,8 @@ function MapNode({
         } ${isLocked ? "cursor-not-allowed" : "cursor-pointer hover:scale-105"} ${
           isSelected ? "ring-4 ring-accent ring-offset-2 ring-offset-neutral-50 dark:ring-offset-neutral-950" : ""
         }`}
-        title={
+        title={undefined}
+        data-tooltip={
           examLocked
             ? `🔒 ${lesson.title}(完成本章所有课时后解锁)`
             : isExam
@@ -576,20 +582,12 @@ function MapNode({
         </div>
       )}
 
-      {/* 节点名:默认隐藏(防气球散布后互相重叠遮挡),hover/选中时显示。
-          半透明胶囊 + 模糊背板保证在多变天空背景上可读。
-          外层 group-hover 让 hover 整个气球区域都触发,不只 hover 文字本身。 */}
-      <div
-        className={`map-node-label mt-1 text-[10px] text-center leading-tight max-w-[120px] font-medium px-1.5 py-0.5 rounded-md backdrop-blur-sm ${
-          isSelected
-            ? "map-node-label--always bg-brand/90 text-white font-bold shadow-sm"
-            : isLocked
-              ? "bg-black/55 text-neutral-300"
-              : "bg-black/65 text-white"
-        }`}
-      >
-        {lesson.title}
-      </div>
+      {/* 节点名:选中态常驻显示;hover 由全局 GlobalTooltip(data-tooltip)处理 */}
+      {isSelected && (
+        <div className="mt-1 text-[10px] text-center leading-tight max-w-[120px] font-bold px-1.5 py-0.5 rounded-md bg-brand/90 text-white shadow-sm">
+          {lesson.title}
+        </div>
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import type {
   NoteSourceAnchor,
 } from "@shared/types";
 import { MapRail, type MapView } from "./components/MapRail.js";
+import { GlobalTooltip } from "./components/GlobalTooltip.js";
 import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
 import { useCanvas } from "./lib/useCanvas.js";
 import { useFontSize } from "./lib/useFontSize.js";
@@ -651,6 +652,9 @@ export default function App() {
           hasNode={!!selectedNodeId}
         />
       )}
+
+      {/* 全局悬浮提示(Portal 到 body,脱离所有 stacking context,永远最上层) */}
+      <GlobalTooltip />
     </div>
   );
 }

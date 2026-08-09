@@ -259,8 +259,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // 优先用 .env 里的真实 ZAI key(让 ui-test 能真实出题/答题);没有则用占位假 key(只验证渲染)。
   try {
     const { settings: settingsTable, customProviders } = await import("./db/schema.js");
-    // getDb 已在顶部 static import,无需再 dynamic import(消除 rollup 混合导入警告,
-    // 也避免 vite-plugin-electron dev 模式下 chunk metadata 不完整导致的 deps optimizer 崩)
+    const { getDb } = await import("./db/index.js");
     const zai = getZaiConfig();
     const PROVIDER_ID = "custom-ui-test-provider";
     const existingProvider = getDb().select().from(customProviders).all();

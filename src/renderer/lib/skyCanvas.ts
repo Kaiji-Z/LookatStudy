@@ -366,35 +366,44 @@ let orbStreakTimer: number[] = [];
 let orbCaps: number[] = [];
 
 /* ---- 雪 dome(参照 weather-orb):4 段贝塞尔画圆顶,凸出球顶 ---- */
-/* 雪盖:覆盖球顶 1/3,边缘用贝塞尔贴合球面弧线(像 dome 那样自然下垂收边),
-   顶部微微隆起凸出球顶。不是横线闭合,而是用 quadraticCurveTo 让雪线
-   顺着球面曲率过渡,雪堆和球面融为一体。 */
+/* 雪盖:覆盖球顶一定比例,边缘用贝塞尔贴合球面弧线自然下垂收边,顶部微隆起。
+   cov 控制覆盖比例(0.5 = 球顶 1/2),用宽度比例定义区域,避免角度参数化
+   在 90° 时端点塌缩到中线的 bug。 */
 function drawSnowDome(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, cap: number, now: number) {
-  const lift = r * (0.05 + cap * 0.07); // 隆起:微凸出球顶
-  // 雪覆盖球顶 1/3:雪线在球面 ±55°(球顶到侧上方约 1/3 区域)
-  const span = 55 * Math.PI / 180;
-  // 雪线两端点(球面上)
-  const lx = cx - Math.cos(span) * r;          // 左端 x
-  const rx = cx + Math.cos(span) * r;          // 右端 x
-  const edgeY = cy - Math.sin(span) * r;       // 雪线 y(球面侧上方)
-  const peakY = cy - r - lift;                 // 顶部最高点(隆起)
+  const lift = r * (0.04 + cap * 0.05);   // 隆起:微凸出球顶
+  const cov = 0.7 + cap * 0.15;           // 覆盖比例:0.7..0.85(球顶大半)
+  // 雪线端点:按宽度比例定
+  const lx = cx - r * cov;
+  const rx = cx + r * cov;
+  const edgeY = cy - Math.sqrt(Math.max(0, r * r - (r * cov) * (r * cov)));
+  const peakY = cy - r - lift;            // 顶部最高点(微隆起)
+  // 贝塞尔控制点(满足切线方向约束):
+  //   端点处切线竖直 → 控制点与端点同 x(竖直方向上)
+  //   顶点处切线水平 → 控制点与顶点同 y(peakY)
+  //   控制点在端点和顶点之间,纵向居中 → 雪堆边缘圆润有厚度
+  const ctrlY = (edgeY + peakY) / 2;      // 控制点 y = 端点和顶点的中点
+  // 端点 x 处的控制点(竖直切线):左 ctrlX=lx,右 ctrlX=rx
+  // 顶点 x=cx 处的控制点(水平切线):y=peakY
+  // 用两段 cubic(3次贝塞尔)精确控制两端切线:
+  //   左段:端点(lx,edgeY) → ctrl1(lx,ctrlY) 竖直 + ctrl2(cx±,peakY) 水平 → 顶点
   ctx.save();
   ctx.beginPath();
-  // 上轮廓(雪盖顶面):从左雪线端点,贝塞尔经隆起顶部到右雪线端点
   ctx.moveTo(lx, edgeY);
-  ctx.quadraticCurveTo(cx - r * 0.45, peakY, cx, peakY);
-  ctx.quadraticCurveTo(cx + r * 0.45, peakY, rx, edgeY);
-  // 下轮廓(雪线,贴合球面):贝塞尔回到左端,控制点沿球面弧下垂 → 自然收边
+  // 左段 cubic:起点切线竖直(ctrl1 与起点同 x)、终点(顶点)切线水平(ctrl2 与顶点同 y)
+  ctx.bezierCurveTo(lx, ctrlY, cx - r * 0.3, peakY, cx, peakY);
+  // 右段 cubic:顶点切线水平(ctrl1 与顶点同 y)、终点切线竖直(ctrl2 与终点同 x)
+  ctx.bezierCurveTo(cx + r * 0.3, peakY, rx, ctrlY, rx, edgeY);
+  // 下轮廓(雪线,贴合球面):贝塞尔回左端,控制点沿球面弧下垂 → 自然收边
   ctx.quadraticCurveTo(cx, cy - r * 0.78, lx, edgeY);
   ctx.closePath();
-  // 渐变:顶部纯白 → 雪线处偏蓝灰(球面弧度立体感)
+  // 渐变:顶部纯白 → 雪线偏蓝灰(球面弧度立体感)
   const g = ctx.createLinearGradient(0, peakY, 0, edgeY);
   g.addColorStop(0, "rgba(255,255,255,0.98)");
   g.addColorStop(0.65, "rgba(245,250,255,0.95)");
   g.addColorStop(1, "rgba(218,230,246,0.9)");
   ctx.fillStyle = g;
   ctx.fill();
-  // 雪线暗影(雪堆压在球面的过渡,一道柔和弧)
+  // 雪线暗影(雪堆压在球面过渡,柔和弧)
   ctx.strokeStyle = "rgba(168,192,225,0.28)";
   ctx.lineWidth = 1.5;
   ctx.beginPath();

@@ -180,7 +180,7 @@ function Quadrant({
               <button
                 onClick={() => onItemClick(node.id)}
                 data-testid={`review-node-${node.id.slice(0, 8)}`}
-                className="w-full text-left text-[11px] px-2 py-1 rounded text-neutral-600 dark:text-neutral-400 hover:bg-white dark:hover:bg-neutral-800/40 hover:text-neutral-900 dark:hover:text-neutral-200 truncate transition-colors"
+                className="w-full text-left text-[11px] px-2 py-1 rounded text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 hover:text-neutral-900 dark:hover:text-neutral-200 truncate transition-colors"
                 title={node.title}
               >
                 {node.title}

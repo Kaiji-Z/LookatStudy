@@ -122,9 +122,9 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
       <div className="flex-1 flex flex-col items-center justify-center px-6" data-testid="exam-loading">
         <Target className="w-12 h-12 text-accent mb-4 opacity-60" />
         <div className="flex items-center gap-1.5 text-sm text-neutral-500 dark:text-neutral-400">
-          <span className="typing-dot w-1.5 h-1.5 bg-accent rounded-full inline-block" />
-          <span className="typing-dot w-1.5 h-1.5 bg-accent rounded-full inline-block" />
-          <span className="typing-dot w-1.5 h-1.5 bg-accent rounded-full inline-block" />
+          <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
+          <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
+          <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
           <span className="ml-1">正在生成章节考试题…</span>
         </div>
       </div>
@@ -200,13 +200,13 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
                   key={idx}
                   onClick={() => handleSelect(idx)}
                   data-testid={`exam-option-${idx}`}
-                  className={`w-full text-left text-sm p-2.5 rounded-lg border-2 font-medium transition-colors ${
+                  className={`w-full text-left text-sm p-2.5 rounded-lg border font-medium transition-all duration-150 ${
                     isSelected
-                      ? "border-accent bg-accent/10 text-accent"
-                      : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600"
+                      ? "border-accent bg-accent/10 text-neutral-900 dark:text-neutral-100 ring-2 ring-accent/20"
+                      : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-900"
                   } cursor-pointer`}
                 >
-                  <span className="font-bold mr-2">{String.fromCharCode(65 + idx)}</span>
+                  <span className={`font-bold mr-2 ${isSelected ? "text-accent" : ""}`}>{String.fromCharCode(65 + idx)}</span>
                   {opt}
                 </button>
               );
@@ -223,8 +223,8 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
           data-testid="exam-next"
           className={`w-full py-2 rounded-xl text-sm font-bold transition-all ${
             selected === null
-              ? "bg-neutral-200 dark:bg-neutral-800 text-neutral-400 dark:text-neutral-600 cursor-not-allowed"
-              : "btn-3d-blue"
+              ? "bg-neutral-200 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-500 cursor-not-allowed"
+              : "btn-3d-brand"
           }`}
         >
           {currentIdx + 1 < exercises.length ? (

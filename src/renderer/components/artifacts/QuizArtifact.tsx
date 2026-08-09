@@ -133,7 +133,7 @@ export function QuizArtifact({
           onClick={handleSubmit}
           disabled={selected === null}
           data-testid="quiz-submit"
-          className="btn-3d-blue w-full py-2 text-xs disabled:opacity-40"
+          className="btn-3d-brand w-full py-2 text-xs disabled:opacity-40"
         >
           提交答案
         </button>

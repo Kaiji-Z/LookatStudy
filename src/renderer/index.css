@@ -164,6 +164,13 @@
     /* 弹出菜单/tooltip:中等抬起 */
     box-shadow: 0 4px 12px -2px rgb(var(--shadow-rgb) / 0.14), 0 1px 3px -1px rgb(var(--shadow-rgb) / 0.08);
   }
+  /* 带语义色辉光的软阴影:用于带头像/图标的强调元素(如 AI 头像) */
+  .shadow-accent-soft {
+    box-shadow: 0 2px 6px -1px rgb(var(--accent-rgb) / 0.25);
+  }
+  .shadow-brand-soft {
+    box-shadow: 0 2px 6px -1px rgb(var(--brand-rgb) / 0.25);
+  }
 }
 
 /* 3D push down buttons (Duolingo signature style) */
@@ -182,13 +189,8 @@
   .btn-3d-brand:active {
     box-shadow: 0 1px 0 0 var(--brand-dark);
   }
-  .btn-3d-blue {
-    @apply btn-3d bg-accent text-white;
-    box-shadow: 0 4px 0 0 var(--accent-dark);
-  }
-  .btn-3d-blue:active {
-    box-shadow: 0 1px 0 0 var(--accent-dark);
-  }
+  /* v0.6: btn-3d-blue 已移除(词汇收敛:全应用主操作统一 btn-3d-brand)。
+     若需 accent 色按钮,用语义化的 .btn-3d-accent 并明确使用场景,不再混用。 */
   .btn-3d-neutral {
     @apply btn-3d bg-neutral-700 text-white;
     box-shadow: 0 4px 0 0 var(--surface-3);
@@ -334,15 +336,6 @@
   animation: bubble-active-pulse 2.4s ease-in-out infinite;
 }
 
-/* 课程抽屉:从左栏向右滑出 */
-@keyframes drawer-slide-right {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
-}
-.drawer-slide-right {
-  animation: drawer-slide-right 280ms var(--ease-out-expo);
-}
-
 /* ============================================================
  * v0.6 节点球季节滤镜(整球色温调,不动状态色本身)
  * 状态色(绿/蓝/金/灰/紫)是游戏语言,filter 整球作用但保持相对差异。
@@ -398,6 +391,40 @@
 }
 .typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+/* ============================================================
+ * v0.6 反馈层语义化:Toast 严重度变体 + 退场动画。
+ * 全应用"AI 思考中"统一用 brand 色(ChatStream/NotebookPanel/ReviewPanel/ExamView)。
+ * Toast 四级 severity 用语义色描边 + 浅 tint,保持深色基调。
+ * ============================================================ */
+
+/* Toast 入场:从下方滑入 + 微缩放(状态传达:新反馈到达) */
+@keyframes toast-enter {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* Toast 退场:淡出 + 下沉(避免硬消失的 glitch 感) */
+@keyframes toast-exit {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(-4px) scale(0.97); }
+}
+.toast-enter { animation: toast-enter 220ms var(--ease-out-back); }
+.toast-exit  { animation: toast-exit 180ms var(--ease-out-quart) forwards; }
+
+/* Toast severity tint:左色条 + 浅 tint 背景,深色基调不变 */
+.toast-default { border-left: 3px solid var(--ink-muted); }
+.toast-success { border-left: 3px solid var(--brand); }
+.toast-error   { border-left: 3px solid var(--warning); }
+.toast-warning { border-left: 3px solid var(--review); }
+.toast-info    { border-left: 3px solid var(--accent); }
+
+/* 内联确认卡(替代 native confirm()):危险动作的二次确认浮层。
+   嵌入式(非 modal),出现在触发按钮原位附近,不打断任务流。 */
+@keyframes confirm-enter {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.confirm-card { animation: confirm-enter 160ms var(--ease-out-back); }
 
 /* —— 滚动叙事天空(canvas 版,MapRail v0.6)——
    canvas 是 nav 的 absolute 子元素(inset-0),铺满整个左栏含 header 区域;

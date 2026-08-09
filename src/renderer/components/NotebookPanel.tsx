@@ -73,21 +73,26 @@ export function NotebookPanel({
       className="h-full flex flex-col bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800/50"
       data-testid="notebook-panel"
     >
-      {/* 标签栏 */}
-      <div className="flex border-b border-neutral-200 dark:border-neutral-800 shrink-0" data-testid="notebook-tabs">
-        <TabBtn
-          label="讲解"
-          active={tab === "content"}
-          onClick={() => handleTabClick("content")}
-          testid="tab-content"
-        />
-        <TabBtn
-          label="笔记"
-          active={tab === "notes"}
-          onClick={() => handleTabClick("notes")}
-          testid="tab-notes"
-          badge={nodeItems.length > 0 ? String(nodeItems.length) : undefined}
-        />
+      {/* 标签栏:分段控件(segmented control)。
+          设计意图:与中栏 ThreadSwitcher(会话流药丸行)刻意不同——
+          这里是"固定 2 个视图切换",分段控件语义更准;会话流是动态可增删的列表,
+          用药丸行。两种 tab 词汇通过形态明确区分各自场景。 */}
+      <div className="flex items-center gap-1 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 shrink-0" data-testid="notebook-tabs">
+        <div className="flex p-0.5 bg-neutral-100 dark:bg-neutral-900 rounded-lg gap-0.5">
+          <TabBtn
+            label="讲解"
+            active={tab === "content"}
+            onClick={() => handleTabClick("content")}
+            testid="tab-content"
+          />
+          <TabBtn
+            label="笔记"
+            active={tab === "notes"}
+            onClick={() => handleTabClick("notes")}
+            testid="tab-notes"
+            badge={nodeItems.length > 0 ? String(nodeItems.length) : undefined}
+          />
+        </div>
       </div>
 
       {/* 内容区:tab 切换时内容滑入(PROPERTY.md motion: 状态传达,150-250ms) */}
@@ -801,15 +806,17 @@ function TabBtn({
     <button
       onClick={onClick}
       data-testid={testid}
-      className={`flex-1 text-xs py-2 font-bold transition-colors duration-150 border-b-2 flex items-center justify-center gap-1.5 ${
+      className={`flex items-center justify-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all duration-150 ${
         active
-          ? "text-brand border-brand"
-          : "text-neutral-500 dark:text-neutral-400 border-transparent hover:text-neutral-700 dark:hover:text-neutral-300"
+          ? "bg-white dark:bg-neutral-950 text-brand shadow-sm"
+          : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
       }`}
     >
       <span>{label}</span>
       {badge && (
-        <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${active ? "bg-brand text-white" : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400"}`}>
+        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+          active ? "bg-brand/15 text-brand" : "bg-neutral-200 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400"
+        }`}>
           {badge}
         </span>
       )}

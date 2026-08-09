@@ -17,7 +17,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { CanvasItem } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, X, ChevronDown } from "lucide-react";
+import { Check, X, ChevronDown, Pencil } from "lucide-react";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
@@ -337,10 +337,10 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
           onClick={handleSaveChatNote}
           data-testid="save-chat-note-btn"
           style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: "translate(-50%, -100%)" }}
-          className="absolute z-20 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-bold shadow-elevated flex items-center gap-1 hover:brightness-110 transition msg-enter"
+          className="absolute z-20 px-3 py-1.5 rounded-lg bg-brand text-white text-xs font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition msg-enter"
           title="把这段对话存到记录区"
         >
-          ✏️ 加笔记
+          <Pencil className="w-3 h-3" /> 加笔记
         </button>
       )}
     </div>
@@ -394,8 +394,7 @@ function MessageRowV2({
   return (
     <div className="msg-enter flex gap-2.5" data-testid="msg-assistant" data-msg-id={msg.id}>
       <div
-        className="w-7 h-7 rounded-full bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5"
-        style={{ boxShadow: "0 2px 6px rgba(28,176,246,0.2)" }}
+        className="w-7 h-7 rounded-full bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5 shadow-accent-soft"
       >
         AI
       </div>
@@ -578,7 +577,7 @@ function ToolCallBlock({
     >
       {state === "input-available" ? (
         <>
-          <span className="typing-dot w-1.5 h-1.5 bg-accent rounded-full inline-block" />
+          <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
           <span className="text-neutral-600 dark:text-neutral-400">{label}…</span>
         </>
       ) : state === "output-error" ? (
@@ -588,7 +587,7 @@ function ToolCallBlock({
         </>
       ) : (
         <>
-          <span className="text-neutral-400 dark:text-neutral-500 dark:text-neutral-400">🔧</span>
+          <span className="text-neutral-400 dark:text-neutral-500">🔧</span>
           <span className="text-neutral-600 dark:text-neutral-400">{label}</span>
         </>
       )}

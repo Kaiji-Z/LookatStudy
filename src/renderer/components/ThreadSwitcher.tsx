@@ -1,18 +1,25 @@
 /**
- * ThreadSwitcher —— v0.4 改 Chrome 式标签条。
+ * ThreadSwitcher —— v0.6 重新设计。
  *
- * 顶部横排 tabs(可横向滚动),每个 tab:
- *   - 标题(自动摘要命名,如"Transformer 概念图…")
- *   - 当前 tab 绿底高亮
- *   - 右侧齿轮按钮:hover 出现,点开菜单(重命名/归档/删除)
- *   - 末尾 + 号新建
+ * 设计目标:
+ *  - 区别于右栏 NotebookPanel 的"页面标签"(分段控件),这里做"会话流"标签:
+ *    会话是动态、可增删、数量不定的,所以用**可滚动的圆角药丸行**(pill row),
+ *    不是分段控件(分段控件适合 2-4 个固定项)。
+ *  - 比 Chrome 填充 tab 更轻:药丸 + 微高亮当前 + 焦点点,视觉重量降到最低,
+ *    让用户视线落在下方对话内容上,不在 tab 条上。
+ *  - P0 修复:native confirm() → ConfirmCard(内联确认浮层)。
  *
- * 首次进入(无 thread):不显示 tabs,只显示一个"📍 焦点节点 + 准备开始"提示条,
- * 等用户输入发送后才真正建 thread。
+ * 交互:
+ *  - 当前会话:brand 描边药丸 + 左侧 brand 实心点
+ *  - 其他会话:中性描边药丸 + 左侧中性点;hover 描边变亮
+ *  - 药丸内 hover 出现齿轮(操作菜单:重命名/归档/删除)
+ *  - 行末 + 新建按钮
+ *  - 删除走 ConfirmCard(warning 红确认),不阻断渲染进程
  */
 import { useState, useRef, useEffect } from "react";
 import type { Thread } from "@shared/types";
 import { Plus, Settings, Edit, Archive, Trash } from "lucide-react";
+import { ConfirmCard } from "./ConfirmCard.js";
 
 interface ThreadSwitcherProps {
   threads: Thread[];
@@ -35,10 +42,11 @@ export function ThreadSwitcher({
   onArchive,
   onDelete,
 }: ThreadSwitcherProps) {
-  const [menuFor, setMenuFor] = useState<string | null>(null); // 哪个 tab 的齿轮菜单开着
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null); // 菜单 fixed 坐标
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string; rect: DOMRect } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -52,11 +60,9 @@ export function ThreadSwitcher({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // 齿轮点击:计算按钮在视口的坐标,菜单用 fixed 定位脱离 overflow:auto 容器
   const openMenu = (e: React.MouseEvent, threadId: string) => {
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    // 菜单宽 128px(w-32),右对齐到齿轮右侧
     const left = Math.max(8, rect.right - 128);
     const top = rect.bottom + 4;
     setMenuPos({ top, left });
@@ -74,39 +80,38 @@ export function ThreadSwitcher({
     setRenamingId(null);
   };
 
-  // 无 thread:首次进入,只显示焦点节点提示
+  // 无 thread:首次进入,焦点节点提示
   if (threads.length === 0) {
     return (
-      <div className="px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 shrink-0 flex items-center text-xs" data-testid="thread-switcher-empty">
-        <span className="text-neutral-600 dark:text-neutral-400 truncate flex-1">
-          📍 {focusNodeTitle ?? "未选节点"}
+      <div className="px-3 py-2.5 border-b border-neutral-200 dark:border-neutral-800 shrink-0 flex items-center gap-2 text-xs bg-neutral-50 dark:bg-neutral-950" data-testid="thread-switcher-empty">
+        <span className="w-1.5 h-1.5 rounded-full bg-brand shrink-0 animate-bubble-pulse" />
+        <span className="text-neutral-700 dark:text-neutral-300 truncate flex-1 font-medium">
+          {focusNodeTitle ?? "未选节点"}
         </span>
-        <span className="text-[10px] text-neutral-400">输入问题开始新会话</span>
+        <span className="text-[10px] text-neutral-400 shrink-0">输入问题开始</span>
       </div>
     );
   }
 
   return (
-    <div className="border-b border-neutral-200 dark:border-neutral-800 shrink-0" data-testid="thread-switcher">
-      <div className="flex items-stretch overflow-x-auto scrollbar-thin bg-neutral-100/60 dark:bg-neutral-900/40">
+    <div className="border-b border-neutral-200 dark:border-neutral-800 shrink-0 bg-neutral-50 dark:bg-neutral-950" data-testid="thread-switcher">
+      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-thin px-2 py-2">
         {threads.map((t) => {
           const isActive = t.id === activeThread?.id;
           const isRenaming = renamingId === t.id;
           return (
             <div
               key={t.id}
-              className={`group relative flex items-center gap-1.5 pl-3 pr-2 py-2 cursor-pointer border-r border-neutral-200 dark:border-neutral-800 whitespace-nowrap transition-colors ${
+              className={`group relative flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all duration-150 shrink-0 ${
                 isActive
-                  ? "bg-neutral-50 dark:bg-neutral-950 text-brand"
-                  : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-900/60"
+                  ? "bg-brand/10 border border-brand/40 text-brand"
+                  : "bg-neutral-100 dark:bg-neutral-900 border border-transparent text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200"
               }`}
               onClick={() => !isRenaming && onPickThread(t.id)}
               data-testid={`thread-tab-${t.id.slice(0, 8)}`}
             >
-              {/* 焦点标记(当前 thread 显示绿点) */}
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? "bg-brand" : "bg-neutral-300 dark:bg-neutral-700"}`} />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors ${isActive ? "bg-brand" : "bg-neutral-400 dark:bg-neutral-600"}`} />
 
-              {/* 标题 / 重命名输入框 */}
               {isRenaming ? (
                 <input
                   value={renameValue}
@@ -118,7 +123,7 @@ export function ThreadSwitcher({
                   onBlur={commitRename}
                   onClick={(e) => e.stopPropagation()}
                   autoFocus
-                  className="bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-[11px] rounded px-1.5 py-0.5 border border-brand focus:outline-none w-32"
+                  className="bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-[11px] rounded px-1.5 py-0.5 border border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 w-28"
                   data-testid="thread-rename-input"
                 />
               ) : (
@@ -127,29 +132,34 @@ export function ThreadSwitcher({
                 </span>
               )}
 
-              {/* 齿轮按钮:hover 出现 */}
               {!isRenaming && (
                 <button
                   onClick={(e) => openMenu(e, t.id)}
-                  className="text-[10px] text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 opacity-0 group-hover:opacity-100 transition-opacity w-4 h-4 flex items-center justify-center rounded"
+                  className={`flex items-center justify-center w-5 h-5 rounded-full transition-all ${
+                    isActive
+                      ? "text-brand/70 hover:text-brand hover:bg-brand/20"
+                      : "text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-800 opacity-0 group-hover:opacity-100"
+                  } ${isActive ? "opacity-70" : ""}`}
                   data-testid={`thread-gear-${t.id.slice(0, 8)}`}
                   title="操作"
+                  aria-label="会话操作"
                 ><Settings className="w-3 h-3" /></button>
               )}
             </div>
           );
         })}
 
-        {/* + 新建 */}
+        {/* + 新建药丸(轻量,与 tab 区分) */}
         <button
           onClick={onCreate}
-          className="px-3 py-2 text-neutral-500 dark:text-neutral-400 hover:text-brand hover:bg-neutral-50 dark:hover:bg-neutral-900/60 text-sm shrink-0"
+          className="flex items-center justify-center w-7 h-7 rounded-full text-neutral-500 hover:text-brand hover:bg-brand/10 transition-colors shrink-0"
           data-testid="thread-new"
           title="新建会话"
+          aria-label="新建会话"
         ><Plus className="w-4 h-4" /></button>
       </div>
 
-      {/* 齿轮菜单:fixed 定位,脱离标签条的 overflow:auto 容器,依附齿轮下方 */}
+      {/* 齿轮菜单:fixed 定位,脱离滚动容器 */}
       {menuFor && menuPos && (() => {
         const t = threads.find((x) => x.id === menuFor);
         if (!t) return null;
@@ -157,25 +167,43 @@ export function ThreadSwitcher({
           <div
             ref={menuRef}
             style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
-            className="z-50 w-32 bg-white dark:bg-neutral-900 rounded-lg shadow-pop py-1"
+            className="z-50 w-32 bg-neutral-900 rounded-lg shadow-pop py-1 border border-neutral-700"
             data-testid={`thread-menu-${t.id.slice(0, 8)}`}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => startRename(t)}
-              className="w-full text-left px-3 py-1.5 text-[11px] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
-            ><Edit className="w-3 h-3 inline mr-1" />重命名</button>
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+            ><Edit className="w-3 h-3" />重命名</button>
             <button
               onClick={() => { onArchive(t.id); setMenuFor(null); setMenuPos(null); }}
-              className="w-full text-left px-3 py-1.5 text-[11px] text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
-            ><Archive className="w-3 h-3 inline mr-1" />归档</button>
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+            ><Archive className="w-3 h-3" />归档</button>
             <button
-              onClick={() => { if (confirm("删除这条会话?消息也会删除")) { onDelete(t.id); setMenuFor(null); setMenuPos(null); } }}
-              className="w-full text-left px-3 py-1.5 text-[11px] text-warning hover:bg-warning/10"
-            ><Trash className="w-3 h-3 inline mr-1" />删除</button>
+              onClick={(e) => {
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setConfirmDelete({ id: t.id, title: t.title ?? "新会话", rect });
+                setMenuFor(null);
+                setMenuPos(null);
+              }}
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-warning hover:bg-warning/10 transition-colors"
+            ><Trash className="w-3 h-3" />删除</button>
           </div>
         );
       })()}
+
+      {/* 删除确认:ConfirmCard 替代 native confirm() */}
+      {confirmDelete && (
+        <ConfirmCard
+          anchorRect={confirmDelete.rect}
+          message={`删除会话「${confirmDelete.title}」?消息也会一并删除。`}
+          danger
+          confirmLabel="删除"
+          testid="thread-delete-confirm"
+          onConfirm={() => { onDelete(confirmDelete.id); setConfirmDelete(null); }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </div>
   );
 }

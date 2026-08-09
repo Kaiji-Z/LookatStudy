@@ -14,6 +14,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api } from "../lib/api.js";
 import type { ProviderPresetInfo, CustomProvider } from "@shared/types";
+import { ConfirmCard } from "./ConfirmCard.js";
 
 export function SettingsView() {
   const [presets, setPresets] = useState<ProviderPresetInfo[]>([]);
@@ -42,6 +43,8 @@ export function SettingsView() {
   const [currentLang] = useState<string>(() => {
     try { return localStorage.getItem("lookatstudy-lang") || "zh-CN"; } catch { return "zh-CN"; }
   });
+  // 删除自定义 provider 的内联确认(v0.6:替代 native confirm())
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; label: string; rect: DOMRect } | null>(null);
 
   const handleDiscoverModels = async () => {
     setDiscovering(true);
@@ -208,7 +211,6 @@ export function SettingsView() {
   };
 
   const handleDeleteCustom = async (id: string) => {
-    if (!confirm("确定删除这个自定义 provider？")) return;
     try {
       await api.deleteCustomProvider(id);
       // 如果删的是当前激活的，切回 glm
@@ -232,7 +234,7 @@ export function SettingsView() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold">⚙️ 设置</h2>
+      <h2 className="text-xl font-extrabold text-neutral-900 dark:text-neutral-100 tracking-tight">设置</h2>
 
       {/* Provider 选择 */}
       <section className="surface-card p-4">
@@ -285,7 +287,7 @@ export function SettingsView() {
           <div className="mt-4 p-4 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-300 dark:border-neutral-700 space-y-3" data-testid="custom-provider-form">
             <h4 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">添加自定义 Provider</h4>
             <div>
-              <label className="text-xs text-neutral-400 block mb-1">名称（自己起个名字）</label>
+              <label className="text-xs text-neutral-500 dark:text-neutral-400 block mb-1">名称（自己起个名字）</label>
               <input
                 type="text"
                 value={customLabel}
@@ -296,12 +298,12 @@ export function SettingsView() {
               />
             </div>
             <div>
-              <label className="text-xs text-neutral-400 block mb-1">协议</label>
+              <label className="text-xs text-neutral-500 dark:text-neutral-400 block mb-1">协议</label>
               <select
                 value={customProtocol}
                 onChange={(e) => setCustomProtocol(e.target.value as "openai-compatible" | "anthropic" | "google")}
                 data-testid="custom-protocol"
-                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700"
+                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
               >
                 <option value="openai-compatible">OpenAI 兼容（大多数，含 GLM/DeepSeek/Ollama）</option>
                 <option value="anthropic">Anthropic（Claude 原生）</option>
@@ -309,7 +311,7 @@ export function SettingsView() {
               </select>
             </div>
             <div>
-              <label className="text-xs text-neutral-400 block mb-1">Base URL（端点地址）</label>
+              <label className="text-xs text-neutral-500 dark:text-neutral-400 block mb-1">Base URL（端点地址）</label>
               <input
                 type="text"
                 value={customBaseUrl}
@@ -318,13 +320,13 @@ export function SettingsView() {
                 data-testid="custom-baseurl"
                 className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono"
               />
-              <p className="text-[11px] text-neutral-600 mt-1">
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">
                 智谱 CodingPlan CN: <code>https://api.z.ai/api/coding/paas/v4</code> ·
                 Ollama: <code>http://localhost:11434/v1</code>
               </p>
             </div>
             <div>
-              <label className="text-xs text-neutral-400 block mb-1">默认模型 ID</label>
+              <label className="text-xs text-neutral-500 dark:text-neutral-400 block mb-1">默认模型 ID</label>
               <input
                 type="text"
                 value={customModel}
@@ -335,7 +337,7 @@ export function SettingsView() {
               />
             </div>
             <div>
-              <label className="text-xs text-neutral-400 block mb-1">API Key（本地模型可留空）</label>
+              <label className="text-xs text-neutral-500 dark:text-neutral-400 block mb-1">API Key（本地模型可留空）</label>
               <input
                 type="password"
                 value={customApiKey}
@@ -347,7 +349,7 @@ export function SettingsView() {
             </div>
             {/* 测试结果 */}
             {customTestResult && (
-              <div className={`text-sm rounded p-2 ${customTestResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning-light"}`}>
+              <div className={`text-sm rounded p-2 ${customTestResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning"}`}>
                 {customTestResult.ok ? "✅" : "❌"} {customTestResult.detail}
               </div>
             )}
@@ -356,7 +358,7 @@ export function SettingsView() {
                 onClick={handleTestCustom}
                 disabled={!customBaseUrl.trim() || !customModel.trim() || customTesting}
                 data-testid="custom-test"
-                className="text-sm bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 px-3 py-2 rounded hover:bg-neutral-600 disabled:opacity-40"
+                className="btn-3d-neutral px-3 py-2 text-sm disabled:opacity-40"
               >
                 {customTesting ? "测试中…" : "测试连接"}
               </button>
@@ -364,13 +366,13 @@ export function SettingsView() {
                 onClick={handleSaveCustom}
                 disabled={!customLabel.trim() || !customBaseUrl.trim() || !customModel.trim()}
                 data-testid="custom-save"
-                className="text-sm bg-brand text-white px-3 py-2 rounded hover:bg-brand/80 disabled:opacity-40"
+                className="btn-3d-brand px-3 py-2 text-sm disabled:opacity-40"
               >
                 保存
               </button>
               <button
                 onClick={() => setShowCustomForm(false)}
-                className="text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:text-neutral-300 px-3 py-2"
+                className="text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 px-3 py-2 transition-colors"
               >
                 取消
               </button>
@@ -383,10 +385,13 @@ export function SettingsView() {
           <div className="mt-3 space-y-1">
             {customProviders.map((c) => (
               <div key={c.id} className="flex items-center justify-between text-xs bg-neutral-100 dark:bg-neutral-950/50 px-3 py-1.5 rounded">
-                <span className="text-neutral-400">🔧 {c.label} · {c.protocol}</span>
+                <span className="text-neutral-500 dark:text-neutral-400">🔧 {c.label} · {c.protocol}</span>
                 <button
-                  onClick={() => handleDeleteCustom(c.id)}
-                  className="text-warning hover:underline"
+                  onClick={(e) => {
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setConfirmDelete({ id: c.id, label: c.label, rect });
+                  }}
+                  className="text-warning hover:underline font-bold"
                 >
                   删除
                 </button>
@@ -417,7 +422,7 @@ export function SettingsView() {
             value={activeModel}
             onChange={(e) => setActiveModel(e.target.value)}
             data-testid="model-select"
-            className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded-xl px-3 py-2.5 border-2 border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
+            className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-sm rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
           >
             {currentPreset.models.map((m) => (
               <option key={m.id} value={m.id}>
@@ -511,7 +516,7 @@ export function SettingsView() {
         </div>
         {testResult && (
           <div
-            className={`text-sm rounded p-2 ${testResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning-light"}`}
+            className={`text-sm rounded p-2 ${testResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning"}`}
             data-testid="test-result"
           >
             {testResult.ok ? "✅" : "❌"} {testResult.detail}
@@ -551,8 +556,10 @@ export function SettingsView() {
                 window.location.reload();
               }}
               data-testid={`lang-${l}`}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${
-                currentLang === l ? "bg-brand text-white" : "bg-neutral-800 text-neutral-400 hover:text-neutral-700 dark:text-neutral-200"
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                currentLang === l
+                  ? "bg-brand text-white shadow-sm"
+                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200"
               }`}
             >
               {l === "zh-CN" ? "中文" : "English"}
@@ -570,8 +577,21 @@ export function SettingsView() {
         >
           保存设置
         </button>
-        {saved && <span className="text-sm text-brand">✅ 已保存</span>}
+        {saved && <span className="text-sm text-brand font-bold">✅ 已保存</span>}
       </div>
+
+      {/* 删除自定义 provider 的内联确认(替代 native confirm()) */}
+      {confirmDelete && (
+        <ConfirmCard
+          anchorRect={confirmDelete.rect}
+          message={`删除自定义 Provider「${confirmDelete.label}」?无法撤销。`}
+          danger
+          confirmLabel="删除"
+          testid="custom-provider-delete-confirm"
+          onConfirm={() => { handleDeleteCustom(confirmDelete.id); setConfirmDelete(null); }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </div>
   );
 }

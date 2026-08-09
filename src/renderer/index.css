@@ -407,7 +407,8 @@
   background: linear-gradient(to bottom, rgb(0 0 0 / 0.28) 0%, rgb(0 0 0 / 0.08) 75%, transparent 100%);
 }
 
-/* 课程标题:默认单行省略,hover 展开全文(换行)+ 高 z 盖住下方 */
+/* 课程标题:默认单行省略;hover 时用 absolute 浮层展开全文(不挤下方元素)。
+   关键:hover 展开层 position:absolute → 脱离文档流,不推挤下方进度条。 */
 .map-title {
   position: relative;
   cursor: default;
@@ -417,22 +418,26 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: max-height 0.3s var(--ease-out-quart);
-  max-height: 1.3em;
 }
-.map-title:hover {
+/* hover 时:原文字隐藏,展开层 absolute 浮在原位之上,撑开但不影响布局 */
+.map-title__full {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 20;
-}
-.map-title:hover .map-title__text {
-  white-space: normal;
-  overflow: visible;
-  max-height: 6em;
-  background: rgb(0 0 0 / 0.55);
+  display: none;
+  background: rgb(0 0 0 / 0.7);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   padding: 4px 8px;
   margin: -4px -8px;
   border-radius: 8px;
+  white-space: normal;
+  word-break: break-word;
+}
+.map-title:hover .map-title__full {
+  display: block;
 }
 
 /* 节点名:默认隐藏(气球散布后防重叠),hover 整个气球或选中时显示 */

@@ -27,7 +27,7 @@ import {
   balloonSegmentToPath,
   hashStr,
 } from "../lib/mapLayout.js";
-import { attachSky } from "../lib/skyCanvas.js";
+import { attachSky, pickPreset, PRESETS, type SkyPreset } from "../lib/skyCanvas.js";
 
 export type MapView = "map" | "import";
 
@@ -35,6 +35,7 @@ interface MapRailProps {
   view: MapView;
   onViewChange: (v: MapView) => void;
   courseTitle: string | null;
+  courseId: string | null;
   sections: ContentNode[];
   tree: ContentNode[];
   progressMap: Record<string, Progress>;
@@ -99,6 +100,7 @@ function MapRailExpanded({
   view,
   onViewChange,
   courseTitle,
+  courseId,
   sections,
   tree,
   progressMap,
@@ -120,6 +122,14 @@ function MapRailExpanded({
   const mapPathRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
 
+  // 季节×天气预设:每次切课(含切回)/ 程序启动时随机抽一个,不持久化。
+  // courseId 变化 → useEffect 重抽 → skyKey 变 → MapSkyCanvas 重 attach(换天空)。
+  const [skyKey, setSkyKey] = useState<string | null>(null);
+  useEffect(() => {
+    setSkyKey(pickPreset(courseId));
+  }, [courseId]);
+  const skyPreset: SkyPreset | null = skyKey ? PRESETS[skyKey] ?? null : null;
+
   return (
     <nav
       ref={navRef}
@@ -127,8 +137,11 @@ function MapRailExpanded({
       data-testid="map-rail"
     >
       {/* 滚动叙事天空:canvas 铺满整个左栏(nav 的 absolute 子元素,含 header 区域),
-          sticky 到 nav 顶部,每帧按 map-path 的 scrollProgress 重绘整张天。 */}
-      {view === "map" && <MapSkyCanvas scrollRef={mapPathRef} navRef={navRef} />}
+          sticky 到 nav 顶部,每帧按 map-path 的 scrollProgress 重绘整张天。
+          preset 决定季节色板 + 天气粒子层;换课重抽 → 重 attach。 */}
+      {view === "map" && skyPreset && (
+        <MapSkyCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} />
+      )}
 
       {/* 顶部:探险地图卷轴头部。透明背景让天空透出来,像地图上的题词栏 */}
       <div className="map-header relative z-10 px-4 pt-3 pb-3 shrink-0">
@@ -161,12 +174,13 @@ function MapRailExpanded({
 
         {view === "map" && (
           <>
-            {/* 课程标题:像卷轴上的铭文。过长默认省略,hover 展开全文(换行) */}
+            {/* 课程标题:像卷轴上的铭文。过长默认省略,hover 浮层展开全文(不挤下方) */}
             <h2
               className="map-title text-sm font-extrabold text-white mt-2.5 drop-shadow-[0_1px_4px_rgba(0,0,0,0.6)]"
               title={courseTitle ?? ""}
             >
               <span className="map-title__text">{courseTitle ?? "未选择课程"}</span>
+              <span className="map-title__full">{courseTitle ?? "未选择课程"}</span>
             </h2>
             {/* 旅程完成度:毛玻璃进度条,brand 实时进度 */}
             <div className="mt-2 flex items-center gap-2">
@@ -272,9 +286,11 @@ function MapRailExpanded({
 function MapSkyCanvas({
   scrollRef,
   navRef,
+  preset,
 }: {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   navRef: React.RefObject<HTMLElement | null>;
+  preset: SkyPreset;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -282,10 +298,10 @@ function MapSkyCanvas({
     const scroll = scrollRef.current;
     const nav = navRef.current;
     if (!canvas || !scroll || !nav) return;
-    // canvas 尺寸跟 nav 走(整个左栏),滚动进度跟 map-path 走
-    const detach = attachSky(canvas, scroll, nav);
+    // canvas 尺寸跟 nav 走(整个左栏),滚动进度跟 map-path 走,preset 决定季节/天气
+    const detach = attachSky(canvas, scroll, nav, preset);
     return detach;
-  }, [scrollRef, navRef]);
+  }, [scrollRef, navRef, preset]);
   return (
     <canvas
       ref={canvasRef}

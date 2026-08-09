@@ -22,25 +22,130 @@ function mix3(c0: RGB, c1: RGB, t: number): RGB {
 const rgbStr = (c: RGB) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
 const rgbaStr = (c: RGB, a: number) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
 
-/* ---- 天空色关键帧(3 段:天顶/中段/地平线)---- 调成偏暗色调,与深色 app 协调,
-   但保留一日变化的暖→冷→暖→暗节奏。深色优先(AGENTS.md)。 */
+/* ---- 季节×天气预设 ----
+   季节 = 天空色板(改色温/饱和度);天气 = 粒子层(雨/雪/雾)+ 云量 + 闪电。
+   两层正交:滚动叙事(一日时间结构)保留,季节只改色,天气只加粒子。 */
 interface SkyStop { t: number; top: RGB; mid: RGB; hor: RGB; }
-const SKY: SkyStop[] = [
-  { t: 0.0,  top: [8, 10, 26],      mid: [16, 20, 44],    hor: [34, 30, 58] },     // 深夜
-  { t: 0.12, top: [30, 32, 72],     mid: [78, 56, 104],   hor: [158, 100, 116] },  // 拂晓 靛+紫
-  { t: 0.22, top: [124, 156, 214],  mid: [232, 152, 120], hor: [250, 196, 128] },  // 日出 琥珀玫瑰
-  { t: 0.36, top: [80, 142, 196],   mid: [132, 186, 226], hor: [188, 214, 232] },  // 清晨晴朗
-  { t: 0.5,  top: [60, 120, 178],   mid: [108, 168, 212], hor: [168, 200, 226] },  // 正午
-  { t: 0.62, top: [120, 132, 152],  mid: [150, 150, 160], hor: [180, 178, 182] },  // 云起
-  { t: 0.74, top: [70, 60, 88],     mid: [108, 78, 110],  hor: [180, 110, 100] },  // 黄金时刻 玫瑰金
-  { t: 0.86, top: [40, 30, 60],     mid: [88, 44, 76],    hor: [168, 72, 72] },    // 日落 深红
-  { t: 1.0,  top: [8, 10, 26],      mid: [16, 20, 44],    hor: [34, 30, 58] },     // 回到深夜(无缝循环)
-];
-function skyAt(p: number): { top: RGB; mid: RGB; hor: RGB } {
+
+export type Season = "spring" | "summer" | "autumn" | "winter";
+export type Weather = "clear" | "cloudy" | "rain" | "storm" | "snow" | "fog";
+
+/** 季节性地面配色:远山色 + 近地色 + 山顶积雪色(仅 winter 用)。 */
+export interface GroundColors {
+  /** 远处丘陵剪影色(较暗、融入天空)。 */
+  far: RGB;
+  /** 近处地面色(季节主色:春嫩绿、夏深绿、秋金棕、冬雪白)。 */
+  near: RGB;
+  /** 是否在丘陵顶部画积雪(仅 winter)。 */
+  snowy: boolean;
+}
+
+export interface SkyPreset {
+  season: Season;
+  weather: Weather;
+  /** 该季节的天空色关键帧(覆盖默认)。t 必须单调递增且首尾同色(无缝循环)。 */
+  sky: SkyStop[];
+  /** 云量曲线(p=0..1 → 0..1),天气驱动(晴少云、阴多云、雨/雪更密)。 */
+  cloudCover: (p: number) => number;
+  /** 粒子类型:none/rain/snow。雨/雷暴用 rain,雪用 snow。 */
+  particles: "none" | "rain" | "snow";
+  /** 是否有闪电(仅 storm)。 */
+  lightning: boolean;
+  /** 雾层 alpha(0=无雾,0.2-0.5=轻雾)。snow/fog 天气 >0。 */
+  fogAlpha: number;
+  /** 季节性地面配色(远山 + 近地 + 是否积雪)。区分季节的关键视觉。 */
+  ground: GroundColors;
+  /** 太阳染色(秋日偏红橙、冬日偏冷白),可选;不传用默认金色。 */
+  sunTint?: RGB;
+}
+
+/* 默认天空(基线,各季节在此基础上偏色)。深夜→拂晓→日出→清晨→正午→云起→黄金→日落→深夜 */
+function defaultSky(): SkyStop[] {
+  return [
+    { t: 0.0,  top: [8, 10, 26],     mid: [16, 20, 44],    hor: [34, 30, 58] },
+    { t: 0.12, top: [30, 32, 72],    mid: [78, 56, 104],   hor: [158, 100, 116] },
+    { t: 0.22, top: [124, 156, 214], mid: [232, 152, 120], hor: [250, 196, 128] },
+    { t: 0.36, top: [80, 142, 196],  mid: [132, 186, 226], hor: [188, 214, 232] },
+    { t: 0.5,  top: [60, 120, 178],  mid: [108, 168, 212], hor: [168, 200, 226] },
+    { t: 0.62, top: [120, 132, 152], mid: [150, 150, 160], hor: [180, 178, 182] },
+    { t: 0.74, top: [70, 60, 88],    mid: [108, 78, 110],  hor: [180, 110, 100] },
+    { t: 0.86, top: [40, 30, 60],    mid: [88, 44, 76],    hor: [168, 72, 72] },
+    { t: 1.0,  top: [8, 10, 26],     mid: [16, 20, 44],    hor: [34, 30, 58] },
+  ];
+}
+
+/* 4 季节色板偏色函数:在基线上整体偏色(春嫩绿、夏明蓝、秋金红、冬冷灰白)。 */
+function tintSky(base: SkyStop[], fn: (c: RGB) => RGB): SkyStop[] {
+  return base.map((s) => ({ t: s.t, top: fn(s.top), mid: fn(s.mid), hor: fn(s.hor) }));
+}
+// 春:整体偏嫩绿(加一点绿,降一点蓝)
+// 季节偏色:幅度加大到一眼可辨(互相色差 ≥100)。
+// 春=嫩绿(压蓝提绿)、夏=青蓝(压红提蓝)、秋=金橙(提红压绿蓝)、冬=冷紫灰(降饱和偏紫)
+const springSky = () => tintSky(defaultSky(), (c) => [c[0] * 1.0, c[1] * 1.15, c[2] * 0.7]);
+const summerSky = () => tintSky(defaultSky(), (c) => [c[0] * 0.75, c[1] * 1.0, Math.min(255, c[2] * 1.25)]);
+const autumnSky = () => tintSky(defaultSky(), (c) => [Math.min(255, c[0] * 1.35), c[1] * 0.8, c[2] * 0.55]);
+const winterSky = () => tintSky(defaultSky(), (c) => {
+  const g = (c[0] + c[1] + c[2]) / 3;
+  return [g * 0.7 + c[0] * 0.1, g * 0.7 + c[1] * 0.1, g * 0.95 + c[2] * 0.15];
+});
+
+/* 4 季节地面配色(远山 + 近地 + 积雪标记)。远山较暗融入天空,近地是季节主色。
+   春=嫩绿草地、夏=深绿茂盛、秋=金棕落叶、冬=雪白(山顶积雪)。 */
+const GROUND_SPRING: GroundColors = { far: [28, 50, 36], near: [56, 110, 52], snowy: false };
+const GROUND_SUMMER: GroundColors = { far: [20, 48, 30], near: [34, 82, 40], snowy: false };
+const GROUND_AUTUMN: GroundColors = { far: [54, 36, 24], near: [128, 78, 36], snowy: false };
+const GROUND_WINTER: GroundColors = { far: [60, 66, 82], near: [232, 236, 244], snowy: true };
+
+/* 云量曲线工厂:base 是日均云量,weather 调峰值。晴=0.1、多云=0.5、雨/雪=0.85、雷暴=1、雾=0.4 */
+function cloudCurve(base: number) {
+  return (p: number) => {
+    let cover = base;
+    // 白天 buildup(正午前后云更多)
+    if (p > 0.3 && p < 0.5) cover = lerp(cover, Math.min(1, cover + 0.2), smooth((p - 0.3) / 0.2));
+    else if (p >= 0.5 && p < 0.74) cover = Math.min(1, cover + 0.15);
+    else if (p >= 0.74 && p < 0.84) cover = lerp(cover, Math.max(0, cover - 0.3), smooth((p - 0.74) / 0.1));
+    return clamp(cover, 0, 1);
+  };
+}
+
+/* 12 个预设(季节×天气组合,排除冲突:春雪/夏雪/秋雪无,冬雨少见) */
+export const PRESETS: Record<string, SkyPreset> = {
+  "spring|clear":  { season: "spring", weather: "clear",  sky: springSky(), cloudCover: cloudCurve(0.1),  particles: "none", lightning: false, fogAlpha: 0, ground: GROUND_SPRING },
+  "spring|cloudy": { season: "spring", weather: "cloudy", sky: springSky(), cloudCover: cloudCurve(0.5),  particles: "none", lightning: false, fogAlpha: 0, ground: GROUND_SPRING },
+  "spring|rain":   { season: "spring", weather: "rain",   sky: springSky(), cloudCover: cloudCurve(0.85), particles: "rain", lightning: false, fogAlpha: 0, ground: GROUND_SPRING },
+  "summer|clear":  { season: "summer", weather: "clear",  sky: summerSky(), cloudCover: cloudCurve(0.1),  particles: "none", lightning: false, fogAlpha: 0, ground: GROUND_SUMMER },
+  "summer|cloudy": { season: "summer", weather: "cloudy", sky: summerSky(), cloudCover: cloudCurve(0.5),  particles: "none", lightning: false, fogAlpha: 0, ground: GROUND_SUMMER },
+  "summer|rain":   { season: "summer", weather: "rain",   sky: summerSky(), cloudCover: cloudCurve(0.85), particles: "rain", lightning: false, fogAlpha: 0, ground: GROUND_SUMMER },
+  "summer|storm":  { season: "summer", weather: "storm",  sky: summerSky(), cloudCover: cloudCurve(1.0),  particles: "rain", lightning: true,  fogAlpha: 0, ground: GROUND_SUMMER },
+  "autumn|clear":  { season: "autumn", weather: "clear",  sky: autumnSky(), cloudCover: cloudCurve(0.15), particles: "none", lightning: false, fogAlpha: 0, ground: GROUND_AUTUMN, sunTint: [255, 180, 110] },
+  "autumn|cloudy": { season: "autumn", weather: "cloudy", sky: autumnSky(), cloudCover: cloudCurve(0.55), particles: "none", lightning: false, fogAlpha: 0, ground: GROUND_AUTUMN },
+  "autumn|storm":  { season: "autumn", weather: "storm",  sky: autumnSky(), cloudCover: cloudCurve(1.0),  particles: "rain", lightning: true,  fogAlpha: 0, ground: GROUND_AUTUMN },
+  "winter|clear":  { season: "winter", weather: "clear",  sky: winterSky(), cloudCover: cloudCurve(0.2),  particles: "none", lightning: false, fogAlpha: 0, ground: GROUND_WINTER, sunTint: [220, 230, 245] },
+  "winter|snow":   { season: "winter", weather: "snow",   sky: winterSky(), cloudCover: cloudCurve(0.9),  particles: "snow", lightning: false, fogAlpha: 0.2, ground: GROUND_WINTER },
+};
+export const PRESET_KEYS = Object.keys(PRESETS);
+
+/** 确定性哈希(与 mapLayout.ts 的 hashStr 同语义,各自独立避免循环依赖)。 */
+export function hashStr(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+  return h >>> 0;
+}
+
+/** 从 courseId + 时间种子随机抽一个预设 key。每次调用都可能不同(真随机,不持久化)。 */
+export function pickPreset(courseId: string | null): string {
+  // 用 courseId 哈希 + 当前时间戳 → 每次切课/启动都换
+  const seed = `${courseId ?? "none"}:${Math.floor(performance.now() / 1000)}`;
+  return PRESET_KEYS[hashStr(seed) % PRESET_KEYS.length]!;
+}
+
+function skyAt(p: number, sky: SkyStop[]): { top: RGB; mid: RGB; hor: RGB } {
   let i = 0;
-  while (i < SKY.length - 1 && p > SKY[i + 1].t) i++;
-  const a = SKY[i]!;
-  const b = SKY[Math.min(i + 1, SKY.length - 1)]!;
+  while (i < sky.length - 1 && p > sky[i + 1]!.t) i++;
+  const a = sky[i]!;
+  const b = sky[Math.min(i + 1, sky.length - 1)]!;
   const t = smooth(clamp((p - a.t) / ((b.t - a.t) || 1), 0, 1));
   return { top: mix3(a.top, b.top, t), mid: mix3(a.mid, b.mid, t), hor: mix3(a.hor, b.hor, t) };
 }
@@ -151,7 +256,7 @@ function drawStars(ctx: CanvasRenderingContext2D, p: number, stars: Star[], W: n
   }
 }
 
-function drawSun(ctx: CanvasRenderingContext2D, body: Body | null) {
+function drawSun(ctx: CanvasRenderingContext2D, body: Body | null, tint?: RGB) {
   if (!body) return;
   const { x, y, peakness } = body;
   const R = 28 + peakness * 8;
@@ -162,9 +267,12 @@ function drawSun(ctx: CanvasRenderingContext2D, body: Body | null) {
   ctx.fillStyle = halo;
   ctx.fillRect(x - R * 5, y - R * 5, R * 10, R * 10);
   const disc = ctx.createRadialGradient(x, y, 0, x, y, R);
+  // 季节染色(秋偏红橙、冬偏冷白);无 tint 用默认金黄
+  const mid: RGB = tint ?? [255, 236, 180];
+  const edge: RGB = tint ? mix3(tint, [255, 214, 150], 0.5) : [255, 214, 150];
   disc.addColorStop(0, "rgba(255,252,238,1)");
-  disc.addColorStop(0.7, "rgba(255,236,180,1)");
-  disc.addColorStop(1, "rgba(255,214,150,0.9)");
+  disc.addColorStop(0.7, rgbaStr(mid, 1));
+  disc.addColorStop(1, rgbaStr(edge, 0.9));
   ctx.fillStyle = disc;
   ctx.beginPath();
   ctx.arc(x, y, R, 0, Math.PI * 2);
@@ -218,45 +326,119 @@ function drawCloud(ctx: CanvasRenderingContext2D, cx: number, cy: number, scale:
   ctx.restore();
 }
 
-function drawClouds(ctx: CanvasRenderingContext2D, p: number, clouds: Cloud[], W: number, H: number, now: number) {
-  let cover = 0;
-  if (p < 0.3) cover = 0;
-  else if (p < 0.5) cover = smooth((p - 0.3) / 0.2) * 0.35;
-  else if (p < 0.66) cover = lerp(0.35, 0.85, smooth((p - 0.5) / 0.16));
-  else if (p < 0.76) cover = 0.9;
-  else if (p < 0.84) cover = lerp(0.9, 0.3, smooth((p - 0.76) / 0.08));
-  else cover = lerp(0.3, 0.05, smooth((p - 0.84) / 0.16));
+function drawClouds(ctx: CanvasRenderingContext2D, p: number, clouds: Cloud[], W: number, H: number, now: number, coverFn: (p: number) => number, sky: { top: RGB; mid: RGB; hor: RGB }, stormy: boolean) {
+  const cover = coverFn(p);
   if (cover < 0.02) return;
-  const sky = skyAt(p);
   const lit = mix3(sky.hor, [255, 255, 255], 0.35);
   const dark = mix3(sky.mid, [20, 20, 30], 0.45);
-  const stormy = p > 0.58 && p < 0.76;
   const tint = stormy ? dark : lit;
   for (let i = 0; i < clouds.length; i++) {
     const c = clouds[i];
-    let x = (c.x + now * c.speed) % 1.2 - 0.1;
+    const x = (c.x + now * c.speed) % 1.2 - 0.1;
     const y = c.y + Math.sin(now * 0.0001 + c.seed) * c.drift;
     if (!(i / clouds.length < cover)) continue;
     drawCloud(ctx, x * W, y * H, c.s, tint, clamp(cover * 0.92, 0, 0.92));
   }
 }
 
+/* ---- 雨/雪/雾/闪电 ---- */
+interface Drop { x: number; y: number; len: number; v: number; }
+interface Flake { x: number; y: number; r: number; v: number; phase: number; }
+
+function drawRain(ctx: CanvasRenderingContext2D, W: number, H: number, rain: Drop[]) {
+  // 小雨:细线、淡色、慢速、短(毛毛雨感,不是暴雨)
+  ctx.save();
+  ctx.strokeStyle = "rgba(210,224,238,0.3)";
+  ctx.lineWidth = 0.7;
+  ctx.lineCap = "round";
+  for (const d of rain) {
+    d.y += d.v * 0.007; // 慢
+    d.x += 0.0004;
+    if (d.y > 1) { d.y -= 1; d.x = Math.random(); }
+    if (d.x > 1) d.x -= 1;
+    const x = d.x * W, y = d.y * H;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - 2, y + d.len); // 短
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSnow(ctx: CanvasRenderingContext2D, W: number, H: number, flakes: Flake[], now: number) {
+  ctx.save();
+  ctx.fillStyle = "rgba(250,250,255,0.85)";
+  for (const f of flakes) {
+    f.y += f.v * 0.004;
+    const x = (f.x + Math.sin(now * 0.0005 + f.phase) * 0.02) * W;
+    const y = f.y * H;
+    if (f.y > 1) { f.y -= 1; }
+    ctx.beginPath();
+    ctx.arc(x, y, f.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawFog(ctx: CanvasRenderingContext2D, W: number, H: number, alpha: number, sky: { hor: RGB }) {
+  const g = ctx.createLinearGradient(0, H * 0.4, 0, H);
+  const c = mix3(sky.hor, [255, 255, 255], 0.3);
+  g.addColorStop(0, rgbaStr(c, 0));
+  g.addColorStop(1, rgbaStr(c, alpha));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, H * 0.4, W, H * 0.6);
+}
+
+let flash = 0;
+let nextStrike = 0;
+function drawLightning(ctx: CanvasRenderingContext2D, W: number, H: number, active: boolean, now: number) {
+  if (!active) { flash = 0; return; }
+  if (now > nextStrike) {
+    flash = 1;
+    nextStrike = now + 1400 + Math.random() * 2600;
+  }
+  flash *= 0.86;
+  if (flash < 0.02) { flash = 0; return; }
+  ctx.fillStyle = `rgba(255,255,255,${flash * 0.5})`;
+  ctx.fillRect(0, 0, W, H);
+  if (flash > 0.6) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.95)";
+    ctx.lineWidth = 2.2;
+    ctx.shadowColor = "rgba(220,230,255,0.9)";
+    ctx.shadowBlur = 22;
+    let x = W * (0.3 + Math.random() * 0.4), y = 0;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    while (y < H * 0.6) {
+      x += (Math.random() - 0.5) * 60;
+      y += 24 + Math.random() * 30;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 /* ---- 主入口:attach 返回 detach ----
-   用法:const detach = attachSky(canvasEl, scrollEl, sizeEl); return detach;
+   用法:const detach = attachSky(canvasEl, scrollEl, sizeEl, preset); return detach;
    canvas 铺满 sizeEl(整个左栏,含 header),滚动进度读 scrollEl(map-path)。
-   两者分离:天空延伸到 header,但滚动驱动仍来自内容容器。 */
+   preset 决定季节色板 + 天气粒子层(雨/雪/雾/闪电)。 */
 export function attachSky(
   canvas: HTMLCanvasElement,
   scroll: HTMLElement,
-  sizeEl?: HTMLElement,
+  sizeEl: HTMLElement,
+  preset: SkyPreset,
 ): () => void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return () => {};
-  const sizeTarget = sizeEl ?? scroll;
+  const sizeTarget = sizeEl;
 
   let W = 0, H = 0, DPR = 1;
   let stars = buildStars(1, 1);
   const clouds = buildClouds();
+  let rain: Drop[] = [];
+  let flakes: Flake[] = [];
   let scrollP = 0;
   let rafId = 0;
   let running = true;
@@ -264,7 +446,6 @@ export function attachSky(
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function resize() {
-    // canvas 尺寸跟整个左栏(sizeTarget = nav)走,这样天空铺满含 header 区域
     const rect = sizeTarget.getBoundingClientRect();
     DPR = Math.min(window.devicePixelRatio || 1, 2);
     W = Math.max(1, rect.width);
@@ -275,6 +456,13 @@ export function attachSky(
     canvas.style.height = H + "px";
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     stars = buildStars(W, H);
+    // 按预设重建粒子池
+    if (preset.particles === "rain" && rain.length === 0) {
+      for (let i = 0; i < 70; i++) rain.push({ x: Math.random(), y: Math.random(), len: 6 + Math.random() * 8, v: 0.5 + Math.random() * 0.3 });
+    }
+    if (preset.particles === "snow" && flakes.length === 0) {
+      for (let i = 0; i < 120; i++) flakes.push({ x: Math.random(), y: Math.random(), r: 0.8 + Math.random() * 1.6, v: 0.5 + Math.random() * 0.8, phase: Math.random() * Math.PI * 2 });
+    }
   }
 
   function readScroll() {
@@ -286,13 +474,16 @@ export function attachSky(
     if (!running) return;
     const p = scrollP;
     const t = reduced ? 0 : (now - T0) / 1000;
-    const sky = skyAt(p);
+    const sky = skyAt(p, preset.sky);
     drawSky(ctx, sky, W, H);
     drawStars(ctx, p, stars, W, H, t);
     drawMoon(ctx, nightArc(p, W, H, 0.92, 0.08));
-    drawSun(ctx, dayArc(p, W, H, 0.16, 0.88));
-    drawClouds(ctx, p, clouds, W, H, now);
-    // 不画地平线剪影:用户反馈陆地影响观感,天空占满整个左栏更干净
+    drawSun(ctx, dayArc(p, W, H, 0.16, 0.88), preset.sunTint);
+    drawClouds(ctx, p, clouds, W, H, now, preset.cloudCover, sky, preset.weather === "storm");
+    if (preset.particles === "rain") drawRain(ctx, W, H, rain);
+    if (preset.particles === "snow") drawSnow(ctx, W, H, flakes, now);
+    if (preset.fogAlpha > 0) drawFog(ctx, W, H, preset.fogAlpha, sky);
+    if (preset.lightning) drawLightning(ctx, W, H, true, now);
     rafId = requestAnimationFrame(frame);
   }
 
@@ -302,7 +493,6 @@ export function attachSky(
 
   resize();
   readScroll();
-  // reduced motion: 不跑连续 rAF,只在 scroll/resize 时画一帧
   if (reduced) {
     scroll.addEventListener("scroll", () => { readScroll(); frame(performance.now()); }, { passive: true });
     frame(performance.now());

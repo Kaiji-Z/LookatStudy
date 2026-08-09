@@ -440,6 +440,7 @@ export default function App() {
           view={view}
           onViewChange={setView}
           courseTitle={currentCourse?.title ?? null}
+          courseId={selectedCourseId}
           sections={sections}
           tree={tree}
           progressMap={progressMap}

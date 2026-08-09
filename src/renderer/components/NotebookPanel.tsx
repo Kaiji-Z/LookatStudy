@@ -70,14 +70,14 @@ export function NotebookPanel({
 
   return (
     <div
-      className="h-full flex flex-col bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800/50"
+      className="h-full flex flex-col bg-surface-2"
       data-testid="notebook-panel"
     >
       {/* 标签栏:分段控件(segmented control)。
           设计意图:与中栏 ThreadSwitcher(会话流药丸行)刻意不同——
           这里是"固定 2 个视图切换",分段控件语义更准;会话流是动态可增删的列表,
           用药丸行。两种 tab 词汇通过形态明确区分各自场景。 */}
-      <div className="flex items-center gap-1 px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 shrink-0" data-testid="notebook-tabs">
+      <div className="flex items-center gap-1 px-3 py-2 shrink-0" data-testid="notebook-tabs">
         <div className="flex p-0.5 bg-neutral-100 dark:bg-neutral-900 rounded-lg gap-0.5">
           <TabBtn
             label="讲解"

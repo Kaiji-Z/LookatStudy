@@ -426,7 +426,7 @@ export default function App() {
   const [showReviewDrawer, setShowReviewDrawer] = useState(false);
 
   return (
-    <div className="h-screen flex bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 overflow-hidden">
+    <div className="h-screen flex bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
       {/* 左栏:MapRail 全高(顶到底),tab 切换地图/导入 */}
       {leftPaneVisible && (
         <MapRail
@@ -472,9 +472,10 @@ export default function App() {
       <div className="flex-1 flex min-h-0">
         {/* 视图层:AI 对话 + 笔记本 */}
         <>
-            {/* 中栏:AI 对话流(ChatStream + ChatComposer) / 考试节点(ExamView) */}
+            {/* 中栏:AI 对话流(ChatStream + ChatComposer) / 考试节点(ExamView)。
+                v0.6 分栏:无描边,用 bg-surface-1(中档)与左栏 rail / 右栏 surface-2 色差划分。 */}
             <div
-              className={`flex flex-col h-full bg-neutral-50 dark:bg-neutral-950 ${rightPaneVisible ? "border-r border-neutral-200 dark:border-neutral-800/50" : ""}`}
+              className="flex flex-col h-full bg-surface-1"
               style={rightPaneVisible ? { width: "40%" } : { flex: 1 }}
               data-testid="chat-panel"
             >
@@ -580,9 +581,10 @@ export default function App() {
               )}
             </div>
 
-            {/* 右栏:NotebookPanel 康奈尔笔记本(讲解/笔记)。布局切换可隐藏 */}
+            {/* 右栏:NotebookPanel 康奈尔笔记本(讲解/笔记)。布局切换可隐藏。
+                v0.6 分栏:无描边,色差划分(底色由 NotebookPanel 内部 bg-surface-2 控制)。 */}
             {rightPaneVisible && (
-            <main className="flex-1 min-w-0">
+            <main className="flex-1 min-w-0 bg-surface-2">
               <NotebookPanel
                 selectedNode={selectedNode}
                 items={canvas.items}
@@ -687,7 +689,7 @@ function Header({
   onToggleRight: () => void;
 }) {
   return (
-    <header className="border-b border-neutral-200 dark:border-neutral-800/50 px-6 py-2.5 flex items-center justify-between shrink-0 bg-neutral-50/80 dark:bg-neutral-950/80 backdrop-blur-sm">
+    <header className="app-header px-6 pt-2.5 pb-3 flex items-center justify-between shrink-0">
       <div className="flex items-center gap-2.5">
         {/* 布局切换按钮(Cursor 风格) */}
         <div className="flex items-center gap-0.5 mr-1">

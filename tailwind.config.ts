@@ -12,6 +12,15 @@ export default {
         // 用 rgb(var(--xxx-rgb) / <alpha-value>) 形式让 Tailwind 的 /opacity
         // 修饰符(bg-brand/10、border-brand/30)正常工作。
         // --xxx(OKLCH)用于 CSS 渐变/发光;--xxx-rgb 用于 Tailwind 工具类。
+        // v0.6 分栏语汇:surface 族三栏色阶(左 rail 最深 / 中 1 / 右 2 最亮),
+        // 替代旧的均匀 bg-neutral-950 描边分栏。
+        surface: {
+          rail: "rgb(var(--surface-rail-rgb) / <alpha-value>)",
+          0: "rgb(var(--surface-0-rgb) / <alpha-value>)",
+          1: "rgb(var(--surface-1-rgb) / <alpha-value>)",
+          2: "rgb(var(--surface-2-rgb) / <alpha-value>)",
+          3: "rgb(var(--surface-3-rgb) / <alpha-value>)",
+        },
         brand: {
           DEFAULT: "rgb(var(--brand-rgb) / <alpha-value>)",
           dark: "rgb(var(--brand-dark-rgb) / <alpha-value>)",

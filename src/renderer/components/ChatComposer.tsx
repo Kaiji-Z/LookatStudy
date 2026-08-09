@@ -72,7 +72,7 @@ export function ChatComposer({
 
   if (!agentReady) {
     return (
-      <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 shrink-0" data-testid="composer-nokey">
+      <div className="p-3 shrink-0 bg-surface-2/40" data-testid="composer-nokey">
         <div className="flex items-center justify-center gap-3 py-2">
           <span className="text-xs text-neutral-600 dark:text-neutral-400">
             {missingHint ?? "未配置 AI 模型"}
@@ -89,7 +89,7 @@ export function ChatComposer({
   }
 
   return (
-    <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 shrink-0" data-testid="composer">
+    <div className="p-3 shrink-0 bg-surface-2/40" data-testid="composer">
       {/* starter prompts 横条(常驻) */}
       {starterPrompts.length > 0 && nodeId && (
         <div className="flex gap-1.5 overflow-x-auto pb-2 mb-1.5 scrollbar-thin" data-testid="starter-prompts">

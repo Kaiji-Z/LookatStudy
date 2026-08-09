@@ -58,7 +58,7 @@ export function MapRail(props: MapRailProps) {
   }, [props.courseId]);
 
   return (
-    <nav ref={navRef} className="relative h-full flex flex-col bg-neutral-950 border-r border-neutral-800/60 w-[300px] shrink-0 overflow-hidden" data-testid="map-rail">
+    <nav ref={navRef} className="relative h-full flex flex-col bg-surface-rail w-[300px] shrink-0 overflow-hidden" data-testid="map-rail">
       {/* 天空 canvas:nav 层铺满全高(含 tab 区),两个面板共享同一背景。
           tab 和面板都透明,让 canvas 从顶到底透出来。 */}
       {skyPreset && (

@@ -79,11 +79,23 @@
   --exam-glow: oklch(0.627 0.233 303.9 / 0.35);
   --exam-ring: oklch(0.627 0.233 303.9 / 0.15);
 
-  /* —— neutral surface ramp(深色优先)—— */
-  --surface-0: oklch(0.16 0.005 270);      /* neutral-950 最深底 */
-  --surface-1: oklch(0.2 0.005 270);       /* neutral-900 卡片底 */
-  --surface-2: oklch(0.245 0.005 270);     /* neutral-800 hover/elevated */
-  --surface-3: oklch(0.29 0.005 270);      /* neutral-700 边框/分隔 */
+  /* —— neutral surface ramp(深色优先,v0.6 分栏语汇:三栏色阶分层)——
+     分栏不再用描边,改用背景色深浅差传达层级(Linear/Raycast 风):
+       左栏(沉浸场景)= surface-rail 最深 → 天空+气球被衬出
+       中栏(chat)      = surface-1   中间
+       右栏(notebook)   = surface-2   最亮(阅读区)
+     间隔 0.04 是 OKLCH 感知均匀下"明显可分又不刺眼"的甜区。
+     -rgb 通道供 Tailwind bg-surface-N 工具类使用(与 brand/accent 同模式,alpha 修饰符可用)。 */
+  --surface-rail: oklch(0.14 0.005 270);  /* 左栏专属最深底 */
+  --surface-rail-rgb: 8 9 11;
+  --surface-0: oklch(0.16 0.005 270);      /* neutral-950 最深底(modal/drawer) */
+  --surface-0-rgb: 12 13 15;
+  --surface-1: oklch(0.18 0.005 270);      /* 中栏 chat 底(原 0.20,降以拉开 rail 差) */
+  --surface-1-rgb: 17 17 20;
+  --surface-2: oklch(0.22 0.005 270);      /* 右栏 notebook 底(原 0.245,提为最亮阅读区) */
+  --surface-2-rgb: 26 26 29;
+  --surface-3: oklch(0.29 0.005 270);      /* neutral-700 hover/elevated */
+  --surface-3-rgb: 42 43 46;
   --ink: oklch(0.96 0.003 270);            /* neutral-100 主文字 */
   --ink-strong: oklch(0.985 0 0);          /* neutral-50 标题/强调 */
   --ink-muted: oklch(0.7 0.005 270);       /* neutral-400 次文字 */
@@ -490,6 +502,32 @@
 
 /* 课程标题 + 节点名的 hover 全文显示已改用全局 GlobalTooltip(data-tooltip 属性),
    不再用 CSS hover 浮层(避免 stacking context 冲突)。旧 CSS 已删除。 */
+
+/* v0.6 顶栏(Header)分栏语汇:透明融入 + 毛玻璃渐隐。
+   Header 浮在中右栏之上,无下边线;背景透明 + backdrop-blur + 底部 mask 渐隐,
+   与左栏 map-header 同一语言(全应用"悬浮卷轴头部"统一)。
+   内容从透明处开始,Header 不"压"在内容上而是"融"进去。 */
+.app-header {
+  position: relative;
+  background: transparent;
+  z-index: 30;
+}
+.app-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  /* 底部渐隐:顶部全显,65% 开始过渡,100% 全透 → 无硬下边线 */
+  -webkit-mask: linear-gradient(to bottom, black 0%, black 65%, transparent 100%);
+  mask: linear-gradient(to bottom, black 0%, black 65%, transparent 100%);
+  background: linear-gradient(to bottom,
+    rgb(var(--surface-1-rgb) / 0.85) 0%,
+    rgb(var(--surface-1-rgb) / 0.55) 60%,
+    rgb(var(--surface-1-rgb) / 0.15) 85%,
+    transparent 100%);
+}
 
 .map-signpost {
   background: rgb(20 16 28 / 0.55);

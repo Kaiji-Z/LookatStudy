@@ -83,7 +83,7 @@ export function ThreadSwitcher({
   // 无 thread:首次进入,焦点节点提示
   if (threads.length === 0) {
     return (
-      <div className="px-3 py-2.5 border-b border-neutral-200 dark:border-neutral-800 shrink-0 flex items-center gap-2 text-xs bg-neutral-50 dark:bg-neutral-950" data-testid="thread-switcher-empty">
+      <div className="px-3 py-2.5 shrink-0 flex items-center gap-2 text-xs bg-surface-1" data-testid="thread-switcher-empty">
         <span className="w-1.5 h-1.5 rounded-full bg-brand shrink-0 animate-bubble-pulse" />
         <span className="text-neutral-700 dark:text-neutral-300 truncate flex-1 font-medium">
           {focusNodeTitle ?? "未选节点"}
@@ -94,7 +94,7 @@ export function ThreadSwitcher({
   }
 
   return (
-    <div className="border-b border-neutral-200 dark:border-neutral-800 shrink-0 bg-neutral-50 dark:bg-neutral-950" data-testid="thread-switcher">
+    <div className="shrink-0 bg-surface-1" data-testid="thread-switcher">
       <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-thin px-2 py-2">
         {threads.map((t) => {
           const isActive = t.id === activeThread?.id;

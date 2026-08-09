@@ -168,7 +168,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
   return (
     <div className="flex-1 flex flex-col min-h-0" data-testid="exam-answering">
       {/* 顶部:考试标题 + 进度 */}
-      <div className="px-4 pt-3 pb-2 shrink-0 border-b border-neutral-200 dark:border-neutral-800/50">
+      <div className="px-4 pt-3 pb-2 shrink-0 bg-surface-2/30">
         <div className="flex items-center gap-2 mb-2">
           <Target className="w-4 h-4 text-accent" />
           <span className="text-sm font-bold text-neutral-900 dark:text-neutral-100 truncate">{examNode.title}</span>
@@ -216,7 +216,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
       </div>
 
       {/* 底部:下一题/提交 */}
-      <div className="px-4 py-3 shrink-0 border-t border-neutral-200 dark:border-neutral-800/50">
+      <div className="px-4 py-3 shrink-0 bg-surface-2/30">
         <button
           onClick={handleNext}
           disabled={selected === null}

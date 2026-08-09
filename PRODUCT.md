@@ -28,13 +28,43 @@ The line we hold: **game-like feedback serves learning motivation, not engagemen
 | **Review** | `#ff7a1a` | `review` | overdue SRS items, streak flame, "due" badges (warm, non-error) | errors, progress |
 | **Exam** | `#a855f7` | `exam` | chapter-exam boss nodes (6th role) | normal lessons, progress |
 | **Neutral** | neutral-50 → 950 | `neutral` | surfaces, text, borders, disabled, locked | semantic emphasis |
+| **Surface tiers** | `--surface-rail/0/1/2/3` | `surface` | pane backgrounds by depth (see below) | semantic emphasis |
 
 The single source of truth is `:root` in `src/renderer/index.css` (OKLCH variables). Tailwind colors reference them via `rgb(var(--xxx-rgb) / <alpha-value>)`. To change a color, edit only the `:root` variable — all utilities (`text-brand`, `bg-exam`, `border-review`) and component classes update automatically. `scripts/verify-color-semantics.mjs` enforces the semantic rules (no raw `red`/`orange`/`green`/`purple` in classNames).
 
 Dark-only (neutral-950 base). Light mode is not supported in v0.5 — it will be added as a dedicated milestone with systematic theme pairing (not ad-hoc fixes). Every text/background pair must hit ≥4.5:1 contrast (≥3:1 for large/bold).
 
+### Pane separation = depth-tiered surfaces, no dividers (v0.6)
+
+Panes are separated by **background lightness contrast**, never by 1px border lines. The flat-neutral-800-divider-everywhere look is banned (SaaS-dashboard default, reads as "土"). Four surface tiers, L 0.14 → 0.32 in OKLCH:
+
+| Tier | L | Tailwind | Used for |
+|------|---|----------|----------|
+| `surface-rail` | 0.14 | `bg-surface-rail` | Left MapRail — deepest, sky canvas + balloons pop |
+| `surface-0` | 0.16 | `bg-surface-0` | Modals / drawers (overlay floats) |
+| `surface-1` | 0.18 | `bg-surface-1` | Middle chat pane |
+| `surface-2` | 0.22 | `bg-surface-2` | Right notebook pane — brightest reading area |
+| `surface-3` | 0.32 | `bg-surface-3` | Hover / elevated elements |
+
+L step is **0.04+**, not 0.02. Weber-Fechner: at low luminance, perceived brightness compresses, so an RGB delta of ~9 (L step 0.02) is invisible. 0.04+ (RGB delta 12-14) is the实测 threshold for visible separation on dark backgrounds. When in doubt, compute the RGB delta via the OKLCH→sRGB pipeline, don't trust the L number alone.
+
 ## Typography
-Single sans family (system-ui stack). Fixed rem scale. Tight hierarchy: lesson titles 1.25rem, body 0.875rem, labels 0.75rem. No display fonts — this is a tool, not a magazine. **User-adjustable** body size in the chat panel (A- / A+ small/medium/large), persisted to localStorage.
+Single sans family (system-ui stack). No display fonts — this is a tool, not a magazine.
+
+### 6-tier semantic font scale (v0.7)
+
+All text uses rem-based semantic classes (defined in `index.css`), never hardcoded `text-[Npx]`. The whole app follows one html `font-size` base, controlled by **A-/A+ in the header** (global, not per-pane). Three bases: small(16px) / medium(17px, default) / large(18px). 16px floor ensures the smallest tier stays readable (12px @small).
+
+| Tier | rem | @small(16) | @medium(17) | @large(18) | Used for |
+|------|-----|-----------|-------------|-----------|----------|
+| `text-caption` | 0.75 | 12.0px | 12.8px | 13.5px | badge / count / logo (readability floor) |
+| `text-label` | 0.825 | 13.2px | 14.0px | 14.8px | form label / timestamp / subtitle |
+| `text-body` | 0.875 | 14.0px | 14.9px | 15.8px | buttons / inputs / chat / tooltip (main interactive text) |
+| `text-lead` | 1.0 | 16.0px | 17.0px | 18.0px | body prose (explanations / notes) |
+| `text-title` | 1.125 | 18.0px | 19.1px | 20.3px | card titles |
+| `text-hero` | 1.5 | 24.0px | 25.5px | 27.0px | large titles / empty states |
+
+Banned: `text-[10px]`, `text-[11px]`, `text-xs` (all eliminated). When adding text, pick the semantic tier by role, not by eyeballing the size. Persisted to localStorage.
 
 ## Iconography
 **Unified system: `lucide-react` line icons.** No emoji as primary functional icon — emoji may appear decoratively in AI-generated content and empty-state illustrations only. This is the single biggest source of visual inconsistency to fix; the codebase already depends on lucide-react but underuses it.
@@ -56,13 +86,19 @@ Single sans family (system-ui stack). Fixed rem scale. Tight hierarchy: lesson t
 **Future hooks (reserved, not implemented)**: particle burst on correct answer, short sfx on unlock/streak, virtual teacher expressions. These are placeholders in `ParticleFx.tsx` — fill in a dedicated design pass, do not block v0.4.
 
 ## Key surfaces
-1. **Skill-tree map** (left rail, collapsible) — Duolingo-style vertical winding path of 3D circular lesson nodes with locked/available/in-progress/mastered states, 0-3 stars, crown for mastered. Winding SVG path connects nodes. Course mastery % + streak at top. This IS the dashboard — no separate dashboard page.
-2. **Thread tabs** (chat panel header) — Chrome-style horizontal tabs, one per conversation thread. Current tab highlighted, gear menu (rename/archive/delete) on hover, + to create. Auto-named from first user message.
-3. **AI agent panel** (chat, center) — streaming chat with parts-based rendering (text / reasoning-foldable / tool-call / proposal-apply). Markdown with GFM tables, code blocks with copy button. Font-size control. Starter prompts row. Cmd+K command palette.
-4. **Notebook** (right, persistent) — three tabs: 讲解 (current node content) / 笔记 (this node's AI artifacts, auto-persisted, pinnable, deletable) / 全部 (cross-node timeline). This is the "chalkboard" — everything AI generates is saved here, reviewable anytime.
-5. **Review drawer** (overlay from map badge) — four-quadrant SRS panel (overdue / short-term / long-term / inactive), session capped at 10, self-rating on review.
-6. **Settings drawer** (overlay from header gear) — BYOK provider config, custom providers, daily goal, theme, language.
-7. **Import view** (full main area when toggled) — GitHub URL or markdown paste.
+1. **Skill-tree map + import** (left rail, full-height, `surface-rail`) — Duolingo-style vertical winding path of 3D circular lesson nodes (locked/available/in-progress/mastered/exam states) with scroll-driven scrollytelling sky + seasonal×weather presets. Floating glass tab bar switches between 课程地图 / 导入课程 (sliding panels, shared sky background). Course mastery % + review-due badge as floating glass header. Full-height: panes are separated by surface depth, not borders. Left pane toggle via Ctrl+B or header button.
+2. **Thread tabs** (chat panel, top, ultra-thin row) — low-contrast text labels, active marked only by a 1px brand dot + semibold, no fill/border. Whole row opacity-70, hover → 100%. Gear menu (rename/archive/delete) on hover per tab. Auto-named from first message; truncated tabs show full name via GlobalTooltip on hover.
+3. **AI agent panel** (chat, middle, `surface-1`, minimal-reading-flow / claude.ai style) — content is the only protagonist, toolbars recede. Streaming chat with parts-based rendering (text / reasoning-foldable / tool-call with lucide Wrench/XCircle / proposal-apply). User messages: right-aligned faint tint, no bubble. AI messages: left-aligned, no bubble. Markdown with GFM, 80ch prose cap. Starter prompts as faint pills above input. **Skill-mode pills inside the input box** (`模式: 🧭苏格拉底 ✅考试冲刺 🔨项目实战 🔄复习`), each with icon + tooltip explaining when to use. Cmd+K command palette.
+4. **Notebook** (right, persistent, `surface-2`) — two tabs in **segmented control** (讲解 / 笔记, deliberately different vocabulary from thread tabs which are pill-row): 讲解 = current node markdown content with persistent highlight + quote-to-chat; 笔记 = Cornell three-zone (理解/记录/练习). Tab vocabulary matches MapRail tabs (equal-flex capsule + brand/20 active).
+5. **Header** (over middle+right panes only, glass-fade) — transparent + backdrop-blur + bottom mask gradient (melts into content, no hard line). Left: layout toggles (PanelLeft/PanelRight) + logo. Right: global font A-/A+ → XP bar → settings gear → streak flame.
+6. **Review drawer** (overlay from map badge, `surface-0`) — four-quadrant SRS panel (overdue / short-term / long-term / inactive), session capped at 10, self-rating on review.
+7. **Settings drawer** (overlay from header gear, `surface-0`) — BYOK provider config, custom providers, daily goal, language.
+
+### Component primitives (v0.6)
+- **`btn-3d-brand`** = primary action everywhere (no `btn-3d-blue`, removed as orphan).
+- **`ConfirmCard`** — inline confirmation popover (portal to body), replaces ALL native `confirm()`. Danger actions get warning-red left stripe.
+- **`Toast`** with `severity` prop (success/error/warning/info/default), each with semantic left-stripe + lucide icon, exit animation.
+- **`GlobalTooltip`** — portal-based, follows mouse, left-bottom anchor. Any element with `data-tooltip` attribute gets hover tooltip. Use this for truncated titles, mode explanations, node names.
 
 ## What this is not
 - Not a chat app. The AI tutor serves learning, not general conversation. Off-curriculum questions get a gentle "this isn't in the current material" redirect.

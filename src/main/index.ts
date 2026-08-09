@@ -62,10 +62,24 @@ function createWindow(): void {
 
   mainWindow.on("ready-to-show", () => mainWindow?.show());
 
-  // 外链走系统浏览器
+  // 外链走系统浏览器:window.open / target=_blank
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  // 外链同窗口导航拦截:点击 <a href="https://...">(ReactMarkdown 渲染的链接)
+  // 默认会让当前窗口导航到该 URL → 整个 app 被网页覆盖,丢失所有 UI。
+  // 拦截所有非内部(file:// / dev server)的导航,转给系统浏览器。
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const isInternal =
+      url.startsWith("file://") ||
+      url.startsWith(DEV_SERVER_URL) ||
+      url.startsWith("about:");
+    if (!isInternal) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
   });
 
   if (isDev && process.env["NODE_ENV"] === "development") {

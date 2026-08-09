@@ -279,7 +279,22 @@ function ContentTab({
         </div>
       ) : content ? (
         <div ref={proseRef} className="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300 leading-relaxed select-text">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              // 外链强制新窗口 → setWindowOpenHandler → 系统浏览器,
+              // 防止点击讲解里的链接把 electron 主窗口导航成网页。
+              a({ children, ...props }) {
+                return (
+                  <a {...props} target="_blank" rel="noopener noreferrer">
+                    {children}
+                  </a>
+                );
+              },
+            }}
+          >
+            {content}
+          </ReactMarkdown>
         </div>
       ) : (
         <div className="text-sm text-neutral-500 dark:text-neutral-400">

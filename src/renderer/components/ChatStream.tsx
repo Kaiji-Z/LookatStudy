@@ -610,6 +610,15 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components
   pre({ children, ...props }) {
     return <CodeBlock {...props}>{children}</CodeBlock>;
   },
+  // 外链:强制新窗口打开(走 setWindowOpenHandler → 系统浏览器),
+  // 避免点击 <a href> 导致 electron 主窗口被网页覆盖、丢失 app UI。
+  a({ children, ...props }) {
+    return (
+      <a {...props} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  },
 };
 
 /** 代码块:语言标签 + 一键复制(学习场景高频需求)。 */

@@ -18,7 +18,7 @@ import { ensureExamNodesForExistingCourses } from "./services/course-generator.j
 import { loadEnv, getZaiConfig } from "./services/env.js";
 import { seedBuiltinSkills } from "./services/skills/skill-service.js";
 import { createProposal } from "./services/proposal-service.js";
-import { courses, contentNodes, streaks } from "./db/schema.js";
+import { courses, contentNodes, streaks, settings as settingsTable, customProviders } from "./db/schema.js";
 import { eq } from "drizzle-orm";
 
 // 主进程以 CJS 打包（见 vite.config.ts），__dirname 天然可用。
@@ -272,9 +272,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // 造一个 custom provider + active 设置(让 agentReady=true,ChatComposer 渲染 skill-picker)。
   // 优先用 .env 里的真实 ZAI key(让 ui-test 能真实出题/答题);没有则用占位假 key(只验证渲染)。
   try {
-    const { settings: settingsTable, customProviders } = await import("./db/schema.js");
-    // getDb 已在顶部 static import,无需再 dynamic import(消除 rollup 混合导入警告,
-    // 也避免 vite-plugin-electron dev 模式下 chunk metadata 不完整导致的 deps optimizer 崩)
+    // schema 已在顶部 static import(消除 rollup 混合 static+dynamic 导入警告)
     const zai = getZaiConfig();
     const PROVIDER_ID = "custom-ui-test-provider";
     const existingProvider = getDb().select().from(customProviders).all();

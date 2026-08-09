@@ -362,6 +362,11 @@ interface OrbStreak {
 const orbStreaks: OrbStreak[][] = []; // [球索引][] 每球的水流列表
 let orbStreakTimer: number[] = [];
 
+/* 雨滴溅起:雨滴击中球顶时飞溅的小水珠(带重力抛物线 + 生命衰减)。 */
+interface Splash { x: number; y: number; vx: number; vy: number; life: number; }
+const orbSplashes: Splash[][] = [];   // [球索引][] 每球的溅起水珠
+let orbSplashTimer: number[] = [];    // 下次溅起的倒计时
+
 /* 雪堆状态:每颗球的积雪厚度(0..1),随雪花堆积增长。 */
 let orbCaps: number[] = [];
 
@@ -419,6 +424,51 @@ function surfPoint(cx: number, cy: number, r: number, a: number, th: number) {
   const sa = Math.sin(a), ca = Math.cos(a);
   return { x: cx + Math.sin(th) * sa * r, y: cy - ca * r };
 }
+/* 湿润光泽:雨天球的表面被水膜覆盖,高光扩散成大面积柔光(不像干球是聚焦小亮点)。
+   画法:左上方一个大面积、柔和高亮的径向渐变(水面漫反射),
+   + 一道锐利镜面反光带(顶部细亮线,水膜的光泽反射)。
+   clip 到球内,不溢出。 */
+function drawWetGloss(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.99, 0, Math.PI * 2);
+  ctx.clip();
+  // 1. 大面积柔和高光(左上扩散,水面漫反射)—— 比干球的高光更大更柔
+  const gloss = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, 0, cx - r * 0.35, cy - r * 0.4, r * 0.8);
+  gloss.addColorStop(0, "rgba(255,255,255,0.4)");
+  gloss.addColorStop(0.5, "rgba(255,255,255,0.12)");
+  gloss.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gloss;
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  // 2. 顶部锐利镜面反光带(水膜光泽,一道细亮弧)
+  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.92, Math.PI * 1.15, Math.PI * 1.5);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* 雨滴溅起:雨滴击中球顶时飞溅的小水珠。每个水珠带初速度(向外散+向上)
+   + 重力(vy 递减)+ 生命衰减,画成渐淡的小圆点。模拟真实雨打水面的飞溅。 */
+function drawSplashes(ctx: CanvasRenderingContext2D, splashes: Splash[]) {
+  ctx.save();
+  for (let i = splashes.length - 1; i >= 0; i--) {
+    const s = splashes[i]!;
+    s.x += s.vx;
+    s.y += s.vy;
+    s.vy += 0.18;            // 重力
+    s.life--;
+    if (s.life <= 0) { splashes.splice(i, 1); continue; }
+    const alpha = Math.min(1, s.life / 20) * 0.8;
+    ctx.fillStyle = `rgba(215,238,255,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawRainStreaks(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, streaks: OrbStreak[], now: number) {
   ctx.save();
   ctx.beginPath();
@@ -429,15 +479,15 @@ function drawRainStreaks(ctx: CanvasRenderingContext2D, cx: number, cy: number, 
     s.prog += s.speed;
     s.life--;
     if (s.prog > Math.PI * 1.05 || s.life <= 0) { streaks.splice(i, 1); continue; }
-    // 画 7 段渐淡的弧线,贴合球面
+    // 画 7 段渐淡的弧线,贴合球面(通透:低 alpha,能透出球面色)
     const steps = 7;
     for (let k = 0; k < steps; k++) {
       const a1 = s.prog - s.len * (k / steps);
       const a2 = s.prog - s.len * ((k + 1) / steps);
       const p1 = surfPoint(cx, cy, r, a1, s.theta);
       const p2 = surfPoint(cx, cy, r, a2, s.theta);
-      const alpha = (1 - k / steps) * 0.7;
-      ctx.strokeStyle = `rgba(215,238,255,${alpha})`;
+      const alpha = (1 - k / steps) * 0.42;  // 降通透:0.7→0.42
+      ctx.strokeStyle = `rgba(200,228,250,${alpha})`;
       ctx.lineWidth = s.thick * (1 - (k / steps) * 0.7);
       ctx.lineCap = "round";
       ctx.beginPath();
@@ -445,11 +495,12 @@ function drawRainStreaks(ctx: CanvasRenderingContext2D, cx: number, cy: number, 
       ctx.lineTo(p2.x, p2.y);
       ctx.stroke();
     }
-    // 头部 3D 水珠
+    // 头部 3D 水珠(通透:半透青蓝水膜 + 中心亮折射点)
     const head = surfPoint(cx, cy, r, s.prog, s.theta);
-    const dg = ctx.createRadialGradient(head.x - 1, head.y - 1, 0, head.x, head.y, s.thick * 1.2);
-    dg.addColorStop(0, "rgba(240,250,255,0.95)");
-    dg.addColorStop(1, "rgba(160,195,230,0.6)");
+    const dg = ctx.createRadialGradient(head.x - 1.2, head.y - 1.2, 0, head.x, head.y, s.thick * 1.3);
+    dg.addColorStop(0, "rgba(255,255,255,0.85)");    // 中心折射高光(亮但小)
+    dg.addColorStop(0.4, "rgba(180,215,240,0.5)");   // 水膜主体(半透青蓝)
+    dg.addColorStop(1, "rgba(120,165,205,0.25)");    // 边缘(更透,融入球面)
     ctx.fillStyle = dg;
     ctx.beginPath();
     ctx.arc(head.x, head.y, s.thick * 1.1, 0, Math.PI * 2);
@@ -469,6 +520,8 @@ function drawOrbWeather(
   while (orbStreaks.length < orbs.length) orbStreaks.push([]);
   while (orbStreakTimer.length < orbs.length) orbStreakTimer.push(0);
   while (orbCaps.length < orbs.length) orbCaps.push(0.3);
+  while (orbSplashes.length < orbs.length) orbSplashes.push([]);
+  while (orbSplashTimer.length < orbs.length) orbSplashTimer.push(0);
 
   for (let i = 0; i < orbs.length; i++) {
     const o = orbs[i]!;
@@ -477,7 +530,9 @@ function drawOrbWeather(
       orbCaps[i] = Math.min(1, orbCaps[i]! + 0.0008);
       drawSnowDome(ctx, o.x, o.y, o.r, orbCaps[i]!, now);
     } else if (preset.particles === "rain") {
-      // 水流:定时生成新流(每球最多 3 条)
+      // 湿润光泽(球面水膜反光)
+      drawWetGloss(ctx, o.x, o.y, o.r);
+      // 水流痕:定时生成新流(每球最多 3 条)
       orbStreakTimer[i] = (orbStreakTimer[i]! - 1);
       if (orbStreakTimer[i]! <= 0 && orbStreaks[i]!.length < 3) {
         const side = Math.random() < 0.5 ? -1 : 1;
@@ -492,6 +547,28 @@ function drawOrbWeather(
         orbStreakTimer[i] = 40 + Math.random() * 60;
       }
       drawRainStreaks(ctx, o.x, o.y, o.r, orbStreaks[i]!, now);
+      // 雨滴溅起:定时在球顶随机点击中,生成飞溅水珠
+      orbSplashTimer[i] = (orbSplashTimer[i]! - 1);
+      if (orbSplashTimer[i]! <= 0) {
+        // 击中点:球顶上方随机 x(用圆方程算球面 y)
+        const hx = o.x + (Math.random() - 0.5) * o.r * 1.2;
+        const dx = hx - o.x;
+        const hy = o.y - Math.sqrt(Math.max(0, o.r * o.r - dx * dx));
+        // 生成 4-6 个飞溅水珠(向外散 + 向上)
+        const n = 4 + Math.floor(Math.random() * 3);
+        for (let k = 0; k < n; k++) {
+          const dir = dx < 0 ? -1 : 1;
+          orbSplashes[i]!.push({
+            x: hx,
+            y: hy,
+            vx: dir * (0.5 + Math.random() * 2) * (Math.random() < 0.5 ? -1 : 1),
+            vy: -(1.5 + Math.random() * 2.5),
+            life: 18 + Math.floor(Math.random() * 14),
+          });
+        }
+        orbSplashTimer[i] = 30 + Math.floor(Math.random() * 50);
+      }
+      drawSplashes(ctx, orbSplashes[i]!);
     }
   }
 }
@@ -676,6 +753,8 @@ export function attachOrbWeather(
     orbStreaks.length = 0;
     orbCaps.length = 0;
     orbStreakTimer.length = 0;
+    orbSplashes.length = 0;
+    orbSplashTimer.length = 0;
     const c = canvas.getContext("2d");
     if (c) c.clearRect(0, 0, canvas.width, canvas.height);
   };

@@ -334,6 +334,15 @@
   animation: bubble-active-pulse 2.4s ease-in-out infinite;
 }
 
+/* 课程抽屉:从左栏向右滑出 */
+@keyframes drawer-slide-right {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.drawer-slide-right {
+  animation: drawer-slide-right 280ms var(--ease-out-expo);
+}
+
 /* ============================================================
  * v0.6 节点球季节滤镜(整球色温调,不动状态色本身)
  * 状态色(绿/蓝/金/灰/紫)是游戏语言,filter 整球作用但保持相对差异。

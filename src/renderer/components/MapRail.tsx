@@ -1,26 +1,14 @@
 /**
- * MapRail —— v0.6 选关地图(气球节点 + 滚动叙事天空)。
+ * MapRail —— v0.7 左栏(tab 切换:课程地图 / 导入课程)。
  *
- * 核心隐喻:左栏是一段从黎明滚到星夜的学习旅程。
- *   - 节点 = 气球:种子确定性抖动飘在空中(不整齐但不乱),轻微上下浮动呼吸
- *   - 路径 = 绳子:下垂的贝塞尔把气球串起来(模拟重力),不再是 S 形箭头
- *   - 背景 = 天空:随滚动进度在 黎明→朝阳→白昼→晚霞→日落→星空 间连续插值,
- *     一颗发光天体沿弧线划过(日/月),夜里星点淡入
- *   - 顶部:课程总进度条 + 连击
- *   - 节点状态:锁(灰)/ 可学(绿脉冲)/ 进行中(蓝)/ 已掌握(金+皇冠)
- *
- * 折叠态:48px 窄条,只显示 🗺️ + 当前节点小圆球。
- *
- * 技术要点:
- *   - 天空渐变用 background-attachment: local 随内容滚动,零 JS、丝滑
- *   - 天体位置/星点透明度用单个 rAF 节流的 onScroll 写 --sky-progress(0→1)驱动
- *   - 气球位置用 section id 哈希抖动 → 每次渲染位置稳定,不乱跳
- *   - 解锁逻辑零改动:onJumpNode → handleLessonClick → api.markNodeAttempted 链路保留
+ * 左栏全高(顶到底),顶部常驻 tab 栏(导入课程 / 课程地图),
+ * 下方滑动内容区:点导入 → 地图向右滑出、导入向右滑入;点地图 → 反向。
+ * 切课后自动回到地图面板。
  */
-import type { ContentNode, Progress } from "@shared/types";
+import type { ContentNode, Progress, Course } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { useState, useEffect, useRef } from "react";
-import { Map as MapIcon, FileText, ChevronLeft, ChevronRight, BookOpen, Target } from "lucide-react";
+import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check } from "lucide-react";
 import {
   computeBalloonLayout,
   sectionHeight,
@@ -28,6 +16,7 @@ import {
   hashStr,
 } from "../lib/mapLayout.js";
 import { attachSky, attachOrbWeather, pickPreset, PRESETS, PRESET_KEYS, type SkyPreset, type OrbPos } from "../lib/skyCanvas.js";
+import { api } from "../lib/api.js";
 
 export type MapView = "map" | "import";
 
@@ -36,277 +25,243 @@ interface MapRailProps {
   onViewChange: (v: MapView) => void;
   courseTitle: string | null;
   courseId: string | null;
+  courses: Course[];
   sections: ContentNode[];
   tree: ContentNode[];
   progressMap: Record<string, Progress>;
   selectedNodeId: string | null;
   dueCount: number;
   dueNodeIds: Set<string>;
-  overallMastery: number; // 0-1,顶部进度条
-  streak: number; // 连击天数
-  collapsed: boolean;
-  streaming: boolean; // AI 输出中(锁定节点切换)
-  onToggleCollapse: () => void;
+  overallMastery: number;
+  streak: number;
+  streaming: boolean;
   onJumpNode: (nodeId: string) => void;
   onOpenReview: () => void;
+  onSelectCourse: (id: string) => void;
+  onCoursesChanged: () => void;
 }
 
 export function MapRail(props: MapRailProps) {
-  if (props.collapsed) {
-    return <MapRailCollapsed {...props} />;
-  }
-  return <MapRailExpanded {...props} />;
-}
-
-/* ---------- 折叠态:48px 窄条 ---------- */
-function MapRailCollapsed({
-  onToggleCollapse,
-  selectedNodeId,
-  tree,
-  progressMap,
-}: MapRailProps) {
-  const currentNode = selectedNodeId ? tree.find((n) => n.id === selectedNodeId) : null;
-  const status = currentNode ? (progressMap[currentNode.id]?.status ?? "available") : null;
-  return (
-    <nav
-      className="h-full flex flex-col items-center bg-neutral-100 dark:bg-neutral-950 border-r border-neutral-200 dark:border-neutral-800/50 w-12 shrink-0 py-3"
-      data-testid="map-rail-collapsed"
-    >
-      <button
-        onClick={onToggleCollapse}
-        className="text-neutral-500 dark:text-neutral-400 hover:text-brand mb-3"
-        title="展开地图"
-        data-testid="map-expand"
-      >
-        <ChevronRight className="w-4 h-4" />
-      </button>
-      <div className="mb-3"><MapIcon className="w-5 h-5 text-brand" /></div>
-      {currentNode && status && (
-        <div
-          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${
-            statusClass(status)
-          }`}
-          title={currentNode.title}
-        >
-          {statusIcon(status)}
-        </div>
-      )}
-    </nav>
-  );
-}
-
-/* ---------- 展开态:完整地图 ---------- */
-function MapRailExpanded({
-  view,
-  onViewChange,
-  courseTitle,
-  courseId,
-  sections,
-  tree,
-  progressMap,
-  selectedNodeId,
-  dueCount,
-  dueNodeIds,
-  overallMastery,
-  streak,
-  streaming,
-  onToggleCollapse,
-  onJumpNode,
-  onOpenReview,
-}: MapRailProps) {
-  const masteryPct = Math.round(overallMastery * 100);
-
-  // v0.6:天空 canvas attach 到这个滚动容器(skyCanvas.ts 内部自己管 rAF + resize + scroll)。
-  // canvas 是 nav 的子元素(position: absolute 铺满整个左栏含 header),不是 map-path 的子元素,
-  // 否则天空到不了 header 区域。attachSky 仍读 mapPathRef 的 scrollTop。
-  const mapPathRef = useRef<HTMLDivElement>(null);
+  const [panel, setPanel] = useState<"map" | "import">("map");
   const navRef = useRef<HTMLElement>(null);
+  const mapPathRef = useRef<HTMLDivElement>(null);
+  const masteryPct = Math.round(props.overallMastery * 100);
 
-  // 季节×天气预设:每次切课(含切回)/ 程序启动时随机抽一个,不持久化。
-  // courseId 变化 → useEffect 重抽 → skyKey 变 → MapSkyCanvas 重 attach(换天空)。
-  // TEMP: skyOverride 手动覆盖(调试用,切换全部 12 预设),null 时走随机。
   const [skyKey, setSkyKey] = useState<string | null>(null);
-  const [skyOverride, setSkyOverride] = useState<string | null>(null);
+  useEffect(() => { setSkyKey(pickPreset(props.courseId)); }, [props.courseId]);
+  const skyPreset: SkyPreset | null = skyKey ? PRESETS[skyKey] ?? null : null;
+
+  const prevCourseId = useRef<string | null>(null);
   useEffect(() => {
-    if (skyOverride === null) setSkyKey(pickPreset(courseId));
-  }, [courseId, skyOverride]);
-  const skyPreset: SkyPreset | null = (skyOverride ?? skyKey) ? PRESETS[skyOverride ?? skyKey!] ?? null : null;
+    if (prevCourseId.current !== null && prevCourseId.current !== props.courseId) setPanel("map");
+    prevCourseId.current = props.courseId;
+  }, [props.courseId]);
 
   return (
-    <nav
-      ref={navRef}
-      className="relative h-full flex flex-col bg-neutral-950 border-r border-neutral-800/60 w-[300px] shrink-0 overflow-hidden"
-      data-testid="map-rail"
-    >
-      {/* 滚动叙事天空:canvas 铺满整个左栏(nav 的 absolute 子元素,含 header 区域),
-          sticky 到 nav 顶部,每帧按 map-path 的 scrollProgress 重绘整张天。
-          preset 决定季节色板 + 天气粒子层;换课重抽 → 重 attach。 */}
-      {view === "map" && skyPreset && (
+    <nav ref={navRef} className="relative h-full flex flex-col bg-neutral-950 border-r border-neutral-800/60 w-[300px] shrink-0 overflow-hidden" data-testid="map-rail">
+      {/* 天空 canvas:nav 层铺满全高(含 tab 区),两个面板共享同一背景。
+          tab 和面板都透明,让 canvas 从顶到底透出来。 */}
+      {skyPreset && (
         <>
           <MapSkyCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} />
           <MapOrbWeatherCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} />
         </>
       )}
 
-      {/* 顶部:悬浮卷轴头部(absolute,不占文档流)。球可以滚到 header 后面,
-          header 作为纯悬浮 UI 浮在内容之上,不再遮挡球体。 */}
-      <div className="map-header absolute top-0 left-0 right-0 z-30 px-4 pt-3 pb-3 pointer-events-none [&_button]:pointer-events-auto">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
-            <button
-              onClick={onToggleCollapse}
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/10 transition-colors"
-              title="折叠地图"
-              data-testid="map-collapse"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            {/* TEMP 主题调试开关:循环切换全部 12 预设;右键或长按清回随机 */}
-            <button
-              onClick={() => {
-                const cur = skyOverride ?? skyKey ?? PRESET_KEYS[0];
-                const idx = PRESET_KEYS.indexOf(cur);
-                const next = PRESET_KEYS[(idx + 1) % PRESET_KEYS.length]!;
-                setSkyOverride(next);
-              }}
-              onContextMenu={(e) => { e.preventDefault(); setSkyOverride(null); }}
-              className="px-1.5 h-6 rounded text-[9px] font-bold text-white/70 bg-white/10 hover:bg-white/20 transition-colors"
-              title={`主题调试(左键切下一个,右键回随机): ${skyOverride ?? "随机"}`}
-            >
-              {skyOverride ? skyOverride.replace("|", "·") : "🎲"}
-            </button>
-          </div>
-          <div className="flex gap-1">
-            <MapNavBtn
-              active={view === "map"}
-              onClick={() => onViewChange("map")}
-              testid="map-view-map"
-            >
-              <MapIcon className="w-4 h-4" />
-            </MapNavBtn>
-            <MapNavBtn
-              active={view === "import"}
-              onClick={() => onViewChange("import")}
-              testid="map-view-import"
-            >
-              <FileText className="w-4 h-4" />
-            </MapNavBtn>
-          </div>
+      {/* tab 栏(透明,浮在天空之上) */}
+      <div className="shrink-0 px-2 pt-2 pb-1.5 z-30 relative">
+        <div className="flex p-1 bg-black/30 backdrop-blur-sm rounded-lg gap-1">
+          <button onClick={() => setPanel("map")} data-testid="map-tab-map" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[11px] font-bold transition-colors ${panel === "map" ? "bg-brand/15 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
+            <MapIcon className="w-3 h-3" /> 课程地图
+          </button>
+          <button onClick={() => setPanel("import")} data-testid="map-tab-import" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[11px] font-bold transition-colors ${panel === "import" ? "bg-brand/15 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
+            <FileText className="w-3 h-3" /> 导入课程
+          </button>
         </div>
-
-        {view === "map" && (
-          <>
-            {/* 课程标题:像卷轴上的铭文。过长默认省略,hover 浮层展开全文(不挤下方) */}
-            <h2
-              className="map-title text-sm font-extrabold text-white mt-2.5 drop-shadow-[0_1px_4px_rgba(0,0,0,0.6)]"
-              title={courseTitle ?? ""}
-            >
-              <span className="map-title__text">{courseTitle ?? "未选择课程"}</span>
-              <span className="map-title__full">{courseTitle ?? "未选择课程"}</span>
-            </h2>
-            {/* 旅程完成度:毛玻璃进度条,brand 实时进度 */}
-            <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-2.5 bg-black/40 rounded-full overflow-hidden ring-1 ring-white/10">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${masteryPct >= 100 ? "bg-gold" : "bg-brand"}`}
-                  style={{ width: `${Math.max(3, masteryPct)}%` }}
-                />
-              </div>
-              <span className="text-xs font-extrabold tabular-nums text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">
-                {masteryPct}%
-              </span>
-            </div>
-            <div className="flex items-center justify-end mt-2 text-[10px]">
-              {dueCount > 0 && (
-                <button
-                  onClick={onOpenReview}
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-review/20 ring-1 ring-review/30 hover:bg-review/30 transition-colors"
-                  data-testid="map-review-badge"
-                >
-                  <BookOpen className="w-3 h-3 text-review" />
-                  <span className="font-extrabold text-review">{dueCount}</span>
-                  <span className="text-review/80">待复习</span>
-                </button>
-              )}
-            </div>
-          </>
-        )}
       </div>
 
-      {/* 主体:地图 / 导入视图。透明背景,天空由 nav 级 canvas 提供 */}
-      {view === "map" ? (
-        <div
-          ref={mapPathRef}
-          className="map-path relative z-10 flex-1 overflow-y-auto px-2 pt-28 pb-4 min-h-0"
-          data-testid="map-path"
-        >
-          {/* 内容层:气球节点 + 章节浮在天空之上(canvas 在 nav 层,这里透明)。
-              env-{season}/env-{weather} 类驱动节点球的环境光染色 + 天气交互(CSS 后代选择器,
-              无需给每个 MapNode 传 props)。 */}
-          <div className={`map-sky-content ${skyPreset ? `env-${skyPreset.season} env-${skyPreset.weather}` : ""}`}>
-            {/* AI 输出中提示(专注当下,锁定节点切换) */}
-            {streaming && (
-              <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-[11px] text-brand font-medium backdrop-blur-sm" data-testid="streaming-notice">
-                <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
-                AI 正在回答,完成后可切换节点
-              </div>
-            )}
-            {sections.length === 0 ? (
-              courseTitle ? (
-                <div className="text-center text-xs text-neutral-500 dark:text-neutral-400 mt-8 px-4 flex items-center justify-center gap-2">
-                  <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
-                  正在生成课程路径…
+      {/* 滑动内容区(透明,天空由 nav 层 canvas 提供) */}
+      <div className="relative flex-1 overflow-hidden z-10">
+        <div className="flex h-full transition-transform duration-300" style={{ transform: panel === "map" ? "translateX(0)" : "translateX(-50%)", width: "200%" }}>
+          {/* 地图面板(透明) */}
+          <div className="w-1/2 h-full flex flex-col min-h-0 relative">
+            <div className="relative z-20 px-3 pt-2 pb-2 bg-black/30 backdrop-blur-sm shrink-0 pointer-events-auto">
+              <h2 className="map-title text-sm font-extrabold text-white truncate" title={props.courseTitle ?? ""}>
+                <span className="map-title__text">{props.courseTitle ?? "未选择课程"}</span>
+                <span className="map-title__full">{props.courseTitle ?? "未选择课程"}</span>
+              </h2>
+              <div className="mt-1.5 flex items-center gap-2">
+                <div className="flex-1 h-2.5 bg-black/40 rounded-full overflow-hidden ring-1 ring-white/10">
+                  <div className={`h-full rounded-full transition-all duration-500 ${masteryPct >= 100 ? "bg-gold" : "bg-brand"}`} style={{ width: `${Math.max(3, masteryPct)}%` }} />
                 </div>
-              ) : (
-                <button
-                  onClick={() => onViewChange("import")}
-                  className="block w-full mt-8 mx-auto p-4 rounded-2xl border-2 border-dashed border-brand/40 hover:border-brand hover:bg-brand/5 transition-all text-center group"
-                  data-testid="map-empty-cta"
-                >
-                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🗺️</div>
-                  <div className="text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                    开始你的第一门课
-                  </div>
-                  <div className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                    导入一个 GitHub 学习仓库,自动生成选关路径
-                  </div>
-                  <div className="mt-2 text-[10px] text-brand font-bold">点这里导入 →</div>
-                </button>
-              )
-            ) : (
-              <div className="space-y-6 pt-2">
-                {sections.map((section, sIdx) => (
-                  <MapSection
-                    key={section.id}
-                    section={section}
-                    sectionIndex={sIdx}
-                    tree={tree}
-                    progressMap={progressMap}
-                    selectedNodeId={selectedNodeId}
-                    dueNodeIds={dueNodeIds}
-                    onJumpNode={onJumpNode}
-                  />
-                ))}
+                <span className="text-xs font-extrabold tabular-nums text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">{masteryPct}%</span>
               </div>
-            )}
+              <div className="flex items-center justify-end mt-1.5 text-[10px]">
+                {props.dueCount > 0 && (
+                  <button onClick={props.onOpenReview} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-review/20 ring-1 ring-review/30 hover:bg-review/30 transition-colors" data-testid="map-review-badge">
+                    <BookOpen className="w-3 h-3 text-review" />
+                    <span className="font-extrabold text-review">{props.dueCount}</span>
+                    <span className="text-review/80">待复习</span>
+                  </button>
+                )}
+              </div>
+            </div>
+            <div ref={mapPathRef} className="map-path relative z-10 flex-1 overflow-y-auto px-2 pb-4 min-h-0" data-testid="map-path">
+              <div className={`map-sky-content ${skyPreset ? `env-${skyPreset.season} env-${skyPreset.weather}` : ""}`}>
+                {props.streaming && (
+                  <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-[11px] text-brand font-medium backdrop-blur-sm" data-testid="streaming-notice">
+                    <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
+                    AI 正在回答,完成后可切换节点
+                  </div>
+                )}
+                {props.sections.length === 0 ? (
+                  props.courseTitle ? (
+                    <div className="text-center text-xs text-neutral-500 dark:text-neutral-400 mt-8 px-4 flex items-center justify-center gap-2">
+                      <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
+                      正在生成课程路径…
+                    </div>
+                  ) : (
+                    <button onClick={() => setPanel("import")} className="block w-full mt-8 mx-auto p-4 rounded-2xl border-2 border-dashed border-brand/40 hover:border-brand hover:bg-brand/5 transition-all text-center group" data-testid="map-empty-cta">
+                      <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🗺️</div>
+                      <div className="text-sm font-bold text-neutral-300 mb-1">开始你的第一门课</div>
+                      <div className="text-[11px] text-neutral-400 leading-relaxed">导入一个 GitHub 学习仓库,自动生成选关路径</div>
+                      <div className="mt-2 text-[10px] text-brand font-bold">点这里导入 →</div>
+                    </button>
+                  )
+                ) : (
+                  <div className="space-y-6 pt-2">
+                    {props.sections.map((section, sIdx) => (
+                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          {/* 导入面板(透明,共享天空背景) */}
+          <div className="w-1/2 h-full overflow-y-auto px-3 py-3 space-y-2.5">
+            <ImportPanel courses={props.courses} selectedCourseId={props.courseId} onSelectCourse={(id) => { props.onSelectCourse(id); setPanel("map"); }} onCoursesChanged={props.onCoursesChanged} />
           </div>
         </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto px-3 py-3 text-xs text-neutral-500 dark:text-neutral-400">
-          {/* 导入提示(实际导入界面在主区) */}
-          <p className="leading-relaxed">
-            点 ⊕ 在主区导入新课程。导入后这里会显示新课程的地图。
-          </p>
-        </div>
-      )}
+      </div>
     </nav>
   );
 }
 
-/* ---------- 滚动叙事天空(canvas 版,参照 A Day in One Scroll)----------
-   canvas 是 nav 的 absolute 子元素(inset-0),铺满整个左栏含 header 区域;
-   attachSky 读 map-path 的 scrollProgress 驱动整张天重绘。
-   关键:canvas 在 nav 层而非 map-path 内 → 天空延伸到 header(修原 bug)。 */
+/* ---------- 导入面板(原 CourseDrawer 内容,内联) ---------- */
+function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChanged }: { courses: Course[]; selectedCourseId: string | null; onSelectCourse: (id: string) => void; onCoursesChanged: () => void; }) {
+  const [tab, setTab] = useState<"url" | "markdown" | "folder">("url");
+  const [showImport, setShowImport] = useState(false);
+  const [repoUrl, setRepoUrl] = useState("");
+  const [mdText, setMdText] = useState("");
+  const [repoName, setRepoName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [progressMsg, setProgressMsg] = useState<string | null>(null);
+
+  useEffect(() => { const off = api.on("import:progress", (msg: string) => setProgressMsg(msg)); return () => off(); }, []);
+
+  const handleImportUrl = async () => {
+    if (!repoUrl.trim() || busy) return;
+    setBusy(true); setError(null); setSuccess(null); setProgressMsg(null);
+    try {
+      const course = await api.importCourseFromRepo(repoUrl.trim());
+      setSuccess(`导入成功：${course.title}`);
+      setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);
+    } catch (e) { setError(e instanceof Error ? `${e.message}\n\n网络受限或私有仓库请改用「Markdown」方式。` : String(e)); } finally { setBusy(false); }
+  };
+  const handleImportMd = async () => {
+    if (!mdText.trim() || !repoName.trim() || busy) return;
+    setBusy(true); setError(null); setSuccess(null);
+    try {
+      const course = await api.generateCourseFromMarkdown(mdText.trim(), repoName.trim());
+      setSuccess(`生成成功：${course.title}`);
+      setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  };
+  const handleImportFolder = async () => {
+    if (busy) return;
+    setBusy(true); setError(null); setSuccess(null); setProgressMsg(null);
+    try {
+      const course = await api.importLocalFolder();
+      if (!course) { setBusy(false); return; }
+      setSuccess(`导入成功：${course.title}（${course.repoName}）`);
+      setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  };
+  const handleDelete = async (courseId: string, title: string) => {
+    if (!confirm(`确定删除课程「${title}」？所有进度和练习都会被清除。`)) return;
+    try { await api.deleteCourse(courseId); setSuccess(`已删除：${title}`); onCoursesChanged(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+
+  return (
+    <>
+      {courses.length === 0 ? (
+        <p className="text-xs text-neutral-400 text-center py-8">还没有课程。用下方导入第一个吧。</p>
+      ) : (
+        <div className="space-y-2" data-testid="course-list">
+          {courses.map((c) => {
+            const isCurrent = c.id === selectedCourseId;
+            return (
+              <button key={c.id} onClick={() => onSelectCourse(c.id)} className={`w-full text-left p-3 rounded-xl border transition-all duration-150 group ${isCurrent ? "border-brand bg-brand/10 shadow-[0_0_0_1px_var(--brand-ring)]" : "border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900/60"}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-sm font-bold truncate ${isCurrent ? "text-brand" : "text-neutral-200"}`}>{c.title}</div>
+                    <div className="text-[10px] text-neutral-400 truncate mt-0.5">{c.repoName}</div>
+                  </div>
+                  {isCurrent && <span className="shrink-0 w-5 h-5 rounded-full bg-brand flex items-center justify-center"><Check className="w-3 h-3 text-white" /></span>}
+                </div>
+                {!isCurrent && (
+                  <button onClick={(e) => { e.stopPropagation(); handleDelete(c.id, c.title); }} className="mt-2 text-[10px] text-neutral-600 hover:text-warning flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Trash2 className="w-2.5 h-2.5" /> 删除
+                  </button>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="pt-3 border-t border-neutral-800/60">
+        <button onClick={() => setShowImport(!showImport)} className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-brand/40 hover:bg-brand/5 text-sm font-bold text-neutral-300 hover:text-brand transition-all">
+          <Plus className="w-4 h-4" /> 导入新课程
+        </button>
+        {showImport && (
+          <div className="mt-3 space-y-3">
+            <div className="flex gap-1 p-1 bg-neutral-900 rounded-lg">
+              {([ { k: "url" as const, label: "URL", icon: LinkIcon }, { k: "markdown" as const, label: "MD", icon: FileText }, { k: "folder" as const, label: "文件夹", icon: FolderDown }]).map(({ k, label, icon: Icon }) => (
+                <button key={k} onClick={() => setTab(k)} className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[11px] font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
+                  <Icon className="w-3 h-3" /> {label}
+                </button>
+              ))}
+            </div>
+            {tab === "url" ? (
+              <section className="space-y-2" data-testid="import-url-section">
+                <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/owner/repo" data-testid="repo-url-input" className="w-full bg-neutral-900 text-neutral-100 text-xs rounded-lg px-2.5 py-2 border border-neutral-800 focus:border-brand focus:outline-none" />
+                <button onClick={handleImportUrl} disabled={!repoUrl.trim() || busy} data-testid="import-url-btn" className="btn-3d-brand w-full px-3 py-2 text-xs disabled:opacity-40">{busy ? "导入中…" : "导入"}</button>
+              </section>
+            ) : tab === "markdown" ? (
+              <section className="space-y-2" data-testid="import-md-section">
+                <input type="text" value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder="课程名称" data-testid="md-name-input" className="w-full bg-neutral-900 text-neutral-100 text-xs rounded-lg px-2.5 py-2 border border-neutral-800 focus:border-brand focus:outline-none" />
+                <textarea value={mdText} onChange={(e) => setMdText(e.target.value)} placeholder="粘贴 Markdown 内容…" data-testid="md-text-input" rows={4} className="w-full bg-neutral-900 text-neutral-100 text-xs rounded-lg px-2.5 py-2 border border-neutral-800 focus:border-brand focus:outline-none resize-none" />
+                <button onClick={handleImportMd} disabled={!mdText.trim() || !repoName.trim() || busy} data-testid="import-md-btn" className="btn-3d-brand w-full px-3 py-2 text-xs disabled:opacity-40">{busy ? "生成中…" : "生成课程"}</button>
+              </section>
+            ) : (
+              <section className="space-y-2" data-testid="import-folder-section">
+                <p className="text-[10px] text-neutral-400 leading-relaxed">递归扫描 .txt/.md/.html/.pdf,适合已下载的课程资料包。</p>
+                <button onClick={handleImportFolder} disabled={busy} data-testid="import-folder-btn" className="btn-3d-brand w-full px-3 py-2 text-xs disabled:opacity-40">{busy ? "处理中…" : "选择文件夹"}</button>
+              </section>
+            )}
+            {busy && progressMsg && <div className="bg-neutral-900 text-neutral-400 text-[11px] rounded-lg p-2 flex items-center gap-1.5" data-testid="import-progress"><span className="inline-block w-2.5 h-2.5 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0"></span>{progressMsg}</div>}
+            {error && <div className="border border-warning/40 text-warning-light text-[11px] rounded-lg p-2 whitespace-pre-wrap" data-testid="import-error">{error}</div>}
+            {success && <div className="border border-brand/30 text-brand text-[11px] rounded-lg p-2" data-testid="import-success">✅ {success}</div>}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function MapSkyCanvas({
   scrollRef,
   navRef,

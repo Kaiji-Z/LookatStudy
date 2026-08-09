@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Settings, Flame, Target } from "lucide-react";
+import { Settings, Flame, Target, PanelLeft, PanelRight } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -21,7 +21,6 @@ import { ExamView } from "./components/ExamView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { ReviewPanel } from "./components/ReviewPanel.js";
 import { SettingsView } from "./components/SettingsView.js";
-import { ImportView } from "./components/ImportView.js";
 import { useChatStream } from "./lib/useChatStream.js";
 import { useThreads } from "./lib/useThreads.js";
 import { useToast } from "./components/Toast.js";
@@ -83,8 +82,9 @@ export default function App() {
   const [forceArtifactTab, setForceArtifactTab] = useState<NotebookTab | null>(null);
   // 设置弹窗(M1:设置从 tab 改为 modal/抽屉)
   const [showSettings, setShowSettings] = useState(false);
-  // v0.3: 左栏地图折叠态
-  const [mapCollapsed, setMapCollapsed] = useState(false);
+  // 布局切换:左栏/右栏显隐(Cursor 风格)
+  const [leftPaneVisible, setLeftPaneVisible] = useState(true);
+  const [rightPaneVisible, setRightPaneVisible] = useState(true);
   // Cmd+K 命令面板(M2)
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   // 当前在右栏聚焦的产物 index(M2)
@@ -249,10 +249,10 @@ export default function App() {
         e.preventDefault();
         setShowCommandPalette((s) => !s);
       }
-      // Ctrl+B → 折叠/展开地图
+      // Ctrl+B → 切换左栏显隐(布局切换)
       if ((e.ctrlKey || e.metaKey) && e.key === "b") {
         e.preventDefault();
-        setMapCollapsed((c) => !c);
+        setLeftPaneVisible((v) => !v);
       }
       // Ctrl+Tab → 切换 thread(下一个)
       if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
@@ -425,22 +425,15 @@ export default function App() {
   const [showReviewDrawer, setShowReviewDrawer] = useState(false);
 
   return (
-    <div className="h-screen flex flex-col bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 overflow-hidden">
-      <Header
-        streak={streak}
-        xp={xp}
-        onOpenSettings={() => setShowSettings(true)}
-      />
-
-      {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
-
-      <div className="flex-1 flex min-h-0">
-        {/* 左栏:MapRail 选关地图(合并仪表盘+技能树) */}
+    <div className="h-screen flex bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 overflow-hidden">
+      {/* 左栏:MapRail 全高(顶到底),tab 切换地图/导入 */}
+      {leftPaneVisible && (
         <MapRail
           view={view}
           onViewChange={setView}
           courseTitle={currentCourse?.title ?? null}
           courseId={selectedCourseId}
+          courses={courses}
           sections={sections}
           tree={tree}
           progressMap={progressMap}
@@ -449,24 +442,39 @@ export default function App() {
           dueNodeIds={dueNodeIds}
           overallMastery={dashboard?.overallMastery ?? 0}
           streak={streak?.currentStreak ?? 0}
-          collapsed={mapCollapsed}
           streaming={chat.streaming}
-          onToggleCollapse={() => setMapCollapsed((c) => !c)}
           onJumpNode={(id) => {
-            if (chat.streaming) return; // 输出中拒绝切换(专注当下)
+            if (chat.streaming) return;
             const node = tree.find((n) => n.id === id);
             if (node) handleLessonClick(node);
           }}
           onOpenReview={() => setShowReviewDrawer(true)}
+          onSelectCourse={(id) => { setSelectedCourseId(id); refreshAll(); }}
+          onCoursesChanged={() => { refreshAll(); }}
         />
+      )}
 
-        {/* 视图层:map 视图 = AI 对话 + 笔记本;import 视图 = 全屏导入 */}
-        {view === "map" ? (
-          <>
+      {/* 右半区:顶栏 + 中右栏(顶栏只在中右栏上方,左栏全高独立) */}
+      <div className="flex-1 flex flex-col min-h-0">
+      <Header
+        streak={streak}
+        xp={xp}
+        onOpenSettings={() => setShowSettings(true)}
+        leftVisible={leftPaneVisible}
+        rightVisible={rightPaneVisible}
+        onToggleLeft={() => setLeftPaneVisible((v) => !v)}
+        onToggleRight={() => setRightPaneVisible((v) => !v)}
+      />
+
+      {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
+
+      <div className="flex-1 flex min-h-0">
+        {/* 视图层:AI 对话 + 笔记本 */}
+        <>
             {/* 中栏:AI 对话流(ChatStream + ChatComposer) / 考试节点(ExamView) */}
             <div
-              className="flex flex-col h-full bg-neutral-50 dark:bg-neutral-950 border-r border-neutral-200 dark:border-neutral-800/50"
-              style={{ width: "40%" }}
+              className={`flex flex-col h-full bg-neutral-50 dark:bg-neutral-950 ${rightPaneVisible ? "border-r border-neutral-200 dark:border-neutral-800/50" : ""}`}
+              style={rightPaneVisible ? { width: "40%" } : { flex: 1 }}
               data-testid="chat-panel"
             >
               {selectedNode?.type === "exam" ? (
@@ -571,7 +579,8 @@ export default function App() {
               )}
             </div>
 
-            {/* 右栏:NotebookPanel 康奈尔笔记本(讲解/笔记) */}
+            {/* 右栏:NotebookPanel 康奈尔笔记本(讲解/笔记)。布局切换可隐藏 */}
+            {rightPaneVisible && (
             <main className="flex-1 min-w-0">
               <NotebookPanel
                 selectedNode={selectedNode}
@@ -606,20 +615,12 @@ export default function App() {
                 onQuoteToChat={handleQuoteToChat}
               />
             </main>
-          </>
-        ) : (
-          <main className="flex-1 overflow-auto px-6 py-6">
-            <div className="max-w-2xl mx-auto">
-              <ImportView
-                onCoursesChanged={() => { refreshAll(); }}
-                courses={courses}
-                selectedCourseId={selectedCourseId}
-                onSelectCourse={(id) => { setSelectedCourseId(id); refreshAll(); setView("map"); }}
-              />
-            </div>
-          </main>
-        )}
+            )}
+        </>
       </div>
+      </div>
+
+      {/* 课程切换/导入已整合进左栏 tab */}
 
       {/* 设置抽屉(从 tab 改为 overlay,M1) */}
       {showSettings && (
@@ -668,14 +669,45 @@ function Header({
   streak,
   xp,
   onOpenSettings,
+  leftVisible,
+  rightVisible,
+  onToggleLeft,
+  onToggleRight,
 }: {
   streak: Streak | null;
   xp: { todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null;
   onOpenSettings: () => void;
+  leftVisible: boolean;
+  rightVisible: boolean;
+  onToggleLeft: () => void;
+  onToggleRight: () => void;
 }) {
   return (
     <header className="border-b border-neutral-200 dark:border-neutral-800/50 px-6 py-2.5 flex items-center justify-between shrink-0 bg-neutral-50/80 dark:bg-neutral-950/80 backdrop-blur-sm">
       <div className="flex items-center gap-2.5">
+        {/* 布局切换按钮(Cursor 风格) */}
+        <div className="flex items-center gap-0.5 mr-1">
+          <button
+            onClick={onToggleLeft}
+            data-testid="layout-toggle-left"
+            className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${
+              leftVisible ? "text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800" : "text-neutral-600 bg-neutral-200 dark:bg-neutral-800"
+            }`}
+            title="切换左栏 (Ctrl+B)"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onToggleRight}
+            data-testid="layout-toggle-right"
+            className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${
+              rightVisible ? "text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800" : "text-neutral-600 bg-neutral-200 dark:bg-neutral-800"
+            }`}
+            title="切换右栏"
+          >
+            <PanelRight className="w-4 h-4" />
+          </button>
+        </div>
         <div
           className="w-7 h-7 rounded-xl bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center text-white font-extrabold text-xs shadow-md"
           style={{ boxShadow: "0 2px 8px rgba(88, 204, 2, 0.3)" }}

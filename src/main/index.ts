@@ -542,9 +542,9 @@ async function runUiTest(screenshot = false): Promise<void> {
   const dashboardOk = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        // 点 map-view-map 切到地图视图
-        const tab = document.querySelector('[data-testid="map-view-map"]');
-        if (!tab) return { ok: false, reason: "map-view-map not found" };
+        // 点 map-tab-map 切到地图视图
+        const tab = document.querySelector('[data-testid="map-tab-map"]');
+        if (!tab) return { ok: false, reason: "map-tab-map not found" };
         tab.click();
         await new Promise(r => setTimeout(r, 300));
         // v0.3:地图路径渲染——map-path 存在 + 至少 1 个 section + 节点
@@ -574,10 +574,13 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T11 (release): 导入课程视图渲染 URL 输入 + markdown 切换 + 课程列表
+  // v0.7: 导入改左栏 tab → 点 map-tab-import 切面板 → 点"导入新课程"展开表单
   const importOk = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        document.querySelector('[data-testid="map-view-import"]').click();
+        document.querySelector('[data-testid="map-tab-import"]').click();
+        await new Promise(r => setTimeout(r, 400));
+        document.querySelectorAll('button').forEach(b => { if (b.textContent.includes('导入新课程')) b.click(); });
         for (let i = 0; i < 30; i++) {
           if (document.querySelector('[data-testid="import-url-section"]')) break;
           await new Promise(r => setTimeout(r, 100));
@@ -585,8 +588,7 @@ async function runUiTest(screenshot = false): Promise<void> {
         const urlSection = !!document.querySelector('[data-testid="import-url-section"]');
         const urlInput = !!document.querySelector('[data-testid="repo-url-input"]');
         const importBtn = !!document.querySelector('[data-testid="import-url-btn"]');
-        // 切到 markdown tab
-        document.querySelectorAll('button').forEach(b => { if (b.textContent === '粘贴 Markdown') b.click(); });
+        document.querySelectorAll('button').forEach(b => { if (b.textContent.includes('MD')) b.click(); });
         await new Promise(r => setTimeout(r, 200));
         const mdSection = !!document.querySelector('[data-testid="import-md-section"]');
         const courseList = document.querySelectorAll('[data-testid="course-list"] > *').length;
@@ -606,13 +608,12 @@ async function runUiTest(screenshot = false): Promise<void> {
   const layoutOk = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        document.querySelector('[data-testid="map-view-map"]').click();
+        document.querySelector('[data-testid="map-tab-map"]').click();
         await new Promise(r => setTimeout(r, 300));
         const headerSettings = !!document.querySelector('[data-testid="header-settings"]');
-        const navTree = !!document.querySelector('[data-testid="map-view-map"]');
-        const navDashboard = !!document.querySelector('[data-testid="map-view-map"]');
-        const navImport = !!document.querySelector('[data-testid="map-view-import"]');
-        return { ok: headerSettings && navTree && navDashboard && navImport, headerSettings, navTree, navDashboard, navImport };
+        const navTree = !!document.querySelector('[data-testid="map-tab-map"]');
+        const navImport = !!document.querySelector('[data-testid="map-tab-import"]');
+        return { ok: headerSettings && navTree && navImport, headerSettings, navTree, navImport };
       } catch (e) {
         return { ok: false, error: String(e) };
       }
@@ -628,8 +629,8 @@ async function runUiTest(screenshot = false): Promise<void> {
   const cmdPalette = await win.webContents.executeJavaScript(`
     (async function() {
       try {
-        // 切回 tree 视图(确保命令面板能用)
-        document.querySelector('[data-testid="map-view-map"]').click();
+        // 切回地图视图(确保命令面板能用)
+        document.querySelector('[data-testid="map-tab-map"]').click();
         await new Promise(r => setTimeout(r, 200));
         // 派发 Ctrl+K
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));

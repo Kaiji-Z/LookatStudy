@@ -270,7 +270,7 @@ function ContentTab({
     );
   }
   return (
-    <div className="p-5 max-w-2xl mx-auto relative" data-testid="node-content" ref={contentRef} onMouseUp={handleMouseUp}>
+    <div className="p-5 relative" data-testid="node-content" ref={contentRef} onMouseUp={handleMouseUp}>
       <div className="text-[10px] font-bold text-brand uppercase tracking-wider mb-1">
         {selectedNode.type === "section" ? "章节" : selectedNode.type === "concept" ? "概念" : "课时"}
       </div>
@@ -284,7 +284,7 @@ function ContentTab({
           ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
         </div>
       ) : content ? (
-        <div ref={proseRef} className="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300 leading-relaxed select-text">
+        <div ref={proseRef} className="prose prose-sm dark:prose-invert max-w-[80ch] text-neutral-700 dark:text-neutral-300 leading-relaxed select-text">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -393,7 +393,7 @@ function NotesTab({
   }
 
   return (
-    <div className="p-4 space-y-3 max-w-2xl mx-auto" data-testid="notes-list">
+    <div className="p-4 space-y-3" data-testid="notes-list">
       {/* 🗺️ 理解区(线索区) */}
       <ZoneSection
         title="理解"

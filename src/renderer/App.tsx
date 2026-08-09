@@ -382,6 +382,13 @@ export default function App() {
         toast.show("会话创建失败,请重试");
         return;
       }
+      // 当前 thread 标题为空(如"+ 新建会话"建的空 thread)→ 用首条消息截断自动命名,
+      // 与 ensureThreadForSend 的命名逻辑一致,避免"同一节点第二个会话不重命名"的 bug。
+      const cur = thread.activeThread;
+      if (cur && !cur.title) {
+        const autoTitle = text.trim().slice(0, 24) + (text.trim().length > 24 ? "…" : "");
+        thread.update(cur.id, { title: autoTitle });
+      }
       chat.send(text);
     },
     [chat, thread, toast],
@@ -473,10 +480,15 @@ export default function App() {
         {/* 视图层:AI 对话 + 笔记本 */}
         <>
             {/* 中栏:AI 对话流(ChatStream + ChatComposer) / 考试节点(ExamView)。
-                v0.6 分栏:无描边,用 bg-surface-1(中档)与左栏 rail / 右栏 surface-2 色差划分。 */}
+                v0.6 分栏:无描边,色差划分。
+                v0.7 宽度:弹性 min/max——clamp(480px, 40vw, 720px)。每个屏宽拿到能拿到的最佳:
+                  1366 屏 → ~470px(下限 480 兜底,表格/代码不挤崩)
+                  1920 屏 → ~680px(阅读黄金区,AI 长讲解舒服)
+                  2560+  → 720px 上限(不浪费,对话不失紧凑)
+                右栏隐藏时 flex:1 撑满。 */}
             <div
-              className="flex flex-col h-full bg-surface-1"
-              style={rightPaneVisible ? { width: "40%" } : { flex: 1 }}
+              className="flex flex-col h-full bg-surface-1 shrink-0"
+              style={rightPaneVisible ? { width: "clamp(480px, 40vw, 720px)" } : { flex: 1 }}
               data-testid="chat-panel"
             >
               {selectedNode?.type === "exam" ? (
@@ -582,9 +594,10 @@ export default function App() {
             </div>
 
             {/* 右栏:NotebookPanel 康奈尔笔记本(讲解/笔记)。布局切换可隐藏。
-                v0.6 分栏:无描边,色差划分(底色由 NotebookPanel 内部 bg-surface-2 控制)。 */}
+                v0.6 分栏:无描边,色差划分(底色由 NotebookPanel 内部 bg-surface-2 控制)。
+                v0.7 宽度:flex-1 弹性吃中栏剩余,加 min-w 防内容(笔记卡/表格)被挤。 */}
             {rightPaneVisible && (
-            <main className="flex-1 min-w-0 bg-surface-2">
+            <main className="flex-1 min-w-[440px] bg-surface-2">
               <NotebookPanel
                 selectedNode={selectedNode}
                 items={canvas.items}

@@ -43,9 +43,11 @@ let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1280,
+    width: 1366,
     height: 832,
-    minWidth: 960,
+    // minWidth=1240 = 左栏 300 + 中栏 clamp 下限 480 + 右栏 min-w 440 + 余量。
+    // 低于此值三栏 flex 布局会溢出(右栏 min-w 被挤)。改宽度规则时同步算这个。
+    minWidth: 1240,
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,

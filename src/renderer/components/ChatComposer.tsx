@@ -10,6 +10,7 @@
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect } from "react";
+import { ArrowUp, Square } from "lucide-react";
 import type { Skill, StarterPrompt } from "@shared/types";
 import { translate } from "../lib/i18n.js";
 
@@ -72,122 +73,116 @@ export function ChatComposer({
 
   if (!agentReady) {
     return (
-      <div className="p-3 shrink-0 bg-surface-2/40" data-testid="composer-nokey">
-        <div className="flex items-center justify-center gap-3 py-2">
-          <span className="text-xs text-neutral-600 dark:text-neutral-400">
-            {missingHint ?? "未配置 AI 模型"}
-          </span>
-          <button
-            onClick={onGotoSettings}
-            className="text-xs text-brand hover:underline font-bold"
-          >
-            去配置 →
-          </button>
+      <div className="px-5 pb-4 shrink-0" data-testid="composer-nokey">
+        <div className="flex items-center justify-center gap-3 py-3 text-xs text-neutral-500">
+          <span>{missingHint ?? "未配置 AI 模型"}</span>
+          <button onClick={onGotoSettings} className="text-brand hover:underline font-bold">去配置 →</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-3 shrink-0 bg-surface-2/40" data-testid="composer">
-      {/* starter prompts 横条(常驻) */}
+    <div className="px-5 pb-4 pt-1 shrink-0" data-testid="composer">
+      {/* starter prompts:淡色小药丸,浮在输入框上方(claude.ai 风)。
+          仅当有节点 + 有推荐时显示。低对比,不抢对话流焦点。 */}
       {starterPrompts.length > 0 && nodeId && (
-        <div className="flex gap-1.5 overflow-x-auto pb-2 mb-1.5 scrollbar-thin" data-testid="starter-prompts">
+        <div className="flex gap-1.5 overflow-x-auto pb-2 scrollbar-thin" data-testid="starter-prompts">
           {starterPrompts.map((p, i) => (
             <button
               key={i}
               onClick={() => !streaming && onSend(p.message)}
               disabled={streaming}
               data-testid={`starter-prompt-${i}`}
-              className={`shrink-0 flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-40 ${
-                p.advancesMastery
-                  ? "border-brand/50 bg-brand/10 text-brand hover:border-brand hover:bg-brand/20 font-semibold"
-                  : "border-brand/30 bg-brand/5 text-brand hover:border-brand hover:bg-brand/10"
-              }`}
+              className="shrink-0 flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full text-neutral-400 hover:text-neutral-200 hover:bg-white/5 transition-colors disabled:opacity-30"
               title={p.hint ?? p.label}
             >
-              <span>{p.icon}</span>
+              <span className="opacity-70">{p.icon}</span>
               <span>{p.label}</span>
-              {p.advancesMastery && <span className="text-[9px] opacity-70">📈</span>}
             </button>
           ))}
         </div>
       )}
 
-      {/* 学习模式 + 字号调节(一行) */}
-      <div className="mb-1.5 flex items-center justify-between" data-testid="skill-picker">
-        {skills.length > 0 ? (
-          <select
-            value={activeSkill ?? ""}
-            onChange={(e) => onPickSkill(e.target.value)}
-            className="text-[11px] bg-transparent text-neutral-600 dark:text-neutral-400 border-none focus:outline-none cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-700 dark:text-neutral-300"
-            data-testid="skill-select"
-          >
-            {skills.map((s) => (
-              <option key={s.id} value={s.name} className="bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200">
-                模式:{SKILL_LABELS[s.name] ?? s.name}
-              </option>
-            ))}
-          </select>
-        ) : <span />}
-        {/* v0.3 字号调节 */}
-        <div className="flex items-center gap-1" data-testid="font-size-control">
-          <button
-            onClick={() => onFontBump("down")}
-            disabled={fontSize === "small"}
-            data-testid="font-smaller"
-            className="text-[11px] w-6 h-6 rounded text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800/50 disabled:opacity-30 transition-colors"
-            title="缩小字号"
-          >A-</button>
-          <span className="text-[9px] text-neutral-400 w-10 text-center">
-            {fontSize === "small" ? "小" : fontSize === "large" ? "大" : "中"}
-          </span>
-          <button
-            onClick={() => onFontBump("up")}
-            disabled={fontSize === "large"}
-            data-testid="font-larger"
-            className="text-[13px] w-6 h-6 rounded text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800/50 disabled:opacity-30 transition-colors"
-            title="放大字号"
-          >A+</button>
+      {/* 输入区:一个圆角胶囊容器(claude.ai 风)。
+          内部布局:[模式选择 ... | textarea | 发送钮]。
+          模式 + 字号收进输入框上方一行极淡工具栏,textarea 撑满,发送钮内嵌右下。 */}
+      <div className="rounded-2xl bg-white/[0.05] focus-within:bg-white/[0.07] transition-colors px-3 pt-2 pb-1.5">
+        {/* 极淡工具栏:模式(左) + 字号(右) */}
+        <div className="flex items-center justify-between mb-1" data-testid="skill-picker">
+          {skills.length > 0 ? (
+            <select
+              value={activeSkill ?? ""}
+              onChange={(e) => onPickSkill(e.target.value)}
+              className="text-[10px] bg-transparent text-neutral-500 border-none focus:outline-none cursor-pointer hover:text-neutral-300 transition-colors"
+              data-testid="skill-select"
+            >
+              {skills.map((s) => (
+                <option key={s.id} value={s.name} className="bg-neutral-900 text-neutral-200">
+                  模式:{SKILL_LABELS[s.name] ?? s.name}
+                </option>
+              ))}
+            </select>
+          ) : <span />}
+          <div className="flex items-center gap-0.5" data-testid="font-size-control">
+            <button
+              onClick={() => onFontBump("down")}
+              disabled={fontSize === "small"}
+              data-testid="font-smaller"
+              className="text-[10px] w-5 h-5 rounded text-neutral-500 hover:text-neutral-300 hover:bg-white/5 disabled:opacity-20 transition-colors"
+              title="缩小字号"
+            >A-</button>
+            <button
+              onClick={() => onFontBump("up")}
+              disabled={fontSize === "large"}
+              data-testid="font-larger"
+              className="text-[12px] w-5 h-5 rounded text-neutral-500 hover:text-neutral-300 hover:bg-white/5 disabled:opacity-20 transition-colors"
+              title="放大字号"
+            >A+</button>
+          </div>
         </div>
-      </div>
 
-      <div className="flex gap-2 items-end">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          placeholder={
-            nodeId ? translate("chat.input.placeholder") : translate("chat.input.no_node")
-          }
-          disabled={streaming || !nodeId}
-          rows={2}
-          data-testid="chat-input"
-          className="flex-1 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm rounded-lg px-3 py-2 resize-none border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none disabled:opacity-50"
-        />
-        {streaming ? (
-          <button
-            onClick={onStop}
-            data-testid="chat-stop"
-            className="bg-warning text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-warning-light shrink-0 transition-colors"
-          >
-            {translate("chat.stop")}
-          </button>
-        ) : (
-          <button
-            onClick={handleSend}
-            disabled={streaming || !input.trim() || !nodeId}
-            data-testid="chat-send"
-            className="bg-brand text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-light disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-          >
-            {translate("chat.send")}
-          </button>
-        )}
+        {/* textarea + 发送钮:发送钮内嵌右下,圆形 */}
+        <div className="flex gap-2 items-end">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder={nodeId ? translate("chat.input.placeholder") : translate("chat.input.no_node")}
+            disabled={streaming || !nodeId}
+            rows={2}
+            data-testid="chat-input"
+            className="flex-1 bg-transparent text-neutral-100 text-sm rounded-lg px-1 py-1 resize-none focus:outline-none disabled:opacity-40 placeholder:text-neutral-600"
+            style={{ fontSize: "var(--chat-font-size, 15px)" }}
+          />
+          {streaming ? (
+            <button
+              onClick={onStop}
+              data-testid="chat-stop"
+              className="shrink-0 w-9 h-9 rounded-full bg-warning text-white flex items-center justify-center hover:bg-warning-light transition-colors"
+              title={translate("chat.stop")}
+              aria-label={translate("chat.stop")}
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={streaming || !input.trim() || !nodeId}
+              data-testid="chat-send"
+              className="shrink-0 w-9 h-9 rounded-full bg-brand text-white flex items-center justify-center hover:bg-brand-light disabled:bg-neutral-700 disabled:cursor-not-allowed transition-colors"
+              title={translate("chat.send")}
+              aria-label={translate("chat.send")}
+            >
+              <ArrowUp className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -87,16 +87,16 @@
      L 间隔实测:0.04 在深色低亮度区肉眼几乎无感(Weber-Fechner:暗部 ΔL 感知压缩),
      0.06(RGB 差 12-14)才是深色底能明显分层的实测阈值。rail 保持 L0.13 略高于
      天空夜空段 0.13,星空沉浸感不丢。 */
-  --surface-rail: oklch(0.13 0.005 270);  /* 左栏专属最深底 */
-  --surface-rail-rgb: 7 7 9;
+  --surface-rail: oklch(0.14 0.005 270);  /* 左栏专属最深底 */
+  --surface-rail-rgb: 8 9 11;
   --surface-0: oklch(0.16 0.005 270);      /* neutral-950 最深底(modal/drawer) */
   --surface-0-rgb: 12 13 15;
-  --surface-1: oklch(0.19 0.005 270);      /* 中栏 chat 底 */
-  --surface-1-rgb: 19 20 20;
-  --surface-2: oklch(0.25 0.005 270);      /* 右栏 notebook 底(最亮阅读区) */
-  --surface-2-rgb: 33 34 36;
-  --surface-3: oklch(0.32 0.005 270);      /* neutral-700 hover/elevated */
-  --surface-3-rgb: 54 55 57;
+  --surface-1: oklch(0.18 0.005 270);      /* 中栏 chat 底 */
+  --surface-1-rgb: 17 17 20;
+  --surface-2: oklch(0.22 0.005 270);      /* 右栏 notebook 底(最亮阅读区) */
+  --surface-2-rgb: 26 26 29;
+  --surface-3: oklch(0.29 0.005 270);      /* neutral-700 hover/elevated */
+  --surface-3-rgb: 42 43 46;
   --ink: oklch(0.96 0.003 270);            /* neutral-100 主文字 */
   --ink-strong: oklch(0.985 0 0);          /* neutral-50 标题/强调 */
   --ink-muted: oklch(0.7 0.005 270);       /* neutral-400 次文字 */

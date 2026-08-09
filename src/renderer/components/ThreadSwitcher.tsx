@@ -83,34 +83,36 @@ export function ThreadSwitcher({
   // 无 thread:首次进入,焦点节点提示
   if (threads.length === 0) {
     return (
-      <div className="px-3 py-2.5 shrink-0 flex items-center gap-2 text-xs bg-surface-1" data-testid="thread-switcher-empty">
-        <span className="w-1.5 h-1.5 rounded-full bg-brand shrink-0 animate-bubble-pulse" />
-        <span className="text-neutral-700 dark:text-neutral-300 truncate flex-1 font-medium">
+      <div className="px-4 py-2 shrink-0 flex items-center gap-2 text-xs bg-surface-1 opacity-60" data-testid="thread-switcher-empty">
+        <span className="w-1 h-1 rounded-full bg-brand shrink-0" />
+        <span className="text-neutral-500 dark:text-neutral-400 truncate flex-1">
           {focusNodeTitle ?? "未选节点"}
         </span>
-        <span className="text-[10px] text-neutral-400 shrink-0">输入问题开始</span>
+        <span className="text-[10px] text-neutral-500 shrink-0">输入问题开始</span>
       </div>
     );
   }
 
   return (
     <div className="shrink-0 bg-surface-1" data-testid="thread-switcher">
-      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-thin px-2 py-2">
+      {/* 极薄行:低对比文字标签,当前会话仅用 brand 点 + 加粗,无填充无描边。
+          整行 opacity-70 淡入背景,hover 提到 100%。内容是主角,tab 让位。 */}
+      <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin px-3 py-1.5 opacity-70 hover:opacity-100 transition-opacity">
         {threads.map((t) => {
           const isActive = t.id === activeThread?.id;
           const isRenaming = renamingId === t.id;
           return (
             <div
               key={t.id}
-              className={`group relative flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full cursor-pointer whitespace-nowrap transition-all duration-150 shrink-0 ${
+              className={`group relative flex items-center gap-1.5 px-2 py-0.5 cursor-pointer whitespace-nowrap transition-colors shrink-0 rounded ${
                 isActive
-                  ? "bg-brand/10 border border-brand/40 text-brand"
-                  : "bg-neutral-100 dark:bg-neutral-900 border border-transparent text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  ? "text-neutral-200"
+                  : "text-neutral-500 hover:text-neutral-300"
               }`}
               onClick={() => !isRenaming && onPickThread(t.id)}
               data-testid={`thread-tab-${t.id.slice(0, 8)}`}
             >
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors ${isActive ? "bg-brand" : "bg-neutral-400 dark:bg-neutral-600"}`} />
+              <span className={`w-1 h-1 rounded-full shrink-0 transition-opacity ${isActive ? "bg-brand opacity-100" : "bg-neutral-600 opacity-0 group-hover:opacity-60"}`} />
 
               {isRenaming ? (
                 <input
@@ -127,7 +129,7 @@ export function ThreadSwitcher({
                   data-testid="thread-rename-input"
                 />
               ) : (
-                <span className="text-[11px] font-medium max-w-[120px] truncate">
+                <span className={`text-[11px] max-w-[120px] truncate ${isActive ? "font-semibold" : "font-normal"}`}>
                   {t.title || "新会话"}
                 </span>
               )}
@@ -135,11 +137,7 @@ export function ThreadSwitcher({
               {!isRenaming && (
                 <button
                   onClick={(e) => openMenu(e, t.id)}
-                  className={`flex items-center justify-center w-5 h-5 rounded-full transition-all ${
-                    isActive
-                      ? "text-brand/70 hover:text-brand hover:bg-brand/20"
-                      : "text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-800 opacity-0 group-hover:opacity-100"
-                  } ${isActive ? "opacity-70" : ""}`}
+                  className="flex items-center justify-center w-4 h-4 rounded text-neutral-600 hover:text-neutral-300 hover:bg-white/5 opacity-0 group-hover:opacity-100 transition-all"
                   data-testid={`thread-gear-${t.id.slice(0, 8)}`}
                   title="操作"
                   aria-label="会话操作"
@@ -149,14 +147,14 @@ export function ThreadSwitcher({
           );
         })}
 
-        {/* + 新建药丸(轻量,与 tab 区分) */}
+        {/* + 新建:纯图标,极淡 */}
         <button
           onClick={onCreate}
-          className="flex items-center justify-center w-7 h-7 rounded-full text-neutral-500 hover:text-brand hover:bg-brand/10 transition-colors shrink-0"
+          className="flex items-center justify-center w-6 h-6 ml-1 rounded text-neutral-600 hover:text-brand hover:bg-white/5 transition-colors shrink-0"
           data-testid="thread-new"
           title="新建会话"
           aria-label="新建会话"
-        ><Plus className="w-4 h-4" /></button>
+        ><Plus className="w-3.5 h-3.5" /></button>
       </div>
 
       {/* 齿轮菜单:fixed 定位,脱离滚动容器 */}

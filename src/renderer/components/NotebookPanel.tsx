@@ -17,7 +17,7 @@ import remarkGfm from "remark-gfm";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
-import { Pin, Trash, ChevronDown, Pencil, Check, X } from "lucide-react";
+import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen } from "lucide-react";
 
 export type NotebookTab = "content" | "notes";
 
@@ -73,20 +73,21 @@ export function NotebookPanel({
       className="h-full flex flex-col bg-surface-2"
       data-testid="notebook-panel"
     >
-      {/* 标签栏:分段控件(segmented control)。
-          设计意图:与中栏 ThreadSwitcher(会话流药丸行)刻意不同——
-          这里是"固定 2 个视图切换",分段控件语义更准;会话流是动态可增删的列表,
-          用药丸行。两种 tab 词汇通过形态明确区分各自场景。 */}
-      <div className="flex items-center gap-1 px-3 py-2 shrink-0" data-testid="notebook-tabs">
-        <div className="flex p-0.5 bg-neutral-100 dark:bg-neutral-900 rounded-lg gap-0.5">
+      {/* 标签栏:与左栏 MapRail tab 同一语言(等分胶囊容器 + brand/20 高亮 +
+          中性非当前 + lucide 图标)。容器底色用稳定深色(surface-3/60)替代
+          左栏的毛玻璃——右栏底色不是动态天空,不需要 blur,但语法形态对齐。 */}
+      <div className="px-3 pt-3 pb-1 shrink-0" data-testid="notebook-tabs">
+        <div className="flex p-1 rounded-lg gap-1 bg-black/25">
           <TabBtn
             label="讲解"
+            icon={BookOpen}
             active={tab === "content"}
             onClick={() => handleTabClick("content")}
             testid="tab-content"
           />
           <TabBtn
             label="笔记"
+            icon={NotebookPen}
             active={tab === "notes"}
             onClick={() => handleTabClick("notes")}
             testid="tab-notes"
@@ -791,12 +792,14 @@ function EmptyNotebook({ message, icon }: { message: string; icon: string }) {
 
 function TabBtn({
   label,
+  icon: Icon,
   active,
   onClick,
   testid,
   badge,
 }: {
   label: string;
+  icon: React.ComponentType<{ className?: string }>;
   active: boolean;
   onClick: () => void;
   testid: string;
@@ -806,16 +809,17 @@ function TabBtn({
     <button
       onClick={onClick}
       data-testid={testid}
-      className={`flex items-center justify-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all duration-150 ${
+      className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[11px] font-bold transition-colors ${
         active
-          ? "bg-white dark:bg-neutral-950 text-brand shadow-sm"
-          : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+          ? "bg-brand/20 text-brand"
+          : "text-neutral-400 hover:text-neutral-200"
       }`}
     >
+      <Icon className="w-3 h-3" />
       <span>{label}</span>
       {badge && (
         <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
-          active ? "bg-brand/15 text-brand" : "bg-neutral-200 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400"
+          active ? "bg-brand/30 text-brand" : "bg-white/10 text-neutral-400"
         }`}>
           {badge}
         </span>

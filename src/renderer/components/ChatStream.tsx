@@ -241,7 +241,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         ref={scrollRef}
         onScroll={handleScroll}
         onMouseUp={handleChatMouseUp}
-        className="h-full overflow-y-auto px-4 py-4 space-y-4 relative"
+        className="h-full overflow-y-auto px-5 py-6 space-y-6 relative"
         data-testid="chat-stream"
       >
         {messages.length === 0 && (
@@ -380,11 +380,14 @@ function MessageRowV2({
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
 }) {
   if (msg.role === "user") {
-    // user:左 4px 绿色竖条 + 全宽浅绿底(扁平,非气泡)
+    // user:极简阅读流(claude.ai 风)。右对齐 + 极轻微染,无气泡边框。
+    // 与 AI 消息靠"右对齐 + 稍亮底色 + 你 标签"区分,不靠气泡。
     return (
-      <div className="msg-enter bg-brand/10 dark:bg-brand/15 rounded-lg px-3 py-2 border border-brand/20" data-testid="msg-user" data-msg-id={msg.id}>
-        <div className="font-medium text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap select-text" style={{ fontSize: "var(--chat-font-size, 15px)" }}>
-          {msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
+      <div className="msg-enter flex justify-end" data-testid="msg-user" data-msg-id={msg.id}>
+        <div className="max-w-[85%] bg-white/[0.04] rounded-2xl rounded-br-md px-4 py-2.5">
+          <div className="font-medium text-neutral-100 whitespace-pre-wrap select-text" style={{ fontSize: "var(--chat-font-size, 15px)" }}>
+            {msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
+          </div>
         </div>
       </div>
     );

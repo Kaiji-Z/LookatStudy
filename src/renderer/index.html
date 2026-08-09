@@ -11,6 +11,18 @@
     <!-- v0.5: 强制深色模式(html class="dark" 已在 <html> 标签上) -->
   </head>
   <body>
+    <!-- 全局 SVG 滤镜定义:节点球积雪边缘的有机扭曲(feTurbulence fractalNoise + feDisplacementMap)。
+         CSS 里用 filter: url(#snow-edge) 引用,把平滑白色覆盖层扭成凹凸不平的雪堆边缘。 -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <filter id="snow-edge" x="-15%" y="-30%" width="130%" height="150%">
+          <!-- baseFrequency: x=0(水平不扭曲,左右边不变形)、y=0.15(只在垂直方向起伏 → 雪堆下边缘凹凸) -->
+          <feTurbulence type="fractalNoise" baseFrequency="0.012 0.15" numOctaves="2" result="NOISE" seed="7" />
+          <!-- scale 适中(4):让下边缘有凹凸但不至于撕裂;x 用 R 通道做轻微水平起伏,y 用 G 做主位移 -->
+          <feDisplacementMap in="SourceGraphic" in2="NOISE" scale="4" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+    </svg>
     <div id="root"></div>
     <script type="module" src="./main.tsx"></script>
   </body>

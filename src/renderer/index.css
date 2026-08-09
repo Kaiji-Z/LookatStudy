@@ -334,6 +334,75 @@
   animation: bubble-active-pulse 2.4s ease-in-out infinite;
 }
 
+/* ============================================================
+ * v0.6 节点球环境光:随季节/天气染色(不动状态色本身)
+ * 球的状态色(绿/蓝/金/灰/紫)是游戏语言,相对关系绝对不改。
+ * 季节用 CSS filter(整球 hue-rotate + saturate):夏天明媚高饱和、冬天低饱和冷调。
+ * 天气用 ::after 实体叠加:
+ *   雪 = 蓬松积雪堆(白色不规则边缘 + blur 软边 + inset 立体感,有厚度)
+ *   雨 = 湿润球面(backdrop-filter 扭曲下方颜色 + 几颗 3D 水珠高光)
+ * 参考技法:radial-gradient 偏心高光做 3D 水珠、backdrop-filter 做湿玻璃、
+ *   filter blur 做蓬松边缘。
+ * env-{season}/env-{weather} 类挂在 .map-sky-content(skyPreset 驱动)。 */
+
+/* 季节滤镜:整球色温调(夏天明媚高饱和,冬天低饱和冷调) */
+.env-spring .lesson-bubble  { filter: hue-rotate(-12deg) saturate(1.15) brightness(1.02); }
+.env-summer .lesson-bubble  { filter: saturate(1.4) brightness(1.08) contrast(1.05); }
+.env-autumn .lesson-bubble  { filter: hue-rotate(-22deg) saturate(1.1) brightness(0.97); }
+.env-winter .lesson-bubble  { filter: saturate(0.5) brightness(1.05) hue-rotate(8deg); }
+
+/* 天气叠加层基类 */
+.lesson-bubble::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* 雪:只盖在上半球。::after 缩成顶部 ~55% 高的层(inset 只改 top/height),
+   下半球完全不受影响 → feDisplacementMap 只扭曲这一层的下边缘(雪堆边缘),
+   球底保持干净。 */
+.env-snow .lesson-bubble::after {
+  /* 向上增厚:top 负值让雪层凸出球顶上方 */
+  top: -5%;
+  right: 0;
+  left: 0;
+  height: 48%;
+  border-radius: 9999px 9999px 0 0;
+  background:
+    linear-gradient(to bottom, rgb(255 255 255 / 0.98) 0%, rgb(255 255 255 / 0.95) 70%, rgb(255 255 255 / 0.55) 88%, rgb(255 255 255 / 0) 100%);
+  filter: url(#snow-edge);
+  box-shadow:
+    inset 0 3px 6px rgb(210 225 250 / 0.7),
+    inset 0 -2px 3px rgb(150 175 220 / 0.45);
+}
+
+/* 雨/雷暴:湿润球面 + 3D 水珠。
+   backdrop-filter 让下方球体颜色轻微扭曲(湿玻璃感);
+   几颗 radial-gradient 水珠(偏心高光 + 暗边)挂在球面,像真实水珠附着。 */
+.env-rain .lesson-bubble::after,
+.env-storm .lesson-bubble::after {
+  background:
+    /* 顶部水膜:亮的湿润反光带 */
+    linear-gradient(to bottom, rgb(200 225 255 / 0.4) 0%, rgb(200 225 255 / 0.1) 15%, transparent 25%),
+    /* 水珠1:左上,3D 球面(左上亮高光 + 右下暗边) */
+    radial-gradient(circle at 28% 30%, rgb(255 255 255 / 0.85) 0%, rgb(220 235 255 / 0.4) 8%, transparent 14%),
+    /* 水珠2:中下 */
+    radial-gradient(circle at 52% 65%, rgb(255 255 255 / 0.7) 0%, rgb(210 228 255 / 0.3) 7%, transparent 12%),
+    /* 水珠3:右 */
+    radial-gradient(circle at 72% 42%, rgb(255 255 255 / 0.75) 0%, rgb(215 232 255 / 0.35) 7%, transparent 13%),
+    /* 水珠4:小颗,左下 */
+    radial-gradient(circle at 35% 72%, rgb(255 255 255 / 0.6) 0%, transparent 8%);
+  backdrop-filter: blur(1.2px) saturate(1.15) brightness(1.04);
+  -webkit-backdrop-filter: blur(1.2px) saturate(1.15) brightness(1.04);
+  /* 水珠的暗边折射(底部内侧暗影,让水珠有立体感) */
+  box-shadow:
+    inset 0 2px 3px rgb(150 185 230 / 0.3),
+    inset 0 -1px 2px rgb(90 130 180 / 0.25);
+}
+
 /* Card surface */
 .surface-card {
   @apply bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl;

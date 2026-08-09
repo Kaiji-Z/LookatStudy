@@ -27,7 +27,7 @@ import {
   balloonSegmentToPath,
   hashStr,
 } from "../lib/mapLayout.js";
-import { attachSky, pickPreset, PRESETS, type SkyPreset } from "../lib/skyCanvas.js";
+import { attachSky, pickPreset, PRESETS, PRESET_KEYS, type SkyPreset } from "../lib/skyCanvas.js";
 
 export type MapView = "map" | "import";
 
@@ -124,11 +124,13 @@ function MapRailExpanded({
 
   // 季节×天气预设:每次切课(含切回)/ 程序启动时随机抽一个,不持久化。
   // courseId 变化 → useEffect 重抽 → skyKey 变 → MapSkyCanvas 重 attach(换天空)。
+  // TEMP: skyOverride 手动覆盖(调试用,切换全部 12 预设),null 时走随机。
   const [skyKey, setSkyKey] = useState<string | null>(null);
+  const [skyOverride, setSkyOverride] = useState<string | null>(null);
   useEffect(() => {
-    setSkyKey(pickPreset(courseId));
-  }, [courseId]);
-  const skyPreset: SkyPreset | null = skyKey ? PRESETS[skyKey] ?? null : null;
+    if (skyOverride === null) setSkyKey(pickPreset(courseId));
+  }, [courseId, skyOverride]);
+  const skyPreset: SkyPreset | null = (skyOverride ?? skyKey) ? PRESETS[skyOverride ?? skyKey!] ?? null : null;
 
   return (
     <nav
@@ -146,14 +148,30 @@ function MapRailExpanded({
       {/* 顶部:探险地图卷轴头部。透明背景让天空透出来,像地图上的题词栏 */}
       <div className="map-header relative z-10 px-4 pt-3 pb-3 shrink-0">
         <div className="flex items-center justify-between">
-          <button
-            onClick={onToggleCollapse}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/10 transition-colors"
-            title="折叠地图"
-            data-testid="map-collapse"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onToggleCollapse}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/10 transition-colors"
+              title="折叠地图"
+              data-testid="map-collapse"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            {/* TEMP 主题调试开关:循环切换全部 12 预设;右键或长按清回随机 */}
+            <button
+              onClick={() => {
+                const cur = skyOverride ?? skyKey ?? PRESET_KEYS[0];
+                const idx = PRESET_KEYS.indexOf(cur);
+                const next = PRESET_KEYS[(idx + 1) % PRESET_KEYS.length]!;
+                setSkyOverride(next);
+              }}
+              onContextMenu={(e) => { e.preventDefault(); setSkyOverride(null); }}
+              className="px-1.5 h-6 rounded text-[9px] font-bold text-white/70 bg-white/10 hover:bg-white/20 transition-colors"
+              title={`主题调试(左键切下一个,右键回随机): ${skyOverride ?? "随机"}`}
+            >
+              {skyOverride ? skyOverride.replace("|", "·") : "🎲"}
+            </button>
+          </div>
           <div className="flex gap-1">
             <MapNavBtn
               active={view === "map"}
@@ -218,8 +236,10 @@ function MapRailExpanded({
           className="map-path relative z-10 flex-1 overflow-y-auto px-2 pb-4 min-h-0"
           data-testid="map-path"
         >
-          {/* 内容层:气球节点 + 章节浮在天空之上(canvas 在 nav 层,这里透明) */}
-          <div className="map-sky-content">
+          {/* 内容层:气球节点 + 章节浮在天空之上(canvas 在 nav 层,这里透明)。
+              env-{season}/env-{weather} 类驱动节点球的环境光染色 + 天气交互(CSS 后代选择器,
+              无需给每个 MapNode 传 props)。 */}
+          <div className={`map-sky-content ${skyPreset ? `env-${skyPreset.season} env-${skyPreset.weather}` : ""}`}>
             {/* AI 输出中提示(专注当下,锁定节点切换) */}
             {streaming && (
               <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-[11px] text-brand font-medium backdrop-blur-sm" data-testid="streaming-notice">

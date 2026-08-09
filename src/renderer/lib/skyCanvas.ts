@@ -366,31 +366,41 @@ let orbStreakTimer: number[] = [];
 let orbCaps: number[] = [];
 
 /* ---- 雪 dome(参照 weather-orb):4 段贝塞尔画圆顶,凸出球顶 ---- */
+/* 雪盖:覆盖球顶 1/3,边缘用贝塞尔贴合球面弧线(像 dome 那样自然下垂收边),
+   顶部微微隆起凸出球顶。不是横线闭合,而是用 quadraticCurveTo 让雪线
+   顺着球面曲率过渡,雪堆和球面融为一体。 */
 function drawSnowDome(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, cap: number, now: number) {
-  // cap 0..1 → 厚度 0.1..0.45r,加一点呼吸感
-  const capThick = r * (0.1 + cap * 0.32);
-  if (capThick < 1) return;
-  const peakY = cy - r - capThick * 0.35;
-  // dome 轮廓:从球左上 y-r*0.45 起,经 peak,到球右上 y-r*0.45,再回下边缘
+  const lift = r * (0.05 + cap * 0.07); // 隆起:微凸出球顶
+  // 雪覆盖球顶 1/3:雪线在球面 ±55°(球顶到侧上方约 1/3 区域)
+  const span = 55 * Math.PI / 180;
+  // 雪线两端点(球面上)
+  const lx = cx - Math.cos(span) * r;          // 左端 x
+  const rx = cx + Math.cos(span) * r;          // 右端 x
+  const edgeY = cy - Math.sin(span) * r;       // 雪线 y(球面侧上方)
+  const peakY = cy - r - lift;                 // 顶部最高点(隆起)
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(cx - r * 0.92, cy - r * 0.42);
-  ctx.quadraticCurveTo(cx - r * 0.5, peakY, cx, peakY - capThick * 0.12);
-  ctx.quadraticCurveTo(cx + r * 0.5, peakY, cx + r * 0.92, cy - r * 0.42);
-  ctx.quadraticCurveTo(cx + r * 0.5, cy - r * 0.72, cx, cy - r * 0.78);
-  ctx.quadraticCurveTo(cx - r * 0.5, cy - r * 0.72, cx - r * 0.92, cy - r * 0.42);
+  // 上轮廓(雪盖顶面):从左雪线端点,贝塞尔经隆起顶部到右雪线端点
+  ctx.moveTo(lx, edgeY);
+  ctx.quadraticCurveTo(cx - r * 0.45, peakY, cx, peakY);
+  ctx.quadraticCurveTo(cx + r * 0.45, peakY, rx, edgeY);
+  // 下轮廓(雪线,贴合球面):贝塞尔回到左端,控制点沿球面弧下垂 → 自然收边
+  ctx.quadraticCurveTo(cx, cy - r * 0.78, lx, edgeY);
   ctx.closePath();
-  // 渐变:顶白到底偏蓝(立体)
-  const g = ctx.createLinearGradient(0, peakY - capThick, 0, cy - r * 0.4);
+  // 渐变:顶部纯白 → 雪线处偏蓝灰(球面弧度立体感)
+  const g = ctx.createLinearGradient(0, peakY, 0, edgeY);
   g.addColorStop(0, "rgba(255,255,255,0.98)");
-  g.addColorStop(1, "rgba(225,235,248,0.92)");
+  g.addColorStop(0.65, "rgba(245,250,255,0.95)");
+  g.addColorStop(1, "rgba(218,230,246,0.9)");
   ctx.fillStyle = g;
   ctx.fill();
-  // 底部投影(雪堆压在球面的暗影)
-  ctx.fillStyle = "rgba(180,200,225,0.22)";
+  // 雪线暗影(雪堆压在球面的过渡,一道柔和弧)
+  ctx.strokeStyle = "rgba(168,192,225,0.28)";
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.ellipse(cx, cy - r * 0.4, r * 0.7, capThick * 0.2, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.moveTo(lx, edgeY);
+  ctx.quadraticCurveTo(cx, cy - r * 0.78, rx, edgeY);
+  ctx.stroke();
   ctx.restore();
 }
 

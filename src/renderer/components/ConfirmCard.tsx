@@ -98,19 +98,19 @@ export function ConfirmCard({
       data-testid={testid}
       onClick={(e) => e.stopPropagation()}
     >
-      <p className="text-xs text-neutral-200 leading-relaxed mb-3">{message}</p>
+      <p className="text-body text-neutral-200 leading-relaxed mb-3">{message}</p>
       <div className="flex gap-2 justify-end">
         <button
           onClick={onCancel}
           data-testid={`${testid}-cancel`}
-          className="px-2.5 py-1 rounded-md text-[11px] font-bold text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
+          className="px-2.5 py-1 rounded-md text-label font-bold text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
         >
           {cancelLabel}
         </button>
         <button
           onClick={onConfirm}
           data-testid={`${testid}-confirm`}
-          className={danger ? "btn-3d-brand px-2.5 py-1 text-[11px]" : "btn-3d-brand px-2.5 py-1 text-[11px]"}
+          className={danger ? "btn-3d-brand px-2.5 py-1 text-label" : "btn-3d-brand px-2.5 py-1 text-label"}
           style={danger
             ? { background: "var(--warning)", boxShadow: "0 3px 0 0 var(--warning-dark)" }
             : undefined}

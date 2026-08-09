@@ -101,11 +101,11 @@ export function MermaidArtifact({ data }: { data: unknown }) {
     <div className="surface-card p-4" data-testid="artifact-mermaid">
       <div className="flex items-center justify-between mb-3 gap-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-sm shrink-0">📐</span>
-          <h3 className="text-sm font-bold text-neutral-800 dark:text-neutral-200 truncate">
+          <span className="text-body shrink-0">📐</span>
+          <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200 truncate">
             {d.title}
           </h3>
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-accent/15 text-accent shrink-0">
+          <span className="text-caption font-bold px-1.5 py-0.5 rounded bg-accent/15 text-accent shrink-0">
             {TYPE_LABELS[d.diagramType] ?? d.diagramType}
           </span>
         </div>
@@ -115,7 +115,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
             <button
               onClick={zoomOut}
               disabled={zoom <= MIN_ZOOM}
-              className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-xs font-bold flex items-center justify-center"
+              className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-label font-bold flex items-center justify-center"
               title="缩小"
               data-testid="mermaid-zoom-out"
             >
@@ -123,7 +123,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
             </button>
             <button
               onClick={zoomReset}
-              className="px-1.5 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-[10px] font-bold tabular-nums"
+              className="px-1.5 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-caption font-bold tabular-nums"
               title="重置缩放"
               data-testid="mermaid-zoom-reset"
             >
@@ -132,7 +132,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
             <button
               onClick={zoomIn}
               disabled={zoom >= MAX_ZOOM}
-              className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-xs font-bold flex items-center justify-center"
+              className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-label font-bold flex items-center justify-center"
               title="放大"
               data-testid="mermaid-zoom-in"
             >
@@ -142,7 +142,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         )}
         <button
           onClick={() => window.open(liveUrl, "_blank")}
-          className="text-[10px] text-accent hover:underline font-bold shrink-0"
+          className="text-caption text-accent hover:underline font-bold shrink-0"
           data-testid="mermaid-open-live"
           title="在 mermaid.live 打开(可编辑)"
         >
@@ -160,7 +160,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         data-testid="mermaid-render-area"
       >
         {state.status === "loading" && (
-          <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400 my-8 justify-center" data-testid="mermaid-loading">
+          <div className="flex items-center gap-2 text-body text-neutral-500 dark:text-neutral-400 my-8 justify-center" data-testid="mermaid-loading">
             <span className="typing-dot w-1.5 h-1.5 bg-accent rounded-full inline-block" />
             <span>渲染图中…</span>
           </div>
@@ -204,26 +204,26 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         )}
         {state.status === "error" && (
           <div className="w-full text-center my-4" data-testid="mermaid-fallback">
-            <div className="text-xs text-warning mb-2">
+            <div className="text-body text-warning mb-2">
               ⚠️ 渲染失败,显示源码(可复制到 mermaid.live 查看)
             </div>
-            <pre className="text-[11px] bg-neutral-100 dark:bg-neutral-900/60 rounded p-2 overflow-x-auto text-neutral-700 dark:text-neutral-300 font-mono text-left">
+            <pre className="text-label bg-neutral-100 dark:bg-neutral-900/60 rounded p-2 overflow-x-auto text-neutral-700 dark:text-neutral-300 font-mono text-left">
               {d.mermaid}
             </pre>
-            <div className="text-[10px] text-neutral-400 mt-2">错误: {state.message}</div>
+            <div className="text-caption text-neutral-400 mt-2">错误: {state.message}</div>
           </div>
         )}
       </div>
 
       {(state.status === "rendered") && (
-        <div className="mt-1.5 text-[10px] text-neutral-400 dark:text-neutral-600 flex items-center gap-2">
+        <div className="mt-1.5 text-caption text-neutral-400 dark:text-neutral-600 flex items-center gap-2">
           <span>Ctrl+滚轮缩放 · 拖动平移查看</span>
         </div>
       )}
 
       {/* harness 修复警告 */}
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-[10px] text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
+        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
           ⚠️ {d.warnings.join("; ")}
         </div>
       )}

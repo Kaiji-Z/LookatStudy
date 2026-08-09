@@ -121,7 +121,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6" data-testid="exam-loading">
         <Target className="w-12 h-12 text-accent mb-4 opacity-60" />
-        <div className="flex items-center gap-1.5 text-sm text-neutral-500 dark:text-neutral-400">
+        <div className="flex items-center gap-1.5 text-body text-neutral-500 dark:text-neutral-400">
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
@@ -136,11 +136,11 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" data-testid="exam-error">
         <AlertCircle className="w-10 h-10 text-warning mb-3" />
-        <div className="text-sm font-bold text-neutral-800 dark:text-neutral-200 mb-1">考试加载失败</div>
-        <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-4 max-w-xs">{errorMsg}</div>
+        <div className="text-body font-bold text-neutral-800 dark:text-neutral-200 mb-1">考试加载失败</div>
+        <div className="text-body text-neutral-500 dark:text-neutral-400 mb-4 max-w-xs">{errorMsg}</div>
         <button
           onClick={() => window.location.reload()}
-          className="btn-3d-neutral px-4 py-1.5 text-xs"
+          className="btn-3d-neutral px-4 py-1.5 text-body"
         >
           重新加载
         </button>
@@ -171,11 +171,11 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
       <div className="px-4 pt-3 pb-2 shrink-0 bg-surface-2/30">
         <div className="flex items-center gap-2 mb-2">
           <Target className="w-4 h-4 text-accent" />
-          <span className="text-sm font-bold text-neutral-900 dark:text-neutral-100 truncate">{examNode.title}</span>
+          <span className="text-body font-bold text-neutral-900 dark:text-neutral-100 truncate">{examNode.title}</span>
         </div>
         {/* 进度条 */}
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold tabular-nums text-neutral-500 dark:text-neutral-400 shrink-0">
+          <span className="text-label font-bold tabular-nums text-neutral-500 dark:text-neutral-400 shrink-0">
             {currentIdx + 1}/{exercises.length}
           </span>
           <div className="flex-1 h-1.5 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
@@ -186,8 +186,8 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
 
       {/* 题目卡片 */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="text-[11px] font-bold text-accent mb-2">第 {currentIdx + 1} 题</div>
-        <div className="text-sm text-neutral-900 dark:text-neutral-100 font-medium mb-4 leading-relaxed">
+        <div className="text-label font-bold text-accent mb-2">第 {currentIdx + 1} 题</div>
+        <div className="text-body text-neutral-900 dark:text-neutral-100 font-medium mb-4 leading-relaxed">
           {ex.prompt}
         </div>
 
@@ -200,7 +200,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
                   key={idx}
                   onClick={() => handleSelect(idx)}
                   data-testid={`exam-option-${idx}`}
-                  className={`w-full text-left text-sm p-2.5 rounded-lg border font-medium transition-all duration-150 ${
+                  className={`w-full text-left text-body p-2.5 rounded-lg border font-medium transition-all duration-150 ${
                     isSelected
                       ? "border-accent bg-accent/10 text-neutral-900 dark:text-neutral-100 ring-2 ring-accent/20"
                       : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-900"
@@ -221,7 +221,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
           onClick={handleNext}
           disabled={selected === null}
           data-testid="exam-next"
-          className={`w-full py-2 rounded-xl text-sm font-bold transition-all ${
+          className={`w-full py-2 rounded-xl text-body font-bold transition-all ${
             selected === null
               ? "bg-neutral-200 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-500 cursor-not-allowed"
               : "btn-3d-brand"
@@ -275,7 +275,7 @@ function ExamResultCard({
         <div className={`text-4xl font-extrabold mb-1 ${passed ? "text-accent" : "text-neutral-400"}`}>
           {correctCount}/{totalCount}
         </div>
-        <div className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+        <div className="text-body text-neutral-500 dark:text-neutral-400 mb-3">
           正确率 {Math.round((correctCount / totalCount) * 100)}%
         </div>
         {/* 星星 */}
@@ -288,7 +288,7 @@ function ExamResultCard({
           ))}
         </div>
         {/* 本次/最佳 */}
-        <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
+        <div className="text-label text-neutral-500 dark:text-neutral-400">
           {passed ? (
             bestStars > stars ? `本次 ${stars} 星 · 历史最佳 ${bestStars} 星` : `恭喜,获得 ${stars} 星!`
           ) : (
@@ -299,7 +299,7 @@ function ExamResultCard({
 
       {/* 逐题回顾 */}
       <div className="space-y-2.5 mb-4">
-        <div className="text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">逐题回顾</div>
+        <div className="text-label font-bold text-neutral-700 dark:text-neutral-300 mb-1">逐题回顾</div>
         {perQuestion.map((pq, i) => {
           const ex = exercises.find((e) => e.id === pq.exerciseId);
           return (
@@ -314,12 +314,12 @@ function ExamResultCard({
                 ) : (
                   <X className="w-4 h-4 text-warning shrink-0 mt-0.5" />
                 )}
-                <div className="text-xs text-neutral-800 dark:text-neutral-200 font-medium leading-relaxed">
+                <div className="text-body text-neutral-800 dark:text-neutral-200 font-medium leading-relaxed">
                   {ex?.prompt ?? `(题目 ${i + 1})`}
                 </div>
               </div>
               {!pq.correct && ex?.options && (
-                <div className="text-[11px] text-neutral-600 dark:text-neutral-400 ml-6 mb-1">
+                <div className="text-label text-neutral-600 dark:text-neutral-400 ml-6 mb-1">
                   <span className="text-warning">你的答案:</span>{" "}
                   {ex.options[Number.parseInt(pq.userAnswer)] ?? pq.userAnswer ?? "(未答)"}{" "}
                   <span className="text-neutral-400">·</span>{" "}
@@ -328,7 +328,7 @@ function ExamResultCard({
                 </div>
               )}
               {pq.explanation && (
-                <div className="text-[11px] text-neutral-600 dark:text-neutral-400 ml-6 leading-relaxed">
+                <div className="text-label text-neutral-600 dark:text-neutral-400 ml-6 leading-relaxed">
                   {pq.explanation}
                 </div>
               )}
@@ -341,7 +341,7 @@ function ExamResultCard({
       <button
         onClick={onRetry}
         data-testid="exam-retry"
-        className="btn-3d-neutral w-full py-2 text-sm font-bold flex items-center justify-center gap-1.5"
+        className="btn-3d-neutral w-full py-2 text-body font-bold flex items-center justify-center gap-1.5"
       >
         <RotateCcw className="w-4 h-4" />
         重新考试(题目已缓存)

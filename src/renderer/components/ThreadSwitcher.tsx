@@ -83,12 +83,12 @@ export function ThreadSwitcher({
   // 无 thread:首次进入,焦点节点提示
   if (threads.length === 0) {
     return (
-      <div className="px-4 py-2 shrink-0 flex items-center gap-2 text-xs bg-surface-1 opacity-60" data-testid="thread-switcher-empty">
+      <div className="px-4 py-2 shrink-0 flex items-center gap-2 text-label bg-surface-1 opacity-60" data-testid="thread-switcher-empty">
         <span className="w-1 h-1 rounded-full bg-brand shrink-0" />
         <span className="text-neutral-500 dark:text-neutral-400 truncate flex-1">
           {focusNodeTitle ?? "未选节点"}
         </span>
-        <span className="text-[10px] text-neutral-500 shrink-0">输入问题开始</span>
+        <span className="text-caption text-neutral-500 shrink-0">输入问题开始</span>
       </div>
     );
   }
@@ -125,11 +125,11 @@ export function ThreadSwitcher({
                   onBlur={commitRename}
                   onClick={(e) => e.stopPropagation()}
                   autoFocus
-                  className="bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-[11px] rounded px-1.5 py-0.5 border border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 w-28"
+                  className="bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-label rounded px-1.5 py-0.5 border border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 w-28"
                   data-testid="thread-rename-input"
                 />
               ) : (
-                <span className={`text-[11px] max-w-[120px] truncate ${isActive ? "font-semibold" : "font-normal"}`}>
+                <span className={`text-label max-w-[120px] truncate ${isActive ? "font-semibold" : "font-normal"}`}>
                   {t.title || "新会话"}
                 </span>
               )}
@@ -171,11 +171,11 @@ export function ThreadSwitcher({
           >
             <button
               onClick={() => startRename(t)}
-              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
             ><Edit className="w-3 h-3" />重命名</button>
             <button
               onClick={() => { onArchive(t.id); setMenuFor(null); setMenuPos(null); }}
-              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
             ><Archive className="w-3 h-3" />归档</button>
             <button
               onClick={(e) => {
@@ -184,7 +184,7 @@ export function ThreadSwitcher({
                 setMenuFor(null);
                 setMenuPos(null);
               }}
-              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-warning hover:bg-warning/10 transition-colors"
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-warning hover:bg-warning/10 transition-colors"
             ><Trash className="w-3 h-3" />删除</button>
           </div>
         );

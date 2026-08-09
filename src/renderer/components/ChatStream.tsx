@@ -250,19 +250,19 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
               <>
                 <div className="text-center mb-5">
                   <div className="text-4xl mb-3 opacity-30">📖</div>
-                  <div className="text-neutral-500 dark:text-neutral-400 text-sm">这是这一课的概览</div>
+                  <div className="text-neutral-500 dark:text-neutral-400 text-body">这是这一课的概览</div>
                 </div>
                 {/* 摘要卡片 */}
                 {summary ? (
                   <div className="surface-card p-4 mb-5">
-                    <div className="text-[10px] font-bold text-brand uppercase tracking-wider mb-2">本课摘要</div>
-                    <div className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
+                    <div className="text-caption font-bold text-brand uppercase tracking-wider mb-2">本课摘要</div>
+                    <div className="text-body text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
                       {summary}
                     </div>
                   </div>
                 ) : (
                   <div className="surface-card p-4 mb-5 text-center">
-                    <div className="text-sm text-neutral-500 dark:text-neutral-400">暂无摘要,点开始学习让 AI 帮你了解这一课</div>
+                    <div className="text-body text-neutral-500 dark:text-neutral-400">暂无摘要,点开始学习让 AI 帮你了解这一课</div>
                   </div>
                 )}
                 {/* 开始学习按钮 */}
@@ -271,13 +271,13 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                     onClick={onStartLearning}
                     disabled={streaming}
                     data-testid="start-learning-btn"
-                    className="btn-3d-brand w-full py-3 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40"
+                    className="btn-3d-brand w-full py-3 text-body font-bold flex items-center justify-center gap-2 disabled:opacity-40"
                   >
                     <span>🚀</span>
                     <span>开始学习</span>
                   </button>
                 )}
-                <div className="text-center mt-4 text-[11px] text-neutral-500 dark:text-neutral-400">
+                <div className="text-center mt-4 text-label text-neutral-500 dark:text-neutral-400">
                   或从下面的快捷按钮选一个
                 </div>
               </>
@@ -285,10 +285,10 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
               /* 未选节点:引导选节点(此时 ChatComposer 仍渲染,skill-picker 可见) */
               <div className="text-center mt-16" data-testid="no-node-selected">
                 <div className="text-5xl mb-3 opacity-25">🗺️</div>
-                <div className="text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                <div className="text-body font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                   从左侧地图选一个节点
                 </div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400 max-w-xs mx-auto">
+                <div className="text-body text-neutral-500 dark:text-neutral-400 max-w-xs mx-auto">
                   点击圆球节点开始学习。绿色=可学,金色=已掌握,紫色 🎯=章节考试
                 </div>
               </div>
@@ -307,7 +307,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         ))}
 
         {streaming && (
-          <div className="flex items-center gap-1.5 text-xs text-brand">
+          <div className="flex items-center gap-1.5 text-body text-brand">
             <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
             <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
             <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
@@ -337,7 +337,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
           onClick={handleSaveChatNote}
           data-testid="save-chat-note-btn"
           style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: "translate(-50%, -100%)" }}
-          className="absolute z-20 px-3 py-1.5 rounded-lg bg-brand text-white text-xs font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition msg-enter"
+          className="absolute z-20 px-3 py-1.5 rounded-lg bg-brand text-white text-body font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition msg-enter"
           title="把这段对话存到记录区"
         >
           <Pencil className="w-3 h-3" /> 加笔记
@@ -385,7 +385,7 @@ function MessageRowV2({
     return (
       <div className="msg-enter flex justify-end" data-testid="msg-user" data-msg-id={msg.id}>
         <div className="max-w-[85%] bg-white/[0.04] rounded-2xl rounded-br-md px-4 py-2.5">
-          <div className="font-medium text-neutral-100 whitespace-pre-wrap select-text" style={{ fontSize: "var(--chat-font-size, 15px)" }}>
+          <div className="font-medium text-neutral-100 whitespace-pre-wrap select-text text-body">
             {msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
           </div>
         </div>
@@ -397,7 +397,7 @@ function MessageRowV2({
   return (
     <div className="msg-enter flex gap-2.5" data-testid="msg-assistant" data-msg-id={msg.id}>
       <div
-        className="w-7 h-7 rounded-full bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5 shadow-accent-soft"
+        className="w-7 h-7 rounded-full bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center text-white text-label font-bold shrink-0 mt-0.5 shadow-accent-soft"
       >
         AI
       </div>
@@ -436,7 +436,7 @@ function PartRenderer({
   if (part.type === "text") {
     return (
       <div
-        className="text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert max-w-[80ch] leading-relaxed select-text" style={{ fontSize: "var(--chat-font-size, 15px)" }}
+        className="text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert max-w-[80ch] leading-relaxed select-text"
         data-testid="part-text"
       >
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
@@ -477,13 +477,13 @@ function ReasoningBlock({ text }: { text: string }) {
     >
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-1.5 text-label font-bold text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
       >
         <span>{open ? "▾" : "▸"} 思考过程</span>
         <span className="text-neutral-500 dark:text-neutral-400 font-normal">{text.length} 字</span>
       </button>
       {open && (
-        <div className="px-3 pb-2.5 text-[11px] text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap leading-relaxed border-t border-neutral-200 dark:border-neutral-800/60 pt-2">
+        <div className="px-3 pb-2.5 text-label text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap leading-relaxed border-t border-neutral-200 dark:border-neutral-800/60 pt-2">
           {text}
         </div>
       )}
@@ -522,25 +522,25 @@ function ToolCallBlock({
   if (proposalData?.proposalId) {
     return (
       <div className="proposal-card rounded-xl p-3 border border-brand/30 bg-brand/5" data-testid="part-proposal">
-        <div className="text-neutral-700 dark:text-neutral-200 text-xs mb-2 flex items-center gap-1.5">
-          <span className="text-sm">📋</span>
+        <div className="text-neutral-700 dark:text-neutral-200 text-body mb-2 flex items-center gap-1.5">
+          <span className="text-body">📋</span>
           <span className="font-bold">AI 提议</span>
         </div>
-        <div className="text-neutral-600 dark:text-neutral-300 text-xs mb-3">
+        <div className="text-neutral-600 dark:text-neutral-300 text-body mb-3">
           {proposalData.message ?? `提议(${toolName})`}
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => onApplyProposal?.(proposalData.proposalId!, msgId, toolCallIdx)}
             data-testid="proposal-apply"
-            className="btn-3d-brand px-4 py-1.5 text-xs"
+            className="btn-3d-brand px-4 py-1.5 text-body"
           >
             <Check className="w-3 h-3 inline" />应用
           </button>
           <button
             onClick={() => onRejectProposal?.(proposalData.proposalId!, msgId, toolCallIdx)}
             data-testid="proposal-reject"
-            className="btn-3d-neutral px-4 py-1.5 text-xs"
+            className="btn-3d-neutral px-4 py-1.5 text-body"
           >
             <X className="w-3 h-3 inline" />拒绝
           </button>
@@ -573,7 +573,7 @@ function ToolCallBlock({
   const label = TOOL_LABELS[toolName] ?? toolName;
   return (
     <div
-      className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-md bg-neutral-100 dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800"
+      className="inline-flex items-center gap-1.5 text-label px-2.5 py-1 rounded-md bg-neutral-100 dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800"
       data-testid="part-tool"
       data-tool={toolName}
       data-state={state}
@@ -649,12 +649,12 @@ function CodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreElement>)
   return (
     <div className="relative group my-3" data-testid="md-codeblock">
       <div className="flex items-center justify-between px-3 py-1.5 bg-neutral-900 border border-b-0 border-neutral-700 rounded-t-md">
-        <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider">
+        <span className="text-caption font-mono text-neutral-400 uppercase tracking-wider">
           {lang || "code"}
         </span>
         <button
           onClick={handleCopy}
-          className="text-[10px] text-neutral-400 hover:text-brand transition-colors opacity-0 group-hover:opacity-100"
+          className="text-caption text-neutral-400 hover:text-brand transition-colors opacity-0 group-hover:opacity-100"
           data-testid="md-copy"
         >
           {copied ? "✓ 已复制" : "复制"}

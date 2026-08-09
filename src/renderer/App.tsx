@@ -467,6 +467,8 @@ export default function App() {
       <Header
         streak={streak}
         xp={xp}
+        fontSize={font.size}
+        onFontBump={font.bump}
         onOpenSettings={() => setShowSettings(true)}
         leftVisible={leftPaneVisible}
         rightVisible={rightPaneVisible}
@@ -585,8 +587,6 @@ export default function App() {
                 onSend={sendMessage}
                 onStop={chat.stop}
                 onGotoSettings={() => setShowSettings(true)}
-                fontSize={font.size}
-                onFontBump={font.bump}
                 insertText={quoteText}
               />
                 </>
@@ -687,6 +687,8 @@ function handleCommandAction(action: string): void {
 function Header({
   streak,
   xp,
+  fontSize,
+  onFontBump,
   onOpenSettings,
   leftVisible,
   rightVisible,
@@ -695,6 +697,8 @@ function Header({
 }: {
   streak: Streak | null;
   xp: { todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null;
+  fontSize: "small" | "medium" | "large";
+  onFontBump: (dir: "up" | "down") => void;
   onOpenSettings: () => void;
   leftVisible: boolean;
   rightVisible: boolean;
@@ -728,16 +732,33 @@ function Header({
           </button>
         </div>
         <div
-          className="w-7 h-7 rounded-xl bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center text-white font-extrabold text-xs shadow-md"
+          className="w-7 h-7 rounded-xl bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center text-white font-extrabold text-label shadow-md"
           style={{ boxShadow: "0 2px 8px rgba(88, 204, 2, 0.3)" }}
         >
           L
         </div>
-        <h1 className="text-sm font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
+        <h1 className="text-body font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
           Lookat<span className="text-brand">Study</span>
         </h1>
       </div>
       <div className="flex items-center gap-3">
+        {/* 全局字号控制(A-/A+):三档,影响整个应用的 rem 基准 */}
+        <div className="flex items-center gap-0.5" data-testid="font-size-control">
+          <button
+            onClick={() => onFontBump("down")}
+            disabled={fontSize === "small"}
+            data-testid="font-smaller"
+            className="text-label w-7 h-7 flex items-center justify-center rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+            title="缩小字号"
+          >A-</button>
+          <button
+            onClick={() => onFontBump("up")}
+            disabled={fontSize === "large"}
+            data-testid="font-larger"
+            className="text-body w-7 h-7 flex items-center justify-center rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+            title="放大字号"
+          >A+</button>
+        </div>
         {xp && (
           <div className="flex items-center gap-1.5" data-testid="xp-bar">
             <Target className="w-3.5 h-3.5 text-neutral-400" />
@@ -747,7 +768,7 @@ function Header({
                 style={{ width: `${Math.max(3, xp.pct)}%` }}
               />
             </div>
-            <span className={`text-xs font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-500 dark:text-neutral-400"}`}>
+            <span className={`text-label font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-500 dark:text-neutral-400"}`}>
               {xp.todayXp}/{xp.dailyGoal}
             </span>
           </div>
@@ -774,7 +795,7 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative w-full max-w-md h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800 shadow-elevated flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-          <h2 className="text-sm font-bold">{translate("settings.title")}</h2>
+          <h2 className="text-body font-bold">{translate("settings.title")}</h2>
           <button
             onClick={onClose}
             data-testid="settings-close"
@@ -807,7 +828,7 @@ function ReviewDrawer({
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative w-full max-w-md h-full bg-neutral-50 dark:bg-neutral-950 border-l border-neutral-200 dark:border-neutral-800 shadow-elevated flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-          <h2 className="text-sm font-bold">📖 复习</h2>
+          <h2 className="text-body font-bold">📖 复习</h2>
           <button
             onClick={onClose}
             data-testid="review-close"
@@ -829,7 +850,7 @@ function ReviewDrawer({
 
 function ErrorBanner({ message, onClose }: { message: string; onClose: () => void }) {
   return (
-    <div className="px-4 py-2 border-b border-warning-tint-border text-warning text-sm flex items-center justify-between" style={{ backgroundColor: "var(--warning-tint)" }}>
+    <div className="px-4 py-2 border-b border-warning-tint-border text-warning text-body flex items-center justify-between" style={{ backgroundColor: "var(--warning-tint)" }}>
       <span>⚠️ {message}</span>
       <button className="ml-3 underline text-warning-light" onClick={onClose}>关闭</button>
     </div>
@@ -845,7 +866,7 @@ function StreakBadge({ streak }: { streak: Streak }) {
       title={`连续学习 ${streak.currentStreak} 天 · 最长 ${streak.longestStreak} 天`}
     >
       <Flame className="w-4 h-4 text-review" />
-      <span className="text-sm font-extrabold text-review">{streak.currentStreak}</span>
+      <span className="text-body font-extrabold text-review">{streak.currentStreak}</span>
     </div>
   );
 }

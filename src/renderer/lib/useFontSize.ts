@@ -1,18 +1,28 @@
 /**
- * useFontSize —— v0.3 中栏字号调节(A-/A+)。
+ * useFontSize —— 全局字号系统(A-/A+),v0.7。
  *
- * 三档:small(13px)/ medium(15px,默认)/ large(17px)。
- * 用 CSS 变量 --chat-font-size 控制,localStorage 持久化。
- * 影响范围:ChatStream 文字 + NotebookPanel 讲解 + 产物卡。
+ * 三档基准 html font-size:small(16px)/ medium(17px,默认)/ large(18px)。
+ * 以 16px 为地板(浏览器标准/a11y 正文最小共识),small 档下最小 caption=12px 正好踩可读线。
+ * 设到 html 元素的 font-size,所有 rem 单位自动跟随。
+ *
+ * 6 级语义字号(见 index.css .text-caption ~ .text-hero):
+ *   caption 0.75rem  badge/计数/logo(刻意最小,12px@small 踩可读线)
+ *   label   0.825rem 表单label/timestamp/小标题
+ *   body    0.875rem 按钮/输入框/对话/tooltip(主要交互文字)
+ *   lead    1rem     正文(讲解/笔记主体)
+ *   title   1.125rem 卡片标题
+ *   hero    1.5rem   大标题/空状态
+ *
+ * localStorage 持久化。
  */
 import { useState, useEffect, useCallback } from "react";
 
 export type FontSize = "small" | "medium" | "large";
 
 const SIZE_PX: Record<FontSize, number> = {
-  small: 13,
-  medium: 15,
-  large: 17,
+  small: 16,
+  medium: 17,
+  large: 18,
 };
 
 const STORAGE_KEY = "lookatstudy-font-size";
@@ -28,8 +38,7 @@ export function useFontSize() {
   });
 
   useEffect(() => {
-    // 写 CSS 变量到 :root,全局生效
-    document.documentElement.style.setProperty("--chat-font-size", `${SIZE_PX[size]}px`);
+    document.documentElement.style.fontSize = `${SIZE_PX[size]}px`;
     localStorage.setItem(STORAGE_KEY, size);
   }, [size]);
 
@@ -42,5 +51,5 @@ export function useFontSize() {
     });
   }, []);
 
-  return { size, bump, px: SIZE_PX[size] };
+  return { size, bump };
 }

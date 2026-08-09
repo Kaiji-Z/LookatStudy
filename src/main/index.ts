@@ -344,9 +344,9 @@ async function runUiTest(screenshot = false): Promise<void> {
     return;
   }
 
-  // T1: skill-picker(v0.2 收起为下拉)里应有 ≥4 个 option(4 个内置 skill)
+  // T1: skill-picker(v0.7 药丸行)里应有 ≥4 个模式药丸(4 个内置 skill)
   const optionCount = await win.webContents.executeJavaScript(
-    `document.querySelectorAll('[data-testid="skill-select"] option').length`,
+    `document.querySelectorAll('[data-testid^="skill-pill-"]').length`,
   );
   results.push({
     name: "skill-picker has ≥4 builtin skill options",
@@ -413,14 +413,13 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: clickResult,
   });
 
-  // T6: 点 skill select → setActiveSkill IPC roundtrip(改 select value)
+  // T6: 点 skill 药丸 → setActiveSkill IPC roundtrip(点按钮触发 onClick)
   const skillSelect = await win.webContents.executeJavaScript(`
     (function() {
-      const sel = document.querySelector('[data-testid="skill-select"]');
-      if (!sel) return { ok: false, reason: "skill-select not found" };
-      sel.value = "socratic-mode";
-      sel.dispatchEvent(new Event("change", { bubbles: true }));
-      return { ok: true, value: sel.value };
+      const pill = document.querySelector('[data-testid="skill-pill-socratic-mode"]');
+      if (!pill) return { ok: false, reason: "skill-pill not found" };
+      pill.click();
+      return { ok: true, value: "socratic-mode" };
     })()
   `);
   await new Promise((r) => setTimeout(r, 300));

@@ -138,6 +138,17 @@
     @apply h-full;
   }
 
+  /* v0.7 全局字号系统:html font-size 由 useFontSize 控制(16/17/18px),
+     所有 rem 单位跟随。6 级语义字号(替代散落的 text-[10px]/[11px] 硬编码),
+     全部 rem,统一跟随全局基准。A-/A+ 调一处,所有文字一起变。
+     small 档(16px)下最小 caption=12px 踩可读线,不会有看不清的字。 */
+  .text-caption { font-size: 0.75rem; }   /* 12px@small: badge/计数/logo(刻意最小) */
+  .text-label   { font-size: 0.825rem; }  /* 13.2px@small: 表单label/timestamp/小标题 */
+  .text-body    { font-size: 0.875rem; }  /* 14px@small: 按钮/输入框/对话/tooltip */
+  .text-lead    { font-size: 1rem; }      /* 16px@small: 正文(讲解/笔记主体) */
+  .text-title   { font-size: 1.125rem; }  /* 18px@small: 卡片标题 */
+  .text-hero    { font-size: 1.5rem; }    /* 24px@small: 大标题/空状态 */
+
   body {
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;

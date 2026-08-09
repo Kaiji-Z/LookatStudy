@@ -133,7 +133,7 @@ function ToastRow({
   const icon = SEVERITY_ICON[item.severity];
   return (
     <div
-      className={`pointer-events-auto flex items-center gap-2.5 pl-3 pr-2 py-2.5 rounded-xl bg-neutral-900 text-neutral-100 text-sm shadow-elevated max-w-md ${SEVERITY_CLASS[item.severity]} ${item.exiting ? "toast-exit" : "toast-enter"}`}
+      className={`pointer-events-auto flex items-center gap-2.5 pl-3 pr-2 py-2.5 rounded-xl bg-neutral-900 text-neutral-100 text-body shadow-elevated max-w-md ${SEVERITY_CLASS[item.severity]} ${item.exiting ? "toast-exit" : "toast-enter"}`}
       data-testid={`toast-${item.id}`}
       data-severity={item.severity}
       onAnimationEnd={item.exiting ? onExitDone : undefined}
@@ -143,7 +143,7 @@ function ToastRow({
       {item.action && (
         <button
           onClick={onAction}
-          className="text-brand font-bold text-xs hover:underline shrink-0 px-1.5 py-1 rounded transition-colors hover:bg-brand/10"
+          className="text-brand font-bold text-body hover:underline shrink-0 px-1.5 py-1 rounded transition-colors hover:bg-brand/10"
           data-testid={`toast-action-${item.id}`}
         >
           {item.action.label}

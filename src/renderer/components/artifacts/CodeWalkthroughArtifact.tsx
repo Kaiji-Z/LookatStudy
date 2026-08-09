@@ -52,9 +52,9 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
   return (
     <div className="surface-card p-4" data-testid="artifact-code-walkthrough">
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm">🔍</span>
-        <h3 className="text-sm font-bold text-neutral-800 dark:text-neutral-200">{d.title}</h3>
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-mono">
+        <span className="text-body">🔍</span>
+        <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200">{d.title}</h3>
+        <span className="text-caption font-bold px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-mono">
           {d.language}
         </span>
       </div>
@@ -62,7 +62,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* 代码块(带行号) */}
         <div className="bg-neutral-950 rounded-lg overflow-hidden border border-neutral-800 max-h-[420px] overflow-y-auto">
-          <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto">
+          <pre className="text-label font-mono leading-relaxed overflow-x-auto">
             <code>
               {lines.map((line, i) => {
                 const lineNum = i + 1;
@@ -87,7 +87,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
 
         {/* 讲解列表 */}
         <div className="space-y-2">
-          <div className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+          <div className="text-caption font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
             逐段讲解(点击定位代码)
           </div>
           {d.annotations.map((a, i) => (
@@ -101,10 +101,10 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
                   : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-500"
               }`}
             >
-              <div className="text-[10px] font-bold text-brand mb-0.5">
+              <div className="text-caption font-bold text-brand mb-0.5">
                 第 {a.lineStart}{a.lineEnd !== a.lineStart ? `-${a.lineEnd}` : ""} 行
               </div>
-              <div className="text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed">
+              <div className="text-body text-neutral-700 dark:text-neutral-300 leading-relaxed">
                 {a.note}
               </div>
             </button>
@@ -113,7 +113,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
       </div>
 
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-[10px] text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
+        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
           ⚠️ {d.warnings.join("; ")}
         </div>
       )}

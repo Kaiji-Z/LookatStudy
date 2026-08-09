@@ -140,8 +140,8 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
     <div className="surface-card p-4" data-testid="artifact-concept-map">
       <div className="flex items-center justify-between mb-3 gap-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-sm shrink-0">🗺️</span>
-          <h3 className="text-sm font-bold text-neutral-800 dark:text-neutral-200 truncate">
+          <span className="text-body shrink-0">🗺️</span>
+          <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200 truncate">
             {d.title}
           </h3>
         </div>
@@ -150,14 +150,14 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
           <button
             onClick={zoomOut}
             disabled={zoom <= MIN_ZOOM}
-            className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-xs font-bold flex items-center justify-center"
+            className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-label font-bold flex items-center justify-center"
             title="缩小"
           >
             −
           </button>
           <button
             onClick={zoomReset}
-            className="px-1.5 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-[10px] font-bold tabular-nums"
+            className="px-1.5 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-caption font-bold tabular-nums"
             title="重置缩放"
           >
             {Math.round(zoom * 100)}%
@@ -165,7 +165,7 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
           <button
             onClick={zoomIn}
             disabled={zoom >= MAX_ZOOM}
-            className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-xs font-bold flex items-center justify-center"
+            className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-label font-bold flex items-center justify-center"
             title="放大"
           >
             +
@@ -253,7 +253,7 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
                         x={midPoint.x}
                         y={midPoint.y + 3.5}
                         textAnchor="middle"
-                        className="fill-neutral-600 dark:fill-neutral-300 text-[10px] font-medium"
+                        className="fill-neutral-600 dark:fill-neutral-300 text-caption font-medium"
                       >
                         {edge.label}
                       </text>
@@ -295,7 +295,7 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
                     x={pos.x + 2}
                     y={pos.y + 4.5}
                     textAnchor="middle"
-                    className="fill-neutral-800 dark:fill-neutral-100 text-[12px] font-semibold"
+                    className="fill-neutral-800 dark:fill-neutral-100 text-label font-semibold"
                   >
                     {node.label.length > 14 ? node.label.slice(0, 13) + "…" : node.label}
                   </text>
@@ -306,12 +306,12 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
         </div>
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between text-[10px] text-neutral-400 dark:text-neutral-600">
+      <div className="mt-1.5 flex items-center justify-between text-caption text-neutral-400 dark:text-neutral-600">
         <span>{d.nodes.length} 个概念 · {d.edges.length} 个关系 · Ctrl+滚轮缩放 · 拖动平移</span>
       </div>
 
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-1 text-[10px] text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
+        <div className="mt-1 text-caption text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
           ⚠️ {d.warnings.join("; ")}
         </div>
       )}

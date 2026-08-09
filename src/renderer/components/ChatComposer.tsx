@@ -10,7 +10,7 @@
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect } from "react";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Square, Compass, ClipboardCheck, Hammer, RefreshCw } from "lucide-react";
 import type { Skill, StarterPrompt } from "@shared/types";
 import { translate } from "../lib/i18n.js";
 
@@ -19,6 +19,22 @@ const SKILL_LABELS: Record<string, string> = {
   "exam-prep-mode": "考试冲刺",
   "project-mode": "项目实战",
   "review-mode": "复习",
+};
+
+/** 模式 → lucide 图标(场景语义,非装饰)。 */
+const SKILL_ICONS: Record<string, typeof Compass> = {
+  "socratic-mode": Compass,        // 罗盘:探索/指引方向
+  "exam-prep-mode": ClipboardCheck, // 答题卡:考试
+  "project-mode": Hammer,           // 锤子:动手做
+  "review-mode": RefreshCw,         // 循环:间隔复习
+};
+
+/** 悬停时显示的完整说明(data-tooltip → GlobalTooltip)。比药丸里的场景提示更详细。 */
+const SKILL_FULL_DESC: Record<string, string> = {
+  "socratic-mode": "苏格拉底模式 · 学新概念时用。不直接给答案,用引导性问题帮你自己推导,真正理解而不是死记",
+  "exam-prep-mode": "考试冲刺模式 · 考前用。模拟真实考试压力,计时答题,答错直接给标准答案和失分点分析",
+  "project-mode": "项目实战模式 · 想动手时用。每个概念配最小可运行任务,在做中学,做完要解释自己的代码",
+  "review-mode": "复习模式 · 日常巩固用。只出到期的复习题,巩固长期记忆,不引入新内容",
 };
 
 interface ChatComposerProps {
@@ -33,9 +49,6 @@ interface ChatComposerProps {
   onSend: (text: string) => void;
   onStop: () => void;
   onGotoSettings: () => void;
-  /** v0.3 字号调节 */
-  fontSize: "small" | "medium" | "large";
-  onFontBump: (dir: "up" | "down") => void;
   /** 外部注入文字(哪里不会点哪里:右栏选中→追加到输入框)。每次变化触发追加。 */
   insertText?: string;
 }
@@ -52,8 +65,6 @@ export function ChatComposer({
   onSend,
   onStop,
   onGotoSettings,
-  fontSize,
-  onFontBump,
   insertText,
 }: ChatComposerProps) {
   const [input, setInput] = useState("");
@@ -74,7 +85,7 @@ export function ChatComposer({
   if (!agentReady) {
     return (
       <div className="px-5 pb-4 shrink-0" data-testid="composer-nokey">
-        <div className="flex items-center justify-center gap-3 py-3 text-xs text-neutral-500">
+        <div className="flex items-center justify-center gap-3 py-3 text-body text-neutral-500">
           <span>{missingHint ?? "未配置 AI 模型"}</span>
           <button onClick={onGotoSettings} className="text-brand hover:underline font-bold">去配置 →</button>
         </div>
@@ -94,7 +105,7 @@ export function ChatComposer({
               onClick={() => !streaming && onSend(p.message)}
               disabled={streaming}
               data-testid={`starter-prompt-${i}`}
-              className="shrink-0 flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full text-neutral-400 hover:text-neutral-200 hover:bg-white/5 transition-colors disabled:opacity-30"
+              className="shrink-0 flex items-center gap-1 text-body px-2.5 py-1 rounded-full text-neutral-400 hover:text-neutral-200 hover:bg-white/5 transition-colors disabled:opacity-30"
               title={p.hint ?? p.label}
             >
               <span className="opacity-70">{p.icon}</span>
@@ -105,42 +116,37 @@ export function ChatComposer({
       )}
 
       {/* 输入区:一个圆角胶囊容器(claude.ai 风)。
-          内部布局:[模式选择 ... | textarea | 发送钮]。
-          模式 + 字号收进输入框上方一行极淡工具栏,textarea 撑满,发送钮内嵌右下。 */}
+          内部:模式药丸行 + textarea + 发送钮。
+          模式选择是输入框的一部分(决定"这段话用什么方式教"),不是独立工具栏。
+          字号控制已移到顶栏(全局字号,不只中栏)。 */}
       <div className="rounded-2xl bg-white/[0.05] focus-within:bg-white/[0.07] transition-colors px-3 pt-2 pb-1.5">
-        {/* 极淡工具栏:模式(左) + 字号(右) */}
-        <div className="flex items-center justify-between mb-1" data-testid="skill-picker">
-          {skills.length > 0 ? (
-            <select
-              value={activeSkill ?? ""}
-              onChange={(e) => onPickSkill(e.target.value)}
-              className="text-[10px] bg-transparent text-neutral-500 border-none focus:outline-none cursor-pointer hover:text-neutral-300 transition-colors"
-              data-testid="skill-select"
-            >
-              {skills.map((s) => (
-                <option key={s.id} value={s.name} className="bg-neutral-900 text-neutral-200">
-                  模式:{SKILL_LABELS[s.name] ?? s.name}
-                </option>
-              ))}
-            </select>
-          ) : <span />}
-          <div className="flex items-center gap-0.5" data-testid="font-size-control">
-            <button
-              onClick={() => onFontBump("down")}
-              disabled={fontSize === "small"}
-              data-testid="font-smaller"
-              className="text-[10px] w-5 h-5 rounded text-neutral-500 hover:text-neutral-300 hover:bg-white/5 disabled:opacity-20 transition-colors"
-              title="缩小字号"
-            >A-</button>
-            <button
-              onClick={() => onFontBump("up")}
-              disabled={fontSize === "large"}
-              data-testid="font-larger"
-              className="text-[12px] w-5 h-5 rounded text-neutral-500 hover:text-neutral-300 hover:bg-white/5 disabled:opacity-20 transition-colors"
-              title="放大字号"
-            >A+</button>
+        {/* 模式药丸:"模式:" 标签 + 四个药丸(图标+名字),hover 显示完整说明 */}
+        {skills.length > 0 && (
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin mb-1" data-testid="skill-picker">
+            <span className="text-body text-neutral-600 shrink-0">模式:</span>
+            {skills.map((s) => {
+              const isActive = activeSkill === s.name;
+              const Icon = SKILL_ICONS[s.name] ?? Compass;
+              const fullDesc = SKILL_FULL_DESC[s.name] ?? s.name;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => onPickSkill(s.name)}
+                  data-testid={`skill-pill-${s.name}`}
+                  data-tooltip={fullDesc}
+                  className={`shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-body font-medium transition-colors ${
+                    isActive
+                      ? "bg-brand/15 text-brand"
+                      : "text-neutral-500 hover:text-neutral-300 hover:bg-white/5"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{SKILL_LABELS[s.name] ?? s.name}</span>
+                </button>
+              );
+            })}
           </div>
-        </div>
+        )}
 
         {/* textarea + 发送钮:发送钮内嵌右下,圆形 */}
         <div className="flex gap-2 items-end">
@@ -157,8 +163,7 @@ export function ChatComposer({
             disabled={streaming || !nodeId}
             rows={2}
             data-testid="chat-input"
-            className="flex-1 bg-transparent text-neutral-100 text-sm rounded-lg px-1 py-1 resize-none focus:outline-none disabled:opacity-40 placeholder:text-neutral-600"
-            style={{ fontSize: "var(--chat-font-size, 15px)" }}
+            className="flex-1 bg-transparent text-neutral-100 text-body rounded-lg px-1 py-1 resize-none focus:outline-none disabled:opacity-40 placeholder:text-neutral-600"
           />
           {streaming ? (
             <button

@@ -39,10 +39,10 @@ export function QuizArtifact({
     return (
       <div className="surface-card p-4 text-center" data-testid="artifact-quiz-done">
         <div className="text-2xl mb-2">{score.correct === score.total ? "🎉" : "📚"}</div>
-        <div className="text-sm font-bold text-neutral-800 dark:text-neutral-200">
+        <div className="text-body font-bold text-neutral-800 dark:text-neutral-200">
           {score.correct}/{score.total} 答对
         </div>
-        <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">
+        <div className="text-label text-neutral-500 dark:text-neutral-400 mt-1">
           {score.correct === score.total ? "全部答对,掌握度已提议更新" : "再练一组巩固一下"}
         </div>
       </div>
@@ -70,17 +70,17 @@ export function QuizArtifact({
     <div className="surface-card p-4" data-testid="artifact-quiz">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="text-sm">📝</span>
-          <span className="text-[11px] font-bold text-brand">
+          <span className="text-body">📝</span>
+          <span className="text-label font-bold text-brand">
             第 {current + 1}/{d.questions.length} 题
           </span>
         </div>
-        <span className="text-[11px] text-neutral-400">
+        <span className="text-label text-neutral-400">
           已答对 {score.correct}
         </span>
       </div>
 
-      <div className="text-sm text-neutral-800 dark:text-neutral-200 font-medium mb-3 leading-relaxed">
+      <div className="text-body text-neutral-800 dark:text-neutral-200 font-medium mb-3 leading-relaxed">
         {q.prompt}
       </div>
 
@@ -95,7 +95,7 @@ export function QuizArtifact({
               onClick={() => !submitted && setSelected(idx)}
               disabled={submitted}
               data-testid={`quiz-option-${idx}`}
-              className={`w-full text-left text-sm p-2.5 rounded-lg border-2 font-medium transition-colors ${
+              className={`w-full text-left text-body p-2.5 rounded-lg border-2 font-medium transition-colors ${
                 isAnswer
                   ? "border-brand bg-brand/10 text-brand animate-answer-correct"
                   : isWrongSelected
@@ -116,7 +116,7 @@ export function QuizArtifact({
 
       {submitted && (
         <div
-            className={`rounded-lg p-3 mb-3 text-xs leading-relaxed animate-artifact-render ${
+            className={`rounded-lg p-3 mb-3 text-body leading-relaxed animate-artifact-render ${
               isCorrect
                 ? "bg-brand/10 border border-brand/30 text-brand"
                 : "bg-warning/10 border border-warning/30 text-warning"
@@ -133,7 +133,7 @@ export function QuizArtifact({
           onClick={handleSubmit}
           disabled={selected === null}
           data-testid="quiz-submit"
-          className="btn-3d-brand w-full py-2 text-xs disabled:opacity-40"
+          className="btn-3d-brand w-full py-2 text-body disabled:opacity-40"
         >
           提交答案
         </button>
@@ -141,14 +141,14 @@ export function QuizArtifact({
         <button
           onClick={handleNext}
           data-testid="quiz-next"
-          className="btn-3d-brand w-full py-2 text-xs"
+          className="btn-3d-brand w-full py-2 text-body"
         >
           {current + 1 < d.questions.length ? "下一题 →" : "完成练习"}
         </button>
       )}
 
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-[10px] text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
+        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
           ⚠️ {d.warnings.join("; ")}
         </div>
       )}

@@ -55,15 +55,15 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
   const sessionCount = Math.min(totalDue, MAX_SESSION);
 
   if (loading) {
-    return <div className="text-center py-12 text-sm text-neutral-500 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在检查哪些课该复习了…</div>;
+    return <div className="text-center py-12 text-body text-neutral-500 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在检查哪些课该复习了…</div>;
   }
 
   if (items.length === 0) {
     return (
       <div className="text-center py-16" data-testid="review-empty">
         <div className="text-4xl mb-3 opacity-30">📖</div>
-        <div className="text-sm text-neutral-500 dark:text-neutral-400">还没有复习项</div>
-        <div className="text-[11px] text-neutral-400 mt-1">完成一些练习后,这里会出现间隔复习提醒</div>
+        <div className="text-body text-neutral-500 dark:text-neutral-400">还没有复习项</div>
+        <div className="text-label text-neutral-400 mt-1">完成一些练习后,这里会出现间隔复习提醒</div>
       </div>
     );
   }
@@ -73,7 +73,7 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-extrabold text-neutral-900 dark:text-neutral-100">复习</h2>
         {totalDue > 0 && (
-          <span className="text-xs font-bold text-review" data-testid="review-due-count">
+          <span className="text-label font-bold text-review" data-testid="review-due-count">
             {totalDue} 个待复习
           </span>
         )}
@@ -84,7 +84,7 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
         <button
           onClick={() => groups.overdue[0] && onReviewNode(groups.overdue[0].nodeId)}
           data-testid="review-start"
-          className="btn-3d-brand w-full py-2.5 text-sm mb-5"
+          className="btn-3d-brand w-full py-2.5 text-body mb-5"
         >
           开始复习({sessionCount}/{MAX_SESSION}) →
         </button>
@@ -130,7 +130,7 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
         />
       </div>
 
-      <div className="mt-5 text-[11px] text-neutral-400 dark:text-neutral-600 leading-relaxed">
+      <div className="mt-5 text-label text-neutral-400 dark:text-neutral-600 leading-relaxed">
         💡 复习采用 SM-2 间隔重复算法。逾期项优先复习;长期记忆项间隔更长。
         单次复习封顶 {MAX_SESSION} 题,避免积压压垮节奏。
       </div>
@@ -165,14 +165,14 @@ function Quadrant({
   return (
     <div className={`rounded-xl border p-3 ${accentClass}`} data-testid={testid}>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300 flex items-center gap-1">
+        <span className="text-label font-bold text-neutral-700 dark:text-neutral-300 flex items-center gap-1">
           <span>{icon}</span>
           <span>{title}</span>
         </span>
-        <span className="text-xs font-extrabold text-neutral-500 dark:text-neutral-400 tabular-nums">{count}</span>
+        <span className="text-label font-extrabold text-neutral-500 dark:text-neutral-400 tabular-nums">{count}</span>
       </div>
       {count === 0 ? (
-        <div className="text-[11px] text-neutral-400 py-2 text-center">—</div>
+        <div className="text-label text-neutral-400 py-2 text-center">—</div>
       ) : (
         <ul className="space-y-1 max-h-32 overflow-y-auto">
           {nodes.slice(0, 8).map((node) => (
@@ -180,7 +180,7 @@ function Quadrant({
               <button
                 onClick={() => onItemClick(node.id)}
                 data-testid={`review-node-${node.id.slice(0, 8)}`}
-                className="w-full text-left text-[11px] px-2 py-1 rounded text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 hover:text-neutral-900 dark:hover:text-neutral-200 truncate transition-colors"
+                className="w-full text-left text-label px-2 py-1 rounded text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 hover:text-neutral-900 dark:hover:text-neutral-200 truncate transition-colors"
                 title={node.title}
               >
                 {node.title}
@@ -188,7 +188,7 @@ function Quadrant({
             </li>
           ))}
           {count > 8 && (
-            <li className="text-[10px] text-neutral-400 px-2">+{count - 8} 更多</li>
+            <li className="text-caption text-neutral-400 px-2">+{count - 8} 更多</li>
           )}
         </ul>
       )}
@@ -226,7 +226,7 @@ export function SelfRatingCard({
 
   if (done) {
     return (
-      <div className="text-center text-xs text-brand py-2" data-testid="self-rated">
+      <div className="text-center text-body text-brand py-2" data-testid="self-rated">
         ✓ 已记录,掌握度已更新
       </div>
     );
@@ -234,7 +234,7 @@ export function SelfRatingCard({
 
   return (
     <div className="border-t border-neutral-200 dark:border-neutral-800 pt-3 mt-3" data-testid="self-rating">
-      <div className="text-[10px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2 text-center">
+      <div className="text-caption font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2 text-center">
         复习完了吗?给自己打分
       </div>
       <div className="grid grid-cols-3 gap-2">
@@ -242,7 +242,7 @@ export function SelfRatingCard({
           onClick={() => rate(1)}
           disabled={busy}
           data-testid="rate-again"
-          className="text-[11px] py-2 rounded-lg border border-warning/40 text-warning hover:bg-warning/10 transition-colors disabled:opacity-40"
+          className="text-label py-2 rounded-lg border border-warning/40 text-warning hover:bg-warning/10 transition-colors disabled:opacity-40"
         >
           再来一次
         </button>
@@ -250,7 +250,7 @@ export function SelfRatingCard({
           onClick={() => rate(4)}
           disabled={busy}
           data-testid="rate-remembered"
-          className="text-[11px] py-2 rounded-lg border border-accent/40 text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
+          className="text-label py-2 rounded-lg border border-accent/40 text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
         >
           记住了
         </button>
@@ -258,7 +258,7 @@ export function SelfRatingCard({
           onClick={() => rate(5)}
           disabled={busy}
           data-testid="rate-mastered"
-          className="text-[11px] py-2 rounded-lg border border-brand/40 text-brand hover:bg-brand/10 transition-colors disabled:opacity-40"
+          className="text-label py-2 rounded-lg border border-brand/40 text-brand hover:bg-brand/10 transition-colors disabled:opacity-40"
         >
           完全掌握
         </button>

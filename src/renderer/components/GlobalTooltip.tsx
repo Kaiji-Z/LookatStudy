@@ -61,7 +61,7 @@ export function GlobalTooltip() {
         backdropFilter: "blur(8px)",
         WebkitBackdropFilter: "blur(8px)",
         color: "#fff",
-        fontSize: "11px",
+        fontSize: "0.875rem", // text-body,跟随全局 html font-size(useFontSize)
         fontWeight: 600,
         lineHeight: 1.4,
         padding: "4px 10px",

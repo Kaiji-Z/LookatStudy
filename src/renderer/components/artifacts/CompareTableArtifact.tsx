@@ -18,11 +18,11 @@ export function CompareTableArtifact({ data }: { data: unknown }) {
   return (
     <div className="surface-card p-4" data-testid="artifact-compare-table">
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm">📊</span>
-        <h3 className="text-sm font-bold text-neutral-800 dark:text-neutral-200">{d.title}</h3>
+        <span className="text-body">📊</span>
+        <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200">{d.title}</h3>
       </div>
       <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
-        <table className="w-full text-xs">
+        <table className="w-full text-body">
           <thead>
             <tr className="bg-neutral-100 dark:bg-neutral-900/60">
               {d.headers.map((h, i) => (
@@ -59,7 +59,7 @@ export function CompareTableArtifact({ data }: { data: unknown }) {
         </table>
       </div>
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-[10px] text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
+        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
           ⚠️ {d.warnings.join("; ")}
         </div>
       )}

@@ -345,6 +345,138 @@ function drawClouds(ctx: CanvasRenderingContext2D, p: number, clouds: Cloud[], W
 interface Drop { x: number; y: number; len: number; v: number; }
 interface Flake { x: number; y: number; r: number; v: number; phase: number; }
 
+/* 节点球天气装饰层(画在球上方的 canvas)。
+   球位置由 getOrbs() 每帧提供(相对 canvas 坐标,含 balloon-bob 动画位移)。 */
+export interface OrbPos { x: number; y: number; r: number; }
+
+/* 水流痕状态:每颗球独立的水流列表(雨球用)。key = 球 id(用 x,y 稳定时做 key 不可靠,
+   所以用 orb 索引在 getOrbs 返回顺序稳定时可行;这里用 数组索引 i 做 key)。 */
+interface OrbStreak {
+  theta: number;   // 球面经度(哪一侧)
+  prog: number;    // 沿球面往下的进度(0=顶, π=底)
+  speed: number;
+  len: number;
+  thick: number;
+  life: number;
+}
+const orbStreaks: OrbStreak[][] = []; // [球索引][] 每球的水流列表
+let orbStreakTimer: number[] = [];
+
+/* 雪堆状态:每颗球的积雪厚度(0..1),随雪花堆积增长。 */
+let orbCaps: number[] = [];
+
+/* ---- 雪 dome(参照 weather-orb):4 段贝塞尔画圆顶,凸出球顶 ---- */
+function drawSnowDome(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, cap: number, now: number) {
+  // cap 0..1 → 厚度 0.1..0.45r,加一点呼吸感
+  const capThick = r * (0.1 + cap * 0.32);
+  if (capThick < 1) return;
+  const peakY = cy - r - capThick * 0.35;
+  // dome 轮廓:从球左上 y-r*0.45 起,经 peak,到球右上 y-r*0.45,再回下边缘
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.92, cy - r * 0.42);
+  ctx.quadraticCurveTo(cx - r * 0.5, peakY, cx, peakY - capThick * 0.12);
+  ctx.quadraticCurveTo(cx + r * 0.5, peakY, cx + r * 0.92, cy - r * 0.42);
+  ctx.quadraticCurveTo(cx + r * 0.5, cy - r * 0.72, cx, cy - r * 0.78);
+  ctx.quadraticCurveTo(cx - r * 0.5, cy - r * 0.72, cx - r * 0.92, cy - r * 0.42);
+  ctx.closePath();
+  // 渐变:顶白到底偏蓝(立体)
+  const g = ctx.createLinearGradient(0, peakY - capThick, 0, cy - r * 0.4);
+  g.addColorStop(0, "rgba(255,255,255,0.98)");
+  g.addColorStop(1, "rgba(225,235,248,0.92)");
+  ctx.fillStyle = g;
+  ctx.fill();
+  // 底部投影(雪堆压在球面的暗影)
+  ctx.fillStyle = "rgba(180,200,225,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - r * 0.4, r * 0.7, capThick * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/* ---- 水流痕(参照 weather-orb drawWet):沿球面弧线往下淌 ---- */
+function surfPoint(cx: number, cy: number, r: number, a: number, th: number) {
+  // a=纬度进度(0=顶..π=底), th=经度(球面哪一侧)
+  const sa = Math.sin(a), ca = Math.cos(a);
+  return { x: cx + Math.sin(th) * sa * r, y: cy - ca * r };
+}
+function drawRainStreaks(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, streaks: OrbStreak[], now: number) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.99, 0, Math.PI * 2);
+  ctx.clip();
+  for (let i = streaks.length - 1; i >= 0; i--) {
+    const s = streaks[i]!;
+    s.prog += s.speed;
+    s.life--;
+    if (s.prog > Math.PI * 1.05 || s.life <= 0) { streaks.splice(i, 1); continue; }
+    // 画 7 段渐淡的弧线,贴合球面
+    const steps = 7;
+    for (let k = 0; k < steps; k++) {
+      const a1 = s.prog - s.len * (k / steps);
+      const a2 = s.prog - s.len * ((k + 1) / steps);
+      const p1 = surfPoint(cx, cy, r, a1, s.theta);
+      const p2 = surfPoint(cx, cy, r, a2, s.theta);
+      const alpha = (1 - k / steps) * 0.7;
+      ctx.strokeStyle = `rgba(215,238,255,${alpha})`;
+      ctx.lineWidth = s.thick * (1 - (k / steps) * 0.7);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+    // 头部 3D 水珠
+    const head = surfPoint(cx, cy, r, s.prog, s.theta);
+    const dg = ctx.createRadialGradient(head.x - 1, head.y - 1, 0, head.x, head.y, s.thick * 1.2);
+    dg.addColorStop(0, "rgba(240,250,255,0.95)");
+    dg.addColorStop(1, "rgba(160,195,230,0.6)");
+    ctx.fillStyle = dg;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, s.thick * 1.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* 在所有球上画天气装饰(雪 dome / 水流痕)。每帧调用。 */
+function drawOrbWeather(
+  ctx: CanvasRenderingContext2D,
+  orbs: OrbPos[],
+  preset: SkyPreset,
+  now: number,
+) {
+  // 扩容状态数组(球数可能变化)
+  while (orbStreaks.length < orbs.length) orbStreaks.push([]);
+  while (orbStreakTimer.length < orbs.length) orbStreakTimer.push(0);
+  while (orbCaps.length < orbs.length) orbCaps.push(0.3);
+
+  for (let i = 0; i < orbs.length; i++) {
+    const o = orbs[i]!;
+    if (preset.particles === "snow") {
+      // 雪堆:缓慢堆积(每帧 +0.0008),封顶 1
+      orbCaps[i] = Math.min(1, orbCaps[i]! + 0.0008);
+      drawSnowDome(ctx, o.x, o.y, o.r, orbCaps[i]!, now);
+    } else if (preset.particles === "rain") {
+      // 水流:定时生成新流(每球最多 3 条)
+      orbStreakTimer[i] = (orbStreakTimer[i]! - 1);
+      if (orbStreakTimer[i]! <= 0 && orbStreaks[i]!.length < 3) {
+        const side = Math.random() < 0.5 ? -1 : 1;
+        orbStreaks[i]!.push({
+          theta: side * (0.2 + Math.random() * 0.3),
+          prog: 0.1 + Math.random() * 0.2,
+          speed: 0.012 + Math.random() * 0.012,
+          len: 0.3 + Math.random() * 0.3,
+          thick: 1.6 + Math.random() * 1.4,
+          life: 250 + Math.random() * 200,
+        });
+        orbStreakTimer[i] = 40 + Math.random() * 60;
+      }
+      drawRainStreaks(ctx, o.x, o.y, o.r, orbStreaks[i]!, now);
+    }
+  }
+}
+
 function drawRain(ctx: CanvasRenderingContext2D, W: number, H: number, rain: Drop[]) {
   // 小雨:细线、淡色、慢速、短(毛毛雨感,不是暴雨)
   ctx.save();
@@ -506,5 +638,69 @@ export function attachSky(
     cancelAnimationFrame(rafId);
     ro.disconnect();
     scroll.removeEventListener("scroll", onScroll);
+  };
+}
+
+/* ---- 球天气装饰层 attach ----
+   独立 canvas(z-20,盖在球 DOM 之上),只画球上的雪 dome / 水流痕。
+   getOrbs() 每帧返回球相对 canvas 的坐标(含 balloon-bob 动画位移)。
+   与 attachSky 共享同一 rAF 节奏(这里单独起一个,因为画在不同 canvas)。 */
+export function attachOrbWeather(
+  canvas: HTMLCanvasElement,
+  sizeEl: HTMLElement,
+  preset: SkyPreset,
+  getOrbs: () => OrbPos[],
+): () => void {
+  // 切换 preset 时总是清空上一个天气的残留状态 + 清 canvas(修 bug:
+  // rain→clear 时旧水流痕残留;晴/多云早返回但不清状态导致画面卡住)
+  const resetState = () => {
+    orbStreaks.length = 0;
+    orbCaps.length = 0;
+    orbStreakTimer.length = 0;
+    const c = canvas.getContext("2d");
+    if (c) c.clearRect(0, 0, canvas.width, canvas.height);
+  };
+  resetState();
+
+  // 雪天/雨天之外不画(晴/多云:清完状态 + canvas 后早返回)
+  if (preset.particles !== "rain" && preset.particles !== "snow") return () => {};
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return () => {};
+
+  let W = 0, H = 0, DPR = 1;
+  let rafId = 0;
+  let running = true;
+
+  function resize() {
+    const rect = sizeEl.getBoundingClientRect();
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = Math.max(1, rect.width);
+    H = Math.max(1, rect.height);
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  function frame(now: number) {
+    if (!running) return;
+    ctx.clearRect(0, 0, W, H); // 透明 canvas,每帧清空重画
+    const orbs = getOrbs();
+    drawOrbWeather(ctx, orbs, preset, now);
+    rafId = requestAnimationFrame(frame);
+  }
+
+  const ro = new ResizeObserver(resize);
+  ro.observe(sizeEl);
+  resize();
+  rafId = requestAnimationFrame(frame);
+
+  return () => {
+    running = false;
+    cancelAnimationFrame(rafId);
+    ro.disconnect();
+    resetState();
   };
 }

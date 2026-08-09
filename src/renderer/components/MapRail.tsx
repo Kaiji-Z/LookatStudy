@@ -27,7 +27,7 @@ import {
   balloonSegmentToPath,
   hashStr,
 } from "../lib/mapLayout.js";
-import { attachSky, pickPreset, PRESETS, PRESET_KEYS, type SkyPreset } from "../lib/skyCanvas.js";
+import { attachSky, attachOrbWeather, pickPreset, PRESETS, PRESET_KEYS, type SkyPreset, type OrbPos } from "../lib/skyCanvas.js";
 
 export type MapView = "map" | "import";
 
@@ -142,11 +142,15 @@ function MapRailExpanded({
           sticky 到 nav 顶部,每帧按 map-path 的 scrollProgress 重绘整张天。
           preset 决定季节色板 + 天气粒子层;换课重抽 → 重 attach。 */}
       {view === "map" && skyPreset && (
-        <MapSkyCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} />
+        <>
+          <MapSkyCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} />
+          <MapOrbWeatherCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} />
+        </>
       )}
 
-      {/* 顶部:探险地图卷轴头部。透明背景让天空透出来,像地图上的题词栏 */}
-      <div className="map-header relative z-10 px-4 pt-3 pb-3 shrink-0">
+      {/* 顶部:悬浮卷轴头部(absolute,不占文档流)。球可以滚到 header 后面,
+          header 作为纯悬浮 UI 浮在内容之上,不再遮挡球体。 */}
+      <div className="map-header absolute top-0 left-0 right-0 z-30 px-4 pt-3 pb-3 pointer-events-none [&_button]:pointer-events-auto">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
             <button
@@ -233,7 +237,7 @@ function MapRailExpanded({
       {view === "map" ? (
         <div
           ref={mapPathRef}
-          className="map-path relative z-10 flex-1 overflow-y-auto px-2 pb-4 min-h-0"
+          className="map-path relative z-10 flex-1 overflow-y-auto px-2 pt-28 pb-4 min-h-0"
           data-testid="map-path"
         >
           {/* 内容层:气球节点 + 章节浮在天空之上(canvas 在 nav 层,这里透明)。
@@ -312,22 +316,58 @@ function MapSkyCanvas({
   navRef: React.RefObject<HTMLElement | null>;
   preset: SkyPreset;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const skyCanvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = skyCanvasRef.current;
     const scroll = scrollRef.current;
     const nav = navRef.current;
     if (!canvas || !scroll || !nav) return;
-    // canvas 尺寸跟 nav 走(整个左栏),滚动进度跟 map-path 走,preset 决定季节/天气
     const detach = attachSky(canvas, scroll, nav, preset);
     return detach;
   }, [scrollRef, navRef, preset]);
   return (
-    <canvas
-      ref={canvasRef}
-      className="map-sky-canvas"
-      aria-hidden="true"
-    />
+    <canvas ref={skyCanvasRef} className="map-sky-canvas" aria-hidden="true" />
+  );
+}
+
+/* ---------- 球天气装饰层(canvas,nav 子元素,z-20 盖在球 DOM 上)----------
+   与天空 canvas 同层(nav 的 absolute 子元素),但 z-20。
+   getOrbs 坐标相对 nav;球滚入 header 区域时不画(防天气效果穿透 header)。 */
+function MapOrbWeatherCanvas({
+  scrollRef,
+  navRef,
+  preset,
+}: {
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  navRef: React.RefObject<HTMLElement | null>;
+  preset: SkyPreset;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const nav = navRef.current;
+    const scroll = scrollRef.current;
+    if (!canvas || !nav || !scroll) return;
+    const getOrbs = (): OrbPos[] => {
+      const navRect = nav.getBoundingClientRect();
+      const btns = scroll.querySelectorAll<HTMLButtonElement>(".lesson-bubble");
+      const out: OrbPos[] = [];
+      btns.forEach((b) => {
+        const r = b.getBoundingClientRect();
+        if (r.bottom < navRect.top || r.top > navRect.bottom) return; // 视口外跳过
+        out.push({
+          x: r.left - navRect.left + r.width / 2,
+          y: r.top - navRect.top + r.height / 2,
+          r: r.width / 2,
+        });
+      });
+      return out;
+    };
+    const detach = attachOrbWeather(canvas, nav, preset, getOrbs);
+    return detach;
+  }, [scrollRef, navRef, preset]);
+  return (
+    <canvas ref={canvasRef} className="map-orb-weather-canvas" aria-hidden="true" />
   );
 }
 

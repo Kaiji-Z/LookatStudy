@@ -335,73 +335,17 @@
 }
 
 /* ============================================================
- * v0.6 节点球环境光:随季节/天气染色(不动状态色本身)
- * 球的状态色(绿/蓝/金/灰/紫)是游戏语言,相对关系绝对不改。
- * 季节用 CSS filter(整球 hue-rotate + saturate):夏天明媚高饱和、冬天低饱和冷调。
- * 天气用 ::after 实体叠加:
- *   雪 = 蓬松积雪堆(白色不规则边缘 + blur 软边 + inset 立体感,有厚度)
- *   雨 = 湿润球面(backdrop-filter 扭曲下方颜色 + 几颗 3D 水珠高光)
- * 参考技法:radial-gradient 偏心高光做 3D 水珠、backdrop-filter 做湿玻璃、
- *   filter blur 做蓬松边缘。
- * env-{season}/env-{weather} 类挂在 .map-sky-content(skyPreset 驱动)。 */
+ * v0.6 节点球季节滤镜(整球色温调,不动状态色本身)
+ * 状态色(绿/蓝/金/灰/紫)是游戏语言,filter 整球作用但保持相对差异。
+ * 天气效果(雪 dome / 水流痕)改由 canvas 画在球上方(attachOrbWeather),
+ *   CSS 不再做 ::after 天气形状(canvas 能做球面弧线流淌 + dome 凸出,CSS 做不到)。
+ * env-{season} 类挂在 .map-sky-content(skyPreset 驱动)。 */
 
-/* 季节滤镜:整球色温调(夏天明媚高饱和,冬天低饱和冷调) */
+/* 季节滤镜:夏天明媚高饱和,冬天低饱和冷调 */
 .env-spring .lesson-bubble  { filter: hue-rotate(-12deg) saturate(1.15) brightness(1.02); }
 .env-summer .lesson-bubble  { filter: saturate(1.4) brightness(1.08) contrast(1.05); }
 .env-autumn .lesson-bubble  { filter: hue-rotate(-22deg) saturate(1.1) brightness(0.97); }
 .env-winter .lesson-bubble  { filter: saturate(0.5) brightness(1.05) hue-rotate(8deg); }
-
-/* 天气叠加层基类 */
-.lesson-bubble::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  pointer-events: none;
-  z-index: 3;
-}
-
-/* 雪:只盖在上半球。::after 缩成顶部 ~55% 高的层(inset 只改 top/height),
-   下半球完全不受影响 → feDisplacementMap 只扭曲这一层的下边缘(雪堆边缘),
-   球底保持干净。 */
-.env-snow .lesson-bubble::after {
-  /* 向上增厚:top 负值让雪层凸出球顶上方 */
-  top: -5%;
-  right: 0;
-  left: 0;
-  height: 48%;
-  border-radius: 9999px 9999px 0 0;
-  background:
-    linear-gradient(to bottom, rgb(255 255 255 / 0.98) 0%, rgb(255 255 255 / 0.95) 70%, rgb(255 255 255 / 0.55) 88%, rgb(255 255 255 / 0) 100%);
-  filter: url(#snow-edge);
-  box-shadow:
-    inset 0 3px 6px rgb(210 225 250 / 0.7),
-    inset 0 -2px 3px rgb(150 175 220 / 0.45);
-}
-
-/* 雨/雷暴:湿润球面 + 3D 水珠。
-   backdrop-filter 让下方球体颜色轻微扭曲(湿玻璃感);
-   几颗 radial-gradient 水珠(偏心高光 + 暗边)挂在球面,像真实水珠附着。 */
-.env-rain .lesson-bubble::after,
-.env-storm .lesson-bubble::after {
-  background:
-    /* 顶部水膜:亮的湿润反光带 */
-    linear-gradient(to bottom, rgb(200 225 255 / 0.4) 0%, rgb(200 225 255 / 0.1) 15%, transparent 25%),
-    /* 水珠1:左上,3D 球面(左上亮高光 + 右下暗边) */
-    radial-gradient(circle at 28% 30%, rgb(255 255 255 / 0.85) 0%, rgb(220 235 255 / 0.4) 8%, transparent 14%),
-    /* 水珠2:中下 */
-    radial-gradient(circle at 52% 65%, rgb(255 255 255 / 0.7) 0%, rgb(210 228 255 / 0.3) 7%, transparent 12%),
-    /* 水珠3:右 */
-    radial-gradient(circle at 72% 42%, rgb(255 255 255 / 0.75) 0%, rgb(215 232 255 / 0.35) 7%, transparent 13%),
-    /* 水珠4:小颗,左下 */
-    radial-gradient(circle at 35% 72%, rgb(255 255 255 / 0.6) 0%, transparent 8%);
-  backdrop-filter: blur(1.2px) saturate(1.15) brightness(1.04);
-  -webkit-backdrop-filter: blur(1.2px) saturate(1.15) brightness(1.04);
-  /* 水珠的暗边折射(底部内侧暗影,让水珠有立体感) */
-  box-shadow:
-    inset 0 2px 3px rgb(150 185 230 / 0.3),
-    inset 0 -1px 2px rgb(90 130 180 / 0.25);
-}
 
 /* Card surface */
 .surface-card {
@@ -459,6 +403,17 @@
   z-index: 0;
   display: block;
 }
+/* 球天气装饰层:nav 的 absolute 子元素(z-20),盖在球 DOM 之上,画雪 dome / 水流痕。
+   getOrbs 跳过 header 区域的球,防天气穿透 header。透明,pointer-events none。 */
+.map-orb-weather-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 20;
+  display: block;
+}
 /* map-path 透明,让 nav 层 canvas 透出来 */
 .map-path {
   background: transparent;
@@ -468,19 +423,41 @@
   z-index: 1;
 }
 
-/* 顶部卷轴头部:透明背景,天空由 nav 层 canvas 直接提供。
-   底部细渐变把头部内容柔和过渡到下方,文字靠 drop-shadow 保可读性。 */
+/* 顶部悬浮卷轴头部:absolute 浮在内容之上(z-30,高于天气 canvas z-20)。
+   球可以滚到 header 后面,header 作为纯悬浮 UI 不占文档流、不遮挡球体。
+   pointer-events:none(容器)但按钮 + 标题 pointer-events:auto(可点 + 可 hover)。
+   底色:半透明黑 + 模糊,保文字在任意天空背景下可读。 */
 .map-header {
-  position: relative;
-  z-index: 10;
-  background: linear-gradient(to bottom, rgb(0 0 0 / 0.28) 0%, rgb(0 0 0 / 0.08) 75%, transparent 100%);
+  z-index: 30;
+  background: linear-gradient(to bottom,
+    rgb(8 10 20 / 0.66) 0%,
+    rgb(8 10 20 / 0.5) 40%,
+    rgb(8 10 20 / 0.28) 65%,
+    rgb(8 10 20 / 0.12) 82%,
+    rgb(8 10 20 / 0.04) 92%,
+    transparent 100%);
+}
+/* 毛玻璃用 ::before 单独画,套渐变 mask 让 blur 本身从上到下渐弱消失。
+   关键:backdrop-filter 对整个元素矩形统一 blur,边缘硬切;
+   用 mask 渐变才能让 blur 跟背景色一起平滑过渡,无硬边。 */
+.map-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  /* mask:顶部全显,到进度条下方边缘处淡出(75% 开始过渡,100% 全透)*/
+  -webkit-mask: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
+  mask: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
 }
 
 /* 课程标题:默认单行省略;hover 时用 absolute 浮层展开全文(不挤下方元素)。
-   关键:hover 展开层 position:absolute → 脱离文档流,不推挤下方进度条。 */
+   pointer-events:auto(header 容器是 none,标题要单独开才能 hover)。 */
 .map-title {
   position: relative;
   cursor: default;
+  pointer-events: auto;
 }
 .map-title__text {
   display: block;

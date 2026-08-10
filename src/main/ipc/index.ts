@@ -106,6 +106,14 @@ import {
 // 本地文件夹导入(通用扫描器)
 import { scanFolder } from "../services/pure/local-folder-scanner.js";
 import { importLocalFolder } from "../services/local-import-service.js";
+// Feature flags
+import { isFlagOn } from "../services/flags.js";
+// 多模态资源服务(node_assets)
+import {
+  listAssetsByNode,
+  listAssetsByCourse,
+  getAssetDataUrl,
+} from "../services/asset-service.js";
 // 课程结构化服务（LLM）
 import {
   analyzeCourseStructure,
@@ -276,6 +284,58 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
         });
         markDirty();
 
+        // v0.8 多模态:flag on 时从 CDN 下载课程里的图片
+        if (isFlagOn("multimodal_import")) {
+          try {
+            send("正在收集课程图片(CDN)…");
+            const { fetchRepoImages } = await import("../services/pure/repo-fetcher.js");
+            const { writeBufferToAssets, persistAssetRecord } = await import("../services/asset-service.js");
+            const downloaded = await fetchRepoImages(
+              fetchResult.ok, owner, cleanRepo, readmeBranch, fetch,
+              (done, total, path) => {
+                if (done % 10 === 0) send(`下载图片 ${done}/${total}…`);
+                void path;
+              },
+            );
+            if (downloaded.length > 0) {
+              // 把下载的图片关联到 content node(用 docPath 匹配 lesson title)
+              const nodes = getDb().select().from(contentNodes).where(eq(contentNodes.courseId, result.courseId)).all();
+              const lessons = nodes.filter((n) => n.type === "lesson");
+              let imgCount = 0;
+              for (let idx = 0; idx < downloaded.length; idx++) {
+                const img = downloaded[idx];
+                // 找 docPath 匹配的 lesson(用 FetchedFile.title 匹配 lesson.title)
+                const docFile = fetchResult.ok.find((f) => f.path === img.docPath);
+                const lesson = docFile
+                  ? lessons.find((l) => l.title === docFile.title || l.title.includes(docFile.title))
+                  : null;
+                const nodeId = lesson?.id ?? lessons[0]?.id;
+                if (!nodeId) continue;
+                const destName = `${String(idx).padStart(3, "0")}-${img.repoPath.split("/").pop()}`;
+                try {
+                  writeBufferToAssets(img.buffer, result.courseId, destName);
+                  persistAssetRecord(getDb(), {
+                    nodeId,
+                    courseId: result.courseId,
+                    filename: destName,
+                    mimeType: img.mimeType,
+                    sourcePath: img.repoPath,
+                    sourceKind: "markdown_ref",
+                    altText: img.altText,
+                  });
+                  imgCount++;
+                } catch {
+                  /* 单张图失败跳过 */
+                }
+              }
+              markDirty();
+              send(`图片收集完成:${imgCount} 张`);
+            }
+          } catch (e) {
+            send(`图片收集跳过(${e instanceof Error ? e.message : "出错"})`);
+          }
+        }
+
         if (fetchResult.failed.length > 0) {
           send(`完成（${fetchResult.failed.length} 个文件拉取失败已跳过）`);
         } else {
@@ -331,6 +391,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   );
 
   // 导入本地文件夹(通用扫描器:递归扫 .txt/.md/.html/.pdf → 落库 → 自动结构化)
+  // 多模态 flag on 时:同时收集图片(.png/.jpg 等)+ PDF 图片提取
   ipcMain.handle("import:localFolder", async (): Promise<Course | null> => {
     const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
     // 1. Electron 文件选择对话框(选文件夹)
@@ -342,20 +403,29 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     const folderPath = result.filePaths[0];
     const folderName = folderPath.split(/[\\/]/).pop() ?? "local-course";
 
-    // 2. 扫描(递归读 txt/md/html/pdf,中文优先去重)
+    // 2. 扫描(递归读 txt/md/html/pdf,中文优先去重;flag on 时同时收图)
     send("正在扫描文件夹…");
-    const docs = await scanFolder(folderPath, (n) => {
+    const collectImages = isFlagOn("multimodal_import");
+    const scanResult = await scanFolder(folderPath, (n) => {
       if (n % 20 === 0) send(`已扫描 ${n} 个文件…`);
-    });
+    }, collectImages ? { collectImages: true } : undefined);
+
+    // scanFolder 返回类型:不收图 → ScannedDoc[];收图 → { docs, images }
+    const docs = Array.isArray(scanResult) ? scanResult : scanResult.docs;
+    const images = Array.isArray(scanResult) ? [] : scanResult.images;
+
     if (docs.length === 0) {
       throw new Error("文件夹里没有找到可识别的文本内容(.txt/.md/.html/.pdf)");
     }
-    send(`扫描完成:${docs.length} 个文档,正在构建课程…`);
+    send(`扫描完成:${docs.length} 个文档${images.length > 0 ? ` + ${images.length} 张图片` : ""},正在构建课程…`);
 
     // 3. 落库(按目录分组 → ParsedCourse → generateCourseFromRepoFiles)
-    const result2 = importLocalFolder(getDb(), docs, folderName);
+    const result2 = importLocalFolder(getDb(), docs, folderName, {
+      images: images.length > 0 ? images : undefined,
+      onProgress: (msg) => send(msg),
+    });
     markDirty();
-    send(`导入完成:${result2.sectionCount} 章 / ${result2.lessonCount} 课`);
+    send(`导入完成:${result2.sectionCount} 章 / ${result2.lessonCount} 课${result2.assetCount > 0 ? ` / ${result2.assetCount} 张图` : ""}`);
 
     // 4. 自动 AI 结构化(有 key 时)
     await autoStructureCourse(result2.courseId, send).catch((e) => {
@@ -467,6 +537,20 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   // Starter prompts: 给学习者提供开始引导按钮
   ipcMain.handle("course:getStarterPrompts", async (_e, nodeId: string) => {
     return getStarterPrompts(getDb(), nodeId);
+  });
+
+  /* ---------- 多模态资源(node_assets)---------- */
+
+  ipcMain.handle("asset:listByNode", async (_e, nodeId: string) => {
+    return listAssetsByNode(getDb(), nodeId);
+  });
+
+  ipcMain.handle("asset:listByCourse", async (_e, courseId: string) => {
+    return listAssetsByCourse(getDb(), courseId);
+  });
+
+  ipcMain.handle("asset:getDataUrl", async (_e, assetId: string): Promise<string | null> => {
+    return getAssetDataUrl(getDb(), assetId);
   });
 }
 

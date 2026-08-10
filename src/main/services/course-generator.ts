@@ -29,6 +29,13 @@ export interface GeneratedCourse {
   sectionCount: number;
   lessonCount: number;
   examCount: number;
+  /**
+   * v0.8 多模态:源文件路径 → lesson nodeId 映射。
+   * 用于导入后把图片关联到正确的 content node。
+   * key = 源文件的相对路径(如 "lessons/1/README.md"),value = 该文件生成的 lesson 节点 id。
+   * 一个文件可能生成多个 lesson(H2/H3 拆分),取第一个。
+   */
+  pathToNodeId?: Map<string, string>;
 }
 
 /**

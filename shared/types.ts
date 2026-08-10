@@ -138,6 +138,8 @@ export interface ProviderModelInfo {
   id: string;
   label: string;
   contextWindow: number | null;
+  /** 模型能力:chat / tools / reasoning / vision(用于 vision 覆盖选择器显示 ✅) */
+  capabilities?: string[];
 }
 
 export interface ProviderPresetInfo {
@@ -209,6 +211,30 @@ export interface Exercise {
   createdAt: string;
 }
 
+/** 多模态资源:导入课程时收集的图片/PDF 页面渲染图元数据 */
+export type AssetSourceKind = "image_file" | "markdown_ref" | "pdf_page";
+
+export interface NodeAsset {
+  id: string;
+  nodeId: string;
+  courseId: string;
+  /** assets 目录下的文件名(如 lesson1-fig01.png) */
+  filename: string;
+  /** image/png / image/jpeg / image/svg+xml 等 */
+  mimeType: string;
+  /** 源文件里的原始相对路径(如 lessons/1/img.png) */
+  sourcePath: string | null;
+  sourceKind: AssetSourceKind;
+  /** 像素宽(可空) */
+  width: number | null;
+  /** 像素高(可空) */
+  height: number | null;
+  /** PDF 来源页码(可空,1-based) */
+  pageNumber: number | null;
+  /** ![](x) 的 alt 或文件名推断描述 */
+  altText: string | null;
+}
+
 /* ---------- IPC 通道协议 ---------- */
 
 /**
@@ -244,6 +270,14 @@ export interface ApiExpose {
   getNodeContent(nodeId: string): Promise<string | null>;
   /** 取节点摘要(导入时生成,空会话时中栏显示) */
   getNodeSummary(nodeId: string): Promise<string | null>;
+
+  /* 多模态资源(node_assets) */
+  /** 列某节点的全部图片资源(元数据,不含二进制) */
+  listAssetsByNode(nodeId: string): Promise<NodeAsset[]>;
+  /** 列某课程的全部图片资源(集中插图区展示用) */
+  listAssetsByCourse(courseId: string): Promise<NodeAsset[]>;
+  /** 读某资源的 data-url(base64,给 <img> src 用)。不存在返回 null */
+  getAssetDataUrl(assetId: string): Promise<string | null>;
 
   /* 进度 */
   getProgress(nodeId: string): Promise<Progress | null>;
@@ -505,7 +539,12 @@ export type SettingKey =
   | "active_provider"
   | "active_model"
   | "daily_goal_xp"
-  | "user_level";
+  | "user_level"
+  // 多模态:feature flag(存 settings 表,key 形如 flag_xxx)
+  | "flag_multimodal_import"
+  // 多模态:可选的 vision 模型覆盖(不配则复用主模型)
+  | "vision_provider_override"
+  | "vision_model_override";
 
 /* ---------- IPC 事件（main → renderer，单向推送） ---------- */
 

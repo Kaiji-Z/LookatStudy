@@ -284,7 +284,7 @@ function ContentTab({
           ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
         </div>
       ) : content ? (
-        <div ref={proseRef} className="prose prose-sm dark:prose-invert max-w-[80ch] text-neutral-700 dark:text-neutral-300 leading-relaxed select-text">
+        <div ref={proseRef} className="prose prose-sm max-w-[80ch] leading-relaxed select-text">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{

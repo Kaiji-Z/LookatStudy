@@ -16,7 +16,10 @@ import type { Mermaid } from "mermaid";
 
 let mermaidPromise: Promise<Mermaid> | null = null;
 
-/** 动态加载 mermaid(只加载一次,后续复用)。 */
+/**
+ * 动态加载 mermaid(只加载一次,后续复用)。
+ * 主题切换时 invalidate(见下方 theme-changed 监听)——下次调用重新 initialize。
+ */
 export function loadMermaid(): Promise<Mermaid> {
   if (!mermaidPromise) {
     mermaidPromise = import("mermaid").then((mod) => {
@@ -33,6 +36,17 @@ export function loadMermaid(): Promise<Mermaid> {
     });
   }
   return mermaidPromise;
+}
+
+/**
+ * 主题切换时 invalidate mermaid 缓存。
+ * useTheme 派发 'theme-changed' 事件 → 这里清 mermaidPromise → 下次 loadMermaid 重新
+ * initialize(用新主题)。已渲染的 SVG 不会自动变色,需要组件层重渲(通过 key 变化触发)。
+ */
+if (typeof window !== "undefined") {
+  window.addEventListener("theme-changed", () => {
+    mermaidPromise = null;
+  });
 }
 
 /**

@@ -118,17 +118,109 @@
   /* ease-out-quart:通用状态过渡(hover/focus),比默认 ease 更利落 */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 
-  /* —— 滚动叙事天空(6 阶段,深色优先)——
-     左栏地图背景,随滚动进度在黎明→朝阳→白昼→晚霞→日落→星空之间连续插值。
-     全部压在 L 0.13-0.34 深色区间:天空是氛围层,气球(高饱和 brand/accent/gold)
-     永远更亮 → 主视觉永远在气球,不靠主观调。 */
-  --sky-dawn:    oklch(0.28 0.08 25);   /* 黎明:深暖橙,低亮度 */
-  --sky-sunrise: oklch(0.34 0.12 50);   /* 朝阳:暖金橙 */
-  --sky-day:     oklch(0.30 0.09 240);  /* 白昼:深青蓝(夜化处理,保持深色基调) */
-  --sky-dusk:    oklch(0.32 0.12 350);  /* 晚霞:紫红 */
-  --sky-sunset:  oklch(0.26 0.14 20);   /* 日落:深红橙 */
-  --sky-night:   oklch(0.13 0.03 270);  /* 星空:近黑靛 */
-  --star:        oklch(0.96 0.02 240);  /* 星点:暖白 */
+  /* 天空 canvas 配色不在这里——skyCanvas.ts 用自己的硬编码 RGB keyframe。
+     曾有 --sky-* 变量但 canvas 不读它们(死代码),已删除。浅色天空在批次2 实现。 */
+}
+
+/* ============================================================
+ * 浅色模式(v0.7)—— html.light 覆盖块
+ * useTheme hook 在 <html> 上加/移 .light/.dark class。本块只覆盖会变的:
+ *   中性层(surface/ink/border/shadow/inner-highlight)+ 语义色降 L(白底对比度)
+ * 语义色 hue 不变,只降 L(brand 0.748→0.55 让白底对比度 2.2:1→4.5:1 过 AA)。
+ * 最佳实践来源:Material 3 surface tone 98 / shadcn / Radix / WCAG AA。
+ * 背景 oklch(0.98 0 0)= #fafafa 非纯白(避免刺眼);reading area surface-2 纯白最大化对比。
+ * ============================================================ */
+html.light {
+  /* —— neutral surface ramp(浅色:reading area 最亮,左栏略沉)—— */
+  --surface-rail: oklch(0.96 0.003 270);
+  --surface-rail-rgb: 241 242 244;
+  --surface-0:    oklch(1 0 0);            /* 纯白:modal/drawer */
+  --surface-0-rgb: 255 255 255;
+  --surface-1:    oklch(0.98 0 0);         /* 中栏 chat:#fafafa */
+  --surface-1-rgb: 248 248 248;
+  --surface-2:    oklch(1 0 0);            /* 右栏 reading area:纯白 */
+  --surface-2-rgb: 255 255 255;
+  --surface-3:    oklch(0.94 0.003 270);   /* hover/elevated */
+  --surface-3-rgb: 234 235 237;
+
+  /* —— ink 文字(非纯黑 #000,避免光晕;用 #171717 ~18:1 AAA)—— */
+  --ink:          oklch(0.21 0 0);
+  --ink-rgb: 24 24 24;
+  --ink-strong:   oklch(0.145 0 0);
+  --ink-strong-rgb: 10 10 10;
+  --ink-muted:    oklch(0.45 0 0);         /* 次文字 ~5:1 AA */
+  --ink-muted-rgb: 85 85 85;
+  --ink-faint:    oklch(0.55 0 0);         /* 弱文字 ~4.7:1 AA(shadcn muted-foreground 共识) */
+  --ink-faint-rgb: 113 113 113;
+
+  /* —— border(浅色:shadcn 0.92 共识)—— */
+  --border:       oklch(0.92 0 0);
+  --border-rgb: 228 228 228;
+  --border-faint: oklch(0.95 0 0);
+  --border-faint-rgb: 238 238 238;
+
+  /* —— 球体内高光(浅底减弱:0.55→0.3,白底上不需要那么强)—— */
+  --inner-highlight: rgb(255 255 255 / 0.3);
+
+  /* —— brand 绿(降 L:0.748→0.55,白底 4.55:1 过 AA)—— */
+  --brand: oklch(0.55 0.16 137.6);
+  --brand-rgb: 60 134 19;
+  --brand-dark: oklch(0.45 0.15 137.6);
+  --brand-dark-rgb: 34 103 0;
+  --brand-light: oklch(0.62 0.15 137.6);
+  --brand-light-rgb: 85 154 56;
+  --brand-glow: oklch(0.55 0.16 137.6 / 0.25);
+  --brand-ring: oklch(0.55 0.16 137.6 / 0.18);
+
+  /* —— accent 蓝(降 L:0.718→0.50,白底 5.56:1 过 AA)—— */
+  --accent: oklch(0.50 0.16 237.1);
+  --accent-rgb: 0 108 177;
+  --accent-dark: oklch(0.42 0.15 245.4);
+  --accent-dark-rgb: 0 79 152;
+  --accent-light: oklch(0.58 0.14 237);
+  --accent-light-rgb: 0 132 194;
+  --accent-glow: oklch(0.50 0.16 237.1 / 0.22);
+  --accent-ring: oklch(0.50 0.16 237.1 / 0.18);
+
+  /* —— gold 黄(降 L:0.857→0.65,白底 3.25:1 AA-large;文字用 gold-dark 4.94:1)—— */
+  --gold: oklch(0.65 0.15 88.5);
+  --gold-rgb: 180 136 0;
+  --gold-dark: oklch(0.55 0.14 80);
+  --gold-dark-rgb: 155 101 0;
+  --gold-light: oklch(0.72 0.14 90);
+  --gold-light-rgb: 199 160 30;
+  --gold-glow: oklch(0.65 0.15 88.5 / 0.3);
+  --gold-ring: oklch(0.65 0.15 88.5 / 0.2);
+
+  /* —— warning 红(降 L:0.671→0.50,白底 6.64:1 过 AA)—— */
+  --warning: oklch(0.50 0.20 25.2);
+  --warning-rgb: 187 7 30;
+  --warning-dark: oklch(0.42 0.20 25);
+  --warning-dark-rgb: 158 0 0;
+  --warning-light: oklch(0.56 0.18 25);
+  --warning-light-rgb: 200 57 58;
+  --warning-glow: oklch(0.50 0.20 25.2 / 0.22);
+  --warning-ring: oklch(0.50 0.20 25.2 / 0.18);
+  --warning-tint: oklch(0.50 0.20 25.2 / 0.08);
+  --warning-tint-border: oklch(0.50 0.20 25.2 / 0.22);
+
+  /* —— review 橙(降 L:0.7→0.55,白底 5.20:1 过 AA)—— */
+  --review: oklch(0.55 0.17 45);
+  --review-rgb: 189 70 0;
+  --review-glow: oklch(0.55 0.17 45 / 0.12);
+  --review-tint: oklch(0.55 0.17 45 / 0.08);
+
+  /* —— exam 紫(降 L:0.627→0.50,白底 6.66:1 过 AA)—— */
+  --exam: oklch(0.50 0.20 303.9);
+  --exam-rgb: 125 55 189;
+  --exam-dark: oklch(0.42 0.20 301.9);
+  --exam-dark-rgb: 100 26 165;
+  --exam-light: oklch(0.58 0.15 305.5);
+  --exam-light-rgb: 144 95 192;
+  --exam-locked: oklch(0.55 0.04 300);
+  --exam-locked-rgb: 117 109 134;
+  --exam-glow: oklch(0.50 0.20 303.9 / 0.25);
+  --exam-ring: oklch(0.50 0.20 303.9 / 0.18);
 }
 
 @layer base {
@@ -216,11 +308,12 @@
   /* v0.6: btn-3d-blue 已移除(词汇收敛:全应用主操作统一 btn-3d-brand)。
      若需 accent 色按钮,用语义化的 .btn-3d-accent 并明确使用场景,不再混用。 */
   .btn-3d-neutral {
-    @apply btn-3d bg-neutral-700 text-white;
-    box-shadow: 0 4px 0 0 var(--surface-3);
+    /* paired: 浅色=neutral-200+深字, 深色=neutral-700+白字 */
+    @apply btn-3d bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-white;
+    box-shadow: 0 4px 0 0 rgb(var(--shadow-rgb) / 0.2);
   }
   .btn-3d-neutral:active {
-    box-shadow: 0 1px 0 0 var(--surface-3);
+    box-shadow: 0 1px 0 0 rgb(var(--shadow-rgb) / 0.2);
   }
 }
 
@@ -490,11 +583,11 @@
 .map-header {
   z-index: 30;
   background: linear-gradient(to bottom,
-    rgb(8 10 20 / 0.66) 0%,
-    rgb(8 10 20 / 0.5) 40%,
-    rgb(8 10 20 / 0.28) 65%,
-    rgb(8 10 20 / 0.12) 82%,
-    rgb(8 10 20 / 0.04) 92%,
+    rgb(var(--surface-rail-rgb) / 0.66) 0%,
+    rgb(var(--surface-rail-rgb) / 0.5) 40%,
+    rgb(var(--surface-rail-rgb) / 0.28) 65%,
+    rgb(var(--surface-rail-rgb) / 0.12) 82%,
+    rgb(var(--surface-rail-rgb) / 0.04) 92%,
     transparent 100%);
 }
 /* 毛玻璃用 ::before 单独画,套渐变 mask 让 blur 本身从上到下渐弱消失。
@@ -542,13 +635,13 @@
 }
 
 .map-signpost {
-  background: rgb(20 16 28 / 0.55);
+  background: rgb(var(--surface-rail-rgb) / 0.55);
   backdrop-filter: blur(7px);
   -webkit-backdrop-filter: blur(7px);
-  border: 1px solid rgb(255 200 0 / 0.18);
-  border-top-color: rgb(255 200 0 / 0.35);
+  border: 1px solid rgb(var(--gold-rgb) / 0.18);
+  border-top-color: rgb(var(--gold-rgb) / 0.35);
   box-shadow:
-    0 2px 8px rgb(0 0 0 / 0.35),
+    0 2px 8px rgb(var(--shadow-rgb) / 0.35),
     inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
 /* 气球节点漂浮:轻微上下浮动,每节点不同相位/周期(用 --bob-delay/--bob-duration 错峰) */
@@ -592,6 +685,13 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(82 82 91);
   background-clip: padding-box;
+}
+/* 浅色模式 scrollbar(浅底上用深灰 thumb) */
+html.light ::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 0.18);
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: rgb(0 0 0 / 0.28);
 }
 
 /* Reduced motion */

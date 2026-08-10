@@ -15,6 +15,7 @@ import { useEffect, useState, useCallback } from "react";
 import { api } from "../lib/api.js";
 import type { ProviderPresetInfo, CustomProvider } from "@shared/types";
 import { ConfirmCard } from "./ConfirmCard.js";
+import { useTheme, type ThemeMode } from "../lib/useTheme.js";
 
 export function SettingsView() {
   const [presets, setPresets] = useState<ProviderPresetInfo[]>([]);
@@ -45,6 +46,8 @@ export function SettingsView() {
   });
   // 删除自定义 provider 的内联确认(v0.6:替代 native confirm())
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; label: string; rect: DOMRect } | null>(null);
+  // 主题切换(v0.7 浅色模式)
+  const theme = useTheme();
 
   const handleDiscoverModels = async () => {
     setDiscovering(true);
@@ -566,6 +569,34 @@ export function SettingsView() {
             </button>
           ))}
         </div>
+      </section>
+
+      {/* 主题切换(v0.7 浅色模式):三态 auto/light/dark */}
+      <section className="surface-card p-4">
+        <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-3">外观 / Theme</h3>
+        <div className="flex gap-2">
+          {([
+            { mode: "auto" as ThemeMode, label: "跟随系统" },
+            { mode: "light" as ThemeMode, label: "浅色" },
+            { mode: "dark" as ThemeMode, label: "深色" },
+          ]).map(({ mode: m, label }) => (
+            <button
+              key={m}
+              onClick={() => theme.setMode(m)}
+              data-testid={`theme-${m}`}
+              className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
+                theme.mode === m
+                  ? "bg-brand text-white shadow-sm"
+                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-label text-neutral-500 dark:text-neutral-400 mt-2">
+          {theme.mode === "auto" ? `当前跟随系统: ${theme.resolved === "dark" ? "深色" : "浅色"}` : null}
+        </p>
       </section>
 
       {/* 保存按钮 */}

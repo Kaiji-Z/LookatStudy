@@ -133,7 +133,7 @@ function ToastRow({
   const icon = SEVERITY_ICON[item.severity];
   return (
     <div
-      className={`pointer-events-auto flex items-center gap-2.5 pl-3 pr-2 py-2.5 rounded-xl bg-neutral-900 text-neutral-100 text-body shadow-elevated max-w-md ${SEVERITY_CLASS[item.severity]} ${item.exiting ? "toast-exit" : "toast-enter"}`}
+      className={`pointer-events-auto flex items-center gap-2.5 pl-3 pr-2 py-2.5 rounded-xl bg-surface-0 text-neutral-900 dark:text-neutral-100 text-body shadow-elevated max-w-md ${SEVERITY_CLASS[item.severity]} ${item.exiting ? "toast-exit" : "toast-enter"}`}
       data-testid={`toast-${item.id}`}
       data-severity={item.severity}
       onAnimationEnd={item.exiting ? onExitDone : undefined}
@@ -151,7 +151,7 @@ function ToastRow({
       )}
       <button
         onClick={onDismiss}
-        className="text-neutral-500 hover:text-neutral-200 shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors hover:bg-neutral-800"
+        className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-800"
         aria-label="关闭"
       >
         <X className="w-3.5 h-3.5" />

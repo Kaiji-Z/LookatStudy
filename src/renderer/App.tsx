@@ -16,6 +16,7 @@ import { GlobalTooltip } from "./components/GlobalTooltip.js";
 import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
 import { useCanvas } from "./lib/useCanvas.js";
 import { useFontSize } from "./lib/useFontSize.js";
+import { useTheme } from "./lib/useTheme.js";
 import { ChatStream, extractArtifacts } from "./components/ChatStream.js";
 import { ChatComposer } from "./components/ChatComposer.js";
 import { ExamView } from "./components/ExamView.js";
@@ -366,6 +367,7 @@ export default function App() {
   // v0.3: 黑板笔记本(canvas_items 持久化)
   const canvas = useCanvas(selectedCourseId);
   const font = useFontSize();
+  const theme = useTheme();
   const toast = useToast();
 
   // 统一的"发送一条消息"流程:首次发送自动建 thread,之后直接发。

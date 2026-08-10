@@ -73,7 +73,7 @@ export function MapRail(props: MapRailProps) {
           map-path 全高滚动,球和内容从屏幕边缘(tab 顶部)才开始被遮。 */}
       <div className="absolute top-0 left-0 right-0 z-40 px-2 pt-2 pb-2 pointer-events-none [&_button]:pointer-events-auto">
         {/* tab 胶囊 */}
-        <div className="flex p-1 rounded-lg gap-1 mb-2" style={{ background: "rgba(8,10,20,0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
+        <div className="flex p-1 rounded-lg gap-1 mb-2" style={{ background: "rgb(var(--surface-rail-rgb) / 0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
           <button onClick={() => setPanel("map")} data-testid="map-tab-map" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${panel === "map" ? "bg-brand/20 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
             <MapIcon className="w-3 h-3" /> 课程地图
           </button>
@@ -83,7 +83,7 @@ export function MapRail(props: MapRailProps) {
         </div>
         {/* 标题/进度条(仅地图面板显示) */}
         {panel === "map" && (
-          <div className="px-3 py-2 rounded-lg pointer-events-auto" style={{ background: "rgba(8,10,20,0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
+          <div className="px-3 py-2 rounded-lg pointer-events-auto" style={{ background: "rgb(var(--surface-rail-rgb) / 0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
             <h2 className="text-body font-extrabold text-white truncate" data-tooltip={props.courseTitle ?? ""}>
               {props.courseTitle ?? "未选择课程"}
             </h2>

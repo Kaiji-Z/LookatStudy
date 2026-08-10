@@ -91,19 +91,19 @@ export function ConfirmCard({
   return createPortal(
     <div
       ref={cardRef}
-      className={`confirm-card fixed z-[60] w-[220px] bg-neutral-900 rounded-xl shadow-elevated border border-neutral-700 p-3 ${danger ? "border-l-2 border-l-warning" : "border-l-2 border-l-brand"}`}
+      className={`confirm-card fixed z-[60] w-[220px] bg-surface-0 rounded-xl shadow-elevated border border-neutral-300 dark:border-neutral-700 p-3 ${danger ? "border-l-2 border-l-warning" : "border-l-2 border-l-brand"}`}
       style={{ left, top }}
       role="alertdialog"
       aria-modal="false"
       data-testid={testid}
       onClick={(e) => e.stopPropagation()}
     >
-      <p className="text-body text-neutral-200 leading-relaxed mb-3">{message}</p>
+      <p className="text-body text-neutral-700 dark:text-neutral-200 leading-relaxed mb-3">{message}</p>
       <div className="flex gap-2 justify-end">
         <button
           onClick={onCancel}
           data-testid={`${testid}-cancel`}
-          className="px-2.5 py-1 rounded-md text-label font-bold text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
+          className="px-2.5 py-1 rounded-md text-label font-bold text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
         >
           {cancelLabel}
         </button>

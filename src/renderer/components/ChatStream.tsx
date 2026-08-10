@@ -436,7 +436,7 @@ function PartRenderer({
   if (part.type === "text") {
     return (
       <div
-        className="text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert max-w-[80ch] leading-relaxed select-text"
+        className="prose prose-sm max-w-[80ch] leading-relaxed select-text"
         data-testid="part-text"
       >
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>

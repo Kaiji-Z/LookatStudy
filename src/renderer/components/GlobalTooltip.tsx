@@ -57,10 +57,12 @@ export function GlobalTooltip() {
         transform: "translate(0, -100%)", // 左下角对齐鼠标:Y 轴上移自身高度
         zIndex: 99999,
         pointerEvents: "none",
-        background: "rgba(8, 10, 20, 0.85)",
+        // 用 CSS 变量自动跟随主题(浅色=深字浅底,深色=浅字深底)
+        background: "rgb(var(--surface-0-rgb) / 0.92)",
         backdropFilter: "blur(8px)",
         WebkitBackdropFilter: "blur(8px)",
-        color: "#fff",
+        color: "var(--ink)",
+        border: "1px solid rgb(var(--border-rgb) / 0.5)",
         fontSize: "0.875rem", // text-body,跟随全局 html font-size(useFontSize)
         fontWeight: 600,
         lineHeight: 1.4,
@@ -68,7 +70,7 @@ export function GlobalTooltip() {
         borderRadius: "8px",
         maxWidth: "260px",
         wordBreak: "break-word",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+        boxShadow: "0 4px 12px rgb(var(--shadow-rgb) / 0.15)",
         whiteSpace: "normal",
       }}
     >

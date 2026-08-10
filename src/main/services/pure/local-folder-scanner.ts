@@ -233,7 +233,9 @@ export async function scanFolder(
   // 2. markdown 图片引用(从 .md/.html 文档正文解析)
   const refImages: ScannedImage[] = [];
   for (const doc of dedupedDocs) {
-    if (doc.kind !== "md") continue;
+    // 所有格式解析后都已转成 markdown,图片引用统一用 ![](path) 或 <img> 语法
+    // txt 可能含裸路径但不常见,跳过;html 走 htmlToText 后图片标签已丢
+    if (doc.kind === "txt" || doc.kind === "html") continue;
     const refs = extractImageRefs(doc.content);
     for (const ref of refs) {
       const resolvedPath = resolveImageRef(ref.refPath, doc.path);

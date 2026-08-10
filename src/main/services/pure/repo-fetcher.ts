@@ -115,14 +115,14 @@ export function filterLessonFiles(files: DiscoveredFile[]): DiscoveredFile[] {
  */
 export function detectRepoPattern(readmeMd: string): DetectionResult {
   const allLinks = extractInternalLinks(readmeMd);
-  const mdLinks = filterLessonFiles(allLinks).filter((f) => f.kind === "md");
+  const lessonLinks = filterLessonFiles(allLinks).filter((f) => f.kind !== "other");
 
-  // 课程型: 有 ≥3 个 .md 子文件链接
-  if (mdLinks.length >= 3) {
+  // 课程型: 有 ≥3 个子文件链接(.md/.ipynb/.rst/.rmd/.org/.adoc 任一)
+  if (lessonLinks.length >= 3) {
     return {
       pattern: "course",
-      reason: `README 含 ${mdLinks.length} 个内部 .md 链接，判定为课程型仓库`,
-      lessonFiles: mdLinks,
+      reason: `README 含 ${lessonLinks.length} 个内部课程文件链接，判定为课程型仓库`,
+      lessonFiles: lessonLinks,
     };
   }
 
@@ -130,7 +130,7 @@ export function detectRepoPattern(readmeMd: string): DetectionResult {
   if (readmeMd.length > 3000) {
     return {
       pattern: "single-file",
-      reason: `README 无足够子文件链接（${mdLinks.length} 个），但正文 ${readmeMd.length} 字符，判定为单文件型`,
+      reason: `README 无足够子文件链接（${lessonLinks.length} 个），但正文 ${readmeMd.length} 字符，判定为单文件型`,
       readmeLength: readmeMd.length,
     };
   }

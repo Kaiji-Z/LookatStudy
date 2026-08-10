@@ -240,10 +240,10 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
           send(`文件树扫描失败(${e instanceof Error ? e.message : "网络问题"}),用 README 链接`);
         }
 
-        // 上限 80 个文件(防爆)
-        if (lessonFiles.length > 80) {
-          send(`文件数 ${lessonFiles.length} 超过上限,截断到 80 个`);
-          lessonFiles = lessonFiles.slice(0, 80);
+        // 上限 200 个文件(防 CDN 过载;AI-For-Beginners ~100 文件,留余量)
+        if (lessonFiles.length > 200) {
+          send(`文件数 ${lessonFiles.length} 超过上限,截断到 200 个`);
+          lessonFiles = lessonFiles.slice(0, 200);
         }
 
         send(`检测到课程型仓库（${lessonFiles.length} 个课时文件），开始拉取…`);

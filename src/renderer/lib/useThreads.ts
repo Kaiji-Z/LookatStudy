@@ -134,8 +134,8 @@ export function useThreads(courseId: string | null, nodeId: string | null) {
     async (userMessage: string): Promise<string | null> => {
       if (!courseId || !nodeId) return null;
       if (activeId) return activeId;
-      const autoTitle = userMessage.trim().slice(0, 24) + (userMessage.trim().length > 24 ? "…" : "");
-      const t = await create({ title: autoTitle });
+      // 标题=用户首条完整输入(不截断)。tab 用 CSS max-w truncate 显示,hover tooltip 看全名。
+      const t = await create({ title: userMessage.trim() });
       return t?.id ?? null;
     },
     [courseId, nodeId, activeId, create],

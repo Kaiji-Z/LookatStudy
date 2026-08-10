@@ -385,11 +385,10 @@ export default function App() {
         return;
       }
       // 当前 thread 标题为空(如"+ 新建会话"建的空 thread)→ 用首条消息截断自动命名,
-      // 与 ensureThreadForSend 的命名逻辑一致,避免"同一节点第二个会话不重命名"的 bug。
+      // 与 ensureThreadForSend 的命名逻辑一致:标题=首条完整输入(不截断)。
       const cur = thread.activeThread;
       if (cur && !cur.title) {
-        const autoTitle = text.trim().slice(0, 24) + (text.trim().length > 24 ? "…" : "");
-        thread.update(cur.id, { title: autoTitle });
+        thread.update(cur.id, { title: text.trim() });
       }
       chat.send(text);
     },

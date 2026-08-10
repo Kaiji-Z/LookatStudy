@@ -20,8 +20,8 @@ export interface DiscoveredFile {
   path: string;
   /** 链接文本（课时标题） */
   title: string;
-  /** 文件类型: md 正文 / ipynb notebook / other */
-  kind: "md" | "ipynb" | "other";
+  /** 文件类型: md 正文 / ipynb notebook / rst / rmd / org / adoc / other */
+  kind: "md" | "ipynb" | "rst" | "rmd" | "org" | "adoc" | "other";
 }
 
 /** 仓库检测结果 */
@@ -72,10 +72,14 @@ export function extractInternalLinks(readmeMd: string): DiscoveredFile[] {
     if (!href || href.startsWith("http") || href.startsWith("mailto:")) continue;
     // 去掉 ./ 前缀
     href = href.replace(/^\.\//, "");
-    // 只收 .md 和 .ipynb
+    // 收 .md / .ipynb / .rst / .rmd / .org / .adoc
     let kind: DiscoveredFile["kind"] = "other";
     if (href.endsWith(".md") || href.endsWith(".mdx")) kind = "md";
     else if (href.endsWith(".ipynb")) kind = "ipynb";
+    else if (href.endsWith(".rst")) kind = "rst";
+    else if (href.endsWith(".rmd")) kind = "rmd";
+    else if (href.endsWith(".org")) kind = "org";
+    else if (href.endsWith(".adoc") || href.endsWith(".asciidoc")) kind = "adoc";
     else continue;
     // 去重
     if (seen.has(href)) continue;
@@ -177,8 +181,26 @@ export async function fetchMarkdownContents(
             const nbResult = parseNotebook(text);
             return { path: f.path, title: f.title, md: nbResult.markdown };
           } catch {
-            // notebook 解析失败 → 当普通文本(至少能看到 JSON 结构)
             return { path: f.path, title: f.title, md: text };
+          }
+        }
+        // .rst/.rmd/.org/.adoc → 用各自解析器转 markdown
+        const lowerPath = f.path.toLowerCase();
+        if (lowerPath.endsWith(".rst") || lowerPath.endsWith(".rmd") || lowerPath.endsWith(".org") || lowerPath.endsWith(".adoc") || lowerPath.endsWith(".asciidoc")) {
+          const parserMap: Record<string, string> = {
+            ".rst": "rst-parser", ".rmd": "rmd-parser", ".org": "org-parser",
+            ".adoc": "adoc-parser", ".asciidoc": "adoc-parser",
+          };
+          const ext = lowerPath.match(/\.[^.]+$/)?.[0] ?? "";
+          const parserName = parserMap[ext];
+          if (parserName) {
+            try {
+              const mod = await import(`./${parserName}.js`);
+              const fn = mod.parseRst ?? mod.parseRmd ?? mod.parseOrg ?? mod.parseAdoc;
+              return { path: f.path, title: f.title, md: fn(text).markdown };
+            } catch {
+              return { path: f.path, title: f.title, md: text };
+            }
           }
         }
         return { path: f.path, title: f.title, md: text };
@@ -330,6 +352,10 @@ export function pathsToDiscoveredFiles(paths: string[]): DiscoveredFile[] {
     let kind: DiscoveredFile["kind"] = "other";
     if (lower.endsWith(".md") || lower.endsWith(".mdx")) kind = "md";
     else if (lower.endsWith(".ipynb")) kind = "ipynb";
+    else if (lower.endsWith(".rst")) kind = "rst";
+    else if (lower.endsWith(".rmd")) kind = "rmd";
+    else if (lower.endsWith(".org")) kind = "org";
+    else if (lower.endsWith(".adoc") || lower.endsWith(".asciidoc")) kind = "adoc";
     else continue;
     // 排除非教学内容
     if (lower.includes("node_modules/") || lower.startsWith(".git/") || lower.includes("translations/")) continue;
@@ -338,7 +364,7 @@ export function pathsToDiscoveredFiles(paths: string[]): DiscoveredFile[] {
     // 标题用文件名(去扩展名)或最后一层目录名
     const parts = p.split("/").filter(Boolean);
     const last = parts[parts.length - 1] ?? p;
-    const title = last.replace(/\.(md|mdx|ipynb)$/i, "").replace(/^readme$/i, parts[parts.length - 2] ?? last);
+    const title = last.replace(/\.(md|mdx|ipynb|rst|rmd|org|adoc|asciidoc)$/i, "").replace(/^readme$/i, parts[parts.length - 2] ?? last);
     files.push({ path: p, title, kind });
   }
   return files;
@@ -362,7 +388,7 @@ export async function fetchRepoFileTree(
   if (apiRes.ok) {
     const data = (await apiRes.json()) as { tree?: Array<{ path: string; type: string }> };
     const mdPaths = (data.tree ?? [])
-      .filter((n) => n.type === "blob" && /\.(md|mdx|ipynb)$/i.test(n.path))
+      .filter((n) => n.type === "blob" && /\.(md|mdx|ipynb|rst|rmd|org|adoc|asciidoc)$/i.test(n.path))
       .map((n) => n.path);
     if (mdPaths.length > 0) return { paths: mdPaths, source: "github-tree-api" };
   }

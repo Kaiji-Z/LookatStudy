@@ -124,6 +124,7 @@ npm run verify:core && npx vite build && npm run self-test
 | Starter prompts | `services/starter-prompts-service.ts` | Mastery-based prompt suggestions |
 | Multimodal assets | `services/asset-service.ts` | `node_assets` CRUD — 图片/PDF 渲染图元数据(二进制存 `userData/assets/{courseId}/`,不入 DB blob);`listAssetsByNode` / `getAssetDataUrl` (base64) |
 | PDF renderer | `lib/pdf-renderer.ts` | pdfjs-dist 封装:PDF 文字提取 + 内嵌图片提取(纯 JS PNG 编码,无 canvas 依赖);`classifyPdfPageByTextRatio` 判断纯文字/纯图片/混合 |
+| Notebook parser | `services/pure/notebook-parser.ts` | Jupyter `.ipynb` JSON 解析:markdown cell 原文 + code cell → ```代码块 + output 图片提取(base64);`inferLanguage` 从 kernelspec 推断语言 |
 | i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + `translate()` |
 
 Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),

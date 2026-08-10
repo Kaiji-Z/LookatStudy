@@ -14,7 +14,9 @@ Output that violates a red line in VERIFICATION.md §7 is void.
 Open-source, local-first, AI-driven desktop learning platform. Turns any GitHub
 learning repository into a Duolingo-style course (gated skill map, AI tutor with
 BKT mastery tracking, SM-2 spaced repetition, XP/streak/crown retention).
-Electron app, local SQLite (sql.js), BYO LLM API key. **Dark-only** as of v0.5.
+Supports 9 file formats (.md/.ipynb/.rst/.Rmd/.org/.adoc/.pdf/.html/.txt) +
+multimodal image import + AI vision.
+Electron app, local SQLite (sql.js), BYO LLM API key. Light/dark theme.
 
 ## Tech stack (locked — do not change)
 
@@ -22,6 +24,7 @@ Electron app, local SQLite (sql.js), BYO LLM API key. **Dark-only** as of v0.5.
 - **Electron 33** main process — **CJS output, not ESM** (see gotchas)
 - **Vercel AI SDK v5** (`ai` + `@ai-sdk/openai` + `@ai-sdk/anthropic` + `@ai-sdk/google`) · **zod v3** for tool schemas
 - **sql.js** (SQLite compiled to WASM, pure JS) + **Drizzle ORM** — *not* better-sqlite3
+- **pdfjs-dist** (PDF rendering, pure WASM/JS) — for PDF text + image extraction, no canvas dependency
 - **tsx** runs `scripts/verify-*.mjs` deterministic tests · `scripts/live-test/*.mjs` for LLM behavior tests
 
 ## Architecture boundaries (critical)
@@ -32,7 +35,8 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 
 - **Renderer never touches DB, files, or API keys directly.** All cross-process calls go through `window.api.*` (contextBridge isolation in `src/preload/index.ts`).
 - **IPC contract is `shared/types.ts` → `ApiExpose` interface.** Editing it = editing the protocol; both ends (preload + main handlers) must sync.
-- **Channel naming: `domain:action`** (e.g. `course:list`, `skill:setActive`, `proposal:apply`, `thread:create`, `canvas:save`, `xp:getStatus`). Handlers in `src/main/ipc/index.ts`, grouped by domain.
+- **Channel naming: `domain:action`** (e.g. `course:list`, `skill:setActive`, `proposal:apply`, `thread:create`, `canvas:save`, `xp:getStatus`, `asset:listByNode`, `asset:getDataUrl`). Handlers in `src/main/ipc/index.ts`, grouped by domain.
+- **Native context menu** (`src/main/context-menu.ts`): right-click copy text / copy+save images / editable roles. Registered in `index.ts` via `setupContextMenu(mainWindow)`.
 - **LLM calls and API keys stay in main process.** CSP in `src/renderer/index.html` forbids renderer-side LLM endpoints; renderer only sees booleans for key presence (`agent:isReady`).
 - **AI persistent-state mutations go through Proposal (Propose→Apply).** AI drafts state changes, human applies/rejects — never let AI write learner state directly (see `proposal-service.ts`).
 - **Custom providers** (`custom_providers` table) bypass preset key settings — their API key is stored in the table row, resolved by `resolveLlm()` when `active_provider` starts with `custom-`.

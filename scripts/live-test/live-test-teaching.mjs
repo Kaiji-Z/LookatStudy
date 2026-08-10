@@ -16,21 +16,13 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import "./_load-env.mjs"; // 把 .env 的 Z_AI_API_KEY 灌进 process.env
+import { readApiKey } from "./_load-env.mjs"; // 把 .env 的 Z_AI_API_KEY 灌进 process.env
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../../src/main/db/schema.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "../..");
-
-function readApiKey() {
-  if (process.env.Z_AI_API_KEY) return process.env.Z_AI_API_KEY;
-  try {
-    const cfg = JSON.parse(readFileSync(join(process.env.HOME || process.env.USERPROFILE, ".config/opencode/opencode.json"), "utf8"));
-    return cfg.mcp?.["zai-mcp-server"]?.environment?.Z_AI_API_KEY;
-  } catch { return null; }
-}
 
 const API_KEY = readApiKey();
 if (!API_KEY) {

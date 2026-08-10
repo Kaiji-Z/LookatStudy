@@ -12,20 +12,13 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import "./_load-env.mjs"; // 把 .env 的 Z_AI_API_KEY 灌进 process.env
+import { readApiKey } from "./_load-env.mjs"; // 把 .env 的 Z_AI_API_KEY 灌进 process.env
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "../..");
 
-function readApiKey() {
-  if (process.env.Z_AI_API_KEY) return process.env.Z_AI_API_KEY;
-  try {
-    const cfg = JSON.parse(readFileSync(join(process.env.HOME || process.env.USERPROFILE, ".config/opencode/opencode.json"), "utf8"));
-    return cfg.mcp?.["zai-mcp-server"]?.environment?.Z_AI_API_KEY;
-  } catch { return null; }
-}
-
 const API_KEY = readApiKey();
+if (!API_KEY) { console.log("skip: no API key configured"); process.exit(0); }
 const readme = readFileSync(join(ROOT, "src/main/assets/seed-ai-for-beginners.md"), "utf8");
 
 // 取课程标题 + 前 3 个 section 的结构（从 README H2 提取）

@@ -19,7 +19,7 @@ const COURSE_ID = "seed-ai-for-beginners";
 const COURSE_REPO_URL = "https://github.com/microsoft/AI-For-Beginners";
 // 种子版本号：bump 这个数字会触发种子课程重建（删旧内容节点重新生成）。
 // 用户自定义 provider / 进度 / 其他课程不受影响。
-const SEED_VERSION = 4;
+const SEED_VERSION = 5;
 
 export function ensureSeedCourse(): void {
   const db = getDb();

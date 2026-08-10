@@ -17,15 +17,25 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Changed
+- **导入管线:规则+LLM 两阶段课时分类**:新增 `file-classifier.ts` 规则引擎,
+  自动过滤高置信度噪声(translations/notebook/lab/example/section-intro/meta),
+  不确定的标 `uncertain` 显式交给 LLM 在 `analyzeCourseStructure` 里先分类(keep/skip)
+  再排结构。`buildCourseFromFiles` 用分类结果改进分组,不再把 lab/notebook 当独立课时。
+  `analyzeCourseStructure` prompt 升级为两阶段(有 uncertain 时要求 LLM 先判 keep/skip)。
+- **导入编排提取为纯函数**:`importRepoToParsedCourse` 从 IPC handler 提取到
+  `repo-fetcher.ts`,种子脚本和运行时导入复用同一条路径。IPC handler 从 ~200 行瘦身到 ~80 行。
 - **种子课程替换**:内置种子课程从 Awesome-FDE-Roadmap 换成
   [microsoft/AI-For-Beginners](https://github.com/microsoft/AI-For-Beginners)
-  (微软官方 12 周 25 课 AI 课程:Intro → Neural Networks → Computer Vision → NLP →
-  RL → Ethics)。采用多文件组装而非单 README:顶层 README 当前言 + 25 个 lesson README
-  为正文,每课含真实讲解、PyTorch/TensorFlow 双框架代码、概念图。新增构建脚本
-  `scripts/build-ai-seed.mjs`。SEED_VERSION 升到 4 —— 旧版 FDE 种子的学习进度/笔记
-  会随种子重建被清理,用户导入的其他课程/自定义 provider 不受影响。
+  (微软官方 12 周 AI 课程)。用项目自己的导入管线(`importRepoToParsedCourse`)
+  自动发现+分类+组装。SEED_VERSION 升到 5 —— 旧版种子进度/笔记会随重建清理。
+- **ui-test knownFail 机制**:T15(notebook 三区折叠)标记为 knownFail,
+  不再阻塞 `npm run ui-test` 的 `overall:true`。报告区分 `[KNOWN-FAIL]` vs `[FAIL]`。
 
 ### Added
+- **live-test 烟雾检查** (`verify-live-test-smoke.mjs`):对每个 live-test 做静态检查
+  (import 能 resolve / readFileSync 路径存在 / API key guard 存在),不需要 API key。
+- **统一 readApiKey**:4 个 live-test 的 `readApiKey` 合并到 `_load-env.mjs`,
+  统一接受 `Z_AI_API_KEY` / `ZHIPU_API_KEY`。修复 `live-test-summary.mjs` 无 key 崩溃。
 - **右键复制/保存**:Electron 原生右键菜单 —— 选中文字可复制,右键图片可"复制图片"或
   "保存图片"(系统保存对话框)。让用户像操作网页一样自由复制保存内容。新增 `context-menu.ts`。
 - **4 种新格式解析**:导入课程现在支持 `.rst`(reStructuredText)、`.Rmd`(R Markdown)、

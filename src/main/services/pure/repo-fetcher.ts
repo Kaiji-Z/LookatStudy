@@ -13,7 +13,8 @@
  *
  * 纯函数设计: fetchFn 由调用方注入（生产用 global fetch，测试用 mock）。
  */
-import { parseMarkdownToCourse, type ParsedCourse, type ParsedSection } from "./markdown-course.js";
+import { parseMarkdownToCourse, type ParsedCourse, type ParsedSection, type ParsedLesson } from "./markdown-course.js";
+import { classifyFile, type FileClassification } from "./file-classifier.js";
 
 /** 仓库文件条目（从 README 链接发现） */
 export interface DiscoveredFile {
@@ -41,6 +42,8 @@ export interface FetchedFile {
   path: string;
   title: string;
   md: string;
+  /** 文件分类（由 classifyFile 填充，buildCourseFromFiles 用于决定是否进 lesson 列表） */
+  classification?: FileClassification;
 }
 
 export interface FetchResult {
@@ -228,20 +231,13 @@ export async function fetchMarkdownContents(
 /**
  * 把课程型仓库的多个课时文件合并成 ParsedCourse 结构。
  *
- * 每个 .md 文件 → 一个 section（用文件路径的目录名做章节标题）
- * 文件内部的 H2 → 该章节下的 lessons
- * 文件内部的 H3 → 更细的 lessons（如果有的话）
+ * v3 改进:集成 file-classifier 规则引擎。
+ *   - 先对每个文件调 classifyFile 判定角色（lesson/notebook/lab/section-intro/uncertain 等）
+ *   - keepAsLesson=false 的文件（translation/meta/notebook/lab/example/section-intro）不进 lesson 列表
+ *   - section-intro 的正文追加到同 section 摘要（作为章节概述）
+ *   - uncertain 的文件进 lesson 列表但标 uncertain=true，后续 LLM 结构化时优先判断 keep/skip
  *
- * 如果文件没有 H2/H3，整个文件作为一个 lesson。
- */
-/**
- * 把课程型仓库的多个课时文件合并成 ParsedCourse 结构。
- *
- * v2 改进(2026-08-08):按**顶层目录**分组,减少碎片。
- *   - lessons/3-NeuralNetworks/03-Perceptron/README.md 和
- *     lessons/3-NeuralNetworks/04-Deep/README.md 归到同一 "3-NeuralNetworks" section
- *     (而不是各自一个 section → 47 碎片)
- *   - 根目录的 .md / 扁平结构的 .md 各自独立成 section
+ * 分组策略保留 v2 的"第一个非通用目录"启发式（减少碎片）。
  *
  * 每个文件的内部 H2/H3 → 该 section 下的 lessons;无 H2/H3 则整个文件作一个 lesson。
  */
@@ -249,16 +245,48 @@ export function buildCourseFromFiles(
   courseTitle: string,
   files: FetchedFile[],
 ): ParsedCourse {
-  // 第一步:给每个文件算"分组键"(=顶层目录名)和"lesson 候选"
+  // 第 0 步:对每个文件分类（siblingPaths = 全部文件路径）
+  const allPaths = files.map((f) => f.path);
+  for (const file of files) {
+    if (!file.classification) {
+      file.classification = classifyFile(file.path, file.md, { siblingPaths: allPaths });
+    }
+  }
+
+  // 第一步:给每个 keepAsLesson 文件算"分组键"和"lesson 候选"
   interface FileGroup {
     sectionTitle: string;
     orderKey: string; // 用于排序(保持原路径顺序)
-    files: { title: string; body: string }[];
+    lessons: ParsedLesson[];
+    /** section-intro 正文（如果有），用于章节概述 */
+    introBody?: string;
   }
   const groupMap = new Map<string, FileGroup>();
   const groupOrder: string[] = [];
 
+  const GENERIC_DIRS = new Set(["lessons", "docs", "doc", "src", "content", "modules", "chapters", "tutorials", "guide"]);
+
   for (const file of files) {
+    const classification = file.classification!;
+    // 跳过非 lesson 文件（但 section-intro 的正文保留给章节概述）
+    if (!classification.keepAsLesson) {
+      if (classification.role === "section-intro") {
+        // section-intro 正文追加到它所属 section 的 introBody
+        const parts = file.path.split("/").filter(Boolean);
+        const dirParts = parts[parts.length - 1]?.match(/^readme/i) || parts[parts.length - 1] === "index.md"
+          ? parts.slice(0, -1)
+          : parts;
+        const specificDir = dirParts.find((p) => !GENERIC_DIRS.has(p.toLowerCase()) && !/\.(md|mdx)$/i.test(p));
+        const groupKey = specificDir ? specificDir.replace(/\.md$/i, "") : file.path;
+        if (!groupMap.has(groupKey)) {
+          groupMap.set(groupKey, { sectionTitle: groupKey, orderKey: file.path, lessons: [] });
+          groupOrder.push(groupKey);
+        }
+        groupMap.get(groupKey)!.introBody = file.md;
+      }
+      continue;
+    }
+
     const parts = file.path.split("/").filter(Boolean);
     // 去掉末尾的 README.md / index.md
     const dirParts = parts[parts.length - 1]?.match(/^readme/i) || parts[parts.length - 1] === "index.md"
@@ -266,25 +294,16 @@ export function buildCourseFromFiles(
       : parts;
 
     // 分组键 + section 标题:用"第一个非通用目录"做章节分组键。
-    //   - lessons/1-Intro/README.md → 键 "1-Intro"(跳过通用 "lessons")
-    //   - lessons/3-NN/03-Perceptron/README.md → 键 "3-NN"(跳过 "lessons",用第一个具体目录)
-    //   - docs/api.md → 键 "docs"("docs" 虽通用但没更深的目录,用它)
-    //   - 根目录 README.md → 键 = 文件名(各自独立)
-    //   - 纯 file.md(无目录) → 键 = 文件名
-    const GENERIC_DIRS = new Set(["lessons", "docs", "doc", "src", "content", "modules", "chapters", "lessons"]);
     let groupKey: string;
     let sectionTitle: string;
-    // 找第一个非通用目录(跳过 lessons/docs/src 等容器目录,用具体章节目录)
     const specificDir = dirParts.find((p) => !GENERIC_DIRS.has(p.toLowerCase()) && !/\.(md|mdx)$/i.test(p));
     if (dirParts.length >= 2 && specificDir) {
       groupKey = specificDir.replace(/\.md$/i, "");
       sectionTitle = groupKey;
     } else if (dirParts.length === 1) {
-      // 单层目录或单文件 → 各自独立成 section
       groupKey = file.path;
       sectionTitle = dirParts[0]!.replace(/\.md$/i, "") || file.title;
     } else {
-      // 无目录(纯文件名,根目录)
       groupKey = file.path;
       sectionTitle = file.title;
     }
@@ -292,23 +311,33 @@ export function buildCourseFromFiles(
     // lesson 候选:解析文件内部 H2/H3,或整个文件作一 lesson
     const parsed = parseMarkdownToCourse(file.md);
     const parsedLessonCount = parsed.sections.reduce((sum, s) => sum + s.lessons.length, 0);
-    const lessonCandidates: { title: string; body: string }[] =
+    const isUncertain = classification.role === "uncertain";
+    const lessonCandidates: ParsedLesson[] =
       parsedLessonCount > 0
         ? parsed.sections
             .filter((s) => s.lessons.length > 0)
-            .flatMap((s) => s.lessons.map((l) => ({ title: l.title, body: l.body })))
+            .flatMap((s) => s.lessons.map((l) => ({
+              title: l.title,
+              anchor: l.title.toLowerCase().replace(/\s+/g, "-"),
+              body: l.body,
+              uncertain: isUncertain,
+            })))
         : (() => {
             const h1Match = file.md.match(/^#\s+(.+)$/m);
             const lessonTitle = h1Match ? h1Match[1]!.trim() : file.title;
-            return [{ title: lessonTitle, body: file.md }];
+            return [{
+              title: lessonTitle,
+              anchor: lessonTitle.toLowerCase().replace(/\s+/g, "-"),
+              body: file.md,
+              uncertain: isUncertain,
+            }];
           })();
 
     if (!groupMap.has(groupKey)) {
-      const g: FileGroup = { sectionTitle, orderKey: file.path, files: [] };
-      groupMap.set(groupKey, g);
+      groupMap.set(groupKey, { sectionTitle, orderKey: file.path, lessons: [] });
       groupOrder.push(groupKey);
     }
-    groupMap.get(groupKey)!.files.push(...lessonCandidates);
+    groupMap.get(groupKey)!.lessons.push(...lessonCandidates);
   }
 
   // 第二步:每个分组 → 一个 section(files 按原路径顺序已稳定)
@@ -317,11 +346,7 @@ export function buildCourseFromFiles(
     return {
       title: g.sectionTitle,
       anchor: g.sectionTitle.toLowerCase().replace(/\s+/g, "-"),
-      lessons: g.files.map((l) => ({
-        title: l.title,
-        anchor: l.title.toLowerCase().replace(/\s+/g, "-"),
-        body: l.body,
-      })),
+      lessons: g.lessons,
     };
   });
 
@@ -602,3 +627,160 @@ export async function fetchRepoImages(
 
   return downloaded;
 }
+
+/* ============================================================
+ * 顶层编排:从 GitHub repo URL → ParsedCourse（纯函数，不落库）
+ *
+ * 提取自 ipc/index.ts 的 importFromRepo handler 的纯逻辑部分。
+ * IPC handler / 种子脚本 / 未来 CLI 都复用本函数。
+ * ============================================================ */
+
+/** importRepoToParsedCourse 的返回结果 */
+export interface ImportRepoResult {
+  /** 构建好的课程结构（含 classification 标签） */
+  course: ParsedCourse;
+  /** 仓库检测结果 */
+  detection: DetectionResult;
+  /** 拉取的文件（含 classification，供图像收集等后续步骤用） */
+  fetchedFiles: FetchedFile[];
+  /** README 实际用的分支（main 或 master） */
+  readmeBranch: string;
+  /** README 全文（供 single-file 降级用） */
+  readmeMd: string;
+}
+
+/** 文件数上限（防爆，和 IPC handler 一致） */
+const MAX_FILES = 200;
+
+/**
+ * 从 GitHub 仓库构建课程结构 —— 纯编排函数。
+ *
+ * 流程: fetch README → detectRepoPattern → 发现文件树 → fetchMarkdownContents
+ *       → classifyFile（在 buildCourseFromFiles 内）→ buildCourseFromFiles
+ *
+ * 不落库、不发进度事件（onProgress 回调只传消息字符串，由调用方决定怎么用）。
+ *
+ * @param owner GitHub owner
+ * @param repo GitHub repo
+ * @param branch 起始分支（README 先试 main 再试 master）
+ * @param fetchFn 注入的 fetch（生产用 global fetch，测试用 mock）
+ * @param onProgress 进度回调（可选）
+ */
+export async function importRepoToParsedCourse(
+  owner: string,
+  repo: string,
+  branch: string,
+  fetchFn: typeof fetch,
+  onProgress?: (msg: string) => void,
+): Promise<ImportRepoResult> {
+  const send = (msg: string) => onProgress?.(msg);
+
+  // 1. 拉 README（试 main/master 两个分支）
+  send("正在拉取 README…");
+  const branches = branch === "master" ? ["master", "main"] : ["main", "master"];
+  let readmeMd: string | null = null;
+  let readmeBranch = branch;
+  for (const br of branches) {
+    try {
+      const r = await fetchFn(cdnUrl(owner, repo, br, "README.md"));
+      if (r.ok) {
+        readmeMd = await r.text();
+        readmeBranch = br;
+        break;
+      }
+    } catch {
+      // 网络错误，试下一个分支
+    }
+  }
+  if (!readmeMd) throw new Error(`无法拉取 README（试过分支: ${branches.join(", ")}）`);
+  send(`README 拉取成功（${readmeMd.length} 字符，分支 ${readmeBranch}）`);
+
+  // 2. 检测仓库形态
+  const detection = detectRepoPattern(readmeMd);
+  if (detection.pattern === "unsupported") {
+    throw new Error(`仓库不支持: ${detection.reason}`);
+  }
+
+  // single-file: 直接返回（调用方用 generateCourseFromMarkdown 处理）
+  if (detection.pattern === "single-file") {
+    return {
+      course: parseMarkdownToCourse(readmeMd),
+      detection,
+      fetchedFiles: [],
+      readmeBranch,
+      readmeMd,
+    };
+  }
+
+  // 3. course 型: 发现文件
+  let lessonFiles = filterLessonFiles(detection.lessonFiles ?? []);
+
+  // 尝试完整文件树（GitHub Tree API → jsdelivr fallback）
+  try {
+    send("正在扫描仓库文件树…");
+    const tree = await fetchRepoFileTree(owner, repo, readmeBranch, fetchFn);
+    if (tree.paths.length > 0) {
+      const treeFiles = pathsToDiscoveredFiles(tree.paths);
+      const treeLessonFiles = filterLessonFiles(treeFiles).filter((f) => f.kind !== "other");
+      if (treeLessonFiles.length > lessonFiles.length) {
+        lessonFiles = treeLessonFiles;
+        send(`文件树发现 ${lessonFiles.length} 个课时文件（来源: ${tree.source}）`);
+      }
+    }
+  } catch {
+    // Tree API 失败，用 README 链接里已有的
+    send("文件树拉取失败，使用 README 链接发现");
+  }
+
+  if (lessonFiles.length === 0) {
+    // 没有子文件，降级为 single-file
+    send("未发现课时文件，降级为单文件导入");
+    return {
+      course: parseMarkdownToCourse(readmeMd),
+      detection: { ...detection, pattern: "single-file", reason: "无课时文件，降级" },
+      fetchedFiles: [],
+      readmeBranch,
+      readmeMd,
+    };
+  }
+
+  // 上限
+  if (lessonFiles.length > MAX_FILES) {
+    send(`文件数 ${lessonFiles.length} 超过上限 ${MAX_FILES}，截断`);
+    lessonFiles = lessonFiles.slice(0, MAX_FILES);
+  }
+
+  // 4. 拉取正文
+  send(`检测到课程型仓库（${lessonFiles.length} 个文件），开始拉取…`);
+  const fetchResult = await fetchMarkdownContents(
+    lessonFiles, owner, repo, readmeBranch, fetchFn,
+    (done, total, path) => send(`拉取 ${done}/${total}: ${path}`),
+  );
+
+  if (fetchResult.ok.length === 0) {
+    // 全部失败，降级为 single-file
+    send("所有文件拉取失败，降级为单文件导入");
+    return {
+      course: parseMarkdownToCourse(readmeMd),
+      detection: { ...detection, pattern: "single-file", reason: "全部文件拉取失败" },
+      fetchedFiles: [],
+      readmeBranch,
+      readmeMd,
+    };
+  }
+
+  // 5. 构建课程（buildCourseFromFiles 内部会调 classifyFile 做分类）
+  const h1Match = readmeMd.match(/^#\s+(.+)$/m);
+  const courseTitle = h1Match ? h1Match[1]!.trim() : repo;
+  const course = buildCourseFromFiles(courseTitle, fetchResult.ok);
+  send(`解析完成：${course.sections.length} 章节，构建课程…`);
+
+  return {
+    course,
+    detection,
+    fetchedFiles: fetchResult.ok,
+    readmeBranch,
+    readmeMd,
+  };
+}
+

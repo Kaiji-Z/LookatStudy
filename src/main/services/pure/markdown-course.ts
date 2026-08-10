@@ -15,6 +15,8 @@ export interface ParsedLesson {
   anchor: string;
   /** 该 H3 下到下一个 H3/H2 之间的正文（逐字） */
   body: string;
+  /** 文件分类器标记该课来源不确定（规则无法确定是课时正文），LLM 结构化时应优先判断 keep/skip */
+  uncertain?: boolean;
 }
 
 export interface ParsedSection {

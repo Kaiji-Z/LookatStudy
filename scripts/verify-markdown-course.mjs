@@ -82,41 +82,40 @@ assert.strictEqual(c4.sections.length, 0, "T7: 空文档 0 section");
 console.log(`✓ T7 空文档：0 section`);
 
 // === LabType 检测 ===
-// T8: doc
+// T8: doc（纯文本，无代码块）
 assert.strictEqual(detectLabType("# 标题\n\n纯文字段落"), "doc", "T8: 纯文本→doc");
 console.log(`✓ T8 LabType doc：纯文本`);
 
-// T9: code
+// T9: doc（单个代码块不够——理论课可能有一个示例）
 assert.strictEqual(
   detectLabType("# 标题\n\n```python\nprint('hi')\n```\n"),
-  "code",
-  "T9: python 块→code",
+  "doc",
+  "T9: 单代码块→doc（不够实操）",
 );
-assert.strictEqual(
-  detectLabType("```js\nconst x=1\n```\n"),
-  "code",
-  "T9: js 块→code",
-);
-console.log(`✓ T9 LabType code：python/js 块`);
+console.log(`✓ T9 LabType doc：单代码块不够`);
 
-// T10: notebook
+// T9b: code（≥5 个代码块 = 实操课程）
+const multiCode = "# 实操课\n\n" + Array.from({ length: 6 }, (_, i) => "```python\n# step " + i + "\n```\n").join("\n");
 assert.strictEqual(
-  detectLabType("# 用 jupyter notebook 学习\n"),
-  "notebook",
-  "T10: jupyter 关键词→notebook",
+  detectLabType(multiCode),
+  "code",
+  "T9b: ≥5 代码块→code",
 );
-assert.strictEqual(
-  detectLabType("见 example.ipynb"),
-  "notebook",
-  "T10: .ipynb→notebook",
-);
-console.log(`✓ T10 LabType notebook：jupyter/.ipynb 关键词`);
+console.log(`✓ T9b LabType code：多代码块`);
 
-// T11: notebook 优先于 code（同时含）
+// T10: notebook（≥3 代码块 + jupyter 关键词）
 assert.strictEqual(
-  detectLabType("```python\nx=1\n```\n见 a.ipynb"),
+  detectLabType("# Jupyter Notebook 课程\n\n" + Array.from({ length: 4 }, () => "```python\nx=1\n```\n").join("\n")),
   "notebook",
-  "T11: 同时含 code+ipynb → notebook 优先",
+  "T10: ≥3 代码块+jupyter→notebook",
+);
+console.log(`✓ T10 LabType notebook：多代码块+jupyter`);
+
+// T11: notebook 优先于 code（≥3 代码块 + ipynb 关键词）
+assert.strictEqual(
+  detectLabType("```python\nx=1\n```\n```python\ny=2\n```\n```python\nz=3\n```\n见 a.ipynb"),
+  "notebook",
+  "T11: ≥3 代码块+ipynb → notebook 优先",
 );
 console.log(`✓ T11 notebook 优先于 code`);
 

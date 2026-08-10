@@ -36,7 +36,8 @@ const ROOT = join(__dirname, "../..");
 
 const API_KEY = readApiKey();
 if (!API_KEY) {
-  console.log("⚠️  无 API key，但本测试不需要 LLM——继续...");
+  console.log("⚠️  无 API key，本测试的翻译规则匹配部分不需要 LLM，继续...");
+  // 注意:persistTranslations 的 LLM 对齐在有 key 时才触发，无 key 时纯规则匹配
 }
 
 const OWNER = "microsoft";

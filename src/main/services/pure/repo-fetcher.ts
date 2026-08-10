@@ -112,9 +112,13 @@ export function filterLessonFiles(files: DiscoveredFile[]): DiscoveredFile[] {
 /**
  * 检测仓库形态。
  *
- * - course: README 链接里有 ≥3 个 .md 文件指向子目录（说明有课程结构）
- * - single-file: 链接不够，但 README 本身够长（>3KB，有实质内容）
- * - unsupported: README 太短且无子文件（可能是纯链接集合仓库）
+ * 原则:规则管确定性，不确定的给 LLM 兜底（通过下游 analyzeCourseStructure）。
+ *
+ * - course: README 链接里有 ≥3 个课程文件(.md/.ipynb 等)指向子目录
+ *   规则高置信度判定:有子文件链接 = 有课程结构
+ * - single-file: 无子文件链接但 README 有实质教学正文（正文 prose >1000 字，非徽章/构建指令）
+ *   规则尽力判定:检查是否真有教学内容而非纯元数据
+ * - unsupported: README 太短且无子文件
  */
 export function detectRepoPattern(readmeMd: string): DetectionResult {
   const allLinks = extractInternalLinks(readmeMd);
@@ -129,19 +133,38 @@ export function detectRepoPattern(readmeMd: string): DetectionResult {
     };
   }
 
-  // 单文件型: README 本身够长
-  if (readmeMd.length > 3000) {
+  // 计算"实质正文"字符数（去徽章/HTML/链接语法后的纯文字）
+  const proseChars = readmeMd
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")    // 去图片
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")  // 去链接语法保留文字
+    .replace(/<[^>]+>/g, "")                   // 去 HTML 标签
+    .replace(/^---[\s\S]*?---/m, "")           // 去 YAML front matter
+    .replace(/\s/g, "").length;
+
+  // 单文件型: 无足够子文件链接，但 README 有实质教学正文
+  // 阈值 1000 字纯文字（不是字符数——去掉了 markdown 语法/HTML/图片）
+  // 这样徽章 + 构建指令等纯元数据 README 不会被误判为课程
+  if (proseChars > 1000) {
     return {
       pattern: "single-file",
-      reason: `README 无足够子文件链接（${lessonLinks.length} 个），但正文 ${readmeMd.length} 字符，判定为单文件型`,
+      reason: `README 无足够子文件链接（${lessonLinks.length} 个），但实质正文 ${proseChars} 字，判定为单文件型`,
       readmeLength: readmeMd.length,
+    };
+  }
+
+  // 有 1-2 个子文件链接但不够 → 不确定，但给个机会（可能是小课程）
+  if (lessonLinks.length >= 1 && proseChars > 300) {
+    return {
+      pattern: "course",
+      reason: `README 只有 ${lessonLinks.length} 个子文件链接但正文有内容，尝试课程型导入`,
+      lessonFiles: lessonLinks,
     };
   }
 
   // 不支持
   return {
     pattern: "unsupported",
-    reason: `README 太短（${readmeMd.length} 字符）且无课程子文件链接，可能不是学习仓库`,
+    reason: `README 实质正文仅 ${proseChars} 字且无课程子文件链接，可能不是学习仓库`,
   };
 }
 
@@ -732,23 +755,29 @@ export async function importRepoToParsedCourse(
   }
 
   // 3. course 型: 发现文件
+  // 策略:README 链接是人工策展的（作者选了真正重要的文件），优先用它。
+  // 文件树是穷举的（含草稿/翻译/内部文档），只在 README 链接太少时才补充。
   let lessonFiles = filterLessonFiles(detection.lessonFiles ?? []);
+  const readmeLinkCount = lessonFiles.length;
 
-  // 尝试完整文件树（GitHub Tree API → jsdelivr fallback）
-  try {
-    send("正在扫描仓库文件树…");
-    const tree = await fetchRepoFileTree(owner, repo, readmeBranch, fetchFn);
-    if (tree.paths.length > 0) {
-      const treeFiles = pathsToDiscoveredFiles(tree.paths);
-      const treeLessonFiles = filterLessonFiles(treeFiles).filter((f) => f.kind !== "other");
-      if (treeLessonFiles.length > lessonFiles.length) {
-        lessonFiles = treeLessonFiles;
-        send(`文件树发现 ${lessonFiles.length} 个课时文件（来源: ${tree.source}）`);
+  // 只在 README 链接很少（<5）时才尝试文件树补充
+  if (readmeLinkCount < 5) {
+    try {
+      send("README 链接较少，扫描文件树补充…");
+      const tree = await fetchRepoFileTree(owner, repo, readmeBranch, fetchFn);
+      if (tree.paths.length > 0) {
+        const treeFiles = pathsToDiscoveredFiles(tree.paths);
+        const treeLessonFiles = filterLessonFiles(treeFiles).filter((f) => f.kind !== "other");
+        if (treeLessonFiles.length > lessonFiles.length) {
+          lessonFiles = treeLessonFiles;
+          send(`文件树发现 ${lessonFiles.length} 个课时文件（来源: ${tree.source}）`);
+        }
       }
+    } catch {
+      send("文件树拉取失败，使用 README 链接发现");
     }
-  } catch {
-    // Tree API 失败，用 README 链接里已有的
-    send("文件树拉取失败，使用 README 链接发现");
+  } else {
+    send(`README 链接发现 ${readmeLinkCount} 个课时文件（人工策展，优先使用）`);
   }
 
   if (lessonFiles.length === 0) {
@@ -763,10 +792,19 @@ export async function importRepoToParsedCourse(
     };
   }
 
-  // 上限
+  // 上限:超过 MAX_FILES 时，优先保留 README 链接的文件（人工策展），
+  // 从文件树补充的文件按路径排序截断（保留编号靠前的课时，通常是基础课）
   if (lessonFiles.length > MAX_FILES) {
     send(`文件数 ${lessonFiles.length} 超过上限 ${MAX_FILES}，截断`);
-    lessonFiles = lessonFiles.slice(0, MAX_FILES);
+    if (readmeLinkCount > 0 && readmeLinkCount < MAX_FILES) {
+      // 保留所有 README 链接文件 + 文件树文件按路径排序填充剩余空间
+      const readmePaths = new Set(filterLessonFiles(detection.lessonFiles ?? []).map((f) => f.path));
+      const fromReadme = lessonFiles.filter((f) => readmePaths.has(f.path));
+      const fromTree = lessonFiles.filter((f) => !readmePaths.has(f.path)).slice(0, MAX_FILES - fromReadme.length);
+      lessonFiles = [...fromReadme, ...fromTree];
+    } else {
+      lessonFiles = lessonFiles.slice(0, MAX_FILES);
+    }
   }
 
   // 4. 拉取正文
@@ -777,15 +815,11 @@ export async function importRepoToParsedCourse(
   );
 
   if (fetchResult.ok.length === 0) {
-    // 全部失败，降级为 single-file
-    send("所有文件拉取失败，降级为单文件导入");
-    return {
-      course: parseMarkdownToCourse(readmeMd),
-      detection: { ...detection, pattern: "single-file", reason: "全部文件拉取失败" },
-      fetchedFiles: [],
-      readmeBranch,
-      readmeMd,
-    };
+    // 所有文件拉取失败 → 抛错让用户知道（而不是静默用 README 伪造课程）
+    throw new Error(
+      `检测到 ${lessonFiles.length} 个课时文件，但全部拉取失败。` +
+      `可能是网络受限。请稍后重试或改用「粘贴 Markdown」方式手动导入。`,
+    );
   }
 
   // 5. 构建课程（buildCourseFromFiles 内部会调 classifyFile 做分类）

@@ -306,6 +306,12 @@ export function applyCourseStructure(
     }
   }
 
+  // 删除 LLM 判 skip 的孤儿节点（不留幽灵——它们不属于任何 section，UI 不可见）
+  // 同时删除它们的 progress 行（FK CASCADE 会处理，但 sql.js 不一定，手动删）
+  for (const skipId of skippedSet) {
+    db.delete(contentNodes).where(eq(contentNodes.id, skipId)).run();
+  }
+
   return {
     sectionCount: sectionOrder,
     lessonCount,

@@ -254,61 +254,72 @@ export function buildCourseFromFiles(
   }
 
   // 第一步:给每个 keepAsLesson 文件算"分组键"和"lesson 候选"
+  // 非课时文件(notebook/lab/example/section-intro)的正文不丢弃——
+  // notebook/lab/example 追加到同目录 lesson 的正文末尾（作为"代码/练习补充"）,
+  // section-intro 追加到 section 第一个 lesson 的正文开头（作为"章节概述"）。
   interface FileGroup {
     sectionTitle: string;
     orderKey: string; // 用于排序(保持原路径顺序)
     lessons: ParsedLesson[];
-    /** section-intro 正文（如果有），用于章节概述 */
-    introBody?: string;
+    /** 待追加到第一个 lesson 的章节概述正文 */
+    pendingIntro?: string;
   }
   const groupMap = new Map<string, FileGroup>();
   const groupOrder: string[] = [];
 
   const GENERIC_DIRS = new Set(["lessons", "docs", "doc", "src", "content", "modules", "chapters", "tutorials", "guide"]);
 
-  for (const file of files) {
-    const classification = file.classification!;
-    // 跳过非 lesson 文件（但 section-intro 的正文保留给章节概述）
-    if (!classification.keepAsLesson) {
-      if (classification.role === "section-intro") {
-        // section-intro 正文追加到它所属 section 的 introBody
-        const parts = file.path.split("/").filter(Boolean);
-        const dirParts = parts[parts.length - 1]?.match(/^readme/i) || parts[parts.length - 1] === "index.md"
-          ? parts.slice(0, -1)
-          : parts;
-        const specificDir = dirParts.find((p) => !GENERIC_DIRS.has(p.toLowerCase()) && !/\.(md|mdx)$/i.test(p));
-        const groupKey = specificDir ? specificDir.replace(/\.md$/i, "") : file.path;
-        if (!groupMap.has(groupKey)) {
-          groupMap.set(groupKey, { sectionTitle: groupKey, orderKey: file.path, lessons: [] });
-          groupOrder.push(groupKey);
-        }
-        groupMap.get(groupKey)!.introBody = file.md;
-      }
-      continue;
-    }
-
-    const parts = file.path.split("/").filter(Boolean);
-    // 去掉末尾的 README.md / index.md
+  /**
+   * 计算文件的 section 分组键（和 lesson 用同一个逻辑）。
+   */
+  function sectionKeyOf(path: string): { groupKey: string; sectionTitle: string } {
+    const parts = path.split("/").filter(Boolean);
     const dirParts = parts[parts.length - 1]?.match(/^readme/i) || parts[parts.length - 1] === "index.md"
       ? parts.slice(0, -1)
       : parts;
-
-    // 分组键 + section 标题:用"第一个非通用目录"做章节分组键。
-    let groupKey: string;
-    let sectionTitle: string;
     const specificDir = dirParts.find((p) => !GENERIC_DIRS.has(p.toLowerCase()) && !/\.(md|mdx)$/i.test(p));
     if (dirParts.length >= 2 && specificDir) {
-      groupKey = specificDir.replace(/\.md$/i, "");
-      sectionTitle = groupKey;
+      const gk = specificDir.replace(/\.md$/i, "");
+      return { groupKey: gk, sectionTitle: gk };
     } else if (dirParts.length === 1) {
-      groupKey = file.path;
-      sectionTitle = dirParts[0]!.replace(/\.md$/i, "") || file.title;
-    } else {
-      groupKey = file.path;
-      sectionTitle = file.title;
+      return { groupKey: path, sectionTitle: dirParts[0]!.replace(/\.md$/i, "") };
+    }
+    return { groupKey: path, sectionTitle: parts[parts.length - 1] ?? path };
+  }
+
+  // 先按路径排序，保证同目录的 notebook 在 lesson 之后（这样 lesson 先建好，notebook 能追加到它）
+  const sortedFiles = [...files].sort((a, b) => a.path.localeCompare(b.path));
+
+  for (const file of sortedFiles) {
+    const classification = file.classification!;
+    const { groupKey, sectionTitle } = sectionKeyOf(file.path);
+
+    // 确保分组存在
+    if (!groupMap.has(groupKey)) {
+      groupMap.set(groupKey, { sectionTitle, orderKey: file.path, lessons: [] });
+      if (!groupOrder.includes(groupKey)) groupOrder.push(groupKey);
+    }
+    const group = groupMap.get(groupKey)!;
+
+    // ---- 非课时文件：正文合并到同目录 lesson ----
+    if (!classification.keepAsLesson) {
+      if (classification.role === "section-intro") {
+        // section-intro → 追加到 section 第一个 lesson 开头
+        group.pendingIntro = file.md;
+      } else if (classification.role === "notebook" || classification.role === "lab" || classification.role === "example") {
+        // notebook/lab/example → 追加到同 group 最后一个 lesson 的末尾（作为代码/练习补充）
+        // 文件已按路径排序，同目录的 lesson README 在 notebook 前面处理，所以 group 里已有 lesson
+        const targetLesson = group.lessons[group.lessons.length - 1];
+        if (targetLesson && file.md.trim().length > 0) {
+          const label = classification.role === "notebook" ? "📓 Notebook 代码" : classification.role === "lab" ? "🔧 练习" : "💡 示例";
+          targetLesson.body += `\n\n---\n\n**${label}**（来自 \`${file.path}\`）:\n\n${file.md}`;
+        }
+      }
+      // translation/meta 不合并，直接跳过
+      continue;
     }
 
-    // lesson 候选:解析文件内部 H2/H3,或整个文件作一 lesson
+    // ---- 课时文件：正常进 lesson 列表 ----
     const parsed = parseMarkdownToCourse(file.md);
     const parsedLessonCount = parsed.sections.reduce((sum, s) => sum + s.lessons.length, 0);
     const isUncertain = classification.role === "uncertain";
@@ -333,22 +344,28 @@ export function buildCourseFromFiles(
             }];
           })();
 
-    if (!groupMap.has(groupKey)) {
-      groupMap.set(groupKey, { sectionTitle, orderKey: file.path, lessons: [] });
-      groupOrder.push(groupKey);
-    }
-    groupMap.get(groupKey)!.lessons.push(...lessonCandidates);
+    group.lessons.push(...lessonCandidates);
   }
 
-  // 第二步:每个分组 → 一个 section(files 按原路径顺序已稳定)
-  const sections: ParsedSection[] = groupOrder.map((key) => {
+  // 第二步:把 pendingIntro（section-intro 正文）追加到每个 section 第一个 lesson 开头
+  for (const key of groupOrder) {
     const g = groupMap.get(key)!;
-    return {
-      title: g.sectionTitle,
-      anchor: g.sectionTitle.toLowerCase().replace(/\s+/g, "-"),
-      lessons: g.lessons,
-    };
-  });
+    if (g.pendingIntro && g.lessons.length > 0) {
+      g.lessons[0]!.body = `> **📖 章节概述**\n>\n> ${g.pendingIntro.replace(/\n/g, "\n> ")}\n\n---\n\n${g.lessons[0]!.body}`;
+    }
+  }
+
+  // 第三步:每个分组 → 一个 section（去掉空 section）
+  const sections: ParsedSection[] = groupOrder
+    .filter((key) => groupMap.get(key)!.lessons.length > 0)
+    .map((key) => {
+      const g = groupMap.get(key)!;
+      return {
+        title: g.sectionTitle,
+        anchor: g.sectionTitle.toLowerCase().replace(/\s+/g, "-"),
+        lessons: g.lessons,
+      };
+    });
 
   return { title: courseTitle, sections };
 }

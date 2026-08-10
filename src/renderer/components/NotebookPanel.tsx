@@ -930,6 +930,7 @@ function InlineAssetImage({
     <img
       src={finalSrc}
       alt={alt ?? ""}
+      data-asset-id={matchedAsset?.id}
       className="rounded-lg max-w-full h-auto my-3"
       loading="lazy"
       {...props}
@@ -962,7 +963,7 @@ function AssetThumb({ asset }: { asset: NodeAsset }) {
         title={asset.altText ?? asset.filename}
       >
         {dataUrl ? (
-          <img src={dataUrl} alt={asset.altText ?? asset.filename} className="w-full h-24 object-cover" loading="lazy" />
+          <img src={dataUrl} alt={asset.altText ?? asset.filename} data-asset-id={asset.id} className="w-full h-24 object-cover" loading="lazy" />
         ) : (
           <div className="w-full h-24 flex items-center justify-center text-neutral-400 text-caption">加载中…</div>
         )}
@@ -972,7 +973,7 @@ function AssetThumb({ asset }: { asset: NodeAsset }) {
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8 cursor-pointer"
           onClick={() => setExpanded(false)}
         >
-          <img src={dataUrl} alt={asset.altText ?? asset.filename} className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" />
+          <img src={dataUrl} alt={asset.altText ?? asset.filename} data-asset-id={asset.id} className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" />
           <button
             className="absolute top-4 right-4 text-white/70 hover:text-white text-2xl"
             onClick={(e) => {

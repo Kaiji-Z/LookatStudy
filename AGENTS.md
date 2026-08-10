@@ -64,7 +64,7 @@ npm run dev               # vite only (renderer debugging, HMR)
 npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
-npm run verify:core       # 27 pure-Node/tsx logic test suites
+npm run verify:core       # 32 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
 npm run ui-test           # real-GUI verification (headless Electron, 18 DOM assertions)
 npm run lint              # oxlint
@@ -125,6 +125,10 @@ npm run verify:core && npx vite build && npm run self-test
 | Multimodal assets | `services/asset-service.ts` | `node_assets` CRUD — 图片/PDF 渲染图元数据(二进制存 `userData/assets/{courseId}/`,不入 DB blob);`listAssetsByNode` / `getAssetDataUrl` (base64) |
 | PDF renderer | `lib/pdf-renderer.ts` | pdfjs-dist 封装:PDF 文字提取 + 内嵌图片提取(纯 JS PNG 编码,无 canvas 依赖);`classifyPdfPageByTextRatio` 判断纯文字/纯图片/混合 |
 | Notebook parser | `services/pure/notebook-parser.ts` | Jupyter `.ipynb` JSON 解析:markdown cell 原文 + code cell → ```代码块 + output 图片提取(base64);`inferLanguage` 从 kernelspec 推断语言 |
+| RST parser | `services/pure/rst-parser.ts` | reStructuredText → markdown:标题下划线/code-block/image/note admonition/行内角色 |
+| RMD parser | `services/pure/rmd-parser.ts` | R Markdown → markdown:剥 YAML front matter + ```{r} chunk 归一化 |
+| Org parser | `services/pure/org-parser.ts` | Org-mode → markdown:标题/SRC 块/链接/粗体斜体/元数据剥除 |
+| AsciiDoc parser | `services/pure/adoc-parser.ts` | AsciiDoc → markdown:标题/source 块/image/link/粗体斜体 |
 | i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + `translate()` |
 
 Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),
@@ -133,7 +137,7 @@ item CRUD), `useFontSize` (3-tier A-/A+).
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (27 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (32 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

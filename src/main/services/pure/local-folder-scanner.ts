@@ -26,7 +26,7 @@ export interface ScannedDoc {
   /** 语言(zh/en/other),用于去重 */
   lang: "zh" | "en" | "other";
   /** 文件类型 */
-  kind: "txt" | "md" | "html" | "pdf" | "ipynb";
+  kind: "txt" | "md" | "html" | "pdf" | "ipynb" | "rst" | "rmd" | "org" | "adoc";
 }
 
 /** 扫描到的图片资源(独立图片文件 / markdown 引用 / PDF 页面渲染图) */
@@ -58,6 +58,11 @@ const EXT_KIND: Record<string, ScannedDoc["kind"]> = {
   htm: "html",
   pdf: "pdf",
   ipynb: "ipynb",
+  rst: "rst",
+  rmd: "rmd",
+  org: "org",
+  adoc: "adoc",
+  asciidoc: "adoc",
 };
 
 /** 图片扩展名 → MIME 映射 */
@@ -127,7 +132,7 @@ export function detectLang(filename: string): "zh" | "en" | "other" {
 export function inferTitle(relPath: string): string {
   const filename = basename(relPath);
   // 去扩展名
-  let name = filename.replace(/\.(txt|md|markdown|html?|pdf)$/i, "");
+  let name = filename.replace(/\.(txt|md|markdown|html?|pdf|ipynb|rst|rmd|org|adoc|asciidoc)$/i, "");
   // 去语言后缀(.zh-CN / .en / .en-US 等)
   name = name.replace(/\.(zh[-_]?cn|zh[-_]?hans|zh|en[-_]?us|en)$/i, "");
   // README / index → 用父目录名
@@ -149,7 +154,7 @@ export function inferTitle(relPath: string): string {
  *  06_motivation.en.txt 和 06_motivation.zh-CN.txt → key "06_motivation" */
 export function dedupKey(relPath: string): string {
   const filename = basename(relPath);
-  let name = filename.replace(/\.(txt|md|markdown|html?|pdf)$/i, "");
+  let name = filename.replace(/\.(txt|md|markdown|html?|pdf|ipynb|rst|rmd|org|adoc|asciidoc)$/i, "");
   name = name.replace(/\.(zh[-_]?cn|zh[-_]?hans|zh|en[-_]?us|en)$/i, "");
   return name.toLowerCase();
 }
@@ -486,6 +491,21 @@ async function readFileWithKind(absPath: string, kind: ScannedDoc["kind"]): Prom
     const { parseNotebook } = await import("./notebook-parser.js");
     const result = parseNotebook(raw);
     return result.markdown;
+  }
+  if (kind === "rst" || kind === "rmd" || kind === "org" || kind === "adoc") {
+    // 非 markdown 标记格式 → 用各自解析器转 markdown
+    const raw = await readFile(absPath, "utf8");
+    const parser = { rst: "rst-parser", rmd: "rmd-parser", org: "org-parser", adoc: "adoc-parser" }[kind];
+    if (parser) {
+      try {
+        const mod = await import(`./${parser}.js`);
+        const fn = mod.parseRst ?? mod.parseRmd ?? mod.parseOrg ?? mod.parseAdoc;
+        return fn(raw).markdown;
+      } catch {
+        return raw; // 解析失败 → 当纯文本
+      }
+    }
+    return raw;
   }
   const raw = await readFile(absPath, "utf8");
   return kind === "html" ? htmlToText(raw) : raw;

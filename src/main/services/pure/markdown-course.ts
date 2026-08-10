@@ -152,18 +152,24 @@ export type LabType = "doc" | "code" | "notebook";
 
 /**
  * 从 markdown 内容推断 LabType（决定 AI 能否动手操作）。
- *   - 有 ```python/```javascript/```go/```rust 等代码块 → 'code'
- *   - 有 jupyter/notebook/.ipynb 关键词 → 'notebook'
- *   - 否则 → 'doc'
+ *
+ * 改进(原则:规则管确定性):
+ *   - notebook: 正文有 ≥3 个代码块 + 含 jupyter/notebook/.ipynb 关键词 → notebook
+ *     (单纯提及 "jupyter" 不够，必须同时有大量代码块)
+ *   - code: 正文有 ≥5 个代码块（多代码块 = 实操课程）
+ *     (单个代码块不够——很多理论课有一个示例代码)
+ *   - doc: 其他（纯阅读课程）
  */
 export function detectLabType(md: string): LabType {
   const lower = md.toLowerCase();
-  // notebook 检测优先（含 .ipynb 或 jupyter 关键词）
-  if (/\.ipynb|jupyter\s*notebook|colab notebook/.test(lower)) {
+  // 数代码块数量
+  const codeBlockCount = (md.match(/```/g) || []).length / 2; // 开闭成对
+  // notebook: 大量代码 + notebook 关键词
+  if (codeBlockCount >= 3 && /\.ipynb|jupyter\s*notebook|colab notebook/.test(lower)) {
     return "notebook";
   }
-  // 代码块检测：常见语言的 ```python/```js/```go/```rust/```java/```c++
-  if (/```(python|javascript|js|typescript|ts|go|rust|java|c\+\+|cpp|c|ruby|sql|bash|sh)\b/i.test(md)) {
+  // code: 代码块多（≥5 个 = 实操导向）
+  if (codeBlockCount >= 5) {
     return "code";
   }
   return "doc";

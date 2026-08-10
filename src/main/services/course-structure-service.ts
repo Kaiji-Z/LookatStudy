@@ -201,26 +201,44 @@ export async function analyzeCourseStructure(
   }
 
   // 构造输入：每课 id + title + content 前 300 字摘要
-  // 不再预判 [lesson]/[uncertain] 标签——所有节点统一标 [file]，
-  // LLM 对每个节点都有 keep/skip 裁量权（规则不做预决策）
   const lessonInputs = lessons.map((l) => ({
     id: l.id,
     title: l.title,
     preview: (l.content ?? "").slice(0, 300).replace(/\n/g, " ").trim(),
   }));
 
-  const prompt = buildStructurePrompt(
-    course?.title ?? "(未知课程)",
-    course?.description ?? "",
-    lessonInputs,
-  );
+  // 分块:大课程（>40 课）分批调 LLM，每批 ≤40 课，防止 prompt 过大导致截断/幻觉
+  const CHUNK_SIZE = 40;
+  const allSections: StructureProposal["sections"] = [];
+  const allSkipped: string[] = [];
 
-  const result = await generateText({
-    model: llm.languageModel,
-    prompt,
-  });
+  if (lessonInputs.length <= CHUNK_SIZE) {
+    // 小课程:单次调用
+    const prompt = buildStructurePrompt(
+      course?.title ?? "(未知课程)", course?.description ?? "", lessonInputs,
+    );
+    const result = await generateText({ model: llm.languageModel, prompt });
+    const proposal = parseStructureResult(result.text, lessons.map((l) => l.id));
+    return proposal;
+  }
 
-  return parseStructureResult(result.text, lessons.map((l) => l.id));
+  // 大课程:分块调用，每批独立分组，最后合并
+  const courseTitle = course?.title ?? "(未知课程)";
+  const courseDesc = course?.description ?? "";
+  for (let i = 0; i < lessonInputs.length; i += CHUNK_SIZE) {
+    const chunk = lessonInputs.slice(i, i + CHUNK_SIZE);
+    const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+    const totalChunks = Math.ceil(lessonInputs.length / CHUNK_SIZE);
+    const prompt = buildStructurePrompt(
+      `${courseTitle}（第 ${chunkNum}/${totalChunks} 部分）`, courseDesc, chunk,
+    );
+    const result = await generateText({ model: llm.languageModel, prompt });
+    const proposal = parseStructureResult(result.text, chunk.map((l) => l.id));
+    allSections.push(...proposal.sections);
+    allSkipped.push(...proposal.skippedNodeIds);
+  }
+
+  return { sections: allSections, skippedNodeIds: allSkipped };
 }
 
 /**

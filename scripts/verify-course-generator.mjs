@@ -56,7 +56,7 @@ const result = generateCourseFromMarkdown(db, MD, {
 
 // === T1: 返回摘要正确 ===
 assert.strictEqual(result.title, "测试课程", "T1: 标题");
-assert.strictEqual(result.labType, "code", `T1: labType 应 code（有 python 块）, 实际 ${result.labType}`);
+assert.strictEqual(result.labType, "doc", `T1: labType 应 doc（单个 python 块不够→doc）, 实际 ${result.labType}`);
 assert.strictEqual(result.sectionCount, 2, `T1: 2 section`);
 assert.strictEqual(result.lessonCount, 3, `T1: 3 lesson`);
 console.log(`✓ T1 摘要：title="${result.title}", labType=${result.labType}, 2s/3l`);
@@ -64,7 +64,7 @@ console.log(`✓ T1 摘要：title="${result.title}", labType=${result.labType},
 // === T2: course 行真的写进去了 ===
 const courseRow = db.select().from(schema.courses).all();
 assert.strictEqual(courseRow.length, 1, "T2: 1 course 行");
-assert.strictEqual(courseRow[0].labType, "code", "T2: course.labType=code");
+assert.strictEqual(courseRow[0].labType, "doc", "T2: course.labType=doc（单代码块不够）");
 console.log(`✓ T2 course 行：labType=${courseRow[0].labType}`);
 
 // === T3: content_nodes 行数 = 2 section + 3 lesson + 2 exam(每章末尾一个考试节点) ===

@@ -64,7 +64,7 @@ npm run dev               # vite only (renderer debugging, HMR)
 npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
-npm run verify:core       # 23 pure-Node/tsx logic test suites
+npm run verify:core       # 27 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
 npm run ui-test           # real-GUI verification (headless Electron, 18 DOM assertions)
 npm run lint              # oxlint
@@ -94,9 +94,10 @@ npm run verify:core && npx vite build && npm run self-test
 4. Run `npm run verify:core` to confirm consistency.
 5. When you add a table, **bump this list** below (don't make agents recount).
 
-16 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
+17 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
 `streaks`, `chat_sessions`, `settings`, `skills`, `proposals`, `friction_log`,
-`memory`, `custom_providers`, `canvas_items`, `threads`, `chat_messages`.
+`memory`, `custom_providers`, `canvas_items`, `threads`, `chat_messages`,
+`node_assets`.
 
 ## Key services
 
@@ -121,6 +122,8 @@ npm run verify:core && npx vite build && npm run self-test
 | Streak | `services/streak.ts` | Streak + freeze transitions |
 | Export | `services/export-service.ts` | JSON + Markdown learning report export |
 | Starter prompts | `services/starter-prompts-service.ts` | Mastery-based prompt suggestions |
+| Multimodal assets | `services/asset-service.ts` | `node_assets` CRUD — 图片/PDF 渲染图元数据(二进制存 `userData/assets/{courseId}/`,不入 DB blob);`listAssetsByNode` / `getAssetDataUrl` (base64) |
+| PDF renderer | `lib/pdf-renderer.ts` | pdfjs-dist 封装:PDF 文字提取 + 内嵌图片提取(纯 JS PNG 编码,无 canvas 依赖);`classifyPdfPageByTextRatio` 判断纯文字/纯图片/混合 |
 | i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + `translate()` |
 
 Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),
@@ -129,7 +132,7 @@ item CRUD), `useFontSize` (3-tier A-/A+).
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (23 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (27 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

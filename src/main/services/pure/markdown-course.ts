@@ -77,6 +77,7 @@ export function parseMarkdownToCourse(md: string): ParsedCourse {
   let title = "(untitled)";
   let currentSection: ParsedSection | null = null;
   let bodyBuffer: string[] = [];
+  let inCodeFence = false; // ``` 或 ~~~ 围栏状态——代码块内的 #/##/### 是注释不是标题
 
   const flushLessonBody = () => {
     if (currentSection && currentSection.lessons.length > 0) {
@@ -87,6 +88,17 @@ export function parseMarkdownToCourse(md: string): ParsedCourse {
   };
 
   for (const line of lines) {
+    // 代码围栏状态机（必须在标题检测之前）
+    if (/^(\s*)(```|~~~)/.test(line)) {
+      inCodeFence = !inCodeFence;
+      bodyBuffer.push(line);
+      continue;
+    }
+    // 代码块内：原样保留，不当标题处理
+    if (inCodeFence) {
+      bodyBuffer.push(line);
+      continue;
+    }
     // H1 → 课程标题（取第一个）
     if (/^#\s+/.test(line) && title === "(untitled)") {
       title = cleanTitle(line.replace(/^#\s+/, "").trim());

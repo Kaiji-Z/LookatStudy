@@ -57,7 +57,8 @@ const BASE_PROMPT =
 const db = drizzle(sqljs, { schema });
 
 // 建种子课程 + 课时（AI-For-Beginners 的第一个 lesson 有真实内容）
-const readme = readFileSync(join(ROOT, "src/main/assets/seed-ai-for-beginners.md"), "utf8");
+// 种子文件已改为运行时拉取，这里也从 CDN 实时获取 README
+const readme = await fetch("https://cdn.jsdelivr.net/gh/microsoft/AI-For-Beginners@master/README.md").then(r => r.text());
 const { generateCourseFromMarkdown } = await import("../../src/main/services/course-generator.ts");
 generateCourseFromMarkdown(db, readme, { repoUrl: "test", repoName: "AI-For-Beginners", courseId: "test-ai" });
 

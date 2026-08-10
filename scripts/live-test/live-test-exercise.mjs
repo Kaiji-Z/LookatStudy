@@ -44,7 +44,7 @@ sqljs.run("INSERT INTO settings (key, value) VALUES ('active_model', 'glm-5.2')"
 const db = drizzle(sqljs, { schema });
 
 // 建种子课程 + 取有内容的课时
-const readme = readFileSync(join(ROOT, "src/main/assets/seed-ai-for-beginners.md"), "utf8");
+const readme = await fetch("https://cdn.jsdelivr.net/gh/microsoft/AI-For-Beginners@master/README.md").then(r => r.text());
 const { generateCourseFromMarkdown } = await import("../../src/main/services/course-generator.ts");
 generateCourseFromMarkdown(db, readme, { repoUrl: "test", repoName: "AI-For-Beginners", courseId: "test-ai" });
 const lessons = db.select().from(schema.contentNodes).all()

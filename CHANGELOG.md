@@ -16,6 +16,12 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Changed
+- **种子课程改为运行时实时拉取**:删除静态种子 md 文件 + 构建脚本,
+  改为 app 启动时从 GitHub 实时拉取 microsoft/AI-For-Beginners（走完整
+  导入管线 + 中文翻译）。网络不可达时静默跳过（self-test 标 knownFail）。
+  `ensureSeedCourse` 改为 async。
+
 ### Added
 - **导入时多语言检测 + 课程语言切换**:导入 GitHub 仓库时自动检测 `translations/`
   目录,弹窗让用户选择一种翻译语言。选中的语言作为额外层拉取,存入新表

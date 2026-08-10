@@ -19,7 +19,7 @@ const ROOT = join(__dirname, "../..");
 
 const API_KEY = readApiKey();
 if (!API_KEY) { console.log("skip: no API key configured"); process.exit(0); }
-const readme = readFileSync(join(ROOT, "src/main/assets/seed-ai-for-beginners.md"), "utf8");
+const readme = await fetch("https://cdn.jsdelivr.net/gh/microsoft/AI-For-Beginners@master/README.md").then(r => r.text());
 
 // 取课程标题 + 前 3 个 section 的结构（从 README H2 提取）
 const h2Matches = readme.match(/^##\s+.+$/gm) || [];

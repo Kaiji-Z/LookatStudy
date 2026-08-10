@@ -313,3 +313,43 @@ export const chatMessages = sqliteTable("chat_messages", {
     .default(sql`(CURRENT_TIMESTAMP)`),
 });
 
+/* ---------- 多模态资源:导入时收集的图片 / PDF 页面渲染图 ---------- */
+
+/** 图片来源类型 */
+export type AssetSourceKind = "image_file" | "markdown_ref" | "pdf_page";
+
+/**
+ * 导入课程时收集的图片元数据。
+ * 图片二进制不入 DB(sql.js 内存型),只存元数据;文件在 userData/assets/{courseId}/。
+ * agent-engine 在"用户问图相关问题时"按需读取喂给多模态 LLM。
+ */
+export const nodeAssets = sqliteTable("node_assets", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id")
+    .notNull()
+    .references(() => contentNodes.id, { onDelete: "cascade" }),
+  courseId: text("course_id")
+    .notNull()
+    .references(() => courses.id, { onDelete: "cascade" }),
+  /** assets 目录下的文件名(如 lesson1-fig01.png) */
+  filename: text("filename").notNull(),
+  /** image/png / image/jpeg / image/svg+xml 等 */
+  mimeType: text("mime_type").notNull(),
+  /** 源文件里的原始相对路径(如 lessons/1/img.png) */
+  sourcePath: text("source_path"),
+  sourceKind: text("source_kind", {
+    enum: ["image_file", "markdown_ref", "pdf_page"] as const,
+  }).notNull(),
+  /** 像素宽(可空,svg/pdf 无) */
+  width: integer("width"),
+  /** 像素高(可空) */
+  height: integer("height"),
+  /** PDF 来源页码(可空,1-based) */
+  pageNumber: integer("page_number"),
+  /** ![](x) 的 alt 或文件名推断描述 */
+  altText: text("alt_text"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+

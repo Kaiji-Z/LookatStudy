@@ -148,3 +148,25 @@ assert.strictEqual(flatCourse.sections[0].lessons[0].title, "Just a title", "T11
 console.log("✓ T11 buildCourseFromFiles(无 H2): 整个文件 → 1 个 lesson，标题取 H1");
 
 console.log("\n=== ALL REPO FETCHER TESTS PASSED ✅ ===");
+
+// === v0.8 多模态: extractImageRefsFromMd ===
+{
+  const { extractImageRefsFromMd } = await import("../src/main/services/pure/repo-fetcher.ts");
+  const md = "# 课程\n\n![架构图](images/arch.png)\n\n正文\n![流程图](./flow.svg)\n![外链](https://e.com/x.png)\n![非图](doc.pdf)";
+  const refs = extractImageRefsFromMd(md);
+  assert.strictEqual(refs.length, 2, "v-img: 2 个本地图片引用(过滤外链+非图扩展名)");
+  assert.strictEqual(refs[0].alt, "架构图");
+  assert.strictEqual(refs[0].path, "images/arch.png");
+  assert.strictEqual(refs[1].path, "flow.svg", "v-img: ./ 前缀去掉");
+  console.log("✓ v-img extractImageRefsFromMd: 过滤外链+非图扩展名");
+}
+
+// === v0.8 多模态: extractImageRefsFromMd 无图返回空 ===
+{
+  const { extractImageRefsFromMd } = await import("../src/main/services/pure/repo-fetcher.ts");
+  assert.strictEqual(extractImageRefsFromMd("纯文字").length, 0, "v-img: 无图返回空");
+  assert.strictEqual(extractImageRefsFromMd("").length, 0);
+  console.log("✓ v-img extractImageRefsFromMd: 无图返回空");
+}
+
+console.log("=== 多模态图片引用解析(repo-fetcher): 通过 ✅ ===");

@@ -408,3 +408,138 @@ export async function discoverFromReadmeRecursively(
 
   return { paths: Array.from(allPaths), source: "readme-links" };
 }
+
+/* ============================================================
+ * v0.8 多模态:GitHub 导入图片收集
+ * 从已拉取的 .md 内容里解析 ![](img.png) 引用,从 CDN 下载图片二进制。
+ * ============================================================ */
+
+/** 图片扩展名集合(与 local-folder-scanner 保持一致) */
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
+
+/** ext → MIME */
+const EXT_TO_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  bmp: "image/bmp",
+};
+
+/** 从 markdown 文本提取图片引用 ![alt](path),只收相对路径的图片扩展名 */
+export function extractImageRefsFromMd(md: string): { alt: string; path: string }[] {
+  const refs: { alt: string; path: string }[] = [];
+  const pattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(md)) !== null) {
+    const alt = m[1].trim();
+    let url = m[2].trim();
+    // 去 title 后缀
+    const titleMatch = url.match(/\s+"[^"]*"$/);
+    if (titleMatch) url = url.slice(0, titleMatch.index).trim();
+    url = url.split("#")[0];
+    if (!url || url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) continue;
+    url = url.replace(/^\.\//, "");
+    const ext = url.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
+    if (!IMAGE_EXTS.has(ext)) continue;
+    refs.push({ alt, path: url });
+  }
+  return refs;
+}
+
+/** 从 .md 文件路径解析图片引用的绝对仓库路径(相对 doc 所在目录) */
+function resolveRepoImgPath(imgRef: string, docPath: string): string {
+  const docDir = docPath.includes("/") ? docPath.slice(0, docPath.lastIndexOf("/")) : "";
+  const parts = docDir ? docDir.split("/") : [];
+  for (const p of imgRef.split("/")) {
+    if (p === "..") parts.pop();
+    else if (p !== "." && p !== "") parts.push(p);
+  }
+  return parts.join("/");
+}
+
+/** 下载的图片结果 */
+export interface DownloadedImage {
+  /** 仓库内的相对路径(用作 sourcePath) */
+  repoPath: string;
+  /** 关联的 doc 路径(用于 nodeId 匹配) */
+  docPath: string;
+  /** 图片二进制 */
+  buffer: Buffer;
+  /** MIME */
+  mimeType: string;
+  /** alt 文本 */
+  altText: string;
+}
+
+/**
+ * 从已拉取的 markdown 文件里收集图片引用,从 CDN 下载二进制。
+ * 5 并发,防 CDN 过载。单个失败跳过不阻塞。
+ *
+ * @param files 已拉取的 .md 文件(ok 列表)
+ * @param owner repo owner
+ * @param repo repo name
+ * @param branch 分支
+ * @param fetchFn 注入的 fetch
+ * @param onProgress 进度回调
+ * @returns 下载成功的图片列表
+ */
+export async function fetchRepoImages(
+  files: FetchedFile[],
+  owner: string,
+  repo: string,
+  branch: string,
+  fetchFn: typeof fetch,
+  onProgress?: (done: number, total: number, path: string) => void,
+): Promise<DownloadedImage[]> {
+  // 1. 从所有 .md 文件收集图片引用(去重)
+  const allRefs = new Map<string, { repoPath: string; docPath: string; alt: string }>();
+  for (const file of files) {
+    const refs = extractImageRefsFromMd(file.md);
+    for (const ref of refs) {
+      const repoPath = resolveRepoImgPath(ref.path, file.path);
+      if (!allRefs.has(repoPath)) {
+        allRefs.set(repoPath, { repoPath, docPath: file.path, alt: ref.alt });
+      }
+    }
+  }
+
+  if (allRefs.size === 0) return [];
+  const refList = Array.from(allRefs.values());
+  const downloaded: DownloadedImage[] = [];
+  const CONCURRENCY = 5;
+
+  // 2. 并发下载(分批)
+  for (let i = 0; i < refList.length; i += CONCURRENCY) {
+    const batch = refList.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (ref) => {
+        const url = cdnUrl(owner, repo, branch, ref.repoPath);
+        const r = await fetchFn(url);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const buf = Buffer.from(await r.arrayBuffer());
+        const ext = ref.repoPath.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "png";
+        return {
+          repoPath: ref.repoPath,
+          docPath: ref.docPath,
+          buffer: buf,
+          mimeType: EXT_TO_MIME[ext] ?? "image/png",
+          altText: ref.alt || ref.repoPath.split("/").pop() || ref.repoPath,
+        } satisfies DownloadedImage;
+      }),
+    );
+    for (let j = 0; j < results.length; j++) {
+      const done = i + j + 1;
+      const ref = batch[j];
+      onProgress?.(done, refList.length, ref?.repoPath ?? "");
+      const result = results[j];
+      if (result && result.status === "fulfilled") {
+        downloaded.push(result.value);
+      }
+    }
+  }
+
+  return downloaded;
+}

@@ -13,7 +13,7 @@
  * 不在这里做 LLM 调用的单元测试（要真 key + 真网络）—— 那是 §8.4 supervisor/M4 dogfood 的事。
  * 本模块的可测部分（system prompt 装配 + 工具 schema + proposal 创建）由 verify-agent.mjs 覆盖。
  */
-import { streamText, tool, stepCountIs, type ToolSet } from "ai";
+import { streamText, tool, stepCountIs, type ToolSet, type ModelMessage } from "ai";
 import { z } from "zod";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import { eq } from "drizzle-orm";
@@ -28,6 +28,8 @@ import {
 import type { BrowserWindow } from "electron";
 import { getDb, markDirty } from "../../db/index.js";
 import { resolveLlm, classifyLlmError } from "./llm-client.js";
+import { isFlagOn } from "../flags.js";
+import { listAssetsByNode, getAssetDataUrl } from "../asset-service.js";
 import { chatSessions } from "../../db/schema.js";
 import type { ChatStreamPart } from "@shared/types";
 import {
@@ -117,6 +119,24 @@ function getTeachingStrategy(mastery: number | null): string {
 }
 
 /**
+ * 检测用户提问是否与图片/图表/示意图相关。
+ * 用于多模态按需喂图:只在用户明确问图时才注入图片(省 token)。
+ *
+ * 关键词覆盖中英文:图/图表/示意图/架构图/流程图/图解/插图/diagram/chart/figure/image/graph/画/plot
+ */
+export function isImageRelatedQuery(query: string): boolean {
+  const lower = query.toLowerCase();
+  const keywords = [
+    // 中文
+    "图", "图表", "示意图", "架构图", "流程图", "图解", "插图", "画一", "画个", "画张",
+    "截图", "图标", "图形", "图片", "看一下图", "这张图", "那幅图",
+    // 英文
+    "diagram", "chart", "figure", "image", "picture", "graph", "plot", "visual", "illustration", "screenshot",
+  ];
+  return keywords.some((kw) => lower.includes(kw));
+}
+
+/**
  * 运行一轮 agent loop。
  *
  * @param nodeId       当前在学的 content node id（提供上下文）
@@ -199,6 +219,52 @@ export async function runAgentTurn(
         };
       },
     }),
+    // 多模态:获取当前节点的关联图片(flag on 时注册)
+    ...(isFlagOn("multimodal_import")
+      ? {
+          attach_node_images: tool({
+            description:
+              "获取当前学习节点关联的图片(导入课程时收集的图/PDF 示意图)。" +
+              "当学习者问的内容涉及图/图表/示意图/架构图,或当前课内容明显需要看图理解时调用。" +
+              "返回的图片会作为你的视觉输入,你可以'看到'图的内容并讲解。" +
+              "如果当前节点没有关联图片,会返回空列表。",
+            inputSchema: z.object({}),
+            execute: async () => {
+              events.onToolCall?.("attach_node_images", {});
+              const assets = listAssetsByNode(db, nodeId);
+              if (assets.length === 0) {
+                return { images: [], message: "当前节点没有关联图片。" };
+              }
+              // 读每张图的 data-url(AI SDK v5 会把 file part 转成 vision input)
+              const imagesWithData = [];
+              for (const asset of assets.slice(0, 5)) {
+                // 限制最多 5 张(防 token 爆炸)
+                const dataUrl = await getAssetDataUrl(db, asset.id);
+                if (dataUrl) {
+                  imagesWithData.push({
+                    id: asset.id,
+                    filename: asset.filename,
+                    mimeType: asset.mimeType,
+                    altText: asset.altText,
+                    sourceKind: asset.sourceKind,
+                    // data-url 格式,vision provider 可直接用
+                    dataUrl,
+                  });
+                }
+              }
+              return {
+                images: imagesWithData,
+                count: imagesWithData.length,
+                message:
+                  imagesWithData.length > 0
+                    ? `找到 ${imagesWithData.length} 张关联图片,请结合图片内容回答学习者的问题。`
+                    : "当前节点没有可用的图片文件。",
+              };
+            },
+          }),
+        }
+      : {}),
+
     record_answer: tool({
       description:
         "记录学习者的一次答题观测。会生成一个 Proposal（pending）等人确认——不会直接改掌握度。",
@@ -394,13 +460,51 @@ export async function runAgentTurn(
   };
 
   try {
+    // v0.8 多模态:用户问图相关问题时,主动把当前节点的图片注入到最后一条 user 消息
+    // (方案 B:不依赖 tool-result vision,直接把图作为 message file-part 喂给 LLM)
+    let preparedMessages: ModelMessage[] = messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    if (isFlagOn("multimodal_import")) {
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+      if (lastUserMsg && isImageRelatedQuery(lastUserMsg.content)) {
+        const assets = listAssetsByNode(db, nodeId);
+        if (assets.length > 0) {
+          const imageParts: Array<{ type: "text"; text: string } | { type: "file"; mediaType: string; data: string }> = [
+            { type: "text", text: lastUserMsg.content },
+            { type: "text", text: `\n(以下是当前课的 ${assets.length} 张关联图片,请结合图片内容回答:)` },
+          ];
+          for (const asset of assets.slice(0, 5)) {
+            try {
+              const dataUrl = await getAssetDataUrl(db, asset.id);
+              if (dataUrl) {
+                imageParts.push({
+                  type: "file",
+                  mediaType: asset.mimeType,
+                  data: dataUrl,
+                });
+              }
+            } catch {
+              /* 单张图加载失败跳过 */
+            }
+          }
+          if (imageParts.length > 2) {
+            preparedMessages = preparedMessages.map((m) =>
+              m.role === "user" && m.content === lastUserMsg.content
+                ? { role: "user", content: imageParts }
+                : m,
+            );
+          }
+        }
+      }
+    }
+
     const result = streamText({
       model: llm.languageModel,
       system: `${system}\n\n${nodeContext}`,
-      messages: messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
+      messages: preparedMessages,
       tools,
       stopWhen: stepCountIs(6),
       abortSignal,

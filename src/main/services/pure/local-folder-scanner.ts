@@ -3,16 +3,18 @@
  *
  * 设计原则:通用,不硬编码某一种文件夹结构。
  *   - 扫描所有文本类文件:.txt/.md/.markdown/.html/.htm/.pdf
+ *   - 图片文件:.png/.jpg/.jpeg/.gif/.webp/.svg/.bmp(多模态 flag on 时收集)
  *   - 中文优先去重(同内容 .zh-CN 和 .en 只留中文)
  *   - 按文件名 NN_ 前缀排序
  *   - HTML 去标签转纯文本(<co-content> 富文本质量足够)
  *   - PDF 用 pdf-parse 提取文本(图表提取不了,但文字说明能拿到)
+ *   - PDF 图片提取由 pdf-renderer 处理(纯文字/纯图片/混合自动分类)
  *
- * 纯函数为主(htmlToText/标题推断/去重),便于 verify 脚本测。
+ * 纯函数为主(htmlToText/标题推断/去重/图片引用解析),便于 verify 脚本测。
  * scanFolder 本身用 fs(异步),verify 用临时目录造文件测。
  */
 import { readFile, readdir } from "node:fs/promises";
-import { join, relative, sep, basename } from "node:path";
+import { join, relative, sep, basename, dirname } from "node:path";
 
 export interface ScannedDoc {
   /** 相对根目录的路径(如 calculus/week1/lesson1/06_motivation.zh-CN.txt),用 / 分隔 */
@@ -27,6 +29,26 @@ export interface ScannedDoc {
   kind: "txt" | "md" | "html" | "pdf";
 }
 
+/** 扫描到的图片资源(独立图片文件 / markdown 引用 / PDF 页面渲染图) */
+export interface ScannedImage {
+  /** 相对根目录的路径(用 / 分隔) */
+  path: string;
+  /** 绝对路径(落库时复制到 assets 用);buffer 型(PDF 提取)为空串 */
+  absPath: string;
+  /** 从文件名推断的标题/描述 */
+  title: string;
+  /** MIME 类型 */
+  mime: string;
+  /** 来源:独立文件 / markdown 引用 / PDF 页面渲染图 */
+  source: "image_file" | "markdown_ref" | "pdf_page";
+  /** markdown ![](x) 的 alt 文本(独立文件时 = title) */
+  altText: string;
+  /** PDF 提取的图片二进制(有 buffer 时 absPath 可空);独立文件时为 undefined */
+  buffer?: Buffer;
+  /** PDF 来源页码(1-based);非 PDF 为 undefined */
+  pageNumber?: number;
+}
+
 /** 支持的扩展名 → kind 映射 */
 const EXT_KIND: Record<string, ScannedDoc["kind"]> = {
   txt: "txt",
@@ -35,6 +57,17 @@ const EXT_KIND: Record<string, ScannedDoc["kind"]> = {
   html: "html",
   htm: "html",
   pdf: "pdf",
+};
+
+/** 图片扩展名 → MIME 映射 */
+const IMAGE_EXT_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  bmp: "image/bmp",
 };
 
 /** 排除的目录(非教学内容) */
@@ -121,27 +154,33 @@ export function dedupKey(relPath: string): string {
 }
 
 /**
- * 递归扫描一个目录,返回所有文本类文档。
+ * 递归扫描一个目录,返回所有文本类文档(可选:同时收集图片)。
  * 中文优先去重:同 dedupKey 的多语言文件只保留中文(.zh 优先于 .en/other)。
  * 按相对路径排序(保持目录顺序 + 文件名 NN_ 前缀)。
  *
  * @param rootDir 根目录绝对路径
  * @param onProgress 可选进度回调(已扫文件数,当前路径)
+ * @param options.collectImages true 时同时收集图片文件 + markdown 图片引用(多模态 flag)
+ * @returns 文档数组,或 { docs, images }(collectImages=true 时)
  */
 export async function scanFolder(
   rootDir: string,
   onProgress?: (scanned: number, currentPath: string) => void,
-): Promise<ScannedDoc[]> {
-  const allFiles: { absPath: string; relPath: string }[] = [];
+  options?: { collectImages?: boolean },
+): Promise<ScannedDoc[] | { docs: ScannedDoc[]; images: ScannedImage[] }> {
+  const allFiles: { absPath: string; relPath: string; isImage: boolean }[] = [];
   await walkDir(rootDir, rootDir, allFiles);
 
   // 按相对路径排序(目录顺序 + 文件名数字前缀)
   allFiles.sort((a, b) => naturalPathCompare(a.relPath, b.relPath));
 
-  // 读所有文件,按 kind 提取内容
+  const docFiles = allFiles.filter((f) => !f.isImage);
+  const imageFiles = allFiles.filter((f) => f.isImage);
+
+  // 读所有文档文件,按 kind 提取内容
   const docs: ScannedDoc[] = [];
   let count = 0;
-  for (const f of allFiles) {
+  for (const f of docFiles) {
     onProgress?.(++count, f.relPath);
     const ext = f.relPath.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
     const kind = EXT_KIND[ext];
@@ -163,7 +202,80 @@ export async function scanFolder(
   }
 
   // 中文优先去重:同 dedupKey 的文件,优先级 zh > en > other
-  return dedupByLang(docs);
+  const dedupedDocs = dedupByLang(docs);
+
+  // 不收图 → 直接返回(向后兼容)
+  if (!options?.collectImages) {
+    return dedupedDocs;
+  }
+
+  // === 收图 ===
+
+  // 1. 独立图片文件
+  const fileImages: ScannedImage[] = imageFiles.map((f) => {
+    const ext = f.relPath.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
+    return {
+      path: f.relPath,
+      absPath: f.absPath,
+      title: inferImageTitle(f.relPath),
+      mime: IMAGE_EXT_MIME[ext] ?? "image/png",
+      source: "image_file" as const,
+      altText: inferImageTitle(f.relPath),
+    };
+  });
+
+  // 2. markdown 图片引用(从 .md/.html 文档正文解析)
+  const refImages: ScannedImage[] = [];
+  for (const doc of dedupedDocs) {
+    if (doc.kind !== "md") continue;
+    const refs = extractImageRefs(doc.content);
+    for (const ref of refs) {
+      const resolvedPath = resolveImageRef(ref.refPath, doc.path);
+      // 跳过已被独立文件覆盖的(去重后做)
+      const ext = resolvedPath.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
+      refImages.push({
+        path: resolvedPath,
+        absPath: join(rootDir, resolvedPath),
+        title: ref.alt || inferImageTitle(resolvedPath),
+        mime: IMAGE_EXT_MIME[ext] ?? "image/png",
+        source: "markdown_ref" as const,
+        altText: ref.alt || inferImageTitle(resolvedPath),
+      });
+    }
+  }
+
+  // 去重:同 path 只留一份(file 优先)
+  const dedupedFileAndRefImages = dedupImages(fileImages, refImages);
+
+  // 3. PDF 内嵌图片提取(纯文字 PDF 无图;混合/纯图片 PDF 有图)
+  const pdfImages: ScannedImage[] = [];
+  for (const doc of dedupedDocs) {
+    if (doc.kind !== "pdf") continue;
+    try {
+      const { processPdf } = await import("../../lib/pdf-renderer.js");
+      const pdfBuf = await readFile(join(rootDir, doc.path));
+      const result = await processPdf(pdfBuf);
+      for (const img of result.images) {
+        pdfImages.push({
+          path: `${doc.path}#page${img.pageNumber}.png`,
+          absPath: "", // buffer 型,无源文件
+          title: `${doc.title} - 图(第${img.pageNumber}页)`,
+          mime: img.mimeType,
+          source: "pdf_page" as const,
+          altText: `${doc.title} 第${img.pageNumber}页`,
+          buffer: img.buffer,
+          pageNumber: img.pageNumber,
+        });
+      }
+    } catch {
+      // PDF 图片提取失败跳过(文字已在 doc.content 里)
+    }
+  }
+
+  // PDF 图片与文件/引用图片合并(PDF 图用唯一 path,不会和文件图冲突)
+  const images = [...dedupedFileAndRefImages, ...pdfImages];
+
+  return { docs: dedupedDocs, images };
 }
 
 /** 按语言优先级去重(zh > en > other)。同 dedupKey 只保留最高优先级那份。 */
@@ -181,9 +293,111 @@ export function dedupByLang(docs: ScannedDoc[]): ScannedDoc[] {
   return docs.filter((d) => byKey.get(dedupKey(d.path)) === d);
 }
 
+/* ============================================================
+ * 图片收集(多模态 flag on 时启用)
+ * ============================================================ */
+
+/** markdown 图片引用提取结果 */
+export interface MarkdownImageRef {
+  /** 原始 alt 文本 */
+  alt: string;
+  /** 引用路径(markdown 里的原始写法,如 ./img.png 或 ../assets/fig.png) */
+  refPath: string;
+}
+
+/**
+ * 从 markdown 内容里提取图片引用 ![alt](path)。
+ * 纯函数,便于测试。
+ *
+ * 解析规则:
+ *   - 匹配 ![可选alt](路径) 格式
+ *   - 去掉路径里的锚点和查询参数后缀
+ *   - 只保留图片扩展名(.png/.jpg/.jpeg/.gif/.webp/.svg/.bmp)
+ *   - 跳过 http(s) 绝对 URL(这些是外部资源,本地没有文件)
+ *   - 跳过 data: URL
+ */
+export function extractImageRefs(md: string): MarkdownImageRef[] {
+  const refs: MarkdownImageRef[] = [];
+  // ![alt](url) — alt 可空,url 不含未转义括号
+  const pattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(md)) !== null) {
+    const alt = m[1].trim();
+    let url = m[2].trim();
+    // 去空格和标题(如 ![alt](path "title"))
+    const titleMatch = url.match(/\s+"[^"]*"$/);
+    if (titleMatch) url = url.slice(0, titleMatch.index).trim();
+    // 去锚点
+    url = url.split("#")[0];
+    // 跳过外部 URL 和 data URL
+    if (!url || url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) continue;
+    // 只留图片扩展名
+    const ext = url.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
+    if (!(ext in IMAGE_EXT_MIME)) continue;
+    refs.push({ alt, refPath: url });
+  }
+  return refs;
+}
+
+/**
+ * 把 markdown 图片引用解析成相对于扫描根目录的路径。
+ * 处理 ./ ../ 等相对引用。
+ *
+ * @param refPath markdown 里的原始引用(如 ./img.png)
+ * @param docRelPath 引用所在文档的相对路径(如 ch1/lesson1/notes.md)
+ * @returns 相对根目录的标准化路径(如 ch1/lesson1/img.png),用 / 分隔
+ *
+ * 纯函数,便于测试。
+ */
+export function resolveImageRef(refPath: string, docRelPath: string): string {
+  const docDir = dirname(docRelPath).replace(/\\/g, "/");
+  // 统一用 / 分隔(Windows \ 路径归一)
+  const normalized = refPath.replace(/\\/g, "/").replace(/^\.\//, "");
+  // 相对引用(含 ./ ../ 纯文件名 子目录)→ 相对 docDir 解析。
+  // 用纯字符串拼接(不依赖 node:path 的盘符行为,跨平台一致)。
+  const parts = docDir === "." ? [] : docDir.split("/").filter(Boolean);
+  const refParts = normalized.split("/");
+  for (const p of refParts) {
+    if (p === "..") parts.pop();
+    else if (p !== "." && p !== "") parts.push(p);
+  }
+  return parts.join("/");
+}
+
+/** 从图片文件名推断 alt 文本(去扩展名 + 数字前缀) */
+export function inferImageTitle(filename: string): string {
+  let name = basename(filename);
+  name = name.replace(/\.(png|jpe?g|gif|webp|svg|bmp)$/i, "");
+  name = name.replace(/^(\d+[_-]\s*)/, "");
+  name = name.replace(/[-_]+/g, " ").trim();
+  if (/^[a-z]/.test(name)) name = name.charAt(0).toUpperCase() + name.slice(1);
+  return name || basename(filename);
+}
+
+/**
+ * 把独立图片文件 + markdown 引用合并去重。
+ * 去重规则:按相对根目录路径归一。同一图既被 .md 引用又是独立文件 → 只留一份(image_file 优先,因为它肯定存在)。
+ *
+ * 纯函数,便于测试。
+ */
+export function dedupImages(
+  fileImages: ScannedImage[],
+  refImages: ScannedImage[],
+): ScannedImage[] {
+  const seen = new Map<string, ScannedImage>();
+  // 先放 file(优先),再放 ref(补充未匹配的)
+  for (const img of fileImages) {
+    if (!seen.has(img.path)) seen.set(img.path, img);
+  }
+  for (const img of refImages) {
+    if (!seen.has(img.path)) seen.set(img.path, img);
+  }
+  return Array.from(seen.values());
+}
+
 /* ---------- 内部辅助 ---------- */
 
-async function walkDir(root: string, current: string, acc: { absPath: string; relPath: string }[]): Promise<void> {
+async function walkDir(root: string, current: string, acc: { absPath: string; relPath: string; isImage: boolean }[]): Promise<void> {
   let entries: import("node:fs").Dirent[];
   try {
     entries = await readdir(current, { withFileTypes: true });
@@ -199,7 +413,10 @@ async function walkDir(root: string, current: string, acc: { absPath: string; re
       const ext = entry.name.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
       if (ext in EXT_KIND) {
         const rel = relative(root, abs).split(sep).join("/");
-        acc.push({ absPath: abs, relPath: rel });
+        acc.push({ absPath: abs, relPath: rel, isImage: false });
+      } else if (ext in IMAGE_EXT_MIME) {
+        const rel = relative(root, abs).split(sep).join("/");
+        acc.push({ absPath: abs, relPath: rel, isImage: true });
       }
     }
   }

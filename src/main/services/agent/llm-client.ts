@@ -17,6 +17,7 @@ import * as schema from "../../db/schema.js";
 import { settings as settingsTable } from "../../db/schema.js";
 import {
   resolveProviderConfig,
+  getProviderPreset,
   type ProviderPreset,
   type ProviderProtocol,
 } from "./llm-presets.js";
@@ -130,6 +131,94 @@ export function resolveLlm(db: Db): ResolvedLlm {
       cfg.model,
     ),
   };
+}
+
+/**
+ * 解析多模态(vision)LLM。
+ *
+ * 策略:复用主模型 + 可选覆盖。
+ *   1. 查 settings.vision_provider_override / vision_model_override
+ *   2. 有覆盖 → 用覆盖的 provider + model 构造(自定义 provider 也可覆盖)
+ *   3. 无覆盖 → 复用 resolveLlm()(主模型),检测 vision 能力
+ *   4. 主模型不支持 vision → 抛友好错误(用户需在设置页配 vision 模型)
+ *
+ * 自定义 provider 默认视为支持 vision(无法可靠检测能力)。
+ */
+export function resolveVisionLlm(db: Db): ResolvedLlm {
+  const settings = readSettingsMap(db);
+  const visionProviderOverride = settings.vision_provider_override;
+  const visionModelOverride = settings.vision_model_override;
+
+  // 有覆盖 → 用覆盖的 provider + model
+  if (visionProviderOverride && visionModelOverride) {
+    // 自定义 provider 覆盖
+    if (visionProviderOverride.startsWith("custom-")) {
+      const raw = getCustomProviderRaw(db, visionProviderOverride);
+      if (!raw) {
+        throw new Error(`多模态覆盖的自定义 provider 不存在: ${visionProviderOverride}`);
+      }
+      const apiKey = raw.apiKey || "no-key-needed";
+      const protocol = raw.protocol as ProviderProtocol;
+      return {
+        provider: {
+          id: raw.id,
+          label: "(自定义 vision)",
+          protocol,
+          baseUrl: raw.baseUrl,
+          defaultModel: raw.defaultModel,
+          models: [],
+          apiKeySetting: "(custom)",
+          keyUrl: "",
+        },
+        model: visionModelOverride,
+        apiKey,
+        languageModel: buildLanguageModel(protocol, raw.baseUrl, apiKey, visionModelOverride),
+      };
+    }
+    // 预设 provider 覆盖:从预设表查 provider 配置
+    const preset = getProviderPreset(visionProviderOverride);
+    if (preset) {
+      const apiKey = settings[preset.apiKeySetting];
+      if (!apiKey) {
+        throw new Error(`多模态覆盖 provider ${preset.label} 的 API key 未配置`);
+      }
+      return {
+        provider: preset,
+        model: visionModelOverride,
+        apiKey,
+        languageModel: buildLanguageModel(preset.protocol, preset.baseUrl, apiKey, visionModelOverride),
+      };
+    }
+  }
+
+  // 无覆盖 → 复用主模型
+  const main = resolveLlm(db);
+
+  // 自定义 provider:宽松处理(无法可靠检测,默认支持)
+  if (main.provider.id.startsWith("custom-")) {
+    return main;
+  }
+
+  // 预设 provider:检测 vision 能力
+  if (!supportsVision(main.provider, main.model)) {
+    throw new Error(
+      `当前模型 ${main.model} 不支持看图(vision)。请在设置页的"多模态"区配置一个支持 vision 的模型(如 GLM-4V / GPT-4o / Claude / Gemini)。`,
+    );
+  }
+  return main;
+}
+
+/**
+ * 检测某 provider + model 是否支持 vision。
+ * 规则:预设的 models 列表里该 model 的 capabilities 含 "vision" → 支持。
+ * 找不到 model 条目时宽松返回 true(新模型可能还没登记 capabilities)。
+ */
+export function supportsVision(provider: ProviderPreset, model: string): boolean {
+  const modelEntry = provider.models.find(
+    (m) => m.id === model || m.id.toLowerCase() === model.toLowerCase(),
+  );
+  if (!modelEntry) return true; // 宽松:没登记的模型默认支持(防误拦新模型)
+  return (modelEntry.capabilities ?? []).includes("vision");
 }
 
 /**

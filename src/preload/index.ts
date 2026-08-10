@@ -31,6 +31,14 @@ const api = {
   getNodeSummary: ((nodeId: string) =>
     ipcRenderer.invoke("course:getNodeSummary", nodeId)) as ApiExpose["getNodeSummary"],
 
+  /* 多模态资源(node_assets) */
+  listAssetsByNode: ((nodeId: string) =>
+    ipcRenderer.invoke("asset:listByNode", nodeId)) as ApiExpose["listAssetsByNode"],
+  listAssetsByCourse: ((courseId: string) =>
+    ipcRenderer.invoke("asset:listByCourse", courseId)) as ApiExpose["listAssetsByCourse"],
+  getAssetDataUrl: ((assetId: string) =>
+    ipcRenderer.invoke("asset:getDataUrl", assetId)) as ApiExpose["getAssetDataUrl"],
+
   /* 进度 */
   getProgress: ((nodeId: string) =>
     ipcRenderer.invoke("progress:get", nodeId)) as ApiExpose["getProgress"],

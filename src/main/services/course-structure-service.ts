@@ -11,7 +11,7 @@ import { eq } from "drizzle-orm";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import { generateText } from "ai";
 import * as schema from "../db/schema.js";
-import { contentNodes, courses } from "../db/schema.js";
+import { contentNodes, courses, progress as progressTable } from "../db/schema.js";
 import { resolveLlm } from "./agent/llm-client.js";
 
 type Db = SQLJsDatabase<typeof schema>;
@@ -200,26 +200,14 @@ export async function analyzeCourseStructure(
     throw new Error("课程没有任何课时节点，无法分析结构");
   }
 
-  // 构造输入：每课 id + title + content 前 200 字摘要 + uncertain 标记
-  // uncertain = 内容特征像非课时（正文少且无代码块），和 file-classifier 规则 7 一致
-  const lessonInputs = lessons.map((l) => {
-    const content = l.content ?? "";
-    const proseChars = content
-      .replace(/```[\s\S]*?```/g, "")   // 去代码块
-      .replace(/`[^`]*`/g, "")          // 去行内代码
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // 去链接语法
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")    // 去图片
-      .replace(/<[^>]+>/g, "")           // 去 HTML
-      .replace(/\s/g, "").length;
-    const hasCodeBlock = /```/.test(content);
-    const uncertain = proseChars < 200 && !hasCodeBlock;
-    return {
-      id: l.id,
-      title: l.title,
-      preview: content.slice(0, 200).replace(/\n/g, " ").trim(),
-      uncertain,
-    };
-  });
+  // 构造输入：每课 id + title + content 前 300 字摘要
+  // 不再预判 [lesson]/[uncertain] 标签——所有节点统一标 [file]，
+  // LLM 对每个节点都有 keep/skip 裁量权（规则不做预决策）
+  const lessonInputs = lessons.map((l) => ({
+    id: l.id,
+    title: l.title,
+    preview: (l.content ?? "").slice(0, 300).replace(/\n/g, " ").trim(),
+  }));
 
   const prompt = buildStructurePrompt(
     course?.title ?? "(未知课程)",
@@ -307,9 +295,36 @@ export function applyCourseStructure(
   }
 
   // 删除 LLM 判 skip 的孤儿节点（不留幽灵——它们不属于任何 section，UI 不可见）
-  // 同时删除它们的 progress 行（FK CASCADE 会处理，但 sql.js 不一定，手动删）
   for (const skipId of skippedSet) {
     db.delete(contentNodes).where(eq(contentNodes.id, skipId)).run();
+  }
+
+  // 进度同步:LLM 重排后,确保第一个 lesson 是 available（用户能开始学）
+  // 策略:找 LLM 排序的第一个 lesson（第一个 section 的 orderIdx=0 的 lesson），
+  // 如果它不是 available，且当前没有其他 available 的 lesson，把它设为 available。
+  const firstSection = db.select().from(contentNodes)
+    .where(eq(contentNodes.courseId, courseId))
+    .all()
+    .filter((n) => n.type === "section")
+    .sort((a, b) => a.orderIdx - b.orderIdx)[0];
+  if (firstSection) {
+    const firstLesson = db.select().from(contentNodes)
+      .where(eq(contentNodes.parentId, firstSection.id))
+      .all()
+      .filter((n) => n.type === "lesson")
+      .sort((a, b) => a.orderIdx - b.orderIdx)[0];
+    if (firstLesson) {
+      // 检查当前是否有任何 available 的 lesson
+      const hasAvailable = db.select().from(progressTable)
+        .all()
+      .filter((p) => p.status === "available").length > 0;
+      if (!hasAvailable) {
+        db.update(progressTable)
+          .set({ status: "available" })
+          .where(eq(progressTable.nodeId, firstLesson.id))
+          .run();
+      }
+    }
   }
 
   return {
@@ -324,50 +339,41 @@ export function applyCourseStructure(
 function buildStructurePrompt(
   courseTitle: string,
   courseDescription: string,
-  lessons: { id: string; title: string; preview: string; uncertain: boolean }[],
+  lessons: { id: string; title: string; preview: string }[],
 ): string {
   const lessonList = lessons
-    .map((l) => {
-      const tag = l.uncertain ? "uncertain" : "lesson";
-      return `  { "id": "${l.id}", "tag": "${tag}", "title": "${l.title}", "preview": "${l.preview.slice(0, 150)}" }`;
-    })
+    .map((l) => `  { "id": "${l.id}", "title": "${l.title}", "preview": "${l.preview.slice(0, 200)}" }`)
     .join(",\n");
 
-  const hasUncertain = lessons.some((l) => l.uncertain);
-
-  return `你是课程设计专家。下面是「${courseTitle}」这个学习仓库导入后的原始课时列表。
+  return `你是课程设计专家。下面是「${courseTitle}」这个学习仓库导入后的原始文件列表。
 ${courseDescription ? `课程描述: ${courseDescription}\n` : ""}
-每个课时带分类标签:
-- [lesson] = 确定是课时正文（规则已判定）
-- [uncertain] = 规则无法确定是否是课时正文，需要你判断
+这些文件来自仓库的自动扫描，可能混入非课时内容（notebook 代码、练习、示例、README 介绍页、元数据等）。
 
 请完成以下任务:
-${hasUncertain
-    ? "1. 对所有 [uncertain] 文件，逐一判断它是 keep（是真正的课时正文）还是 skip（不是课时，如 README 介绍页、变更日志、元数据等）\n"
-    : ""}2. 把所有 [lesson] + keep 的 [uncertain] 文件分成 3-10 个 section（不要太多碎章节）
-3. 把 skip 的 [uncertain] 文件 + 你认为不该归入任何 section 的文件放进 skippedNodeIds
+1. 判断每个文件是否是真正的课时正文（keep）还是非课时内容（skip）
+   - keep: 有教学价值的讲解正文（概念讲解、教程、实战指导）
+   - skip: 纯代码 notebook 无讲解、配套练习/作业、仓库元数据、导航页、翻译副本
+2. 把所有 keep 的文件分成 3-10 个 section（不要太多碎章节）
+3. 把 skip 的文件放进 skippedNodeIds
 4. section 按学习难度排序（基础→进阶）
 5. 每个 section 有一句中文摘要（说清这章学什么）
 6. lessonId 必须用我给你的原始 id，不要编造新 id
 
-课时列表:
+文件列表:
 [
 ${lessonList}
 ]
 
 严格返回以下 JSON 格式，不要加 markdown 代码块标记，不要解释:
 {
-${hasUncertain
-      ? '  "classified": {\n    "keep": ["uncertain的id"],\n    "skip": ["uncertain的id"]\n  },\n'
-      : ""}  "sections": [
+  "sections": [
     {
       "title": "章节标题（中文）",
       "summary": "这章学什么（一句话中文）",
       "lessonIds": ["id1", "id2"]
     }
   ],
-  "skippedNodeIds": ["id3", "id4"]
-}`;
+  "skippedNodeIds": ["id3", "id4"]`;
 }
 
 function parseStructureResult(
@@ -405,14 +411,14 @@ function parseStructureResult(
     }))
     .filter((s) => s.lessonIds.length > 0);
 
-  // 收集 skipped: 显式 skippedNodeIds + classified.skip（两阶段分类）
+  // 收集 skipped: 显式 skippedNodeIds
   const skippedSet = new Set<string>();
   if (Array.isArray(obj.skippedNodeIds)) {
     for (const id of obj.skippedNodeIds as string[]) {
       if (validSet.has(id)) skippedSet.add(id);
     }
   }
-  // classified.skip: LLM 对 uncertain 文件的 skip 判定
+  // 兼容: 如果 LLM 仍返回 classified.skip（旧格式），也收集
   if (obj.classified && typeof obj.classified === "object") {
     const classified = obj.classified as { skip?: unknown };
     if (Array.isArray(classified.skip)) {

@@ -89,46 +89,47 @@ test("T2d README 不在 meta 名单（交给 fallback）", () => {
 });
 
 // ============================================================
-// 规则 3: Jupyter notebook
+// 规则 3: Jupyter notebook → uncertain（交给 LLM，notebook 可能是主课程）
 // ============================================================
-test("T3 .ipynb → notebook, skip", () => {
+test("T3 .ipynb → uncertain, keep（交给 LLM 判断）", () => {
   const r = classifyFile("lessons/3-NeuralNetworks/03-Perceptron/Perceptron.ipynb", RICH_MD, { siblingPaths: AIB_SIBLINGS });
-  assert.strictEqual(r.role, "notebook");
-  assert.strictEqual(r.keepAsLesson, false);
+  assert.strictEqual(r.role, "uncertain");
+  assert.strictEqual(r.confidence, "low");
+  assert.strictEqual(r.keepAsLesson, true); // 不再 skip，LLM 来判
 });
 
 // ============================================================
-// 规则 4: 配套练习
+// 规则 4: 配套练习 → uncertain（交给 LLM，exercise 可能就是课时正文）
 // ============================================================
-test("T4 /lab/ → lab, skip", () => {
+test("T4 /lab/ → uncertain, keep（交给 LLM 判断）", () => {
   const r = classifyFile("lessons/3-NeuralNetworks/03-Perceptron/lab/README.md", RICH_MD, { siblingPaths: AIB_SIBLINGS });
-  assert.strictEqual(r.role, "lab");
-  assert.strictEqual(r.keepAsLesson, false);
+  assert.strictEqual(r.role, "uncertain");
+  assert.strictEqual(r.keepAsLesson, true);
 });
 
-test("T4b /exercise/ → lab, skip", () => {
+test("T4b /exercise/ → uncertain, keep", () => {
   const r = classifyFile("lessons/2-Intro/exercise/README.md", RICH_MD, { siblingPaths: [] });
-  assert.strictEqual(r.role, "lab");
-  assert.strictEqual(r.keepAsLesson, false);
+  assert.strictEqual(r.role, "uncertain");
+  assert.strictEqual(r.keepAsLesson, true);
 });
 
-test("T4c /assignment/ → lab, skip", () => {
+test("T4c /assignment/ → uncertain, keep", () => {
   const r = classifyFile("course/assignment/hw1.md", RICH_MD, { siblingPaths: [] });
-  assert.strictEqual(r.role, "lab");
+  assert.strictEqual(r.role, "uncertain");
 });
 
 // ============================================================
-// 规则 5: 示例代码
+// 规则 5: 示例代码 → uncertain（交给 LLM，example 可能就是课时正文）
 // ============================================================
-test("T5 /examples/ → example, skip", () => {
+test("T5 /examples/ → uncertain, keep", () => {
   const r = classifyFile("examples/mnist_classifier.md", RICH_MD, { siblingPaths: [] });
-  assert.strictEqual(r.role, "example");
-  assert.strictEqual(r.keepAsLesson, false);
+  assert.strictEqual(r.role, "uncertain");
+  assert.strictEqual(r.keepAsLesson, true);
 });
 
-test("T5b /demo/ → example, skip", () => {
+test("T5b /demo/ → uncertain, keep", () => {
   const r = classifyFile("demo/quickstart.md", RICH_MD, { siblingPaths: [] });
-  assert.strictEqual(r.role, "example");
+  assert.strictEqual(r.role, "uncertain");
 });
 
 // ============================================================
@@ -186,14 +187,14 @@ test("T9 translations/ 优先于 .ipynb（翻译 notebook）", () => {
   assert.strictEqual(r.role, "translation"); // 翻译规则先命中
 });
 
-test("T10 /lab/ 优先于 section-intro（lab README 也是 lab）", () => {
+test("T10 /lab/ 优先于 section-intro（lab README 也是 uncertain）", () => {
   const siblings = [
     "lessons/3-NN/03-Perceptron/lab/README.md",
     "lessons/3-NN/03-Perceptron/README.md",
     "lessons/3-NN/README.md",
   ];
   const r = classifyFile("lessons/3-NN/03-Perceptron/lab/README.md", RICH_MD, { siblingPaths: siblings });
-  assert.strictEqual(r.role, "lab"); // lab 规则先于 section-intro
+  assert.strictEqual(r.role, "uncertain"); // lab 规则先于 section-intro，但现在 lab→uncertain
 });
 
 // ============================================================

@@ -862,13 +862,11 @@ export interface TranslatedFile {
 /**
  * 拉取翻译版课程内容。
  *
- * 策略:拉 translations/<code>/README.md，从中发现 lesson 链接。
- * 翻译版 README 的链接可能指向两种路径:
- *   - translations/<code>/lessons/.../README.md（完整翻译）
- *   - lessons/.../README.md（只翻译了大纲，lesson 正文还是英文——跳过）
- * 只拉翻译目录下的文件，跳过指向原文的链接。
+ * 策略:不依赖翻译版 README 的链接（很多翻译只翻译了大纲，README 里没有 lesson 链接，
+ * 或链接指向其他语言翻译）。直接用原文课程的文件路径，在前面加 translations/<code>/
+ * 前缀去探测翻译版是否存在。5 并发拉取，404 跳过（该课无翻译）。
  *
- * @returns Map<originalPath, { title, md }> — key 是映射到原文的路径
+ * @returns Map<originalPath, { title, content }> — key 是原文路径
  */
 export async function fetchTranslatedContent(
   owner: string,
@@ -882,50 +880,52 @@ export async function fetchTranslatedContent(
   const send = (msg: string) => onProgress?.(msg);
   const result = new Map<string, { title: string; content: string }>();
 
-  // 1. 拉翻译版 README
+  // 先确认翻译版 README 存在（不存在说明该语言完全没翻译）
   const transReadmeUrl = cdnUrl(owner, repo, branch, `translations/${langCode}/README.md`);
-  send(`拉取翻译版 README (${langCode})…`);
-  let transReadme: string;
+  send(`检查翻译版 README (${langCode})…`);
   try {
     const r = await fetchFn(transReadmeUrl);
     if (!r.ok) {
-      send(`翻译版 README 不存在 (${r.status})，跳过翻译`);
+      send(`翻译版不存在 (${r.status})，跳过`);
       return result;
     }
-    transReadme = await r.text();
   } catch {
-    send("翻译版 README 拉取失败，跳过翻译");
+    send("翻译版检查失败，跳过");
     return result;
   }
 
-  // 2. 从翻译版 README 发现 lesson 链接
-  const links = extractInternalLinks(transReadme);
-  // 只保留指向翻译目录的 .md 链接（translations/<code>/...）
-  const transLinks = links.filter((l) => l.path.includes(`translations/${langCode}/`));
+  // 只对 .md 文件探测翻译版（.ipynb 通常不翻译）
+  const mdFiles = originalFiles.filter((f) => !f.path.toLowerCase().endsWith(".ipynb"));
+  send(`探测 ${mdFiles.length} 个文件的翻译版（${langCode}）…`);
 
-  // 3. 建立翻译路径 → 原文路径的映射
-  // translations/zh-CN/lessons/3-NN/03-Perceptron/README.md → lessons/3-NN/03-Perceptron/README.md
   const transPrefix = `translations/${langCode}/`;
-  const originalPaths = new Set(originalFiles.map((f) => f.path));
+  const CONCURRENCY = 5;
+  let done = 0;
 
-  for (const link of transLinks) {
-    // 把翻译路径还原为原文路径
-    const originalPath = link.path.replace(transPrefix, "");
-    // 如果原文课程里有这个文件，才拉翻译版
-    if (!originalPaths.has(originalPath)) continue;
-
-    try {
-      const url = cdnUrl(owner, repo, branch, link.path);
-      const r = await fetchFn(url);
-      if (!r.ok) continue;
-      const md = await r.text();
-      result.set(originalPath, { title: link.title, content: md });
-    } catch {
-      // 单个文件失败跳过
+  for (let i = 0; i < mdFiles.length; i += CONCURRENCY) {
+    const batch = mdFiles.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (file) => {
+        const transPath = transPrefix + file.path;
+        const url = cdnUrl(owner, repo, branch, transPath);
+        const r = await fetchFn(url);
+        if (!r.ok) return null; // 该文件无翻译
+        const md = await r.text();
+        return { originalPath: file.path, title: file.title, content: md };
+      }),
+    );
+    for (const res of results) {
+      done++;
+      if (res.status === "fulfilled" && res.value) {
+        result.set(res.value.originalPath, { title: res.value.title, content: res.value.content });
+      }
+    }
+    if (done % 10 === 0 || done === mdFiles.length) {
+      send(`翻译探测 ${done}/${mdFiles.length}（命中 ${result.size}）`);
     }
   }
 
-  send(`翻译版拉取完成: ${result.size}/${originalFiles.length} 课时有翻译`);
+  send(`翻译版拉取完成: ${result.size}/${mdFiles.length} 文件有翻译`);
   return result;
 }
 

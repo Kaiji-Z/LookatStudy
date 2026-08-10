@@ -107,7 +107,8 @@ test("T7 persistTranslations: 加第二种语言", () => {
 test("T8 getCourseTitleTranslations: 标题映射", () => {
   const titles = getCourseTitleTranslations(db, COURSE_ID, "zh-CN");
   assert.strictEqual(titles.get("l1"), "感知机（更新版）");
-  assert.strictEqual(titles.get("l2"), "卷积神经网络");
+  // l2 的翻译 content 是 "# CNN\n\n中文内容"，extractTranslatedTitle 取 H1 = "CNN"
+  assert.strictEqual(titles.get("l2"), "CNN");
   assert.ok(!titles.has("l3")); // l3 无翻译
 });
 

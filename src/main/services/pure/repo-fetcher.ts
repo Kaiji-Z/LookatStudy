@@ -329,16 +329,35 @@ export function buildCourseFromFiles(
       if (classification.role === "section-intro") {
         // section-intro → 追加到 section 第一个 lesson 开头
         group.pendingIntro = file.md;
-      } else if (classification.role === "notebook" || classification.role === "lab" || classification.role === "example") {
-        // notebook/lab/example → 追加到同 group 最后一个 lesson 的末尾（作为代码/练习补充）
-        // 文件已按路径排序，同目录的 lesson README 在 notebook 前面处理，所以 group 里已有 lesson
-        const targetLesson = group.lessons[group.lessons.length - 1];
-        if (targetLesson && file.md.trim().length > 0) {
-          const label = classification.role === "notebook" ? "📓 Notebook 代码" : classification.role === "lab" ? "🔧 练习" : "💡 示例";
-          targetLesson.body += `\n\n---\n\n**${label}**（来自 \`${file.path}\`）:\n\n${file.md}`;
-        }
+      } else {
+        // translation/meta → 不合并，直接跳过
       }
-      // translation/meta 不合并，直接跳过
+      continue;
+    }
+
+    // ---- uncertain 文件：先检查是否是 .ipynb/lab/example（需要合并代码到同目录 lesson）----
+    // 这些文件虽然是 uncertain（LLM 会判 keep/skip），但在 buildCourseFromFiles 阶段
+    // 先把它们的代码合并到同目录的 lesson 里，这样即使 LLM 判 skip，代码也不会丢。
+    const lowerP = file.path.toLowerCase();
+    const isNotebook = lowerP.endsWith(".ipynb");
+    const isLab = /\/lab\//.test(lowerP) || /\/labs\//.test(lowerP) || /\/exercise/.test(lowerP);
+    const isExample = /\/examples?\//.test(lowerP) || /\/demos?\//.test(lowerP);
+    if ((isNotebook || isLab || isExample) && group.lessons.length > 0) {
+      // 找同目录（sourceFilePath 的目录部分匹配）的最后一个 lesson
+      const fileDir = file.path.split("/").slice(0, -1).join("/");
+      const sameDirLessons = group.lessons.filter((l) => {
+        if (!l.sourceFilePath) return false;
+        const lessonDir = l.sourceFilePath.split("/").slice(0, -1).join("/");
+        return lessonDir === fileDir;
+      });
+      const targetLesson = (sameDirLessons.length > 0 ? sameDirLessons : group.lessons)[sameDirLessons.length > 0 ? sameDirLessons.length - 1 : group.lessons.length - 1];
+      if (targetLesson && file.md.trim().length > 0) {
+        const label = isNotebook ? "📓 Notebook 代码" : isLab ? "🔧 练习" : "💡 示例";
+        targetLesson.body += `\n\n---\n\n**${label}**（来自 \`${file.path}\`）:\n\n${file.md}`;
+      }
+      // 合并后跳过——不作为独立 lesson（代码已附在对应 lesson 里）
+      // 注意:LLM 在 analyzeCourseStructure 时仍能看到这个文件（因为 keepAsLesson=true）
+      // 但 buildCourseFromFiles 不为它建独立 lesson 节点
       continue;
     }
 

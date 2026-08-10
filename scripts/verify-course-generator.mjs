@@ -74,8 +74,8 @@ const lessons = nodes.filter((n) => n.type === "lesson");
 const exams = nodes.filter((n) => n.type === "exam");
 assert.strictEqual(sections.length, 2, `T3: 2 section`);
 assert.strictEqual(lessons.length, 3, `T3: 3 lesson`);
-assert.strictEqual(exams.length, 2, `T3: 2 exam(每章末尾一个)`);
-console.log(`✓ T3 content_nodes：2 section + 3 lesson + 2 exam`);
+assert.strictEqual(exams.length, 1, `T3: 1 exam(只有 ≥2 课的 section 才加考试，第二节仅 1 课)`);
+console.log(`✓ T3 content_nodes：2 section + 3 lesson + 1 exam(≥2课才加)`);
 
 // === T4: 第一个 lesson available,其余 lesson locked;exam 节点 available(可选,渲染层按通关条件锁) ===
 // exam DB status=available 是设计:渲染层 MapRail 用 chapterLessonsMastered 运行时算锁定,
@@ -83,10 +83,10 @@ console.log(`✓ T3 content_nodes：2 section + 3 lesson + 2 exam`);
 const progress = db.select().from(schema.progress).all();
 const available = progress.filter((p) => p.status === "available");
 const locked = progress.filter((p) => p.status === "locked");
-// 1 lesson(首发) + 2 exam = available;2 其余 lesson = locked
-assert.strictEqual(available.length, 3, `T4: 3 available(首发 lesson + 2 exam 可选)`);
+// 1 lesson(首发) + 1 exam = available;2 其余 lesson = locked
+assert.strictEqual(available.length, 2, `T4: 2 available(首发 lesson + 1 exam)`);
 assert.strictEqual(locked.length, 2, `T4: 2 locked(2 其余 lesson,exam DB 态 available)`);
-console.log(`✓ T4 初始 progress：3 available(1 lesson+2 exam) + 2 locked(其余 lesson)`);
+console.log(`✓ T4 初始 progress：2 available(1 lesson+1 exam) + 2 locked(其余 lesson)`);
 
 // === T5: lesson content 写进去了（供 RAG）===
 const lessonWithContent = lessons.find((l) => l.content && l.content.includes("hello"));

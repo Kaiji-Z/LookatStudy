@@ -179,7 +179,7 @@ export function generateCourseFromMarkdown(
     }
 
     // 章节末尾:考试节点(可选关底 boss,正确率分档给 1-3 星)
-    if (section.lessons.length > 0 && insertExamNode(db, courseId, sectionId, section.title, lessonOrder)) {
+    if (section.lessons.length >= 2 && insertExamNode(db, courseId, sectionId, section.title, lessonOrder)) {
       totalExams++;
     }
   }
@@ -311,7 +311,7 @@ export function generateCourseFromRepoFiles(
     }
 
     // 章节末尾:考试节点(可选关底 boss,正确率分档给 1-3 星)
-    if (section.lessons.length > 0 && insertExamNode(db, courseId, sectionId, section.title, lessonOrder)) {
+    if (section.lessons.length >= 2 && insertExamNode(db, courseId, sectionId, section.title, lessonOrder)) {
       totalExams++;
     }
   }

@@ -92,26 +92,6 @@ function isSectionIntro(path: string, siblingPaths: string[]): boolean {
   return hasDeeperLesson;
 }
 
-/** 提取正文纯文字字符数（粗略：去 markdown 语法 + 代码块后的字符数） */
-function proseCharCount(md: string): number {
-  // 去代码块
-  const noCodeBlocks = md.replace(/```[\s\S]*?```/g, "");
-  // 去行内代码
-  const noInlineCode = noCodeBlocks.replace(/`[^`]*`/g, "");
-  // 去 markdown 链接语法，保留文字
-  const noLinks = noInlineCode.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
-  // 去图片
-  const noImages = noLinks.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
-  // 去 HTML 标签
-  const noHtml = noImages.replace(/<[^>]+>/g, "");
-  return noHtml.replace(/\s/g, "").length;
-}
-
-/** 判断正文是否含代码块 */
-function hasCodeBlock(md: string): boolean {
-  return /```/.test(md);
-}
-
 /**
  * 主分类函数：first-match-wins 级联规则。
  *
@@ -121,7 +101,7 @@ function hasCodeBlock(md: string): boolean {
  */
 export function classifyFile(
   path: string,
-  md: string,
+  _md: string,
   context: ClassifyContext,
 ): FileClassification {
   const lowerPath = path.toLowerCase();
@@ -169,14 +149,9 @@ export function classifyFile(
       reason: "章节介绍页（同 section 有更深的 lesson 文件）" };
   }
 
-  // ── 规则 7: 正文太少 ──
-  const proseChars = proseCharCount(md);
-  if (proseChars < 200 && !hasCodeBlock(md)) {
-    return { role: "uncertain", confidence: "low", keepAsLesson: true,
-      reason: `正文仅 ${proseChars} 字且无代码块，内容太少，交给 LLM 判断` };
-  }
-
   // ── fallback: 不确定，交给 LLM ──
+  // 所有未被高置信度规则命中的文件，统一标 uncertain 交给 LLM 判断。
+  // 不再用 proseChars<200 阈值细分——那个分支和 fallback 返回完全一样，是死代码。
   return { role: "uncertain", confidence: "low", keepAsLesson: true,
     reason: "规则未命中高置信度分类，交给 LLM 判断" };
 }

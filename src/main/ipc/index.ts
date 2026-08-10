@@ -94,14 +94,7 @@ import {
 // M4：Course Generator
 import { generateCourseFromMarkdown as generateCourseFromMarkdownService, generateCourseFromRepoFiles as generateCourseFromRepoFilesService, ensureExamNodesForExistingCourses } from "../services/course-generator.js";
 import {
-  filterLessonFiles,
-  detectRepoPattern,
-  fetchMarkdownContents,
-  buildCourseFromFiles,
-  cdnUrl,
-  fetchRepoFileTree,
-  discoverFromReadmeRecursively,
-  pathsToDiscoveredFiles,
+  importRepoToParsedCourse,
 } from "../services/pure/repo-fetcher.js";
 // 本地文件夹导入(通用扫描器)
 import { scanFolder } from "../services/pure/local-folder-scanner.js";
@@ -173,195 +166,94 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       const send = (msg: string) =>
         mainWindow?.webContents.send("import:progress", msg);
 
-      // Step 1: 拉 README（试 main + master 分支，走 CDN）
-      send("正在拉取 README…");
-      const branches = ["main", "master"];
-      let readmeMd = "";
-      let readmeBranch = "main";
-      for (const br of branches) {
-        try {
-          const url = cdnUrl(owner, cleanRepo, br, "README.md");
-          const res = await fetch(url);
-          if (res.ok) {
-            readmeMd = await res.text();
-            readmeBranch = br;
-            break;
-          }
-        } catch {
-          /* 试下一个 */
-        }
-      }
-      if (!readmeMd) {
+      // 用纯编排函数拉取 + 解析（复用种子脚本同一条路径）
+      let importResult;
+      try {
+        importResult = await importRepoToParsedCourse(
+          owner, cleanRepo, "main", fetch, send,
+        );
+      } catch (e) {
+        // README 拉取失败等 → 提示用户改用粘贴
         throw new Error(
-          "拉取 README 失败。可能是网络受限或仓库私有。" +
-            "请改用「粘贴 Markdown」方式手动提供内容。",
-        );
-      }
-      send(`README 拉取成功（${readmeMd.length} 字符）`);
-
-      // Step 2: 检测仓库形态
-      const detection = detectRepoPattern(readmeMd);
-
-      if (detection.pattern === "unsupported") {
-        throw new Error(
-          `这个仓库不像学习仓库：${detection.reason}。` +
-            "LookatStudy 专为学习型仓库设计（如微软 AI-For-Beginners）。" +
-            "如果确实有学习内容，请用「粘贴 Markdown」方式手动导入。",
+          `${e instanceof Error ? e.message : "导入失败"}。` +
+            "可能是网络受限或仓库私有，请改用「粘贴 Markdown」方式手动导入。",
         );
       }
 
-      // Step 3a: 课程型 → 文件发现(主:全仓 Tree API;fallback:README 链接)+ 拉取
-      if (detection.pattern === "course" && detection.lessonFiles) {
-        let lessonFiles = filterLessonFiles(detection.lessonFiles);
+      const { course: parsed, fetchedFiles, readmeMd } = importResult;
 
-        // 文件发现升级:先尝试全仓 Tree API(发现 README 没链接的 .md 文件),
-        // 失败降级到 README 链接发现 + 一层递归。
-        try {
-          send("正在扫描仓库文件树(GitHub API)…");
-          const tree = await fetchRepoFileTree(owner, cleanRepo, readmeBranch, fetch);
-          if (tree.paths.length > 0) {
-            send(`GitHub API 发现 ${tree.paths.length} 个 .md 文件(${tree.source})`);
-            const discovered = pathsToDiscoveredFiles(tree.paths);
-            if (discovered.length > lessonFiles.length) {
-              lessonFiles = discovered; // Tree API 发现更多,用它的
-            }
-          } else {
-            // Tree API 没拿到 → 试 README 递归发现
-            send("GitHub API 不可用,改用 README 链接递归发现…");
-            const recursive = await discoverFromReadmeRecursively(
-              readmeMd, owner, cleanRepo, readmeBranch, fetch, 1, send,
-            );
-            if (recursive.paths.length > lessonFiles.length) {
-              lessonFiles = pathsToDiscoveredFiles(recursive.paths);
-            }
-          }
-        } catch (e) {
-          // 网络抖动:降级到 README 直接链接(detection 已有的)
-          send(`文件树扫描失败(${e instanceof Error ? e.message : "网络问题"}),用 README 链接`);
-        }
-
-        // 上限 200 个文件(防 CDN 过载;AI-For-Beginners ~100 文件,留余量)
-        if (lessonFiles.length > 200) {
-          send(`文件数 ${lessonFiles.length} 超过上限,截断到 200 个`);
-          lessonFiles = lessonFiles.slice(0, 200);
-        }
-
-        send(`检测到课程型仓库（${lessonFiles.length} 个课时文件），开始拉取…`);
-        const fetchResult = await fetchMarkdownContents(
-          lessonFiles,
-          owner,
-          cleanRepo,
-          readmeBranch,
-          fetch,
-          (done, total, path) => {
-            send(`拉取文件 ${done}/${total}: ${path}`);
-          },
-        );
-
-        if (fetchResult.ok.length === 0) {
-          // 所有子文件都拉失败 → 降级用 README 本身
-          send("子文件拉取全部失败，降级用 README 正文");
-          const result = generateCourseFromMarkdownService(getDb(), readmeMd, {
-            repoUrl,
-            repoName: cleanRepo,
-          });
-          markDirty();
-          const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
-          return course as unknown as Course;
-        }
-
-        // 从 README 取课程标题
-        const titleMatch = readmeMd.match(/^#\s+(.+)$/m);
-        const courseTitle = titleMatch ? titleMatch[1].trim() : cleanRepo;
-
-        // 合并所有课时文件成 ParsedCourse
-        const parsed = buildCourseFromFiles(courseTitle, fetchResult.ok);
-        send(`解析完成：${parsed.sections.length} 章节，构建课程…`);
-
-        const result = generateCourseFromRepoFilesService(getDb(), parsed, {
+      // 落库
+      let result;
+      if (importResult.detection.pattern === "single-file" || parsed.sections.length === 0) {
+        send("用 README 正文构建课程…");
+        result = generateCourseFromMarkdownService(getDb(), readmeMd, {
           repoUrl,
           repoName: cleanRepo,
         });
-        markDirty();
-
-        // v0.8 多模态:flag on 时从 CDN 下载课程里的图片
-        if (isFlagOn("multimodal_import")) {
-          try {
-            send("正在收集课程图片(CDN)…");
-            const { fetchRepoImages } = await import("../services/pure/repo-fetcher.js");
-            const { writeBufferToAssets, persistAssetRecord } = await import("../services/asset-service.js");
-            const downloaded = await fetchRepoImages(
-              fetchResult.ok, owner, cleanRepo, readmeBranch, fetch,
-              (done, total, path) => {
-                if (done % 10 === 0) send(`下载图片 ${done}/${total}…`);
-                void path;
-              },
-            );
-            if (downloaded.length > 0) {
-              // 把下载的图片关联到 content node(用 docPath 匹配 lesson title)
-              const nodes = getDb().select().from(contentNodes).where(eq(contentNodes.courseId, result.courseId)).all();
-              const lessons = nodes.filter((n) => n.type === "lesson");
-              let imgCount = 0;
-              for (let idx = 0; idx < downloaded.length; idx++) {
-                const img = downloaded[idx];
-                // 找 docPath 匹配的 lesson(用 FetchedFile.title 匹配 lesson.title)
-                const docFile = fetchResult.ok.find((f) => f.path === img.docPath);
-                const lesson = docFile
-                  ? lessons.find((l) => l.title === docFile.title || l.title.includes(docFile.title))
-                  : null;
-                const nodeId = lesson?.id ?? lessons[0]?.id;
-                if (!nodeId) continue;
-                const destName = `${String(idx).padStart(3, "0")}-${img.repoPath.split("/").pop()}`;
-                try {
-                  writeBufferToAssets(img.buffer, result.courseId, destName);
-                  persistAssetRecord(getDb(), {
-                    nodeId,
-                    courseId: result.courseId,
-                    filename: destName,
-                    mimeType: img.mimeType,
-                    sourcePath: img.repoPath,
-                    sourceKind: "markdown_ref",
-                    altText: img.altText,
-                  });
-                  imgCount++;
-                } catch {
-                  /* 单张图失败跳过 */
-                }
-              }
-              markDirty();
-              send(`图片收集完成:${imgCount} 张`);
-            }
-          } catch (e) {
-            send(`图片收集跳过(${e instanceof Error ? e.message : "出错"})`);
-          }
-        }
-
-        if (fetchResult.failed.length > 0) {
-          send(`完成（${fetchResult.failed.length} 个文件拉取失败已跳过）`);
-        } else {
-          send(`导入完成：${result.sectionCount} 章 / ${result.lessonCount} 课`);
-        }
-
-        // Step 4: 自动 AI 结构化(有 key 时)。失败不阻塞,降级到纯确定性导入结果。
-        await autoStructureCourse(result.courseId, send).catch((e) => {
-          send(`AI 结构化跳过(${e instanceof Error ? e.message : "无 key 或出错"})`);
+      } else {
+        result = generateCourseFromRepoFilesService(getDb(), parsed, {
+          repoUrl,
+          repoName: cleanRepo,
         });
+      }
+      markDirty();
 
-        const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
-        return course as unknown as Course;
+      // v0.8 多模态:flag on 时从 CDN 下载课程里的图片
+      if (isFlagOn("multimodal_import") && fetchedFiles.length > 0) {
+        try {
+          send("正在收集课程图片(CDN)…");
+          const { fetchRepoImages } = await import("../services/pure/repo-fetcher.js");
+          const { writeBufferToAssets, persistAssetRecord } = await import("../services/asset-service.js");
+          const downloaded = await fetchRepoImages(
+            fetchedFiles, owner, cleanRepo, importResult.readmeBranch, fetch,
+            (done, total, _path) => {
+              if (done % 10 === 0) send(`下载图片 ${done}/${total}…`);
+            },
+          );
+          if (downloaded.length > 0) {
+            const nodes = getDb().select().from(contentNodes).where(eq(contentNodes.courseId, result.courseId)).all();
+            const lessons = nodes.filter((n) => n.type === "lesson");
+            let imgCount = 0;
+            for (let idx = 0; idx < downloaded.length; idx++) {
+              const img = downloaded[idx];
+              const docFile = fetchedFiles.find((f) => f.path === img.docPath);
+              const lesson = docFile
+                ? lessons.find((l) => l.title === docFile.title || l.title.includes(docFile.title))
+                : null;
+              const nodeId = lesson?.id ?? lessons[0]?.id;
+              if (!nodeId) continue;
+              const destName = `${String(idx).padStart(3, "0")}-${img.repoPath.split("/").pop()}`;
+              try {
+                writeBufferToAssets(img.buffer, result.courseId, destName);
+                persistAssetRecord(getDb(), {
+                  nodeId,
+                  courseId: result.courseId,
+                  filename: destName,
+                  mimeType: img.mimeType,
+                  sourcePath: img.repoPath,
+                  sourceKind: "markdown_ref",
+                  altText: img.altText,
+                });
+                imgCount++;
+              } catch {
+                /* 单张图失败跳过 */
+              }
+            }
+            markDirty();
+            send(`图片收集完成:${imgCount} 张`);
+          }
+        } catch (e) {
+          send(`图片收集跳过(${e instanceof Error ? e.message : "出错"})`);
+        }
       }
 
-      // Step 3b: 单文件型 → 走现有 generateCourseFromMarkdown
-      send("检测到单文件型仓库，用 README 正文构建课程…");
-      const result = generateCourseFromMarkdownService(getDb(), readmeMd, {
-        repoUrl,
-        repoName: cleanRepo,
-      });
-      markDirty();
       send(`导入完成：${result.sectionCount} 章 / ${result.lessonCount} 课`);
+
+      // 自动 AI 结构化(有 key 时)。失败不阻塞,降级到纯确定性导入结果。
       await autoStructureCourse(result.courseId, send).catch((e) => {
         send(`AI 结构化跳过(${e instanceof Error ? e.message : "无 key 或出错"})`);
       });
+
       const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
       return course as unknown as Course;
     },

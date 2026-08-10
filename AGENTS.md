@@ -115,8 +115,9 @@ npm run verify:core && npx vite build && npm run self-test
 | Highlight | `lib/highlightText.ts` | 画线定位:getTextModel + 文本搜索(applyPersistentMarksByText)+ 跨节点包裹(wrapRangeWithMark)+ 闪烁(flashMark)。**不依赖 DOM offset**(ReactMarkdown 重渲染不稳定),用 indexOf 在纯文本上定位 |
 | Custom providers | `services/custom-provider-service.ts` | BYO user-defined provider rows; bypass preset settings, resolved by `custom-` prefix |
 | Course generator | `services/course-generator.ts` | `generateCourseFromMarkdown` + `generateCourseFromRepoFiles` |
-| Course structure | `services/course-structure-service.ts` | LLM-based course restructuring + `generateLessonSummaries` + prerequisite edges |
-| Repo fetcher | `services/pure/repo-fetcher.ts` | CDN fetch + `detectRepoPattern` (course/single-file/unsupported) |
+| Course structure | `services/course-structure-service.ts` | LLM-based course restructuring (two-phase: classify uncertain → group sections) + `generateLessonSummaries` |
+| Repo fetcher | `services/pure/repo-fetcher.ts` | CDN fetch + `detectRepoPattern` + `importRepoToParsedCourse` (top-level orchestration: fetch → detect → classify → build) |
+| File classifier | `services/pure/file-classifier.ts` | Rule-based `classifyFile` — high-confidence noise filter (translations/notebook/lab/example/section-intro/meta) + uncertain flag for LLM |
 | Exercise | `services/exercise-service.ts` | AI exercise generation (mcq/fill_blank/true_false) + grading |
 | Dashboard | `services/dashboard-service.ts` | `getDashboard` — section mastery, metrics |
 | Progress | `services/progress-service.ts` | DB-injected progress read/write (headless-testable) |
@@ -141,8 +142,8 @@ item CRUD), `useFontSize` (3-tier A-/A+).
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (32 suites) — run via `tsx`, import real TS source.
-- **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config.
+- **Tests live in `scripts/verify-*.mjs`** (34 suites) — run via `tsx`, import real TS source.
+- **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.
 - **Tests that import `schema.sql?raw`**: tsx can't resolve `?raw` — services that transitively import schema via `srs.ts` must use static imports in production, but the import chain must not reach `schema.ts` from verify scripts that don't use the DB.

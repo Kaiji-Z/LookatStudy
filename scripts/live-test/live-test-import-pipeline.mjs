@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import "./_load-env.mjs"; // 把 .env 的 Z_AI_API_KEY 灌进 process.env
+import { readApiKey } from "./_load-env.mjs"; // 把 .env 的 Z_AI_API_KEY 灌进 process.env
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../../src/main/db/schema.ts";
@@ -25,22 +25,6 @@ import {
 } from "../../src/main/services/course-structure-service.ts";
 
 // === 读取 API key ===
-function readApiKey() {
-  if (process.env.Z_AI_API_KEY) return process.env.Z_AI_API_KEY;
-  if (process.env.ZHIPU_API_KEY) return process.env.ZHIPU_API_KEY;
-  try {
-    const cfg = JSON.parse(
-      readFileSync(
-        join(process.env.HOME || process.env.USERPROFILE, ".config/opencode/opencode.json"),
-        "utf8",
-      ),
-    );
-    return cfg.mcp?.["zai-mcp-server"]?.environment?.Z_AI_API_KEY;
-  } catch {
-    return null;
-  }
-}
-
 const API_KEY = readApiKey();
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "../..");

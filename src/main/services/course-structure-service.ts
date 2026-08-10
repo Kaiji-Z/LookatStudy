@@ -200,12 +200,26 @@ export async function analyzeCourseStructure(
     throw new Error("课程没有任何课时节点，无法分析结构");
   }
 
-  // 构造输入：每课 id + title + content 前 200 字摘要
-  const lessonInputs = lessons.map((l) => ({
-    id: l.id,
-    title: l.title,
-    preview: (l.content ?? "").slice(0, 200).replace(/\n/g, " ").trim(),
-  }));
+  // 构造输入：每课 id + title + content 前 200 字摘要 + uncertain 标记
+  // uncertain = 内容特征像非课时（正文少且无代码块），和 file-classifier 规则 7 一致
+  const lessonInputs = lessons.map((l) => {
+    const content = l.content ?? "";
+    const proseChars = content
+      .replace(/```[\s\S]*?```/g, "")   // 去代码块
+      .replace(/`[^`]*`/g, "")          // 去行内代码
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // 去链接语法
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")    // 去图片
+      .replace(/<[^>]+>/g, "")           // 去 HTML
+      .replace(/\s/g, "").length;
+    const hasCodeBlock = /```/.test(content);
+    const uncertain = proseChars < 200 && !hasCodeBlock;
+    return {
+      id: l.id,
+      title: l.title,
+      preview: content.slice(0, 200).replace(/\n/g, " ").trim(),
+      uncertain,
+    };
+  });
 
   const prompt = buildStructurePrompt(
     course?.title ?? "(未知课程)",
@@ -304,20 +318,28 @@ export function applyCourseStructure(
 function buildStructurePrompt(
   courseTitle: string,
   courseDescription: string,
-  lessons: { id: string; title: string; preview: string }[],
+  lessons: { id: string; title: string; preview: string; uncertain: boolean }[],
 ): string {
   const lessonList = lessons
-    .map((l) => `  { "id": "${l.id}", "title": "${l.title}", "preview": "${l.preview.slice(0, 150)}" }`)
+    .map((l) => {
+      const tag = l.uncertain ? "uncertain" : "lesson";
+      return `  { "id": "${l.id}", "tag": "${tag}", "title": "${l.title}", "preview": "${l.preview.slice(0, 150)}" }`;
+    })
     .join(",\n");
+
+  const hasUncertain = lessons.some((l) => l.uncertain);
 
   return `你是课程设计专家。下面是「${courseTitle}」这个学习仓库导入后的原始课时列表。
 ${courseDescription ? `课程描述: ${courseDescription}\n` : ""}
-请把这些课时重新组织成合理的教学结构。
+每个课时带分类标签:
+- [lesson] = 确定是课时正文（规则已判定）
+- [uncertain] = 规则无法确定是否是课时正文，需要你判断
 
-规则:
-1. 识别 3-10 个大主题作为 section（不要太多碎章节）
-2. 把相关的 lesson 归到对应 section 下
-3. lab/练习/翻译类的节点在 skippedNodeIds 里标出（不归入任何 section）
+请完成以下任务:
+${hasUncertain
+    ? "1. 对所有 [uncertain] 文件，逐一判断它是 keep（是真正的课时正文）还是 skip（不是课时，如 README 介绍页、变更日志、元数据等）\n"
+    : ""}2. 把所有 [lesson] + keep 的 [uncertain] 文件分成 3-10 个 section（不要太多碎章节）
+3. 把 skip 的 [uncertain] 文件 + 你认为不该归入任何 section 的文件放进 skippedNodeIds
 4. section 按学习难度排序（基础→进阶）
 5. 每个 section 有一句中文摘要（说清这章学什么）
 6. lessonId 必须用我给你的原始 id，不要编造新 id
@@ -329,7 +351,9 @@ ${lessonList}
 
 严格返回以下 JSON 格式，不要加 markdown 代码块标记，不要解释:
 {
-  "sections": [
+${hasUncertain
+      ? '  "classified": {\n    "keep": ["uncertain的id"],\n    "skip": ["uncertain的id"]\n  },\n'
+      : ""}  "sections": [
     {
       "title": "章节标题（中文）",
       "summary": "这章学什么（一句话中文）",
@@ -350,7 +374,7 @@ function parseStructureResult(
     .replace(/\s*```$/i, "")
     .trim();
 
-  let obj: { sections?: unknown; skippedNodeIds?: unknown };
+  let obj: { sections?: unknown; skippedNodeIds?: unknown; classified?: unknown };
   try {
     obj = JSON.parse(cleaned);
   } catch (e) {
@@ -375,9 +399,22 @@ function parseStructureResult(
     }))
     .filter((s) => s.lessonIds.length > 0);
 
-  const skippedNodeIds = Array.isArray(obj.skippedNodeIds)
-    ? (obj.skippedNodeIds as string[]).filter((id) => validSet.has(id))
-    : [];
+  // 收集 skipped: 显式 skippedNodeIds + classified.skip（两阶段分类）
+  const skippedSet = new Set<string>();
+  if (Array.isArray(obj.skippedNodeIds)) {
+    for (const id of obj.skippedNodeIds as string[]) {
+      if (validSet.has(id)) skippedSet.add(id);
+    }
+  }
+  // classified.skip: LLM 对 uncertain 文件的 skip 判定
+  if (obj.classified && typeof obj.classified === "object") {
+    const classified = obj.classified as { skip?: unknown };
+    if (Array.isArray(classified.skip)) {
+      for (const id of classified.skip as string[]) {
+        if (validSet.has(id)) skippedSet.add(id);
+      }
+    }
+  }
 
-  return { sections, skippedNodeIds };
+  return { sections, skippedNodeIds: Array.from(skippedSet) };
 }

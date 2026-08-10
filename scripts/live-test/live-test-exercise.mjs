@@ -52,11 +52,11 @@ sqljs.run("INSERT INTO settings (key, value) VALUES ('active_model', 'glm-5.2')"
 const db = drizzle(sqljs, { schema });
 
 // 建种子课程 + 取有内容的课时
-const readme = readFileSync(join(ROOT, "src/main/services/seed-fde-readme.md"), "utf8");
+const readme = readFileSync(join(ROOT, "src/main/assets/seed-ai-for-beginners.md"), "utf8");
 const { generateCourseFromMarkdown } = await import("../../src/main/services/course-generator.ts");
-generateCourseFromMarkdown(db, readme, { repoUrl: "test", repoName: "FDE", courseId: "test-fde" });
+generateCourseFromMarkdown(db, readme, { repoUrl: "test", repoName: "AI-For-Beginners", courseId: "test-ai" });
 const lessons = db.select().from(schema.contentNodes).all()
-  .filter((n) => n.courseId === "test-fde" && n.type === "lesson" && n.content && n.content.length > 100);
+  .filter((n) => n.courseId === "test-ai" && n.type === "lesson" && n.content && n.content.length > 100);
 const testNode = lessons[0];
 if (!testNode) { console.log("❌ 找不到有内容的测试节点"); process.exit(1); }
 console.log(`测试节点: ${testNode.title} (content ${testNode.content.length} 字符)\n`);

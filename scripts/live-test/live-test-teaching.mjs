@@ -53,7 +53,7 @@ const BASE_PROMPT =
   "你的职责是帮学习者真正理解知识，不是简单复述文档。" +
   "用清晰、鼓励的中文回答。\n\n" +
   "【防幻觉红线】你必须严格基于下面提供的课程上下文和当前节点内容回答。" +
-  "对于课程标题中出现的专有名词、缩写（如 FDE = Forward Deployment Engineer），" +
+  "对于课程标题中出现的专有名词、缩写（如 CNN = Convolutional Neural Network），" +
   "必须使用课程上下文里的定义，绝不可自行猜测或编造。" +
   "如果学习者问的内容超出了你掌握的上下文，明确说'这部分内容不在当前课程材料中'，" +
   "而不是编造一个看似合理的回答。\n\n" +
@@ -64,14 +64,14 @@ const BASE_PROMPT =
 
 const db = drizzle(sqljs, { schema });
 
-// 建种子课程 + 课时（FDE 的第一个 lesson 有真实内容）
-const readme = readFileSync(join(ROOT, "src/main/assets/seed-fde-readme.md"), "utf8");
+// 建种子课程 + 课时（AI-For-Beginners 的第一个 lesson 有真实内容）
+const readme = readFileSync(join(ROOT, "src/main/assets/seed-ai-for-beginners.md"), "utf8");
 const { generateCourseFromMarkdown } = await import("../../src/main/services/course-generator.ts");
-generateCourseFromMarkdown(db, readme, { repoUrl: "test", repoName: "FDE", courseId: "test-fde" });
+generateCourseFromMarkdown(db, readme, { repoUrl: "test", repoName: "AI-For-Beginners", courseId: "test-ai" });
 
 // 取第一个有内容的 lesson
 const lessons = db.select().from(schema.contentNodes).all()
-  .filter((n) => n.courseId === "test-fde" && n.type === "lesson" && n.content && n.content.length > 100);
+  .filter((n) => n.courseId === "test-ai" && n.type === "lesson" && n.content && n.content.length > 100);
 const testNode = lessons[0];
 if (!testNode) {
   console.log("❌ 找不到有内容的测试节点");
@@ -131,9 +131,9 @@ async function testTeaching(label, userMessage, checks, masteryOverride) {
 
   try {
     // 构造 system prompt（模拟 agent-engine 的逻辑）
-    const course = db.select().from(schema.courses).all().find((c) => c.id === "test-fde");
+    const course = db.select().from(schema.courses).all().find((c) => c.id === "test-ai");
     const sections = db.select().from(schema.contentNodes).all()
-      .filter((n) => n.courseId === "test-fde" && n.type === "section")
+      .filter((n) => n.courseId === "test-ai" && n.type === "section")
       .sort((a, b) => a.orderIdx - b.orderIdx);
     const systemPrompt = buildSystemPromptForTest(testNode, course, sections, masteryOverride ?? null);
 
@@ -167,10 +167,10 @@ await testTeaching("基础讲解 - 学习者问核心概念", "请帮我理解�
   { name: "不含空响应", fn: (r) => !r.includes("未返回任何内容") },
 ]);
 
-// === Test 2: 防幻觉 - FDE 缩写含义 ===
-await testTeaching("防幻觉 - FDE 是什么", "FDE 是什么意思？", [
-  { name: "提到 Forward Deployment", fn: (r) => r.includes("Forward Deployment") || r.includes("向前部署") },
-  { name: "不是 Full Stack", fn: (r) => !r.toLowerCase().includes("full stack") },
+// === Test 2: 防幻觉 - 课程核心概念（AI 是什么） ===
+await testTeaching("防幻觉 - AI 是什么", "这一课讲的核心概念是什么？用简单的话解释。", [
+  { name: "提到人工智能", fn: (r) => r.includes("人工智能") || r.toLowerCase().includes("artificial intelligence") },
+  { name: "不是数据库概念", fn: (r) => !r.includes("关系数据库") && !r.includes("SQL 查询") },
 ]);
 
 // === Test 3: 苏格拉底引导（检查是否含提问） ===
@@ -191,9 +191,9 @@ await testTeaching(`基于内容回答 - 检查引用课程关键词(${keywordTo
 ]);
 
 // === Test 5: 答错纠错 — 学习者故意说错，AI 应纠正 ===
-await testTeaching("答错纠错 - 学习者故意说错概念", "我觉得 FDE 就是前端开发工程师，对吧？", [
+await testTeaching("答错纠错 - 学习者故意说错概念", "我觉得机器学习就是写更多的 if-else 规则，对吧？", [
   { name: "纠正了误解", fn: (r) => !r.includes("对的") && !r.includes("是的，") && !r.includes("没错") },
-  { name: "给出正确解释", fn: (r) => r.includes("Forward Deployment") || r.includes("向前部署") || r.includes("不是前端") },
+  { name: "给出正确解释", fn: (r) => r.includes("数据") || r.includes("学习") || r.includes("不是") || r.includes("训练") },
   { name: "回复非空", fn: (r) => r.length > 50 },
 ]);
 
@@ -201,9 +201,9 @@ await testTeaching("答错纠错 - 学习者故意说错概念", "我觉得 FDE 
 console.log("\n=== Test 6: 多轮对话连贯性 ===");
 try {
   testCount++;
-  const course = db.select().from(schema.courses).all().find((c) => c.id === "test-fde");
+  const course = db.select().from(schema.courses).all().find((c) => c.id === "test-ai");
   const sections = db.select().from(schema.contentNodes).all()
-    .filter((n) => n.courseId === "test-fde" && n.type === "section")
+    .filter((n) => n.courseId === "test-ai" && n.type === "section")
     .sort((a, b) => a.orderIdx - b.orderIdx);
   const systemPrompt = buildSystemPromptForTest(testNode, course, sections, null);
 
@@ -299,28 +299,28 @@ console.log("\n=== §3.2 Supervisor 评判 ===");
 // 收集要评判的回复（从前面的测试中复用）
 const supervisorCases = [];
 
-// Case 1: 防幻觉 — FDE 缩写
+// Case 1: 防幻觉 — AI 核心概念定义
 {
-  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-fde"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-fde" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "FDE 是什么意思？");
-  supervisorCases.push({ label: "防幻觉-FDE定义", learnerMsg: "FDE 是什么意思？", aiReply: reply, contextSummary: `课程标题: Awesome Forward Deployment Engineering (FDE)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["防幻觉"] });
+  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-ai"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-ai" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "人工智能和普通编程有什么本质区别？");
+  supervisorCases.push({ label: "防幻觉-AI定义", learnerMsg: "人工智能和普通编程有什么本质区别？", aiReply: reply, contextSummary: `课程标题: AI for Beginners — 12 Weeks, 24 Lessons (Microsoft)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["防幻觉"] });
 }
 
 // Case 2: 引导性 — 苏格拉底模式
 {
-  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-fde"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-fde" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "我不太理解这一课的内容，能帮帮我吗？");
-  supervisorCases.push({ label: "引导性-苏格拉底", learnerMsg: "我不太理解这一课的内容，能帮帮我吗？", aiReply: reply, contextSummary: `课程标题: Awesome Forward Deployment Engineering (FDE)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["引导性"] });
+  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-ai"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-ai" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "我不太理解这一课的内容，能帮帮我吗？");
+  supervisorCases.push({ label: "引导性-苏格拉底", learnerMsg: "我不太理解这一课的内容，能帮帮我吗？", aiReply: reply, contextSummary: `课程标题: AI for Beginners — 12 Weeks, 24 Lessons (Microsoft)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["引导性"] });
 }
 
-// Case 3: 纠错 — 学习者故意说错
+// Case 3: 纠错 — 学习者故意说错（机器学习 = if-else）
 {
-  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-fde"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-fde" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "我觉得 FDE 就是前端开发工程师，对吧？");
-  supervisorCases.push({ label: "纠错-故意说错", learnerMsg: "我觉得 FDE 就是前端开发工程师，对吧？", aiReply: reply, contextSummary: `课程标题: Awesome Forward Deployment Engineering (FDE)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["纠错准确性"] });
+  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-ai"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-ai" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "我觉得机器学习就是写更多的 if-else 规则，对吧？");
+  supervisorCases.push({ label: "纠错-故意说错", learnerMsg: "我觉得机器学习就是写更多的 if-else 规则，对吧？", aiReply: reply, contextSummary: `课程标题: AI for Beginners — 12 Weeks, 24 Lessons (Microsoft)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["纠错准确性"] });
 }
 
 // Case 4: 出题质量 — 考考我
 {
-  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-fde"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-fde" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "出一道关于这一课的练习题考考我。");
-  supervisorCases.push({ label: "出题质量-考考我", learnerMsg: "出一道关于这一课的练习题考考我。", aiReply: reply, contextSummary: `课程标题: Awesome Forward Deployment Engineering (FDE)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["出题质量"] });
+  const reply = await callGlm(buildSystemPromptForTest(testNode, db.select().from(schema.courses).all().find(c => c.id === "test-ai"), db.select().from(schema.contentNodes).all().filter(n => n.courseId === "test-ai" && n.type === "section").sort((a,b) => a.orderIdx - b.orderIdx), null), "出一道关于这一课的练习题考考我。");
+  supervisorCases.push({ label: "出题质量-考考我", learnerMsg: "出一道关于这一课的练习题考考我。", aiReply: reply, contextSummary: `课程标题: AI for Beginners — 12 Weeks, 24 Lessons (Microsoft)\n课时标题: ${testNode.title}\n课时内容摘要: ${testNode.content?.slice(0, 300)}`, dimensions: ["出题质量"] });
 }
 
 // Supervisor prompt（§3.2: 独立、不含生成器代码、只看行为）

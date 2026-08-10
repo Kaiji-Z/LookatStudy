@@ -4,7 +4,7 @@
  * 跑法: npx tsx scripts/live-test/live-test-summary.mjs
  *
  * 测试场景:
- *   1. 章节摘要生成质量: 调 LLM 为 FDE 课程的 section 生成摘要 + 前置依赖
+ *   1. 章节摘要生成质量: 调 LLM 为 AI-For-Beginners 课程的 section 生成摘要 + 前置依赖
  *   2. 摘要格式: JSON 合法 + summary 在 30 字以内 + prerequisites 非空
  *   3. 摘要内容相关性: 摘要应包含章节标题关键词
  *   4. Ollama 本地连接: 尝试连 http://localhost:11434/v1/models（不要求 Ollama 在跑，只需验证不崩溃）
@@ -26,7 +26,7 @@ function readApiKey() {
 }
 
 const API_KEY = readApiKey();
-const readme = readFileSync(join(ROOT, "src/main/services/seed-fde-readme.md"), "utf8");
+const readme = readFileSync(join(ROOT, "src/main/assets/seed-ai-for-beginners.md"), "utf8");
 
 // 取课程标题 + 前 3 个 section 的结构（从 README H2 提取）
 const h2Matches = readme.match(/^##\s+.+$/gm) || [];
@@ -88,7 +88,7 @@ if (!API_KEY) {
 
     const prompt = `你是课程设计专家。请为以下章节生成一句话中文摘要和前置知识标记。
 
-课程: 🚀 Awesome Forward Deployment Engineering (FDE)
+课程: AI for Beginners — 12 Weeks, 24 Lessons (Microsoft)
 章节: ${sectionTitle}
 该章节的课时:
 ${lessonTitles.map(t => `- ${t}`).join("\n")}

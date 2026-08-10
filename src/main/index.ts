@@ -189,7 +189,7 @@ async function runSelfTest(): Promise<void> {
   const seedCourse = db
     .select()
     .from(courses)
-    .where(eq(courses.id, "seed-fde-roadmap"))
+    .where(eq(courses.id, "seed-ai-for-beginners"))
     .get();
   results.push({
     name: "seed course exists",
@@ -197,12 +197,12 @@ async function runSelfTest(): Promise<void> {
     detail: seedCourse?.title,
   });
 
-  // 2. 课程树有 sections + lessons（数量不硬编码——seed 内容会随 FDE 路线图源更新而变，
+  // 2. 课程树有 sections + lessons（数量不硬编码——seed 内容会随 AI-For-Beginners 源更新而变，
   // 这里只校验"非空 + 结构合理"，避免改 seed 时 self-test 假性失败）
   const tree = db
     .select()
     .from(contentNodes)
-    .where(eq(contentNodes.courseId, "seed-fde-roadmap"))
+    .where(eq(contentNodes.courseId, "seed-ai-for-beginners"))
     .all();
   const sections = tree.filter((n) => n.type === "section");
   const lessons = tree.filter((n) => n.type === "lesson");

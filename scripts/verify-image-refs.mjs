@@ -169,6 +169,50 @@ test("T16 extractImageRefs: 嵌套括号不误匹配", () => {
   assert.ok(good, "good.png 被正确解析");
 });
 
+// === T17: extractImageRefs 支持 HTML <img> 标签 ===
+test("T17 extractImageRefs: HTML <img> 标签(src 单引号)", () => {
+  const md = "Text\n<img src='images/arch.png' alt='架构图'/>\nMore";
+  const refs = extractImageRefs(md);
+  assert.strictEqual(refs.length, 1, "HTML img 被解析");
+  assert.strictEqual(refs[0].refPath, "images/arch.png");
+  assert.strictEqual(refs[0].alt, "架构图");
+});
+
+// === T18: extractImageRefs HTML img 双引号 ===
+test("T18 extractImageRefs: HTML <img> 标签(src 双引号 + 无 alt)", () => {
+  const md = '<img src="diagrams/flow.jpg"/>';
+  const refs = extractImageRefs(md);
+  assert.strictEqual(refs.length, 1);
+  assert.strictEqual(refs[0].refPath, "diagrams/flow.jpg");
+  // 无 alt → 用文件名推断
+  assert.ok(refs[0].alt.includes("flow"), `alt 含文件名,实际: ${refs[0].alt}`);
+});
+
+// === T19: extractImageRefs HTML img + Markdown 混合,去重 ===
+test("T19 extractImageRefs: Markdown + HTML 混合去重", () => {
+  const md = "![图](fig.png)\n<img src='fig.png' alt='图'/>";
+  const refs = extractImageRefs(md);
+  // 同 path + 同 alt → 去重为 1
+  assert.strictEqual(refs.length, 1, "同 path+alt 去重");
+});
+
+// === T20: extractImageRefs HTML img 跳过外部 URL ===
+test("T20 extractImageRefs: HTML img 跳过外部 URL", () => {
+  const md = '<img src="https://e.com/x.png" alt="外链"/>\n<img src="local.png"/>';
+  const refs = extractImageRefs(md);
+  assert.strictEqual(refs.length, 1, "只有本地 img 被收");
+  assert.strictEqual(refs[0].refPath, "local.png");
+});
+
+// === T21: extractImageRefs HTML img alt 在 src 前 ===
+test("T21 extractImageRefs: HTML img alt 在 src 前", () => {
+  const md = "<img alt='描述' src='img.png'/>";
+  const refs = extractImageRefs(md);
+  assert.strictEqual(refs.length, 1);
+  assert.strictEqual(refs[0].refPath, "img.png");
+  assert.strictEqual(refs[0].alt, "描述", "alt 在 src 前也能解析");
+});
+
 // === v0.8 多模态: isImageRelatedQuery(agent-engine 视觉查询检测)===
 // inline 复刻(agent-engine.ts import 链到 electron app,tsx 环境会崩)
 {

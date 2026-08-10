@@ -170,6 +170,17 @@ export async function fetchMarkdownContents(
         const r = await fetchFn(url);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const text = await r.text();
+        // .ipynb → 用 notebook-parser 转成 markdown(markdown cell + code block)
+        if (f.path.toLowerCase().endsWith(".ipynb")) {
+          try {
+            const { parseNotebook } = await import("./notebook-parser.js");
+            const nbResult = parseNotebook(text);
+            return { path: f.path, title: f.title, md: nbResult.markdown };
+          } catch {
+            // notebook 解析失败 → 当普通文本(至少能看到 JSON 结构)
+            return { path: f.path, title: f.title, md: text };
+          }
+        }
         return { path: f.path, title: f.title, md: text };
       }),
     );
@@ -351,7 +362,7 @@ export async function fetchRepoFileTree(
   if (apiRes.ok) {
     const data = (await apiRes.json()) as { tree?: Array<{ path: string; type: string }> };
     const mdPaths = (data.tree ?? [])
-      .filter((n) => n.type === "blob" && /\.(md|mdx)$/i.test(n.path))
+      .filter((n) => n.type === "blob" && /\.(md|mdx|ipynb)$/i.test(n.path))
       .map((n) => n.path);
     if (mdPaths.length > 0) return { paths: mdPaths, source: "github-tree-api" };
   }
@@ -428,15 +439,17 @@ const EXT_TO_MIME: Record<string, string> = {
   bmp: "image/bmp",
 };
 
-/** 从 markdown 文本提取图片引用 ![alt](path),只收相对路径的图片扩展名 */
+/** 从 markdown 文本提取图片引用 ![alt](path) + <img src='...'>,只收相对路径的图片扩展名 */
 export function extractImageRefsFromMd(md: string): { alt: string; path: string }[] {
   const refs: { alt: string; path: string }[] = [];
-  const pattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  const seen = new Set<string>();
+
+  // 1. Markdown 语法 ![alt](url)
+  const mdPattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
   let m: RegExpExecArray | null;
-  while ((m = pattern.exec(md)) !== null) {
+  while ((m = mdPattern.exec(md)) !== null) {
     const alt = m[1].trim();
     let url = m[2].trim();
-    // 去 title 后缀
     const titleMatch = url.match(/\s+"[^"]*"$/);
     if (titleMatch) url = url.slice(0, titleMatch.index).trim();
     url = url.split("#")[0];
@@ -444,8 +457,28 @@ export function extractImageRefsFromMd(md: string): { alt: string; path: string 
     url = url.replace(/^\.\//, "");
     const ext = url.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
     if (!IMAGE_EXTS.has(ext)) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
     refs.push({ alt, path: url });
   }
+
+  // 2. HTML <img> 标签(覆盖微软课程仓库 <img src='images/xxx.png'/>)
+  // 两步法:先提取 <img ...> 整标签,再独立提取 src 和 alt(属性顺序无关)
+  const htmlPattern = /<img\s+[^>]*>/gi;
+  let hm: RegExpExecArray | null;
+  while ((hm = htmlPattern.exec(md)) !== null) {
+    const tag = hm[0];
+    let url = (tag.match(/src=['"]([^'"]+)['"]/i)?.[1] ?? "").trim().split("#")[0];
+    const alt = (tag.match(/alt=['"]([^'"]*)['"]/i)?.[1] ?? "").trim();
+    if (!url || url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) continue;
+    url = url.replace(/^\.\//, "");
+    const ext = url.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
+    if (!IMAGE_EXTS.has(ext)) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    refs.push({ alt: alt || (url.split("/").pop() ?? url), path: url });
+  }
+
   return refs;
 }
 

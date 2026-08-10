@@ -2,6 +2,39 @@
 
 > Source: [microsoft/AI-For-Beginners](https://github.com/microsoft/AI-For-Beginners) — auto-imported via repo-fetcher pipeline.
 
+## Examples
+
+### Prerequisites
+
+Make sure you have Python installed (3.8 or higher recommended). Install required packages:
+
+```bash
+# For Python scripts
+pip install numpy
+
+# For Jupyter notebooks (image classifier)
+pip install jupyter numpy pillow tensorflow
+```
+
+Or use the conda environment from the main curriculum:
+
+```bash
+conda env create --name ai4beg --file ../environment.yml
+conda activate ai4beg
+```
+
+### Running the Examples
+
+**For Python scripts (.py files):**
+```bash
+python 01-hello-ai-world.py
+```
+
+**For Jupyter notebooks (.ipynb files):**
+```bash
+jupyter notebook 03-image-classifier.ipynb
+```
+
 ## Course Setup
 
 ### For Educators
@@ -120,6 +153,564 @@ Alternately, we can try to model the simplest elements inside our brain – a ne
 
 ## Symbolic
 
+### Implementing an Animal Expert System
+
+An example from [AI for Beginners Curriculum](http://github.com/microsoft/ai-for-beginners).
+
+In this sample, we will implement a simple knowledge-based system to determine an animal based on some physical characteristics. The system can be represented by the following AND-OR tree (this is a part of the whole tree, we can easily add some more rules):
+
+![](images/AND-OR-Tree.png)
+
+#### Our own expert systems shell with backward inference
+
+Let's try to define a simple language for knowledge representation based on production rules. We will use Python classes as keywords to define rules. There would be essentially 3 types of classes:
+* `Ask` represents a question that needs to be asked to the user. It contains the set of possible answers.
+* `If` represents a rule, and it is just a syntactic sugar to store the content of the rule
+* `AND`/`OR` are classes to represent AND/OR branches of the tree. They just store the list of arguments inside. To simplify code, all functionality is defined in the parent class `Content`
+
+```python
+class Ask():
+    def __init__(self,choices=['y','n']):
+        self.choices = choices
+    def ask(self):
+        if max([len(x) for x in self.choices])>1:
+            for i,x in enumerate(self.choices):
+                print("{0}. {1}".format(i,x),flush=True)
+            x = int(input())
+            return self.choices[x]
+        else:
+            print("/".join(self.choices),flush=True)
+            return input()
+
+class Content():
+    def __init__(self,x):
+        self.x=x
+        
+class If(Content):
+    pass
+
+class AND(Content):
+    pass
+
+class OR(Content):
+    pass
+```
+
+In our system, working memory would contain the list of **facts** as **attribute-value pairs**. The knowledgebase can be defined as one big dictionary that maps actions (new facts that should be inserted into working memory) to conditions, expressed as AND-OR expressions. Also, some facts can be `Ask`-ed.
+
+```python
+rules = {
+    'default': Ask(['y','n']),
+    'color' : Ask(['red-brown','black and white','other']),
+    'pattern' : Ask(['dark stripes','dark spots']),
+    'mammal': If(OR(['hair','gives milk'])),
+    'carnivor': If(OR([AND(['sharp teeth','claws','forward-looking eyes']),'eats meat'])),
+    'ungulate': If(['mammal',OR(['has hooves','chews cud'])]),
+    'bird': If(OR(['feathers',AND(['flies','lies eggs'])])),
+    'animal:monkey' : If(['mammal','carnivor','color:red-brown','pattern:dark spots']),
+    'animal:tiger' : If(['mammal','carnivor','color:red-brown','pattern:dark stripes']),
+    'animal:giraffe' : If(['ungulate','long neck','long legs','pattern:dark spots']),
+    'animal:zebra' : If(['ungulate','pattern:dark stripes']),
+    'animal:ostrich' : If(['bird','long nech','color:black and white','cannot fly']),
+    'animal:pinguin' : If(['bird','swims','color:black and white','cannot fly']),
+    'animal:albatross' : If(['bird','flies well'])
+}
+```
+
+To perform the backward inference, we will define `Knowledgebase` class. It will contain:
+* Working `memory` - a dictionary that maps attributes to values
+* Knowledgebase `rules` in the format as defined above
+
+Two main methods are:
+* `get` to obtain the value of an attribute, performing inference if necessary. For example, `get('color')` would get the value of a color slot (it will ask if necessary, and store the value for later usage in the working memory). If we ask `get('color:blue')`, it will ask for a color, and then return `y`/`n` value depending on the color.
+* `eval` performs the actual inference, i.e. traverses AND/OR tree, evaluates sub-goals, etc.
+
+```python
+class KnowledgeBase():
+    def __init__(self,rules):
+        self.rules = rules
+        self.memory = {}
+        
+    def get(self,name):
+        if ':' in name:
+            k,v = name.split(':')
+            vv = self.get(k)
+            return 'y' if v==vv else 'n'
+        if name in self.memory.keys():
+            return self.memory[name]
+        for fld in self.rules.keys():
+            if fld==name or fld.startswith(name+":"):
+                # print(" + proving {}".format(fld))
+                value = 'y' if fld==name else fld.split(':')[1]
+                res = self.eval(self.rules[fld],field=name)
+                if res!='y' and res!='n' and value=='y':
+                    self.memory[name] = res
+                    return res
+                if res=='y':
+                    self.memory[name] = value
+                    return value
+        # field is not found, using default
+        res = self.eval(self.rules['default'],field=name)
+        self.memory[name]=res
+        return res
+                
+    def eval(self,expr,field=None):
+        # print(" + eval {}".format(expr))
+        if isinstance(expr,Ask):
+            print(field)
+            return expr.ask()
+        elif isinstance(expr,If):
+            return self.eval(expr.x)
+        elif isinstance(expr,AND) or isinstance(expr,list):
+            expr = expr.x if isinstance(expr,AND) else expr
+            for x in expr:
+                if self.eval(x)=='n':
+                    return 'n'
+            return 'y'
+        elif isinstance(expr,OR):
+            for x in expr.x:
+                if self.eval(x)=='y':
+                    return 'y'
+            return 'n'
+        elif isinstance(expr,str):
+            return self.get(expr)
+        else:
+            print("Unknown expr: {}".format(expr))
+```
+
+Now let's define our animal knowledgebase and perform the consultation. Note that this call will ask you questions. You can answer by typing `y`/`n` for yes-no questions, or by specifying number (0..N) for questions with longer multiple-choice answers.
+
+```python
+kb = KnowledgeBase(rules)
+kb.get('animal')
+```
+
+#### Using Experta for Forward Inference
+
+In the next example, we will try to implement forward inference using one of the libraries for knowledge representation, [Experta](https://github.com/nilp0inter/experta). **Experta** is a library for creating forward inference systems in Python, which is designed to be similar to classical old system [CLIPS](http://www.clipsrules.net/index.html). 
+
+We could have also implemented forward chaining ourselves without many problems, but naive implementations are usually not very efficient. For more effective rule matching a special algorithm [Rete](https://en.wikipedia.org/wiki/Rete_algorithm) is used.
+
+```python
+import sys
+!{sys.executable} -m pip install git+https://github.com/nilp0inter/experta
+```
+
+```python
+from experta import *
+#import experta
+```
+
+We will define our system as a class that subclasses `KnowledgeEngine`. Each rule is defined by a separate function with `@Rule` annotation, which specifies when the rule should fire. Inside the rule, we can add new facts using `declare` function, and adding those facts will result in some more rules being called by forward inference engine. 
+
+```python
+class Animals(KnowledgeEngine):
+    @Rule(OR(
+           AND(Fact('sharp teeth'),Fact('claws'),Fact('forward looking eyes')),
+           Fact('eats meat')))
+    def cornivor(self):
+        self.declare(Fact('carnivor'))
+        
+    @Rule(OR(Fact('hair'),Fact('gives milk')))
+    def mammal(self):
+        self.declare(Fact('mammal'))
+
+    @Rule(Fact('mammal'),
+          OR(Fact('has hooves'),Fact('chews cud')))
+    def hooves(self):
+        self.declare('ungulate')
+        
+    @Rule(OR(Fact('feathers'),AND(Fact('flies'),Fact('lays eggs'))))
+    def bird(self):
+        self.declare('bird')
+        
+    @Rule(Fact('mammal'),Fact('carnivor'),
+          Fact(color='red-brown'),
+          Fact(pattern='dark spots'))
+    def monkey(self):
+        self.declare(Fact(animal='monkey'))
+
+    @Rule(Fact('mammal'),Fact('carnivor'),
+          Fact(color='red-brown'),
+          Fact(pattern='dark stripes'))
+    def tiger(self):
+        self.declare(Fact(animal='tiger'))
+
+    @Rule(Fact('ungulate'),
+          Fact('long neck'),
+          Fact('long legs'),
+          Fact(pattern='dark spots'))
+    def giraffe(self):
+        self.declare(Fact(animal='giraffe'))
+
+    @Rule(Fact('ungulate'),
+          Fact(pattern='dark stripes'))
+    def zebra(self):
+        self.declare(Fact(animal='zebra'))
+
+    @Rule(Fact('bird'),
+          Fact('long neck'),
+          Fact('cannot fly'),
+          Fact(color='black and white'))
+    def straus(self):
+        self.declare(Fact(animal='ostrich'))
+
+    @Rule(Fact('bird'),
+          Fact('swims'),
+          Fact('cannot fly'),
+          Fact(color='black and white'))
+    def pinguin(self):
+        self.declare(Fact(animal='pinguin'))
+
+    @Rule(Fact('bird'),
+          Fact('flies well'))
+    def albatros(self):
+        self.declare(Fact(animal='albatross'))
+        
+    @Rule(Fact(animal=MATCH.a))
+    def print_result(self,a):
+          print('Animal is {}'.format(a))
+                    
+    def factz(self,l):
+        for x in l:
+            self.declare(x)
+```
+
+Once we have defined a knowledgebase, we populate our working memory with some initial facts, and then call `run()` method to perform the inference. You can see as a result that new inferred facts are added to the working memory, including the final fact about the animal (if we set up all the initial facts correctly).
+
+```python
+ex1 = Animals()
+ex1.reset()
+ex1.factz([
+    Fact(color='red-brown'),
+    Fact(pattern='dark stripes'),
+    Fact('sharp teeth'),
+    Fact('claws'),
+    Fact('forward looking eyes'),
+    Fact('gives milk')])
+ex1.run()
+ex1.facts
+```
+
+```python
+
+```
+
+---
+
+**📓 Notebook 代码**（来自 `lessons/2-Symbolic/FamilyOntology.ipynb`）:
+
+This example is a part of [AI for Beginners Curriculum](http://github.com/microsoft/ai-for-beginners), and it has been inspired by [this blog post](https://habr.com/post/270857/).
+
+I always find it difficult to remember different relationships between people in a family. In this example, we will take an ontology that defines family relationships, and the actual genealogical tree, and show how we can then perform automatic inference to find all relatives.
+
+##### Getting the Genealogical Tree
+
+As an example, we will take genealogical tree of [Romanov Tsar Family](https://en.wikipedia.org/wiki/House_of_Romanov). The most common format for describing family relationships is [GEDCOM](https://en.wikipedia.org/wiki/GEDCOM). We will take Romanov family tree in GEDCOM format:
+
+```python
+!head -15 data/tsars.ged
+```
+
+To use GEDCOM file, we can use `python-gedcom` library:
+
+```python
+import sys
+!{sys.executable} -m pip install python-gedcom
+```
+
+This library takes away some of the technical problems with file parsing, but it still gives us pretty low-level access to all individuals and families in the tree. Here is how we can parse the file, and show the list of all individuals:
+
+```python
+from gedcom.parser import Parser
+from gedcom.element.individual import IndividualElement
+from gedcom.element.family import FamilyElement
+g = Parser()
+g.parse_file('data/tsars.ged')
+```
+
+```python
+d = g.get_element_dictionary()
+[ (k,v.get_name()) for k,v in d.items() if isinstance(v,IndividualElement)]
+```
+
+Here is how we can get information about families. Note that is gives us a list of **identifiers**, and we need to convert them to names if we want more clarity:
+
+```python
+d = g.get_element_dictionary()
+[ (k,[x.get_value() for x in v.get_child_elements()]) for k,v in d.items() if isinstance(v,FamilyElement)]
+```
+
+##### Getting Family Ontology
+
+Next, let's have a look at [family ontology](https://raw.githubusercontent.com/blokhin/genealogical-trees/master/data/header.ttl) defined as a set of Semantic Web triplets. This ontology defines such relationships as `isUncleOf`, `isCousinOf`, and many others. All those relationships are defined in terms of basic predicates `isMotherOf`, `isFatherOf`, `isBrotherOf` and `isSisterOf`. We will use automatic reasoning to deduce all other relationships using the ontology.
+
+Here is a sample definition of `isAuntOf` property, which is defined as a composition of `isSisterOf` and `isParentOf` (*Aunt is a sister of one's parent*).
+
+```
+fhkb:isAuntOf a owl:ObjectProperty ;
+    rdfs:domain fhkb:Woman ;
+    rdfs:range fhkb:Person ;
+    owl:propertyChainAxiom ( fhkb:isSisterOf fhkb:isParentOf ) .
+```
+
+```python
+!head -20 data/onto.ttl
+```
+
+##### Constructing Ontology for Inference
+
+For simplicity, we will create one ontology file that will include original rules from family ontology, and facts about individuals from our GEDCOM file. We will go through the GEDCOM file and extract information about families and individuals, and convert them to triplets.
+
+```python
+!cp data/onto.ttl .
+
+gedcom_dict = g.get_element_dictionary()
+individuals, marriages = {}, {}
+
+def term2id(el):
+    return "i" + el.get_pointer().replace('@', '').lower()
+
+out = open("onto.ttl","a")
+
+for k, v in gedcom_dict.items():
+    if isinstance(v,IndividualElement):
+        children, siblings = set(), set()
+        idx = term2id(v)
+
+        title = v.get_name()[0] + " " + v.get_name()[1]
+        title = title.replace('"', '').replace('[', '').replace(']', '').replace('(', '').replace(')', '').strip()
+
+        own_families = g.get_families(v, 'FAMS')
+        for fam in own_families:
+            children |= set(term2id(i) for i in g.get_family_members(fam, "CHIL"))
+
+        parent_families = g.get_families(v, 'FAMC')
+        if len(parent_families):
+            for member in g.get_family_members(parent_families[0], "CHIL"): # NB adoptive families i.e len(parent_families)>1 are not considered (TODO?)
+                if member.get_pointer() == v.get_pointer():
+                    continue
+                siblings.add(term2id(member))
+
+        if idx in individuals:
+            children |= individuals[idx].get('children', set())
+            siblings |= individuals[idx].get('siblings', set())
+        individuals[idx] = {'sex': v.get_gender().lower(), 'children': children, 'siblings': siblings, 'title': title}
+
+    elif isinstance(v,FamilyElement):
+        wife, husb, children = None, None, set()
+        children = set(term2id(i) for i in g.get_family_members(v, "CHIL"))
+
+        try:
+            wife = g.get_family_members(v, "WIFE")[0]
+            wife = term2id(wife)
+            if wife in individuals: individuals[wife]['children'] |= children
+            else: individuals[wife] = {'children': children}
+        except IndexError: pass
+        try:
+            husb = g.get_family_members(v, "HUSB")[0]
+            husb = term2id(husb)
+            if husb in individuals: individuals[husb]['children'] |= children
+            else: individuals[husb] = {'children': children}
+        except IndexError: pass
+
+        if wife and husb: marriages[wife + husb] = (term2id(v), wife, husb)
+
+for idx, val in individuals.items():
+    added_terms = ''
+    if val['sex'] == 'f':
+        parent_predicate, sibl_predicate = "isMotherOf", "isSisterOf"
+    else:
+        parent_predicate, sibl_predicate = "isFatherOf", "isBrotherOf"
+    if len(val['children']):
+        added_terms += " ;\n    fhkb:" + parent_predicate + " " + ", ".join(["fhkb:" + i for i in val['children']])
+    if len(val['siblings']):
+        added_terms += " ;\n    fhkb:" + sibl_predicate + " " + ", ".join(["fhkb:" + i for i in val['siblings']])
+    out.write("fhkb:%s a owl:NamedIndividual, owl:Thing%s ;\n    rdfs:label \"%s\" .\n" % (idx, added_terms, val['title']))
+
+for k, v in marriages.items():
+    out.write("fhkb:%s a owl:NamedIndividual, owl:Thing ;\n    fhkb:hasFemalePartner fhkb:%s ;\n    fhkb:hasMalePartner fhkb:%s .\n" % v)
+
+out.write("[] a owl:AllDifferent ;\n    owl:distinctMembers (")
+for idx in individuals.keys():
+    out.write("    fhkb:" + idx)
+for k, v in marriages.items():
+    out.write("    fhkb:" + v[0])
+out.write("    ) .")
+out.close()
+```
+
+```python
+!tail onto.ttl
+```
+
+##### Doing Inference 
+
+Now we want to be able to use this ontology for inference and for querying. We will use [RDFLib](https://github.com/RDFLib), library for reading RDF Graph in different formats, querying it, etc. 
+
+For logical inference, we will use [OWL-RL](https://github.com/RDFLib/OWL-RL) library, which allows us to build **Closure** of the RDF Graph, i.e. add all possible concepts and relations that can be inferred.
+
+```python
+!{sys.executable} -m pip install rdflib
+!{sys.executable} -m pip install git+https://github.com/RDFLib/OWL-RL.git
+```
+
+Let's open the ontology file and see how many triplets it contains:
+
+```python
+import rdflib
+from owlrl import DeductiveClosure, OWLRL_Extension
+
+g = rdflib.Graph()
+g.parse("onto.ttl", format="turtle")
+
+print("Triplets found:%d" % len(g))
+```
+
+Now let's build the closure, and see how the number of triplets increase:
+
+```python
+DeductiveClosure(OWLRL_Extension).expand(g)
+print("Triplets after inference:%d" % len(g))
+```
+
+##### Querying for Relatives 
+
+Now we can query the graph to see different relations between people. We can use **SPARQL** language together with `query` method. In our case, let's see all **uncles** in our family tree:
+
+```python
+qres = g.query(
+    """SELECT DISTINCT ?aname ?bname
+       WHERE {
+          ?a fhkb:isUncleOf ?b .
+          ?a rdfs:label ?aname .
+          ?b rdfs:label ?bname .
+       }""")
+
+for row in qres:
+    print("%s is uncle of %s" % row)
+```
+
+Feel free to experiment with different other family relations. For example, you can have a look at `isAncestorOf` relation, which recurrently defines all ancestors of a given person.
+
+Finally, let's clean up!
+
+```python
+!rm onto.ttl
+```
+
+```python
+
+```
+
+---
+
+**📓 Notebook 代码**（来自 `lessons/2-Symbolic/MSConceptGraph.ipynb`）:
+
+#### Concept Graph using ConceptNet
+
+> **Note:** The original [Microsoft Concept Graph](https://concept.research.microsoft.com/) API is no longer available. This notebook has been updated to use [ConceptNet](https://conceptnet.io/) as a replacement, which is a freely available open knowledge graph with similar `is-a` relations between concepts.
+
+[ConceptNet](https://conceptnet.io/) is a large semantic network of concepts with relationships such as `IsA`, `PartOf`, `UsedFor`, and more. It is available as:
+ * A downloadable data file
+ * A REST API (no API key required)
+
+ConceptNet statistics:
+ * Over 8 million nodes
+ * 21+ million edges across 83 languages
+
+#### Using ConceptNet Web Service
+
+[ConceptNet](https://conceptnet.io/) provides a REST API to explore `is-a` (IsA) relationships between concepts. No API key is required.
+Here is the sample URL to call: `https://api.conceptnet.io/query?start=/c/en/microsoft&rel=/r/IsA&limit=10`
+
+```python
+import urllib
+import json
+
+def http(x):
+    response = urllib.request.urlopen(x)
+    data = response.read()
+    return data.decode('utf-8')
+
+def query(x):
+    concept = x.lower().replace(' ', '_')
+    url = "https://api.conceptnet.io/query?start=/c/en/{}&rel=/r/IsA&limit=10".format(
+        urllib.parse.quote(concept))
+    try:
+        result = json.loads(http(url))
+    except Exception:
+        return {}
+    edges = result.get('edges', [])
+    if not edges:
+        return {}
+    total_weight = sum(edge['weight'] for edge in edges)
+    if total_weight == 0:
+        return {}
+    return {edge['end']['label']: edge['weight'] / total_weight for edge in edges}
+
+query('microsoft')
+```
+
+Let's try to categorize the news titles using parent concepts. To get news titles, we will use [NewsApi.org](http://newsapi.org) service. You need to obtain your own API key in order to use the service - go to the web site and register for free developer plan.
+
+```python
+newsapi_key = '<your API key here>'
+def get_news(country='us'):
+    res = json.loads(http("https://newsapi.org/v2/top-headlines?country={0}&apiKey={1}".format(country,newsapi_key)))
+    return res['articles']
+
+all_titles = [x['title'] for x in get_news('us')+get_news('gb')]
+```
+
+```python
+all_titles
+```
+
+First of all, we want to be able to extract nouns from news titles. We will use `TextBlob` library to do this, which simplifies a lot of typical NLP tasks like this.
+
+```python
+import sys
+!{sys.executable} -m pip install textblob
+!{sys.executable} -m textblob.download_corpora
+from textblob import TextBlob
+```
+
+```python
+w = {}
+for x in all_titles:
+    for n in TextBlob(x).noun_phrases:
+        if n in w:
+            w[n].append(x)
+        else:
+            w[n]=[x]
+{ x:len(w[x]) for x in w.keys()}
+```
+
+We can see that nouns do not give us large thematic groups. Let's substitute nouns by more general terms obtained from the concept graph. This will take some time, because we are doing REST call for each noun phrase.
+
+```python
+w = {}
+for x in all_titles:
+    for noun in TextBlob(x).noun_phrases:
+        terms = query(noun)
+        for term in [u for u in terms.keys() if terms[u]>0.1]:
+            if term in w:
+                w[term].append(x)
+            else:
+                w[term]=[x]
+```
+
+```python
+{ x:len(w[x]) for x in w.keys() if len(w[x])>3}
+```
+
+```python
+print('\nECONOMY:\n'+'\n'.join(w['economy']))
+print('\nNATION:\n'+'\n'.join(w['nation']))
+print('\nPERSON:\n'+'\n'.join(w['person']))
+```
+
 ### Forward vs. Backward Inference
 
 The process described above is called **forward inference**. It starts with some initial data about the problem available in the working memory, and then executes the following reasoning loop:
@@ -154,7 +745,7 @@ Expert systems can be implemented using different tools:
 
 ## Neural Networks
 
-### Introduction to Neural Networks: Perceptron
+### Multi-Class Classification with Perceptron
 
 > **📖 章节概述**
 >
@@ -209,6 +800,559 @@ Expert systems can be implemented using different tools:
 > 
 
 ---
+
+Lab Assignment from [AI for Beginners Curriculum](https://github.com/microsoft/ai-for-beginners).
+
+#### Task
+
+Using the code we have developed in this lesson for binary classification of MNIST handwritten digits, create a multi-class classified that would be able to recognize any digit. Compute the classification accuracy on the train and test dataset, and print out the confusion matrix.
+
+#### Hints
+
+1. For each digit, create a dataset for binary classifier of "this digit vs. all other digits"
+1. Train 10 different perceptrons for binary classification (one for each digit)
+1. Define a function that will classify an input digit
+
+> **Hint**: If we combine weights of all 10 perceptrons into one matrix, we should be able to apply all 10 perceptrons to the input digits by one matrix multiplication. Most probable digit can then be found just by applying `argmax` operation on the output.
+
+#### Starting Notebook
+
+Start the lab by opening [PerceptronMultiClass.ipynb](PerceptronMultiClass.ipynb)
+
+---
+
+**📓 Notebook 代码**（来自 `lessons/3-NeuralNetworks/03-Perceptron/Perceptron.ipynb`）:
+
+#### Perceptron
+
+> This notebook is a part of [AI for Beginners Curricula](http://github.com/microsoft/ai-for-beginners). Visit the repository for complete set of learning materials.
+
+As we have discussed, perceptron allows you to solve **binary classification problem**, i.e. to classify input examples into two classes - we can call them **positive** and **negative**.
+
+First, let's import some required libraries.
+
+```python
+import pylab
+from matplotlib import gridspec
+from sklearn.datasets import make_classification
+import numpy as np
+from ipywidgets import interact, interactive, fixed
+import ipywidgets as widgets
+import pickle
+import os
+import gzip
+
+# pick the seed for reproducability - change it to explore the effects of random variations
+np.random.seed(1)
+import random
+```
+
+#### Toy Problem
+
+To begin with, let's start with a toy problem, where we have two input features. For example, in medicine we may want to classify tumours into benign and malignant, depending on its size and age.
+
+We will generate a random classification dataset using `make_classification` function from SciKit Learn library:
+
+```python
+n = 50
+X, Y = make_classification(n_samples = n, n_features=2,
+                           n_redundant=0, n_informative=2, flip_y=0)
+Y = Y*2-1 # convert initial 0/1 values into -1/1
+X = X.astype(np.float32); Y = Y.astype(np.int32) # features - float, label - int
+
+# Split the dataset into training and test
+train_x, test_x = np.split(X, [ n*8//10])
+train_labels, test_labels = np.split(Y, [n*8//10])
+print("Features:\n",train_x[0:4])
+print("Labels:\n",train_labels[0:4])
+```
+
+Let's also plot the dataset:
+
+```python
+def plot_dataset(suptitle, features, labels):
+    # prepare the plot
+    fig, ax = pylab.subplots(1, 1)
+    #pylab.subplots_adjust(bottom=0.2, wspace=0.4)
+    fig.suptitle(suptitle, fontsize = 16)
+    ax.set_xlabel('$x_i[0]$ -- (feature 1)')
+    ax.set_ylabel('$x_i[1]$ -- (feature 2)')
+
+    colors = ['r' if l>0 else 'b' for l in labels]
+    ax.scatter(features[:, 0], features[:, 1], marker='o', c=colors, s=100, alpha = 0.5)
+    fig.show()
+
+plot_dataset('Training data', train_x, train_labels)
+```
+
+#### Perceptron
+
+Since perceptron is a binary classifier, for each input vector $x$ the output of our perceptron would be either +1 or -1, depending on the class. The output will be computed using the formula
+
+$$y(\mathbf{x}) = f(\mathbf{w}^{\mathrm{T}}\mathbf{x})$$
+
+where $\mathbf{w}$ is a weight vector, $f$ is a step activation function:
+$$
+f(x) = \begin{cases}
+         +1 & x \geq 0 \\
+         -1 & x < 0
+       \end{cases} \\
+$$
+
+However, a generic linear model should also have a bias, i.e. ideally we should compute $y$ as $y=f(\mathbf{w}^{\mathrm{T}}\mathbf{x}+\mathbf{b})$. To simplify our model, we can get rid of this bias term by adding one more dimension to our input features, which always equals to 1:
+
+```python
+pos_examples = np.array([ [t[0], t[1], 1] for i,t in enumerate(train_x) 
+                          if train_labels[i]>0])
+neg_examples = np.array([ [t[0], t[1], 1] for i,t in enumerate(train_x) 
+                          if train_labels[i]<0])
+print(pos_examples[0:3])
+```
+
+#### Training Algorithm
+
+In order to train the perceptron, we need to find out weights $\mathbf{w}$ that will minimize the error. The error is defined using **perceptron criteria**:
+
+$$E(\mathbf{w}) = -\sum_{n \in \mathcal{M}}\mathbf{w}^{\mathrm{T}}\mathbf{x}_{n}t_{n}$$
+ 
+  * $t_{n} \in \{-1, +1\}$ for negative and positive training samples, respectively
+  * $\mathcal{M}$ - a set of wrongly classified examples
+  
+We will use the process of **gradient descent**. Starting with some initial random weights $\mathbf{w}^{(0)}$, we will adjust weights on each step of the training using the gradient of $E$:
+
+$$\mathbf{w}^{\tau + 1}=\mathbf{w}^{\tau} - \eta \nabla E(\mathbf{w}) = \mathbf{w}^{\tau} + \eta\sum_{n \in \mathcal{M}}\mathbf{x}_{n} t_{n}$$
+
+where $\eta$ is a **learning rate**, and $\tau\in\mathbb{N}$ - number of iteration.
+
+Let's define this algorithm in Python:
+
+```python
+def train(positive_examples, negative_examples, num_iterations = 100, learning_rate = 0.01):
+    num_dims = positive_examples.shape[1]
+    
+    # Initialize weights. 
+    # We initialize with 0 for simplicity, but random initialization is also a good idea
+    weights = np.zeros((num_dims,1)) 
+    
+    pos_count = positive_examples.shape[0]
+    neg_count = negative_examples.shape[0]
+    
+    report_frequency = 10
+    
+    for i in range(num_iterations):
+        # Pick one positive and one negative example
+        pos = random.choice(positive_examples)
+        neg = random.choice(negative_examples)
+
+        z = np.dot(pos, weights)   
+        if z < 0: # positive example was classified as negative
+            weights = weights + learning_rate * pos.reshape(weights.shape)
+
+        z  = np.dot(neg, weights)
+        if z >= 0: # negative example was classified as positive
+            weights = weights - learning_rate * neg.reshape(weights.shape)
+            
+        # Periodically, print out the current accuracy on all examples 
+        if i % report_frequency == 0:             
+            pos_out = np.dot(positive_examples, weights)
+            neg_out = np.dot(negative_examples, weights)        
+            pos_correct = (pos_out >= 0).sum() / float(pos_count)
+            neg_correct = (neg_out < 0).sum() / float(neg_count)
+            print("Iteration={}, pos correct={}, neg correct={}".format(i,pos_correct,neg_correct))
+
+    return weights
+```
+
+**Note on Learning Rate**: The `learning_rate` parameter (default `0.01`) controls how much we adjust the weights during each training step. This implements the gradient descent update formula:
+
+$$\mathbf{w}^{\tau + 1}=\mathbf{w}^{\tau} + \eta \mathbf{x}_{n} t_{n}$$
+
+- A larger learning rate (e.g., `1.0`) makes the perceptron learn faster but may overshoot the optimal solution
+- A smaller learning rate (e.g., `0.001`) learns more slowly but may converge more precisely
+- You can experiment by calling: `train(pos_examples, neg_examples, learning_rate=0.1)`
+
+Now let's run the training on our dataset:
+
+```python
+wts = train(pos_examples,neg_examples)
+print(wts.transpose())
+```
+
+As you can see, initial accuracy is around 50%, but it quickly increases to higher values close to 90%.
+
+Let's visualize how classes are separated. Our classification function looks like $\mathbf{w}^Tx$, and it is greater than 0 for one class, and is below 0 for another. Thus, class separation line is defined by $\mathbf{w}^Tx = 0$. Since we have only two dimensions $x_0$ and $x_1$, the equation for the line would be $w_0x_0+w_1x_1+w_2 = 0$ (remember that we have explicitly defined an extra dimension $x_2=1$). Let's plot this line:
+
+```python
+def plot_boundary(positive_examples, negative_examples, weights):
+    if np.isclose(weights[1], 0):
+        if np.isclose(weights[0], 0):
+            x = y = np.array([-6, 6], dtype = 'float32')
+        else:
+            y = np.array([-6, 6], dtype='float32')
+            x = -(weights[1] * y + weights[2])/weights[0]
+    else:
+        x = np.array([-6, 6], dtype='float32')
+        y = -(weights[0] * x + weights[2])/weights[1]
+
+    pylab.xlim(-6, 6)
+    pylab.ylim(-6, 6)                      
+    pylab.plot(positive_examples[:,0], positive_examples[:,1], 'bo')
+    pylab.plot(negative_examples[:,0], negative_examples[:,1], 'ro')
+    pylab.plot(x, y, 'g', linewidth=2.0)
+    pylab.show()
+```
+
+```python
+plot_boundary(pos_examples,neg_examples,wts)
+```
+
+#### Experimenting with Learning Rates
+
+Now let's explore how different learning rates affect the training process. The learning rate controls the step size in gradient descent - a crucial hyperparameter that affects both convergence speed and stability.
+
+```python
+# Compare different learning rates
+learning_rates = [0.001, 0.01, 0.1, 1.0]
+fig, axes = pylab.subplots(2, 2, figsize=(12, 10))
+fig.suptitle('Effect of Different Learning Rates', fontsize=16)
+
+for idx, lr in enumerate(learning_rates):
+    ax = axes[idx // 2, idx % 2]
+    
+    # Train with this learning rate
+    weights_lr = train(pos_examples, neg_examples, num_iterations=100, learning_rate=lr)
+    
+    # Plot decision boundary
+    if np.isclose(weights_lr[1], 0):
+        if np.isclose(weights_lr[0], 0):
+            x = y = np.array([-6, 6], dtype='float32')
+        else:
+            y = np.array([-6, 6], dtype='float32')
+            x = -(weights_lr[1] * y + weights_lr[2])/weights_lr[0]
+    else:
+        x = np.array([-6, 6], dtype='float32')
+        y = -(weights_lr[0] * x + weights_lr[2])/weights_lr[1]
+    
+    ax.set_xlim(-6, 6)
+    ax.set_ylim(-6, 6)
+    ax.plot(pos_examples[:, 0], pos_examples[:, 1], 'bo', label='Positive', alpha=0.7)
+    ax.plot(neg_examples[:, 0], neg_examples[:, 1], 'ro', label='Negative', alpha=0.7)
+    ax.plot(x, y, 'g-', linewidth=2)
+    ax.set_title(f'Learning Rate = {lr}')
+    ax.set_xlabel('Feature 1')
+    ax.set_ylabel('Feature 2')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+pylab.tight_layout()
+pylab.show()
+
+```
+
+##### Interactive Learning Rate Experiment
+
+Use the slider below to interactively experiment with different learning rates and see how they affect the decision boundary:
+
+```python
+def train_and_plot_with_lr(learning_rate=0.01):
+    """Train perceptron with specified learning rate and plot results"""
+    weights_lr = train(pos_examples, neg_examples, num_iterations=100, learning_rate=learning_rate)
+    
+    fig, (ax1, ax2) = pylab.subplots(1, 2, figsize=(14, 5))
+    
+    # Plot 1: Decision boundary
+    if np.isclose(weights_lr[1], 0):
+        if np.isclose(weights_lr[0], 0):
+            x = y = np.array([-6, 6], dtype='float32')
+        else:
+            y = np.array([-6, 6], dtype='float32')
+            x = -(weights_lr[1] * y + weights_lr[2])/weights_lr[0]
+    else:
+        x = np.array([-6, 6], dtype='float32')
+        y = -(weights_lr[0] * x + weights_lr[2])/weights_lr[1]
+    
+    ax1.set_xlim(-6, 6)
+    ax1.set_ylim(-6, 6)
+    ax1.plot(pos_examples[:, 0], pos_examples[:, 1], 'bo', label='Positive', s=100, alpha=0.6)
+    ax1.plot(neg_examples[:, 0], neg_examples[:, 1], 'ro', label='Negative', s=100, alpha=0.6)
+    ax1.plot(x, y, 'g-', linewidth=3, label='Decision Boundary')
+    ax1.set_title(f'Decision Boundary (lr={learning_rate})', fontsize=14)
+    ax1.set_xlabel('Feature 1')
+    ax1.set_ylabel('Feature 2')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot 2: Weight values
+    ax2.bar(['w0', 'w1', 'bias'], weights_lr.flatten(), color=['blue', 'green', 'red'], alpha=0.7)
+    ax2.set_title('Final Weight Values', fontsize=14)
+    ax2.set_ylabel('Weight Value')
+    ax2.grid(True, alpha=0.3, axis='y')
+    ax2.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
+    
+    pylab.tight_layout()
+    pylab.show()
+    
+    print(f"Final weights: {weights_lr.flatten()}")
+
+# Create interactive widget
+interact(train_and_plot_with_lr, 
+         learning_rate=widgets.FloatSlider(value=0.01, min=0.001, max=1.0, step=0.001, 
+                                          description='Learning Rate:', continuous_update=False))
+
+```
+
+#### Evaluate on Test Dataset
+
+In the beginning, we have put apart some data to the test dataset. Let's see how accurate our classifier is on this test dataset. In order to do this, we also expand the test dataset with an extra dimension, multiply by weights matrix, and make sure that the obtained value is of the same sign as the label (+1 or -1). We then add together all boolean values and divide by the length of test sample, to obtain the accuracy:
+
+```python
+def accuracy(weights, test_x, test_labels):
+    res = np.dot(np.c_[test_x,np.ones(len(test_x))],weights)
+    return (res.reshape(test_labels.shape)*test_labels>=0).sum()/float(len(test_labels))
+
+accuracy(wts, test_x, test_labels)
+```
+
+#### Observing the training process
+
+We have seen before how the accuracy decreases during training. It would be nice to see how the separation line behaves during training. The code below will visualize everything on one graph, and you should be able to move the slider to "time-travel" through the training process. 
+
+```python
+def train_graph(positive_examples, negative_examples, num_iterations = 100, learning_rate = 0.01):
+    num_dims = positive_examples.shape[1]
+    weights = np.zeros((num_dims,1)) # initialize weights
+    
+    pos_count = positive_examples.shape[0]
+    neg_count = negative_examples.shape[0]
+    
+    report_frequency = 15;
+    snapshots = []
+    
+    for i in range(num_iterations):
+        pos = random.choice(positive_examples)
+        neg = random.choice(negative_examples)
+
+        z = np.dot(pos, weights)   
+        if z < 0:
+            weights = weights + learning_rate * pos.reshape(weights.shape)
+
+        z  = np.dot(neg, weights)
+        if z >= 0:
+            weights = weights - learning_rate * neg.reshape(weights.shape)
+            
+        if i % report_frequency == 0:             
+            pos_out = np.dot(positive_examples, weights)
+            neg_out = np.dot(negative_examples, weights)        
+            pos_correct = (pos_out >= 0).sum() / float(pos_count)
+            neg_correct = (neg_out < 0).sum() / float(neg_count)
+            snapshots.append([np.copy(weights).flatten(), (pos_correct+neg_correct)/2.0])
+
+    return np.array(snapshots, dtype=object)
+
+snapshots = train_graph(pos_examples,neg_examples)
+
+def plotit(pos_examples,neg_examples,snapshots,step):
+    fig = pylab.figure(figsize=(10,4))
+    fig.add_subplot(1, 2, 1)
+    plot_boundary(pos_examples, neg_examples, snapshots[step][0])
+    fig.add_subplot(1, 2, 2)
+    pylab.plot(np.arange(len(snapshots[:,1])), snapshots[:,1])
+    pylab.ylabel('Accuracy')
+    pylab.xlabel('Iteration')
+    pylab.plot(step, snapshots[step,1], "bo")
+    pylab.show()
+def pl1(step): plotit(pos_examples,neg_examples,snapshots,step)
+```
+
+```python
+interact(pl1, step=widgets.IntSlider(value=0, min=0, max=len(snapshots)-1))
+```
+
+#### Limitations of the Perceptron
+
+As you have seen above, perceptron is a **linear classifier**. It can distinguish between two classes well if they are **linearly separable**, i.e. can be separated by a straight line. Otherwise, perceptron training process will not converge.
+
+A most obvious example of a problem that cannot be solved by a perceptron is so-called **XOR problem**. We want our perceptron to learn the XOR boolean function, which has the following truth table:
+
+|   | 0 | 1 |
+|---|---|---|
+| 0 | 0 | 1 | 
+| 1 | 1 | 0 |
+
+Let's try and do that! We will manually populate all positive and negative training samples, and then call our train function defined above:
+
+```python
+pos_examples_xor = np.array([[1,0,1],[0,1,1]])
+neg_examples_xor = np.array([[1,1,1],[0,0,1]])
+
+snapshots_xor = train_graph(pos_examples_xor,neg_examples_xor,1000)
+def pl2(step): plotit(pos_examples_xor,neg_examples_xor,snapshots_xor,step)
+```
+
+```python
+interact(pl2, step=widgets.IntSlider(value=0, min=0, max=len(snapshots)-1))
+```
+
+As you can see from the graph above, the accuracy never goes above 75%, because it is impossible to draw a straight line in such a way as to get all possible examples right.
+
+The XOR problem is a classical example of perceptron limitations, and it was pointed out by Marvin Minsky and Seymour Papert in 1969 in their book [Perceptrons](https://en.wikipedia.org/wiki/Perceptrons_(book)). This observation limited research in the area of neural networks for almost 10 years, even though - and we will see this in the next section of our course - multi-layered perceptrons are perfectly capable of solving such problems.
+
+#### Complex Example - MNIST
+
+Even though perceptron cannot solve XOR problem, it can solve many more complex problems, such as handwritten character recognition.
+
+A dataset that is often used when mastering machine learning is called [MNIST](https://en.wikipedia.org/wiki/MNIST_database). It has been created by Modified National Institute of Standards and Technology, and contains a training set of 60000 handwritten digits, collected from around 250 students and employees of the institute. There is also a test dataset of 10000 digits, collected from different individuals.
+
+All digits are represented by grayscale images of size 28x28 pixels.
+
+> MNIST Dataset is available as a training competition on [Kaggle](https://www.kaggle.com/c/digit-recognizer), a site that hosts machine learning competitions and contests. Once you learn how to classify MNIST digits, you can submit your solution to Kaggle to see how it is rated among other participants. 
+
+We start by loading MNIST dataset:
+
+```python
+# If you are not running this notebook from a cloned repository, you may need to grab the binary dataset file first
+# !wget https://github.com/microsoft/AI-For-Beginners/raw/main/data/mnist.pkl.gz?raw=true
+# In this case correct the link to the dataset below as well.
+
+with gzip.open('../../../data/mnist.pkl.gz', 'rb') as mnist_pickle:
+    MNIST = pickle.load(mnist_pickle, encoding='latin1')
+```
+
+Let's now plot the dataset:
+
+```python
+print(MNIST['Train']['Features'][0][130:180])
+print(MNIST['Train']['Labels'][0])
+features = MNIST['Train']['Features'].astype(np.float32) / 256.0
+labels = MNIST['Train']['Labels']
+fig = pylab.figure(figsize=(10,5))
+for i in range(10):
+    ax = fig.add_subplot(1,10,i+1)
+    pylab.imshow(features[i].reshape(28,28))
+pylab.show()
+```
+
+Because perceptron is a binary classifier, we will limit our problem to recognizing only two digits. The function below will populate positive and negative sample arrays with two given digits (and will also show samples of those digits for clarity).
+
+```python
+def set_mnist_pos_neg(positive_label, negative_label):
+    positive_indices = [i for i, j in enumerate(MNIST['Train']['Labels']) 
+                          if j == positive_label]
+    negative_indices = [i for i, j in enumerate(MNIST['Train']['Labels']) 
+                          if j == negative_label]
+
+    positive_images = MNIST['Train']['Features'][positive_indices]
+    negative_images = MNIST['Train']['Features'][negative_indices]
+
+    fig = pylab.figure()
+    ax = fig.add_subplot(1, 2, 1)
+    pylab.imshow(positive_images[0].reshape(28,28), cmap='gray', interpolation='nearest')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax = fig.add_subplot(1, 2, 2)
+    pylab.imshow(negative_images[0].reshape(28,28), cmap='gray', interpolation='nearest')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    pylab.show()
+    
+    return positive_images, negative_images
+```
+
+We will start by trying to classify between 0 and 1:
+
+```python
+pos1,neg1 = set_mnist_pos_neg(1,0)
+```
+
+```python
+def plotit2(snapshots_mn,step):
+    fig = pylab.figure(figsize=(10,4))
+    ax = fig.add_subplot(1, 2, 1)
+    pylab.imshow(snapshots_mn[step][0].reshape(28, 28), interpolation='nearest')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    pylab.colorbar()
+    ax = fig.add_subplot(1, 2, 2)
+    ax.set_ylim([0,1])
+    pylab.plot(np.arange(len(snapshots_mn[:,1])), snapshots_mn[:,1])
+    pylab.plot(step, snapshots_mn[step,1], "bo")
+    pylab.show()
+def pl3(step): plotit2(snapshots_mn,step)
+def pl4(step): plotit2(snapshots_mn2,step)    
+```
+
+```python
+snapshots_mn = train_graph(pos1,neg1,1000)    
+interact(pl3, step=widgets.IntSlider(value=0, min=0, max=len(snapshots_mn) - 1))
+```
+
+Please note how accuracy goes up to almost 100% very fast.
+
+Please, move the slider to some position towards the end of the training, and observe the weight matrix plotted on the left. This matrix will allow you to understand how perceptron actually works. You can see the high weight values in the middle of the field, which correspond to pixels that are typically present for digit 1, and low negative values by the sides, where parts of 0 digit are. So, if the digit presented to the perceptron is in fact 1, middle part of it will be mupliplied by high values, producing positive result. On the contrary, when perceptron observes 0, corresponding pixels will be multiplied by negative numbers.
+
+> You may notice that if we give our perceptron a digit 1 slightly shifted horizontally, so that its pixels occupy the place where there are vertical parts of 0, we may receive incorrect result. Since the nature of our MNIST dataset is such that all digits are centered and positioned properly, and perceptron relies on this to distinguish between digits.
+
+Now let's try different digits: 
+
+```python
+pos2,neg2 = set_mnist_pos_neg(2,5)
+```
+
+```python
+snapshots_mn2 = train_graph(pos2,neg2,1000)
+interact(pl4, step=widgets.IntSlider(value=0, min=0, max=len(snapshots_mn2) - 1))
+```
+
+#### Discussion
+
+For some reason, 2 and 5 are not as easily separable. Even though we get relatively high accuracy (above 85%), we can clearly see how perceptron stops learning at some point.
+
+To understand why this happens, we can try to use [Principal Component Analysis](https://en.wikipedia.org/wiki/Principal_component_analysis) (PCA). It is a machine learning technique used to lower the dimensionality of the input dataset, in such a way as to obtain the best separability between classes. 
+
+In our case, an input image has 784 pixels (input features), and we want to use PCA to reduce the number of parameter to just 2, so that we can plot them on the graph. Those two parameters would be a linear combination of original features, and we can view this procedure as "rotating" our original 784-dimensional space and observing it's projection to our 2D-space, until we get the best view that separates the classes.
+
+```python
+from sklearn.decomposition import PCA
+
+def pca_analysis(positive_label, negative_label):
+    positive_images, negative_images = set_mnist_pos_neg(positive_label, negative_label)
+    M = np.append(positive_images, negative_images, 0)
+
+    mypca = PCA(n_components=2)
+    mypca.fit(M)
+    
+    pos_points = mypca.transform(positive_images[:200])
+    neg_points = mypca.transform(negative_images[:200])
+
+    pylab.plot(pos_points[:,0], pos_points[:,1], 'bo')
+    pylab.plot(neg_points[:,0], neg_points[:,1], 'ro')
+```
+
+```python
+pca_analysis(1,0)
+```
+
+```python
+pca_analysis(2,5)
+```
+
+As you can see, 0 and 1 can be clearly separated by a straight line. This indicates that in the original 784-dimensional space dots corresponding to digits are also linearly separable. In the case of 2 and 5, we cannot find the good projection that will separate the digits clearly, and thus there are some cases of wrong classification.
+
+> Later on this course we will learn how to create non-linear classifiers using Neural Networks, and how to deal with a problem of digits not being properly aligned. Very soon we will reach above 99% accuracy in MNIST digit classification, while classifying them into 10 different classes.
+
+#### Takeaway
+
+ * We have leart about the simplest neural network architecture - one-layer perceptron.
+ * We have implemented the perceptron "by hand", using simple training procedure based on gradient descent
+ * Despite simplicity, one-layered perceptron can solve rather complex problems of handwritten digit recognition
+ * One-layered perceptron is a liner classifier, and thus it provides the same classification power as logistic regression.
+ * In the sample space, perceptron can separate two classes of input data using hyperplane.
+
+#### Credits
+
+This notebook is a part of [AI for Beginners Curricula](http://github.com/microsoft/ai-for-beginners), and has been prepared by [Dmitry Soshnikov](http://soshnikov.com). It is inspired by Neural Network Workshop at Microsoft Research Cambridge. Some code and illustrative materials are taken from presentations by [Katja Hoffmann](https://www.microsoft.com/en-us/research/people/kahofman/), [Matthew Johnson](https://www.microsoft.com/en-us/research/people/matjoh/) and [Ryoto Tomioka](https://www.microsoft.com/en-us/research/people/ryoto/), and from [NeuroWorkshop](http://github.com/shwars/NeuroWorkshop) repository.
+
+### Introduction to Neural Networks: Perceptron
 
 One of the first attempts to implement something similar to a modern neural network was done by Frank Rosenblatt from Cornell Aeronautical Laboratory in 1957. It was a hardware implementation called "Mark-1", designed to recognize primitive geometric figures, such as triangles, squares and circles.
 
@@ -2591,7 +3735,7 @@ Ask yourself the following questions:
 
 ## Computer Vision
 
-### Loading Images
+### Detecting Movements using Optical Flow
 
 > **📖 章节概述**
 >
@@ -2610,6 +3754,281 @@ Ask yourself the following questions:
 > * [Semantic Segmentation](12-Segmentation/README.md)
 
 ---
+
+Lab Assignment from [AI for Beginners Curriculum](https://aka.ms/ai-beginners).
+
+#### Task
+
+Consider [this video](palm-movement.mp4), in which a person's palm moves left/right/up/down on the stable background.
+
+<img src="../images/palm-movement.png" width="30%" alt="Palm Movement Frame"/>
+
+**Your goal** would be able to use Optical Flow to determine, which parts of video contain up/down/left/right movements.
+
+**Stretch goal** would be to actually track the palm/finger movement using skin tone, as described [in this blog post](https://dev.to/amarlearning/finger-detection-and-tracking-using-opencv-and-python-586m) or [here](http://www.benmeline.com/finger-tracking-with-opencv-and-python/).
+
+#### Starting Notebook
+
+Start the lab by opening [MovementDetection.ipynb](MovementDetection.ipynb)
+
+#### Takeaway
+
+Sometimes, relatively complex tasks such as movement detection or fingertip detection can be solved purely by computer vision. Thus, it is very helpful to know what libraries like OpenCV can do.
+
+---
+
+**📓 Notebook 代码**（来自 `lessons/4-ComputerVision/06-IntroCV/OpenCV.ipynb`）:
+
+This notebook is a part of [AI for Beginners Curriculum](http://aka.ms/ai-beginners).
+
+[OpenCV](https://opencv.org/) is considered to be *de facto* standard for image processing. It contains a lot of useful algorithms, implemented in C++. You can call OpenCV from Python as well.
+
+In this notebooks, we will give you some examples for using OpenCV. For more details, you can visit [Learn OpenCV](https://learnopencv.com/getting-started-with-opencv/) online course. 
+
+First, let's `import cv2`, as well as some other useful libraries:
+
+```python
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+
+def display_images(l,titles=None,fontsize=12):
+    n=len(l)
+    fig,ax = plt.subplots(1,n)
+    for i,im in enumerate(l):
+        ax[i].imshow(im)
+        ax[i].axis('off')
+        if titles is not None:
+            ax[i].set_title(titles[i],fontsize=fontsize)
+    fig.set_size_inches(fig.get_size_inches()*n)
+    plt.tight_layout()
+    plt.show()
+
+```
+
+#### Loading Images
+
+Images in Python can be conveniently represented by NumPy arrays. For example, grayscale image with size of 320x200 pixels would be stored in 200x320 array, and color image of the same dimension would have shape of 200x320x3 (for 3 color channels). 
+
+Let's start by loading an image:
+
+```python
+im = cv2.imread('data/braille.jpeg')
+print(im.shape)
+plt.imshow(im)
+```
+
+As you can see, it is an image of braille text. Since we are not very interested in the actual color, we can convert it to black-and-white:
+
+```python
+bw_im = cv2.cvtColor(im,cv2.COLOR_BGR2GRAY)
+print(bw_im.shape)
+plt.imshow(bw_im, cmap='gray')
+```
+
+#### Braille Image Processing
+
+If we want to apply image classification to recognize the text, we need to cut out individual symbols to make them similar to MNIST images that we have seen before. This can be done using [object detection](../11-ObjectDetection/README.md) technique which we will discuss later, but also we can try to use pure computer vision for that. A good description of how computer vision can be used for character separation can be found [in this blog post](https://learnopencv.com/image-alignment-feature-based-using-opencv-c-python/) - we will only focus on some computer vision techniques here.
+
+First, let's try to enhance the image a little bit. We can use the idea of **thresholding** (well described [in this OpenCV article](https://docs.opencv.org/4.x/d7/d4d/tutorial_py_thresholding.html)): 
+
+```python
+im = cv2.blur(bw_im,(3,3))
+im = cv2.adaptiveThreshold(im, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+                           cv2.THRESH_BINARY_INV, 5, 4)
+im = cv2.medianBlur(im, 3)
+_,im = cv2.threshold(im, 0, 255, cv2.THRESH_OTSU)
+im = cv2.GaussianBlur(im, (3,3), 0)
+_,im = cv2.threshold(im, 0, 255, cv2.THRESH_OTSU)
+plt.imshow(im)
+```
+
+To work with images, we need to "extract" individual dots, i.e. convert the images to a set of coordinates of individual dots. We can do that using **feature extraction** techniques, such as SIFT, SURF or [ORB](https://docs.opencv.org/4.x/d1/d89/tutorial_py_orb.html):
+
+```python
+orb = cv2.ORB_create(5000)
+f,d = orb.detectAndCompute(im,None)
+print(f"First 5 points: { [f[i].pt for i in range(5)]}")
+```
+
+Let's plot all points to make sure we got things right:
+
+```python
+def plot_dots(dots):
+    img = np.zeros((250,500))
+    for x in dots:
+        cv2.circle(img,(int(x[0]),int(x[1])),3,(255,0,0))
+    plt.imshow(img)
+
+pts = [x.pt for x in f]
+plot_dots(pts)  
+```
+
+To separate individual characters, we need to know the bounding box of the whole text. To find it out, we can just compute min and max coordinates: 
+
+```python
+min_x, min_y, max_x, max_y = [int(f([z[i] for z in pts])) for f in (min,max) for i in (0,1)]
+min_y+=13
+plt.imshow(im[min_y:max_y,min_x:max_x])
+```
+
+Also, this text can be partially rotated, and to make it perfectly aligned we need to do so-called **perspective transformation**. We will take a rectangle defined by points $(x_{min},y_{min}), (x_{min},y_{max}), (x_{max},y_{min}), (x_{max},y_{max})$ and align it with new image with proportional dimensions:
+
+```python
+off = 5
+src_pts = np.array([(min_x-off,min_y-off),(min_x-off,max_y+off),
+                    (max_x+off,min_y-off),(max_x+off,max_y+off)])
+w = int(max_x-min_x+off*2)
+h = int(max_y-min_y+off*2)
+dst_pts = np.array([(0,0),(0,h),(w,0),(w,h)])
+ho,m = cv2.findHomography(src_pts,dst_pts)
+trim = cv2.warpPerspective(im,ho,(w,h))
+plt.imshow(trim)
+```
+
+After we get this well-aligned image, it should be relatively easy to slice it into pieces:
+
+```python
+char_h = 36
+char_w = 24
+def slice(img):
+    dy,dx = img.shape
+    y = 0
+    while y+char_h<dy:
+        x=0
+        while x+char_w<dx:
+            # Skip empty lines
+            if np.max(img[y:y+char_h,x:x+char_w])>0:
+                yield img[y:y+char_h,x:x+char_w]
+            x+=char_w
+        y+=char_h
+
+sliced = list(slice(trim))
+display_images(sliced)
+```
+
+You have seen that quite a lot of tasks can be done using pure image processing, without any artificial intelligence. If we can use computer vision techniques to make the work of a neural network simpler - we should definitely do it, because it will allow us to solve problems with smaller number of training data.
+
+#### Motion Detection using Frame Difference
+
+Detecting motion on video stream is a very frequent task. For example, it allows us to get alerts when something happens on a surveillance camera. If we want to understand what's happening on the camera, we can then use a neural network - but it is much cheaper to use neural network when we know that something is going on.
+
+The main idea of motion detection is simple. If the camera is fixed, then frames from the camera should be pretty similar to each other. Since frames are represented as arrays, just by subtracting those arrays for two subsequent frames we will get the pixel difference, which should be low for static frames, and become higher once there is substantial motion in the image.
+
+We will start by learning how to open a video and convert it into a sequence of frames:  
+
+```python
+vid = cv2.VideoCapture('data/motionvideo.mp4')
+
+c = 0
+frames = []
+while vid.isOpened():
+    ret, frame = vid.read()
+    if not ret:
+        break
+    frames.append(frame)
+    c+=1
+vid.release()
+print(f"Total frames: {c}")
+display_images(frames[::150])
+```
+
+Since color is not so important for motion detection, we will convert all frames to grayscale. Then, we will compute the frame differences, and plot their norms to visually see the amount of activity going on: 
+
+```python
+bwframes = [cv2.cvtColor(x,cv2.COLOR_BGR2GRAY) for x in frames]
+diffs = [(p2-p1) for p1,p2 in zip(bwframes[:-1],bwframes[1:])]
+diff_amps = np.array([np.linalg.norm(x) for x in diffs])
+plt.plot(diff_amps)
+display_images(diffs[::150],titles=diff_amps[::150])
+```
+
+Suppose we want to create a report that shows what happened in front of the camera by showing the suitable image each time something happens. To do it, we probably want to find out the start and end frame of an "event", and display the middle frame. To remove some noise, we will also smooth out the curve above with moving average function: 
+
+```python
+def moving_average(x, w):
+    return np.convolve(x, np.ones(w), 'valid') / w
+
+threshold = 13000
+
+plt.plot(moving_average(diff_amps,10))
+plt.axhline(y=threshold, color='r', linestyle='-')
+```
+
+Now we can find out frames that have the amount of changes above the threshold by using `np.where`, and extract a sequence of consecutive frames that is longer than 30 frames: 
+
+```python
+active_frames = np.where(diff_amps>threshold)[0]
+
+def subsequence(seq,min_length=30):
+    ss = []
+    for i,x in enumerate(seq[:-1]):
+        ss.append(x)
+        if x+1 != seq[i+1]:
+            if len(ss)>min_length:
+                return ss
+            ss.clear()
+
+sub = subsequence(active_frames)
+print(sub)
+
+```
+
+And finally we can display the image:
+
+```python
+plt.imshow(frames[(sub[0]+sub[-1])//2])
+```
+
+You may notice that color scheme on this image does not look right! This is because OpenCV for historical reasons loads images in BGR color space, while matplotlib uses more traditional RGB color order. Most of the time, it makes sense to convert images to RGB immediately after loading them. 
+
+```python
+plt.imshow(cv2.cvtColor(frames[(sub[0]+sub[-1])//2],cv2.COLOR_BGR2RGB))
+```
+
+#### Extract Motion using Optical Flow
+
+While just comparing two consecutive frames allows us to see the amount of changes, it does not give any information on what is actually moving and where. To get that information, there is a technique called **[optical flow](https://docs.opencv.org/3.4/d4/dee/tutorial_optical_flow.html)**:
+
+* **Dense Optical Flow** computes the vector field that shows for each pixel where is it moving
+* **Sparse Optical Flow** is based on taking some distinctive features in the image (eg. edges), and building their trajectory from frame to frame.
+
+Read more on optical flow [in this great tutorial](https://learnopencv.com/optical-flow-in-opencv/).
+
+Let's compute dense optical flow between our frames:
+
+```python
+flows = [cv2.calcOpticalFlowFarneback(f1, f2, None, 0.5, 3, 15, 3, 5, 1.2, 0) 
+         for f1,f2 in zip(bwframes[:-1],bwframes[1:])]
+flows[0].shape
+```
+
+As you can see, for each frame the flow has the dimension of the frame, and 2 channels, corresponding to x and y components of optical flow vector.
+
+Displaying optical flow in 2D is a bit challenging, but we can use one clever idea. If we convert optical flow to polar coordinates, then we will get two components for each pixel: *direction* and *intensity*. We can represent intensity by the pixel intensity, and direction by different colors. We will create an image in [HSV (Hue-Saturation-Value) color space](https://en.wikipedia.org/wiki/HSV_color_space), where hue will be defined by direction, value - by intensity, and saturation will be 255. 
+
+```python
+def flow_to_hsv(flow):
+    hsvImg = np.zeros((flow.shape[0],flow.shape[1],3),dtype=np.uint8)
+    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+    hsvImg[..., 0] = 0.5 * ang * 180 / np.pi
+    hsvImg[..., 1] = 255
+    hsvImg[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
+    return cv2.cvtColor(hsvImg, cv2.COLOR_HSV2BGR)
+
+start = sub[0]
+stop = sub[-1]
+print(start,stop)
+
+frms = [flow_to_hsv(x) for x in flows[start:stop]]
+display_images(frms[::25])
+```
+
+So, in those frames greenish color corresponds to moving to the left, while blue - moving to the right.
+
+Optical flow can be a great tool to draw conclusions about general direction of movement. For example, if you see that all pixels in a frame are moving in more or less one direction - you can conclude that there is camera movement, and try to compensate for that.
+
+### Loading Images
 
 Images in Python can be conveniently represented by NumPy arrays. For example, grayscale images with the size of 320x200 pixels would be stored in a 200x320 array, and color images of the same dimension would have shape of 200x320x3 (for 3 color channels). To load an image, you can use the following code:
 
@@ -7204,6 +8623,332 @@ New general pre-trained language models do not only model language structure, bu
 
 ### Genetic Algorithms
 
+This notebook is part of [AI for Beginners Curriculum](http://github.com/microsoft/ai-for-beginners).
+
+```python
+import random
+import matplotlib.pyplot as plt
+import numpy as np
+import math
+import time
+```
+
+#### Some Theory
+
+**Genetic Algorithms** (GA) are based on **evolutionary approach** to AI, in which methods of evolution of population is used to obtain an optimal solution for a given problem. They were proposed in 1975 by [John Henry Holland](https://en.wikipedia.org/wiki/John_Henry_Holland).
+
+Genetic Algorithms are based on the following ideas:
+* Valid solutions to the problem can be represented as **genes**
+* **Crossover** allows us to combine two solutions together to obtain new valid solution
+* **Selection** is used to select more optimal solutions using some **fitness function**
+* **Mutations** are introduced to destabilize optimization and get us out of the local minimum 
+
+If you want to implement a Genetic Algorithm, you need the following:
+
+ * To find a method of coding our problem solutions using **genes** $g\in\Gamma$
+ * On the set of genes $\Gamma$ we need to define **fitness function** $\mathrm{fit}: \Gamma\to\mathbb{R}$. Smaller function values would correspond to better solutions.
+ * To define **crossover** mechanism to combine two genes together to get a new valid solution $\mathrm{crossover}: \Gamma^2\to\Gamma$.
+ * To define **mutation** mechanism $\mathrm{mutate}: \Gamma\to\Gamma$.
+In many cases, crossover and mutation are quite simple algorithms to manipulate genes as numeric sequences or bit vectors.
+
+Specific implementation of a genetic algorithm can vary from case to case, but overall structure is the following:
+
+1. Select initial population $G\subset\Gamma$
+2. Randomly select one of the operations that will be performed at this step: crossover or mutation 
+3. **Crossover**:
+  * Randomly select two genes $g_1, g_2 \in G$
+  * Compute crossover $g=\mathrm{crossover}(g_1,g_2)$
+  * If $\mathrm{fit}(g)<\mathrm{fit}(g_1)$ or $\mathrm{fit}(g)<\mathrm{fit}(g_2)$ - replace corresponding gene in the population by $g$.
+4. **Mutation** - select random gene $g\in G$ and replace it by $\mathrm{mutate}(g)$
+5. Repeat from step 2, until we get sufficiently small value of $\mathrm{fit}$, or until the limit on the number of steps is reached.
+
+Tasks typically solved by GA:
+1. Schedule optimization
+1. Optimal packing
+1. Optimal cutting
+1. Speeding up exhaustive search
+
+#### Problem 1: Fair Treasure Split
+
+**Task**: 
+Two people found a treasure that contains diamonds of different sizes (and, correspondingly, different price). They need to split the treasure in two parts in such a way that the difference in the price is 0 (or minimal).
+
+**Formal definition**: 
+We have a set of numbers $S$. We need to split it into two subsets $S_1$ and $S_2$, such that $$\left|\sum_{i\in S_1}i - \sum_{j\in S_2}j\right|\to\min$$ and $S_1\cup S_2=S$, $S_1\cap S_2=\emptyset$.
+
+First of all, let's define the set $S$:
+
+```python
+N = 200
+S = np.array([random.randint(1,10000) for _ in range(N)])
+print(S)
+```
+
+Let's encode each possible solution of the problem by a binary vector $B\in\{0,1\}^N$, where the number on $i$-th position shows to which of the sets ($S_1$ or $S_2$) the $i$-th number in the original set $S$ belongs. `generate` function will generate those random binary vectors.
+
+```python
+def generate(S):
+    return np.array([random.randint(0,1) for _ in S])
+
+b = generate(S)
+print(b)
+```
+
+Let's now define `fit` function that calculates the "cost" of the solution. It will be the difference between sum or two sets, $S_1$ and $S_2$:
+
+```python
+def fit(B,S=S):
+    c1 = (B*S).sum()
+    c2 = ((1-B)*S).sum()
+    return abs(c1-c2)
+
+fit(b)
+```
+
+Now we need to define functions for mutation and crossover:
+* For mutation, we will select one random bit and negate it (change from 0 to 1 and vice versa)
+* For crossover, we will take some bits from one vector, and some bits from another one. We will use the same `generate` function to randomly select, which bits to take from which of the input masks.
+
+```python
+def mutate(b):
+    x = b.copy()
+    i = random.randint(0,len(b)-1)
+    x[i] = 1-x[i]
+    return x
+
+def xover(b1,b2):
+    x = generate(b1)
+    return b1*x+b2*(1-x)
+```
+
+Let's create initial population of the solutions $P$ of the size `pop_size`:
+
+```python
+pop_size = 30
+P = [generate(S) for _ in range(pop_size)]
+```
+
+Now, the main function to perform the evolution. `n` is the number of steps of evolution to undergo. At each step:
+* With the probability of 30% we perform a mutation, and replace the element with the worst `fit` function by the mutated element
+* With the probability of 70% we perform crossover
+
+The function returns the best solution (gene corresponding to the best solution), and the history of minimal fit function in the population on each iteration.
+
+```python
+def evolve(P,S=S,n=2000):
+    res = []
+    for _ in range(n):
+        f = min([fit(b) for b in P])
+        res.append(f)
+        if f==0:
+            break
+        if random.randint(1,10)<3:
+            i = random.randint(0,len(P)-1)
+            b = mutate(P[i])
+            i = np.argmax([fit(z) for z in P])
+            P[i] = b
+        else:
+            i = random.randint(0,len(P)-1)
+            j = random.randint(0,len(P)-1)
+            b = xover(P[i],P[j])
+            if fit(b)<fit(P[i]):
+                P[i]=b
+            elif fit(b)<fit(P[j]):
+                P[j]=b
+            else:
+                pass
+    i = np.argmin([fit(b) for b in P])
+    return (P[i],res)
+
+(s,hist) = evolve(P)
+print(s,fit(s))
+```
+
+You can see that we have managed to minimize the `fit` function quite a bit! Here is the graph that shows how the `fit` function for the whole population behaves during the process.
+
+```python
+plt.plot(hist)
+plt.show()
+```
+
+#### Problem 2: N Queens Problem
+
+**Task**:
+You need to place $N$ queens on a chess board of the size $N\times N$ in such a way that they do not attack each other.
+
+First of all, let's solve the problem without genetic algorithms, using full search. We can represent the state of the board by the list $L$, where $i$-th number in the list is the horizontal position of the queen in $i$-th row. It is quite obvious that each solution will have only one queen per row, and each row would have a queen.
+
+Our goal would be to find the first solution to the problem, after which we will stop searching. You can easily extend this function to generate all possible positions for queens.
+
+```python
+N = 8
+
+def checkbeats(i_new,j_new,l):
+    for i,j in enumerate(l,start=1):
+        if j==j_new:
+            return False
+        else:
+            if abs(j-j_new) == i_new-i:
+                return False
+    return True
+
+def nqueens(l,N=8,disp=True):
+    if len(l)==N:
+        if disp: print(l)
+        return True
+    else:
+        for j in range(1,N+1):
+            if checkbeats(len(l)+1,j,l):
+                l.append(j)
+                if nqueens(l,N,disp): return True
+                else: l.pop()
+        return False
+            
+nqueens([],8)
+
+```
+
+Now let's measure how long does it take to get a solution for 20-queens problem:
+
+```python
+%timeit nqueens([],20,False)
+```
+
+Now let's solve the same problem using genetic algorithm. This solution is inspired by [this blog post](https://kushalvyas.github.io/gen_8Q.html).
+
+We will represent each solution by the same list of length $N$, and as a `fit` function we will take the number of queens that attack each other:
+
+```python
+def fit(L):
+    x=0
+    for i1,j1 in enumerate(L,1):
+        for i2,j2 in enumerate(L,1):
+            if i2>i1:
+                if j2==j1 or (abs(j2-j1)==i2-i1): x+=1
+    return x
+```
+
+Since calculating fitness function is time consuming, let's store each solution in the population together with the value of fitness function. Let's generate the initial population:
+
+```python
+def generate_one(N):
+    x = np.arange(1,N+1)
+    np.random.shuffle(x)
+    return (x,fit(x))
+
+def generate(N,NP):
+    return [generate_one(N) for _ in range(NP)]
+
+generate(8,5)
+```
+
+Now we need to define mutation and crossover functions. Crossover would combine two genes together by breaking them at some random point and concatenating two parts from different genes together.
+
+```python
+def mutate(G):
+    x=random.randint(0,len(G)-1)
+    G[x]=random.randint(1,len(G))
+    return G
+    
+def xover(G1,G2):
+    x=random.randint(0,len(G1))
+    return np.concatenate((G1[:x],G2[x:]))
+
+xover([1,2,3,4],[5,6,7,8])
+```
+
+We will enhance gene selection process by selecting more genes with better fitness function. The probability of selection of a gene would depend on the fitness function: 
+
+```python
+def choose_rand(P):
+    N=len(P[0][0])
+    mf = N*(N-1)//2 # max fitness fn
+    z = [mf-x[1] for x in P]
+    tf = sum(z) # total fitness
+    w = [x/tf for x in z]
+    p = np.random.choice(len(P),2,False,p=w)
+    return p[0],p[1]
+
+def choose(P):
+    def ch(w):
+        p=[]
+        while p==[]:
+            r = random.random()
+            p = [i for i,x in enumerate(P) if x[1]>=r]
+        return random.choice(p)
+    N=len(P[0][0])
+    mf = N*(N-1)//2 # max fitness fn
+    z = [mf-x[1] for x in P]
+    tf = sum(z) # total fitness
+    w = [x/tf for x in z]
+    p1=p2=0
+    while p1==p2:
+        p1 = ch(w)
+        p2 = ch(w)
+    return p1,p2
+```
+
+Now let's define the main evolutionary loop. We will make the logic slightly different from previous example, to show that one can get creative. We will loop until we get the perfect solution (fitness function=0), and at each step we will take the current generation, and produce the new generation of the same size. This is done using `nxgeneration` function, using the following steps:
+
+1. Discard the most unfit solutions - there is `discard_unfit` function that does that
+1. Add some more random solutions to the generation
+1. Populate new generation of size `gen_size` using the following steps for each new gene:
+    - select two random genes, with probability proportional to fitness function
+    - calculate a crossover
+    - apply a mutation with the probability `mutation_prob`
+
+```python
+mutation_prob = 0.1
+
+def discard_unfit(P):
+    P.sort(key=lambda x:x[1])
+    return P[:len(P)//3]
+
+def nxgeneration(P):
+    gen_size=len(P)
+    P = discard_unfit(P)
+    P.extend(generate(len(P[0][0]),3))
+    new_gen = []
+    for _ in range(gen_size):
+        p1,p2 = choose_rand(P)
+        n = xover(P[p1][0],P[p2][0])
+        if random.random()<mutation_prob:
+            n=mutate(n)
+        nf = fit(n)
+        new_gen.append((n,nf))
+        '''
+        if (nf<=P[p1][1]) or (nf<=P[p2][1]):
+            new_gen.append((n,nf))
+        elif (P[p1][1]<P[p2][1]):
+            new_gen.append(P[p1])
+        else:
+            new_gen.append(P[p2])
+        '''
+    return new_gen
+    
+def genetic(N,pop_size=100):
+    P = generate(N,pop_size)
+    mf = min([x[1] for x in P])
+    n=0
+    while mf>0:
+        #print("Generation {0}, fit={1}".format(n,mf))
+        n+=1
+        mf = min([x[1] for x in P])
+        P = nxgeneration(P)
+    mi = np.argmin([x[1] for x in P])
+    return P[mi]
+
+genetic(8)
+```
+
+It is interesting that in most of the times we are able to get a solution pretty quickly, but in some rare cases optimization reaches local minimum, and the process is stuck for a long time. It is important to take that into account when you are measuring average time: while in most of the cases genetic algorithm will be faster than full search, in some cases it can take longer. To overcome this problem, it often makes sense to limit the number of generations to consider, and if we are not able to find the solution - we can start from scratch.  
+
+```python
+%timeit genetic(10)
+```
+
+### Genetic Algorithms
+
 **Genetic Algorithms** (GA) are based on an **evolutionary approach** to AI, in which methods of the evolution of a population is used to obtain an optimal solution for a given problem. They were proposed in 1975 by [John Henry Holland](https://wikipedia.org/wiki/John_Henry_Holland).
 
 Genetic Algorithms are based on the following ideas:
@@ -8113,6 +9858,41 @@ For more information about AI Ethics, please visit [this lesson](https://github.
 Take this [Learn Path](https://docs.microsoft.com/learn/modules/responsible-ai-principles/?WT.mc_id=academic-77998-cacaste) to learn more about responsible AI.
 
 ## X Extras
+
+### Zero-Shot Image Classification
+
+The main thing CLIP can do is to match an image with a text prompt. So, if we take an image, say, of a cat, and then try to match it with text promps "a cat", "a penguin", "a bear" - the first one is likely to have higher probability. Thus we can conlcude that we are dealing with a cat. We don't need to train a model because it has already been pre-trained on a huge dataset - thus it is called **zero-shot**.
+
+```python
+image = preprocess(Image.open("oxcats/Maine_Coon_1.jpg")).unsqueeze(0).to(device)
+text = clip.tokenize(["a penguin", "a bear", "a cat"]).to(device)
+
+with torch.no_grad():
+    image_features = model.encode_image(image)
+    text_features = model.encode_text(text)
+    
+    logits_per_image, logits_per_text = model(image, text)
+    probs = logits_per_image.softmax(dim=-1).cpu().numpy()
+
+print("Label probs:", probs)
+```
+
+### Intelligent Image Search
+
+In the previous example, there was one image the 3 text prompts. We can use CLIP in a different context, eg. we can take many images of a cat, and then select an image the best suits the textual description:
+
+```python
+cats_img = [ Image.open(os.path.join("oxcats",x)) for x in os.listdir("oxcats") ] 
+cats = torch.cat([ preprocess(i).unsqueeze(0) for i in cats_img ]).to(device)
+text = clip.tokenize(["a very fat gray cat"]).to(device)
+with torch.no_grad():
+    logits_per_image, logits_per_text = model(cats, text)
+    res = logits_per_text.softmax(dim=-1).argmax().cpu().numpy()
+
+print("Img Index:", res)
+
+plt.imshow(cats_img[res])
+```
 
 ### DALL-E 1
 

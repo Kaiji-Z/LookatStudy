@@ -170,3 +170,38 @@ console.log("\n=== ALL REPO FETCHER TESTS PASSED ✅ ===");
 }
 
 console.log("=== 多模态图片引用解析(repo-fetcher): 通过 ✅ ===");
+
+// ============================================================
+// extractLanguagesFromReadme: 翻译语言检测
+// ============================================================
+{
+  const { extractLanguagesFromReadme } = await import("../src/main/services/pure/repo-fetcher.ts");
+
+  const readmeWithTranslations = `# AI for Beginners
+
+[Arabic](./translations/ar/README.md) | [Chinese (Simplified)](./translations/zh-CN/README.md) | [Japanese](./translations/ja/README.md) | [French](translations/fr/README.md)
+
+## Lessons
+`;
+
+  const langs = extractLanguagesFromReadme(readmeWithTranslations);
+  assert.strictEqual(langs.length, 4);
+  assert.strictEqual(langs[0].code, "ar");
+  assert.strictEqual(langs[0].name, "Arabic");
+  assert.strictEqual(langs[1].code, "zh-CN");
+  assert.strictEqual(langs[2].code, "ja");
+  assert.strictEqual(langs[3].code, "fr"); // 无 ./ 前缀也能匹配
+  console.log("✓ lang-detect extractLanguagesFromReadme: 4 语言正确提取");
+
+  // 无翻译的 README
+  const noTrans = "# Plain Repo\n\nNo translations here.";
+  assert.strictEqual(extractLanguagesFromReadme(noTrans).length, 0);
+  console.log("✓ lang-detect extractLanguagesFromReadme: 无翻译返回空");
+
+  // 去重
+  const dup = "[English](./translations/en/README.md) | [English Again](./translations/en/README.md)";
+  assert.strictEqual(extractLanguagesFromReadme(dup).length, 1);
+  console.log("✓ lang-detect extractLanguagesFromReadme: 重复语言去重");
+}
+
+console.log("=== 翻译语言检测(repo-fetcher): 通过 ✅ ===");

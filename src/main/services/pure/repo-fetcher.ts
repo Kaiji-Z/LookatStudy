@@ -801,3 +801,132 @@ export async function importRepoToParsedCourse(
   };
 }
 
+/* ============================================================
+ * 多语言:从 README 检测翻译语言 + 拉取翻译版课程内容
+ * ============================================================ */
+
+/** 从 markdown 链接中提取翻译语言列表 */
+export function extractLanguagesFromReadme(readmeMd: string): { code: string; name: string }[] {
+  // 匹配 [语言名](./translations/xx-XX/README.md) 或 [语言名](translations/xx-XX/README.md)
+  const pattern = /\[([^\]]+)\]\(\.?\/?translations\/([^/)]+)\/README\.md\)/g;
+  const langs: { code: string; name: string }[] = [];
+  const seen = new Set<string>();
+  let m;
+  while ((m = pattern.exec(readmeMd)) !== null) {
+    const name = m[1]!.trim();
+    const code = m[2]!.trim();
+    if (!seen.has(code)) {
+      seen.add(code);
+      langs.push({ code, name });
+    }
+  }
+  return langs;
+}
+
+/**
+ * 从 GitHub 仓库检测可用翻译语言。
+ * 拉根 README → 提取翻译链接 → 返回语言列表（空 = 无翻译）。
+ */
+export async function detectRepoLanguages(
+  owner: string,
+  repo: string,
+  branch: string,
+  fetchFn: typeof fetch,
+): Promise<{ code: string; name: string }[]> {
+  // 试 main + master
+  const branches = branch === "master" ? ["master", "main"] : ["main", "master"];
+  for (const br of branches) {
+    try {
+      const r = await fetchFn(cdnUrl(owner, repo, br, "README.md"));
+      if (r.ok) {
+        const readme = await r.text();
+        return extractLanguagesFromReadme(readme);
+      }
+    } catch {
+      // 试下一个
+    }
+  }
+  return [];
+}
+
+/** 翻译版文件条目 */
+export interface TranslatedFile {
+  /** 原文路径（用于和 content_nodes 对齐） */
+  originalPath: string;
+  /** 翻译版路径（translations/<code>/...） */
+  translatedPath: string;
+  title: string;
+  md: string;
+}
+
+/**
+ * 拉取翻译版课程内容。
+ *
+ * 策略:拉 translations/<code>/README.md，从中发现 lesson 链接。
+ * 翻译版 README 的链接可能指向两种路径:
+ *   - translations/<code>/lessons/.../README.md（完整翻译）
+ *   - lessons/.../README.md（只翻译了大纲，lesson 正文还是英文——跳过）
+ * 只拉翻译目录下的文件，跳过指向原文的链接。
+ *
+ * @returns Map<originalPath, { title, md }> — key 是映射到原文的路径
+ */
+export async function fetchTranslatedContent(
+  owner: string,
+  repo: string,
+  branch: string,
+  langCode: string,
+  originalFiles: FetchedFile[],
+  fetchFn: typeof fetch,
+  onProgress?: (msg: string) => void,
+): Promise<Map<string, { title: string; content: string }>> {
+  const send = (msg: string) => onProgress?.(msg);
+  const result = new Map<string, { title: string; content: string }>();
+
+  // 1. 拉翻译版 README
+  const transReadmeUrl = cdnUrl(owner, repo, branch, `translations/${langCode}/README.md`);
+  send(`拉取翻译版 README (${langCode})…`);
+  let transReadme: string;
+  try {
+    const r = await fetchFn(transReadmeUrl);
+    if (!r.ok) {
+      send(`翻译版 README 不存在 (${r.status})，跳过翻译`);
+      return result;
+    }
+    transReadme = await r.text();
+  } catch {
+    send("翻译版 README 拉取失败，跳过翻译");
+    return result;
+  }
+
+  // 2. 从翻译版 README 发现 lesson 链接
+  const links = extractInternalLinks(transReadme);
+  // 只保留指向翻译目录的 .md 链接（translations/<code>/...）
+  const transLinks = links.filter((l) => l.path.includes(`translations/${langCode}/`));
+
+  // 3. 建立翻译路径 → 原文路径的映射
+  // translations/zh-CN/lessons/3-NN/03-Perceptron/README.md → lessons/3-NN/03-Perceptron/README.md
+  const transPrefix = `translations/${langCode}/`;
+  const originalPaths = new Set(originalFiles.map((f) => f.path));
+
+  for (const link of transLinks) {
+    // 把翻译路径还原为原文路径
+    const originalPath = link.path.replace(transPrefix, "");
+    // 如果原文课程里有这个文件，才拉翻译版
+    if (!originalPaths.has(originalPath)) continue;
+
+    try {
+      const url = cdnUrl(owner, repo, branch, link.path);
+      const r = await fetchFn(url);
+      if (!r.ok) continue;
+      const md = await r.text();
+      result.set(originalPath, { title: link.title, content: md });
+    } catch {
+      // 单个文件失败跳过
+    }
+  }
+
+  send(`翻译版拉取完成: ${result.size}/${originalFiles.length} 课时有翻译`);
+  return result;
+}
+
+

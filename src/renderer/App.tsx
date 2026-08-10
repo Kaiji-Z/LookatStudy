@@ -66,6 +66,9 @@ export default function App() {
   const [xp, setXp] = useState<{ todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 多语言:当前课程的可用翻译语言 + 选定语言
+  const [availableLanguages, setAvailableLanguages] = useState<string[]>([]);
+  const [currentLocale, setCurrentLocale] = useState<string | null>(null);
 
   // Skill 系统
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -211,7 +214,14 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedCourseId) return;
-    api.getCourseTree(selectedCourseId).then(async (nodes) => {
+    // 拉可用语言 + 当前语言
+    api.getCourseLanguages(selectedCourseId).then(setAvailableLanguages).catch(() => setAvailableLanguages([]));
+    api.getCourseLanguage(selectedCourseId).then(setCurrentLocale).catch(() => setCurrentLocale(null));
+  }, [selectedCourseId]);
+
+  useEffect(() => {
+    if (!selectedCourseId) return;
+    api.getCourseTree(selectedCourseId, currentLocale ?? undefined).then(async (nodes) => {
       setTree(nodes);
       const lessons = nodes.filter((n) => n.type === "lesson" || n.type === "exam");
       const entries = await Promise.all(
@@ -227,7 +237,7 @@ export default function App() {
       setProgressMap(map);
     }).catch(setErrorFromThrow);
     api.getDashboard(selectedCourseId).then(setDashboard).catch(setErrorFromThrow);
-  }, [selectedCourseId]);
+  }, [selectedCourseId, currentLocale]);
 
   // 节点切换时拉 starter prompts
   useEffect(() => {
@@ -460,6 +470,13 @@ export default function App() {
           onOpenReview={() => setShowReviewDrawer(true)}
           onSelectCourse={(id) => { setSelectedCourseId(id); refreshAll(); }}
           onCoursesChanged={() => { refreshAll(); }}
+          availableLanguages={availableLanguages}
+          currentLocale={currentLocale}
+          onLocaleChange={async (locale) => {
+            if (!selectedCourseId) return;
+            await api.setCourseLanguage(selectedCourseId, locale);
+            setCurrentLocale(locale);
+          }}
         />
       )}
 
@@ -630,6 +647,7 @@ export default function App() {
                 }}
                 onJumpToSource={handleJumpToSource}
                 onQuoteToChat={handleQuoteToChat}
+                locale={currentLocale}
               />
             </main>
             )}

@@ -353,3 +353,20 @@ export const nodeAssets = sqliteTable("node_assets", {
     .default(sql`(CURRENT_TIMESTAMP)`),
 });
 
+/* ---------- 内容翻译（多语言课程） ---------- */
+
+export const contentNodeTranslations = sqliteTable("content_node_translations", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id")
+    .notNull()
+    .references(() => contentNodes.id, { onDelete: "cascade" }),
+  courseId: text("course_id")
+    .notNull()
+    .references(() => courses.id, { onDelete: "cascade" }),
+  /** BCP-47 语言标签，如 "zh-CN", "ja", "fr" */
+  locale: text("locale").notNull(),
+  title: text("title").notNull(),
+  content: text("content"),
+  summary: text("summary"),
+});
+

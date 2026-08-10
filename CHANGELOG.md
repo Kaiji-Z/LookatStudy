@@ -16,6 +16,14 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **导入时多语言检测 + 课程语言切换**:导入 GitHub 仓库时自动检测 `translations/`
+  目录,弹窗让用户选择一种翻译语言。选中的语言作为额外层拉取,存入新表
+  `content_node_translations`（第 18 张表）。课程地图标题旁加 🌐 语言切换器,
+  切换后标题+正文用翻译版,进度/掌握度共享不重置。原文永远导入作为基底。
+- **翻译服务** (`translation-service.ts`):persist/getNodeTranslation/getCourseLanguages/
+  getCourseTitleTranslations。10 个 CRUD 测试。
+
 ### Changed
 - **导入管线:规则+LLM 两阶段课时分类**:新增 `file-classifier.ts` 规则引擎,
   自动过滤高置信度噪声(translations/notebook/lab/example/section-intro/meta),

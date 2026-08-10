@@ -8,7 +8,7 @@
 import type { ContentNode, Progress, Course } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { useState, useEffect, useRef } from "react";
-import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check } from "lucide-react";
+import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import {
   computeBalloonLayout,
@@ -37,6 +37,12 @@ interface MapRailProps {
   streak: number;
   streaming: boolean;
   onJumpNode: (nodeId: string) => void;
+  /** 课程可用的翻译语言列表 */
+  availableLanguages: string[];
+  /** 当前显示语言（null = 原文） */
+  currentLocale: string | null;
+  /** 切换语言 */
+  onLocaleChange: (locale: string | null) => void;
   onOpenReview: () => void;
   onSelectCourse: (id: string) => void;
   onCoursesChanged: () => void;
@@ -84,9 +90,18 @@ export function MapRail(props: MapRailProps) {
         {/* 标题/进度条(仅地图面板显示) */}
         {panel === "map" && (
           <div className="px-3 py-2 rounded-lg pointer-events-auto" style={{ background: "rgb(var(--surface-rail-rgb) / 0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
-            <h2 className="text-body font-extrabold text-white truncate" data-tooltip={props.courseTitle ?? ""}>
-              {props.courseTitle ?? "未选择课程"}
-            </h2>
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-body font-extrabold text-white truncate flex-1" data-tooltip={props.courseTitle ?? ""}>
+                {props.courseTitle ?? "未选择课程"}
+              </h2>
+              {props.availableLanguages.length > 0 && (
+                <LanguageSwitcher
+                  available={props.availableLanguages}
+                  current={props.currentLocale}
+                  onChange={props.onLocaleChange}
+                />
+              )}
+            </div>
             <div className="mt-1.5 flex items-center gap-2">
               <div className="flex-1 h-2.5 bg-black/40 rounded-full overflow-hidden ring-1 ring-white/10">
                 <div className={`h-full rounded-full transition-all duration-500 ${masteryPct >= 100 ? "bg-gold" : "bg-brand"}`} style={{ width: `${Math.max(3, masteryPct)}%` }} />
@@ -165,15 +180,34 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   const [success, setSuccess] = useState<string | null>(null);
   const [progressMsg, setProgressMsg] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string; rect: DOMRect } | null>(null);
+  const [pendingLanguages, setPendingLanguages] = useState<{ code: string; name: string }[] | null>(null);
 
   useEffect(() => { const off = api.on("import:progress", (msg: string) => setProgressMsg(msg)); return () => off(); }, []);
 
   const handleImportUrl = async () => {
     if (!repoUrl.trim() || busy) return;
-    setBusy(true); setError(null); setSuccess(null); setProgressMsg(null);
+    setBusy(true); setError(null); setSuccess(null); setProgressMsg(null); setPendingLanguages(null);
     try {
-      const course = await api.importCourseFromRepo(repoUrl.trim());
-      setSuccess(`导入成功：${course.title}`);
+      // Step 1: 检测翻译语言
+      const langs = await api.detectLanguages(repoUrl.trim());
+      if (langs.length > 0) {
+        setPendingLanguages(langs);
+        setBusy(false);
+        return;
+      }
+      // 无翻译:直接导入原文
+      await doImport(undefined);
+    } catch (e) {
+      setError(e instanceof Error ? `${e.message}\n\n网络受限或私有仓库请改用「Markdown」方式。` : String(e));
+      setBusy(false);
+    }
+  };
+
+  const doImport = async (langCode?: string) => {
+    setBusy(true); setError(null); setSuccess(null); setProgressMsg(null); setPendingLanguages(null);
+    try {
+      const course = await api.importCourseFromRepo(repoUrl.trim(), langCode);
+      setSuccess(`导入成功：${course.title}${langCode ? `（含 ${langCode} 翻译）` : ""}`);
       setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);
     } catch (e) { setError(e instanceof Error ? `${e.message}\n\n网络受限或私有仓库请改用「Markdown」方式。` : String(e)); } finally { setBusy(false); }
   };
@@ -260,6 +294,18 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
             {busy && progressMsg && <div className="bg-neutral-100 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 text-label rounded-lg p-2 flex items-center gap-1.5" data-testid="import-progress"><span className="inline-block w-2.5 h-2.5 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0"></span>{progressMsg}</div>}
             {error && <div className="border border-warning/40 text-warning-light text-label rounded-lg p-2 whitespace-pre-wrap" data-testid="import-error">{error}</div>}
             {success && <div className="border border-brand/30 text-brand text-label rounded-lg p-2" data-testid="import-success">✅ {success}</div>}
+            {pendingLanguages && pendingLanguages.length > 0 && (
+              <div className="border border-accent/40 bg-accent/5 rounded-lg p-2.5 space-y-2" data-testid="lang-select-card">
+                <p className="text-label font-bold text-neutral-700 dark:text-neutral-300">🌐 该课程有 {pendingLanguages.length} 种语言翻译</p>
+                <p className="text-caption text-neutral-600 dark:text-neutral-400">选择一种语言导入翻译版（原文也会导入，进度共享）</p>
+                <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                  <button onClick={() => doImport(undefined)} className="px-2 py-1 rounded-md text-caption font-bold bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-700">原文</button>
+                  {pendingLanguages.slice(0, 20).map((l) => (
+                    <button key={l.code} onClick={() => doImport(l.code)} className="px-2 py-1 rounded-md text-caption font-bold bg-brand/15 text-brand hover:bg-brand/25">{l.name}</button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -669,4 +715,51 @@ function bubbleClass(status: string): string {
 /** 考试节点气泡:紫色(关底 boss 专属色),已通过(有星)时更亮。 */
 function examBubbleClass(passed: boolean): string {
   return passed ? "lesson-bubble exam-bubble-passed" : "lesson-bubble exam-bubble";
+}
+
+/** 🌐 语言切换器:显示当前语言，点击弹出可用语言列表 */
+function LanguageSwitcher({ available, current, onChange }: { available: string[]; current: string | null; onChange: (locale: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  // BCP-47 → 显示名（简化版，常见语言）
+  const LOCALE_NAMES: Record<string, string> = {
+    "zh-CN": "中文", "zh-TW": "繁體", "ja": "日本語", "ko": "한국어", "fr": "Français",
+    "de": "Deutsch", "es": "Español", "pt-BR": "Português", "ru": "Русский", "it": "Italiano",
+    "ar": "العربية", "hi": "हिन्दी", "tr": "Türkçe", "pl": "Polski", "nl": "Nederlands",
+    "id": "Indonesia", "vi": "Tiếng Việt", "th": "ไทย", "sv": "Svenska", "fi": "Suomi",
+  };
+  const displayName = current ? (LOCALE_NAMES[current] ?? current) : "原文";
+  return (
+    <div className="relative shrink-0">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-caption font-bold text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+        data-testid="lang-switcher-btn"
+      >
+        <Globe className="w-3 h-3" />
+        {displayName}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute top-full right-0 mt-1 z-50 bg-surface-0 rounded-lg shadow-elevated p-1 min-w-[100px] max-h-48 overflow-y-auto">
+            <button
+              onClick={() => { onChange(null); setOpen(false); }}
+              className={`w-full text-left px-2 py-1 rounded-md text-caption font-bold transition-colors ${current === null ? "bg-brand/15 text-brand" : "text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
+            >
+              原文
+            </button>
+            {available.map((code) => (
+              <button
+                key={code}
+                onClick={() => { onChange(code); setOpen(false); }}
+                className={`w-full text-left px-2 py-1 rounded-md text-caption font-bold transition-colors ${current === code ? "bg-brand/15 text-brand" : "text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
+              >
+                {LOCALE_NAMES[code] ?? code}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }

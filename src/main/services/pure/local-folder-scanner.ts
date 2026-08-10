@@ -26,7 +26,7 @@ export interface ScannedDoc {
   /** 语言(zh/en/other),用于去重 */
   lang: "zh" | "en" | "other";
   /** 文件类型 */
-  kind: "txt" | "md" | "html" | "pdf";
+  kind: "txt" | "md" | "html" | "pdf" | "ipynb";
 }
 
 /** 扫描到的图片资源(独立图片文件 / markdown 引用 / PDF 页面渲染图) */
@@ -57,6 +57,7 @@ const EXT_KIND: Record<string, ScannedDoc["kind"]> = {
   html: "html",
   htm: "html",
   pdf: "pdf",
+  ipynb: "ipynb",
 };
 
 /** 图片扩展名 → MIME 映射 */
@@ -272,8 +273,33 @@ export async function scanFolder(
     }
   }
 
-  // PDF 图片与文件/引用图片合并(PDF 图用唯一 path,不会和文件图冲突)
-  const images = [...dedupedFileAndRefImages, ...pdfImages];
+  // 4. ipynb output 图片提取(notebook 的 code cell 执行输出图)
+  const notebookImages: ScannedImage[] = [];
+  for (const doc of dedupedDocs) {
+    if (!doc.path.toLowerCase().endsWith(".ipynb")) continue;
+    try {
+      const { parseNotebook } = await import("./notebook-parser.js");
+      const nbRaw = await readFile(join(rootDir, doc.path), "utf8");
+      const nbResult = parseNotebook(nbRaw);
+      for (const img of nbResult.images) {
+        const buf = Buffer.from(img.base64, "base64");
+        notebookImages.push({
+          path: `${doc.path}#cell${img.cellIndex}.png`,
+          absPath: "", // buffer 型
+          title: `${doc.title} - 输出图(cell ${img.cellIndex})`,
+          mime: img.mimeType,
+          source: "image_file" as const, // 复用 image_file 类型(buffer 型)
+          altText: img.altText,
+          buffer: buf,
+        });
+      }
+    } catch {
+      // notebook 图片提取失败跳过(文字已在 doc.content 里)
+    }
+  }
+
+  // 全部图片合并(PDF/notebook 图用唯一 path,不会和文件图冲突)
+  const images = [...dedupedFileAndRefImages, ...pdfImages, ...notebookImages];
 
   return { docs: dedupedDocs, images };
 }
@@ -318,10 +344,12 @@ export interface MarkdownImageRef {
  */
 export function extractImageRefs(md: string): MarkdownImageRef[] {
   const refs: MarkdownImageRef[] = [];
-  // ![alt](url) — alt 可空,url 不含未转义括号
-  const pattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  const seen = new Set<string>();
+
+  // 1. Markdown 语法 ![alt](url)
+  const mdPattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
   let m: RegExpExecArray | null;
-  while ((m = pattern.exec(md)) !== null) {
+  while ((m = mdPattern.exec(md)) !== null) {
     const alt = m[1].trim();
     let url = m[2].trim();
     // 去空格和标题(如 ![alt](path "title"))
@@ -334,8 +362,30 @@ export function extractImageRefs(md: string): MarkdownImageRef[] {
     // 只留图片扩展名
     const ext = url.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
     if (!(ext in IMAGE_EXT_MIME)) continue;
+    const key = alt + "|" + url;
+    if (seen.has(key)) continue;
+    seen.add(key);
     refs.push({ alt, refPath: url });
   }
+
+  // 2. HTML <img> 标签(src='...' 或 src="...")
+  // 覆盖微软课程仓库常见的 <img src='images/xxx.png' alt='描述'/>
+  // 两步法:先提取 <img ...> 整标签,再独立提取 src 和 alt(属性顺序无关)
+  const htmlPattern = /<img\s+[^>]*>/gi;
+  let hm: RegExpExecArray | null;
+  while ((hm = htmlPattern.exec(md)) !== null) {
+    const tag = hm[0];
+    const url = (tag.match(/src=['"]([^'"]+)['"]/i)?.[1] ?? "").trim().split("#")[0];
+    const alt = (tag.match(/alt=['"]([^'"]*)['"]/i)?.[1] ?? "").trim();
+    if (!url || url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) continue;
+    const ext = url.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
+    if (!(ext in IMAGE_EXT_MIME)) continue;
+    const key = alt + "|" + url;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ alt: alt || (url.split("/").pop() ?? url), refPath: url });
+  }
+
   return refs;
 }
 
@@ -429,6 +479,13 @@ async function readFileWithKind(absPath: string, kind: ScannedDoc["kind"]): Prom
     const pdfParse = require("pdf-parse") as (data: Buffer) => Promise<{ text: string }>;
     const data = await pdfParse(buf);
     return data.text.trim();
+  }
+  if (kind === "ipynb") {
+    // .ipynb 是 JSON,用 notebook-parser 转成 markdown(markdown cell + code block)
+    const raw = await readFile(absPath, "utf8");
+    const { parseNotebook } = await import("./notebook-parser.js");
+    const result = parseNotebook(raw);
+    return result.markdown;
   }
   const raw = await readFile(absPath, "utf8");
   return kind === "html" ? htmlToText(raw) : raw;

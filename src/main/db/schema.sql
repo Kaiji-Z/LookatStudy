@@ -240,3 +240,27 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON chat_messages(thread_id, created_at);
+
+-- ============================================================
+-- 多模态资源:导入课程时收集的图片 / PDF 页面渲染图
+-- ============================================================
+-- 图片二进制不入 DB(sql.js 内存型,塞图会爆),只存元数据。
+-- 实际文件存 userData/assets/{courseId}/{filename}。
+-- agent-engine 在"用户问图相关问题时"按需读取喂给多模态 LLM。
+
+CREATE TABLE IF NOT EXISTS node_assets (
+  id TEXT PRIMARY KEY,
+  node_id TEXT NOT NULL REFERENCES content_nodes(id) ON DELETE CASCADE,
+  course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,                       -- assets 目录下的文件名(如 lesson1-fig01.png)
+  mime_type TEXT NOT NULL,                      -- image/png / image/jpeg / image/svg+xml 等
+  source_path TEXT,                             -- 源文件里的原始相对路径(如 lessons/1/img.png)
+  source_kind TEXT NOT NULL CHECK (source_kind IN ('image_file', 'markdown_ref', 'pdf_page')),
+  width INTEGER,                                -- 像素宽(可空,svg/pdf 无)
+  height INTEGER,                               -- 像素高(可空)
+  page_number INTEGER,                          -- PDF 来源页码(可空,1-based)
+  alt_text TEXT,                                -- ![](x) 的 alt 或文件名推断描述
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+CREATE INDEX IF NOT EXISTS idx_node_assets_node ON node_assets(node_id);
+CREATE INDEX IF NOT EXISTS idx_node_assets_course ON node_assets(course_id);

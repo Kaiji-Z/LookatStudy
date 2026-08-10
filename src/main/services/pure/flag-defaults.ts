@@ -12,7 +12,8 @@ export type FlagName =
   | "agent_engine" // M2: Agent 引擎 + Propose/Apply
   | "bkt_mastery" // M2: BKT 掌握度
   | "lightweight_rag" // M3: 轻量 RAG
-  | "memory_system"; // M3: 记忆系统
+  | "memory_system" // M3: 记忆系统
+  | "multimodal_import"; // 多模态导入:图片收集 + PDF 图片提取 + AI 看图
 
 export const FLAG_DEFAULTS: Record<FlagName, boolean> = {
   skill_system: false,
@@ -20,6 +21,7 @@ export const FLAG_DEFAULTS: Record<FlagName, boolean> = {
   bkt_mastery: false,
   lightweight_rag: false,
   memory_system: false,
+  multimodal_import: false,
 };
 
 /** 类型守卫：避免用字符串乱传 flag 名 */

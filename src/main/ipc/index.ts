@@ -142,13 +142,23 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(
     "course:getTree",
-    async (_e, courseId: string): Promise<ContentNode[]> => {
+    async (_e, courseId: string, locale?: string): Promise<ContentNode[]> => {
       const db = getDb();
-      return db
+      const nodes = db
         .select()
         .from(contentNodes)
         .where(eq(contentNodes.courseId, courseId))
         .all() as ContentNode[];
+      // 如果有 locale，用翻译版标题替换（content/summary 仍按需调 getNodeContent）
+      if (locale) {
+        const { getCourseTitleTranslations } = await import("../services/translation-service.js");
+        const titleMap = getCourseTitleTranslations(db, courseId, locale);
+        for (const node of nodes) {
+          const transTitle = titleMap.get(node.id);
+          if (transTitle) node.title = transTitle;
+        }
+      }
+      return nodes;
     },
   );
 
@@ -157,7 +167,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   // 进度通过 import:progress 事件推给渲染层。
   ipcMain.handle(
     "course:importFromRepo",
-    async (_e, repoUrl: string): Promise<Course> => {
+    async (_e, repoUrl: string, langCode?: string): Promise<Course> => {
       const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
       if (!m) throw new Error(`无效 GitHub URL：${repoUrl}`);
       const [, owner, repoRaw] = m;
@@ -249,6 +259,28 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
 
       send(`导入完成：${result.sectionCount} 章 / ${result.lessonCount} 课`);
 
+      // 多语言:如果用户选了翻译语言，拉翻译版内容存入 translations 表
+      if (langCode && fetchedFiles.length > 0) {
+        try {
+          send(`拉取翻译版内容 (${langCode})…`);
+          const { fetchTranslatedContent } = await import("../services/pure/repo-fetcher.js");
+          const { persistTranslations } = await import("../services/translation-service.js");
+          const translations = await fetchTranslatedContent(
+            owner, cleanRepo, importResult.readmeBranch, langCode,
+            fetchedFiles, fetch, send,
+          );
+          if (translations.size > 0) {
+            const transResult = persistTranslations(getDb(), result.courseId, langCode, translations);
+            markDirty();
+            send(`翻译完成: ${transResult.written} 课有翻译, ${transResult.skipped} 课无翻译`);
+          } else {
+            send("翻译版内容为空（该语言可能只有 README 翻译，lesson 未翻译）");
+          }
+        } catch (e) {
+          send(`翻译拉取跳过(${e instanceof Error ? e.message : "出错"})`);
+        }
+      }
+
       // 自动 AI 结构化(有 key 时)。失败不阻塞,降级到纯确定性导入结果。
       await autoStructureCourse(result.courseId, send).catch((e) => {
         send(`AI 结构化跳过(${e instanceof Error ? e.message : "无 key 或出错"})`);
@@ -256,6 +288,57 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
 
       const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
       return course as unknown as Course;
+    },
+  );
+
+  // 多语言:检测仓库可用翻译语言
+  ipcMain.handle(
+    "course:detectLanguages",
+    async (_e, repoUrl: string): Promise<{ code: string; name: string }[]> => {
+      const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+      if (!m) return [];
+      const [, owner, repoRaw] = m;
+      const cleanRepo = repoRaw.replace(/\.git$/, "");
+      const { detectRepoLanguages } = await import("../services/pure/repo-fetcher.js");
+      return detectRepoLanguages(owner, cleanRepo, "main", fetch);
+    },
+  );
+
+  // 多语言:获取课程已导入的翻译语言
+  ipcMain.handle(
+    "course:getLanguages",
+    async (_e, courseId: string): Promise<string[]> => {
+      const { getCourseLanguages } = await import("../services/translation-service.js");
+      return getCourseLanguages(getDb(), courseId);
+    },
+  );
+
+  // 多语言:设置/获取课程当前显示语言（存 settings 表）
+  ipcMain.handle(
+    "course:setLanguage",
+    async (_e, courseId: string, locale: string | null): Promise<void> => {
+      const key = `course:${courseId}:locale`;
+      if (locale === null) {
+        getDb().delete(settingsTable).where(eq(settingsTable.key, key)).run();
+      } else {
+        // upsert
+        const existing = getDb().select().from(settingsTable).where(eq(settingsTable.key, key)).get();
+        if (existing) {
+          getDb().update(settingsTable).set({ value: locale }).where(eq(settingsTable.key, key)).run();
+        } else {
+          getDb().insert(settingsTable).values({ key, value: locale }).run();
+        }
+      }
+      markDirty();
+    },
+  );
+
+  ipcMain.handle(
+    "course:getLanguage",
+    async (_e, courseId: string): Promise<string | null> => {
+      const key = `course:${courseId}:locale`;
+      const row = getDb().select().from(settingsTable).where(eq(settingsTable.key, key)).get();
+      return row?.value ?? null;
     },
   );
 
@@ -367,9 +450,14 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     markDirty();
   });
 
-  // 取某节点完整内容（课程详情 / 练习生成上下文用）
-  ipcMain.handle("course:getNodeContent", async (_e, nodeId: string) => {
+  // 取某节点完整内容（课程详情 / 练习生成上下文用）。有 locale 时返回翻译版。
+  ipcMain.handle("course:getNodeContent", async (_e, nodeId: string, locale?: string) => {
     const db = getDb();
+    if (locale) {
+      const { getNodeTranslation } = await import("../services/translation-service.js");
+      const trans = getNodeTranslation(db, nodeId, locale);
+      if (trans?.content) return trans.content;
+    }
     const node = db
       .select({ content: contentNodes.content })
       .from(contentNodes)

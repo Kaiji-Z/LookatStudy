@@ -39,6 +39,8 @@ interface NotebookPanelProps {
   onJumpToSource?: (anchor: NoteSourceAnchor, noteText?: string, noteId?: string) => void;
   /** 选中文字后"提问这段"→ 插入聊天框(哪里不会点哪里) */
   onQuoteToChat?: (text: string) => void;
+  /** 当前显示语言（null = 原文） */
+  locale?: string | null;
 }
 
 export function NotebookPanel({
@@ -54,6 +56,7 @@ export function NotebookPanel({
   onUpdateNoteComment,
   onJumpToSource,
   onQuoteToChat,
+  locale,
 }: NotebookPanelProps) {
   const [internalTab, setInternalTab] = useState<NotebookTab>("content");
   const tab = forceTab ?? internalTab;
@@ -106,6 +109,7 @@ export function NotebookPanel({
             )}
             onQuoteToChat={onQuoteToChat}
             onSaveContentNote={onSaveContentNote}
+            locale={locale}
           />
         ) : (
           <NotesTab
@@ -130,12 +134,14 @@ function ContentTab({
   contentNotes,
   onQuoteToChat,
   onSaveContentNote,
+  locale,
 }: {
   selectedNode: ContentNode | null;
   /** 该节点的 user_note(用于持久画线渲染) */
   contentNotes: CanvasItem[];
   onQuoteToChat?: (text: string) => void;
   onSaveContentNote: (text: string, anchor: NoteSourceAnchor) => void;
+  locale?: string | null;
 }) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -156,7 +162,7 @@ function ContentTab({
     let cancelled = false;
     setLoading(true);
     setLoadError(false);
-    api.getNodeContent(selectedNode.id)
+    api.getNodeContent(selectedNode.id, locale ?? undefined)
       .then((c) => { if (!cancelled) setContent(c); })
       .catch(() => { if (!cancelled) { setContent(null); setLoadError(true); } })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -296,7 +302,7 @@ function ContentTab({
         <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 flex items-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在加载这一节的讲解…</div>
       ) : loadError ? (
         <div className="text-body text-warning">
-          ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
+          ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id, locale ?? undefined).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
         </div>
       ) : content ? (
         <div ref={proseRef} className="prose prose-sm max-w-[80ch] leading-relaxed select-text">

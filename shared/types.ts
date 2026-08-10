@@ -244,8 +244,16 @@ export interface NodeAsset {
 export interface ApiExpose {
   /* 课程 */
   listCourses(): Promise<Course[]>;
-  getCourseTree(courseId: string): Promise<ContentNode[]>;
-  importCourseFromRepo(repoUrl: string): Promise<Course>;
+  getCourseTree(courseId: string, locale?: string): Promise<ContentNode[]>;
+  importCourseFromRepo(repoUrl: string, langCode?: string): Promise<Course>;
+  /** 检测仓库的可用翻译语言（从 README 的 translations/ 链接提取） */
+  detectLanguages(repoUrl: string): Promise<{ code: string; name: string }[]>;
+  /** 获取课程已导入的翻译语言列表 */
+  getCourseLanguages(courseId: string): Promise<string[]>;
+  /** 设置课程当前显示语言（null = 原文），存 settings 表 */
+  setCourseLanguage(courseId: string, locale: string | null): Promise<void>;
+  /** 获取课程当前显示语言（null = 原文） */
+  getCourseLanguage(courseId: string): Promise<string | null>;
   /** 从本地文件夹导入:Electron 选目录 → 递归扫描 txt/md/html/pdf → 落库 → 自动结构化。push import:progress。用户取消返回 null */
   importLocalFolder(): Promise<Course | null>;
   /** M4: 从 markdown 字符串生成课程（无网络依赖） */
@@ -267,7 +275,7 @@ export interface ApiExpose {
   /** 获取某节点的 starter prompts（引导按钮） */
   getStarterPrompts(nodeId: string): Promise<StarterPrompt[]>;
   /** 获取某节点的完整内容（课程导入 UI / 详情页用） */
-  getNodeContent(nodeId: string): Promise<string | null>;
+  getNodeContent(nodeId: string, locale?: string): Promise<string | null>;
   /** 取节点摘要(导入时生成,空会话时中栏显示) */
   getNodeSummary(nodeId: string): Promise<string | null>;
 

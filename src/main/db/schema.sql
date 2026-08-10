@@ -264,3 +264,21 @@ CREATE TABLE IF NOT EXISTS node_assets (
 );
 CREATE INDEX IF NOT EXISTS idx_node_assets_node ON node_assets(node_id);
 CREATE INDEX IF NOT EXISTS idx_node_assets_course ON node_assets(course_id);
+
+-- ============================================================
+-- 内容翻译（多语言课程）：每个节点的每种语言一个翻译行
+-- 进度/掌握度在 progress 表（共享），切语言不重置进度。
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS content_node_translations (
+  id TEXT PRIMARY KEY,
+  node_id TEXT NOT NULL REFERENCES content_nodes(id) ON DELETE CASCADE,
+  course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  locale TEXT NOT NULL,              -- "zh-CN", "ja", "fr" 等 BCP-47 标签
+  title TEXT NOT NULL,               -- 翻译版标题
+  content TEXT,                      -- 翻译版正文（markdown）
+  summary TEXT,                      -- 翻译版摘要
+  UNIQUE(node_id, locale)            -- 每节点每语言一行
+);
+CREATE INDEX IF NOT EXISTS idx_translations_node ON content_node_translations(node_id);
+CREATE INDEX IF NOT EXISTS idx_translations_course_locale ON content_node_translations(course_id, locale);

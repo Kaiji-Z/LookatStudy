@@ -10,10 +10,18 @@ import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey, ExerciseType, Cus
 const api = {
   /* 课程 */
   listCourses: (() => ipcRenderer.invoke("course:list")) as ApiExpose["listCourses"],
-  getCourseTree: ((courseId: string) =>
-    ipcRenderer.invoke("course:getTree", courseId)) as ApiExpose["getCourseTree"],
-  importCourseFromRepo: ((repoUrl: string) =>
-    ipcRenderer.invoke("course:importFromRepo", repoUrl)) as ApiExpose["importCourseFromRepo"],
+  getCourseTree: ((courseId: string, locale?: string) =>
+    ipcRenderer.invoke("course:getTree", courseId, locale)) as ApiExpose["getCourseTree"],
+  importCourseFromRepo: ((repoUrl: string, langCode?: string) =>
+    ipcRenderer.invoke("course:importFromRepo", repoUrl, langCode)) as ApiExpose["importCourseFromRepo"],
+  detectLanguages: ((repoUrl: string) =>
+    ipcRenderer.invoke("course:detectLanguages", repoUrl)) as ApiExpose["detectLanguages"],
+  getCourseLanguages: ((courseId: string) =>
+    ipcRenderer.invoke("course:getLanguages", courseId)) as ApiExpose["getCourseLanguages"],
+  setCourseLanguage: ((courseId: string, locale: string | null) =>
+    ipcRenderer.invoke("course:setLanguage", courseId, locale)) as ApiExpose["setCourseLanguage"],
+  getCourseLanguage: ((courseId: string) =>
+    ipcRenderer.invoke("course:getLanguage", courseId)) as ApiExpose["getCourseLanguage"],
   importLocalFolder: (() =>
     ipcRenderer.invoke("import:localFolder")) as ApiExpose["importLocalFolder"],
   generateCourseFromMarkdown: ((md: string, repoName: string, repoUrl?: string) =>
@@ -26,8 +34,8 @@ const api = {
     ipcRenderer.invoke("course:generateSummaries", courseId)) as ApiExpose["generateSummaries"],
   getStarterPrompts: ((nodeId: string) =>
     ipcRenderer.invoke("course:getStarterPrompts", nodeId)) as ApiExpose["getStarterPrompts"],
-  getNodeContent: ((nodeId: string) =>
-    ipcRenderer.invoke("course:getNodeContent", nodeId)) as ApiExpose["getNodeContent"],
+  getNodeContent: ((nodeId: string, locale?: string) =>
+    ipcRenderer.invoke("course:getNodeContent", nodeId, locale)) as ApiExpose["getNodeContent"],
   getNodeSummary: ((nodeId: string) =>
     ipcRenderer.invoke("course:getNodeSummary", nodeId)) as ApiExpose["getNodeSummary"],
 

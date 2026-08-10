@@ -98,10 +98,10 @@ npm run verify:core && npx vite build && npm run self-test
 4. Run `npm run verify:core` to confirm consistency.
 5. When you add a table, **bump this list** below (don't make agents recount).
 
-17 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
+18 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
 `streaks`, `chat_sessions`, `settings`, `skills`, `proposals`, `friction_log`,
 `memory`, `custom_providers`, `canvas_items`, `threads`, `chat_messages`,
-`node_assets`.
+`node_assets`, `content_node_translations`.
 
 ## Key services
 
@@ -134,6 +134,7 @@ npm run verify:core && npx vite build && npm run self-test
 | RMD parser | `services/pure/rmd-parser.ts` | R Markdown → markdown:剥 YAML front matter + ```{r} chunk 归一化 |
 | Org parser | `services/pure/org-parser.ts` | Org-mode → markdown:标题/SRC 块/链接/粗体斜体/元数据剥除 |
 | AsciiDoc parser | `services/pure/adoc-parser.ts` | AsciiDoc → markdown:标题/source 块/image/link/粗体斜体 |
+| Translation | `services/translation-service.ts` | `content_node_translations` CRUD — persist/read per-locale title/content; `getCourseLanguages`; `getCourseTitleTranslations` |
 | i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + `translate()` |
 
 Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),

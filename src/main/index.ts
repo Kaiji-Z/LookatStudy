@@ -13,6 +13,7 @@ import { join, resolve } from "node:path";
 import { writeFileSync } from "node:fs";
 import { initDb, getDb, markDirty } from "./db/index.js";
 import { registerAllHandlers } from "./ipc/index.js";
+import { setupContextMenu } from "./context-menu.js";
 import { ensureSeedCourse } from "./services/seed.js";
 import { ensureExamNodesForExistingCourses } from "./services/course-generator.js";
 import { loadEnv, getZaiConfig } from "./services/env.js";
@@ -83,6 +84,9 @@ function createWindow(): void {
       shell.openExternal(url);
     }
   });
+
+  // 右键菜单:复制文字 / 复制图片 / 保存图片(像操作网页一样)
+  setupContextMenu(mainWindow);
 
   if (isDev && process.env["NODE_ENV"] === "development") {
     mainWindow.loadURL(DEV_SERVER_URL);

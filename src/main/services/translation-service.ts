@@ -6,12 +6,18 @@
  * - 翻译作为额外层拉取，存入 content_node_translations
  * - 进度/掌握度在 progress 表（共享），切语言不重置
  * - 切换语言时:title/content/summary 用翻译版（如有），否则回退原文
+ *
+ * 匹配原则:规则管确定性，LLM 管不确定
+ * - 规则:精确路径匹配（sourcePath 的文件路径部分 === translations key）→ 直接写
+ * - LLM:路径对不上的 → 给 LLM 看原文 lesson 列表 + 翻译文件标题，让它判对应关系
  */
 import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
+import { generateText } from "ai";
 import * as schema from "../db/schema.js";
 import { contentNodes, contentNodeTranslations } from "../db/schema.js";
+import { resolveLlm } from "./agent/llm-client.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -19,21 +25,18 @@ type Db = SQLJsDatabase<typeof schema>;
  * 批量写入翻译（导入时调）。
  * translations: Map<originalPath, { title, content }> —— key 是原文课程的文件路径。
  *
- * 匹配策略（按优先级）:
- * 1. 精确路径匹配: translations key === node.sourcePath
- * 2. 路径前缀匹配: node.sourcePath 的 # 前缀（section dir）在 translations key 里出现
- * 3. 标题匹配: translations value.title === node.title（翻译版文件 H1 == 原文 lesson 标题）
+ * 匹配策略:
+ * 1. 规则（高置信度）: 精确路径匹配 — node.sourcePath 的文件路径部分 === translations key
+ * 2. LLM（不确定的）: 路径对不上的 lesson，给 LLM 做语义对齐
  *
- * 策略 3 是主力——因为 buildCourseFromFiles 把文件内容拆成 lesson 后,
- * lesson 标题来自文件的 H3 或 H1,翻译版文件有同样的标题结构。
+ * 如果 LLM 不可用（无 API key），降级为不匹配（只写精确路径命中的）。
  */
-export function persistTranslations(
+export async function persistTranslations(
   db: Db,
   courseId: string,
   locale: string,
   translations: Map<string, { title: string; content: string }>,
-): { written: number; skipped: number } {
-  // 取该课程所有 lesson 节点的 id + sourcePath + title + content
+): Promise<{ written: number; skipped: number; llmAligned: number }> {
   const nodes = db
     .select()
     .from(contentNodes)
@@ -41,67 +44,51 @@ export function persistTranslations(
     .all()
     .filter((n) => n.type === "lesson");
 
-  // 构建翻译查找索引
-  // 1. 按标题索引（主力）: Map<lowercaseTitle, translation>
-  const titleIndex = new Map<string, { title: string; content: string }>();
-  for (const [, trans] of translations) {
-    // 从翻译版 content 里提取所有 H1/H2/H3 标题，建索引
-    const headingMatches = trans.content.matchAll(/^#{1,3}\s+(.+)$/gm);
-    for (const m of headingMatches) {
-      const heading = m[1]!.trim().toLowerCase();
-      if (!titleIndex.has(heading)) {
-        titleIndex.set(heading, trans);
-      }
-    }
-    // 也按 FetchedFile.title 建索引
-    const fileTitle = trans.title.trim().toLowerCase();
-    if (!titleIndex.has(fileTitle)) {
-      titleIndex.set(fileTitle, trans);
-    }
-  }
-
-  // 2. 按路径索引（辅助）: Map<originalPath, translation>
-  const pathIndex = translations;
-
-  let written = 0;
-  let skipped = 0;
+  // ── 第 1 步:规则精确路径匹配（高置信度）──
+  // sourcePath 现在格式是 "文件路径#anchor"（course-generator 改后），取 # 前面做匹配
+  const matched = new Map<string, { title: string; content: string }>(); // nodeId → translation
+  const unmatchedNodes: typeof nodes = [];
 
   for (const node of nodes) {
     const sp = node.sourcePath ?? "";
-    const nodeTitle = node.title.trim().toLowerCase();
+    const filePath = sp.split("#")[0]; // 取文件路径部分
+    const transEntry = translations.get(filePath);
+    if (transEntry) {
+      // 精确路径命中 → 规则确定
+      matched.set(node.id, transEntry);
+    } else {
+      unmatchedNodes.push(node);
+    }
+  }
 
-    // 尝试匹配
-    let transEntry: { title: string; content: string } | null = null;
-
-    // 策略 1: 精确路径
-    transEntry = pathIndex.get(sp) ?? null;
-
-    // 策略 2: 路径前缀（sourcePath 的 # 前缀在某个 translations key 里）
-    if (!transEntry) {
-      const sectionDir = sp.split("#")[0];
-      for (const [origPath, trans] of pathIndex) {
-        if (origPath.includes(sectionDir)) {
-          transEntry = trans;
-          break;
+  // ── 第 2 步:LLM 语义对齐（不确定的）──
+  let llmAligned = 0;
+  if (unmatchedNodes.length > 0 && unmatchedNodes.length <= 100) {
+    try {
+      const llmResult = await alignTranslationsWithLlm(db, unmatchedNodes, translations);
+      for (const [nodeId, transPath] of llmResult) {
+        const trans = translations.get(transPath);
+        if (trans) {
+          matched.set(nodeId, trans);
+          llmAligned++;
         }
       }
+    } catch {
+      // LLM 不可用或失败 → 只写规则匹配的
     }
+  }
 
-    // 策略 3: 标题匹配
-    if (!transEntry) {
-      transEntry = titleIndex.get(nodeTitle) ?? null;
-    }
-
+  // ── 第 3 步:写入 DB ──
+  let written = 0;
+  let skipped = 0;
+  for (const node of nodes) {
+    const transEntry = matched.get(node.id);
     if (!transEntry) {
       skipped++;
       continue;
     }
 
-    // 从翻译版 content 提取该 lesson 对应的正文片段
-    // （翻译版文件可能包含多课内容，我们取整个文件作为翻译内容）
     const transTitle = extractTranslatedTitle(transEntry.content, transEntry.title, node.title);
-
-    // 检查是否已有翻译行（幂等）
     const existing = db
       .select()
       .from(contentNodeTranslations)
@@ -115,10 +102,7 @@ export function persistTranslations(
 
     if (existing) {
       db.update(contentNodeTranslations)
-        .set({
-          title: transTitle,
-          content: transEntry.content,
-        })
+        .set({ title: transTitle, content: transEntry.content })
         .where(eq(contentNodeTranslations.id, existing.id))
         .run();
     } else {
@@ -136,20 +120,79 @@ export function persistTranslations(
     written++;
   }
 
-  return { written, skipped };
+  return { written, skipped, llmAligned };
+}
+
+/**
+ * LLM 语义对齐:给 LLM 看未匹配的 lesson 列表 + 翻译文件列表，让它判断对应关系。
+ *
+ * 返回 Map<nodeId, translationPath>。
+ */
+async function alignTranslationsWithLlm(
+  db: Db,
+  unmatchedNodes: Array<{ id: string; title: string; content: string | null }>,
+  translations: Map<string, { title: string; content: string }>,
+): Promise<Map<string, string>> {
+  const llm = resolveLlm(db);
+
+  // 原文 lesson 列表
+  const lessonList = unmatchedNodes.map((n) => ({
+    id: n.id,
+    title: n.title,
+    preview: (n.content ?? "").slice(0, 100).replace(/\n/g, " ").trim(),
+  }));
+
+  // 翻译文件列表（path + 所有标题）
+  const transList = Array.from(translations.entries()).map(([path, t]) => {
+    const headings = (t.content.match(/^#{1,3}\s+(.+)$/gm) || [])
+      .map((h) => h.replace(/^#{1,3}\s+/, "").trim())
+      .slice(0, 5);
+    return { path, title: t.title, headings };
+  });
+
+  const prompt = `你是一个翻译对齐专家。下面是课程的原始课时列表和翻译文件列表。
+请判断每个原始课时对应哪个翻译文件（通过标题和内容的语义相似度）。
+
+原始课时:
+${JSON.stringify(lessonList, null, 2)}
+
+翻译文件:
+${JSON.stringify(transList, null, 2)}
+
+请返回 JSON 数组，每项是 { "lessonId": "原文课时id", "translationPath": "翻译文件path" }。
+如果某个课时没有对应的翻译文件，不要包含它。
+不要加 markdown 代码块标记。`;
+
+  const result = await generateText({ model: llm.languageModel, prompt });
+  const cleaned = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+  const arr = JSON.parse(cleaned) as Array<{ lessonId: string; translationPath: string }>;
+  const validLessonIds = new Set(unmatchedNodes.map((n) => n.id));
+  const validPaths = new Set(translations.keys());
+  const resultMap = new Map<string, string>();
+
+  for (const item of arr) {
+    if (
+      typeof item.lessonId === "string" &&
+      typeof item.translationPath === "string" &&
+      validLessonIds.has(item.lessonId) &&
+      validPaths.has(item.translationPath)
+    ) {
+      resultMap.set(item.lessonId, item.translationPath);
+    }
+  }
+
+  return resultMap;
 }
 
 /**
  * 从翻译版 content 里提取对应原文 lesson 的标题。
- * 优先级:content 里的 H1 → FetchedFile.title（翻译版的链接文本）→ 原文标题兜底
+ * 优先级:content 里的 H1 → FetchedFile.title → 原文标题兜底
  */
 function extractTranslatedTitle(transContent: string, fileTitle: string, originalTitle: string): string {
-  // 翻译版文件的第一个 H1
   const h1Match = transContent.match(/^#\s+(.+)$/m);
   if (h1Match) return h1Match[1]!.trim();
-  // 翻译版的链接文本（FetchedFile.title）
   if (fileTitle && fileTitle.trim()) return fileTitle.trim();
-  // 回退到原标题
   return originalTitle;
 }
 

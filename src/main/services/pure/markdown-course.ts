@@ -17,6 +17,8 @@ export interface ParsedLesson {
   body: string;
   /** 文件分类器标记该课来源不确定（规则无法确定是课时正文），LLM 结构化时应优先判断 keep/skip */
   uncertain?: boolean;
+  /** 原始文件路径（如 lessons/3-NN/03-Perceptron/README.md），用于翻译匹配/图片关联 */
+  sourceFilePath?: string;
 }
 
 export interface ParsedSection {

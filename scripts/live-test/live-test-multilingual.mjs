@@ -109,9 +109,10 @@ console.log("\n" + "=".repeat(60));
 console.log("Step 4: 存入 DB（persistTranslations）");
 console.log("=".repeat(60));
 
-const persistResult = persistTranslations(db, COURSE_ID, LANG, translations);
+const persistResult = await persistTranslations(db, COURSE_ID, LANG, translations);
 console.log(`  写入: ${persistResult.written} 课有翻译`);
 console.log(`  跳过: ${persistResult.skipped} 课无翻译`);
+console.log(`  LLM 对齐: ${persistResult.llmAligned ?? 0} 课`);
 
 // ============================================================
 console.log("\n" + "=".repeat(60));

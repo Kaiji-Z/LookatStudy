@@ -290,7 +290,9 @@ export function generateCourseFromRepoFiles(
           parentId: sectionId,
           type: "lesson",
           title: lesson.title,
-          sourcePath: lesson.anchor ? `${section.title}#${lesson.anchor}` : null,
+          sourcePath: lesson.sourceFilePath
+            ? (lesson.anchor ? `${lesson.sourceFilePath}#${lesson.anchor}` : lesson.sourceFilePath)
+            : (lesson.anchor ? `${section.title}#${lesson.anchor}` : null),
           orderIdx: lessonOrder++,
           content: lesson.body || null,
         })

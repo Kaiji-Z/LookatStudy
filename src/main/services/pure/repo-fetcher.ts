@@ -332,6 +332,7 @@ export function buildCourseFromFiles(
               anchor: l.title.toLowerCase().replace(/\s+/g, "-"),
               body: l.body,
               uncertain: isUncertain,
+              sourceFilePath: file.path,
             })))
         : (() => {
             const h1Match = file.md.match(/^#\s+(.+)$/m);
@@ -341,6 +342,7 @@ export function buildCourseFromFiles(
               anchor: lessonTitle.toLowerCase().replace(/\s+/g, "-"),
               body: file.md,
               uncertain: isUncertain,
+              sourceFilePath: file.path,
             }];
           })();
 

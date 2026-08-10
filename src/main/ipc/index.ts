@@ -270,7 +270,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
             fetchedFiles, fetch, send,
           );
           if (translations.size > 0) {
-            const transResult = persistTranslations(getDb(), result.courseId, langCode, translations);
+            const transResult = await persistTranslations(getDb(), result.courseId, langCode, translations);
             markDirty();
             send(`翻译完成: ${transResult.written} 课有翻译, ${transResult.skipped} 课无翻译`);
           } else {

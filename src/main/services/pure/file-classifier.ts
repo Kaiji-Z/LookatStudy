@@ -141,25 +141,25 @@ export function classifyFile(
       reason: `文件名 ${stem} 是仓库元数据` };
   }
 
-  // ── 规则 3: Jupyter notebook ──
+  // ── 规则 3: Jupyter notebook → uncertain（notebook 可能是主课程）──
   if (lowerPath.endsWith(".ipynb")) {
-    return { role: "notebook", confidence: "high", keepAsLesson: false,
-      reason: ".ipynb notebook，独立成 lesson 不合适（精华是代码不是讲解）" };
+    return { role: "uncertain", confidence: "low", keepAsLesson: true,
+      reason: ".ipynb notebook——可能是主课程(fast.ai/d2l 风格)也可能是补充代码，交给 LLM 判断" };
   }
 
-  // ── 规则 4: 配套练习 ──
+  // ── 规则 4: 配套练习 → uncertain（exercise 可能就是课时正文）──
   for (const kw of LAB_KEYWORDS) {
     if (lowerPath.includes(kw)) {
-      return { role: "lab", confidence: "high", keepAsLesson: false,
-        reason: `路径含 ${kw}，是配套练习` };
+      return { role: "uncertain", confidence: "low", keepAsLesson: true,
+        reason: `路径含 ${kw}——可能是配套练习也可能是课时正文，交给 LLM 判断` };
     }
   }
 
-  // ── 规则 5: 示例代码 ──
+  // ── 规则 5: 示例代码 → uncertain（example 可能就是课时正文）──
   for (const kw of EXAMPLE_KEYWORDS) {
     if (lowerPath.includes(kw)) {
-      return { role: "example", confidence: "high", keepAsLesson: false,
-        reason: `路径含 ${kw}，是示例代码` };
+      return { role: "uncertain", confidence: "low", keepAsLesson: true,
+        reason: `路径含 ${kw}——可能是示例代码也可能是课时正文，交给 LLM 判断` };
     }
   }
 

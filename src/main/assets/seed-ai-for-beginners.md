@@ -1,11 +1,10 @@
 # AI for Beginners — 12 Weeks, 24 Lessons (Microsoft)
 
-Explore the world of **Artificial Intelligence** (AI) with our 12-week, 24-lesson curriculum!  It includes practical lessons, quizzes, and labs. The curriculum is beginner-friendly and covers tools like TensorFlow and PyTorch, as well as ethics in AI
-> This repository includes 50+ language translations which significantly increases the download size. To clone without translations, use sparse checkout:
+> Source: [microsoft/AI-For-Beginners](https://github.com/microsoft/AI-For-Beginners) — auto-imported via repo-fetcher pipeline.
 
-## Introduction to AI
+## Intro
 
-### Lesson 01. Introduction and History of AI
+### Intro
 
 ![Summary of Introduction of AI content in a doodle](../sketchnotes/ai-intro.png)
 
@@ -156,9 +155,9 @@ Review the history of AI and ML by reading through [this lesson](https://github.
 
 **Assignment**: [Game Jam](assignment.md)
 
-## Knowledge Representation & Symbolic AI
+## Symbolic
 
-### Lesson 02. Knowledge Representation and Expert Systems
+### Symbolic
 
 ![Summary of Symbolic AI content](../sketchnotes/ai-symbolic.png)
 
@@ -395,9 +394,9 @@ Do some research on the internet to discover areas where humans have tried to qu
 
 **Assignment**: [Build an Ontology](assignment.md)
 
-## Introduction to Neural Networks
+## Neural Networks
 
-### Lesson 03. Perceptron
+### Perceptron
 
 One of the first attempts to implement something similar to a modern neural network was done by Frank Rosenblatt from Cornell Aeronautical Laboratory in 1957. It was a hardware implementation called "Mark-1", designed to recognize primitive geometric figures, such as triangles, squares and circles.
 
@@ -480,7 +479,7 @@ To see how we can use perceptron to solve a toy problem as well as real-life pro
 Here's an interesting [article about perceptrons](https://towardsdatascience.com/what-is-a-perceptron-basics-of-neural-networks-c4cfea20c590
 ) as well.
 
-### Lesson 04. Multi-Layered Perceptron & Own Framework
+### Own Framework
 
 In the previous section, you learned about the simplest neural network model - one-layered perceptron, a linear two-class classification model.
 
@@ -556,7 +555,7 @@ Proceed to the [OwnFramework](OwnFramework.ipynb) notebook and work through it.
 
 Backpropagation is a common algorithm used in AI and ML, worth studying [in more detail](https://wikipedia.org/wiki/Backpropagation)
 
-### Lesson 05. Intro to Frameworks (PyTorch & TensorFlow)
+### Frameworks
 
 As we have learned already, to be able to train neural networks efficiently we need to do two things:
 
@@ -666,7 +665,7 @@ Ask yourself the following questions:
 
 ## Computer Vision
 
-### Lesson 06. Intro to Computer Vision & OpenCV
+### Intro CV
 
 [Computer Vision](https://wikipedia.org/wiki/Computer_vision) is a discipline whose aim is to allow computers to gain high-level understanding of digital images. This is quite a broad definition, because *understanding* can mean many different things, including finding an object on a picture (**object detection**), understanding what is happening (**event detection**), describing a picture in text, or reconstructing a scene in 3D. There are also special tasks related to human images: age and emotion estimation, face detection and identification, and 3D pose estimation, to name a few.
 
@@ -766,7 +765,7 @@ Watch [this video](https://docs.microsoft.com/shows/ai-show/ai-show--2021-opencv
 
 Read more on optical flow [in this great tutorial](https://learnopencv.com/optical-flow-in-opencv/).
 
-### Lesson 07. Convolutional Neural Networks
+### Conv Nets
 
 We have seen before that neural networks are quite good at dealing with images, and even one-layer perceptron is able to recognize handwritten digits from MNIST dataset with reasonable accuracy. However, the MNIST dataset is very special, and all digits are centered inside the image, which makes the task simpler.
 
@@ -822,7 +821,7 @@ As an example, let's look at the architecture of VGG-16, a network that achieved
 
 [Continue your study about the best-known CNN architectures](CNN_Architectures.md)
 
-### Lesson 08. Pre-trained Networks & Transfer Learning
+### Transfer Learning
 
 Training CNNs can take a lot of time, and a lot of data is required for that task. However, much of the time is spent learning the best low-level filters that a network can use to extract patterns from images. A natural question arises - can we use a neural network trained on one dataset and adapt it to classify different images without requiring a full training process?
 
@@ -892,7 +891,7 @@ In the accompanying notebooks, there are notes at the bottom about how transfer 
 
 Read through [TrainingTricks.md](TrainingTricks.md) to deepen your knowledge of some other way to train your models.
 
-### Lesson 09. Autoencoders & VAEs
+### Autoencoders
 
 When training CNNs, one of the problems is that we need a lot of labeled data. In the case of image classification, we need to separate images into different classes, which is a manual effort.
 
@@ -984,7 +983,7 @@ For reference, read more about autoencoders in these resources:
 
 At the end of [this notebook using TensorFlow](AutoencodersTF.ipynb), you will find a 'task' - use this as your assignment.
 
-### Lesson 10. Generative Adversarial Networks & Style Transfer
+### GANs
 
 In the previous section, we learned about **generative models**: models that can generate new images similar to the ones in the training dataset. VAE was a good example of a generative model.
 
@@ -1079,7 +1078,7 @@ For reference, read more about GANs in these resources:
 
 Revisit one of the two notebooks associated to this lesson and retrain the GAN on your own images. What can you create?
 
-### Lesson 11. Object Detection
+### Object Detection
 
 The image classification models we have dealt with so far took an image and produced a categorical result, such as the class 'number' in a MNIST problem. However, in many cases we do not want just to know that a picture portrays objects - we want to be able to determine their precise location. This is exactly the point of **object detection**.
 
@@ -1252,7 +1251,7 @@ Read through these articles and notebooks about YOLO and try them for yourself
 
 #### [Assignment: Object Detection](lab/README.md)
 
-### Lesson 12. Semantic Segmentation & U-Net
+### Segmentation
 
 We have previously learned about Object Detection, which allows us to locate objects in the image by predicting their *bounding boxes*. However, for some tasks we do not only need bounding boxes, but also more precise object localization. This task is called  **segmentation**.
 
@@ -1311,9 +1310,9 @@ Body segmentation is just one of the common tasks that we can do with images of 
 
 This [wikipedia article](https://wikipedia.org/wiki/Image_segmentation) offers a good overview of the various applications of this technique. Learn more on your own about the subdomains of Instance segmentation and Panoptic segmentation in this field of inquiry.
 
-## Natural Language Processing
+## NLP
 
-### Lesson 13. Text Representation (BoW, TF-IDF)
+### Text Rep
 
 #### Text Classification
 
@@ -1383,7 +1382,7 @@ Practice your skills with text embeddings and bag-of-words techniques on [Micros
 
 #### [Assignment: Notebooks](assignment.md)
 
-### Lesson 14. Semantic Word Embeddings (Word2Vec, GloVe)
+### Embeddings
 
 When training classifiers based on BoW or TF/IDF, we operated on high-dimensional bag-of-words vectors with length `vocab_size`, and we were explicitly converting from low-dimensional positional representation vectors into sparse one-hot representation. This one-hot representation, however, is not memory-efficient. In addition, each word is treated independently from each other, i.e. one-hot encoded vectors do not express any semantic similarity between words.
 
@@ -1445,7 +1444,7 @@ Read through this paper on Word2Vec: [Efficient Estimation of Word Representatio
 
 #### [Assignment: Notebooks](assignment.md)
 
-### Lesson 15. Language Modeling & Training Embeddings
+### Language Modeling
 
 Semantic embeddings, such as Word2Vec and GloVe, are in fact a first step towards **language modeling** - creating models that somehow *understand* (or *represent*) the nature of the language.
 
@@ -1484,7 +1483,7 @@ In the previous lesson we have seen that words embeddings work like magic! Now w
 
 In the lab, we challenge you to modify the code from this lesson to train skip-gram model instead of CBoW. [Read the details](lab/README.md)
 
-### Lesson 16. Recurrent Neural Networks
+### RNN
 
 In previous sections, we have been using rich semantic representations of text and a simple linear classifier on top of the embeddings. What this architecture does is to capture the aggregated meaning of words in a sentence, but it does not take into account the **order** of words, because the aggregation operation on top of embeddings removed this information from the original text. Because these models are unable to model word ordering, they cannot solve more complex or ambiguous tasks such as text generation or question answering.
 
@@ -1565,7 +1564,7 @@ Generation with Visual Attention](https://arxiv.org/pdf/1502.03044v2.pdf)
 
 #### [Assignment: Notebooks](assignment.md)
 
-### Lesson 17. Generative Recurrent Networks
+### Generative Networks
 
 Recurrent Neural Networks (RNNs) and their gated cell variants such as Long Short Term Memory Cells (LSTMs) and Gated Recurrent Units (GRUs) provided a mechanism for language modeling in that they can learn word ordering and provide predictions for the next word in a sequence. This allows us to use RNNs for **generative tasks**, such as ordinary text generation, machine translation, and even image captioning.
 
@@ -1634,7 +1633,7 @@ Here are some articles to expand your knowledge
 * Different approaches to text generation with Markov Chain, LSTM and GPT-2: [blog post](https://towardsdatascience.com/text-generation-gpt-2-lstm-markov-chain-9ea371820e1e)
 * Text generation sample in [Keras documentation](https://keras.io/examples/generative/lstm_character_level_text_generation/)
 
-### Lesson 18. Transformers & BERT
+### Transformers
 
 One of the most important problems in the NLP domain is **machine translation**, an essential task that underlies tools such as Google Translate. In this section, we will focus on machine translation, or, more generally, on any *sequence-to-sequence* task (which is also called **sentence transduction**).
 
@@ -1738,7 +1737,7 @@ In this lesson you learned about Transformers and Attention Mechanisms, all esse
 * [Blog post](https://mchromiak.github.io/articles/2017/Sep/12/Transformer-Attention-is-all-you-need/), explaining the classical [Attention is all you need](https://arxiv.org/abs/1706.03762) paper on transformers.
 * [A series of blog posts](https://towardsdatascience.com/transformers-explained-visually-part-1-overview-of-functionality-95a6dd460452) on transformers, explaining the architecture in detail.
 
-### Lesson 19. Named Entity Recognition
+### NER
 
 Up to now, we have mostly been concentrating on one NLP task - classification. However, there are also other NLP tasks that can be accomplished with neural networks. One of those tasks is **[Named Entity Recognition](https://wikipedia.org/wiki/Named-entity_recognition)** (NER), which deals with recognizing specific entities within text, such as places, person names, date-time intervals, chemical formulae and so on.
 
@@ -1813,7 +1812,7 @@ Complete the assignment linked below to train a named entity recognition model f
 
 Read through the blog [The Unreasonable Effectiveness of Recurrent Neural Networks](http://karpathy.github.io/2015/05/21/rnn-effectiveness/) and follow along with the Further Reading section in that article to deepen your knowledge.
 
-### Lesson 20. Large Language Models & Prompt Programming
+### Lang Models
 
 In all of our previous tasks, we were training a neural network to perform a certain task using labeled dataset. With large transformer models, such as BERT, we use language modelling in self-supervised fashion to build a language model, which is then specialized for specific downstream task with further domain-specific training. However, it has been demonstrated that large language models can also solve many tasks without ANY domain-specific training. A family of models capable of doing that is called **GPT**: Generative Pre-Trained Transformer.
 
@@ -1862,9 +1861,9 @@ Continue your learning in the following notebooks:
 
 New general pre-trained language models do not only model language structure, but also contain vast amount of natural language. Thus, they can be effectively used to solve some NLP tasks in zero-shop or few-shot settings.
 
-## Other AI Techniques
+## Other
 
-### Lesson 21. Genetic Algorithms
+### Genetic Algorithms
 
 **Genetic Algorithms** (GA) are based on an **evolutionary approach** to AI, in which methods of the evolution of a population is used to obtain an optimal solution for a given problem. They were proposed in 1975 by [John Henry Holland](https://wikipedia.org/wiki/John_Henry_Holland).
 
@@ -1938,7 +1937,7 @@ Hints:
 
 Use [Diophantine.ipynb](Diophantine.ipynb) as a starting point.
 
-### Lesson 22. Deep Reinforcement Learning
+### Deep RL
 
 Reinforcement learning (RL) is seen as one of the basic machine learning paradigms, next to supervised learning and unsupervised learning. While in supervised learning we rely on the dataset with known outcomes, RL is based on **learning by doing**. For example, when we first see a computer game, we start playing, even without knowing the rules, and soon we are able to improve our skills just by the process of playing and adjusting our behavior.
 
@@ -2049,7 +2048,7 @@ Watch [this great video](https://www.youtube.com/watch?v=qv6UVOQ0F44) talking ab
 
 Your goal during this assignment would be to train a different Gym environment - [Mountain Car](https://www.gymlibrary.ml/environments/classic_control/mountain_car/).
 
-### Lesson 23. Multi-Agent Systems
+### Multiagent Systems
 
 One of the possible ways of achieving intelligence is so-called **emergent** (or **synergetic**) approach, which is based on the fact that the combined behavior of many relatively simple agents can result in the overall more complex (or intelligent) behavior of the system as a whole. Theoretically, this is based on the principles of [Collective Intelligence](https://en.wikipedia.org/wiki/Collective_intelligence), [Emergentism](https://en.wikipedia.org/wiki/Global_brain) and [Evolutionary Cybernetics](https://en.wikipedia.org/wiki/Global_brain), which state that higher-level systems gain some sort of added value when being properly combined from lower-level systems (so-called *principle of metasystem transition*).
 
@@ -2198,9 +2197,9 @@ Review the use of this type of system in industry. Pick a domain such as manufac
 
 #### [NetLogo Assignment](assignment.md)
 
-## AI Ethics
+## Ethics
 
-### Lesson 24. AI Ethics & Responsible AI
+### Ethics
 
 You have almost finished this course, and I hope that by now you clearly see that AI is based on a number of formal mathematical methods that allow us to find relationships in data and train models to replicate some aspects of human behavior. At this point in history, we consider AI to be a very powerful tool to extract patterns from data, and to apply those patterns to solve new problems.
 
@@ -2237,9 +2236,9 @@ For more information about AI Ethics, please visit [this lesson](https://github.
 
 Take this [Learn Path](https://docs.microsoft.com/learn/modules/responsible-ai-principles/?WT.mc_id=academic-77998-cacaste) to learn more about responsible AI.
 
-## Extras
+## X Extras
 
-### Lesson 25. Multi-Modal Networks (CLIP & VQGAN)
+### Multi Modal
 
 After the success of transformer models for solving NLP tasks, the same or similar architectures have been applied to computer vision tasks. There is a growing interest in building models that would *combine* vision and natural language capabilities. One of such attempts was done by OpenAI, and it is called CLIP and DALL.E.
 

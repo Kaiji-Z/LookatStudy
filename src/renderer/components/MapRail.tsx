@@ -10,6 +10,7 @@ import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { useState, useEffect, useRef } from "react";
 import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
+import { useTheme } from "../lib/useTheme.js";
 import {
   computeBalloonLayout,
   sectionHeight,
@@ -84,14 +85,14 @@ export function MapRail(props: MapRailProps) {
         {/* 标题/进度条(仅地图面板显示) */}
         {panel === "map" && (
           <div className="px-3 py-2 rounded-lg pointer-events-auto" style={{ background: "rgb(var(--surface-rail-rgb) / 0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
-            <h2 className="text-body font-extrabold text-white truncate" data-tooltip={props.courseTitle ?? ""}>
+            <h2 className="map-sky-text text-body font-extrabold truncate" data-tooltip={props.courseTitle ?? ""}>
               {props.courseTitle ?? "未选择课程"}
             </h2>
             <div className="mt-1.5 flex items-center gap-2">
               <div className="flex-1 h-2.5 bg-black/40 rounded-full overflow-hidden ring-1 ring-white/10">
                 <div className={`h-full rounded-full transition-all duration-500 ${masteryPct >= 100 ? "bg-gold" : "bg-brand"}`} style={{ width: `${Math.max(3, masteryPct)}%` }} />
               </div>
-              <span className="text-label font-extrabold tabular-nums text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">{masteryPct}%</span>
+              <span className="map-sky-text text-label font-extrabold tabular-nums">{masteryPct}%</span>
             </div>
             <div className="flex items-center justify-end mt-1.5 text-caption">
               {props.dueCount > 0 && (
@@ -290,14 +291,16 @@ function MapSkyCanvas({
   preset: SkyPreset;
 }) {
   const skyCanvasRef = useRef<HTMLCanvasElement>(null);
+  const { resolved } = useTheme();
+  const isLight = resolved === "light";
   useEffect(() => {
     const canvas = skyCanvasRef.current;
     const scroll = scrollRef.current;
     const nav = navRef.current;
     if (!canvas || !scroll || !nav) return;
-    const detach = attachSky(canvas, scroll, nav, preset);
+    const detach = attachSky(canvas, scroll, nav, preset, isLight);
     return detach;
-  }, [scrollRef, navRef, preset]);
+  }, [scrollRef, navRef, preset, isLight]);
   return (
     <canvas ref={skyCanvasRef} className="map-sky-canvas" aria-hidden="true" />
   );
@@ -316,6 +319,8 @@ function MapOrbWeatherCanvas({
   preset: SkyPreset;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { resolved } = useTheme();
+  const isLight = resolved === "light";
   useEffect(() => {
     const canvas = canvasRef.current;
     const nav = navRef.current;
@@ -337,9 +342,9 @@ function MapOrbWeatherCanvas({
       });
       return out;
     };
-    const detach = attachOrbWeather(canvas, nav, preset, getOrbs);
+    const detach = attachOrbWeather(canvas, nav, preset, getOrbs, isLight);
     return detach;
-  }, [scrollRef, navRef, preset]);
+  }, [scrollRef, navRef, preset, isLight]);
   return (
     <canvas ref={canvasRef} className="map-orb-weather-canvas" aria-hidden="true" />
   );
@@ -404,7 +409,7 @@ function MapSection({
         <span className="w-6 h-6 rounded-full bg-gold text-neutral-900 text-caption font-extrabold flex items-center justify-center shrink-0 ring-2 ring-gold/40 shadow-sm">
           {sectionIndex + 1}
         </span>
-        <span className="text-label font-bold text-white truncate flex-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">
+        <span className="map-sky-text text-label font-bold truncate flex-1">
           {section.title}
         </span>
       </div>

@@ -107,6 +107,9 @@
   /* —— 通用发光/阴影 —— */
   --shadow-rgb: 0 0 0;
   --inner-highlight: rgb(255 255 255 / 0.55);  /* 球体内高光 */
+  /* 左栏天空 canvas 上的文字/图标:深色天空=白字+深影;浅色模式在 html.light 覆盖 */
+  --map-text: rgb(255 255 255);
+  --map-text-shadow: drop-shadow(0 1px 3px rgb(0 0 0 / 0.6));
 
   /* —— 动效曲线(PRODUCT.md: 指数 ease-out,150-250ms;reduced-motion 全局降级)—— */
   /* ease-out-expo:状态入场/反馈(消息、面板、答题结果),无回弹,干脆 */
@@ -161,6 +164,9 @@ html.light {
 
   /* —— 球体内高光(浅底减弱:0.55→0.3,白底上不需要那么强)—— */
   --inner-highlight: rgb(255 255 255 / 0.3);
+  /* 左栏天空文字:浅色天空=深字+浅影(与深色模式反转) */
+  --map-text: rgb(30 30 35);
+  --map-text-shadow: drop-shadow(0 1px 2px rgb(255 255 255 / 0.7));
 
   /* —— brand 绿(降 L:0.748→0.55,白底 4.55:1 过 AA)—— */
   --brand: oklch(0.55 0.16 137.6);
@@ -574,6 +580,12 @@ html.light {
 .map-sky-content {
   position: relative;
   z-index: 1;
+}
+/* 天空 canvas 上的文字/图标:颜色和阴影跟随主题(深色天空=白字深影,浅色=深字浅影)。
+   通过 --map-text / --map-text-shadow 变量在 :root 和 html.light 切换。 */
+.map-sky-text {
+  color: var(--map-text);
+  filter: var(--map-text-shadow);
 }
 
 /* 顶部悬浮卷轴头部:absolute 浮在内容之上(z-30,高于天气 canvas z-20)。

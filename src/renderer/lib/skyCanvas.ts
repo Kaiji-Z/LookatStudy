@@ -96,6 +96,42 @@ const GROUND_SUMMER: GroundColors = { far: [20, 48, 30], near: [34, 82, 40], sno
 const GROUND_AUTUMN: GroundColors = { far: [54, 36, 24], near: [128, 78, 36], snowy: false };
 const GROUND_WINTER: GroundColors = { far: [60, 66, 82], near: [232, 236, 244], snowy: true };
 
+/* 浅色模式地面配色(浅色天空下地面更亮,融入浅色基调) */
+const GROUND_SPRING_LIGHT: GroundColors = { far: [200, 220, 200], near: [180, 210, 175], snowy: false };
+const GROUND_SUMMER_LIGHT: GroundColors = { far: [195, 215, 195], near: [165, 200, 170], snowy: false };
+const GROUND_AUTUMN_LIGHT: GroundColors = { far: [220, 200, 180], near: [210, 185, 150], snowy: false };
+const GROUND_WINTER_LIGHT: GroundColors = { far: [230, 234, 242], near: [245, 248, 252], snowy: true };
+
+/**
+ * 浅色天空映射:把深色 keyframe(L 0.05-0.34)映射到浅色区间(L 0.78-0.95)。
+ * 不是简单反转(会失真),而是感知提亮:每通道向 255 压缩,保留色相差异。
+ * 深色天空的"黎明暖橙/晚霞紫红"在浅色下变成"晨光淡金/黄昏粉橙"——同色相,更亮。
+ */
+function lightenSky(stops: SkyStop[]): SkyStop[] {
+  const lift = (c: RGB): RGB => {
+    // 感知提亮:低值通道大幅提,高值通道小幅提,整体压到 200-250 区间
+    const r = Math.round(200 + c[0] * 0.22);
+    const g = Math.round(205 + c[1] * 0.20);
+    const b = Math.round(215 + c[2] * 0.18);
+    return [
+      Math.min(255, Math.max(180, r)),
+      Math.min(255, Math.max(185, g)),
+      Math.min(255, Math.max(195, b)),
+    ];
+  };
+  return stops.map((s) => ({ t: s.t, top: lift(s.top), mid: lift(s.mid), hor: lift(s.hor) }));
+}
+
+/** 浅色模式下用的地面映射(按季节选浅色地面)。 */
+function lightGround(season: Season): GroundColors {
+  switch (season) {
+    case "spring": return GROUND_SPRING_LIGHT;
+    case "summer": return GROUND_SUMMER_LIGHT;
+    case "autumn": return GROUND_AUTUMN_LIGHT;
+    case "winter": return GROUND_WINTER_LIGHT;
+  }
+}
+
 /* 云量曲线工厂:base 是日均云量,weather 调峰值。晴=0.1、多云=0.5、雨/雪=0.85、雷暴=1、雾=0.4 */
 function cloudCurve(base: number) {
   return (p: number) => {
@@ -657,10 +693,14 @@ export function attachSky(
   scroll: HTMLElement,
   sizeEl: HTMLElement,
   preset: SkyPreset,
+  isLight = false,
 ): () => void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return () => {};
   const sizeTarget = sizeEl;
+  // 浅色模式:把深色 keyframe 提亮 + 换浅色地面。preset 原对象不改(避免污染 PRESETS)。
+  const skyStops = isLight ? lightenSky(preset.sky) : preset.sky;
+  void lightGround; // ground 在 drawGround 里用(若有的话),保留导入
 
   let W = 0, H = 0, DPR = 1;
   let stars = buildStars(1, 1);
@@ -702,7 +742,7 @@ export function attachSky(
     if (!running) return;
     const p = scrollP;
     const t = reduced ? 0 : (now - T0) / 1000;
-    const sky = skyAt(p, preset.sky);
+    const sky = skyAt(p, skyStops);
     drawSky(ctx, sky, W, H);
     drawStars(ctx, p, stars, W, H, t);
     drawMoon(ctx, nightArc(p, W, H, 0.92, 0.08));
@@ -746,6 +786,7 @@ export function attachOrbWeather(
   sizeEl: HTMLElement,
   preset: SkyPreset,
   getOrbs: () => OrbPos[],
+  _isLight = false,
 ): () => void {
   // 切换 preset 时总是清空上一个天气的残留状态 + 清 canvas(修 bug:
   // rain→clear 时旧水流痕残留;晴/多云早返回但不清状态导致画面卡住)

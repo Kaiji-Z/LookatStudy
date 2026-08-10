@@ -37,13 +37,13 @@ console.assert(courseCols.includes("lab_type"), "courses 应有 lab_type 列");
 console.log(`✓ courses.lab_type 列存在`);
 
 // 2. 种子课程写入（从 services/seed.ts 复制核心逻辑，用原生 SQL）
-const COURSE_ID = "seed-fde-roadmap";
+const COURSE_ID = "seed-ai-for-beginners";
 db.run(
   `INSERT INTO courses (id, repo_url, repo_name, title, description, version) VALUES (?, ?, ?, ?, ?, 1)`,
-  [COURSE_ID, "https://github.com/pierpaolo28/Awesome-FDE-Roadmap", "Awesome-FDE-Roadmap", "FDE 路线图", "测试用"],
+  [COURSE_ID, "https://github.com/microsoft/AI-For-Beginners", "AI-For-Beginners", "AI for Beginners", "测试用"],
 );
 
-const FDE_SEED = [
+const SEED_FIXTURE = [
   { title: "Section A", lessons: ["Lesson A1", "Lesson A2"] },
   { title: "Section B", lessons: ["Lesson B1"] },
   { title: "Section C", lessons: ["Lesson C1", "Lesson C2", "Lesson C3"] },
@@ -51,7 +51,7 @@ const FDE_SEED = [
 
 let sectionOrder = 0;
 let totalLessons = 0;
-for (const section of FDE_SEED) {
+for (const section of SEED_FIXTURE) {
   const sectionId = randomUUID();
   db.run(
     `INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES (?, ?, NULL, 'section', ?, ?)`,
@@ -72,14 +72,14 @@ for (const section of FDE_SEED) {
     totalLessons++;
   }
 }
-console.log(`✓ 种子课程写入: ${FDE_SEED.length} sections, ${totalLessons} lessons`);
+console.log(`✓ 种子课程写入: ${SEED_FIXTURE.length} sections, ${totalLessons} lessons`);
 
 // 3. 查询验证
-const courseRow = db.exec("SELECT title FROM courses WHERE id = 'seed-fde-roadmap'");
+const courseRow = db.exec("SELECT title FROM courses WHERE id = 'seed-ai-for-beginners'");
 console.assert(courseRow.length === 1, "课程应存在");
 console.log(`✓ 课程查询: ${courseRow[0].values[0][0]}`);
 
-const sectionCount = db.exec("SELECT COUNT(*) FROM content_nodes WHERE type='section' AND course_id='seed-fde-roadmap'")[0].values[0][0];
+const sectionCount = db.exec("SELECT COUNT(*) FROM content_nodes WHERE type='section' AND course_id='seed-ai-for-beginners'")[0].values[0][0];
 console.assert(sectionCount === 3, `应有 3 sections, 实际 ${sectionCount}`);
 console.log(`✓ section 数量: ${sectionCount}`);
 
@@ -104,7 +104,7 @@ console.assert(updated[0] === "in_progress", `更新后应为 in_progress, 实�
 console.log(`✓ 进度更新: ${firstLessonId.slice(0, 8)}... → in_progress`);
 
 // 5. 外键级联测试
-db.run("DELETE FROM courses WHERE id = 'seed-fde-roadmap'");
+db.run("DELETE FROM courses WHERE id = 'seed-ai-for-beginners'");
 const orphanNodes = db.exec("SELECT COUNT(*) FROM content_nodes")[0].values[0][0];
 console.assert(orphanNodes === 0, `级联删除后应无 content_nodes, 实际 ${orphanNodes}`);
 console.log(`✓ 外键级联: 删课程 → 关联 nodes 全部清理 (${orphanNodes} 残留)`);

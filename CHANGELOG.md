@@ -16,6 +16,15 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Changed
+- **种子课程替换**:内置种子课程从 Awesome-FDE-Roadmap 换成
+  [microsoft/AI-For-Beginners](https://github.com/microsoft/AI-For-Beginners)
+  (微软官方 12 周 25 课 AI 课程:Intro → Neural Networks → Computer Vision → NLP →
+  RL → Ethics)。采用多文件组装而非单 README:顶层 README 当前言 + 25 个 lesson README
+  为正文,每课含真实讲解、PyTorch/TensorFlow 双框架代码、概念图。新增构建脚本
+  `scripts/build-ai-seed.mjs`。SEED_VERSION 升到 4 —— 旧版 FDE 种子的学习进度/笔记
+  会随种子重建被清理,用户导入的其他课程/自定义 provider 不受影响。
+
 ### Added
 - **右键复制/保存**:Electron 原生右键菜单 —— 选中文字可复制,右键图片可"复制图片"或
   "保存图片"(系统保存对话框)。让用户像操作网页一样自由复制保存内容。新增 `context-menu.ts`。

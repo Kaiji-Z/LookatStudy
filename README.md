@@ -116,10 +116,10 @@ lookatstudy/
 
 ```bash
 npm install
-npm run dev:electron      # opens the app with the built-in FDE seed course
+npm run dev:electron      # opens the app with the built-in AI for Beginners seed course
 ```
 
-The app ships with a seed course (the Awesome-FDE-Roadmap) so you can explore the skill tree immediately without an API key.
+The app ships with a seed course — [microsoft/AI-For-Beginners](https://github.com/microsoft/AI-For-Beginners) (12-week, 25-lesson AI curriculum: Intro → Neural Networks → Computer Vision → NLP → RL → Ethics) — so you can explore the skill tree immediately without an API key.
 
 ### Configure your AI tutor
 

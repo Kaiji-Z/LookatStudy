@@ -10,8 +10,8 @@
  *
  * 砍掉了"全部"tab —— 笔记跟随节点,跨节点靠左侧地图切换。
  */
-import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
-import type { ContentNode, CanvasItem, NoteSourceAnchor } from "@shared/types";
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
+import type { ContentNode, CanvasItem, NoteSourceAnchor, NodeAsset } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../lib/api.js";
@@ -140,6 +140,8 @@ function ContentTab({
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // 多模态:当前节点的图片资源(集中插图区展示)
+  const [assets, setAssets] = useState<NodeAsset[]>([]);
   // 选区浮按钮:选中文字后显示。带 offsets(Range-based 偏移,精准)和 surroundingText(legacy 回退)
   const [quoteBtn, setQuoteBtn] = useState<{ x: number; y: number; text: string; surrounding: string; offsets?: { start: number; end: number } } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null); // 整个讲解容器(标题+正文+提示)
@@ -158,6 +160,19 @@ function ContentTab({
       .then((c) => { if (!cancelled) setContent(c); })
       .catch(() => { if (!cancelled) { setContent(null); setLoadError(true); } })
       .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedNode?.id]);
+
+  // 多模态:加载当前节点的图片资源
+  useEffect(() => {
+    if (!selectedNode) {
+      setAssets([]);
+      return;
+    }
+    let cancelled = false;
+    api.listAssetsByNode(selectedNode.id)
+      .then((a) => { if (!cancelled) setAssets(a); })
+      .catch(() => { if (!cancelled) setAssets([]); });
     return () => { cancelled = true; };
   }, [selectedNode?.id]);
 
@@ -297,6 +312,11 @@ function ContentTab({
                   </a>
                 );
               },
+              // 多模态:内嵌图片渲染。相对路径(src 不含 http)→ 从 assets 找匹配的图加载 data-url。
+              // 匹配不到则保持原 src(可能是外部 URL,浏览器直接加载)。
+              img({ src, alt, ...props }) {
+                return <InlineAssetImage src={src} alt={alt} assets={assets} {...props} />;
+              },
             }}
           >
             {content}
@@ -305,6 +325,19 @@ function ContentTab({
       ) : (
         <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">
           这一节还没有讲解内容。问 AI 导师:「给我讲讲这一节」
+        </div>
+      )}
+      {/* 多模态:集中插图区(当前节点的全部图片缩略图网格) */}
+      {assets.length > 0 && (
+        <div className="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+          <div className="text-label font-bold text-neutral-600 dark:text-neutral-300 mb-2">
+            📷 插图({assets.length})
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {assets.map((asset) => (
+              <AssetThumb key={asset.id} asset={asset} />
+            ))}
+          </div>
         </div>
       )}
       {/* 选区浮按钮:提问 + 加到笔记 */}
@@ -842,3 +875,115 @@ const ARTIFACT_ICON: Record<string, string> = {
   diagram: "📐",
   code_walkthrough: "🔍",
 };
+
+/* ============================================================
+ * 多模态:图片展示组件(内嵌渲染 + 集中插图区缩略图)
+ * ============================================================ */
+
+/**
+ * 内嵌图片:ReactMarkdown 的 img renderer 用。
+ * 相对路径(src 不含 http/data:)→ 从 assets 列表找匹配 → 加载 data-url。
+ * 外部 URL → 保持原 src(浏览器/csp 处理)。匹配不到也保持原 src(fallback)。
+ */
+function InlineAssetImage({
+  src,
+  alt,
+  assets,
+  ...props
+}: {
+  src?: string;
+  alt?: string;
+  assets: NodeAsset[];
+} & Record<string, unknown>) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const srcStr = src ?? "";
+
+  // 找匹配的 asset:用 src 的 basename 匹配 asset 的 sourcePath 或 filename
+  const matchedAsset = useMemo(() => {
+    if (!srcStr || srcStr.startsWith("http") || srcStr.startsWith("data:")) return null;
+    const srcBase = srcStr.split("/").pop() ?? srcStr;
+    return (
+      assets.find((a) => a.sourcePath?.endsWith(srcBase)) ??
+      assets.find((a) => a.filename === srcBase) ??
+      null
+    );
+  }, [srcStr, assets]);
+
+  useEffect(() => {
+    if (!matchedAsset) {
+      setDataUrl(null);
+      return;
+    }
+    let cancelled = false;
+    api.getAssetDataUrl(matchedAsset.id).then((url) => {
+      if (!cancelled) setDataUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [matchedAsset]);
+
+  if (!srcStr) return null;
+  // 外部 URL 或无匹配 → 用原 src(让浏览器尝试加载)
+  const finalSrc = dataUrl ?? srcStr;
+  return (
+    <img
+      src={finalSrc}
+      alt={alt ?? ""}
+      className="rounded-lg max-w-full h-auto my-3"
+      loading="lazy"
+      {...props}
+    />
+  );
+}
+
+/**
+ * 集中插图区缩略图:点击放大查看(lightbox)。
+ */
+function AssetThumb({ asset }: { asset: NodeAsset }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getAssetDataUrl(asset.id).then((url) => {
+      if (!cancelled) setDataUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [asset.id]);
+
+  return (
+    <>
+      <button
+        onClick={() => setExpanded(true)}
+        className="block rounded-lg overflow-hidden bg-ink/5 dark:bg-ink/10 hover:ring-2 hover:ring-accent transition-all"
+        title={asset.altText ?? asset.filename}
+      >
+        {dataUrl ? (
+          <img src={dataUrl} alt={asset.altText ?? asset.filename} className="w-full h-24 object-cover" loading="lazy" />
+        ) : (
+          <div className="w-full h-24 flex items-center justify-center text-neutral-400 text-caption">加载中…</div>
+        )}
+      </button>
+      {expanded && dataUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8 cursor-pointer"
+          onClick={() => setExpanded(false)}
+        >
+          <img src={dataUrl} alt={asset.altText ?? asset.filename} className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" />
+          <button
+            className="absolute top-4 right-4 text-white/70 hover:text-white text-2xl"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(false);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </>
+  );
+}

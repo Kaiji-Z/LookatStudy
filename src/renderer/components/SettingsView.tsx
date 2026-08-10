@@ -599,6 +599,14 @@ export function SettingsView() {
         </p>
       </section>
 
+      {/* 多模态:图片识别导入 + AI 看图 */}
+      <MultimodalSection
+        activeProvider={activeProvider}
+        activeModel={activeModel}
+        presets={presets}
+        customProviders={customProviders}
+      />
+
       {/* 保存按钮 */}
       <div className="flex items-center gap-3">
         <button
@@ -624,5 +632,177 @@ export function SettingsView() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * 多模态设置区:图片识别导入开关 + vision 模型覆盖选择器。
+ *
+ * - 开关写 flag_multimodal_import(默认 off;on 后导入时收集图片 + AI 看图)
+ * - 覆盖选择器:可选配一个专门的 vision provider + model(不配则复用主模型)
+ *   写 vision_provider_override / vision_model_override 两个 settings key
+ */
+function MultimodalSection({
+  activeProvider,
+  activeModel,
+  presets,
+  customProviders,
+}: {
+  activeProvider: string;
+  activeModel: string;
+  presets: ProviderPresetInfo[];
+  customProviders: CustomProvider[];
+}) {
+  const [enabled, setEnabled] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [overrideProvider, setOverrideProvider] = useState<string>("");
+  const [overrideModel, setOverrideModel] = useState<string>("");
+
+  useEffect(() => {
+    Promise.all([
+      api.getSetting("flag_multimodal_import"),
+      api.getSetting("vision_provider_override"),
+      api.getSetting("vision_model_override"),
+    ]).then(([flag, prov, model]) => {
+      setEnabled(flag === "true");
+      setOverrideProvider(prov ?? "");
+      setOverrideModel(model ?? "");
+      setLoaded(true);
+    });
+  }, []);
+
+  const handleToggle = async () => {
+    const next = !enabled;
+    setEnabled(next);
+    await api.setSetting("flag_multimodal_import", String(next));
+  };
+
+  const handleSaveOverride = async () => {
+    await api.setSetting("vision_provider_override", overrideProvider);
+    await api.setSetting("vision_model_override", overrideModel);
+  };
+
+  // 选中的覆盖 provider 对应的 model 列表
+  const overridePreset = overrideProvider && !overrideProvider.startsWith("custom-")
+    ? presets.find((p) => p.id === overrideProvider)
+    : null;
+  const overrideCustom = overrideProvider.startsWith("custom-")
+    ? customProviders.find((c) => c.id === overrideProvider)
+    : null;
+
+  if (!loaded) return null;
+
+  return (
+    <section className="surface-card p-4">
+      <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-3">
+        多模态 / Multimodal
+      </h3>
+      <div className="flex items-center gap-3 mb-3">
+        <button
+          onClick={handleToggle}
+          data-testid="multimodal-toggle"
+          className={`relative w-12 h-6 rounded-full transition-colors ${
+            enabled ? "bg-brand" : "bg-neutral-300 dark:bg-neutral-700"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+              enabled ? "translate-x-6" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+        <div className="flex-1">
+          <div className="text-body font-medium text-neutral-700 dark:text-neutral-300">
+            图片识别导入 + AI 看图
+          </div>
+          <div className="text-label text-neutral-500 dark:text-neutral-400">
+            开启后:导入课程时收集图片(.png/.jpg) + PDF 图片;聊天时 AI 可以看图讲解
+          </div>
+        </div>
+      </div>
+      {enabled && (
+        <div className="space-y-3">
+          {/* 当前主模型 vision 能力提示 */}
+          <div className="text-label text-neutral-500 dark:text-neutral-400 bg-ink/5 dark:bg-ink/10 rounded-lg p-3">
+            <div className="font-medium mb-1">当前主模型:{activeModel || "(未选)"}</div>
+            <div>
+              {activeProvider.startsWith("custom-")
+                ? "自定义 provider — 视觉能力未知。如不支持看图,在下方覆盖一个 vision 模型。"
+                : "如当前模型不支持 vision,可在下方配置专门的 vision 模型。常见:GLM-4V / GPT-4o / Claude 3.5 / Gemini。"}
+            </div>
+          </div>
+          {/* Vision 模型覆盖 */}
+          <div className="bg-ink/5 dark:bg-ink/10 rounded-lg p-3">
+            <div className="text-label font-medium text-neutral-600 dark:text-neutral-300 mb-2">
+              Vision 模型覆盖(可选 — 留空则复用主模型)
+            </div>
+            <div className="flex flex-col gap-2">
+              <select
+                value={overrideProvider}
+                onChange={(e) => {
+                  setOverrideProvider(e.target.value);
+                  // 自动选默认 model
+                  const pid = e.target.value;
+                  if (pid.startsWith("custom-")) {
+                    const cp = customProviders.find((c) => c.id === pid);
+                    setOverrideModel(cp?.defaultModel ?? "");
+                  } else {
+                    const p = presets.find((pr) => pr.id === pid);
+                    setOverrideModel(p?.defaultModel ?? "");
+                  }
+                }}
+                className="w-full px-3 py-2 rounded-lg bg-surface-1 text-body border border-neutral-200 dark:border-neutral-700"
+              >
+                <option value="">(不覆盖 — 用主模型)</option>
+                <optgroup label="预设 Provider">
+                  {presets.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </optgroup>
+                {customProviders.length > 0 && (
+                  <optgroup label="自定义 Provider">
+                    {customProviders.map((c) => (
+                      <option key={c.id} value={c.id}>{c.label}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              {overrideProvider && (
+                <>
+                  {(overridePreset?.models.length ?? 0) > 0 ? (
+                    <select
+                      value={overrideModel}
+                      onChange={(e) => setOverrideModel(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-surface-1 text-body border border-neutral-200 dark:border-neutral-700"
+                    >
+                      {overridePreset!.models.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}{(m.capabilities ?? []).includes("vision") ? " ✅ vision" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={overrideModel}
+                      onChange={(e) => setOverrideModel(e.target.value)}
+                      placeholder={overrideCustom?.defaultModel ?? "模型 ID"}
+                      className="w-full px-3 py-2 rounded-lg bg-surface-1 text-body border border-neutral-200 dark:border-neutral-700"
+                    />
+                  )}
+                  <button
+                    onClick={handleSaveOverride}
+                    data-testid="vision-override-save"
+                    className="btn-3d-brand px-4 py-1.5 text-label self-start"
+                  >
+                    保存覆盖配置
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

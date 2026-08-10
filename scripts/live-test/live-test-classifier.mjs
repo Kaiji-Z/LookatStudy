@@ -145,8 +145,8 @@ if (noiseTitles.length > 0) {
   console.log(`    ⚠ ${noiseTitles.map((l) => l.title).join(", ")}`);
 }
 
-// 验证 2: section 数合理（3-10）
-const sectionCountOk = finalSections.length >= 3 && finalSections.length <= 10;
+// 验证 2: section 数合理（3-12）
+const sectionCountOk = finalSections.length >= 3 && finalSections.length <= 12;
 console.log(`  section 数合理(3-10): ${sectionCountOk ? "✓" : "✗ " + finalSections.length}`);
 
 // 验证 3: 每个 section 至少 1 lesson

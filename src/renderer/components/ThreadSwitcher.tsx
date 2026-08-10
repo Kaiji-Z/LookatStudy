@@ -85,7 +85,7 @@ export function ThreadSwitcher({
     return (
       <div className="px-4 py-2 shrink-0 flex items-center gap-2 text-label bg-surface-1 opacity-60" data-testid="thread-switcher-empty">
         <span className="w-1 h-1 rounded-full bg-brand shrink-0" />
-        <span className="text-neutral-500 dark:text-neutral-400 truncate flex-1">
+        <span className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 truncate flex-1">
           {focusNodeTitle ?? "未选节点"}
         </span>
         <span className="text-caption text-neutral-500 shrink-0">输入问题开始</span>
@@ -106,13 +106,13 @@ export function ThreadSwitcher({
               key={t.id}
               className={`group relative flex items-center gap-1.5 px-2 py-0.5 cursor-pointer whitespace-nowrap transition-colors shrink-0 rounded ${
                 isActive
-                  ? "text-neutral-200"
-                  : "text-neutral-500 hover:text-neutral-300"
+                  ? "text-neutral-900 dark:text-neutral-200"
+                  : "text-neutral-500 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
               }`}
               onClick={() => !isRenaming && onPickThread(t.id)}
               data-testid={`thread-tab-${t.id.slice(0, 8)}`}
             >
-              <span className={`w-1 h-1 rounded-full shrink-0 transition-opacity ${isActive ? "bg-brand opacity-100" : "bg-neutral-600 opacity-0 group-hover:opacity-60"}`} />
+              <span className={`w-1 h-1 rounded-full shrink-0 transition-opacity ${isActive ? "bg-brand opacity-100" : "bg-neutral-400 dark:bg-neutral-600 opacity-0 group-hover:opacity-60"}`} />
 
               {isRenaming ? (
                 <input
@@ -137,7 +137,7 @@ export function ThreadSwitcher({
               {!isRenaming && (
                 <button
                   onClick={(e) => openMenu(e, t.id)}
-                  className="flex items-center justify-center w-4 h-4 rounded text-neutral-600 hover:text-neutral-300 hover:bg-white/5 opacity-0 group-hover:opacity-100 transition-all"
+                  className="flex items-center justify-center w-4 h-4 rounded text-neutral-600 hover:text-neutral-300 hover:bg-ink/5 opacity-0 group-hover:opacity-100 transition-all"
                   data-testid={`thread-gear-${t.id.slice(0, 8)}`}
                   title="操作"
                   aria-label="会话操作"
@@ -150,7 +150,7 @@ export function ThreadSwitcher({
         {/* + 新建:纯图标,极淡 */}
         <button
           onClick={onCreate}
-          className="flex items-center justify-center w-6 h-6 ml-1 rounded text-neutral-600 hover:text-brand hover:bg-white/5 transition-colors shrink-0"
+          className="flex items-center justify-center w-6 h-6 ml-1 rounded text-neutral-600 hover:text-brand hover:bg-ink/5 transition-colors shrink-0"
           data-testid="thread-new"
           title="新建会话"
           aria-label="新建会话"
@@ -165,17 +165,17 @@ export function ThreadSwitcher({
           <div
             ref={menuRef}
             style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
-            className="z-50 w-32 bg-neutral-900 rounded-lg shadow-pop py-1 border border-neutral-700"
+            className="z-50 w-32 bg-white dark:bg-neutral-900 rounded-lg shadow-pop py-1 border border-neutral-200 dark:border-neutral-700"
             data-testid={`thread-menu-${t.id.slice(0, 8)}`}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => startRename(t)}
-              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-white transition-colors"
             ><Edit className="w-3 h-3" />重命名</button>
             <button
               onClick={() => { onArchive(t.id); setMenuFor(null); setMenuPos(null); }}
-              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-white transition-colors"
             ><Archive className="w-3 h-3" />归档</button>
             <button
               onClick={(e) => {

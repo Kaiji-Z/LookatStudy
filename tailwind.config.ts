@@ -21,6 +21,14 @@ export default {
           2: "rgb(var(--surface-2-rgb) / <alpha-value>)",
           3: "rgb(var(--surface-3-rgb) / <alpha-value>)",
         },
+        // ink 族:文字/前景色(深色=浅文字,浅色=深文字)。bg-ink/X 做主题感知覆盖
+        // (深色模式=浅色提亮覆盖,浅色模式=深色加深覆盖),替代写死的 bg-white/X。
+        ink: {
+          DEFAULT: "rgb(var(--ink-rgb) / <alpha-value>)",
+          strong: "rgb(var(--ink-strong-rgb) / <alpha-value>)",
+          muted: "rgb(var(--ink-muted-rgb) / <alpha-value>)",
+          faint: "rgb(var(--ink-faint-rgb) / <alpha-value>)",
+        },
         brand: {
           DEFAULT: "rgb(var(--brand-rgb) / <alpha-value>)",
           dark: "rgb(var(--brand-dark-rgb) / <alpha-value>)",
@@ -123,18 +131,18 @@ export default {
         DEFAULT: {
           css: {
             // 暗色优先:正文文字
-            color: "rgb(40 40 40)", // neutral-200
+            color: "var(--ink)", // 跟随主题
             maxWidth: "none", // 不限宽,撑满对话气泡
             // 标题层级(学习内容需要明显的视觉层次)
-            h1: { fontSize: "1.25rem", fontWeight: "800", marginTop: "1.25em", marginBottom: "0.5em", color: "rgb(24 24 24)" },
-            h2: { fontSize: "1.1rem", fontWeight: "700", marginTop: "1.2em", marginBottom: "0.4em", color: "rgb(24 24 24)", paddingBottom: "0.3em", borderBottom: "1px solid rgb(var(--border-rgb))" },
-            h3: { fontSize: "1rem", fontWeight: "700", marginTop: "1em", marginBottom: "0.3em", color: "rgb(40 40 40)" },
-            h4: { fontSize: "0.9rem", fontWeight: "700", marginTop: "0.8em", marginBottom: "0.2em", color: "rgb(40 40 40)" },
+            h1: { fontSize: "1.25rem", fontWeight: "800", marginTop: "1.25em", marginBottom: "0.5em", color: "var(--ink-strong)" },
+            h2: { fontSize: "1.1rem", fontWeight: "700", marginTop: "1.2em", marginBottom: "0.4em", color: "var(--ink-strong)", paddingBottom: "0.3em", borderBottom: "1px solid rgb(var(--border-rgb))" },
+            h3: { fontSize: "1rem", fontWeight: "700", marginTop: "1em", marginBottom: "0.3em", color: "var(--ink)" },
+            h4: { fontSize: "0.9rem", fontWeight: "700", marginTop: "0.8em", marginBottom: "0.2em", color: "var(--ink)" },
             // 段落与链接
             p: { marginTop: "0.6em", marginBottom: "0.6em", lineHeight: "1.65" },
             a: { color: "rgb(var(--accent-rgb))", textDecoration: "none", fontWeight: "500", "&:hover": { textDecoration: "underline" } },
-            strong: { color: "rgb(24 24 24)", fontWeight: "700" },
-            em: { color: "rgb(40 40 40)" },
+            strong: { color: "var(--ink-strong)", fontWeight: "700" },
+            em: { color: "var(--ink)" },
             // 列表(有序/无序)——学习内容常分步骤
             ul: { marginTop: "0.5em", marginBottom: "0.5em", paddingLeft: "1.3em", listStyleType: "disc" },
             ol: { marginTop: "0.5em", marginBottom: "0.5em", paddingLeft: "1.3em", listStyleType: "decimal" },
@@ -150,13 +158,13 @@ export default {
               paddingBottom: "0.4em",
               marginTop: "0.8em",
               marginBottom: "0.8em",
-              color: "rgb(85 85 85)",
+              color: "var(--ink-muted)",
               fontStyle: "normal",
               borderRadius: "0 0.4rem 0.4rem 0",
             },
-            // 行内代码——醒目的 mono 胶囊
+            // 行内代码——醒目的 mono 胶囊。surface-3: hover/elevated 层,深浅模式都和正文有对比。
             code: {
-              backgroundColor: "rgb(var(--ink-rgb) / 0.06)",
+              backgroundColor: "rgb(var(--surface-3-rgb) / 0.6)",
               color: "rgb(var(--accent-rgb))",
               padding: "0.15em 0.4em",
               borderRadius: "0.3rem",
@@ -165,10 +173,10 @@ export default {
               "&::before": { content: '""' }, // 去掉默认反引号
               "&::after": { content: '""' },
             },
-            // 代码块(多行)——深色面板 + 横滚
+            // 代码块(多行)——surface-0 面板(深色模式最深底/浅色模式纯白,都和正文 surface-1/2 区分)+ 横滚
             pre: {
-              backgroundColor: "rgb(var(--ink-rgb) / 0.03)",
-              color: "rgb(40 40 40)",
+              backgroundColor: "rgb(var(--surface-0-rgb))",
+              color: "var(--ink)",
               borderRadius: "0.5rem",
               padding: "0.9em 1em",
               marginTop: "0.7em",
@@ -201,7 +209,7 @@ export default {
               borderBottomColor: "rgb(var(--brand-rgb))", // 表头底线用品牌绿
             },
             th: {
-              color: "rgb(24 24 24)",
+              color: "var(--ink-strong)",
               fontWeight: "700",
               textAlign: "left",
               padding: "0.5em 0.7em",
@@ -211,9 +219,9 @@ export default {
               padding: "0.45em 0.7em",
               borderBottom: "1px solid rgb(var(--border-rgb))",
               verticalAlign: "top",
-              color: "rgb(40 40 40)",
+              color: "var(--ink)",
             },
-            "tbody tr:nth-child(odd)": { backgroundColor: "rgb(var(--ink-rgb) / 0.02)" }, // 斑马纹
+            "tbody tr:nth-child(odd)": { backgroundColor: "rgb(var(--surface-3-rgb) / 0.3)" }, // 斑马纹
             // 水平分割线
             hr: {
               borderColor: "rgb(var(--border-rgb))",

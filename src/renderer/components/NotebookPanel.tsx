@@ -77,7 +77,7 @@ export function NotebookPanel({
           中性非当前 + lucide 图标)。容器底色用稳定深色(surface-3/60)替代
           左栏的毛玻璃——右栏底色不是动态天空,不需要 blur,但语法形态对齐。 */}
       <div className="px-3 pt-3 pb-1 shrink-0" data-testid="notebook-tabs">
-        <div className="flex p-1 rounded-lg gap-1 bg-black/25">
+        <div className="flex p-1 rounded-lg gap-1 bg-ink/[0.08]">
           <TabBtn
             label="讲解"
             icon={BookOpen}
@@ -263,7 +263,7 @@ function ContentTab({
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-6">
         <div className="text-4xl mb-3 opacity-30">📖</div>
-        <div className="text-body text-neutral-600 dark:text-neutral-400 max-w-xs">
+        <div className="text-body text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 max-w-xs">
           从左侧地图选一个节点开始学习,讲解会显示在这里
         </div>
       </div>
@@ -278,7 +278,7 @@ function ContentTab({
         {selectedNode.title}
       </h2>
       {loading ? (
-        <div className="text-body text-neutral-500 dark:text-neutral-400 flex items-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在加载这一节的讲解…</div>
+        <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 flex items-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在加载这一节的讲解…</div>
       ) : loadError ? (
         <div className="text-body text-warning">
           ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
@@ -303,7 +303,7 @@ function ContentTab({
           </ReactMarkdown>
         </div>
       ) : (
-        <div className="text-body text-neutral-500 dark:text-neutral-400">
+        <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">
           这一节还没有讲解内容。问 AI 导师:「给我讲讲这一节」
         </div>
       )}
@@ -333,12 +333,12 @@ function ContentTab({
         </div>
       )}
       {selectedNode.sourcePath && (
-        <div className="mt-6 pt-3 border-t border-neutral-200 dark:border-neutral-800 text-label text-neutral-400 dark:text-neutral-600">
+        <div className="mt-6 pt-3 border-t border-neutral-200 dark:border-neutral-800 text-label text-neutral-600 dark:text-neutral-400 dark:text-neutral-600">
           来源:{selectedNode.sourcePath}
         </div>
       )}
       {/* 笔记提示 */}
-      <div className="mt-4 p-3 rounded-lg bg-accent/5 border border-accent/20 text-body text-neutral-600 dark:text-neutral-400">
+      <div className="mt-4 p-3 rounded-lg bg-accent/5 border border-accent/20 text-body text-neutral-600 dark:text-neutral-600 dark:text-neutral-400">
         💡 选中讲解文字可「✏️ 加笔记」;AI 生成的概念图/对比表/练习卡会自动进「笔记」标签
       </div>
     </div>
@@ -369,7 +369,7 @@ function NotesTab({
     return <EmptyNotebook message="选一个节点后,这里显示该节点的学习笔记" icon="📓" />;
   }
   if (loading) {
-    return <div className="text-center py-12 text-body text-neutral-500 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在整理这一节的笔记…</div>;
+    return <div className="text-center py-12 text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在整理这一节的笔记…</div>;
   }
 
   // 三区筛选
@@ -524,11 +524,11 @@ function ZoneSection({
         className="w-full flex items-center gap-2 px-3 py-2.5 bg-neutral-100 dark:bg-neutral-900/50 hover:bg-neutral-200/60 dark:hover:bg-neutral-900 transition-colors text-left"
         data-testid={`${testid}-toggle`}
       >
-        <ChevronDown className={`w-4 h-4 text-neutral-500 dark:text-neutral-400 transition-transform duration-200 ease-out-back ${open ? "" : "-rotate-90"}`} />
+        <ChevronDown className={`w-4 h-4 text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 transition-transform duration-200 ease-out-back ${open ? "" : "-rotate-90"}`} />
         <span className="text-body">{icon}</span>
         <span className="text-body font-bold text-neutral-800 dark:text-neutral-200">{title}</span>
         <span className="text-caption font-bold px-1.5 py-0.5 rounded-full bg-brand/15 text-brand">{count}</span>
-        <span className="text-label text-neutral-500 dark:text-neutral-400 ml-auto truncate">{subtitle}</span>
+        <span className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 ml-auto truncate">{subtitle}</span>
       </button>
       {/*
         折叠用 grid-template-rows 0fr↔1fr 过渡(CSS 动画高度的标准技巧)。
@@ -551,7 +551,7 @@ function ZoneSection({
 
 function ZoneEmpty({ hint }: { hint: string }) {
   return (
-    <div className="text-center py-3 text-body text-neutral-400 dark:text-neutral-600">{hint}</div>
+    <div className="text-center py-3 text-body text-neutral-600 dark:text-neutral-400 dark:text-neutral-600">{hint}</div>
   );
 }
 
@@ -668,7 +668,7 @@ function CanvasItemCard({
                   </button>
                   <button
                     onClick={handleCancelEdit}
-                    className="inline-flex items-center gap-1 text-caption text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    className="inline-flex items-center gap-1 text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                     data-testid={`note-comment-cancel-${item.id.slice(0, 8)}`}
                   >
                     <X className="w-3 h-3" /> 取消
@@ -677,13 +677,13 @@ function CanvasItemCard({
               </div>
             ) : existingComment ? (
               <div className="mt-2 pl-2 border-l-2 border-accent/40">
-                <div className="text-label text-neutral-600 dark:text-neutral-400 italic leading-relaxed whitespace-pre-wrap">
+                <div className="text-label text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 italic leading-relaxed whitespace-pre-wrap">
                   {existingComment}
                 </div>
                 {onUpdateNoteComment && (
                   <button
                     onClick={handleStartEdit}
-                    className="mt-1 inline-flex items-center gap-0.5 text-caption text-neutral-400 hover:text-accent"
+                    className="mt-1 inline-flex items-center gap-0.5 text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-accent"
                     data-testid={`note-comment-edit-btn-${item.id.slice(0, 8)}`}
                     title="编辑注释"
                   >
@@ -694,7 +694,7 @@ function CanvasItemCard({
             ) : onUpdateNoteComment ? (
               <button
                 onClick={handleStartEdit}
-                className="mt-2 inline-flex items-center gap-0.5 text-caption text-neutral-400 hover:text-accent"
+                className="mt-2 inline-flex items-center gap-0.5 text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-accent"
                 data-testid={`note-comment-add-${item.id.slice(0, 8)}`}
                 title="加注释"
               >
@@ -712,10 +712,10 @@ function CanvasItemCard({
               </button>
             )}
             <div className="flex items-center gap-2 mt-2">
-              <span className="text-caption text-neutral-400 dark:text-neutral-600">{timeStr}</span>
+              <span className="text-caption text-neutral-600 dark:text-neutral-400 dark:text-neutral-600">{timeStr}</span>
               <button
                 onClick={() => onRemove(item.id)}
-                className="text-caption text-neutral-400 hover:text-warning"
+                className="text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-warning"
                 data-testid={`canvas-delete-${item.id.slice(0, 8)}`}
                 title="删除"
               >
@@ -752,7 +752,7 @@ function CanvasItemCard({
         {item.pinned ? <span className="text-caption text-brand font-bold flex items-center gap-0.5"><Pin className="w-2.5 h-2.5" />已置顶</span> : null}
         <button
           onClick={() => onTogglePin(item.id)}
-          className="text-caption text-neutral-400 hover:text-brand"
+          className="text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-brand"
           data-testid={`canvas-pin-${item.id.slice(0, 8)}`}
           title={item.pinned ? "取消置顶" : "置顶"}
         >
@@ -760,7 +760,7 @@ function CanvasItemCard({
         </button>
         <button
           onClick={() => onRemove(item.id)}
-          className="text-caption text-neutral-400 hover:text-warning"
+          className="text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-warning"
           data-testid={`canvas-delete-${item.id.slice(0, 8)}`}
           title="删除"
         >
@@ -770,11 +770,11 @@ function CanvasItemCard({
 
       {/* 产物内容 */}
       <div className="text-label">
-        {parsed ? <ArtifactRenderer data={parsed} onQuizAnswered={handleQuizAnswered} /> : <div className="text-neutral-400">产物数据损坏</div>}
+        {parsed ? <ArtifactRenderer data={parsed} onQuizAnswered={handleQuizAnswered} /> : <div className="text-neutral-600 dark:text-neutral-400">产物数据损坏</div>}
       </div>
 
       {/* 时间 */}
-      <div className="text-caption text-neutral-400 dark:text-neutral-600 mt-2">{timeStr}</div>
+      <div className="text-caption text-neutral-600 dark:text-neutral-400 dark:text-neutral-600 mt-2">{timeStr}</div>
     </div>
   );
 }
@@ -783,7 +783,7 @@ function EmptyNotebook({ message, icon }: { message: string; icon: string }) {
   return (
     <div className="text-center py-16" data-testid="empty-notebook">
       <div className="text-4xl mb-3 opacity-30">{icon}</div>
-      <div className="text-body text-neutral-600 dark:text-neutral-400 max-w-xs mx-auto leading-relaxed">
+      <div className="text-body text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 max-w-xs mx-auto leading-relaxed">
         {message}
       </div>
     </div>
@@ -812,14 +812,14 @@ function TabBtn({
       className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${
         active
           ? "bg-brand/20 text-brand"
-          : "text-neutral-400 hover:text-neutral-200"
+          : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
       }`}
     >
       <Icon className="w-3 h-3" />
       <span>{label}</span>
       {badge && (
         <span className={`text-caption px-1.5 py-0.5 rounded-full font-bold ${
-          active ? "bg-brand/30 text-brand" : "bg-white/10 text-neutral-400"
+          active ? "bg-brand/30 text-brand" : "bg-ink/10 text-neutral-600 dark:text-neutral-400"
         }`}>
           {badge}
         </span>

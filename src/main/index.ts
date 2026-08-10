@@ -710,6 +710,8 @@ async function runUiTest(screenshot = false): Promise<void> {
   console.error("UI_TEST_RESULT=" + JSON.stringify(report));
 
   // 截图作为视觉证据（可选，--screenshot 触发）。落 cwd/ui-screenshot.png。
+  // 注意:本环境 disableHardwareAcceleration 下 capturePage 可能返回 0x0,
+  // 截图功能在某些机器上不可用;用 DOM 断言作为主验证手段。
   if (screenshot) {
     try {
       const img = await win.webContents.capturePage();

@@ -47,9 +47,9 @@ export function ArtifactRenderer({ data, onQuizAnswered }: ArtifactProps) {
 
 function UnknownArtifact({ data }: ArtifactProps) {
   return (
-    <div className="surface-card p-4 text-body text-neutral-500 dark:text-neutral-400" data-testid="artifact-unknown">
+    <div className="surface-card p-4 text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400" data-testid="artifact-unknown">
       <div className="font-bold mb-1">🧩 产物(未识别类型)</div>
-      <pre className="text-caption overflow-x-auto text-neutral-400">
+      <pre className="text-caption overflow-x-auto text-neutral-600 dark:text-neutral-400">
         {JSON.stringify(data, null, 2)?.slice(0, 200)}
       </pre>
     </div>

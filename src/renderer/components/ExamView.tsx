@@ -121,7 +121,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6" data-testid="exam-loading">
         <Target className="w-12 h-12 text-accent mb-4 opacity-60" />
-        <div className="flex items-center gap-1.5 text-body text-neutral-500 dark:text-neutral-400">
+        <div className="flex items-center gap-1.5 text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
@@ -137,7 +137,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" data-testid="exam-error">
         <AlertCircle className="w-10 h-10 text-warning mb-3" />
         <div className="text-body font-bold text-neutral-800 dark:text-neutral-200 mb-1">考试加载失败</div>
-        <div className="text-body text-neutral-500 dark:text-neutral-400 mb-4 max-w-xs">{errorMsg}</div>
+        <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mb-4 max-w-xs">{errorMsg}</div>
         <button
           onClick={() => window.location.reload()}
           className="btn-3d-neutral px-4 py-1.5 text-body"
@@ -175,7 +175,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
         </div>
         {/* 进度条 */}
         <div className="flex items-center gap-2">
-          <span className="text-label font-bold tabular-nums text-neutral-500 dark:text-neutral-400 shrink-0">
+          <span className="text-label font-bold tabular-nums text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 shrink-0">
             {currentIdx + 1}/{exercises.length}
           </span>
           <div className="flex-1 h-1.5 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
@@ -272,10 +272,10 @@ function ExamResultCard({
     <div className="flex-1 overflow-y-auto px-4 py-4" data-testid="exam-result">
       {/* 得分头部 */}
       <div className="text-center mb-5">
-        <div className={`text-4xl font-extrabold mb-1 ${passed ? "text-accent" : "text-neutral-400"}`}>
+        <div className={`text-4xl font-extrabold mb-1 ${passed ? "text-accent" : "text-neutral-600 dark:text-neutral-400"}`}>
           {correctCount}/{totalCount}
         </div>
-        <div className="text-body text-neutral-500 dark:text-neutral-400 mb-3">
+        <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mb-3">
           正确率 {Math.round((correctCount / totalCount) * 100)}%
         </div>
         {/* 星星 */}
@@ -288,7 +288,7 @@ function ExamResultCard({
           ))}
         </div>
         {/* 本次/最佳 */}
-        <div className="text-label text-neutral-500 dark:text-neutral-400">
+        <div className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">
           {passed ? (
             bestStars > stars ? `本次 ${stars} 星 · 历史最佳 ${bestStars} 星` : `恭喜,获得 ${stars} 星!`
           ) : (
@@ -319,16 +319,16 @@ function ExamResultCard({
                 </div>
               </div>
               {!pq.correct && ex?.options && (
-                <div className="text-label text-neutral-600 dark:text-neutral-400 ml-6 mb-1">
+                <div className="text-label text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 ml-6 mb-1">
                   <span className="text-warning">你的答案:</span>{" "}
                   {ex.options[Number.parseInt(pq.userAnswer)] ?? pq.userAnswer ?? "(未答)"}{" "}
-                  <span className="text-neutral-400">·</span>{" "}
+                  <span className="text-neutral-600 dark:text-neutral-400">·</span>{" "}
                   <span className="text-brand">正确:</span>{" "}
                   {ex.options[Number.parseInt(pq.correctAnswer)] ?? pq.correctAnswer}
                 </div>
               )}
               {pq.explanation && (
-                <div className="text-label text-neutral-600 dark:text-neutral-400 ml-6 leading-relaxed">
+                <div className="text-label text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 ml-6 leading-relaxed">
                   {pq.explanation}
                 </div>
               )}

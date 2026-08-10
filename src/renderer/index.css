@@ -367,15 +367,15 @@ html.light {
 .lesson-bubble-available:hover {
   transform: translateY(-3px) scale(1.03);
   box-shadow:
-    0 0 0 5px oklch(0.748 0.229 137.6 / 0.2),
-    0 0 22px oklch(0.748 0.229 137.6 / 0.5),
+    0 0 0 5px rgb(var(--brand-rgb) / 0.2),
+    0 0 22px rgb(var(--brand-rgb) / 0.5),
     0 6px 14px rgb(var(--shadow-rgb) / 0.3);
 }
 .lesson-bubble-available:active {
   transform: translateY(2px) scale(0.97);
   box-shadow:
     0 0 0 3px var(--brand-ring),
-    0 0 10px oklch(0.748 0.229 137.6 / 0.3),
+    0 0 10px rgb(var(--brand-rgb) / 0.3),
     0 2px 6px rgb(var(--shadow-rgb) / 0.2);
 }
 
@@ -390,8 +390,8 @@ html.light {
 .lesson-bubble-in-progress:hover {
   transform: translateY(-2px) scale(1.03);
   box-shadow:
-    0 0 0 5px oklch(0.718 0.151 237.1 / 0.2),
-    0 0 20px oklch(0.718 0.151 237.1 / 0.45),
+    0 0 0 5px rgb(var(--accent-rgb) / 0.2),
+    0 0 20px rgb(var(--accent-rgb) / 0.45),
     0 6px 14px rgb(var(--shadow-rgb) / 0.3);
 }
 
@@ -401,7 +401,7 @@ html.light {
   box-shadow:
     0 0 0 4px var(--gold-ring),
     0 0 22px var(--gold-glow),
-    0 0 40px oklch(0.857 0.175 88.5 / 0.15),
+    0 0 40px rgb(var(--gold-rgb) / 0.15),
     0 4px 12px rgb(var(--shadow-rgb) / 0.25);
   transform: scale(1.1);
 }
@@ -411,9 +411,9 @@ html.light {
 .lesson-bubble-mastered:hover {
   transform: scale(1.13) translateY(-2px);
   box-shadow:
-    0 0 0 5px oklch(0.857 0.175 88.5 / 0.25),
-    0 0 28px oklch(0.857 0.175 88.5 / 0.55),
-    0 0 50px oklch(0.857 0.175 88.5 / 0.2),
+    0 0 0 5px rgb(var(--gold-rgb) / 0.25),
+    0 0 28px rgb(var(--gold-rgb) / 0.55),
+    0 0 50px rgb(var(--gold-rgb) / 0.2),
     0 6px 16px rgb(var(--shadow-rgb) / 0.3);
 }
 
@@ -435,11 +435,11 @@ html.light {
 }
 /* 已通过(有星)的考试:更亮 + 金色光环 */
 .exam-bubble-passed {
-  background: radial-gradient(circle at 32% 28%, oklch(0.85 0.08 305) 0%, var(--exam-light) 40%, var(--exam) 100%);
+  background: radial-gradient(circle at 32% 28%, rgb(var(--exam-light-rgb)) 0%, var(--exam-light) 40%, var(--exam) 100%);
   box-shadow:
     0 0 0 4px var(--gold-ring),
     0 0 18px var(--exam-glow),
-    0 0 28px oklch(0.857 0.175 88.5 / 0.15),
+    0 0 28px rgb(var(--gold-rgb) / 0.15),
     0 4px 12px rgb(var(--shadow-rgb) / 0.25);
 }
 
@@ -495,7 +495,7 @@ html.light {
 /* Proposal card glow */
 .proposal-card {
   @apply surface-card p-3 border-brand/30;
-  box-shadow: 0 0 0 1px var(--brand-ring), 0 4px 12px oklch(0.748 0.229 137.6 / 0.08);
+  box-shadow: 0 0 0 1px var(--brand-ring), 0 4px 12px rgb(var(--brand-rgb) / 0.08);
 }
 
 /* Typing indicator */

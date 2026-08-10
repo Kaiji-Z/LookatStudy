@@ -255,7 +255,7 @@ export function SettingsView() {
               }`}
             >
               <div className="text-body font-medium text-neutral-900 dark:text-neutral-100">{p.label}</div>
-              {p.note && <div className="text-label text-neutral-500 dark:text-neutral-400 mt-0.5">{p.note}</div>}
+              {p.note && <div className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-0.5">{p.note}</div>}
             </button>
           ))}
           {/* 自定义 provider 卡片 */}
@@ -271,14 +271,14 @@ export function SettingsView() {
               }`}
             >
               <div className="text-body font-medium text-neutral-900 dark:text-neutral-100">🔧 {c.label}</div>
-              <div className="text-label text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">{c.baseUrl}</div>
+              <div className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-0.5 truncate">{c.baseUrl}</div>
             </button>
           ))}
           {/* 添加自定义 provider 按钮 */}
           <button
             onClick={() => setShowCustomForm((s) => !s)}
             data-testid="add-custom-provider"
-            className="text-left p-3 rounded-lg border border-dashed border-neutral-600 text-neutral-400 hover:border-neutral-500 hover:text-neutral-700 dark:text-neutral-300"
+            className="text-left p-3 rounded-lg border border-dashed border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:border-neutral-500 hover:text-neutral-700 dark:text-neutral-300"
           >
             <div className="text-body">＋ 添加自定义 Provider</div>
             <div className="text-label text-neutral-600 mt-0.5">智谱 CodingPlan / Ollama / 自建代理 等</div>
@@ -290,7 +290,7 @@ export function SettingsView() {
           <div className="mt-4 p-4 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-300 dark:border-neutral-700 space-y-3" data-testid="custom-provider-form">
             <h4 className="text-body font-semibold text-neutral-700 dark:text-neutral-200">添加自定义 Provider</h4>
             <div>
-              <label className="text-body text-neutral-500 dark:text-neutral-400 block mb-1">名称（自己起个名字）</label>
+              <label className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 block mb-1">名称（自己起个名字）</label>
               <input
                 type="text"
                 value={customLabel}
@@ -301,7 +301,7 @@ export function SettingsView() {
               />
             </div>
             <div>
-              <label className="text-body text-neutral-500 dark:text-neutral-400 block mb-1">协议</label>
+              <label className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 block mb-1">协议</label>
               <select
                 value={customProtocol}
                 onChange={(e) => setCustomProtocol(e.target.value as "openai-compatible" | "anthropic" | "google")}
@@ -314,7 +314,7 @@ export function SettingsView() {
               </select>
             </div>
             <div>
-              <label className="text-body text-neutral-500 dark:text-neutral-400 block mb-1">Base URL（端点地址）</label>
+              <label className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 block mb-1">Base URL（端点地址）</label>
               <input
                 type="text"
                 value={customBaseUrl}
@@ -323,13 +323,13 @@ export function SettingsView() {
                 data-testid="custom-baseurl"
                 className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono"
               />
-              <p className="text-label text-neutral-500 dark:text-neutral-400 mt-1">
+              <p className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-1">
                 智谱 CodingPlan CN: <code>https://api.z.ai/api/coding/paas/v4</code> ·
                 Ollama: <code>http://localhost:11434/v1</code>
               </p>
             </div>
             <div>
-              <label className="text-body text-neutral-500 dark:text-neutral-400 block mb-1">默认模型 ID</label>
+              <label className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 block mb-1">默认模型 ID</label>
               <input
                 type="text"
                 value={customModel}
@@ -340,7 +340,7 @@ export function SettingsView() {
               />
             </div>
             <div>
-              <label className="text-body text-neutral-500 dark:text-neutral-400 block mb-1">API Key（本地模型可留空）</label>
+              <label className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 block mb-1">API Key（本地模型可留空）</label>
               <input
                 type="password"
                 value={customApiKey}
@@ -375,7 +375,7 @@ export function SettingsView() {
               </button>
               <button
                 onClick={() => setShowCustomForm(false)}
-                className="text-body text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 px-3 py-2 transition-colors"
+                className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 px-3 py-2 transition-colors"
               >
                 取消
               </button>
@@ -388,7 +388,7 @@ export function SettingsView() {
           <div className="mt-3 space-y-1">
             {customProviders.map((c) => (
               <div key={c.id} className="flex items-center justify-between text-label bg-neutral-100 dark:bg-neutral-950/50 px-3 py-1.5 rounded">
-                <span className="text-neutral-500 dark:text-neutral-400">🔧 {c.label} · {c.protocol}</span>
+                <span className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">🔧 {c.label} · {c.protocol}</span>
                 <button
                   onClick={(e) => {
                     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -486,7 +486,7 @@ export function SettingsView() {
             </a>
           </div>
           {keyMasked && (
-            <div className="text-body text-neutral-400 mb-2" data-testid="key-status">
+            <div className="text-body text-neutral-600 dark:text-neutral-400 mb-2" data-testid="key-status">
               ✅ 已配置：<code className="bg-neutral-200 dark:bg-neutral-800 px-1 rounded">{keyMasked}</code>
             </div>
           )}
@@ -543,7 +543,7 @@ export function SettingsView() {
             data-testid="daily-goal-input"
             className="w-24 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
           />
-          <span className="text-label text-neutral-500 dark:text-neutral-400">XP / 天（每答对一题 +10 XP）</span>
+          <span className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">XP / 天（每答对一题 +10 XP）</span>
         </div>
       </section>
 
@@ -562,7 +562,7 @@ export function SettingsView() {
               className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
                 currentLang === l
                   ? "bg-brand text-white shadow-sm"
-                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200"
               }`}
             >
               {l === "zh-CN" ? "中文" : "English"}
@@ -587,14 +587,14 @@ export function SettingsView() {
               className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
                 theme.mode === m
                   ? "bg-brand text-white shadow-sm"
-                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200"
               }`}
             >
               {label}
             </button>
           ))}
         </div>
-        <p className="text-label text-neutral-500 dark:text-neutral-400 mt-2">
+        <p className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-2">
           {theme.mode === "auto" ? `当前跟随系统: ${theme.resolved === "dark" ? "深色" : "浅色"}` : null}
         </p>
       </section>

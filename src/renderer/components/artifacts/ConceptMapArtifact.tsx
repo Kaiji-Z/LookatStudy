@@ -306,7 +306,7 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
         </div>
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between text-caption text-neutral-400 dark:text-neutral-600">
+      <div className="mt-1.5 flex items-center justify-between text-caption text-neutral-600 dark:text-neutral-400 dark:text-neutral-600">
         <span>{d.nodes.length} 个概念 · {d.edges.length} 个关系 · Ctrl+滚轮缩放 · 拖动平移</span>
       </div>
 

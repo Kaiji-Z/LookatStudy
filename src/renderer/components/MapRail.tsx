@@ -74,10 +74,10 @@ export function MapRail(props: MapRailProps) {
       <div className="absolute top-0 left-0 right-0 z-40 px-2 pt-2 pb-2 pointer-events-none [&_button]:pointer-events-auto">
         {/* tab 胶囊 */}
         <div className="flex p-1 rounded-lg gap-1 mb-2" style={{ background: "rgb(var(--surface-rail-rgb) / 0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
-          <button onClick={() => setPanel("map")} data-testid="map-tab-map" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${panel === "map" ? "bg-brand/20 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
+          <button onClick={() => setPanel("map")} data-testid="map-tab-map" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${panel === "map" ? "bg-brand/20 text-brand" : "text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"}`}>
             <MapIcon className="w-3 h-3" /> 课程地图
           </button>
-          <button onClick={() => setPanel("import")} data-testid="map-tab-import" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${panel === "import" ? "bg-brand/20 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
+          <button onClick={() => setPanel("import")} data-testid="map-tab-import" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${panel === "import" ? "bg-brand/20 text-brand" : "text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"}`}>
             <FileText className="w-3 h-3" /> 导入课程
           </button>
         </div>
@@ -111,7 +111,7 @@ export function MapRail(props: MapRailProps) {
         <div className="flex h-full transition-transform duration-300" style={{ transform: panel === "map" ? "translateX(0)" : "translateX(-50%)", width: "200%" }}>
           {/* 地图面板(透明)。map-path 全高滚动(pt-24 留出 tab+标题悬浮空间)。 */}
           <div className="w-1/2 h-full relative">
-            <div ref={mapPathRef} className="map-path h-full overflow-y-auto px-2 pt-24 pb-4" data-testid="map-path">
+            <div ref={mapPathRef} className="map-path h-full overflow-y-auto px-2 pt-32 pb-4" data-testid="map-path">
               <div className={`map-sky-content ${skyPreset ? `env-${skyPreset.season} env-${skyPreset.weather}` : ""}`}>
                 {props.streaming && (
                   <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-label text-brand font-medium backdrop-blur-sm" data-testid="streaming-notice">
@@ -121,7 +121,7 @@ export function MapRail(props: MapRailProps) {
                 )}
                 {props.sections.length === 0 ? (
                   props.courseTitle ? (
-                    <div className="text-center text-label text-neutral-500 dark:text-neutral-400 mt-8 px-4 flex items-center justify-center gap-2">
+                    <div className="text-center text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-8 px-4 flex items-center justify-center gap-2">
                       <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
                       正在生成课程路径…
                     </div>
@@ -129,7 +129,7 @@ export function MapRail(props: MapRailProps) {
                     <button onClick={() => setPanel("import")} className="block w-full mt-8 mx-auto p-4 rounded-2xl border-2 border-dashed border-brand/40 hover:border-brand hover:bg-brand/5 transition-all text-center group" data-testid="map-empty-cta">
                       <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🗺️</div>
                       <div className="text-body font-bold text-neutral-300 mb-1">开始你的第一门课</div>
-                      <div className="text-label text-neutral-400 leading-relaxed">导入一个 GitHub 学习仓库,自动生成选关路径</div>
+                      <div className="text-label text-neutral-600 dark:text-neutral-400 leading-relaxed">导入一个 GitHub 学习仓库,自动生成选关路径</div>
                       <div className="mt-2 text-caption text-brand font-bold">点这里导入 →</div>
                     </button>
                   )
@@ -143,8 +143,8 @@ export function MapRail(props: MapRailProps) {
               </div>
             </div>
           </div>
-          {/* 导入面板(透明,共享天空背景)。pt-24 避开悬浮 tab 区域 */}
-          <div className="w-1/2 h-full overflow-y-auto px-3 pt-24 pb-3 space-y-2.5">
+          {/* 导入面板(透明,共享天空背景)。pt-32 避开悬浮 tab 区域(与地图面板一致) */}
+          <div className="w-1/2 h-full overflow-y-auto px-3 pt-32 pb-3 space-y-2.5">
             <ImportPanel courses={props.courses} selectedCourseId={props.courseId} onSelectCourse={(id) => { props.onSelectCourse(id); setPanel("map"); }} onCoursesChanged={props.onCoursesChanged} />
           </div>
         </div>
@@ -203,17 +203,17 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   return (
     <>
       {courses.length === 0 ? (
-        <p className="text-label text-neutral-400 text-center py-8">还没有课程。用下方导入第一个吧。</p>
+        <p className="text-label text-neutral-600 dark:text-neutral-400 text-center py-8">还没有课程。用下方导入第一个吧。</p>
       ) : (
         <div className="space-y-2" data-testid="course-list">
           {courses.map((c) => {
             const isCurrent = c.id === selectedCourseId;
             return (
-              <button key={c.id} onClick={() => onSelectCourse(c.id)} className={`w-full text-left p-3 rounded-xl border transition-all duration-150 group ${isCurrent ? "border-brand bg-brand/10 shadow-[0_0_0_1px_var(--brand-ring)]" : "border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900/60"}`}>
+              <button key={c.id} onClick={() => onSelectCourse(c.id)} className={`w-full text-left p-3 rounded-xl border transition-all duration-150 group ${isCurrent ? "border-brand bg-brand/10 shadow-[0_0_0_1px_var(--brand-ring)]" : "border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-600 hover:bg-neutral-100 dark:bg-neutral-900/60"}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className={`text-body font-bold truncate ${isCurrent ? "text-brand" : "text-neutral-200"}`}>{c.title}</div>
-                    <div className="text-caption text-neutral-400 truncate mt-0.5">{c.repoName}</div>
+                    <div className="text-caption text-neutral-600 dark:text-neutral-400 truncate mt-0.5">{c.repoName}</div>
                   </div>
                   {isCurrent && <span className="shrink-0 w-5 h-5 rounded-full bg-brand flex items-center justify-center"><Check className="w-3 h-3 text-white" /></span>}
                 </div>
@@ -228,36 +228,36 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
         </div>
       )}
       <div className="pt-3 border-t border-neutral-800/60">
-        <button onClick={() => setShowImport(!showImport)} className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-brand/40 hover:bg-brand/5 text-body font-bold text-neutral-300 hover:text-brand transition-all">
+        <button onClick={() => setShowImport(!showImport)} className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 hover:border-brand/40 hover:bg-brand/5 text-body font-bold text-neutral-700 dark:text-neutral-300 hover:text-brand transition-all">
           <Plus className="w-4 h-4" /> 导入新课程
         </button>
         {showImport && (
           <div className="mt-3 space-y-3">
-            <div className="flex gap-1 p-1 bg-neutral-900 rounded-lg">
+            <div className="flex gap-1 p-1 bg-neutral-100 dark:bg-neutral-900 rounded-lg">
               {([ { k: "url" as const, label: "URL", icon: LinkIcon }, { k: "markdown" as const, label: "MD", icon: FileText }, { k: "folder" as const, label: "文件夹", icon: FolderDown }]).map(({ k, label, icon: Icon }) => (
-                <button key={k} onClick={() => setTab(k)} className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-neutral-400 hover:text-neutral-200"}`}>
+                <button key={k} onClick={() => setTab(k)} className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"}`}>
                   <Icon className="w-3 h-3" /> {label}
                 </button>
               ))}
             </div>
             {tab === "url" ? (
               <section className="space-y-2" data-testid="import-url-section">
-                <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/owner/repo" data-testid="repo-url-input" className="w-full bg-neutral-900 text-neutral-100 text-body rounded-lg px-2.5 py-2 border border-neutral-800 focus:border-brand focus:outline-none" />
+                <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/owner/repo" data-testid="repo-url-input" className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded-lg px-2.5 py-2 border border-neutral-800 focus:border-brand focus:outline-none" />
                 <button onClick={handleImportUrl} disabled={!repoUrl.trim() || busy} data-testid="import-url-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{busy ? "导入中…" : "导入"}</button>
               </section>
             ) : tab === "markdown" ? (
               <section className="space-y-2" data-testid="import-md-section">
-                <input type="text" value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder="课程名称" data-testid="md-name-input" className="w-full bg-neutral-900 text-neutral-100 text-body rounded-lg px-2.5 py-2 border border-neutral-800 focus:border-brand focus:outline-none" />
-                <textarea value={mdText} onChange={(e) => setMdText(e.target.value)} placeholder="粘贴 Markdown 内容…" data-testid="md-text-input" rows={4} className="w-full bg-neutral-900 text-neutral-100 text-body rounded-lg px-2.5 py-2 border border-neutral-800 focus:border-brand focus:outline-none resize-none" />
+                <input type="text" value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder="课程名称" data-testid="md-name-input" className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded-lg px-2.5 py-2 border border-neutral-800 focus:border-brand focus:outline-none" />
+                <textarea value={mdText} onChange={(e) => setMdText(e.target.value)} placeholder="粘贴 Markdown 内容…" data-testid="md-text-input" rows={4} className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded-lg px-2.5 py-2 border border-neutral-800 focus:border-brand focus:outline-none resize-none" />
                 <button onClick={handleImportMd} disabled={!mdText.trim() || !repoName.trim() || busy} data-testid="import-md-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{busy ? "生成中…" : "生成课程"}</button>
               </section>
             ) : (
               <section className="space-y-2" data-testid="import-folder-section">
-                <p className="text-caption text-neutral-400 leading-relaxed">递归扫描 .txt/.md/.html/.pdf,适合已下载的课程资料包。</p>
+                <p className="text-caption text-neutral-600 dark:text-neutral-400 leading-relaxed">递归扫描 .txt/.md/.html/.pdf,适合已下载的课程资料包。</p>
                 <button onClick={handleImportFolder} disabled={busy} data-testid="import-folder-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{busy ? "处理中…" : "选择文件夹"}</button>
               </section>
             )}
-            {busy && progressMsg && <div className="bg-neutral-900 text-neutral-400 text-label rounded-lg p-2 flex items-center gap-1.5" data-testid="import-progress"><span className="inline-block w-2.5 h-2.5 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0"></span>{progressMsg}</div>}
+            {busy && progressMsg && <div className="bg-neutral-100 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 text-label rounded-lg p-2 flex items-center gap-1.5" data-testid="import-progress"><span className="inline-block w-2.5 h-2.5 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0"></span>{progressMsg}</div>}
             {error && <div className="border border-warning/40 text-warning-light text-label rounded-lg p-2 whitespace-pre-wrap" data-testid="import-error">{error}</div>}
             {success && <div className="border border-brand/30 text-brand text-label rounded-lg p-2" data-testid="import-success">✅ {success}</div>}
           </div>
@@ -624,7 +624,7 @@ function MapNavBtn({
       className={`w-7 h-7 rounded-lg flex items-center justify-center text-body transition-colors ${
         active
           ? "bg-brand/15 text-brand"
-          : "text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-800/50 hover:text-neutral-700 dark:hover:text-neutral-200"
+          : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-800/50 hover:text-neutral-700 dark:hover:text-neutral-200"
       }`}
     >
       {children}
@@ -636,7 +636,7 @@ function MapNavBtn({
 function statusClass(status: string): string {
   switch (status) {
     case "locked":
-      return "bg-neutral-300 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400";
+      return "bg-neutral-300 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-600 dark:text-neutral-400";
     case "available":
       return "bg-brand text-white";
     case "in_progress":

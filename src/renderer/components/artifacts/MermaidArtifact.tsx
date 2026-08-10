@@ -160,7 +160,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         data-testid="mermaid-render-area"
       >
         {state.status === "loading" && (
-          <div className="flex items-center gap-2 text-body text-neutral-500 dark:text-neutral-400 my-8 justify-center" data-testid="mermaid-loading">
+          <div className="flex items-center gap-2 text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 my-8 justify-center" data-testid="mermaid-loading">
             <span className="typing-dot w-1.5 h-1.5 bg-accent rounded-full inline-block" />
             <span>渲染图中…</span>
           </div>
@@ -210,13 +210,13 @@ export function MermaidArtifact({ data }: { data: unknown }) {
             <pre className="text-label bg-neutral-100 dark:bg-neutral-900/60 rounded p-2 overflow-x-auto text-neutral-700 dark:text-neutral-300 font-mono text-left">
               {d.mermaid}
             </pre>
-            <div className="text-caption text-neutral-400 mt-2">错误: {state.message}</div>
+            <div className="text-caption text-neutral-600 dark:text-neutral-400 mt-2">错误: {state.message}</div>
           </div>
         )}
       </div>
 
       {(state.status === "rendered") && (
-        <div className="mt-1.5 text-caption text-neutral-400 dark:text-neutral-600 flex items-center gap-2">
+        <div className="mt-1.5 text-caption text-neutral-600 dark:text-neutral-400 dark:text-neutral-600 flex items-center gap-2">
           <span>Ctrl+滚轮缩放 · 拖动平移查看</span>
         </div>
       )}

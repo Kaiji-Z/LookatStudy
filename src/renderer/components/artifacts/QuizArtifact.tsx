@@ -42,7 +42,7 @@ export function QuizArtifact({
         <div className="text-body font-bold text-neutral-800 dark:text-neutral-200">
           {score.correct}/{score.total} 答对
         </div>
-        <div className="text-label text-neutral-500 dark:text-neutral-400 mt-1">
+        <div className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-1">
           {score.correct === score.total ? "全部答对,掌握度已提议更新" : "再练一组巩固一下"}
         </div>
       </div>
@@ -75,7 +75,7 @@ export function QuizArtifact({
             第 {current + 1}/{d.questions.length} 题
           </span>
         </div>
-        <span className="text-label text-neutral-400">
+        <span className="text-label text-neutral-600 dark:text-neutral-400">
           已答对 {score.correct}
         </span>
       </div>

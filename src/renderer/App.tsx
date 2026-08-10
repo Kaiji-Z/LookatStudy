@@ -716,7 +716,7 @@ function Header({
             onClick={onToggleLeft}
             data-testid="layout-toggle-left"
             className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${
-              leftVisible ? "text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800" : "text-neutral-600 bg-neutral-200 dark:bg-neutral-800"
+              leftVisible ? "text-neutral-500 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-800" : "text-neutral-600 bg-neutral-200 dark:bg-neutral-800"
             }`}
             title="切换左栏 (Ctrl+B)"
           >
@@ -726,7 +726,7 @@ function Header({
             onClick={onToggleRight}
             data-testid="layout-toggle-right"
             className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${
-              rightVisible ? "text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800" : "text-neutral-600 bg-neutral-200 dark:bg-neutral-800"
+              rightVisible ? "text-neutral-500 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-800" : "text-neutral-600 bg-neutral-200 dark:bg-neutral-800"
             }`}
             title="切换右栏"
           >
@@ -735,7 +735,7 @@ function Header({
         </div>
         <div
           className="w-7 h-7 rounded-xl bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center text-white font-extrabold text-label shadow-md"
-          style={{ boxShadow: "0 2px 8px rgba(88, 204, 2, 0.3)" }}
+          style={{ boxShadow: "0 2px 8px rgb(var(--brand-rgb) / 0.3)" }}
         >
           L
         </div>
@@ -750,27 +750,27 @@ function Header({
             onClick={() => onFontBump("down")}
             disabled={fontSize === "small"}
             data-testid="font-smaller"
-            className="text-label w-7 h-7 flex items-center justify-center rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+            className="text-label w-7 h-7 flex items-center justify-center rounded-md text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-ink/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
             title="缩小字号"
           >A-</button>
           <button
             onClick={() => onFontBump("up")}
             disabled={fontSize === "large"}
             data-testid="font-larger"
-            className="text-body w-7 h-7 flex items-center justify-center rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+            className="text-body w-7 h-7 flex items-center justify-center rounded-md text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-ink/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
             title="放大字号"
           >A+</button>
         </div>
         {xp && (
           <div className="flex items-center gap-1.5" data-testid="xp-bar">
-            <Target className="w-3.5 h-3.5 text-neutral-400" />
+            <Target className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-400" />
             <div className="w-20 h-2 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${xp.achieved ? "bg-gold" : "bg-brand"}`}
                 style={{ width: `${Math.max(3, xp.pct)}%` }}
               />
             </div>
-            <span className={`text-label font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-500 dark:text-neutral-400"}`}>
+            <span className={`text-label font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-500 dark:text-neutral-600 dark:text-neutral-400"}`}>
               {xp.todayXp}/{xp.dailyGoal}
             </span>
           </div>
@@ -778,7 +778,7 @@ function Header({
         <button
           onClick={onOpenSettings}
           data-testid="header-settings"
-          className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
+          className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
           title="设置 (Ctrl+S)"
         >
           <Settings className="w-4 h-4" />
@@ -795,13 +795,13 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="settings-drawer">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-md h-full bg-surface-0 border-l border-neutral-800 shadow-elevated flex flex-col">
+      <div className="relative w-full max-w-md h-full bg-surface-0 border-l border-neutral-300 dark:border-neutral-800 shadow-elevated flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 shrink-0">
           <h2 className="text-body font-bold">{translate("settings.title")}</h2>
           <button
             onClick={onClose}
             data-testid="settings-close"
-            className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
+            className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
           >
             ✕
           </button>
@@ -828,13 +828,13 @@ function ReviewDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="review-drawer">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-md h-full bg-surface-0 border-l border-neutral-800 shadow-elevated flex flex-col">
+      <div className="relative w-full max-w-md h-full bg-surface-0 border-l border-neutral-300 dark:border-neutral-800 shadow-elevated flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 shrink-0">
           <h2 className="text-body font-bold">📖 复习</h2>
           <button
             onClick={onClose}
             data-testid="review-close"
-            className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
+            className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
           >
             ✕
           </button>

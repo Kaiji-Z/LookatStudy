@@ -250,7 +250,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
               <>
                 <div className="text-center mb-5">
                   <div className="text-4xl mb-3 opacity-30">📖</div>
-                  <div className="text-neutral-500 dark:text-neutral-400 text-body">这是这一课的概览</div>
+                  <div className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 text-body">这是这一课的概览</div>
                 </div>
                 {/* 摘要卡片 */}
                 {summary ? (
@@ -262,7 +262,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                   </div>
                 ) : (
                   <div className="surface-card p-4 mb-5 text-center">
-                    <div className="text-body text-neutral-500 dark:text-neutral-400">暂无摘要,点开始学习让 AI 帮你了解这一课</div>
+                    <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">暂无摘要,点开始学习让 AI 帮你了解这一课</div>
                   </div>
                 )}
                 {/* 开始学习按钮 */}
@@ -277,7 +277,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                     <span>开始学习</span>
                   </button>
                 )}
-                <div className="text-center mt-4 text-label text-neutral-500 dark:text-neutral-400">
+                <div className="text-center mt-4 text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">
                   或从下面的快捷按钮选一个
                 </div>
               </>
@@ -288,7 +288,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                 <div className="text-body font-bold text-neutral-700 dark:text-neutral-300 mb-1">
                   从左侧地图选一个节点
                 </div>
-                <div className="text-body text-neutral-500 dark:text-neutral-400 max-w-xs mx-auto">
+                <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 max-w-xs mx-auto">
                   点击圆球节点开始学习。绿色=可学,金色=已掌握,紫色 🎯=章节考试
                 </div>
               </div>
@@ -384,8 +384,8 @@ function MessageRowV2({
     // 与 AI 消息靠"右对齐 + 稍亮底色 + 你 标签"区分,不靠气泡。
     return (
       <div className="msg-enter flex justify-end" data-testid="msg-user" data-msg-id={msg.id}>
-        <div className="max-w-[85%] bg-white/[0.04] rounded-2xl rounded-br-md px-4 py-2.5">
-          <div className="font-medium text-neutral-100 whitespace-pre-wrap select-text text-body">
+        <div className="max-w-[85%] bg-ink/[0.04] rounded-2xl rounded-br-md px-4 py-2.5">
+          <div className="font-medium text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap select-text text-body">
             {msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
           </div>
         </div>
@@ -480,10 +480,10 @@ function ReasoningBlock({ text }: { text: string }) {
         className="w-full flex items-center justify-between px-3 py-1.5 text-label font-bold text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
       >
         <span>{open ? "▾" : "▸"} 思考过程</span>
-        <span className="text-neutral-500 dark:text-neutral-400 font-normal">{text.length} 字</span>
+        <span className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 font-normal">{text.length} 字</span>
       </button>
       {open && (
-        <div className="px-3 pb-2.5 text-label text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap leading-relaxed border-t border-neutral-200 dark:border-neutral-800/60 pt-2">
+        <div className="px-3 pb-2.5 text-label text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap leading-relaxed border-t border-neutral-200 dark:border-neutral-800/60 pt-2">
           {text}
         </div>
       )}
@@ -581,7 +581,7 @@ function ToolCallBlock({
       {state === "input-available" ? (
         <>
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
-          <span className="text-neutral-600 dark:text-neutral-400">{label}…</span>
+          <span className="text-neutral-600 dark:text-neutral-600 dark:text-neutral-400">{label}…</span>
         </>
       ) : state === "output-error" ? (
         <>
@@ -591,7 +591,7 @@ function ToolCallBlock({
       ) : (
         <>
           <Wrench className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-          <span className="text-neutral-600 dark:text-neutral-400">{label}</span>
+          <span className="text-neutral-600 dark:text-neutral-600 dark:text-neutral-400">{label}</span>
         </>
       )}
     </div>
@@ -648,13 +648,13 @@ function CodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreElement>)
 
   return (
     <div className="relative group my-3" data-testid="md-codeblock">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-neutral-900 border border-b-0 border-neutral-700 rounded-t-md">
-        <span className="text-caption font-mono text-neutral-400 uppercase tracking-wider">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-neutral-100 dark:bg-neutral-900 border border-b-0 border-neutral-200 dark:border-neutral-700 rounded-t-md">
+        <span className="text-caption font-mono text-neutral-600 dark:text-neutral-400 uppercase tracking-wider">
           {lang || "code"}
         </span>
         <button
           onClick={handleCopy}
-          className="text-caption text-neutral-400 hover:text-brand transition-colors opacity-0 group-hover:opacity-100"
+          className="text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-brand transition-colors opacity-0 group-hover:opacity-100"
           data-testid="md-copy"
         >
           {copied ? "✓ 已复制" : "复制"}

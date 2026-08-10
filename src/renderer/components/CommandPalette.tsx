@@ -71,7 +71,7 @@ export function CommandPalette({
       <div className="relative w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-elevated overflow-hidden">
         {/* 搜索框 */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
-          <Search className="w-4 h-4 text-neutral-400" />
+          <Search className="w-4 h-4 text-neutral-600 dark:text-neutral-400" />
           <input
             ref={inputRef}
             value={query}
@@ -81,10 +81,10 @@ export function CommandPalette({
             }}
             onKeyDown={handleKeyDown}
             placeholder="输入指令或问题…(↑↓ 选择,Enter 确认)"
-            className="flex-1 bg-transparent text-body text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none"
+            className="flex-1 bg-transparent text-body text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-600 dark:text-neutral-400 focus:outline-none"
             data-testid="command-input"
           />
-          <kbd className="text-caption text-neutral-400 px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-700">
+          <kbd className="text-caption text-neutral-600 dark:text-neutral-400 px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-700">
             ESC
           </kbd>
         </div>
@@ -92,7 +92,7 @@ export function CommandPalette({
         {/* 命令列表 */}
         <div className="max-h-80 overflow-y-auto py-2" data-testid="command-list">
           {visible.length === 0 ? (
-            <div className="px-4 py-6 text-center text-body text-neutral-400">
+            <div className="px-4 py-6 text-center text-body text-neutral-600 dark:text-neutral-400">
               {hasNode ? "没有匹配的命令" : "先在左侧选一个节点,才能用这些命令"}
             </div>
           ) : (
@@ -101,7 +101,7 @@ export function CommandPalette({
               if (cmds.length === 0) return null;
               return (
                 <div key={group}>
-                  <div className="px-4 pt-2 pb-1 text-caption font-bold text-neutral-400 uppercase tracking-wider">
+                  <div className="px-4 pt-2 pb-1 text-caption font-bold text-neutral-600 dark:text-neutral-400 uppercase tracking-wider">
                     {group}
                   </div>
                   {cmds.map((cmd) => {
@@ -120,7 +120,7 @@ export function CommandPalette({
                       >
                         <span className="text-base w-5 text-center">{cmd.icon}</span>
                         <span className="text-body font-medium flex-1">{cmd.label}</span>
-                        {cmd.hint && <span className="text-caption text-neutral-400">{cmd.hint}</span>}
+                        {cmd.hint && <span className="text-caption text-neutral-600 dark:text-neutral-400">{cmd.hint}</span>}
                       </button>
                     );
                   })}
@@ -131,7 +131,7 @@ export function CommandPalette({
         </div>
 
         {/* 底部提示 */}
-        <div className="px-4 py-2 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between text-caption text-neutral-400">
+        <div className="px-4 py-2 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between text-caption text-neutral-600 dark:text-neutral-400">
           <span>AI 导师会根据指令生成对应内容</span>
           <span>↵ 确认 · esc 关闭</span>
         </div>

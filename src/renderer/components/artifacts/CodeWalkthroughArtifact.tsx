@@ -54,7 +54,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
       <div className="flex items-center gap-2 mb-3">
         <span className="text-body">🔍</span>
         <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200">{d.title}</h3>
-        <span className="text-caption font-bold px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-mono">
+        <span className="text-caption font-bold px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 font-mono">
           {d.language}
         </span>
       </div>
@@ -87,7 +87,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
 
         {/* 讲解列表 */}
         <div className="space-y-2">
-          <div className="text-caption font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+          <div className="text-caption font-bold text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 uppercase tracking-wider">
             逐段讲解(点击定位代码)
           </div>
           {d.annotations.map((a, i) => (

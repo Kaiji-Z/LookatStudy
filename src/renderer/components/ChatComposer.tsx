@@ -105,7 +105,7 @@ export function ChatComposer({
               onClick={() => !streaming && onSend(p.message)}
               disabled={streaming}
               data-testid={`starter-prompt-${i}`}
-              className="shrink-0 flex items-center gap-1 text-body px-2.5 py-1 rounded-full text-neutral-400 hover:text-neutral-200 hover:bg-white/5 transition-colors disabled:opacity-30"
+              className="shrink-0 flex items-center gap-1 text-body px-2.5 py-1 rounded-full text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-ink/5 transition-colors disabled:opacity-30"
               title={p.hint ?? p.label}
             >
               <span className="opacity-70">{p.icon}</span>
@@ -119,7 +119,7 @@ export function ChatComposer({
           内部:模式药丸行 + textarea + 发送钮。
           模式选择是输入框的一部分(决定"这段话用什么方式教"),不是独立工具栏。
           字号控制已移到顶栏(全局字号,不只中栏)。 */}
-      <div className="rounded-2xl bg-white/[0.05] focus-within:bg-white/[0.07] transition-colors px-3 pt-2 pb-1.5">
+      <div className="rounded-2xl bg-ink/[0.05] focus-within:bg-ink/[0.07] transition-colors px-3 pt-2 pb-1.5">
         {/* 模式药丸:"模式:" 标签 + 四个药丸(图标+名字),hover 显示完整说明 */}
         {skills.length > 0 && (
           <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin mb-1" data-testid="skill-picker">
@@ -137,7 +137,7 @@ export function ChatComposer({
                   className={`shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-body font-medium transition-colors ${
                     isActive
                       ? "bg-brand/15 text-brand"
-                      : "text-neutral-500 hover:text-neutral-300 hover:bg-white/5"
+                      : "text-neutral-500 hover:text-neutral-300 hover:bg-ink/5"
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
@@ -163,7 +163,7 @@ export function ChatComposer({
             disabled={streaming || !nodeId}
             rows={2}
             data-testid="chat-input"
-            className="flex-1 bg-transparent text-neutral-100 text-body rounded-lg px-1 py-1 resize-none focus:outline-none disabled:opacity-40 placeholder:text-neutral-600"
+            className="flex-1 bg-transparent text-neutral-900 dark:text-neutral-100 text-body rounded-lg px-1 py-1 resize-none focus:outline-none disabled:opacity-40 placeholder:text-neutral-600 dark:text-neutral-400 dark:placeholder:text-neutral-600"
           />
           {streaming ? (
             <button
@@ -180,7 +180,7 @@ export function ChatComposer({
               onClick={handleSend}
               disabled={streaming || !input.trim() || !nodeId}
               data-testid="chat-send"
-              className="shrink-0 w-9 h-9 rounded-full bg-brand text-white flex items-center justify-center hover:bg-brand-light disabled:bg-neutral-700 disabled:cursor-not-allowed transition-colors"
+              className="shrink-0 w-9 h-9 rounded-full bg-brand text-white flex items-center justify-center hover:bg-brand-light disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed transition-colors"
               title={translate("chat.send")}
               aria-label={translate("chat.send")}
             >

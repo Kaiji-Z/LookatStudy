@@ -6,7 +6,7 @@
  *    反馈与状态对应(成功≠错误≠警告),不再是"所有反馈看起来一样"。
  *  - 退场动画(toast-exit):淡出 + 微下沉,避免硬消失 glitch 感。
  *  - 关闭按钮换 lucide-react X(全应用 icon 词汇统一,lucide-only for utility)。
- *  - 修复 dark class 重复 bug(bg-white dark:bg-neutral-900 dark:bg-neutral-800)。
+ *  - 修复历史 dark class 重复 bug(现在统一用 bg-surface-0 token)。
  *
  * 用法:
  *   const { show } = useToast();
@@ -151,7 +151,7 @@ function ToastRow({
       )}
       <button
         onClick={onDismiss}
-        className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-800"
+        className="text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-800"
         aria-label="关闭"
       >
         <X className="w-3.5 h-3.5" />

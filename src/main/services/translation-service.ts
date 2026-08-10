@@ -17,8 +17,15 @@ type Db = SQLJsDatabase<typeof schema>;
 
 /**
  * 批量写入翻译（导入时调）。
- * translations: Map<sourcePath, { title, content }> —— key 是原文课程的文件路径。
- * 用 sourcePath 匹配 content_nodes 的 sourcePath 来关联 node_id。
+ * translations: Map<originalPath, { title, content }> —— key 是原文课程的文件路径。
+ *
+ * 匹配策略（按优先级）:
+ * 1. 精确路径匹配: translations key === node.sourcePath
+ * 2. 路径前缀匹配: node.sourcePath 的 # 前缀（section dir）在 translations key 里出现
+ * 3. 标题匹配: translations value.title === node.title（翻译版文件 H1 == 原文 lesson 标题）
+ *
+ * 策略 3 是主力——因为 buildCourseFromFiles 把文件内容拆成 lesson 后,
+ * lesson 标题来自文件的 H3 或 H1,翻译版文件有同样的标题结构。
  */
 export function persistTranslations(
   db: Db,
@@ -26,7 +33,7 @@ export function persistTranslations(
   locale: string,
   translations: Map<string, { title: string; content: string }>,
 ): { written: number; skipped: number } {
-  // 取该课程所有 lesson 节点的 id + sourcePath
+  // 取该课程所有 lesson 节点的 id + sourcePath + title + content
   const nodes = db
     .select()
     .from(contentNodes)
@@ -34,26 +41,65 @@ export function persistTranslations(
     .all()
     .filter((n) => n.type === "lesson");
 
+  // 构建翻译查找索引
+  // 1. 按标题索引（主力）: Map<lowercaseTitle, translation>
+  const titleIndex = new Map<string, { title: string; content: string }>();
+  for (const [, trans] of translations) {
+    // 从翻译版 content 里提取所有 H1/H2/H3 标题，建索引
+    const headingMatches = trans.content.matchAll(/^#{1,3}\s+(.+)$/gm);
+    for (const m of headingMatches) {
+      const heading = m[1]!.trim().toLowerCase();
+      if (!titleIndex.has(heading)) {
+        titleIndex.set(heading, trans);
+      }
+    }
+    // 也按 FetchedFile.title 建索引
+    const fileTitle = trans.title.trim().toLowerCase();
+    if (!titleIndex.has(fileTitle)) {
+      titleIndex.set(fileTitle, trans);
+    }
+  }
+
+  // 2. 按路径索引（辅助）: Map<originalPath, translation>
+  const pathIndex = translations;
+
   let written = 0;
   let skipped = 0;
 
   for (const node of nodes) {
-    // sourcePath 格式如 "Section Title#lesson-anchor"，取 # 前面部分做匹配
-    // 或者直接用整个 sourcePath 匹配
-    // 实际上 sourcePath 可能是 "README.md#anchor" 或 "lessons/.../README.md"
-    // 翻译 Map 的 key 是文件路径（如 "lessons/3-NN/03-Perceptron/README.md"）
-    // 尝试精确匹配 + 前缀匹配
     const sp = node.sourcePath ?? "";
-    const transEntry =
-      translations.get(sp) ??
-      translations.get(sp.split("#")[0] ?? sp) ??
-      // 尝试用 title 模糊匹配（翻译版 title 可能和原文不同）
-      null;
+    const nodeTitle = node.title.trim().toLowerCase();
+
+    // 尝试匹配
+    let transEntry: { title: string; content: string } | null = null;
+
+    // 策略 1: 精确路径
+    transEntry = pathIndex.get(sp) ?? null;
+
+    // 策略 2: 路径前缀（sourcePath 的 # 前缀在某个 translations key 里）
+    if (!transEntry) {
+      const sectionDir = sp.split("#")[0];
+      for (const [origPath, trans] of pathIndex) {
+        if (origPath.includes(sectionDir)) {
+          transEntry = trans;
+          break;
+        }
+      }
+    }
+
+    // 策略 3: 标题匹配
+    if (!transEntry) {
+      transEntry = titleIndex.get(nodeTitle) ?? null;
+    }
 
     if (!transEntry) {
       skipped++;
       continue;
     }
+
+    // 从翻译版 content 提取该 lesson 对应的正文片段
+    // （翻译版文件可能包含多课内容，我们取整个文件作为翻译内容）
+    const transTitle = extractTranslatedTitle(transEntry.content, transEntry.title, node.title);
 
     // 检查是否已有翻译行（幂等）
     const existing = db
@@ -68,10 +114,9 @@ export function persistTranslations(
       .get();
 
     if (existing) {
-      // 更新
       db.update(contentNodeTranslations)
         .set({
-          title: transEntry.title,
+          title: transTitle,
           content: transEntry.content,
         })
         .where(eq(contentNodeTranslations.id, existing.id))
@@ -83,7 +128,7 @@ export function persistTranslations(
           nodeId: node.id,
           courseId,
           locale,
-          title: transEntry.title,
+          title: transTitle,
           content: transEntry.content,
         })
         .run();
@@ -92,6 +137,20 @@ export function persistTranslations(
   }
 
   return { written, skipped };
+}
+
+/**
+ * 从翻译版 content 里提取对应原文 lesson 的标题。
+ * 优先级:content 里的 H1 → FetchedFile.title（翻译版的链接文本）→ 原文标题兜底
+ */
+function extractTranslatedTitle(transContent: string, fileTitle: string, originalTitle: string): string {
+  // 翻译版文件的第一个 H1
+  const h1Match = transContent.match(/^#\s+(.+)$/m);
+  if (h1Match) return h1Match[1]!.trim();
+  // 翻译版的链接文本（FetchedFile.title）
+  if (fileTitle && fileTitle.trim()) return fileTitle.trim();
+  // 回退到原标题
+  return originalTitle;
 }
 
 /**

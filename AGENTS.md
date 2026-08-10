@@ -175,7 +175,7 @@ item CRUD), `useFontSize` (3-tier A-/A+).
 8. **No native module compilation.** If a dep fails to build, switch to pure-JS.
 9. **Electron stderr unreliable in headless.** Use `--self-test` / `--ui-test` and read JSON result files.
 10. **HMR**: renderer changes (CSS/TSX) auto-reload. Main/preload changes need full restart.
-11. **Seed versioning**: `SEED_VERSION` in `seed.ts` — bump to trigger seed course rebuild. 种子课程现在从 GitHub 实时拉取（和用户导入走同一条管线），不再用静态 md 文件。网络不可达时静默跳过（self-test 标 knownFail）。Never delete the DB to re-seed; it wipes custom providers.
+11. **Seed versioning**: `SEED_VERSION` in `seed.ts` — bump to trigger seed course rebuild. 种子课程内置为静态 `src/main/assets/seed-course.json`(离线、无网络、无 LLM,启动瞬时加载)。要刷新 JSON 内容:跑 `npx tsx scripts/build-seed-json.mjs`(联网拉 microsoft/AI-For-Beginners → 验证 → 导出)再 bump `SEED_VERSION`。Never delete the DB to re-seed; it wipes custom providers.
 
 ## Docs to read before sensitive changes
 

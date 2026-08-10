@@ -17,10 +17,12 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Changed
-- **种子课程改为运行时实时拉取**:删除静态种子 md 文件 + 构建脚本,
-  改为 app 启动时从 GitHub 实时拉取 microsoft/AI-For-Beginners（走完整
-  导入管线 + 中文翻译）。网络不可达时静默跳过（self-test 标 knownFail）。
-  `ensureSeedCourse` 改为 async。
+- **种子课程改为内置静态 JSON**:种子课程 microsoft/AI-For-Beginners 现在
+  固化为 `src/main/assets/seed-course.json`(约 1 MB,含 10 章/67 课/9 章节测验/
+  63 课中文翻译),启动时 `ensureSeedCourse` 直接 `readFileSync` + insert,
+  离线可用、无网络依赖、瞬时启动。刷新内容由 `npx tsx scripts/build-seed-json.mjs`
+  重新拉取+验证+导出,同时 bump `SEED_VERSION`。self-test 的种子检查不再
+  标 knownFail(现在是确定性通过)。
 
 ### Added
 - **导入时多语言检测 + 课程语言切换**:导入 GitHub 仓库时自动检测 `translations/`

@@ -37,6 +37,25 @@ export default defineConfig({
               output: {
                 format: "cjs", // CJS 让 __dirname 天然可用，避免 ESM 路径坑
               },
+              // 把内置种子课程 JSON 作为静态资源 emit 到 dist-electron/main/assets/,
+              // 让运行时 readFileSync(join(__dirname, "assets", ...)) 能定位。
+              // seed.ts 的 loadSeedData() 会在多个候选路径里找到它。
+              plugins: [
+                {
+                  name: "emit-seed-course-json",
+                  generateBundle() {
+                    const jsonPath = resolve(__dirname, "src/main/assets/seed-course.json");
+                    const fs = require("node:fs");
+                    if (fs.existsSync(jsonPath)) {
+                      this.emitFile({
+                        type: "asset",
+                        fileName: "assets/seed-course.json",
+                        source: fs.readFileSync(jsonPath, "utf8"),
+                      });
+                    }
+                  },
+                },
+              ],
             },
           },
         },

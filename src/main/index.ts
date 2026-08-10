@@ -122,7 +122,7 @@ app.whenReady().then(async () => {
     loadEnv();
     await initDb();
     console.error("[lookatstudy] DB initialized");
-    await ensureSeedCourse();
+    ensureSeedCourse();
     console.error("[lookatstudy] seed course ensured");
     // 给老库(本功能上线前导入的课程)补章节考试节点。幂等,已含 exam 的 section 跳过。
     const { patched } = ensureExamNodesForExistingCourses(getDb());
@@ -185,22 +185,19 @@ async function runSelfTest(): Promise<void> {
   const db = getDb();
   const results: Array<{ name: string; ok: boolean; detail?: unknown; knownFail?: boolean; knownFailReason?: string }> = [];
 
-  // 1. 种子课程存在（网络不可达时可能不存在——不算 fail，标 known-issue）
+  // 1. 种子课程存在（现在从内置 JSON 加载，不再依赖网络，应为确定性通过）
   const seedCourse = db
     .select()
     .from(courses)
     .where(eq(courses.id, "seed-ai-for-beginners"))
     .get();
-  const seedMissing = !seedCourse;
   results.push({
     name: "seed course exists",
     ok: !!seedCourse,
-    detail: seedCourse?.title ?? "(网络不可达，种子未拉取)",
-    knownFail: seedMissing,
-    knownFailReason: "种子课程从 GitHub 实时拉取，网络不可达时跳过（不影响其他功能）",
+    detail: seedCourse?.title ?? "(种子未灌入)",
   });
 
-  // 2. 课程树有 sections + lessons（种子不存在时跳过此检查）
+  // 2. 课程树有 sections + lessons
   const tree = db
     .select()
     .from(contentNodes)
@@ -210,10 +207,8 @@ async function runSelfTest(): Promise<void> {
   const lessons = tree.filter((n) => n.type === "lesson");
   results.push({
     name: "course tree has sections + lessons",
-    ok: seedMissing ? true : (sections.length >= 3 && lessons.length >= sections.length * 2),
-    detail: seedMissing ? "(种子未拉取，跳过)" : { sections: sections.length, lessons: lessons.length },
-    knownFail: seedMissing,
-    knownFailReason: "种子课程从 GitHub 实时拉取，网络不可达时跳过",
+    ok: sections.length >= 3 && lessons.length >= sections.length * 2,
+    detail: { sections: sections.length, lessons: lessons.length },
   });
 
   // 3. streak singleton 存在

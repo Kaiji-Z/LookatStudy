@@ -10,6 +10,9 @@ export type NodeType = "section" | "lesson" | "concept" | "exam";
 
 export type NodeStatus = "locked" | "available" | "in_progress" | "mastered";
 
+/** 两个世界: study(学习主线讲解) / practice(实操练习) */
+export type World = "study" | "practice";
+
 /* ---------- 掌握度阈值(主进程 + 渲染层共享,改这里两端联动) ----------
  * 单一真源:progress-service / proposal-service / MapRail 都从这里 import,
  * 避免 DB 认为该解锁了但 UI 还锁着(或反之)的漂移 bug。 */
@@ -30,6 +33,8 @@ export interface ContentNode {
   orderIdx: number;
   /** LLM 生成的课节摘要(1-2 句,空会话时中栏显示;导入时批量生成) */
   summary?: string | null;
+  /** 两个世界: study(学习主线) / practice(实操练习)。默认 study。 */
+  world: World;
 }
 
 export interface Course {
@@ -278,6 +283,10 @@ export interface ApiExpose {
   getNodeContent(nodeId: string, locale?: string): Promise<string | null>;
   /** 取节点摘要(导入时生成,空会话时中栏显示) */
   getNodeSummary(nodeId: string): Promise<string | null>;
+  /** 两个世界:查某学习课对应的实操节点(同 source_path 目录) */
+  getPracticeForLesson(nodeId: string): Promise<ContentNode[]>;
+  /** 两个世界:查某实操节点对应的学习课(反向跳转) */
+  getLessonForPractice(nodeId: string): Promise<ContentNode | null>;
 
   /* 多模态资源(node_assets) */
   /** 列某节点的全部图片资源(元数据,不含二进制) */
@@ -550,6 +559,7 @@ export type SettingKey =
   | "user_level"
   // 多模态:feature flag(存 settings 表,key 形如 flag_xxx)
   | "flag_multimodal_import"
+  | "flag_image_download"
   // 多模态:可选的 vision 模型覆盖(不配则复用主模型)
   | "vision_provider_override"
   | "vision_model_override";

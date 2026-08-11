@@ -9,16 +9,19 @@
 import assert from "node:assert";
 import { FLAG_DEFAULTS, isFlagName } from "../src/main/services/pure/flag-defaults.ts";
 
-// T1: 所有 flag 默认必须是 false（off）
+// T1: 大部分 flag 默认 off。例外:image_download 默认 on(md 里有图就该导入,不需要 AI)。
+// 这个例外清单是"白名单"——新加的 flag 如果想默认 on 必须加到这里并说明理由。
+const ALLOWED_ON = ["image_download"];
 const offending = Object.entries(FLAG_DEFAULTS)
   .filter(([, v]) => v === true)
-  .map(([k]) => k);
+  .map(([k]) => k)
+  .filter((k) => !ALLOWED_ON.includes(k));
 assert.strictEqual(
   offending.length,
   0,
-  `以下 flag 默认值被改成了 true，违反"默认 off"红线: ${offending.join(", ")}`,
+  `以下 flag 默认值被改成了 true,不在白名单 ${ALLOWED_ON.join(", ")} 中: ${offending.join(", ")}`,
 );
-console.log(`✓ T1 全部 ${Object.keys(FLAG_DEFAULTS).length} 个 flag 默认 off: ${Object.keys(FLAG_DEFAULTS).join(", ")}`);
+console.log(`✓ T1 全部 ${Object.keys(FLAG_DEFAULTS).length} 个 flag 默认值正确(白名单 on: ${ALLOWED_ON.join(", ")})`);
 
 // T2: isFlagName 守卫 —— 合法名返回 true
 for (const name of Object.keys(FLAG_DEFAULTS)) {

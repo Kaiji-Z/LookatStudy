@@ -50,9 +50,17 @@ interface MapRailProps {
 
 export function MapRail(props: MapRailProps) {
   const [panel, setPanel] = useState<"map" | "import">("map");
+  /** 当前显示的世界: study(学习) / practice(实操)。默认 study。 */
+  const [world, setWorld] = useState<"study" | "practice">("study");
   const navRef = useRef<HTMLElement>(null);
   const mapPathRef = useRef<HTMLDivElement>(null);
   const masteryPct = Math.round(props.overallMastery * 100);
+
+  // 按 world 过滤 section(practice 节点不受学习门控,自由探索)
+  const visibleSections = props.sections.filter(
+    (s) => (s.world ?? "study") === world,
+  );
+  const hasPracticeWorld = props.sections.some((s) => s.world === "practice");
 
   const [skyKey, setSkyKey] = useState<string | null>(null);
   useEffect(() => { setSkyKey(pickPreset(props.courseId)); }, [props.courseId]);
@@ -117,6 +125,25 @@ export function MapRail(props: MapRailProps) {
                 </button>
               )}
             </div>
+            {/* 两个世界切换器: 学习 / 实操(只在有实操世界时显示) */}
+            {hasPracticeWorld && (
+              <div className="flex gap-1 mt-1.5 p-0.5 rounded-lg bg-black/30">
+                <button
+                  onClick={() => setWorld("study")}
+                  data-testid="world-tab-study"
+                  className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-md text-caption font-bold transition-colors ${world === "study" ? "bg-brand/30 text-brand" : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-200"}`}
+                >
+                  📚 学习
+                </button>
+                <button
+                  onClick={() => setWorld("practice")}
+                  data-testid="world-tab-practice"
+                  className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-md text-caption font-bold transition-colors ${world === "practice" ? "bg-accent/30 text-accent" : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-200"}`}
+                >
+                  🔧 实操
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -148,9 +175,13 @@ export function MapRail(props: MapRailProps) {
                       <div className="mt-2 text-caption text-brand font-bold">点这里导入 →</div>
                     </button>
                   )
+                ) : visibleSections.length === 0 ? (
+                  <div className="text-center text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-8 px-4">
+                    {world === "practice" ? "这个课程暂无实操练习内容" : "正在生成课程路径…"}
+                  </div>
                 ) : (
                   <div className="space-y-6 pt-2">
-                    {props.sections.map((section, sIdx) => (
+                    {visibleSections.map((section, sIdx) => (
                       <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} />
                     ))}
                   </div>

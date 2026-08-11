@@ -16,6 +16,40 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **两个世界:学习世界 vs 实操世界**:课程内容分为两个世界:
+  - **学习世界 (study)**:README 讲解正文(概念/理论/教程)——主线学习路径
+  - **实操世界 (practice)**:notebook/lab/exercise/quiz/.py 实操资源——配套动手探索
+  - 地图标签页切换(📚学习 / 🔧实操),每次只看到一个世界
+  - 实操节点默认 available(自由探索,不受 BKT 门控),不生成考试
+  - 跨世界关联:学到某课时可查同目录的实操练习(靠 source_path 前缀匹配)
+  - content_nodes 加 `world` 字段(addColumnIfMissing 零风险迁移)
+  - 遵循"规则管确定性,LLM 管不确定":world 分类完全交给 LLM 判断,
+    规则层只标 null(未定),不增加新的确定性判断
+  - notebook/lab/example 不再合并进 lesson 正文,而是建独立节点(LLM 判 world)
+
+### Changed
+- **种子课程暂时停用**:两个世界重构期间用 GitHub 真实导入验证,
+  不依赖固化种子。恢复时取消注释 `ensureSeedCourse()` 即可。
+
+### Fixed
+- **翻译版正文切换不实时更新**:切换翻译语言后,讲解区标题立即变但正文不变,
+  需 Ctrl+R 才刷新。根因是 `ContentTab` 拉取正文的 `useEffect` 依赖数组漏了
+  `locale`,导致 locale 变化时 effect 不重跑。修复:依赖数组加 `locale`
+  (`NotebookPanel.tsx`)。
+- **选中翻译时点击节点球黑屏**:翻译 content 是 CDN 原样拉取的 markdown,
+  未经过原文管道的 code-fence-aware parser,可能含未闭合代码围栏 / 畸形 GFM
+  表格导致 `react-markdown` 抛同步异常。项目此前无 ErrorBoundary,React 19
+  卸载整个 root 子树 → 黑屏。修复两层:
+  (1) 新增 `ErrorBoundary` 组件包裹 ReactMarkdown,崩溃时显示 fallback(原文
+  截断 + 重试按钮)而非黑屏;
+  (2) 新增 `sanitizeTranslatedMarkdown` 在 `fetchTranslatedContent` 阶段修复
+  未闭合围栏、去除危险 HTML(script/iframe),从源头减少畸形内容。
+- **章节间解锁过于严格**:此前必须点到当前章节最后一课才解锁下一章,用户
+  容易卡死在某章。改为**双线推进**:点当前章节任意一课时,同时解锁同章下一课
+  + 下一章第一课。多邻国式逐课推进感保留(同章下一课),章节间不再串行阻塞。
+  新增 T12 测试(闭环验证:破坏双线 → T12 抓到回归)。
+
 ### Changed
 - **种子课程改为内置静态 JSON**:种子课程 microsoft/AI-For-Beginners 现在
   固化为 `src/main/assets/seed-course.json`(约 1 MB,含 10 章/67 课/9 章节测验/

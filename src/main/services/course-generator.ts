@@ -267,6 +267,7 @@ export function generateCourseFromRepoFiles(
 
   for (const section of parsed.sections) {
     const sectionId = randomUUID();
+    const sectionWorld = section.world ?? "study";
     db.insert(contentNodes)
       .values({
         id: sectionId,
@@ -276,6 +277,7 @@ export function generateCourseFromRepoFiles(
         title: section.title,
         sourcePath: section.anchor ? `${section.anchor}` : null,
         orderIdx: sectionOrder++,
+        world: sectionWorld,
       })
       .run();
 
@@ -283,6 +285,7 @@ export function generateCourseFromRepoFiles(
     for (const lesson of section.lessons) {
       const lessonId = randomUUID();
       const isFirstEver = firstLessonId === null;
+      const lessonWorld = lesson.world ?? sectionWorld;
       db.insert(contentNodes)
         .values({
           id: lessonId,
@@ -295,23 +298,27 @@ export function generateCourseFromRepoFiles(
             : (lesson.anchor ? `${section.title}#${lesson.anchor}` : null),
           orderIdx: lessonOrder++,
           content: lesson.body || null,
+          world: lessonWorld,
         })
         .run();
 
+      // practice 节点默认 available(实操是自由探索,不受 BKT 门控)
+      // study 节点:第一个 available,其余 locked
+      const isPractice = lessonWorld === "practice";
       db.insert(progressTable)
         .values({
           nodeId: lessonId,
-          status: isFirstEver ? "available" : "locked",
+          status: isPractice ? "available" : (isFirstEver ? "available" : "locked"),
           crownLevel: 0,
         })
         .run();
 
-      if (isFirstEver) firstLessonId = lessonId;
+      if (!isPractice && isFirstEver) firstLessonId = lessonId;
       totalLessons++;
     }
 
-    // 章节末尾:考试节点(可选关底 boss,正确率分档给 1-3 星)
-    if (section.lessons.length >= 2 && insertExamNode(db, courseId, sectionId, section.title, lessonOrder)) {
+    // 章节末尾:考试节点(只在 study section 生成,practice 不做测验)
+    if (sectionWorld === "study" && section.lessons.length >= 2 && insertExamNode(db, courseId, sectionId, section.title, lessonOrder)) {
       totalExams++;
     }
   }
@@ -332,7 +339,10 @@ export function generateCourseFromRepoFiles(
  * 在 app 启动时调一次(见 main/index.ts)。已含 exam 的 section 跳过(insertExamNode 幂等)。
  */
 export function ensureExamNodesForExistingCourses(db: Db): { patched: number } {
-  const sections = db.select().from(contentNodes).all().filter((n) => n.type === "section");
+  // 只给 study section 补 exam(practice section 不做测验)
+  const sections = db.select().from(contentNodes).all().filter(
+    (n) => n.type === "section" && (n.world ?? "study") === "study",
+  );
   let patched = 0;
   for (const sec of sections) {
     const hasLessons = db.select().from(contentNodes).all().some(

@@ -155,4 +155,21 @@ const les6p = getProgress(db, "les-6");
 assert.strictEqual(les6p?.status, "available", "T11: 跨空 section 解锁 —— les-5→跳过sec-c→les-6 unlocked");
 console.log(`✓ T11 跨空 section: les-5(sec-b末)→跳过 sec-c(仅exam)→les-6(sec-d) unlocked`);
 
+// === T12: 双线推进 —— 点当前章节任意一课,同时解锁同章下一课 + 下一章第一课 ===
+// 场景(双线推进设计):用户点 sec-A 的课1时,既解锁 sec-A 的课2(同章下一课),
+// 也解锁 sec-B 的第一课(下一章入口)。这样用户不会卡死在某章。
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('sec-e', 'c2', NULL, 'section', '章节E', 4)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('les-7', 'c2', 'sec-e', 'lesson', '课7', 0)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('les-8', 'c2', 'sec-e', 'lesson', '课8', 1)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('sec-f', 'c2', NULL, 'section', '章节F', 5)`);
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('les-9', 'c2', 'sec-f', 'lesson', '课9', 0)`);
+updateProgress(db, "les-7", { status: "available" });
+updateProgress(db, "les-8", { status: "locked" });
+updateProgress(db, "les-9", { status: "locked" });
+// 点课7(sec-E 的非末课)→ 应同时解锁 课8(同章下一课) + 课9(下一章第一课)
+markNodeAttempted(db, "les-7");
+assert.strictEqual(getProgress(db, "les-8")?.status, "available", "T12: 同章下一课(les-8)应解锁");
+assert.strictEqual(getProgress(db, "les-9")?.status, "available", "T12: 下一章第一课(les-9)应同时解锁(双线推进)");
+console.log(`✓ T12 双线推进: 点课7(sec-E)→课8(同章)+课9(下章)同时解锁`);
+
 console.log("\n=== ALL PROGRESS SERVICE TESTS PASSED ✅ ===");

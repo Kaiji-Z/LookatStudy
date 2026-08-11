@@ -47,6 +47,8 @@ export const contentNodes = sqliteTable("content_nodes", {
   content: text("content"),
   /** LLM 生成的课节摘要(1-2 句,空会话时中栏显示;导入时批量生成) */
   summary: text("summary"),
+  /** 两个世界: study(学习主线讲解) / practice(实操练习 notebook/lab/exercise) */
+  world: text("world", { enum: ["study", "practice"] }).notNull().default("study"),
 });
 
 /* ---------- 练习题（按需生成后缓存） ---------- */

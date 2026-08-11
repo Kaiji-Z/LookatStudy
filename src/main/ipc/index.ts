@@ -59,6 +59,11 @@ import {
   updateProgress as updateProgressService,
   markNodeAttempted as markNodeAttemptedService,
 } from "../services/progress-service.js";
+// 两个世界:学习 ↔ 实操 关联查询
+import {
+  findPracticeForLesson,
+  findLessonForPractice,
+} from "../services/practice-service.js";
 // Skill 系统（M1）—— 业务逻辑在 skill-service，IPC 是薄壳
 import {
   listSkills as listSkillsService,
@@ -208,8 +213,40 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       }
       markDirty();
 
-      // v0.8 多模态:flag on 时从 CDN 下载课程里的图片
-      if (isFlagOn("multimodal_import") && fetchedFiles.length > 0) {
+      send(`导入完成：${result.sectionCount} 章 / ${result.lessonCount} 课`);
+
+      // 多语言:如果用户选了翻译语言，拉翻译版内容存入 translations 表
+      if (langCode && fetchedFiles.length > 0) {
+        try {
+          send(`拉取翻译版内容 (${langCode})…`);
+          const { fetchTranslatedContent } = await import("../services/pure/repo-fetcher.js");
+          const { persistTranslations } = await import("../services/translation-service.js");
+          const translations = await fetchTranslatedContent(
+            owner, cleanRepo, importResult.readmeBranch, langCode,
+            fetchedFiles, fetch, send,
+          );
+          if (translations.size > 0) {
+            const transResult = await persistTranslations(getDb(), result.courseId, langCode, translations);
+            markDirty();
+            send(`翻译完成: ${transResult.written} 课有翻译, ${transResult.skipped} 课无翻译`);
+          } else {
+            send("翻译版内容为空（该语言可能只有 README 翻译，lesson 未翻译）");
+          }
+        } catch (e) {
+          send(`翻译拉取跳过(${e instanceof Error ? e.message : "出错"})`);
+        }
+      }
+
+      // 自动 AI 结构化(有 key 时)。失败不阻塞,降级到纯确定性导入结果。
+      // 必须在图片下载之前:LLM 可能 skip 一些 lesson(FK CASCADE 删 node_assets),
+      // 结构化后 lesson 列表稳定了再关联图片才不会丢。
+      await autoStructureCourse(result.courseId, send).catch((e) => {
+        send(`AI 结构化跳过(${e instanceof Error ? e.message : "无 key 或出错"})`);
+      });
+
+      // 图片下载:image_download flag(默认 on)控制。
+      // 放在结构化之后:lesson 列表已稳定(skip 的已删),用 sourcePath 匹配不会丢图。
+      if (isFlagOn("image_download") && fetchedFiles.length > 0) {
         try {
           send("正在收集课程图片(CDN)…");
           const { fetchRepoImages } = await import("../services/pure/repo-fetcher.js");
@@ -226,10 +263,16 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
             let imgCount = 0;
             for (let idx = 0; idx < downloaded.length; idx++) {
               const img = downloaded[idx];
-              const docFile = fetchedFiles.find((f) => f.path === img.docPath);
-              const lesson = docFile
-                ? lessons.find((l) => l.title === docFile.title || l.title.includes(docFile.title))
-                : null;
+              // 用 sourcePath 匹配(而非 title):sourcePath 格式 "文件路径#anchor",
+              // 取 # 前面的文件路径和 img.docPath 比较
+              const lesson = lessons.find((l) => {
+                const sp = (l.sourcePath ?? "").split("#")[0];
+                return sp === img.docPath;
+              }) ?? lessons.find((l) => {
+                // 兜底:title 包含匹配
+                const docFile = fetchedFiles.find((f) => f.path === img.docPath);
+                return docFile && (l.title === docFile.title || l.title.includes(docFile.title));
+              });
               const nodeId = lesson?.id ?? lessons[0]?.id;
               if (!nodeId) continue;
               const destName = `${String(idx).padStart(3, "0")}-${img.repoPath.split("/").pop()}`;
@@ -256,35 +299,6 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
           send(`图片收集跳过(${e instanceof Error ? e.message : "出错"})`);
         }
       }
-
-      send(`导入完成：${result.sectionCount} 章 / ${result.lessonCount} 课`);
-
-      // 多语言:如果用户选了翻译语言，拉翻译版内容存入 translations 表
-      if (langCode && fetchedFiles.length > 0) {
-        try {
-          send(`拉取翻译版内容 (${langCode})…`);
-          const { fetchTranslatedContent } = await import("../services/pure/repo-fetcher.js");
-          const { persistTranslations } = await import("../services/translation-service.js");
-          const translations = await fetchTranslatedContent(
-            owner, cleanRepo, importResult.readmeBranch, langCode,
-            fetchedFiles, fetch, send,
-          );
-          if (translations.size > 0) {
-            const transResult = await persistTranslations(getDb(), result.courseId, langCode, translations);
-            markDirty();
-            send(`翻译完成: ${transResult.written} 课有翻译, ${transResult.skipped} 课无翻译`);
-          } else {
-            send("翻译版内容为空（该语言可能只有 README 翻译，lesson 未翻译）");
-          }
-        } catch (e) {
-          send(`翻译拉取跳过(${e instanceof Error ? e.message : "出错"})`);
-        }
-      }
-
-      // 自动 AI 结构化(有 key 时)。失败不阻塞,降级到纯确定性导入结果。
-      await autoStructureCourse(result.courseId, send).catch((e) => {
-        send(`AI 结构化跳过(${e instanceof Error ? e.message : "无 key 或出错"})`);
-      });
 
       const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
       return course as unknown as Course;
@@ -378,9 +392,9 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     const folderPath = result.filePaths[0];
     const folderName = folderPath.split(/[\\/]/).pop() ?? "local-course";
 
-    // 2. 扫描(递归读 txt/md/html/pdf,中文优先去重;flag on 时同时收图)
+    // 2. 扫描(递归读 txt/md/html/pdf,中文优先去重;image_download on 时同时收图)
     send("正在扫描文件夹…");
-    const collectImages = isFlagOn("multimodal_import");
+    const collectImages = isFlagOn("image_download");
     const scanResult = await scanFolder(folderPath, (n) => {
       if (n % 20 === 0) send(`已扫描 ${n} 个文件…`);
     }, collectImages ? { collectImages: true } : undefined);
@@ -503,6 +517,15 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       `结构化完成：${result.sectionCount} 章 / ${result.lessonCount} 课 / 跳过 ${result.skippedCount} 个练习节点`,
     );
     return result;
+  });
+
+  // 两个世界:查某学习课对应的实操节点(同 source_path 目录)
+  ipcMain.handle("course:getPracticeForLesson", (_e, nodeId: string) => {
+    return findPracticeForLesson(getDb(), nodeId);
+  });
+  // 两个世界:查某实操节点对应的学习课(反向跳转)
+  ipcMain.handle("course:getLessonForPractice", (_e, nodeId: string) => {
+    return findLessonForPractice(getDb(), nodeId);
   });
 
   // LLM 生成章节摘要 + 前置依赖标记

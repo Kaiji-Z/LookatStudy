@@ -38,6 +38,10 @@ const api = {
     ipcRenderer.invoke("course:getNodeContent", nodeId, locale)) as ApiExpose["getNodeContent"],
   getNodeSummary: ((nodeId: string) =>
     ipcRenderer.invoke("course:getNodeSummary", nodeId)) as ApiExpose["getNodeSummary"],
+  getPracticeForLesson: ((nodeId: string) =>
+    ipcRenderer.invoke("course:getPracticeForLesson", nodeId)) as ApiExpose["getPracticeForLesson"],
+  getLessonForPractice: ((nodeId: string) =>
+    ipcRenderer.invoke("course:getLessonForPractice", nodeId)) as ApiExpose["getLessonForPractice"],
 
   /* 多模态资源(node_assets) */
   listAssetsByNode: ((nodeId: string) =>

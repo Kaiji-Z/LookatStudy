@@ -14,7 +14,8 @@ import { writeFileSync } from "node:fs";
 import { initDb, getDb, markDirty } from "./db/index.js";
 import { registerAllHandlers } from "./ipc/index.js";
 import { setupContextMenu } from "./context-menu.js";
-import { ensureSeedCourse } from "./services/seed.js";
+// 种子课程暂时停用(两个世界重构期间)——恢复时取消注释
+// import { ensureSeedCourse } from "./services/seed.js";
 import { ensureExamNodesForExistingCourses } from "./services/course-generator.js";
 import { loadEnv, getZaiConfig } from "./services/env.js";
 import { seedBuiltinSkills } from "./services/skills/skill-service.js";
@@ -122,8 +123,10 @@ app.whenReady().then(async () => {
     loadEnv();
     await initDb();
     console.error("[lookatstudy] DB initialized");
-    ensureSeedCourse();
-    console.error("[lookatstudy] seed course ensured");
+    // 种子课程暂时停用 —— 两个世界重构期间用 GitHub 真实导入验证,不依赖固化种子。
+    // 恢复时取消注释即可(seed-course.json + ensureSeedCourse 都保留着)。
+    // ensureSeedCourse();
+    // console.error("[lookatstudy] seed course ensured");
     // 给老库(本功能上线前导入的课程)补章节考试节点。幂等,已含 exam 的 section 跳过。
     const { patched } = ensureExamNodesForExistingCourses(getDb());
     if (patched > 0) {

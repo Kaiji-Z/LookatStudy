@@ -26,6 +26,9 @@ export type FileRole =
 /** 置信度 */
 export type Confidence = "high" | "low";
 
+/** 两个世界(与 shared/types.ts World 对齐,这里独立声明避免环引用) */
+export type World = "study" | "practice";
+
 /** 分类结果 */
 export interface FileClassification {
   role: FileRole;
@@ -38,6 +41,13 @@ export interface FileClassification {
    * - 高置信度噪声（translation/meta/lab/example/notebook/section-intro）→ false
    */
   keepAsLesson: boolean;
+  /**
+   * 属于哪个世界。
+   * - null = 未定(uncertain),由 LLM 在 course-structure-service 判
+   * - "study" = 高置信度判定为学习讲解(section-intro 等)
+   * - "practice" = (当前规则不直接判 practice,留给 LLM)
+   */
+  world: World | null;
 }
 
 /** 分类上下文：同一批次所有文件的路径（用于 section-intro 判断） */
@@ -111,26 +121,26 @@ export function classifyFile(
 
   // ── 规则 1: 翻译副本 ──
   if (lowerPath.includes("translations/") || lowerPath.includes("translated_images/")) {
-    return { role: "translation", confidence: "high", keepAsLesson: false,
+    return { role: "translation", confidence: "high", keepAsLesson: false, world: null,
       reason: "路径含 translations/，是翻译副本" };
   }
 
   // ── 规则 2: 仓库元数据 ──
   if (META_FILE_NAMES.has(stem)) {
-    return { role: "meta", confidence: "high", keepAsLesson: false,
+    return { role: "meta", confidence: "high", keepAsLesson: false, world: null,
       reason: `文件名 ${stem} 是仓库元数据` };
   }
 
   // ── 规则 3: Jupyter notebook → uncertain（notebook 可能是主课程）──
   if (lowerPath.endsWith(".ipynb")) {
-    return { role: "uncertain", confidence: "low", keepAsLesson: true,
+    return { role: "uncertain", confidence: "low", keepAsLesson: true, world: null,
       reason: ".ipynb notebook——可能是主课程(fast.ai/d2l 风格)也可能是补充代码，交给 LLM 判断" };
   }
 
   // ── 规则 4: 配套练习 → uncertain（exercise 可能就是课时正文）──
   for (const kw of LAB_KEYWORDS) {
     if (lowerPath.includes(kw)) {
-      return { role: "uncertain", confidence: "low", keepAsLesson: true,
+      return { role: "uncertain", confidence: "low", keepAsLesson: true, world: null,
         reason: `路径含 ${kw}——可能是配套练习也可能是课时正文，交给 LLM 判断` };
     }
   }
@@ -138,21 +148,21 @@ export function classifyFile(
   // ── 规则 5: 示例代码 → uncertain（example 可能就是课时正文）──
   for (const kw of EXAMPLE_KEYWORDS) {
     if (lowerPath.includes(kw)) {
-      return { role: "uncertain", confidence: "low", keepAsLesson: true,
+      return { role: "uncertain", confidence: "low", keepAsLesson: true, world: null,
         reason: `路径含 ${kw}——可能是示例代码也可能是课时正文，交给 LLM 判断` };
     }
   }
 
   // ── 规则 6: section-intro（章节介绍页）──
   if (isSectionIntro(path, context.siblingPaths)) {
-    return { role: "section-intro", confidence: "high", keepAsLesson: false,
+    return { role: "section-intro", confidence: "high", keepAsLesson: false, world: "study",
       reason: "章节介绍页（同 section 有更深的 lesson 文件）" };
   }
 
   // ── fallback: 不确定，交给 LLM ──
   // 所有未被高置信度规则命中的文件，统一标 uncertain 交给 LLM 判断。
   // 不再用 proseChars<200 阈值细分——那个分支和 fallback 返回完全一样，是死代码。
-  return { role: "uncertain", confidence: "low", keepAsLesson: true,
+  return { role: "uncertain", confidence: "low", keepAsLesson: true, world: null,
     reason: "规则未命中高置信度分类，交给 LLM 判断" };
 }
 

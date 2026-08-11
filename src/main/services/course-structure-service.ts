@@ -172,6 +172,7 @@ interface StructureProposal {
   sections: {
     title: string;
     summary: string;
+    world: "study" | "practice";
     lessonIds: string[];
   }[];
   skippedNodeIds: string[];
@@ -289,6 +290,7 @@ export function applyCourseStructure(
     if (validIds.length === 0) continue; // 空 section 跳过
 
     const sectionId = randomUUID();
+    const secWorld = sec.world ?? "study";
     db.insert(contentNodes)
       .values({
         id: sectionId,
@@ -298,14 +300,15 @@ export function applyCourseStructure(
         title: sec.title,
         sourcePath: null,
         orderIdx: sectionOrder++,
-        summary: sec.summary || null, // section 摘要存 summary 字段(不覆盖 content)
+        summary: sec.summary || null,
+        world: secWorld,
       })
       .run();
 
     let lessonOrder = 0;
     for (const lessonId of validIds) {
       db.update(contentNodes)
-        .set({ parentId: sectionId, orderIdx: lessonOrder++ })
+        .set({ parentId: sectionId, orderIdx: lessonOrder++, world: secWorld })
         .where(eq(contentNodes.id, lessonId))
         .run();
       lessonCount++;
@@ -317,31 +320,58 @@ export function applyCourseStructure(
     db.delete(contentNodes).where(eq(contentNodes.id, skipId)).run();
   }
 
-  // 进度同步:LLM 重排后,确保第一个 lesson 是 available（用户能开始学）
-  // 策略:找 LLM 排序的第一个 lesson（第一个 section 的 orderIdx=0 的 lesson），
-  // 如果它不是 available，且当前没有其他 available 的 lesson，把它设为 available。
-  const firstSection = db.select().from(contentNodes)
+  // 进度同步:LLM 重排后,重置 progress 门控。
+  // practice 节点:全部 available(实操自由探索,不受 BKT 门控)
+  // study 节点:第一个 study section 的第一个 lesson = available,其余 locked
+  const courseLessons = db.select().from(contentNodes)
     .where(eq(contentNodes.courseId, courseId))
     .all()
-    .filter((n) => n.type === "section")
+    .filter((n) => n.type === "lesson");
+
+  // practice 节点 → available
+  for (const lesson of courseLessons.filter((l) => (l.world ?? "study") === "practice")) {
+    const existing = db.select().from(progressTable)
+      .where(eq(progressTable.nodeId, lesson.id)).get();
+    if (existing) {
+      db.update(progressTable).set({ status: "available" })
+        .where(eq(progressTable.nodeId, lesson.id)).run();
+    } else {
+      db.insert(progressTable).values({
+        nodeId: lesson.id, status: "available", crownLevel: 0,
+      }).run();
+    }
+  }
+
+  // study 节点:第一个 study section 的第一个 lesson = available,其余 locked
+  const firstStudySection = db.select().from(contentNodes)
+    .where(eq(contentNodes.courseId, courseId))
+    .all()
+    .filter((n) => n.type === "section" && (n.world ?? "study") === "study")
     .sort((a, b) => a.orderIdx - b.orderIdx)[0];
-  if (firstSection) {
-    const firstLesson = db.select().from(contentNodes)
-      .where(eq(contentNodes.parentId, firstSection.id))
-      .all()
-      .filter((n) => n.type === "lesson")
-      .sort((a, b) => a.orderIdx - b.orderIdx)[0];
-    if (firstLesson) {
-      // 检查当前是否有任何 available 的 lesson
-      const hasAvailable = db.select().from(progressTable)
+
+  const firstStudyLessonId = firstStudySection
+    ? db.select().from(contentNodes)
+        .where(eq(contentNodes.parentId, firstStudySection.id))
         .all()
-      .filter((p) => p.status === "available").length > 0;
-      if (!hasAvailable) {
-        db.update(progressTable)
-          .set({ status: "available" })
-          .where(eq(progressTable.nodeId, firstLesson.id))
-          .run();
+        .filter((n) => n.type === "lesson" && (n.world ?? "study") === "study")
+        .sort((a, b) => a.orderIdx - b.orderIdx)[0]?.id
+    : null;
+
+  for (const lesson of courseLessons.filter((l) => (l.world ?? "study") === "study")) {
+    const shouldBeAvailable = lesson.id === firstStudyLessonId;
+    const existing = db.select().from(progressTable)
+      .where(eq(progressTable.nodeId, lesson.id)).get();
+    const status = shouldBeAvailable ? "available" : "locked";
+    if (existing) {
+      // 只改 locked/available,不改已 in_progress/mastered 的(用户已学过的保留)
+      if (existing.status === "locked" || existing.status === "available") {
+        db.update(progressTable).set({ status })
+          .where(eq(progressTable.nodeId, lesson.id)).run();
       }
+    } else {
+      db.insert(progressTable).values({
+        nodeId: lesson.id, status, crownLevel: 0,
+      }).run();
     }
   }
 
@@ -365,16 +395,21 @@ function buildStructurePrompt(
 
   return `你是课程设计专家。下面是「${courseTitle}」这个学习仓库导入后的原始文件列表。
 ${courseDescription ? `课程描述: ${courseDescription}\n` : ""}
-这些文件来自仓库的自动扫描，可能混入非课时内容（notebook 代码、练习、示例、README 介绍页、元数据等）。
+这些文件来自仓库的自动扫描，可能包含讲解正文、notebook 代码、练习、示例、环境设置等。
+
+这个课程分**两个世界**:
+- **study（学习世界）**: 概念讲解、理论、教程正文 —— 用户的主线学习路径
+- **practice（实操世界）**: notebook 代码、配套练习、示例代码 —— 用户学完某课想动手时的资源
 
 请完成以下任务:
-1. 判断每个文件是否是真正的课时正文（keep）还是非课时内容（skip）
-   - keep: 有教学价值的讲解正文（概念讲解、教程、实战指导）
-   - skip: 纯代码 notebook 无讲解、配套练习/作业、仓库元数据、导航页、翻译副本
-2. 把所有 keep 的文件分成 3-10 个 section（不要太多碎章节）
-3. 把 skip 的文件放进 skippedNodeIds
-4. section 按学习难度排序（基础→进阶）
-5. 每个 section 有一句中文摘要（说清这章学什么）
+1. 判断每个文件属于哪个世界，或应该跳过:
+   - **study**: 有教学价值的讲解正文（概念讲解、教程、实战指导）
+   - **practice**: notebook 代码、配套练习/作业、示例代码（用户动手探索的资源）
+   - **skip**: 真正的噪声 —— 仓库元数据、翻译副本、纯环境配置(setup/install)、空导航页
+2. 把 study 文件分成 3-10 个 section（学习难度排序:基础→进阶）
+3. 把 practice 文件按"对应学习章节"或"类型"分成 section（挂 practice 世界）
+4. skip 的文件放进 skippedNodeIds
+5. 每个 section 有一句中文摘要 + 标明 world
 6. lessonId 必须用我给你的原始 id，不要编造新 id
 
 文件列表:
@@ -388,10 +423,17 @@ ${lessonList}
     {
       "title": "章节标题（中文）",
       "summary": "这章学什么（一句话中文）",
+      "world": "study",
       "lessonIds": ["id1", "id2"]
+    },
+    {
+      "title": "实操练习标题",
+      "summary": "这些练习对应哪些课程",
+      "world": "practice",
+      "lessonIds": ["id3"]
     }
   ],
-  "skippedNodeIds": ["id3", "id4"]`;
+  "skippedNodeIds": ["id4", "id5"]`;
 }
 
 function parseStructureResult(
@@ -423,6 +465,7 @@ function parseStructureResult(
     .map((s) => ({
       title: typeof s.title === "string" ? s.title : "(未命名章节)",
       summary: typeof s.summary === "string" ? s.summary : "",
+      world: s.world === "practice" ? "practice" as const : "study" as const,
       lessonIds: Array.isArray(s.lessonIds)
         ? (s.lessonIds as string[]).filter((id) => validSet.has(id))
         : [],

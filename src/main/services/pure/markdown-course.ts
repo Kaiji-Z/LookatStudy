@@ -19,11 +19,15 @@ export interface ParsedLesson {
   uncertain?: boolean;
   /** 原始文件路径（如 lessons/3-NN/03-Perceptron/README.md），用于翻译匹配/图片关联 */
   sourceFilePath?: string;
+  /** 两个世界: null=未定(LLM 判), "study"=学习讲解, "practice"=实操练习 */
+  world?: "study" | "practice" | null;
 }
 
 export interface ParsedSection {
   title: string;
   anchor: string;
+  /** 两个世界: null=未定, "study"/"practice" 由子节点多数决定或 LLM 判 */
+  world?: "study" | "practice" | null;
   lessons: ParsedLesson[];
 }
 

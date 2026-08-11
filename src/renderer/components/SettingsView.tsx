@@ -654,6 +654,7 @@ function MultimodalSection({
   customProviders: CustomProvider[];
 }) {
   const [enabled, setEnabled] = useState(false);
+  const [imgDownload, setImgDownload] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [overrideProvider, setOverrideProvider] = useState<string>("");
   const [overrideModel, setOverrideModel] = useState<string>("");
@@ -661,10 +662,12 @@ function MultimodalSection({
   useEffect(() => {
     Promise.all([
       api.getSetting("flag_multimodal_import"),
+      api.getSetting("flag_image_download"),
       api.getSetting("vision_provider_override"),
       api.getSetting("vision_model_override"),
-    ]).then(([flag, prov, model]) => {
+    ]).then(([flag, imgFlag, prov, model]) => {
       setEnabled(flag === "true");
+      setImgDownload(imgFlag !== "false"); // 默认 on,只有显式 "false" 才关
       setOverrideProvider(prov ?? "");
       setOverrideModel(model ?? "");
       setLoaded(true);
@@ -675,6 +678,12 @@ function MultimodalSection({
     const next = !enabled;
     setEnabled(next);
     await api.setSetting("flag_multimodal_import", String(next));
+  };
+
+  const handleImgToggle = async () => {
+    const next = !imgDownload;
+    setImgDownload(next);
+    await api.setSetting("flag_image_download", String(next));
   };
 
   const handleSaveOverride = async () => {
@@ -697,6 +706,30 @@ function MultimodalSection({
       <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-3">
         多模态 / Multimodal
       </h3>
+      {/* 图片下载开关(默认 on) —— md/ipynb 里的图片引用直接下载,不涉及 AI */}
+      <div className="flex items-center gap-3 mb-3">
+        <button
+          onClick={handleImgToggle}
+          data-testid="image-download-toggle"
+          className={`relative w-12 h-6 rounded-full transition-colors ${
+            imgDownload ? "bg-brand" : "bg-neutral-300 dark:bg-neutral-700"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+              imgDownload ? "translate-x-6" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+        <div className="flex-1">
+          <div className="text-body font-medium text-neutral-700 dark:text-neutral-300">
+            图片下载
+          </div>
+          <div className="text-label text-neutral-500 dark:text-neutral-400">
+            导入课程时自动下载 md/notebook 里引用的图片(默认开启)
+          </div>
+        </div>
+      </div>
       <div className="flex items-center gap-3 mb-3">
         <button
           onClick={handleToggle}

@@ -365,6 +365,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
         practiceFiles: roles.practice,
         skipFiles: roles.skip,
         translationFiles,
+        translationLayout: roles.translationLayout,
       };
     },
   );
@@ -414,6 +415,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
           langCode,
           translationFiles: translationFilesMap,
           sourceLang: analysis.sourceLang,
+          translationLayout: analysis.translationLayout,
           markDirty,
         },
         send,
@@ -554,8 +556,8 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     const { executeImport } = await import("../services/import-pipeline.js");
     const { LocalContentSource } = await import("../services/content-source.js");
 
-    const translationFilesMap = selectedLang && inventory.translationLangs.includes(selectedLang)
-      ? new Map([[selectedLang, []]]) // 路径由约定 translations/{lang}/{file} 构造，不需列路径
+    const translationFilesMap = selectedLang && roles.languages.some((l) => l.code === selectedLang)
+      ? new Map([[selectedLang, []]])
       : null;
 
     const result2 = await executeImport(
@@ -566,6 +568,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
         langCode: selectedLang,
         translationFiles: translationFilesMap,
         sourceLang: roles.sourceLang,
+        translationLayout: roles.translationLayout,
         markDirty,
       },
       send,

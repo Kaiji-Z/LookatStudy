@@ -53,6 +53,8 @@ export interface FileClassificationResult {
   languages: { code: string; name: string }[];
   /** 仓库原文语言 (en / zh-CN / zh-TW / ...), LLM 判断 */
   sourceLang: string;
+  /** 检测到的翻译布局约定 (microsoft/parallel/suffix/none) */
+  translationLayout: "microsoft" | "parallel" | "suffix" | "none";
 }
 
 /**
@@ -75,17 +77,24 @@ export async function classifyFileRoles(
   const send = (msg: string) => onProgress?.(msg);
   const allPaths = fileList.map((f) => f.path);
 
-  // ── 规则预处理: translations/ ──
-  // 注意: filterLessonFiles 已过滤掉 translations/ 路径的文件,所以 fileList 里不会有翻译文件。
-  // 翻译语言检测靠 README 正则提取(高置信度规则),不靠 fileList。
+  // ── 规则预处理: 翻译布局检测 ──
+  // 从文件树检测翻译约定（microsoft/parallel/suffix），替代仅靠 README 正则。
+  const { detectTranslationLayout } = await import("./pure/translation-layout.js");
   const { extractLanguagesFromReadme } = await import("./pure/repo-fetcher.js");
-  const readmeLanguages = extractLanguagesFromReadme(readmeMd); // [{code, name}]
+  const layoutResult = detectTranslationLayout(fullTree);
+  // README 正则检测作为补充（有些仓库 README 有翻译链接但文件树结构不同）
+  const readmeLanguages = extractLanguagesFromReadme(readmeMd);
 
-  // 用 README 检测到的语言构建 translations map
-  // 翻译文件路径 = translations/{code}/{原始路径}，在导入阶段(Step 5)按需探测
+  // 合并两种检测结果（去重）
+  const allLangs = new Map<string, string>();
+  for (const lang of [...layoutResult.languages, ...readmeLanguages]) {
+    allLangs.set(lang.code, lang.name);
+  }
+  const validLangs = Array.from(allLangs, ([code, name]) => ({ code, name }));
+
+  // 构建 translations map（所有检测到的语言）
   const translations = new Map<string, string[]>();
-  for (const lang of readmeLanguages) {
-    // 原始文件的翻译版路径(在 Step 5 拉取时按需探测,这里只记录语言存在)
+  for (const lang of validLangs) {
     translations.set(lang.code, []);
   }
 
@@ -95,18 +104,14 @@ export async function classifyFileRoles(
   for (const p of allPaths) {
     // 元数据文件
     const stem = p.split("/").pop()?.replace(/\.[^.]+$/, "").toLowerCase() ?? "";
-    if (["license", "licence", "contributing", "code_of_conduct", "security", "changelog", "authors", "maintainers"].includes(stem)) {
+    if (["license", "licence", "contributing", "code_of_conduct", "security", "changelog", "authors", "maintainers", "pull_request_template", "issue_template", "support", "faq", "citation", "codeowners"].includes(stem)) {
       skip.push(p);
       continue;
     }
     remaining.push(p);
   }
 
-  // 翻译语言列表（供用户选择）—— 直接用 README 检测到的
-  // extractLanguagesFromReadme 已经过滤了只含 README.md 的翻译链接,所以都是有效的
-  const validLangs = readmeLanguages;
-
-  send(`规则预分类: ${remaining.length} 待判, ${translations.size} 翻译语言, ${skip.length} 噪声`);
+  send(`规则预分类: ${remaining.length} 待判, ${validLangs.length} 翻译语言(${layoutResult.layout}), ${skip.length} 噪声`);
 
   // ── LLM 判断剩余文件 + sourceLang ──
   const ready = isLlmReady(db);
@@ -119,6 +124,7 @@ export async function classifyFileRoles(
       skip,
       languages: validLangs,
       sourceLang: detectSourceLangByRule(readmeMd),
+      translationLayout: layoutResult.layout,
     };
   }
 
@@ -155,17 +161,32 @@ export async function classifyFileRoles(
 
   if (!sourceLang) sourceLang = detectSourceLangByRule(readmeMd);
 
-  return { original, translations, practice, skip, languages: validLangs, sourceLang };
+  return { original, translations, practice, skip, languages: validLangs, sourceLang, translationLayout: layoutResult.layout };
 }
 
 /**
  * 规则推断仓库原文语言（无 LLM 降级时用）。
  * 粗略：README 中文字符占比 > 30% → zh-CN，否则 en。
  */
+/**
+ * 规则推断仓库原文语言（无 LLM 降级时用）。
+ * 按 Unicode 脚本区域统计字符占比，区分日/韩/中/俄/英。
+ */
 function detectSourceLangByRule(readmeMd: string): string {
+  const total = Math.max(readmeMd.length, 1);
+  // ひらがな + カタカナ → 日文
+  const jpCount = (readmeMd.match(/[\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
+  if (jpCount / total > 0.05) return "ja";
+  // Hangul → 韩文
+  const koCount = (readmeMd.match(/[\uac00-\ud7af]/g) || []).length;
+  if (koCount / total > 0.05) return "ko";
+  // 西里尔字母 → 俄文
+  const ruCount = (readmeMd.match(/[\u0400-\u04ff]/g) || []).length;
+  if (ruCount / total > 0.1) return "ru";
+  // CJK 汉字（排除日韩已处理的）→ 中文
   const cjkCount = (readmeMd.match(/[\u4e00-\u9fff]/g) || []).length;
-  const ratio = cjkCount / Math.max(readmeMd.length, 1);
-  return ratio > 0.3 ? "zh-CN" : "en";
+  if (cjkCount / total > 0.15) return "zh-CN";
+  return "en";
 }
 
 /**
@@ -269,13 +290,15 @@ ${fileList}
 - README 大纲表格通常标明了文件角色（Lesson Link = original, Notebook = practice, Lab = practice）
 - .ipynb 文件大概率是 practice（除非是 notebook 风格的主课程如 fast.ai/d2l）
 - 路径含 /lab/ /exercise/ → 大概率 practice
+- 代码文件(.py/.js/.go 等): 教程型(带大量注释/docstring, 如 nanoGPT) → original; 实操/练习型 → practice; 配置脚本(setup.py/config.js) → skip
 
 严格返回 JSON 对象，不要 markdown 代码块标记:
 {
   "sourceLang": "en",
   "files": [
     { "path": "lessons/1-Intro/README.md", "role": "original" },
-    { "path": "lessons/2-Symbolic/Animals.ipynb", "role": "practice" }
+    { "path": "lessons/2-Symbolic/Animals.ipynb", "role": "practice" },
+    { "path": "src/nanoGPT.py", "role": "original" }
   ]
 }`;
 }
@@ -474,6 +497,8 @@ ${headingsStr}
 - role 字段是 Step 2 的文件类型（original/practice），作为参考但不是唯一依据
 - 如果仓库目录结构已清晰（如 lessons/N-Topic/），保留原有章节，不过度重组
 - 每个 section 给中文标题
+- 代码文件(.py/.js/.go 等): 教程型代码(带详细注释/docstring) → study world; 工具/脚本/练习 → practice world
+- 代码文件通常无 H2/H3 标题，totalChars 就是文件大小，不拆分，整体一个 lesson
 
 ${readmeSection}
 
@@ -573,7 +598,7 @@ function fallbackStructure(
   practiceFiles: string[],
   standaloneImages: { path: string; alt: string }[] = [],
 ): CourseStructure {
-  const GENERIC_DIRS = new Set(["lessons", "docs", "doc", "src", "content", "modules", "chapters", "tutorials", "guide"]);
+  const GENERIC_DIRS = new Set(["lessons", "docs", "doc", "src", "content", "modules", "chapters", "tutorials", "guide", "week", "unit", "part", "topic", "lecture", "session", "day", "step"]);
   const allFiles = [...originalFiles.map((f) => ({ file: f, world: "study" as const })), ...practiceFiles.map((f) => ({ file: f, world: "practice" as const }))];
 
   // 按 sectionKeyOf 逻辑分组

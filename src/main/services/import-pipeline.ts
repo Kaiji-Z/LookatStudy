@@ -22,7 +22,7 @@ import { verifyCourseIntegrity, type VerificationResult } from "./pure/course-ve
 type Db = SQLJsDatabase<typeof schema>;
 
 /** 图片引用匹配用的扩展名 */
-const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"];
+const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".ico", ".tiff", ".tif", ".heic"];
 
 export interface ImportPipelineResult {
   courseId: string;
@@ -52,6 +52,7 @@ export async function executeImport(
     langCode: string | null;
     translationFiles: Map<string, string[]> | null;
     sourceLang: string;
+    translationLayout?: "microsoft" | "parallel" | "suffix" | "none";
     markDirty: () => void;
   },
   onProgress?: (msg: string) => void,
@@ -195,6 +196,7 @@ export async function executeImport(
     send(`拉取 ${opts.langCode} 翻译正文（图片按位置用原文图，不下载翻译图）`);
     await fetchAndPersistTranslations(
       db, courseId, opts.langCode, structure, opts.source, opts.markDirty, contentCache, lessonImages, lessonMeta, send,
+      opts.translationLayout ?? "microsoft",
     );
   }
 
@@ -423,18 +425,49 @@ async function fetchAndPersistTranslations(
   lessonImages: Map<string, string[]>,
   lessonMeta: Map<string, { titleIndex: number; isFirstOfFile: boolean }>,
   send: (msg: string) => void,
+  layout: "microsoft" | "parallel" | "suffix" | "none" = "microsoft",
 ): Promise<void> {
   const allLessons = structure.sections.flatMap((s) => s.lessons);
   // 翻译文件的标题列表缓存（按原 file 路径 key）
   const transHeadingsCache = new Map<string, Heading[]>();
   let transWritten = 0;
 
+  /**
+   * 根据翻译布局约定构造翻译文件路径。
+   * parallel 布局尝试 docs/{lang}/ 和 {lang}/ 两种。
+   */
+  function resolveTransPath(lang: string, originalPath: string): string {
+    switch (layout) {
+      case "microsoft":
+        return `translations/${lang}/${originalPath}`;
+      case "parallel":
+        return `docs/${lang}/${originalPath}`;
+      case "suffix": {
+        const ext = originalPath.match(/\.(md|markdown|ipynb|rst)$/i)?.[0] ?? ".md";
+        const base = originalPath.slice(0, -ext.length);
+        return `${base}.${lang}${ext}`;
+      }
+      default:
+        return `translations/${lang}/${originalPath}`;
+    }
+  }
+
   for (let idx = 0; idx < allLessons.length; idx++) {
     const lesson = allLessons[idx]!;
     const sourcePath = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;
-    const transPath = `translations/${langCode}/${lesson.file}`;
+    let transPath = resolveTransPath(langCode, lesson.file);
 
     // 从缓存或拉取翻译文件
+    if (!contentCache.has(transPath)) {
+      let content = await source.getFile(transPath);
+      // parallel 布局: docs/{lang}/ 不存在 → 试 {lang}/
+      if (content === null && layout === "parallel") {
+        const altPath = `${langCode}/${lesson.file}`;
+        content = await source.getFile(altPath);
+        if (content !== null) transPath = altPath;
+      }
+      contentCache.set(transPath, content);
+    }
     if (!contentCache.has(transPath)) {
       const content = await source.getFile(transPath);
       contentCache.set(transPath, content);

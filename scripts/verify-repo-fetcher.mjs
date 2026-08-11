@@ -86,11 +86,11 @@ const singleDetection = detectRepoPattern(singleFileReadme);
 assert.strictEqual(singleDetection.pattern, "single-file", "T5: 长文本无链接 → single-file");
 console.log("✓ T5 detectRepoPattern(single-file): README 够长但无子链接");
 
-// === T6: detectRepoPattern — 不支持（太短 + 无链接）===
+// === T6: detectRepoPattern — docs-rich（短文本无链接 → 让文件树补全）===
 const shortReadme = "# Tiny Repo\n\nA link collection.";
 const unsupportedDetection = detectRepoPattern(shortReadme);
-assert.strictEqual(unsupportedDetection.pattern, "unsupported", "T6: 短文本无链接 → unsupported");
-console.log("✓ T6 detectRepoPattern(unsupported): README 太短且无课程链接");
+assert.strictEqual(unsupportedDetection.pattern, "docs-rich", "T6: 短文本无链接 → docs-rich（给文件树机会）");
+console.log("✓ T6 detectRepoPattern(docs-rich): 短 README 无链接 → 不急着拒绝，让文件树补全");
 
 // === T7: cdnUrl 构造 ===
 const url = cdnUrl("microsoft", "AI-For-Beginners", "main", "lessons/1-Intro/README.md");

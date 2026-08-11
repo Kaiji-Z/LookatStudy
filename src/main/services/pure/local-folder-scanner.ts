@@ -27,7 +27,7 @@ export interface ScannedDoc {
   /** 语言(zh/en/other),用于去重 */
   lang: "zh" | "en" | "other";
   /** 文件类型 */
-  kind: "txt" | "md" | "html" | "pdf" | "ipynb" | "rst" | "rmd" | "org" | "adoc";
+  kind: "txt" | "md" | "html" | "pdf" | "ipynb" | "rst" | "rmd" | "org" | "adoc" | "code";
 }
 
 /** 扫描到的图片资源(独立图片文件 / markdown 引用 / PDF 页面渲染图) */
@@ -54,6 +54,7 @@ export interface ScannedImage {
 const EXT_KIND: Record<string, ScannedDoc["kind"]> = {
   txt: "txt",
   md: "md",
+  mdx: "md",
   markdown: "md",
   html: "html",
   htm: "html",
@@ -64,6 +65,15 @@ const EXT_KIND: Record<string, ScannedDoc["kind"]> = {
   org: "org",
   adoc: "adoc",
   asciidoc: "adoc",
+  // 代码文件 → code kind (代码即教学内容)
+  py: "code", js: "code", jsx: "code", ts: "code", tsx: "code", mjs: "code", cjs: "code",
+  go: "code", rs: "code", java: "code", kt: "code", kts: "code", scala: "code",
+  c: "code", h: "code", cpp: "code", cc: "code", cxx: "code", hpp: "code",
+  cs: "code", rb: "code", php: "code", swift: "code",
+  sh: "code", bash: "code", zsh: "code", ps1: "code",
+  lua: "code", r: "code", jl: "code", dart: "code",
+  clj: "code", ex: "code", exs: "code", erl: "code", hs: "code", ml: "code", fs: "code",
+  sql: "code", pl: "code", elm: "code",
 };
 
 /** 图片扩展名 → MIME 映射 */
@@ -75,12 +85,21 @@ const IMAGE_EXT_MIME: Record<string, string> = {
   webp: "image/webp",
   svg: "image/svg+xml",
   bmp: "image/bmp",
+  avif: "image/avif",
+  ico: "image/x-icon",
+  tiff: "image/tiff",
+  tif: "image/tiff",
+  heic: "image/heic",
 };
 
 /** 排除的目录(非教学内容) */
 const EXCLUDED_DIRS = new Set([
   "node_modules", ".git", ".svn", "dist", "build", "__pycache__",
   ".DS_Store", "translations",
+  ".venv", "venv", "env", "vendor", "target", "out", "coverage",
+  ".next", ".nuxt", ".gradle", ".idea", ".vscode", ".cache",
+  ".pytest_cache", ".mypy_cache", ".turbo", ".svelte-kit",
+  "bin", "obj", "__pypackages__", ".docusaurus",
 ]);
 
 /** HTML 转纯文本:去 script/style,标签转段落,<li> 加 •,decode 常见实体。纯函数,可测。 */
@@ -120,9 +139,9 @@ export function htmlToText(html: string): string {
 /** 从文件名推断语言(用于中文优先去重)。 */
 export function detectLang(filename: string): "zh" | "en" | "other" {
   const lower = filename.toLowerCase();
-  if (/\.zh[-_]?cn\./.test(lower) || /\.zh[-_]?hans\./.test(lower) || /\.zh\./.test(lower)) return "zh";
-  if (/\.en[-_]?us\./.test(lower) || /\.en\./.test(lower)) return "en";
-  // 无语言后缀:内容是中文 → zh,否则 other(留给扫描时按内容判断)
+  if (/\.zh[-_]?cn\./.test(lower) || /\.zh[-_]?hans\./.test(lower) || /\.zh[-_]?tw\./.test(lower) || /\.zh[-_]?hant\./.test(lower) || /\.zh\./.test(lower)) return "zh";
+  if (/\.en[-_]?us\./.test(lower) || /\.en[-_]?gb\./.test(lower) || /\.en\./.test(lower)) return "en";
+  if (/\.ja\./.test(lower) || /\.ko\./.test(lower) || /\.de\./.test(lower) || /\.fr\./.test(lower) || /\.es\./.test(lower) || /\.pt[-_]?br\./.test(lower) || /\.pt\./.test(lower) || /\.it\./.test(lower) || /\.ru\./.test(lower) || /\.ar\./.test(lower)) return "other";
   return "other";
 }
 
@@ -133,7 +152,7 @@ export function detectLang(filename: string): "zh" | "en" | "other" {
 export function inferTitle(relPath: string): string {
   const filename = basename(relPath);
   // 去扩展名
-  let name = filename.replace(/\.(txt|md|markdown|html?|pdf|ipynb|rst|rmd|org|adoc|asciidoc)$/i, "");
+  let name = filename.replace(/\.(txt|md|mdx|markdown|html?|pdf|ipynb|rst|rmd|org|adoc|asciidoc|py|js|jsx|ts|tsx|mjs|cjs|go|rs|java|kt|kts|scala|c|h|cpp|cc|cxx|hpp|cs|rb|php|swift|sh|bash|zsh|ps1|lua|r|jl|dart|clj|ex|exs|erl|hs|ml|fs|sql|pl|elm)$/i, "");
   // 去语言后缀(.zh-CN / .en / .en-US 等)
   name = name.replace(/\.(zh[-_]?cn|zh[-_]?hans|zh|en[-_]?us|en)$/i, "");
   // README / index → 用父目录名
@@ -155,7 +174,7 @@ export function inferTitle(relPath: string): string {
  *  06_motivation.en.txt 和 06_motivation.zh-CN.txt → key "06_motivation" */
 export function dedupKey(relPath: string): string {
   const filename = basename(relPath);
-  let name = filename.replace(/\.(txt|md|markdown|html?|pdf|ipynb|rst|rmd|org|adoc|asciidoc)$/i, "");
+  let name = filename.replace(/\.(txt|md|mdx|markdown|html?|pdf|ipynb|rst|rmd|org|adoc|asciidoc|py|js|jsx|ts|tsx|mjs|cjs|go|rs|java|kt|kts|scala|c|h|cpp|cc|cxx|hpp|cs|rb|php|swift|sh|bash|zsh|ps1|lua|r|jl|dart|clj|ex|exs|erl|hs|ml|fs|sql|pl|elm)$/i, "");
   name = name.replace(/\.(zh[-_]?cn|zh[-_]?hans|zh|en[-_]?us|en)$/i, "");
   return name.toLowerCase();
 }
@@ -509,6 +528,17 @@ async function readFileWithKind(absPath: string, kind: ScannedDoc["kind"]): Prom
       }
     }
     return raw;
+  }
+  if (kind === "code") {
+    // 代码文件 → code-parser 转 markdown（docstring + 代码围栏）
+    const raw = await readFile(absPath, "utf8");
+    const ext = absPath.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
+    try {
+      const { parseCode } = await import("./code-parser.js");
+      return parseCode(raw, ext).markdown;
+    } catch {
+      return "```\n" + raw + "\n```"; // 解析失败 → 纯代码围栏
+    }
   }
   const raw = await readFile(absPath, "utf8");
   return kind === "html" ? htmlToText(raw) : raw;

@@ -17,6 +17,33 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **代码文件导入支持(.py/.js/.go 等 30+ 语言)**:代码文件现在和 .md/.ipynb
+  一样被管线识别和导入。新增 `code-parser.ts`：提取模块级 docstring/注释块
+  作为正文讲解 + 代码体用围栏包裹。解锁 karpathy/nanoGPT、算法题解、
+  learn-X-by-building 等代码驱动学习仓库。6 处接线点（EXT_KIND/kind 联合类型/
+  readFileWithKind/extractInternalLinks/pathsToDiscoveredFiles/fetch 函数），
+  和加 ipynb/rst 格式完全相同的模式。
+- **翻译布局多策略检测**:新增 `translation-layout.ts` 自动从文件树检测翻译约定。
+  支持 microsoft(translations/{lang}/)、parallel({lang}/ 或 docs/{lang}/)、
+  suffix({file}.{lang}.md) 三种约定。替代之前硬编码的 `translations/{lang}/` 路径。
+  解锁 vuejs/docs、docusaurus i18n、hexo/jekyll 翻译约定仓库。
+- **日韩俄语言检测**:`detectSourceLangByRule` 新增ひらがな/カタカナ→ja、
+  Hangul→ko、西里尔字母→ru 检测。解决日文被误判为中文的问题。
+
+### Changed
+- **detectRepoPattern 放宽**:课程链接阈值 ≥3→≥1（文件树补全更多文件）。
+  新增 `docs-rich` 模式（README 无链接但文件树可能有内容→不急着拒绝）。
+  新增 awesome-list 检测（外链占比>60%→unsupported+友好消息）。
+  `detectWellOrganized` 接受 week/unit/part/topic/lecture/session/day/step
+  前缀目录（不只数字编号）。
+- **README 多入口 + 分支检测**:fetchRepoInventory 按优先级尝试
+  README.md/readme.md/README.rst/index.md/home.md/SUMMARY.md。
+  分支候选扩展到 main/master/develop/gh-pages。
+- **细节扩展**:IMAGE_EXTS(3处)加 .avif/.ico/.tiff/.heic。
+  EXCLUDED_DIRS 加 .venv/vendor/target/.next/.gradle 等 12 个构建/IDE 目录。
+  MAX_FILES 200→500。detectLang 加 .ja/.ko/.de/.fr 等语言后缀识别。
+  GENERIC_DIRS 加 week/unit/part/topic/lecture/session/day/step。
+
 - **本地导入统一到 GitHub 5 步管线**:本地文件夹导入不再走旧的
   buildCourseFromFiles → autoStructureCourse 路径,而是和 GitHub 导入
   完全对齐:Step1 buildLocalInventory → Step2 LLM 判文件角色 →

@@ -73,6 +73,8 @@ export interface RepoAnalysis {
   skipFiles: string[];
   /** 翻译文件: 语言代码 → 文件路径列表 */
   translationFiles: Record<string, string[]>;
+  /** 检测到的翻译布局约定 (microsoft/parallel/suffix/none) */
+  translationLayout: "microsoft" | "parallel" | "suffix" | "none";
 }
 
 /* ---------- 学习进度 ---------- */

@@ -22,12 +22,12 @@ export interface DiscoveredFile {
   path: string;
   /** 链接文本（课时标题） */
   title: string;
-  /** 文件类型: md 正文 / ipynb notebook / rst / rmd / org / adoc / other */
-  kind: "md" | "ipynb" | "rst" | "rmd" | "org" | "adoc" | "other";
+  /** 文件类型: md 正文 / ipynb notebook / rst / rmd / org / adoc / code / other */
+  kind: "md" | "ipynb" | "rst" | "rmd" | "org" | "adoc" | "code" | "other";
 }
 
 /** 仓库检测结果 */
-export type RepoPattern = "course" | "well-organized" | "single-file" | "unsupported";
+export type RepoPattern = "course" | "well-organized" | "single-file" | "docs-rich" | "unsupported";
 
 export interface DetectionResult {
   pattern: RepoPattern;
@@ -58,6 +58,18 @@ export function cdnUrl(owner: string, repo: string, branch: string, path: string
   return `https://cdn.jsdelivr.net/gh/${owner}/${repo}@${branch}/${cleanPath}`;
 }
 
+/** 代码文件扩展名（代码即教学内容） */
+const CODE_EXTENSIONS = [
+  ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+  ".go", ".rs", ".java", ".kt", ".kts", ".scala",
+  ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp",
+  ".cs", ".rb", ".php", ".swift",
+  ".sh", ".bash", ".zsh", ".ps1",
+  ".lua", ".r", ".jl", ".dart",
+  ".clj", ".ex", ".exs", ".erl", ".hs", ".ml", ".fs",
+  ".sql", ".pl", ".elm",
+];
+
 /**
  * 从 README 的 markdown 链接提取内部文件引用。
  * 只看相对路径（非 http/锚点），且指向 .md/.ipynb 文件。
@@ -76,7 +88,7 @@ export function extractInternalLinks(readmeMd: string): DiscoveredFile[] {
     if (!href || href.startsWith("http") || href.startsWith("mailto:")) continue;
     // 去掉 ./ 前缀
     href = href.replace(/^\.\//, "");
-    // 收 .md / .ipynb / .rst / .rmd / .org / .adoc
+    // 收文档 + 代码文件
     let kind: DiscoveredFile["kind"] = "other";
     if (href.endsWith(".md") || href.endsWith(".mdx")) kind = "md";
     else if (href.endsWith(".ipynb")) kind = "ipynb";
@@ -84,6 +96,7 @@ export function extractInternalLinks(readmeMd: string): DiscoveredFile[] {
     else if (href.endsWith(".rmd")) kind = "rmd";
     else if (href.endsWith(".org")) kind = "org";
     else if (href.endsWith(".adoc") || href.endsWith(".asciidoc")) kind = "adoc";
+    else if (CODE_EXTENSIONS.some((ext) => href.endsWith(ext))) kind = "code";
     else continue;
     // 去重
     if (seen.has(href)) continue;
@@ -121,20 +134,22 @@ export function filterLessonFiles(files: DiscoveredFile[]): DiscoveredFile[] {
  */
 export function detectWellOrganized(files: { path: string }[]): boolean {
   const topicDirs = new Set<string>();
+  // 已知的课程组织目录名前缀（前缀 + 数字/分隔符，不含纯复数如 lessons/chapters）
+  const ORGANIZED_PREFIXES = /^(week|unit|part|topic|lecture|session|day|step)(\d|[-_])/i;
   for (const f of files) {
-    // 匹配 (可选 lessons/) + 编号 + 分隔符 + 名称 + /
-    // 如: lessons/1-Intro/README.md → "1-intro"
-    //     2-Symbolic/README.md → "2-symbolic"
-    //     lessons/03-Perceptron/lab/README.md → 注意这会匹配 03-perceptron
-    // 但我们要的是顶层编号目录,所以要排除子编号目录:
-    // 只取路径里第一个编号目录
     const parts = f.path.split("/").filter(Boolean);
     for (const part of parts) {
+      if (part.includes(".")) continue; // 是文件名不是目录名
+      // 编号目录 (1-Intro, 02_Symbolic, 03-Perceptron)
       const m = part.match(/^(\d+[-_])/i);
-      if (m && !part.includes(".")) {
-        // 第一个编号目录(不含点 = 不是文件名)
+      if (m) {
         topicDirs.add(part.toLowerCase());
-        break; // 只取路径里第一个编号目录
+        break;
+      }
+      // 已知课程组织目录 (week1, unit-2, topic-a, lecture3, etc.)
+      if (ORGANIZED_PREFIXES.test(part)) {
+        topicDirs.add(part.toLowerCase());
+        break;
       }
     }
   }
@@ -155,8 +170,8 @@ export function detectRepoPattern(readmeMd: string): DetectionResult {
   const allLinks = extractInternalLinks(readmeMd);
   const lessonLinks = filterLessonFiles(allLinks).filter((f) => f.kind !== "other");
 
-  // 课程型: 有 ≥3 个子文件链接(.md/.ipynb/.rst/.rmd/.org/.adoc 任一)
-  if (lessonLinks.length >= 3) {
+  // 课程型: 有 ≥1 个子文件链接 → 尝试课程型（文件树会补全更多文件）
+  if (lessonLinks.length >= 1) {
     // 高置信度检测:仓库是否已用编号目录组织好(如 lessons/1-Intro/...)
     if (detectWellOrganized(lessonLinks)) {
       return {
@@ -180,30 +195,30 @@ export function detectRepoPattern(readmeMd: string): DetectionResult {
     .replace(/^---[\s\S]*?---/m, "")           // 去 YAML front matter
     .replace(/\s/g, "").length;
 
-  // 单文件型: 无足够子文件链接，但 README 有实质教学正文
-  // 阈值 1000 字纯文字（不是字符数——去掉了 markdown 语法/HTML/图片）
-  // 这样徽章 + 构建指令等纯元数据 README 不会被误判为课程
+  // 单文件型: 无子文件链接，但 README 有实质教学正文
   if (proseChars > 1000) {
     return {
       pattern: "single-file",
-      reason: `README 无足够子文件链接（${lessonLinks.length} 个），但实质正文 ${proseChars} 字，判定为单文件型`,
+      reason: `README 无子文件链接，但实质正文 ${proseChars} 字，判定为单文件型`,
       readmeLength: readmeMd.length,
     };
   }
 
-  // 有 1-2 个子文件链接但不够 → 不确定，但给个机会（可能是小课程）
-  if (lessonLinks.length >= 1 && proseChars > 300) {
+  // awesome-list 检测：外链占比极高 + 正文极少 → unsupported
+  const externalLinks = (readmeMd.match(/\]\(https?:\/\//g) || []).length;
+  const totalLinks = (readmeMd.match(/\]\(/g) || []).length;
+  if (totalLinks > 10 && externalLinks / totalLinks > 0.6 && proseChars < 500) {
     return {
-      pattern: "course",
-      reason: `README 只有 ${lessonLinks.length} 个子文件链接但正文有内容，尝试课程型导入`,
-      lessonFiles: lessonLinks,
+      pattern: "unsupported",
+      reason: `README 外链占比 ${(externalLinks / totalLinks * 100).toFixed(0)}%，实质正文仅 ${proseChars} 字，疑似 awesome-list 资源索引（非课程）`,
     };
   }
 
-  // 不支持
+  // docs-rich: README 无链接但可能 docs/ 下有大量内容 → 让 fetchRepoInventory 用文件树补全
+  // 不在这里抛 unsupported，给文件树一个机会
   return {
-    pattern: "unsupported",
-    reason: `README 实质正文仅 ${proseChars} 字且无课程子文件链接，可能不是学习仓库`,
+    pattern: "docs-rich",
+    reason: `README 无课程文件链接，实质正文 ${proseChars} 字 → 将用文件树补全课程文件`,
   };
 }
 
@@ -268,6 +283,16 @@ export async function fetchMarkdownContents(
             }
           }
         }
+        // 代码文件 → code-parser 转 markdown (docstring + 代码围栏)
+        if (CODE_EXTENSIONS.some((ext) => lowerPath.endsWith(ext))) {
+          const ext = lowerPath.split(".").pop() ?? "";
+          try {
+            const { parseCode } = await import("./code-parser.js");
+            return { path: f.path, title: f.title, md: parseCode(text, ext).markdown };
+          } catch {
+            return { path: f.path, title: f.title, md: "```\n" + text + "\n```" };
+          }
+        }
         return { path: f.path, title: f.title, md: text };
       }),
     );
@@ -329,7 +354,7 @@ export function buildCourseFromFiles(
   const groupMap = new Map<string, FileGroup>();
   const groupOrder: string[] = [];
 
-  const GENERIC_DIRS = new Set(["lessons", "docs", "doc", "src", "content", "modules", "chapters", "tutorials", "guide"]);
+  const GENERIC_DIRS = new Set(["lessons", "docs", "doc", "src", "content", "modules", "chapters", "tutorials", "guide", "week", "unit", "part", "topic", "lecture", "session", "day", "step"]);
 
   /**
    * 计算文件的 section 分组键（和 lesson 用同一个逻辑）。
@@ -485,6 +510,7 @@ export function pathsToDiscoveredFiles(paths: string[]): DiscoveredFile[] {
     else if (lower.endsWith(".rmd")) kind = "rmd";
     else if (lower.endsWith(".org")) kind = "org";
     else if (lower.endsWith(".adoc") || lower.endsWith(".asciidoc")) kind = "adoc";
+    else if (CODE_EXTENSIONS.some((ext) => lower.endsWith(ext))) kind = "code";
     else continue;
     // 排除非教学内容
     if (lower.includes("node_modules/") || lower.startsWith(".git/") || lower.includes("translations/")) continue;
@@ -493,7 +519,7 @@ export function pathsToDiscoveredFiles(paths: string[]): DiscoveredFile[] {
     // 标题用文件名(去扩展名)或最后一层目录名
     const parts = p.split("/").filter(Boolean);
     const last = parts[parts.length - 1] ?? p;
-    const title = last.replace(/\.(md|mdx|ipynb|rst|rmd|org|adoc|asciidoc)$/i, "").replace(/^readme$/i, parts[parts.length - 2] ?? last);
+    const title = last.replace(/\.(md|mdx|ipynb|rst|rmd|org|adoc|asciidoc|py|js|jsx|ts|tsx|go|rs|java|c|cpp|rb|sh|sql|lua|r|jl|dart|scala|kt|cs|php|swift|hs|clj|ex|erl|ml|fs|pl|elm)$/i, "").replace(/^readme$/i, parts[parts.length - 2] ?? last);
     files.push({ path: p, title, kind });
   }
   return files;
@@ -589,7 +615,7 @@ export async function discoverFromReadmeRecursively(
  * ============================================================ */
 
 /** 图片扩展名集合(与 local-folder-scanner 保持一致) */
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif", "ico", "tiff", "tif", "heic"]);
 
 /** ext → MIME */
 const EXT_TO_MIME: Record<string, string> = {
@@ -762,7 +788,7 @@ export interface ImportRepoResult {
 }
 
 /** 文件数上限（防爆，和 IPC handler 一致） */
-const MAX_FILES = 200;
+const MAX_FILES = 500;
 
 /**
  * 从 GitHub 仓库构建课程结构 —— 纯编排函数。
@@ -1110,25 +1136,31 @@ export async function fetchRepoInventory(
 ): Promise<RepoInventory> {
   const send = (msg: string) => onProgress?.(msg);
 
-  // 1. 拉 README
+  // 1. 拉 README（多候选文件名 + 多分支）
   send("正在拉取 README…");
-  const branches = branch === "master" ? ["master", "main"] : ["main", "master"];
+  const branches = branch === "master" ? ["master", "main", "develop", "gh-pages"]
+    : branch === "main" ? ["main", "master", "develop", "gh-pages"]
+    : [branch, "main", "master"];
+  // README 候选文件名（按优先级）
+  const readmeCandidates = ["README.md", "readme.md", "README.MD", "README.rst", "README.adoc", "index.md", "home.md", "SUMMARY.md"];
   let readmeMd: string | null = null;
   let readmeBranch = branch;
-  for (const br of branches) {
-    try {
-      const r = await fetchFn(cdnUrl(owner, repo, br, "README.md"));
-      if (r.ok) {
-        readmeMd = await r.text();
-        readmeBranch = br;
-        break;
+  outer: for (const br of branches) {
+    for (const candidate of readmeCandidates) {
+      try {
+        const r = await fetchFn(cdnUrl(owner, repo, br, candidate));
+        if (r.ok) {
+          readmeMd = await r.text();
+          readmeBranch = br;
+          break outer;
+        }
+      } catch {
+        // network error, try next
       }
-    } catch {
-      // network error, try next
     }
   }
-  if (!readmeMd) throw new Error(`无法拉取 README（试过分支: ${branches.join(", ")}）`);
-  send(`README 拉取成功（${readmeMd.length} 字符）`);
+  if (!readmeMd) throw new Error(`无法拉取 README（试过分支: ${branches.join(", ")}，文件名: ${readmeCandidates.join(", ")}）`);
+  send(`README 拉取成功（${readmeMd.length} 字符，分支 ${readmeBranch}）`);
 
   // 2. 检测形态
   const detection = detectRepoPattern(readmeMd);
@@ -1161,6 +1193,11 @@ export async function fetchRepoInventory(
     }
   } catch {
     send("目录树拉取失败，使用 README 链接列表");
+  }
+
+  // docs-rich 模式下文件树也没找到课程文件 → 不支持
+  if (fileList.length === 0) {
+    throw new Error(`未找到课程文件（README 无链接且文件树无可识别的文档/代码文件）`);
   }
 
   // 上限
@@ -1309,6 +1346,12 @@ export async function fetchSingleFileContent(
     if (lower.endsWith(".adoc")) {
       const { parseAdoc } = await import("./adoc-parser.js");
       return parseAdoc(text).markdown;
+    }
+    // 代码文件 → code-parser 转 markdown
+    if (CODE_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+      const ext = lower.split(".").pop() ?? "";
+      const { parseCode } = await import("./code-parser.js");
+      return parseCode(text, ext).markdown;
     }
     return text;
   } catch {

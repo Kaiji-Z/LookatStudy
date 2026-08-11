@@ -12,6 +12,26 @@ import type { DiscoveredFile, FileOutline } from "./pure/repo-fetcher.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
+/** LLM 调用超时(ms)。超时后抛错让上层降级。 */
+const LLM_TIMEOUT = 120_000; // 2 分钟
+
+/**
+ * 带 timeout 的 generateText wrapper。
+ * 防止 LLM 端点不通时永久挂起（electron UI 卡死）。
+ */
+async function generateTextWithTimeout(
+  model: Parameters<typeof generateText>[0]["model"],
+  prompt: string,
+): Promise<string> {
+  const result = await Promise.race([
+    generateText({ model, prompt }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`LLM 调用超时（${LLM_TIMEOUT / 1000}s）`)), LLM_TIMEOUT),
+    ),
+  ]);
+  return result.text;
+}
+
 /* ============================================================
  * Step 2: 文件角色分类
  * ============================================================ */
@@ -35,38 +55,40 @@ export interface FileClassificationResult {
  * Step 2: 用 LLM 判断仓库里每个文件的角色。
  *
  * 规则预处理（高置信度）:
- *   - translations/ 路径 → 翻译文件（自动按语言分组）
+ *   - README 翻译链接 → 翻译语言列表（extractLanguagesFromReadme）
  *   - LICENSE/CONTRIBUTING 等 → skip
  *
  * LLM 判断（不确定的）:
- *   剩余文件交给 LLM，看 README 上下文判 original/practice/skip
+ *   课程文件列表交给 LLM，看 README + 完整目录树判 original/practice/skip
  */
 export async function classifyFileRoles(
   db: Db,
   readmeMd: string,
   fileList: DiscoveredFile[],
+  fullTree: string[],
   onProgress?: (msg: string) => void,
 ): Promise<FileClassificationResult> {
   const send = (msg: string) => onProgress?.(msg);
   const allPaths = fileList.map((f) => f.path);
 
   // ── 规则预处理: translations/ ──
+  // 注意: filterLessonFiles 已过滤掉 translations/ 路径的文件,所以 fileList 里不会有翻译文件。
+  // 翻译语言检测靠 README 正则提取(高置信度规则),不靠 fileList。
+  const { extractLanguagesFromReadme } = await import("./pure/repo-fetcher.js");
+  const readmeLanguages = extractLanguagesFromReadme(readmeMd); // [{code, name}]
+
+  // 用 README 检测到的语言构建 translations map
+  // 翻译文件路径 = translations/{code}/{原始路径}，在导入阶段(Step 5)按需探测
   const translations = new Map<string, string[]>();
+  for (const lang of readmeLanguages) {
+    // 原始文件的翻译版路径(在 Step 5 拉取时按需探测,这里只记录语言存在)
+    translations.set(lang.code, []);
+  }
+
   const remaining: string[] = [];
   const skip: string[] = [];
 
   for (const p of allPaths) {
-    const lower = p.toLowerCase();
-    if (lower.includes("translations/")) {
-      // 提取语言代码: translations/zh-CN/...
-      const m = lower.match(/translations\/([^/]+)\//);
-      if (m) {
-        const lang = m[1]!;
-        if (!translations.has(lang)) translations.set(lang, []);
-        translations.get(lang)!.push(p);
-      }
-      continue; // 翻译文件不进 remaining
-    }
     // 元数据文件
     const stem = p.split("/").pop()?.replace(/\.[^.]+$/, "").toLowerCase() ?? "";
     if (["license", "licence", "contributing", "code_of_conduct", "security", "changelog", "authors", "maintainers"].includes(stem)) {
@@ -76,19 +98,9 @@ export async function classifyFileRoles(
     remaining.push(p);
   }
 
-  // 翻译语言列表（供用户选择）
-  const languages: { code: string; name: string }[] = [];
-  // 从 README 提取语言名（更好看）
-  for (const [code] of translations) {
-    // 从 README 找语言名: [语言名](...translations/code/README.md)
-    const re = new RegExp(`\\[([^\\]]+)\\]\\([^)]*translations/${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/README\\.md\\)`, "i");
-    const m = readmeMd.match(re);
-    languages.push({ code, name: m ? m[1]! : code });
-  }
-  // 只保留有 README.md 的翻译（说明翻译比较完整）
-  const validLangs = languages.filter((l) =>
-    translations.get(l.code)?.some((p) => p.toLowerCase().endsWith("readme.md")),
-  );
+  // 翻译语言列表（供用户选择）—— 直接用 README 检测到的
+  // extractLanguagesFromReadme 已经过滤了只含 README.md 的翻译链接,所以都是有效的
+  const validLangs = readmeLanguages;
 
   send(`规则预分类: ${remaining.length} 待判, ${translations.size} 翻译语言, ${skip.length} 噪声`);
 
@@ -108,8 +120,8 @@ export async function classifyFileRoles(
   send(`AI 正在判断 ${remaining.length} 个文件的角色…`);
   const llm = resolveLlm(db);
 
-  // 分块（防 prompt 过大）
-  const CHUNK_SIZE = 50;
+  // 分块（防 prompt 过大）—— 68 个文件 + 3000 字 README 约 5K token，一次性发没问题
+  const CHUNK_SIZE = 200;
   const original: string[] = [];
   const practice: string[] = [];
 
@@ -118,10 +130,12 @@ export async function classifyFileRoles(
     const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
     const totalChunks = Math.ceil(remaining.length / CHUNK_SIZE);
     if (totalChunks > 1) send(`AI 文件分类（第 ${chunkNum}/${totalChunks} 批）…`);
+    console.error(`[import] Step 2: 调 LLM (批 ${chunkNum}/${totalChunks}, ${chunk.length} 文件)…`);
 
-    const prompt = buildRolePrompt(readmeMd, chunk);
-    const result = await generateText({ model: llm.languageModel, prompt });
-    const roles = parseRoleResult(result.text, chunk);
+    const prompt = buildRolePrompt(readmeMd, chunk, fullTree);
+    const result = await generateTextWithTimeout(llm.languageModel, prompt);
+    console.error(`[import] Step 2: 批 ${chunkNum} LLM 返回 ${result.length} 字符`);
+    const roles = parseRoleResult(result, chunk);
 
     for (const { path, role } of roles) {
       if (role === "practice") practice.push(path);
@@ -133,12 +147,15 @@ export async function classifyFileRoles(
   return { original, translations, practice, skip, languages: validLangs };
 }
 
-function buildRolePrompt(readmeMd: string, filePaths: string[]): string {
+function buildRolePrompt(readmeMd: string, filePaths: string[], fullTree: string[]): string {
   // README 截取前 3000 字（大纲部分够了）
   const readmeExcerpt = readmeMd.slice(0, 3000);
   const fileList = filePaths.map((p) => `  "${p}"`).join(",\n");
 
-  return `你是课程仓库分析专家。下面是一个 GitHub 学习仓库的 README（前3000字）和文件路径列表。
+  // 完整目录树（截取前 500 个路径，防止过大）
+  const treeExcerpt = fullTree.slice(0, 500).join("\n");
+
+  return `你是课程仓库分析专家。下面是一个 GitHub 学习仓库的 README（前3000字）、完整目录结构和待分类的文件列表。
 
 请判断每个文件的角色:
 - **original**: 原文课程讲解（README.md 教程、概念讲解）
@@ -150,7 +167,12 @@ README 内容:
 ${readmeExcerpt}
 ---
 
-文件路径列表:
+仓库完整目录结构（供参考，了解仓库组织）:
+---
+${treeExcerpt}
+---
+
+需要分类的文件列表:
 [
 ${fileList}
 ]
@@ -265,8 +287,8 @@ export async function designCourseStructure(
   const CHUNK_SIZE = 40;
   if (fileInfos.length <= CHUNK_SIZE) {
     const prompt = buildStructureDesignPrompt(readmeMd, fileInfos);
-    const result = await generateText({ model: llm.languageModel, prompt });
-    return parseStructureDesignResult(result.text, allFiles);
+    const text = await generateTextWithTimeout(llm.languageModel, prompt);
+    return parseStructureDesignResult(text, allFiles, practiceFiles);
   }
 
   // 大课程: 分块设计，每块独立分 section
@@ -278,8 +300,8 @@ export async function designCourseStructure(
     const totalChunks = Math.ceil(fileInfos.length / CHUNK_SIZE);
     send(`AI 设计中（第 ${chunkNum}/${totalChunks} 批）…`);
     const prompt = buildStructureDesignPrompt(readmeMd, chunk);
-    const result = await generateText({ model: llm.languageModel, prompt });
-    const structure = parseStructureDesignResult(result.text, chunk.map((f) => f.file));
+    const text = await generateTextWithTimeout(llm.languageModel, prompt);
+    const structure = parseStructureDesignResult(text, chunk.map((f) => f.file), practiceFiles);
     allSections.push(...structure.sections);
   }
 
@@ -311,13 +333,14 @@ ${headingsStr}
 你的任务: 设计课程结构（section → lesson），并给每个 lesson 标 world。
 
 设计原则:
-- **study**: 讲解正文（概念/理论/教程）→ 学习世界
-- **practice**: notebook/lab/示例代码 → 实操世界
+- **study**: 讲解正文（概念/理论/教程）→ 学习世界主线
+- **practice**: notebook/lab/示例代码/实操资源 → 实操世界
 - **skip**: 噪声（可以不放进课程）
+- role 字段是 Step 2 的文件类型分类（original/practice），作为参考但不是唯一依据
+- 你要根据 title + headlines + README 上下文综合判断每个文件的 world
 - 如果仓库目录结构已经清晰（如 lessons/N-Topic/），**保留原有章节**，不要过度重组
 - 长文件如果有多个 H2 标题且有实质内容，可以按 H2 拆成多个 lesson（填 anchor = H2 标题）
 - 短文件整体作为一个 lesson
-- practice 文件如果和 study 文件在同一目录，可以作为对应 study section 下的 practice lesson
 - 每个 section 给一个中文标题
 
 README:
@@ -335,7 +358,6 @@ ${fileList}
   "sections": [
     {
       "title": "中文章节标题",
-      "world": "study",
       "summary": "一句话描述",
       "lessons": [
         { "title": "课时标题", "file": "lessons/1-Intro/README.md", "world": "study" },
@@ -346,7 +368,7 @@ ${fileList}
 }`;
 }
 
-function parseStructureDesignResult(raw: string, validFiles: string[]): CourseStructure {
+function parseStructureDesignResult(raw: string, validFiles: string[], _practiceFiles: string[]): CourseStructure {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   let obj: { sections?: unknown };
   try {
@@ -368,11 +390,16 @@ function parseStructureDesignResult(raw: string, validFiles: string[]): CourseSt
           title: typeof l.title === "string" ? l.title : "未命名",
           file: l.file as string,
           anchor: typeof l.anchor === "string" ? l.anchor : undefined,
+          // world 由 LLM 在 Step 4 判断（不是 Step 2 的 role）
           world: (l.world === "practice" ? "practice" : "study") as "study" | "practice",
         }));
+      // section.world 按子节点多数派
+      const practiceCount = lessons.filter((l) => l.world === "practice").length;
+      const studyCount = lessons.filter((l) => l.world === "study").length;
+      const secWorld = (practiceCount > 0 && studyCount === 0 ? "practice" : "study") as "study" | "practice";
       return {
         title: typeof sec.title === "string" ? sec.title : "未命名章节",
-        world: (sec.world === "practice" ? "practice" : "study") as "study" | "practice",
+        world: secWorld,
         summary: typeof sec.summary === "string" ? sec.summary : undefined,
         lessons,
       };

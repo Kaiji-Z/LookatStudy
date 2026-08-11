@@ -1072,17 +1072,25 @@ export async function fetchTranslatedContent(
 export interface RepoInventory {
   /** README 全文 */
   readmeMd: string;
-  /** 发现的文件路径列表(含 kind) */
+  /** 课程文件路径列表(供 Step 3+5 拉正文用，已过滤翻译/元数据) */
   fileList: DiscoveredFile[];
-  /** README 实际用的分支 */
+  /** 完整目录树(所有文件路径，含 translations/images/lab 等，供 LLM 看) */
+  fullTree: string[];
+  /** README 实际使用的分支 */
   branch: string;
   /** 仓库检测结果 */
   detection: DetectionResult;
 }
 
 /**
- * Step 1: 拉取仓库清单 —— README 全文 + 文件路径列表。
- * 不拉正文，只拉 README 和发现文件路径。
+ * Step 1: 拉取仓库清单 —— README 全文 + 完整目录树 + 课程文件列表。
+ *
+ * 三样东西:
+ *   1. README 全文 → 给 LLM 看课程大纲
+ *   2. 完整目录树(所有路径) → 给 LLM 看仓库结构(translations/、images/、lab/ 等)
+ *   3. 课程文件列表(filterLessonFiles 过滤后) → 供 Step 3+5 拉正文用
+ *
+ * 不拉正文。
  */
 export async function fetchRepoInventory(
   owner: string,
@@ -1113,12 +1121,13 @@ export async function fetchRepoInventory(
   if (!readmeMd) throw new Error(`无法拉取 README（试过分支: ${branches.join(", ")}）`);
   send(`README 拉取成功（${readmeMd.length} 字符）`);
 
-  // 2. 检测形态 + 发现文件
+  // 2. 检测形态
   const detection = detectRepoPattern(readmeMd);
   if (detection.pattern === "unsupported") {
     throw new Error(`仓库不支持: ${detection.reason}`);
   }
 
+  // 3. 课程文件列表（供 Step 3+5 拉正文用）
   let fileList = filterLessonFiles(detection.lessonFiles ?? []);
   const readmeLinkCount = fileList.length;
 
@@ -1132,14 +1141,14 @@ export async function fetchRepoInventory(
         const treeLessonFiles = filterLessonFiles(treeFiles).filter((f) => f.kind !== "other");
         if (treeLessonFiles.length > fileList.length) {
           fileList = treeLessonFiles;
-          send(`文件树发现 ${fileList.length} 个文件`);
+          send(`文件树发现 ${fileList.length} 个课程文件`);
         }
       }
     } catch {
       send("文件树拉取失败，使用 README 链接");
     }
   } else {
-    send(`README 链接发现 ${readmeLinkCount} 个文件`);
+    send(`README 链接发现 ${readmeLinkCount} 个课程文件`);
   }
 
   // 上限
@@ -1148,7 +1157,21 @@ export async function fetchRepoInventory(
     fileList = fileList.slice(0, MAX_FILES);
   }
 
-  return { readmeMd, fileList, branch: readmeBranch, detection };
+  // 4. 完整目录树（供 LLM 看仓库结构）
+  // 总是尝试拉取，即使 README 链接足够 —— LLM 需要看到 translations/、images/ 等目录
+  let fullTree: string[] = fileList.map((f) => f.path);
+  try {
+    send("扫描仓库完整目录结构…");
+    const tree = await fetchRepoFileTree(owner, repo, readmeBranch, fetchFn);
+    if (tree.paths.length > fullTree.length) {
+      fullTree = tree.paths;
+      send(`目录树: ${fullTree.length} 个文件/目录`);
+    }
+  } catch {
+    send("目录树拉取失败，使用 README 链接列表");
+  }
+
+  return { readmeMd, fileList, fullTree, branch: readmeBranch, detection };
 }
 
 /** 文件标题大纲 —— Step 3 的输出 */

@@ -10,7 +10,7 @@
  */
 import { app, BrowserWindow, shell } from "electron";
 import { join, resolve } from "node:path";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, appendFileSync } from "node:fs";
 import { initDb, getDb, markDirty } from "./db/index.js";
 import { registerAllHandlers } from "./ipc/index.js";
 import { setupContextMenu } from "./context-menu.js";
@@ -29,6 +29,18 @@ declare const __dirname: string;
 
 const DEV_SERVER_URL = "http://localhost:5173";
 const isDev = !app.isPackaged;
+
+// 把 main process 的 console.error 重定向到日志文件,方便调试导入管线。
+const LOG_FILE = join(app?.getPath?.("userData") ?? process.env.APPDATA ?? ".", "lookatstudy-import.log");
+try {
+  const origError = console.error;
+  console.error = (...args: unknown[]) => {
+    origError(...args);
+    try { appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${args.map(String).join(" ")}\n`); } catch { /* ignore */ }
+  };
+  // 启动时清空旧日志
+  try { writeFileSync(LOG_FILE, `[${new Date().toISOString()}] === electron started ===\n`); } catch { /* ignore */ }
+} catch { /* ignore */ }
 
 // 项目根目录：从 dist-electron/main/ 退两级到项目根
 const PROJECT_ROOT = resolve(__dirname, "../..");

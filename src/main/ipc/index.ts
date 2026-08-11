@@ -337,7 +337,9 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
 
       // Step 2: LLM 判文件角色
       const { classifyFileRoles } = await import("../services/import-llm-service.js");
-      const roles = await classifyFileRoles(getDb(), inventory.readmeMd, inventory.fileList, send);
+      console.error("[import] Step 2: LLM 文件角色分类…");
+      const roles = await classifyFileRoles(getDb(), inventory.readmeMd, inventory.fileList, inventory.fullTree, send);
+      console.error(`[import] Step 2 完成: ${roles.original.length} original, ${roles.practice.length} practice, ${roles.skip.length} skip, ${roles.languages.length} 翻译语言`);
 
       // 转换 translationFiles Map 为 Record（IPC 序列化）
       const translationFiles: Record<string, string[]> = {};

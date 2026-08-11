@@ -231,20 +231,21 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
         setBusy(false);
         return;
       }
-      // 无翻译: 直接导入原文
-      await doImport(null);
+      // 无翻译: 直接导入原文(直接传 analysis,不靠 state——避免 React 异步更新)
+      await doImport(null, analysis);
     } catch (e) {
       setError(e instanceof Error ? `${e.message}\n\n网络受限或私有仓库请改用「Markdown」方式。` : String(e));
       setBusy(false);
     }
   };
 
-  const doImport = async (langCode: string | null) => {
-    if (!repoAnalysis) return;
+  const doImport = async (langCode: string | null, analysisOverride?: import("@shared/types").RepoAnalysis | null) => {
+    const analysis = analysisOverride ?? repoAnalysis;
+    if (!analysis) return;
     setBusy(true); setError(null); setSuccess(null); setProgressMsg(null); setPendingLanguages(null);
     try {
       // 新管线 Step 3+4+5: 提取大纲 → LLM 设计结构 → 拉正文+图片 → 落库
-      const course = await api.importAnalyzed(repoUrl.trim(), repoAnalysis, langCode);
+      const course = await api.importAnalyzed(repoUrl.trim(), analysis, langCode);
       setSuccess(`导入成功：${course.title}${langCode ? `（含 ${langCode} 翻译）` : ""}`);
       setRepoAnalysis(null);
       setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);

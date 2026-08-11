@@ -18,6 +18,7 @@ import { contentNodes, courses, progress as progressTable, contentNodeTranslatio
 import {
   fetchSingleFileContent,
   fetchImageAsDataUrl,
+  cdnUrl,
 } from "./pure/repo-fetcher.js";
 import type { CourseStructure, DesignedLesson } from "./import-llm-service.js";
 import { verifyCourseIntegrity, type VerificationResult } from "./pure/course-verifier.js";
@@ -297,9 +298,15 @@ async function inlineImages(
       const dataUrl = await fetchImageAsDataUrl(
         imgPath, opts.owner, opts.repo, opts.branch, opts.fetchFn,
       );
-      imageCache.set(imgPath, dataUrl);
+      if (dataUrl) {
+        imageCache.set(imgPath, dataUrl);
+      } else {
+        // 下载失败或超限 → 用 CDN URL 替代(联网可看,离线不可看)
+        const cdn = cdnUrl(opts.owner, opts.repo, opts.branch, imgPath);
+        imageCache.set(imgPath, cdn);
+      }
     }
-    return imageCache.get(imgPath) ?? src; // 下载失败保留原 src
+    return imageCache.get(imgPath) ?? src;
   }
 
   // 替换 markdown 图片
@@ -314,14 +321,16 @@ async function inlineImages(
     }
   }
 
-  // 替换 HTML 图片
+  // 替换 HTML 图片 → 转成 markdown 图片语法(ReactMarkdown 不渲染 raw HTML)
   const htmlMatches = [...result.matchAll(htmlImgPattern)];
   for (const m of htmlMatches) {
     const src = m[1] ?? "";
+    // 从 <img> 标签提取 alt 属性
+    const altMatch = m[0].match(/alt=["']([^"']*)["']/i);
+    const alt = altMatch?.[1] ?? "";
     const newSrc = await resolveImage(src);
-    if (newSrc !== src) {
-      result = result.replace(m[0], m[0].replace(src, newSrc));
-    }
+    // 整个 <img> 标签替换成 markdown ![](url)
+    result = result.replace(m[0], `![${alt}](${newSrc})`);
   }
 
   return result;

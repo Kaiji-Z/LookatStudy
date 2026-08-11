@@ -14,6 +14,7 @@
  * scanFolder 本身用 fs(异步),verify 用临时目录造文件测。
  */
 import { readFile, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join, relative, sep, basename, dirname } from "node:path";
 
 export interface ScannedDoc {
@@ -524,4 +525,167 @@ function naturalPathCompare(a: string, b: string): number {
     if (pa[i] !== pb[i]) return pa[i]! < pb[i]! ? -1 : 1;
   }
   return pa.length - pb.length;
+}
+
+/* ============================================================
+ * 本地导入清点 (buildLocalInventory) —— 供新 5 步管线的 Step 1
+ *
+ * scanFolder 只管扫描文档+图片(不含 translations/)。
+ * buildLocalInventory 在此基础上补全:
+ *   - translations/{lang}/ 扫描 → 翻译文件 + 检测到的语言
+ *   - README 检测(根目录 README.md / index.md / 首个 md)
+ *   - fullTree(所有路径,给 LLM 看仓库结构)
+ *   - standaloneImages(不被任何 md 引用的独立图片文件)
+ * ============================================================ */
+
+/** 本地导入清点结果 */
+export interface LocalInventory {
+  /** 文档(非翻译,已去重) */
+  docs: ScannedDoc[];
+  /** 图片(独立文件 + md 引用 + PDF/notebook 提取) */
+  images: ScannedImage[];
+  /** 翻译文件(path = translations/{lang}/{原路径}) */
+  translations: ScannedDoc[];
+  /** 检测到的翻译语言代码(如 ["zh-CN", "ja"]) */
+  translationLangs: string[];
+  /** README 全文(根目录 README.md/index.md,无则首个 md,再无则 "") */
+  readmeMd: string;
+  /** 完整目录树(所有文件路径,给 LLM 看结构) */
+  fullTree: string[];
+  /** 不被任何文档引用的独立图片文件(给 LLM Step4 关联到 lesson 用) */
+  standaloneImages: ScannedImage[];
+}
+
+/**
+ * 为新管线构建本地清点:scanFolder + translations + README + fullTree + standaloneImages。
+ *
+ * 和 GitHub 的 fetchRepoInventory 对齐:产出 readmeMd + fileList(隐含在 docs 里) +
+ * fullTree,供 classifyFileRoles + designCourseStructure 使用。
+ */
+export async function buildLocalInventory(
+  rootDir: string,
+  onProgress?: (scanned: number, currentPath: string) => void,
+): Promise<LocalInventory> {
+  // 1. 扫描文档 + 图片(scanFolder 内部排除 translations/,不影响)
+  const scanResult = await scanFolder(rootDir, onProgress, { collectImages: true });
+  // collectImages:true → 返回 { docs, images }（不是 ScannedDoc[]）
+  const { docs, images } = Array.isArray(scanResult) ? { docs: scanResult, images: [] } : scanResult;
+
+  // 2. 扫描 translations/ 目录(单独扫,不进 docs)
+  const { translations, translationLangs } = await scanTranslationsDir(rootDir);
+
+  // 3. README 检测
+  const readmeMd = findReadmeContent(docs);
+
+  // 4. fullTree(所有文件路径,含翻译 + 图片)
+  const fullTree = [
+    ...docs.map((d) => d.path),
+    ...images.map((i) => i.path),
+    ...translations.map((t) => t.path),
+  ];
+
+  // 5. 不被引用的独立图片
+  const standaloneImages = findStandaloneImages(images, docs);
+
+  return { docs, images, translations, translationLangs, readmeMd, fullTree, standaloneImages };
+}
+
+/**
+ * 扫描 translations/{lang}/ 目录。
+ * 每个 lang 子目录对应一种翻译语言,其下的文件按原目录结构保留。
+ * path = translations/{lang}/{相对 lang 目录的路径}。
+ */
+async function scanTranslationsDir(
+  rootDir: string,
+): Promise<{ translations: ScannedDoc[]; translationLangs: string[] }> {
+  const translationsDir = join(rootDir, "translations");
+  if (!existsSync(translationsDir)) {
+    return { translations: [], translationLangs: [] };
+  }
+
+  let langEntries: import("node:fs").Dirent[];
+  try {
+    langEntries = await readdir(translationsDir, { withFileTypes: true });
+  } catch {
+    return { translations: [], translationLangs: [] };
+  }
+
+  const langs = langEntries.filter((e) => e.isDirectory()).map((e) => e.name);
+  const translations: ScannedDoc[] = [];
+
+  for (const lang of langs) {
+    const langDir = join(translationsDir, lang);
+    const transFiles: { absPath: string; relPath: string; isImage: boolean }[] = [];
+    await walkDir(langDir, langDir, transFiles);
+
+    for (const f of transFiles) {
+      if (f.isImage) continue;
+      const ext = f.relPath.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
+      const kind = EXT_KIND[ext];
+      if (!kind) continue;
+      try {
+        const content = await readFileWithKind(f.absPath, kind);
+        if (!content || content.trim().length < 5) continue;
+        translations.push({
+          path: `translations/${lang}/${f.relPath}`,
+          title: inferTitle(f.relPath),
+          content,
+          lang: detectLang(f.relPath),
+          kind,
+        });
+      } catch {
+        // 单文件失败跳过
+      }
+    }
+  }
+
+  return { translations, translationLangs: langs };
+}
+
+/**
+ * 从已扫描文档里找 README 全文。
+ * 优先根目录 README.md/README.markdown,其次 index.md,再首个 md,都没有返回 ""。
+ */
+function findReadmeContent(docs: ScannedDoc[]): string {
+  // 根目录 README.md / README.markdown
+  const readme = docs.find((d) => {
+    const parts = d.path.split("/");
+    return parts.length === 1 && /^readme\.(md|markdown)$/i.test(parts[0]!);
+  });
+  if (readme) return readme.content;
+
+  // 根目录 index.md
+  const index = docs.find((d) => {
+    const parts = d.path.split("/");
+    return parts.length === 1 && /^index\.(md|markdown)$/i.test(parts[0]!);
+  });
+  if (index) return index.content;
+
+  // 首个 md 文档
+  const firstMd = docs.find((d) => d.kind === "md");
+  return firstMd?.content ?? "";
+}
+
+/**
+ * 找出不被任何文档引用的独立图片文件。
+ * 这些是"孤儿"图片,需要 LLM 在 Step 4 关联到最相关的 lesson。
+ *
+ * 判定:source=image_file(独立文件,非 PDF/notebook 提取) + 有 absPath(磁盘文件) +
+ *      不在任何文档的图片引用路径里。
+ */
+export function findStandaloneImages(images: ScannedImage[], docs: ScannedDoc[]): ScannedImage[] {
+  // 收集所有文档引用的图片路径
+  const referencedPaths = new Set<string>();
+  for (const doc of docs) {
+    if (doc.kind === "txt" || doc.kind === "html") continue;
+    const refs = extractImageRefs(doc.content);
+    for (const ref of refs) {
+      const resolved = resolveImageRef(ref.refPath, doc.path);
+      referencedPaths.add(resolved);
+    }
+  }
+
+  return images.filter(
+    (img) => img.source === "image_file" && img.absPath && !referencedPaths.has(img.path),
+  );
 }

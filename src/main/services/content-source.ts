@@ -3,8 +3,11 @@
  * GitHub CDN 还是本地磁盘。
  *
  * - GithubContentSource: 通过 CDN 拉取（fetchSingleFileContent + fetchImageAsDataUrl）
- * - LocalContentSource（阶段 B 实现）: 从 scanFolder 已扫描的缓存读取
+ * - LocalContentSource: 从 scanFolder 已扫描的缓存读文件，图片从磁盘读
  */
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { existsSync } from "node:fs";
 import { fetchSingleFileContent, fetchImageAsDataUrl, cdnUrl } from "./pure/repo-fetcher.js";
 
 export interface ContentSource {
@@ -38,5 +41,53 @@ export class GithubContentSource implements ContentSource {
 
   getImageFallbackUrl(path: string): string | null {
     return cdnUrl(this.owner, this.repo, this.branch, path);
+  }
+}
+
+/** 图片扩展名 → MIME 映射（LocalContentSource 用） */
+const LOCAL_IMAGE_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  bmp: "image/bmp",
+};
+
+/**
+ * 本地内容源：文件内容从 scanFolder 已解析的缓存读取，图片从磁盘读取。
+ *
+ * - docs Map 的 key 是相对根目录的路径（用 / 分隔），如 "lessons/1-Intro/README.md"
+ *   翻译文件 key 是 "translations/{lang}/{原路径}"
+ * - getImageDataUrl 从磁盘读文件（rootDir + path），转 base64 data-url
+ * - getImageFallbackUrl 返回 null（本地无 CDN，下载失败时保留原 src）
+ */
+export class LocalContentSource implements ContentSource {
+  constructor(
+    private rootDir: string,
+    private docs: Map<string, string>,
+  ) {}
+
+  async getFile(path: string): Promise<string | null> {
+    return this.docs.get(path) ?? null;
+  }
+
+  async getImageDataUrl(path: string, maxBytes = 200_000): Promise<string | null> {
+    try {
+      const abs = join(this.rootDir, path);
+      if (!existsSync(abs)) return null;
+      const buf = await readFile(abs);
+      if (buf.length > maxBytes) return null; // 太大不内联
+      const ext = path.split(".").pop()?.toLowerCase() ?? "png";
+      const mime = LOCAL_IMAGE_MIME[ext] ?? "image/png";
+      return `data:${mime};base64,${buf.toString("base64")}`;
+    } catch {
+      return null;
+    }
+  }
+
+  getImageFallbackUrl(_path: string): string | null {
+    return null; // 本地无 CDN fallback，保留原 src
   }
 }

@@ -119,9 +119,23 @@ export async function executeImport(
       );
 
       // 5b: 图片 base64 内联
-      const inlinedContent = content ? await inlineImages(
+      let inlinedContent = content ? await inlineImages(
         content, lesson.file, opts.source, imageCache, send,
       ) : null;
+
+      // 5b-2: 独立图片 attachImages（LLM 关联的孤儿图，追加到正文末尾）
+      if (inlinedContent && lesson.attachImages && lesson.attachImages.length > 0) {
+        for (const imgPath of lesson.attachImages) {
+          if (!imageCache.has(imgPath)) {
+            const dataUrl = await opts.source.getImageDataUrl(imgPath);
+            imageCache.set(imgPath, dataUrl ?? opts.source.getImageFallbackUrl(imgPath));
+          }
+          const resolved = imageCache.get(imgPath);
+          if (resolved) {
+            inlinedContent += `\n\n![](${resolved})`;
+          }
+        }
+      }
 
       // 记录原文图片 src 数组（翻译按位置映射用）
       const srcPath = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;

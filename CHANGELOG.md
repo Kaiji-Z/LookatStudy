@@ -17,6 +17,13 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **本地导入统一到 GitHub 5 步管线**:本地文件夹导入不再走旧的
+  buildCourseFromFiles → autoStructureCourse 路径,而是和 GitHub 导入
+  完全对齐:Step1 buildLocalInventory → Step2 LLM 判文件角色 →
+  Step3 提取大纲 → Step4 LLM 设计课程结构 → Step5 executeImport。
+  UX 也和 GitHub 一样一气呵成(选文件夹 → 连续走到导入完成)。
+  新增 `ContentSource` 抽象层(GithubContentSource + LocalContentSource),
+  `buildLocalInventory`(扫描 + README 检测 + 目录树 + 翻译检测 + 独立图片)。
 - **语言偏好持久化(替代导入时弹窗)**:用户在 Settings 选偏好语言
   (英语/简中/繁中),首次启动按系统语言检测默认值。导入时自动按
   pref_lang + 仓库原文语言(sourceLang)决定拉哪个翻译,不再弹翻译选择。
@@ -31,6 +38,9 @@ Entry conventions for contributors:
   当前步骤显示 spinner + 实时计时(已 Xs)。消息真实描述每步工作 + 完成摘要
   (如"文件分类: 45 原文 · 12 实操 · 原文语言 en")。含 X/Y 进度的消息更新当前
   步骤而非新建步骤。
+- **独立图片 LLM 关联(attachImages)**:不被任何 markdown 引用的"孤儿"图片
+  文件,LLM 在 Step 4 课程结构设计时关联到最相关的 lesson,内联进正文末尾。
+  无 LLM 时按路径前缀匹配降级(同目录图挂到同目录 lesson)。
 
 ### Changed
 - **翻译图片放弃拉取,改位置映射**:学习仓库的翻译图片是机翻效果差,
@@ -46,6 +56,9 @@ Entry conventions for contributors:
   课程设计 prompt 更新为字数驱动的自适应拆分指引。
 - **种子课程暂时停用**:两个世界重构期间用 GitHub 真实导入验证,
   不依赖固化种子。恢复时取消注释 `ensureSeedCourse()` 即可。
+- **本地导入 prompt fallback**:无 README 文件时,LLM 文件角色分类和
+  课程结构设计 prompt 自动切换为"根据文件名 + 目录结构 + 文件类型判断",
+  不硬依赖 README。无 LLM key 时纯规则降级(按目录分 section + 路径前缀图片关联)。
 
 ### Fixed
 - **翻译版正文切换不实时更新**:切换翻译语言后,讲解区标题立即变但正文不变,

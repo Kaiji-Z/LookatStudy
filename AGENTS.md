@@ -68,7 +68,7 @@ npm run dev               # vite only (renderer debugging, HMR)
 npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
-npm run verify:core       # 32 pure-Node/tsx logic test suites
+npm run verify:core       # 37 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
 npm run ui-test           # real-GUI verification (headless Electron, 18 DOM assertions)
 npm run lint              # oxlint
@@ -116,7 +116,11 @@ npm run verify:core && npx vite build && npm run self-test
 | Custom providers | `services/custom-provider-service.ts` | BYO user-defined provider rows; bypass preset settings, resolved by `custom-` prefix |
 | Course generator | `services/course-generator.ts` | `generateCourseFromMarkdown` + `generateCourseFromRepoFiles` |
 | Course structure | `services/course-structure-service.ts` | LLM-based course restructuring (two-phase: classify uncertain → group sections) + `generateLessonSummaries` |
-| Repo fetcher | `services/pure/repo-fetcher.ts` | CDN fetch + `detectRepoPattern` + `importRepoToParsedCourse` (top-level orchestration: fetch → detect → classify → build) |
+| Repo fetcher | `services/pure/repo-fetcher.ts` | CDN fetch + `detectRepoPattern` + `fetchRepoInventory` (Step1: README + tree + file list) + `fetchFileOutlines` (Step3: H1/H2/H3 + chars) + `extractOutlineWithCharCounts` |
+| Import pipeline | `services/import-pipeline.ts` | `executeImport` (Step5): 拉正文 → 图片 base64 内联 → attachImages → 翻译落库 → 验证。通过 `ContentSource` 抽象不关心来源 |
+| Import LLM | `services/import-llm-service.ts` | `classifyFileRoles` (Step2: LLM 文件角色 + sourceLang) + `designCourseStructure` (Step4: section/lesson/world + 长文件拆分 + attachImages 关联) |
+| Content source | `services/content-source.ts` | `ContentSource` 接口 + `GithubContentSource` (CDN) + `LocalContentSource` (磁盘) — 统一 executeImport 的文件/图片获取 |
+| Local scanner | `services/pure/local-folder-scanner.ts` | `scanFolder` (递归扫 9 种格式) + `buildLocalInventory` (本地清点: docs + images + translations + README + fullTree + standaloneImages) |
 | File classifier | `services/pure/file-classifier.ts` | Rule-based `classifyFile` — high-confidence noise filter (translations/notebook/lab/example/section-intro/meta) + uncertain flag for LLM |
 | Exercise | `services/exercise-service.ts` | AI exercise generation (mcq/fill_blank/true_false) + grading |
 | Dashboard | `services/dashboard-service.ts` | `getDashboard` — section mastery, metrics |
@@ -144,7 +148,7 @@ item CRUD), `useFontSize` (3-tier A-/A+).
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (34 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (37 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

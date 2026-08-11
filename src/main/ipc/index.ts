@@ -102,9 +102,6 @@ import { generateCourseFromMarkdown as generateCourseFromMarkdownService, genera
 import {
   importRepoToParsedCourse,
 } from "../services/pure/repo-fetcher.js";
-// 本地文件夹导入(通用扫描器)
-import { scanFolder } from "../services/pure/local-folder-scanner.js";
-import { importLocalFolder } from "../services/local-import-service.js";
 // Feature flags
 import { isFlagOn } from "../services/flags.js";
 // 多模态资源服务(node_assets)
@@ -488,8 +485,9 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     },
   );
 
-  // 导入本地文件夹(通用扫描器:递归扫 .txt/.md/.html/.pdf → 落库 → 自动结构化)
-  // 多模态 flag on 时:同时收集图片(.png/.jpg 等)+ PDF 图片提取
+  // 导入本地文件夹 —— 走新 5 步管线(和 GitHub 对齐)
+  // Step1 buildLocalInventory → Step2 classifyFileRoles → Step3 extractOutlines
+  // → Step4 designCourseStructure → Step5 executeImport
   ipcMain.handle("import:localFolder", async (): Promise<Course | null> => {
     const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
     // 1. Electron 文件选择对话框(选文件夹)
@@ -501,34 +499,80 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     const folderPath = result.filePaths[0];
     const folderName = folderPath.split(/[\\/]/).pop() ?? "local-course";
 
-    // 2. 扫描(递归读 txt/md/html/pdf,中文优先去重;image_download on 时同时收图)
+    // Step 1: 扫描 → 文档 + 图片 + 翻译 + README + 目录树 + 独立图片
     send("正在扫描文件夹…");
-    const collectImages = isFlagOn("image_download");
-    const scanResult = await scanFolder(folderPath, (n) => {
+    const { buildLocalInventory } = await import("../services/pure/local-folder-scanner.js");
+    const inventory = await buildLocalInventory(folderPath, (n) => {
       if (n % 20 === 0) send(`已扫描 ${n} 个文件…`);
-    }, collectImages ? { collectImages: true } : undefined);
+    });
 
-    // scanFolder 返回类型:不收图 → ScannedDoc[];收图 → { docs, images }
-    const docs = Array.isArray(scanResult) ? scanResult : scanResult.docs;
-    const images = Array.isArray(scanResult) ? [] : scanResult.images;
-
-    if (docs.length === 0) {
+    if (inventory.docs.length === 0) {
       throw new Error("文件夹里没有找到可识别的文本内容(.txt/.md/.html/.pdf)");
     }
-    send(`扫描完成:${docs.length} 个文档${images.length > 0 ? ` + ${images.length} 张图片` : ""},正在构建课程…`);
+    send(`✓ 扫描完成:${inventory.docs.length} 文档 · ${inventory.images.length} 图 · ${inventory.translations.length} 翻译文件`);
 
-    // 3. 落库(按目录分组 → ParsedCourse → generateCourseFromRepoFiles)
-    const result2 = importLocalFolder(getDb(), docs, folderName, {
-      images: images.length > 0 ? images : undefined,
-      onProgress: (msg) => send(msg),
-    });
+    // 构建 docsMap（原文 + 翻译）→ LocalContentSource
+    const docsMap = new Map<string, string>();
+    for (const doc of inventory.docs) docsMap.set(doc.path, doc.content);
+    for (const tr of inventory.translations) docsMap.set(tr.path, tr.content);
+
+    // Step 2: LLM 判文件角色 + sourceLang
+    const { classifyFileRoles } = await import("../services/import-llm-service.js");
+    const { pathsToDiscoveredFiles } = await import("../services/pure/repo-fetcher.js");
+    const fileList = pathsToDiscoveredFiles(inventory.docs.map((d) => d.path));
+    const roles = await classifyFileRoles(getDb(), inventory.readmeMd, fileList, inventory.fullTree, send);
+    send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
+
+    // 语言决策（用本地 translations/ 检测到的语言，比 README 链接更可靠）
+    const { getPrefLang, resolveImportLang } = await import("../services/lang-pref.js");
+    const pref = getPrefLang(getDb()) ?? "en";
+    const localLangs = inventory.translationLangs.map((code) => ({ code, name: code }));
+    const { langCode: selectedLang, reason } = resolveImportLang(pref, roles.sourceLang, localLangs);
+    send(`语言决策:${reason}`);
+
+    // Step 3: 提取标题大纲（纯函数，不经网络，直接从 docsMap 读）
+    const { extractOutlineWithCharCounts } = await import("../services/pure/repo-fetcher.js");
+    const allFiles = [...roles.original, ...roles.practice];
+    const outlines = new Map<string, ReturnType<typeof extractOutlineWithCharCounts>>();
+    for (const path of allFiles) {
+      const content = docsMap.get(path);
+      if (content) outlines.set(path, extractOutlineWithCharCounts(content, path));
+    }
+    send(`✓ 提取 ${outlines.size} 个文件大纲`);
+
+    // Step 4: LLM 设计课程结构（含独立图片关联）
+    const { designCourseStructure } = await import("../services/import-llm-service.js");
+    const standaloneImgList = inventory.standaloneImages.map((img) => ({ path: img.path, alt: img.altText }));
+    const structure = await designCourseStructure(
+      getDb(), inventory.readmeMd, outlines,
+      roles.original, roles.practice, send, standaloneImgList,
+    );
+    const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
+    send(`✓ 课程结构:${structure.sections.length} 章 · ${lessonCount} 课`);
+
+    // Step 5: 拉正文 + 图片内联 + 翻译 + 落库
+    const { executeImport } = await import("../services/import-pipeline.js");
+    const { LocalContentSource } = await import("../services/content-source.js");
+
+    const translationFilesMap = selectedLang && inventory.translationLangs.includes(selectedLang)
+      ? new Map([[selectedLang, []]]) // 路径由约定 translations/{lang}/{file} 构造，不需列路径
+      : null;
+
+    const result2 = await executeImport(
+      getDb(), structure,
+      {
+        source: new LocalContentSource(folderPath, docsMap),
+        repoUrl: null, repoName: folderName,
+        langCode: selectedLang,
+        translationFiles: translationFilesMap,
+        sourceLang: roles.sourceLang,
+        markDirty,
+      },
+      send,
+    );
+
     markDirty();
-    send(`导入完成:${result2.sectionCount} 章 / ${result2.lessonCount} 课${result2.assetCount > 0 ? ` / ${result2.assetCount} 张图` : ""}`);
-
-    // 4. 自动 AI 结构化(有 key 时)
-    await autoStructureCourse(result2.courseId, send).catch((e) => {
-      send(`AI 结构化跳过(${e instanceof Error ? e.message : "无 key 或出错"})`);
-    });
+    send(`✓ 导入完成`);
 
     const course = getDb().select().from(courses).where(eq(courses.id, result2.courseId)).get();
     return course as unknown as Course;

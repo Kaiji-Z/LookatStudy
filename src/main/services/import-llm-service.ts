@@ -232,7 +232,12 @@ function buildRolePrompt(readmeMd: string, filePaths: string[], fullTree: string
   // 完整目录树（树状结构 + 折叠，不截断——LLM 能看到完整仓库组织）
   const treeStr = buildTreeString(fullTree);
 
-  return `你是课程仓库分析专家。下面是一个 GitHub 学习仓库的 README（前3000字）、完整目录树和待分类的文件列表。
+  const hasReadme = readmeMd.trim().length > 0;
+  const readmeSection = hasReadme
+    ? `README 内容:\n---\n${readmeExcerpt}\n---`
+    : "（无 README 文件，请根据文件名、目录结构、文件类型判断原文语言和文件角色）";
+
+  return `你是课程仓库分析专家。下面是一个学习仓库的 README（前3000字）、完整目录树和待分类的文件列表。
 
 请完成两个任务:
 
@@ -241,16 +246,14 @@ function buildRolePrompt(readmeMd: string, filePaths: string[], fullTree: string
    - 简体中文 → "zh-CN"
    - 繁体中文 → "zh-TW"
    - 日文 → "ja"，其他语言用对应 BCP-47 子标签
+   - 无 README 时看文件名/目录名用的语言
 
 2. 判断每个文件的角色:
    - **original**: 原文课程讲解（README.md 教程、概念讲解）
    - **practice**: 实操资源（notebook .ipynb、lab 练习、示例代码）
    - **skip**: 噪声（纯配置、空文件、非学习内容）
 
-README 内容:
----
-${readmeExcerpt}
----
+${readmeSection}
 
 仓库完整目录树（树状结构，最多展开 3 层，每目录最多 10 项，超出折叠）:
 ---
@@ -321,6 +324,8 @@ export interface DesignedLesson {
   anchor?: string;
   /** 世界 */
   world: "study" | "practice";
+  /** 可选: LLM 关联的独立图片路径（未被任何 md 引用的孤儿图，挂到本 lesson 正文末尾） */
+  attachImages?: string[];
 }
 
 export interface DesignedSection {
@@ -357,12 +362,13 @@ export async function designCourseStructure(
   originalFiles: string[],
   practiceFiles: string[],
   onProgress?: (msg: string) => void,
+  standaloneImages: { path: string; alt: string }[] = [],
 ): Promise<CourseStructure> {
   const send = (msg: string) => onProgress?.(msg);
   const ready = isLlmReady(db);
   if (!ready.ready) {
     // 无 key: 降级为纯规则结构（按目录分 section，每文件一 lesson）
-    return fallbackStructure(readmeMd, outlines, originalFiles, practiceFiles);
+    return fallbackStructure(readmeMd, outlines, originalFiles, practiceFiles, standaloneImages);
   }
 
   send("AI 设计课程结构（按字数拆分 + study/practice/附属 三分类）");
@@ -385,9 +391,9 @@ export async function designCourseStructure(
   // 分块
   const CHUNK_SIZE = 40;
   if (fileInfos.length <= CHUNK_SIZE) {
-    const prompt = buildStructureDesignPrompt(readmeMd, fileInfos);
+    const prompt = buildStructureDesignPrompt(readmeMd, fileInfos, standaloneImages);
     const text = await generateTextWithTimeout(llm.languageModel, prompt);
-    return parseStructureDesignResult(text, allFiles, practiceFiles);
+    return parseStructureDesignResult(text, allFiles, practiceFiles, standaloneImages);
   }
 
   // 大课程: 分块设计，每块独立分 section
@@ -398,9 +404,9 @@ export async function designCourseStructure(
     const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
     const totalChunks = Math.ceil(fileInfos.length / CHUNK_SIZE);
     send(`AI 设计中（第 ${chunkNum}/${totalChunks} 批）…`);
-    const prompt = buildStructureDesignPrompt(readmeMd, chunk);
+    const prompt = buildStructureDesignPrompt(readmeMd, chunk, standaloneImages);
     const text = await generateTextWithTimeout(llm.languageModel, prompt);
-    const structure = parseStructureDesignResult(text, chunk.map((f) => f.file), practiceFiles);
+    const structure = parseStructureDesignResult(text, chunk.map((f) => f.file), practiceFiles, standaloneImages);
     allSections.push(...structure.sections);
   }
 
@@ -412,6 +418,7 @@ export async function designCourseStructure(
 function buildStructureDesignPrompt(
   readmeMd: string,
   fileInfos: { file: string; role: string; h1: string; totalChars: number; headings: { level: number; title: string; chars: number }[] }[],
+  standaloneImages: { path: string; alt: string }[] = [],
 ): string {
   const readmeExcerpt = readmeMd.slice(0, 4000);
   const fileList = fileInfos.map((f) => {
@@ -427,6 +434,18 @@ function buildStructureDesignPrompt(
 ${headingsStr}
   }`;
   }).join(",\n");
+
+  const hasReadme = readmeMd.trim().length > 0;
+  const readmeSection = hasReadme
+    ? `README:\n---\n${readmeExcerpt}\n---`
+    : "（无 README，请根据文件名、目录结构、文件类型设计课程结构）";
+
+  // 独立图片列表（给 LLM 关联到 lesson 用）
+  const imagesSection = standaloneImages.length > 0
+    ? `\n\n## 独立图片（未被任何文件引用的孤儿图片，请关联到最相关的 lesson）\n${
+        standaloneImages.map((img) => `- "${img.path}" (描述: ${img.alt})`).join("\n")
+      }\n\n在 lesson 的 JSON 里加 "attachImages": ["图片路径"] 把图片关联到该 lesson。`
+    : "";
 
   return `你是课程设计专家。下面是一个学习仓库的 README（前4000字）和每个文件的标题大纲（含每段字符数）。
 
@@ -456,15 +475,13 @@ ${headingsStr}
 - 如果仓库目录结构已清晰（如 lessons/N-Topic/），保留原有章节，不过度重组
 - 每个 section 给中文标题
 
-README:
----
-${readmeExcerpt}
----
+${readmeSection}
 
 文件标题大纲（totalChars = 文件总字数，每个标题后 [字数] = 该段字数）:
 [
 ${fileList}
 ]
+${imagesSection}
 
 严格返回 JSON，不要 markdown 代码块标记:
 {
@@ -475,14 +492,19 @@ ${fileList}
       "lessons": [
         { "title": "课时标题", "file": "lessons/1-Intro/README.md", "world": "study" },
         { "title": "课时标题2", "file": "lessons/1-Intro/README.md", "anchor": "## The Top-Down Approach", "world": "study" },
-        { "title": "动物推理练习", "file": "lessons/2-Symbolic/README.md", "anchor": "## ✍️ Exercise: Animal Inference", "world": "practice" }
+        { "title": "动物推理练习", "file": "lessons/2-Symbolic/README.md", "anchor": "## ✍️ Exercise: Animal Inference", "world": "practice", "attachImages": ["images/diagram.png"] }
       ]
     }
   ]
 }`;
 }
 
-function parseStructureDesignResult(raw: string, validFiles: string[], _practiceFiles: string[]): CourseStructure {
+function parseStructureDesignResult(
+  raw: string,
+  validFiles: string[],
+  _practiceFiles: string[],
+  standaloneImages: { path: string; alt: string }[] = [],
+): CourseStructure {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   let obj: { sections?: unknown };
   try {
@@ -494,19 +516,35 @@ function parseStructureDesignResult(raw: string, validFiles: string[], _practice
     throw new Error("LLM 结构设计缺少 sections 数组");
   }
   const validSet = new Set(validFiles);
+  const validImgPaths = new Set(standaloneImages.map((i) => i.path));
+  const assignedImgPaths = new Set<string>();
 
   const sections = (obj.sections as Array<Record<string, unknown>>)
     .map((sec) => {
       const lessonsRaw = Array.isArray(sec.lessons) ? sec.lessons as Array<Record<string, unknown>> : [];
       const lessons = lessonsRaw
         .filter((l) => typeof l.file === "string" && validSet.has(l.file as string))
-        .map((l) => ({
-          title: typeof l.title === "string" ? l.title : "未命名",
-          file: l.file as string,
-          anchor: typeof l.anchor === "string" ? l.anchor : undefined,
-          // world 由 LLM 在 Step 4 判断（不是 Step 2 的 role）
-          world: (l.world === "practice" ? "practice" : "study") as "study" | "practice",
-        }));
+        .map((l) => {
+          // 解析 attachImages（只接受 validImgPaths 里的路径，防幻觉）
+          let attachImages: string[] | undefined;
+          if (Array.isArray(l.attachImages)) {
+            const valid = (l.attachImages as unknown[])
+              .filter((p): p is string => typeof p === "string" && validImgPaths.has(p as string))
+              .filter((p) => !assignedImgPaths.has(p)); // 防重复分配
+            if (valid.length > 0) {
+              valid.forEach((p) => assignedImgPaths.add(p));
+              attachImages = valid;
+            }
+          }
+          return {
+            title: typeof l.title === "string" ? l.title : "未命名",
+            file: l.file as string,
+            anchor: typeof l.anchor === "string" ? l.anchor : undefined,
+            // world 由 LLM 在 Step 4 判断（不是 Step 2 的 role）
+            world: (l.world === "practice" ? "practice" : "study") as "study" | "practice",
+            attachImages,
+          };
+        });
       // section.world 按子节点多数派
       const practiceCount = lessons.filter((l) => l.world === "practice").length;
       const studyCount = lessons.filter((l) => l.world === "study").length;
@@ -526,12 +564,14 @@ function parseStructureDesignResult(raw: string, validFiles: string[], _practice
 /**
  * 无 LLM 时的降级: 纯规则结构。
  * 按文件路径第一个非通用目录分 section，每文件一个 lesson。
+ * 独立图片按路径前缀匹配挂到同目录 lesson（LLM 关联的规则降级）。
  */
 function fallbackStructure(
   readmeMd: string,
   outlines: Map<string, FileOutline>,
   originalFiles: string[],
   practiceFiles: string[],
+  standaloneImages: { path: string; alt: string }[] = [],
 ): CourseStructure {
   const GENERIC_DIRS = new Set(["lessons", "docs", "doc", "src", "content", "modules", "chapters", "tutorials", "guide"]);
   const allFiles = [...originalFiles.map((f) => ({ file: f, world: "study" as const })), ...practiceFiles.map((f) => ({ file: f, world: "practice" as const }))];
@@ -551,6 +591,26 @@ function fallbackStructure(
       file,
       world,
     });
+  }
+
+  // 独立图片按路径前缀匹配挂到同目录 lesson
+  const allLessons = Array.from(groups.values()).flatMap((g) => g.lessons);
+  for (const img of standaloneImages) {
+    const imgDir = img.path.includes("/") ? img.path.slice(0, img.path.lastIndexOf("/")) : "";
+    // 找路径前缀最匹配的 lesson
+    let bestLesson: DesignedLesson | null = null;
+    let bestOverlap = -1;
+    for (const lesson of allLessons) {
+      const lessonDir = lesson.file.includes("/") ? lesson.file.slice(0, lesson.file.lastIndexOf("/")) : "";
+      if (imgDir === lessonDir || (lessonDir && imgDir.startsWith(lessonDir + "/"))) {
+        const overlap = lessonDir.split("/").length;
+        if (overlap > bestOverlap) { bestOverlap = overlap; bestLesson = lesson; }
+      }
+    }
+    if (bestLesson) {
+      if (!bestLesson.attachImages) bestLesson.attachImages = [];
+      bestLesson.attachImages.push(img.path);
+    }
   }
 
   const h1Match = readmeMd.match(/^#\s+(.+)$/m);

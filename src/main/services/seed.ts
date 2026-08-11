@@ -2,10 +2,10 @@
  * 种子课程加载器 —— 从内置静态 JSON 加载 microsoft/AI-For-Beginners。
  *
  * 不联网、不调 LLM、不跑翻译管线 —— 这些都在构建前由
- * `scripts/_audit-seed.mjs` 一次性完成,产物固化为 `src/main/assets/seed-course.json`。
+ * `scripts/build-seed-json.mjs` 一次性完成,产物固化为 `src/main/assets/seed-course.json`。
  * 启动时直接 insert,瞬时完成,离线可用。
  *
- * 数据来源(运行 `_audit-seed.mjs` 重新生成):
+ * 数据来源(运行 `npx tsx scripts/build-seed-json.mjs` 重新生成):
  *   importRepoToParsedCourse → generateCourseFromRepoFiles →
  *   fetchTranslatedContent → persistTranslations → 导出 course/nodes/progress/translations
  *
@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** JSON 顶层结构(与 _audit-seed.mjs 导出格式对齐) */
+/** JSON 顶层结构(与 build-seed-json.mjs 导出格式对齐) */
 interface SeedData {
   version: number;
   courseId: string;
@@ -95,14 +95,14 @@ function loadSeedData(): SeedData {
     // fallthrough
   }
   throw new Error(
-    `seed-course.json 未找到,试过: ${candidates.join(", ")} — 请运行 npx tsx scripts/_audit-seed.mjs 重新生成。lastErr=${String(lastErr)}`,
+    `seed-course.json 未找到,试过: ${candidates.join(", ")} — 请运行 npx tsx scripts/build-seed-json.mjs 重新生成。lastErr=${String(lastErr)}`,
   );
 }
 
 const SEED_DATA: SeedData = loadSeedData();
 const COURSE_ID = SEED_DATA.courseId;
 // 种子版本号:bump 触发重建(删旧课程 + 重新灌入)。
-// 改这里的同时应重新跑 _audit-seed.mjs 更新 JSON 内容。
+// 改这里的同时应重新跑 build-seed-json.mjs 更新 JSON 内容。
 const SEED_VERSION = 8;
 
 /**

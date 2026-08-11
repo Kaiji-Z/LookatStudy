@@ -404,6 +404,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
 
       // Step 5: 拉正文 + 图片内联 + 落库 + 验证
       const { executeImport } = await import("../services/import-pipeline.js");
+      const { GithubContentSource } = await import("../services/content-source.js");
       const translationFilesMap = langCode && analysis.translationFiles[langCode]
         ? new Map([[langCode, analysis.translationFiles[langCode]!]])
         : null;
@@ -411,7 +412,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       const result = await executeImport(
         getDb(), structure,
         {
-          owner, repo: cleanRepo, branch: analysis.branch, fetchFn: fetch,
+          source: new GithubContentSource(owner, cleanRepo, analysis.branch, fetch),
           repoUrl, repoName: cleanRepo,
           langCode,
           translationFiles: translationFilesMap,

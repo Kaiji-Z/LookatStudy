@@ -15,11 +15,7 @@ import { eq } from "drizzle-orm";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
 import { contentNodes, courses, progress as progressTable, contentNodeTranslations } from "../db/schema.js";
-import {
-  fetchSingleFileContent,
-  fetchImageAsDataUrl,
-  cdnUrl,
-} from "./pure/repo-fetcher.js";
+import type { ContentSource } from "./content-source.js";
 import type { CourseStructure, DesignedLesson } from "./import-llm-service.js";
 import { verifyCourseIntegrity, type VerificationResult } from "./pure/course-verifier.js";
 
@@ -50,10 +46,7 @@ export async function executeImport(
   db: Db,
   structure: CourseStructure,
   opts: {
-    owner: string;
-    repo: string;
-    branch: string;
-    fetchFn: typeof fetch;
+    source: ContentSource;
     repoUrl: string | null;
     repoName: string;
     langCode: string | null;
@@ -121,13 +114,13 @@ export async function executeImport(
     for (const lesson of sec.lessons) {
       // 5a: 拉正文（标题序号截取：含文件头部 + H3 子段 + 供翻译对齐的 meta）
       const content = await getLessonContent(
-        lesson, opts, contentCache, headingsCache, fileFirstLesson, lessonMeta,
+        lesson, opts.source, contentCache, headingsCache, fileFirstLesson, lessonMeta,
         allLessons.length, totalLessons, send,
       );
 
       // 5b: 图片 base64 内联
       const inlinedContent = content ? await inlineImages(
-        content, lesson.file, opts, imageCache, send,
+        content, lesson.file, opts.source, imageCache, send,
       ) : null;
 
       // 记录原文图片 src 数组（翻译按位置映射用）
@@ -187,7 +180,7 @@ export async function executeImport(
   if (opts.langCode && opts.translationFiles) {
     send(`拉取 ${opts.langCode} 翻译正文（图片按位置用原文图，不下载翻译图）`);
     await fetchAndPersistTranslations(
-      db, courseId, opts.langCode, structure, opts, contentCache, lessonImages, lessonMeta, send,
+      db, courseId, opts.langCode, structure, opts.source, opts.markDirty, contentCache, lessonImages, lessonMeta, send,
     );
   }
 
@@ -271,7 +264,7 @@ export function extractSectionByIndex(
  */
 async function getLessonContent(
   lesson: DesignedLesson,
-  opts: { owner: string; repo: string; branch: string; fetchFn: typeof fetch },
+  source: ContentSource,
   cache: Map<string, string | null>,
   headingsCache: Map<string, Heading[]>,
   fileFirstLesson: Map<string, string>,
@@ -284,9 +277,7 @@ async function getLessonContent(
 
   // 从缓存或拉取
   if (!cache.has(lesson.file)) {
-    const content = await fetchSingleFileContent(
-      lesson.file, opts.owner, opts.repo, opts.branch, opts.fetchFn,
-    );
+    const content = await source.getFile(lesson.file);
     cache.set(lesson.file, content);
   }
   const fullContent = cache.get(lesson.file);
@@ -319,7 +310,7 @@ async function getLessonContent(
 async function inlineImages(
   content: string,
   sourceFile: string,
-  opts: { owner: string; repo: string; branch: string; fetchFn: typeof fetch },
+  source: ContentSource,
   imageCache: Map<string, string | null>,
   _send: (msg: string) => void,
 ): Promise<string> {
@@ -358,15 +349,12 @@ async function inlineImages(
 
     // 从缓存或下载
     if (!imageCache.has(imgPath)) {
-      const dataUrl = await fetchImageAsDataUrl(
-        imgPath, opts.owner, opts.repo, opts.branch, opts.fetchFn,
-      );
+      const dataUrl = await source.getImageDataUrl(imgPath);
       if (dataUrl) {
         imageCache.set(imgPath, dataUrl);
       } else {
-        // 下载失败或超限 → 用 CDN URL 替代(联网可看,离线不可看)
-        const cdn = cdnUrl(opts.owner, opts.repo, opts.branch, imgPath);
-        imageCache.set(imgPath, cdn);
+        // 下载失败或超限 → fallback（GitHub 用 CDN URL，本地返回 null 保留原 src）
+        imageCache.set(imgPath, source.getImageFallbackUrl(imgPath));
       }
     }
     return imageCache.get(imgPath) ?? src;
@@ -415,7 +403,8 @@ async function fetchAndPersistTranslations(
   courseId: string,
   langCode: string,
   structure: CourseStructure,
-  opts: { owner: string; repo: string; branch: string; fetchFn: typeof fetch; markDirty: () => void },
+  source: ContentSource,
+  markDirty: () => void,
   contentCache: Map<string, string | null>,
   lessonImages: Map<string, string[]>,
   lessonMeta: Map<string, { titleIndex: number; isFirstOfFile: boolean }>,
@@ -433,9 +422,7 @@ async function fetchAndPersistTranslations(
 
     // 从缓存或拉取翻译文件
     if (!contentCache.has(transPath)) {
-      const content = await fetchSingleFileContent(
-        transPath, opts.owner, opts.repo, opts.branch, opts.fetchFn,
-      );
+      const content = await source.getFile(transPath);
       contentCache.set(transPath, content);
     }
     const transContent = contentCache.get(transPath);
@@ -489,7 +476,7 @@ async function fetchAndPersistTranslations(
     }
   }
 
-  opts.markDirty();
+  markDirty();
   send(`翻译完成: ${transWritten} 课有翻译`);
 }
 

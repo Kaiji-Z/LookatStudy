@@ -55,7 +55,7 @@ assert.ok(filtered.find((f) => f.path === "lessons/1-Intro/README.md"));
 assert.ok(!filtered.find((f) => f.path.includes("translations")));
 console.log("✓ T3 filterLessonFiles: 排除 translations/LICENSE/CONTRIBUTING");
 
-// === T4: detectRepoPattern — 课程型（≥3 个 .md 链接）===
+// === T4: detectRepoPattern — well-organized（编号目录 ≥3 个）===
 const courseReadme = `
 # AI Course
 - [Lesson 1](./lessons/1-Intro/README.md)
@@ -64,9 +64,21 @@ const courseReadme = `
 - [Lesson 4](./lessons/4-NLP/README.md)
 `;
 const courseDetection = detectRepoPattern(courseReadme);
-assert.strictEqual(courseDetection.pattern, "course", "T4: 4 个 .md 链接 → course");
+assert.strictEqual(courseDetection.pattern, "well-organized", "T4: 编号目录 → well-organized");
 assert.ok(courseDetection.lessonFiles && courseDetection.lessonFiles.length >= 3);
-console.log(`✓ T4 detectRepoPattern(course): ${courseDetection.lessonFiles.length} 个课时文件`);
+console.log(`✓ T4 detectRepoPattern(well-organized): ${courseDetection.lessonFiles.length} 个课时文件`);
+
+// === T4b: detectRepoPattern — course（有链接但无编号目录）===
+const courseReadmeB = `
+# Messy Course
+- [Intro](./intro.md)
+- [Basics](./module-a/basics.md)
+- [Advanced](./advanced/guide.md)
+- [Lab](./lab/work.md)
+`;
+const courseDetectionB = detectRepoPattern(courseReadmeB);
+assert.strictEqual(courseDetectionB.pattern, "course", "T4b: 无编号目录 → course(LLM 重组)");
+console.log(`✓ T4b detectRepoPattern(course): 无编号目录走 LLM 重组`);
 
 // === T5: detectRepoPattern — 单文件型（README 够长但无子文件链接）===
 const singleFileReadme = "# Course\n\n" + "This is substantial teaching content. ".repeat(200);

@@ -240,7 +240,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       // 自动 AI 结构化(有 key 时)。失败不阻塞,降级到纯确定性导入结果。
       // 必须在图片下载之前:LLM 可能 skip 一些 lesson(FK CASCADE 删 node_assets),
       // 结构化后 lesson 列表稳定了再关联图片才不会丢。
-      await autoStructureCourse(result.courseId, send).catch((e) => {
+      await autoStructureCourse(result.courseId, send, importResult.detection.pattern).catch((e) => {
         send(`AI 结构化跳过(${e instanceof Error ? e.message : "无 key 或出错"})`);
       });
 
@@ -875,25 +875,45 @@ export function registerM3Handlers(): void {
 
 /**
  * 导入后自动 AI 结构化(有 API key 时)。
- * 流程:analyzeCourseStructure → applyCourseStructure → 补 exam 节点 → generateLessonSummaries。
+ *
+ * 两条路径:
+ *   - well-organized: 只判 world(study/practice/skip),保留原始目录结构
+ *   - 其他: LLM 重组章节(analyzeCourseStructure → applyCourseStructure)
+ *
  * 失败不阻塞(调用方 catch),用户仍得到纯确定性导入的课程。
  * 无 key → 直接返回(降级)。
  */
-async function autoStructureCourse(courseId: string, send: (msg: string) => void): Promise<void> {
+async function autoStructureCourse(
+  courseId: string,
+  send: (msg: string) => void,
+  repoPattern?: string,
+): Promise<void> {
   const ready = isLlmReady(getDb());
   if (!ready.ready) {
     return; // 无 key,跳过(不报错,用户可后续手动结构化)
   }
+
+  if (repoPattern === "well-organized") {
+    // 路径 A:只判 world,保留原始章节结构
+    send("AI 正在分类学习/实操内容（保留原始章节）…");
+    const { classifyWorldsOnly, applyWorldClassification } = await import("../services/course-structure-service.js");
+    const classifications = await classifyWorldsOnly(getDb(), courseId, send);
+    const result = applyWorldClassification(getDb(), courseId, classifications);
+    markDirty();
+    ensureExamNodesForExistingCourses(getDb());
+    markDirty();
+    send(`AI 分类完成：📚 学习 ${result.studyCount} 课 / 🔧 实操 ${result.practiceCount} 课 / 跳过 ${result.skippedCount}`);
+    return;
+  }
+
+  // 路径 B:LLM 重组章节(杂乱仓库)
   send("AI 正在分析课程结构…");
   const proposal = await analyzeCourseStructure(getDb(), courseId, send);
   send(`AI 重组章节(${proposal.sections.length} 章)…`);
   applyCourseStructure(getDb(), courseId, proposal);
   markDirty();
-  // 结构化重建了 section,exam 节点需补回
   ensureExamNodesForExistingCourses(getDb());
   markDirty();
-  // lesson 摘要不在这里批量生成(大课程会卡很久)——改为点节点时懒生成(getNodeSummary IPC)。
-  // section 摘要也不批量(applyCourseStructure 已从 LLM 结构化结果带入 sec.summary)。
   send("AI 结构化完成");
 }
 

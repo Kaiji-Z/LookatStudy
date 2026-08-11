@@ -26,7 +26,7 @@ export interface DiscoveredFile {
 }
 
 /** 仓库检测结果 */
-export type RepoPattern = "course" | "single-file" | "unsupported";
+export type RepoPattern = "course" | "well-organized" | "single-file" | "unsupported";
 
 export interface DetectionResult {
   pattern: RepoPattern;
@@ -110,14 +110,44 @@ export function filterLessonFiles(files: DiscoveredFile[]): DiscoveredFile[] {
 }
 
 /**
+ * 规则高置信度检测：仓库是否已用编号目录组织好课程结构。
+ *
+ * 判定依据：文件路径里有 ≥3 个不同的编号顶层目录（如 lessons/1-Intro/,
+ * lessons/2-Symbolic/, lessons/3-NeuralNetworks/）。编号前缀 = 作者刻意组织。
+ *
+ * 这是确定性判断（规则管），不交给 LLM。
+ * 命中 → pattern: "well-organized"，下游只判 world 不重组章节。
+ */
+export function detectWellOrganized(files: { path: string }[]): boolean {
+  const topicDirs = new Set<string>();
+  for (const f of files) {
+    // 匹配 (可选 lessons/) + 编号 + 分隔符 + 名称 + /
+    // 如: lessons/1-Intro/README.md → "1-intro"
+    //     2-Symbolic/README.md → "2-symbolic"
+    //     lessons/03-Perceptron/lab/README.md → 注意这会匹配 03-perceptron
+    // 但我们要的是顶层编号目录,所以要排除子编号目录:
+    // 只取路径里第一个编号目录
+    const parts = f.path.split("/").filter(Boolean);
+    for (const part of parts) {
+      const m = part.match(/^(\d+[-_])/i);
+      if (m && !part.includes(".")) {
+        // 第一个编号目录(不含点 = 不是文件名)
+        topicDirs.add(part.toLowerCase());
+        break; // 只取路径里第一个编号目录
+      }
+    }
+  }
+  return topicDirs.size >= 3;
+}
+
+/**
  * 检测仓库形态。
  *
  * 原则:规则管确定性，不确定的给 LLM 兜底（通过下游 analyzeCourseStructure）。
  *
- * - course: README 链接里有 ≥3 个课程文件(.md/.ipynb 等)指向子目录
- *   规则高置信度判定:有子文件链接 = 有课程结构
+ * - well-organized: README 链接 ≥3 个且路径有编号目录组织 → 保留原始结构,只判 world
+ * - course: README 链接里有 ≥3 个课程文件(.md/.ipynb 等)指向子目录 → LLM 重组
  * - single-file: 无子文件链接但 README 有实质教学正文（正文 prose >1000 字，非徽章/构建指令）
- *   规则尽力判定:检查是否真有教学内容而非纯元数据
  * - unsupported: README 太短且无子文件
  */
 export function detectRepoPattern(readmeMd: string): DetectionResult {
@@ -126,6 +156,14 @@ export function detectRepoPattern(readmeMd: string): DetectionResult {
 
   // 课程型: 有 ≥3 个子文件链接(.md/.ipynb/.rst/.rmd/.org/.adoc 任一)
   if (lessonLinks.length >= 3) {
+    // 高置信度检测:仓库是否已用编号目录组织好(如 lessons/1-Intro/...)
+    if (detectWellOrganized(lessonLinks)) {
+      return {
+        pattern: "well-organized",
+        reason: `README 含 ${lessonLinks.length} 个文件,路径有编号目录组织,判定为已组织好的课程仓库`,
+        lessonFiles: lessonLinks,
+      };
+    }
     return {
       pattern: "course",
       reason: `README 含 ${lessonLinks.length} 个内部课程文件链接，判定为课程型仓库`,

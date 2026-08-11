@@ -384,7 +384,223 @@ export function applyCourseStructure(
   };
 }
 
-/* ---------- 内部工具 ---------- */
+/* ============================================================
+ * well-organized 路径:只判 world 不重组章节。
+ * 对已组织好目录结构的仓库(如 microsoft/AI-For-Beginners),
+ * 保留 sectionKeyOf 算出的原始 section,只让 LLM 判每个 lesson 的 world。
+ * ============================================================ */
+
+/** LLM world 分类结果 */
+export interface WorldClassification {
+  nodeId: string;
+  world: "study" | "practice" | "skip";
+}
+
+/**
+ * LLM 只判 world(不重组章节)。适用于 well-organized 仓库。
+ * 喂 lesson 列表(含 sourcePath 目录信息)给 LLM,让它判 study/practice/skip。
+ */
+export async function classifyWorldsOnly(
+  db: Db,
+  courseId: string,
+  onProgress?: (msg: string) => void,
+): Promise<WorldClassification[]> {
+  const llm = resolveLlm(db);
+  const course = db.select().from(courses).where(eq(courses.id, courseId)).get();
+  const lessons = db
+    .select()
+    .from(contentNodes)
+    .where(eq(contentNodes.courseId, courseId))
+    .all()
+    .filter((n) => n.type === "lesson");
+
+  if (lessons.length === 0) return [];
+
+  const inputs = lessons.map((l) => ({
+    id: l.id,
+    title: l.title,
+    sourcePath: l.sourcePath ?? "",
+    preview: (l.content ?? "").slice(0, 200).replace(/\n/g, " ").trim(),
+  }));
+
+  // 分块(同 analyzeCourseStructure)
+  const CHUNK_SIZE = 40;
+  const allResults: WorldClassification[] = [];
+
+  if (inputs.length <= CHUNK_SIZE) {
+    onProgress?.(`AI 分类中（${inputs.length} 课）…`);
+    const prompt = buildWorldOnlyPrompt(course?.title ?? "(未知课程)", inputs);
+    const result = await generateText({ model: llm.languageModel, prompt });
+    allResults.push(...parseWorldOnlyResult(result.text, lessons.map((l) => l.id)));
+    return allResults;
+  }
+
+  for (let i = 0; i < inputs.length; i += CHUNK_SIZE) {
+    const chunk = inputs.slice(i, i + CHUNK_SIZE);
+    const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+    const totalChunks = Math.ceil(inputs.length / CHUNK_SIZE);
+    onProgress?.(`AI 分类中（第 ${chunkNum}/${totalChunks} 批，${chunk.length} 课）…`);
+    const prompt = buildWorldOnlyPrompt(course?.title ?? "(未知课程)", chunk);
+    const result = await generateText({ model: llm.languageModel, prompt });
+    allResults.push(...parseWorldOnlyResult(result.text, chunk.map((c) => c.id)));
+  }
+
+  return allResults;
+}
+
+/**
+ * 应用 world 分类到 DB(不删 section、不改 parentId、不改 orderIdx)。
+ * 只更新 lesson.world + section.world(按子节点多数派) + 删 skip 节点 + 重置 progress。
+ */
+export function applyWorldClassification(
+  db: Db,
+  courseId: string,
+  classifications: WorldClassification[],
+): { studyCount: number; practiceCount: number; skippedCount: number } {
+  const validIds = new Set(
+    db.select().from(contentNodes).where(eq(contentNodes.courseId, courseId)).all()
+      .filter((n) => n.type === "lesson")
+      .map((n) => n.id),
+  );
+
+  let studyCount = 0;
+  let practiceCount = 0;
+  let skippedCount = 0;
+
+  for (const c of classifications) {
+    if (!validIds.has(c.nodeId)) continue;
+    if (c.world === "skip") {
+      // 删真正噪声(translation/meta 等)
+      db.delete(contentNodes).where(eq(contentNodes.id, c.nodeId)).run();
+      skippedCount++;
+    } else {
+      db.update(contentNodes)
+        .set({ world: c.world })
+        .where(eq(contentNodes.id, c.nodeId))
+        .run();
+      if (c.world === "study") studyCount++;
+      else practiceCount++;
+    }
+  }
+
+  // section.world 按子节点多数派重算
+  const sections = db.select().from(contentNodes).where(eq(contentNodes.courseId, courseId)).all()
+    .filter((n) => n.type === "section");
+  for (const sec of sections) {
+    const childLessons = db.select().from(contentNodes).where(eq(contentNodes.parentId, sec.id)).all()
+      .filter((n) => n.type === "lesson");
+    if (childLessons.length === 0) continue;
+    const practice = childLessons.filter((l) => l.world === "practice").length;
+    const study = childLessons.filter((l) => (l.world ?? "study") === "study").length;
+    const secWorld = practice > 0 && study === 0 ? "practice" : "study";
+    db.update(contentNodes).set({ world: secWorld }).where(eq(contentNodes.id, sec.id)).run();
+  }
+
+  // 重置 progress 门控(practice=available, study 第一课=available, 其余 locked)
+  const courseLessons = db.select().from(contentNodes).where(eq(contentNodes.courseId, courseId)).all()
+    .filter((n) => n.type === "lesson");
+
+  // practice → available
+  for (const lesson of courseLessons.filter((l) => l.world === "practice")) {
+    const existing = db.select().from(progressTable).where(eq(progressTable.nodeId, lesson.id)).get();
+    if (existing) {
+      db.update(progressTable).set({ status: "available" }).where(eq(progressTable.nodeId, lesson.id)).run();
+    } else {
+      db.insert(progressTable).values({ nodeId: lesson.id, status: "available", crownLevel: 0 }).run();
+    }
+  }
+
+  // study: 第一个 study section 的第一个 study lesson = available, 其余 locked
+  const firstStudySection = sections
+    .filter((s) => (s.world ?? "study") === "study")
+    .sort((a, b) => a.orderIdx - b.orderIdx)[0];
+  const firstStudyLessonId = firstStudySection
+    ? db.select().from(contentNodes).where(eq(contentNodes.parentId, firstStudySection.id)).all()
+        .filter((n) => n.type === "lesson" && (n.world ?? "study") === "study")
+        .sort((a, b) => a.orderIdx - b.orderIdx)[0]?.id
+    : null;
+
+  for (const lesson of courseLessons.filter((l) => (l.world ?? "study") === "study")) {
+    const shouldBeAvailable = lesson.id === firstStudyLessonId;
+    const existing = db.select().from(progressTable).where(eq(progressTable.nodeId, lesson.id)).get();
+    const status = shouldBeAvailable ? "available" : "locked";
+    if (existing) {
+      if (existing.status === "locked" || existing.status === "available") {
+        db.update(progressTable).set({ status }).where(eq(progressTable.nodeId, lesson.id)).run();
+      }
+    } else {
+      db.insert(progressTable).values({ nodeId: lesson.id, status, crownLevel: 0 }).run();
+    }
+  }
+
+  return { studyCount, practiceCount, skippedCount };
+}
+
+/* ---------- well-organized 路径内部工具 ---------- */
+
+function buildWorldOnlyPrompt(
+  courseTitle: string,
+  lessons: { id: string; title: string; sourcePath: string; preview: string }[],
+): string {
+  const lessonList = lessons
+    .map((l) => `  { "id": "${l.id}", "title": "${l.title}", "sourcePath": "${l.sourcePath.slice(0, 80)}", "preview": "${l.preview.slice(0, 150)}" }`)
+    .join(",\n");
+
+  return `你是课程内容分类专家。下面是「${courseTitle}」这个学习仓库的课时文件列表。
+这个仓库的**目录结构已经决定了章节**(你不要重组),你只需判断每个文件的 world 分类。
+
+分类标准:
+- **study**: 讲解正文(概念讲解、理论、教程、文档) → 学习世界主线
+- **practice**: notebook 代码、配套练习、lab、示例代码 → 实操世界
+- **skip**: 真正的噪声(仓库元数据、翻译副本、纯环境配置 setup/install)
+
+提示:
+- sourcePath 里的文件扩展名(.ipynb/.py → 可能 practice,.md → 可能 study)
+- 路径含 /lab/ /exercise/ → 大概率 practice
+- 但这些只是提示,最终由你根据 title + preview 内容判断
+
+文件列表:
+[
+${lessonList}
+]
+
+严格返回以下 JSON 格式,不要加 markdown 代码块标记:
+[
+  { "nodeId": "id1", "world": "study" },
+  { "nodeId": "id2", "world": "practice" },
+  { "nodeId": "id3", "world": "skip" }
+]`;
+}
+
+function parseWorldOnlyResult(raw: string, validIds: string[]): WorldClassification[] {
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  let arr: unknown;
+  try {
+    arr = JSON.parse(cleaned);
+  } catch (e) {
+    throw new Error(`LLM world 分类 JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!Array.isArray(arr)) {
+    throw new Error("LLM world 分类返回的不是数组");
+  }
+
+  const validSet = new Set(validIds);
+  return (arr as Array<Record<string, unknown>>)
+    .map((item) => ({
+      nodeId: typeof item.nodeId === "string" ? item.nodeId : "",
+      world: item.world === "practice" ? "practice" as const
+           : item.world === "skip" ? "skip" as const
+           : "study" as const,
+    }))
+    .filter((c) => validSet.has(c.nodeId));
+}
+
+/* ---------- 原路径内部工具 ---------- */
 
 function buildStructurePrompt(
   courseTitle: string,

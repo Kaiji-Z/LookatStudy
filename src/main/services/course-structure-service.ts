@@ -483,17 +483,59 @@ export function applyWorldClassification(
     }
   }
 
-  // section.world 按子节点多数派重算
+  // 拆分 practice lesson 到独立的 practice section。
+  // 微软仓库里 study README 和 practice notebook 在同一个目录(sectionKeyOf 归同一 section),
+  // 但用户需要"学习世界"和"实操世界"分开显示。
+  // 做法:遍历所有 section,如果有混合的 practice lesson,把它们移到一个新建的 practice section。
   const sections = db.select().from(contentNodes).where(eq(contentNodes.courseId, courseId)).all()
     .filter((n) => n.type === "section");
+
+  // 收集所有需要拆出来的 practice lesson
+  const orphanPractice: { lesson: typeof contentNodes.$inferSelect; fromSection: string }[] = [];
   for (const sec of sections) {
     const childLessons = db.select().from(contentNodes).where(eq(contentNodes.parentId, sec.id)).all()
       .filter((n) => n.type === "lesson");
-    if (childLessons.length === 0) continue;
-    const practice = childLessons.filter((l) => l.world === "practice").length;
-    const study = childLessons.filter((l) => (l.world ?? "study") === "study").length;
-    const secWorld = practice > 0 && study === 0 ? "practice" : "study";
-    db.update(contentNodes).set({ world: secWorld }).where(eq(contentNodes.id, sec.id)).run();
+    const practiceLessons = childLessons.filter((l) => l.world === "practice");
+    const studyLessons = childLessons.filter((l) => (l.world ?? "study") === "study");
+
+    if (practiceLessons.length > 0 && studyLessons.length > 0) {
+      // 混合 section:practice lesson 标记为孤儿,稍后移走
+      for (const pl of practiceLessons) {
+        orphanPractice.push({ lesson: pl, fromSection: sec.title });
+      }
+    } else if (practiceLessons.length > 0 && studyLessons.length === 0) {
+      // 纯 practice section:不需要拆
+      db.update(contentNodes).set({ world: "practice" }).where(eq(contentNodes.id, sec.id)).run();
+    } else {
+      // 纯 study section
+      db.update(contentNodes).set({ world: "study" }).where(eq(contentNodes.id, sec.id)).run();
+    }
+  }
+
+  // 如果有孤儿 practice lesson,创建 practice section 并移入
+  if (orphanPractice.length > 0) {
+    const { randomUUID } = require("node:crypto") as { randomUUID: () => string };
+    const maxOrder = Math.max(...sections.map((s) => s.orderIdx), 0);
+    const practiceSectionId = randomUUID();
+    db.insert(contentNodes).values({
+      id: practiceSectionId,
+      courseId,
+      parentId: null,
+      type: "section",
+      title: "🔧 实操练习",
+      sourcePath: null,
+      orderIdx: maxOrder + 1,
+      world: "practice",
+      summary: null,
+    }).run();
+
+    let practiceOrder = 0;
+    for (const { lesson } of orphanPractice) {
+      db.update(contentNodes)
+        .set({ parentId: practiceSectionId, orderIdx: practiceOrder++ })
+        .where(eq(contentNodes.id, lesson.id))
+        .run();
+    }
   }
 
   // 重置 progress 门控(practice=available, study 第一课=available, 其余 locked)

@@ -309,7 +309,7 @@ function ContentTab({
         <ErrorBoundary
           key={`${selectedNode.id}-${locale ?? "orig"}`}
           fallback={(_err, retry) => (
-            <div className="prose prose-sm max-w-[80ch] leading-relaxed">
+            <div className="prose prose-sm max-w-[80ch] leading-relaxed [&_pre]:max-w-full [&_pre]:overflow-x-auto">
               <div className="text-body text-warning mb-2">
                 ⚠️ 这段内容渲染失败(可能翻译格式有问题)。
               </div>
@@ -325,9 +325,10 @@ function ContentTab({
             </div>
           )}
         >
-        <div ref={proseRef} className="prose prose-sm max-w-[80ch] leading-relaxed select-text">
+        <div ref={proseRef} className="prose prose-sm max-w-[80ch] leading-relaxed [&_pre]:max-w-full [&_pre]:overflow-x-auto select-text">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
+            urlTransform={(url) => url}
             components={{
               // 外链强制新窗口 → setWindowOpenHandler → 系统浏览器,
               // 防止点击讲解里的链接把 electron 主窗口导航成网页。

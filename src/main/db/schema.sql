@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS courses (
   description TEXT,
   version INTEGER NOT NULL DEFAULT 1,
   lab_type TEXT NOT NULL DEFAULT 'doc' CHECK (lab_type IN ('doc', 'code', 'notebook')),
+  -- 仓库原文语言 (BCP-47 子集: en / zh-CN / zh-TW / ja / ...), LLM 在 Step 2 判断
+  source_lang TEXT,
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 

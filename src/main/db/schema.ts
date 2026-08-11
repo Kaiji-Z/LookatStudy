@@ -25,6 +25,8 @@ export const courses = sqliteTable("courses", {
   labType: text("lab_type", { enum: ["doc", "code", "notebook"] })
     .notNull()
     .default("doc"),
+  /** 仓库原文语言 (en / zh-CN / zh-TW / ...), LLM Step 2 判断; null=未知按 en 处理 */
+  sourceLang: text("source_lang"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

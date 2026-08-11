@@ -209,44 +209,59 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [progressMsg, setProgressMsg] = useState<string | null>(null);
+  /** 导入进度步骤列表（安装式滚动窗口）：新步骤进来时上一条自动打勾 */
+  const [progressSteps, setProgressSteps] = useState<{ msg: string; status: "working" | "done"; ts: number }[]>([]);
+  /** 每秒 tick 让 working 步骤的"已工作 Xs"实时更新 */
+  const [, setTick] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string; rect: DOMRect } | null>(null);
-  const [pendingLanguages, setPendingLanguages] = useState<{ code: string; name: string }[] | null>(null);
   // 新智能管线: analyzeRepo 的结果暂存(供 importAnalyzed 用)
   const [repoAnalysis, setRepoAnalysis] = useState<import("@shared/types").RepoAnalysis | null>(null);
 
-  useEffect(() => { const off = api.on("import:progress", (msg: string) => setProgressMsg(msg)); return () => off(); }, []);
+  useEffect(() => {
+    const off = api.on("import:progress", (msg: string) => {
+      setProgressSteps((prev) => {
+        // 含 "X/Y" 进度数字 → 当前步骤的进度更新（不新建步骤）
+        const isProgressUpdate = /\d+\/\d+/.test(msg);
+        const last = prev[prev.length - 1];
+        if (isProgressUpdate && last && last.status === "working") {
+          const copy = [...prev];
+          copy[copy.length - 1] = { ...last, msg };
+          return copy;
+        }
+        // 新步骤：上一条 working 标 done，push 新步骤
+        const copy = prev.map((s) => (s.status === "working" ? { ...s, status: "done" as const } : s));
+        copy.push({ msg, status: "working", ts: Date.now() });
+        return copy;
+      });
+    });
+    const timer = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => { off(); clearInterval(timer); };
+  }, []);
 
   const handleImportUrl = async () => {
     if (!repoUrl.trim() || busy) return;
-    setBusy(true); setError(null); setSuccess(null); setProgressMsg(null);
-    setPendingLanguages(null); setRepoAnalysis(null);
+    setBusy(true); setError(null); setSuccess(null); setProgressSteps([]);
+    setRepoAnalysis(null);
     try {
-      // 新管线 Step 1+2: 分析仓库(LLM 判文件角色 + 检测翻译)
+      // 新管线 Step 1+2: 分析仓库(LLM 判文件角色 + sourceLang + 自动按 pref_lang 选翻译)
       const analysis = await api.analyzeRepo(repoUrl.trim());
       setRepoAnalysis(analysis);
-      if (analysis.languages.length > 0) {
-        // 有翻译: 让用户选择
-        setPendingLanguages(analysis.languages);
-        setBusy(false);
-        return;
-      }
-      // 无翻译: 直接导入原文(直接传 analysis,不靠 state——避免 React 异步更新)
-      await doImport(null, analysis);
+      // selectedLang 已由 pref_lang + sourceLang 自动决定，直接导入（不再弹语言选择）
+      await doImport(analysis);
     } catch (e) {
       setError(e instanceof Error ? `${e.message}\n\n网络受限或私有仓库请改用「Markdown」方式。` : String(e));
       setBusy(false);
     }
   };
 
-  const doImport = async (langCode: string | null, analysisOverride?: import("@shared/types").RepoAnalysis | null) => {
+  const doImport = async (analysisOverride?: import("@shared/types").RepoAnalysis | null) => {
     const analysis = analysisOverride ?? repoAnalysis;
     if (!analysis) return;
-    setBusy(true); setError(null); setSuccess(null); setProgressMsg(null); setPendingLanguages(null);
+    setBusy(true); setError(null); setSuccess(null); setProgressSteps([]);
     try {
       // 新管线 Step 3+4+5: 提取大纲 → LLM 设计结构 → 拉正文+图片 → 落库
-      const course = await api.importAnalyzed(repoUrl.trim(), analysis, langCode);
-      setSuccess(`导入成功：${course.title}${langCode ? `（含 ${langCode} 翻译）` : ""}`);
+      const course = await api.importAnalyzed(repoUrl.trim(), analysis);
+      setSuccess(`导入成功：${course.title}${analysis.selectedLang ? `（含 ${analysis.selectedLang} 翻译）` : ""}`);
       setRepoAnalysis(null);
       setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);
     } catch (e) { setError(e instanceof Error ? `${e.message}\n\n网络受限或私有仓库请改用「Markdown」方式。` : String(e)); } finally { setBusy(false); }
@@ -262,7 +277,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   };
   const handleImportFolder = async () => {
     if (busy) return;
-    setBusy(true); setError(null); setSuccess(null); setProgressMsg(null);
+    setBusy(true); setError(null); setSuccess(null); setProgressSteps([]);
     try {
       const course = await api.importLocalFolder();
       if (!course) { setBusy(false); return; }
@@ -331,21 +346,27 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
                 <button onClick={handleImportFolder} disabled={busy} data-testid="import-folder-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{busy ? "处理中…" : "选择文件夹"}</button>
               </section>
             )}
-            {busy && progressMsg && <div className="bg-black/30 text-white/70 text-label rounded-lg p-2 flex items-center gap-1.5" data-testid="import-progress"><span className="inline-block w-2.5 h-2.5 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0"></span>{progressMsg}</div>}
-            {error && <div className="border border-warning/40 text-warning-light text-label rounded-lg p-2 whitespace-pre-wrap" data-testid="import-error">{error}</div>}
-            {success && <div className="border border-brand/30 text-brand text-label rounded-lg p-2" data-testid="import-success">✅ {success}</div>}
-            {pendingLanguages && pendingLanguages.length > 0 && (
-              <div className="border border-accent/40 bg-accent/5 rounded-lg p-2.5 space-y-2" data-testid="lang-select-card">
-                <p className="text-label font-bold text-white/90">🌐 该课程有 {pendingLanguages.length} 种语言翻译</p>
-                <p className="text-caption text-white/50">选择一种语言导入翻译版（原文也会导入，进度共享）</p>
-                <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                  <button onClick={() => doImport(null)} className="px-2 py-1 rounded-md text-caption font-bold bg-white/10 text-white/80 hover:bg-white/20">原文</button>
-                  {pendingLanguages.slice(0, 20).map((l) => (
-                    <button key={l.code} onClick={() => doImport(l.code)} className="px-2 py-1 rounded-md text-caption font-bold bg-brand/15 text-brand hover:bg-brand/25">{l.name}</button>
-                  ))}
-                </div>
+            {busy && progressSteps.length > 0 && (
+              <div className="bg-black/30 rounded-lg p-2 max-h-52 overflow-y-auto space-y-1" data-testid="import-progress">
+                {progressSteps.map((step, i) => (
+                  <div key={i} className="flex items-start gap-1.5 text-caption">
+                    {step.status === "done" ? (
+                      <span className="text-brand shrink-0 leading-tight">✓</span>
+                    ) : (
+                      <span className="inline-block w-2.5 h-2.5 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0 mt-px"></span>
+                    )}
+                    <span className={step.status === "done" ? "text-white/40" : "text-white/90"}>
+                      {step.msg}
+                      {step.status === "working" && (
+                        <span className="text-white/35 ml-1">（已 {Math.floor((Date.now() - step.ts) / 1000)}s）</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
+            {error && <div className="border border-warning/40 text-warning-light text-label rounded-lg p-2 whitespace-pre-wrap" data-testid="import-error">{error}</div>}
+            {success && <div className="border border-brand/30 text-brand text-label rounded-lg p-2" data-testid="import-success">✅ {success}</div>}
           </div>
         )}
       </div>

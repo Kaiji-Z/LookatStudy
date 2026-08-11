@@ -58,6 +58,7 @@ export async function executeImport(
     repoName: string;
     langCode: string | null;
     translationFiles: Map<string, string[]> | null;
+    sourceLang: string;
     markDirty: () => void;
   },
   onProgress?: (msg: string) => void,
@@ -74,6 +75,7 @@ export async function executeImport(
     description: `从 ${opts.repoName} 导入`,
     version: 1,
     labType: "doc",
+    sourceLang: opts.sourceLang,
   }).run();
 
   // ── 5a+5b: 拉正文 + 图片内联 ──
@@ -84,6 +86,18 @@ export async function executeImport(
   const contentCache = new Map<string, string | null>();
   // 缓存已下载的图片（同路径不重复下载）
   const imageCache = new Map<string, string | null>();
+  // 每个 lesson 原文 inlined 后的图片 src 数组（按出现顺序），供翻译按位置映射
+  const lessonImages = new Map<string, string[]>();
+  // 原文文件的标题列表缓存（供标题序号截取）
+  const headingsCache = new Map<string, Heading[]>();
+  // 每个 lesson 的截取 meta（titleIndex + isFirstOfFile），供翻译用相同序号对齐
+  const lessonMeta = new Map<string, { titleIndex: number; isFirstOfFile: boolean }>();
+  // 每个 file 的首个 lesson 的 sourcePath（首 lesson 含文件头部 H1+前言）
+  const fileFirstLesson = new Map<string, string>();
+  for (const lesson of allLessons) {
+    const sp = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;
+    if (!fileFirstLesson.has(lesson.file)) fileFirstLesson.set(lesson.file, sp);
+  }
 
   let sectionOrder = 0;
   let totalLessons = 0;
@@ -105,15 +119,20 @@ export async function executeImport(
 
     let lessonOrder = 0;
     for (const lesson of sec.lessons) {
-      // 5a: 拉正文
+      // 5a: 拉正文（标题序号截取：含文件头部 + H3 子段 + 供翻译对齐的 meta）
       const content = await getLessonContent(
-        lesson, opts, contentCache, allLessons.length, totalLessons, send,
+        lesson, opts, contentCache, headingsCache, fileFirstLesson, lessonMeta,
+        allLessons.length, totalLessons, send,
       );
 
       // 5b: 图片 base64 内联
       const inlinedContent = content ? await inlineImages(
         content, lesson.file, opts, imageCache, send,
       ) : null;
+
+      // 记录原文图片 src 数组（翻译按位置映射用）
+      const srcPath = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;
+      lessonImages.set(srcPath, extractImageSrcs(inlinedContent ?? ""));
 
       const lessonId = randomUUID();
       const isPractice = lesson.world === "practice";
@@ -166,9 +185,9 @@ export async function executeImport(
 
   // ── 翻译落库 ──
   if (opts.langCode && opts.translationFiles) {
-    send(`拉取翻译版正文 (${opts.langCode})…`);
+    send(`拉取 ${opts.langCode} 翻译正文（图片按位置用原文图，不下载翻译图）`);
     await fetchAndPersistTranslations(
-      db, courseId, opts.langCode, structure, opts, contentCache, imageCache, send,
+      db, courseId, opts.langCode, structure, opts, contentCache, lessonImages, lessonMeta, send,
     );
   }
 
@@ -189,14 +208,74 @@ export async function executeImport(
   return { courseId, title: structure.courseTitle, verification };
 }
 
+/** 标题信息：行号 + 级别（2=H2, 3=H3）+ 标题文字 */
+type Heading = { line: number; level: number; title: string };
+
+/**
+ * 提取文件的所有 H2/H3 标题（带行号 + 级别），代码块内的不算。
+ * 用于按标题序号截取段落（原文和翻译用相同序号对齐）。
+ */
+export function extractHeadings(content: string): Heading[] {
+  const lines = content.split(/\r?\n/);
+  const headings: Heading[] = [];
+  let inCode = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^(\s*)(```|~~~)/.test(lines[i]!)) { inCode = !inCode; continue; }
+    if (inCode) continue;
+    const m = lines[i]!.match(/^(#{2,3})\s+(.+)$/);
+    if (m) headings.push({ line: i, level: m[1]!.length, title: m[2]!.trim() });
+  }
+  return headings;
+}
+
+/** 找 anchor 在标题列表里的序号（双向 includes 匹配，文字定位） */
+export function findTitleIndex(headings: Heading[], anchor: string): number {
+  const anchorClean = anchor.replace(/^#{1,3}\s+/, "").toLowerCase().trim();
+  for (let i = 0; i < headings.length; i++) {
+    const titleLower = headings[i]!.title.toLowerCase();
+    if (titleLower.includes(anchorClean) || anchorClean.includes(titleLower)) return i;
+  }
+  return -1;
+}
+
+/**
+ * 按标题序号截取段落。
+ *
+ * 关键设计（修三个 bug）:
+ *  - isFirstOfFile=true → startLine=0，包含文件头部（H1+前言+Pre-lecture quiz）
+ *  - endIdx 级别感知：H2 anchor 遇到 H3 不结束（H3 是子段，应包含），遇到同级/更高级才结束
+ *    → 修复 Expert Systems 丢失 H3 子段
+ *  - 原文和翻译用相同 titleIndex，不依赖文字匹配
+ *    → 修复翻译 anchor 英文匹配中文标题失败
+ */
+export function extractSectionByIndex(
+  content: string,
+  headings: Heading[],
+  titleIndex: number,
+  isFirstOfFile: boolean,
+): string {
+  const lines = content.split(/\r?\n/);
+  const anchor = headings[titleIndex]!;
+  const startLine = isFirstOfFile ? 0 : anchor.line;
+  // endLine: 下一个 level <= anchor.level 的标题（H2 遇 H3 不停，遇 H2/H1 停）
+  let endLine = lines.length;
+  for (let i = titleIndex + 1; i < headings.length; i++) {
+    if (headings[i]!.level <= anchor.level) { endLine = headings[i]!.line; break; }
+  }
+  return lines.slice(startLine, endLine).join("\n").trim();
+}
+
 /**
  * 获取 lesson 的正文内容。
- * 如果有 anchor（H2/H3 标题），从文件正文中截取对应段落。
+ * 用标题序号截取（extractSectionByIndex），保证原文/翻译对齐 + H3 子段不丢 + 文件头部归入首 lesson。
  */
 async function getLessonContent(
   lesson: DesignedLesson,
   opts: { owner: string; repo: string; branch: string; fetchFn: typeof fetch },
   cache: Map<string, string | null>,
+  headingsCache: Map<string, Heading[]>,
+  fileFirstLesson: Map<string, string>,
+  lessonMeta: Map<string, { titleIndex: number; isFirstOfFile: boolean }>,
   total: number,
   done: number,
   send: (msg: string) => void,
@@ -216,37 +295,21 @@ async function getLessonContent(
   // 无 anchor: 返回整个文件
   if (!lesson.anchor) return fullContent;
 
-  // 有 anchor: 截取 H2/H3 段落
-  const lines = fullContent.split(/\r?\n/);
-  const anchorLower = lesson.anchor.toLowerCase().trim();
-  let startIdx = -1;
-  let endIdx = lines.length;
-  let inCodeFence = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    if (/^(\s*)(```|~~~)/.test(lines[i]!)) {
-      inCodeFence = !inCodeFence;
-      continue;
-    }
-    if (inCodeFence) continue;
-
-    if (startIdx === -1) {
-      // 找到 anchor 标题行
-      const lineLower = lines[i]!.toLowerCase().trim();
-      if (/^#{2,3}\s+/.test(lines[i]!) && lineLower.includes(anchorLower.replace(/^#{2,3}\s+/, ""))) {
-        startIdx = i;
-      }
-    } else {
-      // 找到下一个同级或更高级标题 → 结束
-      if (/^#{1,3}\s+/.test(lines[i]!)) {
-        endIdx = i;
-        break;
-      }
-    }
+  // 标题列表（缓存）
+  if (!headingsCache.has(lesson.file)) {
+    headingsCache.set(lesson.file, extractHeadings(fullContent));
   }
+  const headings = headingsCache.get(lesson.file)!;
 
-  if (startIdx === -1) return fullContent; // anchor 没找到，返回整个文件
-  return lines.slice(startIdx, endIdx).join("\n").trim();
+  const titleIndex = findTitleIndex(headings, lesson.anchor);
+  const sp = `${lesson.file}#${lesson.anchor}`;
+  const isFirstOfFile = fileFirstLesson.get(lesson.file) === sp;
+
+  // 记录 meta 供翻译用（翻译用相同序号 + isFirstOfFile 对齐）
+  lessonMeta.set(sp, { titleIndex, isFirstOfFile });
+
+  if (titleIndex === -1) return fullContent; // anchor 没找到，降级全文
+  return extractSectionByIndex(fullContent, headings, titleIndex, isFirstOfFile);
 }
 
 /**
@@ -338,6 +401,14 @@ async function inlineImages(
 
 /**
  * 拉取翻译版正文并写入 content_node_translations 表。
+ *
+ * 截取对齐（标题序号，修翻译 anchor 英文匹配中文失败）:
+ *   原文处理时记录了每个 lesson 的 titleIndex + isFirstOfFile（lessonMeta）。
+ *   翻译文件用相同的 titleIndex 截取同序号标题段落，不依赖文字匹配。
+ *   → 原文第 N 个 H2 段落 = 翻译第 N 个 H2 段落（机翻保持结构）。
+ *
+ * 图片处理（位置映射，不下载翻译图）:
+ *   翻译正文里的图片引用，按出现位置替换成原文图片（base64/cdn），多余的删掉。
  */
 async function fetchAndPersistTranslations(
   db: Db,
@@ -346,18 +417,21 @@ async function fetchAndPersistTranslations(
   structure: CourseStructure,
   opts: { owner: string; repo: string; branch: string; fetchFn: typeof fetch; markDirty: () => void },
   contentCache: Map<string, string | null>,
-  imageCache: Map<string, string | null>,
+  lessonImages: Map<string, string[]>,
+  lessonMeta: Map<string, { titleIndex: number; isFirstOfFile: boolean }>,
   send: (msg: string) => void,
 ): Promise<void> {
-  // 翻译文件路径: translations/{langCode}/{originalPath}
   const allLessons = structure.sections.flatMap((s) => s.lessons);
+  // 翻译文件的标题列表缓存（按原 file 路径 key）
+  const transHeadingsCache = new Map<string, Heading[]>();
   let transWritten = 0;
 
   for (let idx = 0; idx < allLessons.length; idx++) {
     const lesson = allLessons[idx]!;
+    const sourcePath = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;
     const transPath = `translations/${langCode}/${lesson.file}`;
 
-    // 从缓存或拉取
+    // 从缓存或拉取翻译文件
     if (!contentCache.has(transPath)) {
       const content = await fetchSingleFileContent(
         transPath, opts.owner, opts.repo, opts.branch, opts.fetchFn,
@@ -367,46 +441,38 @@ async function fetchAndPersistTranslations(
     const transContent = contentCache.get(transPath);
     if (!transContent) continue; // 该文件无翻译
 
-    // anchor 截取（同原文逻辑）
-    let finalContent = transContent;
-    if (lesson.anchor) {
-      const lines = transContent.split(/\r?\n/);
-      const anchorLower = lesson.anchor.toLowerCase().trim();
-      let startIdx = -1;
-      let endIdx = lines.length;
-      let inCodeFence = false;
-      for (let i = 0; i < lines.length; i++) {
-        if (/^(\s*)(```|~~~)/.test(lines[i]!)) { inCodeFence = !inCodeFence; continue; }
-        if (inCodeFence) continue;
-        if (startIdx === -1) {
-          const lineLower = lines[i]!.toLowerCase().trim();
-          if (/^#{2,3}\s+/.test(lines[i]!) && lineLower.includes(anchorLower.replace(/^#{2,3}\s+/, ""))) {
-            startIdx = i;
-          }
-        } else {
-          if (/^#{1,3}\s+/.test(lines[i]!)) { endIdx = i; break; }
+    // 用 titleIndex 序号对齐截取翻译（不依赖文字匹配，修英文 anchor vs 中文标题）
+    let finalContent: string;
+    if (!lesson.anchor) {
+      finalContent = transContent; // 无 anchor = 整个翻译文件
+    } else {
+      const meta = lessonMeta.get(sourcePath);
+      if (!meta || meta.titleIndex === -1) {
+        finalContent = transContent; // 原文 anchor 没找到，降级全文
+      } else {
+        // 翻译文件的标题列表（缓存，按原 file 路径 key）
+        if (!transHeadingsCache.has(lesson.file)) {
+          transHeadingsCache.set(lesson.file, extractHeadings(transContent));
         }
-      }
-      if (startIdx !== -1) {
-        finalContent = lines.slice(startIdx, endIdx).join("\n").trim();
+        const transHeadings = transHeadingsCache.get(lesson.file)!;
+        if (meta.titleIndex >= transHeadings.length) continue; // 翻译缺该段落
+        finalContent = extractSectionByIndex(transContent, transHeadings, meta.titleIndex, meta.isFirstOfFile);
       }
     }
 
-    // 图片内联（翻译版也可能有图片引用）
-    finalContent = await inlineImages(
-      finalContent, `translations/${langCode}/${lesson.file}`, opts, imageCache, send,
-    );
+    // 图片位置映射：按位置替换成原文图片（不下载翻译图）
+    const originalImgs = lessonImages.get(sourcePath) ?? [];
+    finalContent = replaceImagesByPosition(finalContent, originalImgs);
 
     // 找对应的 lesson 节点
-    const sourcePath = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;
     const lessonNode = db.select().from(contentNodes)
       .where(eq(contentNodes.courseId, courseId)).all()
       .find((n) => n.type === "lesson" && n.sourcePath === sourcePath);
     if (!lessonNode) continue;
 
-    // 翻译标题取 H1
-    const h1Match = finalContent.match(/^#\s+(.+)$/m);
-    const transTitle = h1Match ? h1Match[1]!.trim() : lesson.title;
+    // 翻译标题取首个标题（H1 或 H2）
+    const hMatch = finalContent.match(/^#{1,2}\s+(.+)$/m);
+    const transTitle = hMatch ? hMatch[1]!.trim() : lesson.title;
 
     db.insert(contentNodeTranslations).values({
       id: randomUUID(),
@@ -425,4 +491,47 @@ async function fetchAndPersistTranslations(
 
   opts.markDirty();
   send(`翻译完成: ${transWritten} 课有翻译`);
+}
+
+/**
+ * 提取 markdown 正文里的所有图片 src（按出现顺序）。
+ * 匹配 markdown ![](src) 和 HTML <img src="...">。
+ * 用于记录原文 inlined 后的图片序列（已是 base64/cdn），供翻译按位置映射。
+ */
+export function extractImageSrcs(content: string): string[] {
+  const srcs: string[] = [];
+  for (const m of content.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) {
+    srcs.push(m[1]!);
+  }
+  for (const m of content.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi)) {
+    srcs.push(m[1]!);
+  }
+  return srcs;
+}
+
+/**
+ * 按位置替换翻译正文里的图片引用为原文图片。
+ * 翻译第 i 张图 → originalImgs[i]（原文第 i 张的 base64/cdn）。
+ * 超出原文图片数的翻译图 → 删掉（机翻增图罕见，删掉最干净）。
+ * HTML <img> 统一转成 markdown ![](src)（ReactMarkdown 不渲染 raw HTML）。
+ *
+ * 用统一正则一次扫描 markdown ![](x) 和 HTML <img>，避免分两步导致
+ * HTML 转成 markdown 后被二次扫到、共用 imgIdx 误删。
+ */
+export function replaceImagesByPosition(content: string, originalImgs: string[]): string {
+  let imgIdx = 0;
+  // 统一匹配 markdown ![](x) 或 HTML <img src="x">，按出现顺序处理
+  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+  return content.replace(pattern, (match, mdAlt: string, _mdSrc: string, htmlSrc?: string) => {
+    if (imgIdx >= originalImgs.length) return ""; // 多余的删掉
+    const replacement = originalImgs[imgIdx++]!;
+    if (htmlSrc !== undefined) {
+      // HTML <img>: 提取 alt 属性，转成 markdown
+      const altMatch = match.match(/alt=["']([^"']*)["']/i);
+      const alt = altMatch?.[1] ?? "";
+      return `![${alt}](${replacement})`;
+    }
+    // markdown ![](x)
+    return `![${mdAlt}](${replacement})`;
+  });
 }

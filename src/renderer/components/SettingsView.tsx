@@ -607,6 +607,9 @@ export function SettingsView() {
         customProviders={customProviders}
       />
 
+      {/* 语言偏好:导入时自动按此偏好选翻译 */}
+      <LanguagePrefSection />
+
       {/* 保存按钮 */}
       <div className="flex items-center gap-3">
         <button
@@ -632,6 +635,63 @@ export function SettingsView() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * 语言偏好设置:导入课程时自动按此偏好选择翻译。
+ * 首次启动按系统语言写入默认值(在 main/index.ts ensurePrefLang)。
+ * 仓库无对应翻译时用原文(严格 fallback)。
+ */
+function LanguagePrefSection() {
+  const [prefLang, setPrefLang] = useState<string>("en");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.getSetting("pref_lang").then((v) => {
+      if (v) setPrefLang(v);
+      setLoaded(true);
+    });
+  }, []);
+
+  const handleChange = async (lang: string) => {
+    setPrefLang(lang);
+    await api.setSetting("pref_lang", lang);
+  };
+
+  const options = [
+    { code: "en", label: "English" },
+    { code: "zh-CN", label: "简体中文" },
+    { code: "zh-TW", label: "繁體中文" },
+  ];
+
+  if (!loaded) return null;
+
+  return (
+    <section className="surface-card p-4">
+      <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+        🌐 语言偏好
+      </h3>
+      <p className="text-label text-neutral-500 dark:text-neutral-400 mb-3">
+        导入课程时自动按此偏好选择翻译。仓库原文语言与偏好一致时直接用原文；无对应翻译时也用原文。
+      </p>
+      <div className="flex gap-2" data-testid="pref-lang-options">
+        {options.map((o) => (
+          <button
+            key={o.code}
+            onClick={() => handleChange(o.code)}
+            data-testid={`pref-lang-${o.code}`}
+            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
+              prefLang === o.code
+                ? "bg-brand text-white shadow-elevated-card"
+                : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

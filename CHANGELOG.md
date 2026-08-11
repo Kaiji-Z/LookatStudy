@@ -17,18 +17,33 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
-- **两个世界:学习世界 vs 实操世界**:课程内容分为两个世界:
-  - **学习世界 (study)**:README 讲解正文(概念/理论/教程)——主线学习路径
-  - **实操世界 (practice)**:notebook/lab/exercise/quiz/.py 实操资源——配套动手探索
-  - 地图标签页切换(📚学习 / 🔧实操),每次只看到一个世界
-  - 实操节点默认 available(自由探索,不受 BKT 门控),不生成考试
-  - 跨世界关联:学到某课时可查同目录的实操练习(靠 source_path 前缀匹配)
-  - content_nodes 加 `world` 字段(addColumnIfMissing 零风险迁移)
-  - 遵循"规则管确定性,LLM 管不确定":world 分类完全交给 LLM 判断,
-    规则层只标 null(未定),不增加新的确定性判断
-  - notebook/lab/example 不再合并进 lesson 正文,而是建独立节点(LLM 判 world)
+- **语言偏好持久化(替代导入时弹窗)**:用户在 Settings 选偏好语言
+  (英语/简中/繁中),首次启动按系统语言检测默认值。导入时自动按
+  pref_lang + 仓库原文语言(sourceLang)决定拉哪个翻译,不再弹翻译选择。
+  严格 fallback:仓库无对应翻译时用原文。新增 `lang-pref.ts` 服务。
+- **仓库原文语言(sourceLang)模型**:LLM 在 Step 2 判 README 语言,
+  courses 表加 `source_lang` 字段。解决了"原文不一定是英语"的盲区
+  (中文仓库 + en 偏好 → 拉英语翻译;中文仓库 + zh-CN 偏好 → 直接用原文)。
+- **长文件自适应拆分**:导入时按字数驱动决定 H2/H3 拆分粒度
+  (< 3k 不拆 / > 8k 按 H3 拆 / < 1k 合并 / > 15k 接受)。
+  fetchFileOutlines 现在拉完整文件并算每段字符数,供 LLM 做拆分决策。
+- **导入进度滚动窗口**:进度提示从单行改成安装式滚动列表,完成的步骤打 ✓,
+  当前步骤显示 spinner + 实时计时(已 Xs)。消息真实描述每步工作 + 完成摘要
+  (如"文件分类: 45 原文 · 12 实操 · 原文语言 en")。含 X/Y 进度的消息更新当前
+  步骤而非新建步骤。
 
 ### Changed
+- **翻译图片放弃拉取,改位置映射**:学习仓库的翻译图片是机翻效果差,
+  放弃下载。翻译正文里的图片引用按出现位置替换成原文对应位置的图片
+  (已 base64 内联)。结果:翻译正文 = 翻译文字 + 原文图片,切换语言时
+  图片不变。多余的翻译图(翻译图数 > 原文图数)删掉。
+  彻底绕过"翻译图片路径规律不存在"问题(按位置映射,不解析路径)。
+- **导入不再弹翻译选择**:analyzeRepo 内部读 pref_lang + sourceLang
+  自动决定 selectedLang,UI 直接显示"将导入X翻译"然后一键导入。
+  删除 MapRail 的语言选择卡片。
+- **lesson 三分类**:study(讲解)/ practice(实操)/ 附属(quiz链接/
+  总结/挑战/参考文献不独立成节点,内容保留进相邻 study lesson)。
+  课程设计 prompt 更新为字数驱动的自适应拆分指引。
 - **种子课程暂时停用**:两个世界重构期间用 GitHub 真实导入验证,
   不依赖固化种子。恢复时取消注释 `ensureSeedCourse()` 即可。
 
@@ -49,6 +64,28 @@ Entry conventions for contributors:
   容易卡死在某章。改为**双线推进**:点当前章节任意一课时,同时解锁同章下一课
   + 下一章第一课。多邻国式逐课推进感保留(同章下一课),章节间不再串行阻塞。
   新增 T12 测试(闭环验证:破坏双线 → T12 抓到回归)。
+- **文件树获取失败(SSL 中间证书)**:`api.github.com` 证书链在 Node 的 CA 验证
+  失败(`UNABLE_TO_VERIFY_LEAF_SIGNATURE`),fetchRepoFileTree 拿不到完整文件树
+  (只回退到 README 链接的 68 个文件)。修复:GitHub Tree API 改用 Node `https`
+  模块 + `rejectUnauthorized:false`(只此一个获取公开文件树的请求,风险可控)。
+  jsdelivr 文件列表已证明不可行(仓库大就 403 "Package size exceeded limit")。
+- **导入后图片看不到(CSP + URL 过滤双重原因)**:
+  (1) CSP `default-src 'self'` 无 img-src → 回退 'self' 不允许 `data:` → 加
+  `img-src 'self' data: https:`;
+  (2) react-markdown v9 默认 `urlTransform` 只允许 https?/mailto 等协议,把
+  `data:` URL 清空成 "" → InlineAssetImage 收到空 src 不渲染 → 加
+  `urlTransform={(url) => url}`(CSP 兜底安全)。
+- **长文件截取丢 H3 子段 + H1 前言**:H2 anchor 的结束边界用"任何 H1/H2/H3 都
+  结束",导致 Expert Systems 的 H3 子段(Forward/Implementing)被切掉(2831 字,
+  应为 5387 字);文件首 lesson 从 H2 开始,H1+前言+Pre-lecture quiz 成孤儿丢失。
+  重构为**标题序号截取**(extractSectionByIndex):级别感知 endIdx(H2 遇 H3 不
+  结束,H3 是子段)+ isFirstOfFile(首 lesson 从文件头截取,含 H1+前言)。
+- **翻译返回整个文件(anchor 英文匹配中文标题失败)**:翻译文件标题是中文,
+  英文 anchor `includes` 匹配失败 → 返回整个翻译文件(几万字,和原文段落不一致)。
+  重构为 **titleIndex 序号对齐**:原文第 N 个标题 = 翻译第 N 个标题,不依赖文字
+  匹配。新增 verify-section-extract.mjs 闭环测试(27/27 通过)。
+- **翻译模式讲解区宽度撑开**:翻译内容含代码块,`<pre>` 的 min-content 宽度撑开
+  prose 容器。加 `[&_pre]:max-w-full [&_pre]:overflow-x-auto`(代码块横向滚动)。
 
 ### Changed
 - **种子课程改为内置静态 JSON**:种子课程 microsoft/AI-For-Beginners 现在

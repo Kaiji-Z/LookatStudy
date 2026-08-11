@@ -24,8 +24,8 @@ const api = {
     ipcRenderer.invoke("course:getLanguage", courseId)) as ApiExpose["getCourseLanguage"],
   analyzeRepo: ((repoUrl: string) =>
     ipcRenderer.invoke("course:analyzeRepo", repoUrl)) as ApiExpose["analyzeRepo"],
-  importAnalyzed: ((repoUrl: string, analysis: import("@shared/types").RepoAnalysis, langCode: string | null) =>
-    ipcRenderer.invoke("course:importAnalyzed", repoUrl, analysis, langCode)) as ApiExpose["importAnalyzed"],
+  importAnalyzed: ((repoUrl: string, analysis: import("@shared/types").RepoAnalysis) =>
+    ipcRenderer.invoke("course:importAnalyzed", repoUrl, analysis)) as ApiExpose["importAnalyzed"],
   importLocalFolder: (() =>
     ipcRenderer.invoke("import:localFolder")) as ApiExpose["importLocalFolder"],
   generateCourseFromMarkdown: ((md: string, repoName: string, repoUrl?: string) =>

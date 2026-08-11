@@ -135,6 +135,7 @@ npm run verify:core && npx vite build && npm run self-test
 | Org parser | `services/pure/org-parser.ts` | Org-mode → markdown:标题/SRC 块/链接/粗体斜体/元数据剥除 |
 | AsciiDoc parser | `services/pure/adoc-parser.ts` | AsciiDoc → markdown:标题/source 块/image/link/粗体斜体 |
 | Translation | `services/translation-service.ts` | `content_node_translations` CRUD — persist/read per-locale title/content; `getCourseLanguages`; `getCourseTitleTranslations` |
+| Language pref | `services/lang-pref.ts` | `pref_lang` setting read/write + system locale detection + `resolveImportLang` (pref + sourceLang → import language) |
 | i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + `translate()` |
 
 Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),

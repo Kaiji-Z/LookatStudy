@@ -148,6 +148,10 @@ app.whenReady().then(async () => {
     // M1: 幂等 seed 4 个内置 learning-mode skill
     seedBuiltinSkills(getDb());
     console.error("[lookatstudy] builtin skills ensured");
+    // 语言偏好: 首次启动按系统语言写默认值 (用户可在 Settings 改)
+    const { ensurePrefLang } = await import("./services/lang-pref.js");
+    ensurePrefLang(getDb(), app.getLocale());
+    console.error(`[lookatstudy] pref_lang ensured (system locale: ${app.getLocale()})`);
   } catch (e) {
     console.error("[lookatstudy] FATAL during init:", e);
     app.quit();

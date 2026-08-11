@@ -15,6 +15,7 @@
  */
 import { parseMarkdownToCourse, type ParsedCourse, type ParsedSection, type ParsedLesson } from "./markdown-course.js";
 import { classifyFile, type FileClassification } from "./file-classifier.js";
+import https from "node:https";
 
 /** 仓库文件条目（从 README 链接发现） */
 export interface DiscoveredFile {
@@ -504,40 +505,48 @@ export function pathsToDiscoveredFiles(paths: string[]): DiscoveredFile[] {
  * 返回 { tree: [{ path, type }] }。筛 blob + .md/.ipynb。
  * 网络失败/限流 → 抛错(由调用方降级)。
  */
+/**
+ * 用 Node 的 https 模块拉取（可单独控制 SSL 验证）。
+ * GitHub Tree API 的证书链在部分环境（Node 内置 CA）验证失败（中间证书缺失），
+ * 对这一个获取公开文件树的请求用 rejectUnauthorized:false 绕过。
+ * 风险可控：获取的是公开文件路径列表（无敏感数据），且只用于此请求。
+ */
+function httpsGet(url: string, opts: { rejectUnauthorized?: boolean; headers?: Record<string, string> } = {}): Promise<{ ok: boolean; status?: number; body?: string; error?: string }> {
+  return new Promise((resolve) => {
+    const req = https.get(url, {
+      headers: { "User-Agent": "lookatstudy-import", ...opts.headers },
+      rejectUnauthorized: opts.rejectUnauthorized ?? true,
+      timeout: 20000,
+    }, (res) => {
+      let body = "";
+      res.on("data", (d: Buffer) => { body += d.toString(); });
+      res.on("end", () => resolve({ ok: res.statusCode === 200, status: res.statusCode, body }));
+    });
+    req.on("error", (e: Error) => resolve({ ok: false, error: e.message }));
+    req.on("timeout", () => { req.destroy(); resolve({ ok: false, error: "timeout" }); });
+  });
+}
+
 export async function fetchRepoFileTree(
   owner: string,
   repo: string,
   branch: string,
-  fetchFn: typeof fetch,
+  _fetchFn?: typeof fetch, // 保留签名兼容，实际用内部 httpsGet（可控制 SSL）
 ): Promise<DiscoveredTree> {
-  // GitHub Tree API
+  // GitHub Tree API（唯一可靠源：recursive=1 给全部文件，含 translations/、代码、图片等）
+  // jsdelivr 文件列表已证明不可行（仓库大就 403 "Package size exceeded limit"）
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-  const apiRes = await fetchFn(apiUrl);
-  if (apiRes.ok) {
-    const data = (await apiRes.json()) as { tree?: Array<{ path: string; type: string }> };
-    const mdPaths = (data.tree ?? [])
-      .filter((n) => n.type === "blob" && /\.(md|mdx|ipynb|rst|rmd|org|adoc|asciidoc)$/i.test(n.path))
-      .map((n) => n.path);
-    if (mdPaths.length > 0) return { paths: mdPaths, source: "github-tree-api" };
+  try {
+    const r = await httpsGet(apiUrl, { rejectUnauthorized: false });
+    console.error(`[import] GitHub Tree API: HTTP ${r.status ?? r.error}`);
+    if (r.ok && r.body) {
+      const data = JSON.parse(r.body) as { tree?: Array<{ path: string; type: string }> };
+      const paths = (data.tree ?? []).filter((n) => n.type === "blob").map((n) => n.path);
+      if (paths.length > 0) return { paths, source: "github-tree-api" };
+    }
+  } catch (e) {
+    console.error(`[import] GitHub Tree API 异常: ${e instanceof Error ? e.message : e}`);
   }
-
-  // Fallback:jsdelivr 文件列表 API
-  const jsUrl = `https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${branch}`;
-  const jsRes = await fetchFn(jsUrl);
-  if (jsRes.ok) {
-    const data = (await jsRes.json()) as { files?: Array<{ name: string; type: string }> };
-    // jsdelivr 返回扁平/嵌套结构不一,兼容:收所有 .md 路径
-    const mdPaths: string[] = [];
-    const walk = (nodes: Array<{ name: string; type: string; files?: unknown }>, prefix: string) => {
-      for (const n of nodes) {
-        const full = prefix ? `${prefix}/${n.name}` : n.name;
-        if (n.type === "file" && /\.(md|mdx)$/i.test(n.name)) mdPaths.push(full);
-      }
-    };
-    if (Array.isArray(data.files)) walk(data.files, "");
-    if (mdPaths.length > 0) return { paths: mdPaths, source: "jsdelivr-list" };
-  }
-
   return { paths: [], source: "none" };
 }
 
@@ -1127,48 +1136,37 @@ export async function fetchRepoInventory(
     throw new Error(`仓库不支持: ${detection.reason}`);
   }
 
-  // 3. 课程文件列表（供 Step 3+5 拉正文用）
+  // 3. 课程文件列表（初始：README 链接发现）
   let fileList = filterLessonFiles(detection.lessonFiles ?? []);
-  const readmeLinkCount = fileList.length;
+  send(`README 链接发现 ${fileList.length} 个课程文件`);
 
-  // README 链接太少时补充文件树
-  if (readmeLinkCount < 5) {
-    try {
-      send("README 链接较少，扫描文件树补充…");
-      const tree = await fetchRepoFileTree(owner, repo, readmeBranch, fetchFn);
-      if (tree.paths.length > 0) {
-        const treeFiles = pathsToDiscoveredFiles(tree.paths);
-        const treeLessonFiles = filterLessonFiles(treeFiles).filter((f) => f.kind !== "other");
-        if (treeLessonFiles.length > fileList.length) {
-          fileList = treeLessonFiles;
-          send(`文件树发现 ${fileList.length} 个课程文件`);
-        }
+  // 4. 完整目录树 + 用文件树补全 fileList（README 链接会漏文件）
+  // 总是拉取文件树：既供 LLM 看仓库结构，又补全 README 表格没列全的课程文件
+  let fullTree: string[] = fileList.map((f) => f.path);
+  try {
+    send("扫描仓库完整目录结构…");
+    const tree = await fetchRepoFileTree(owner, repo, readmeBranch, fetchFn);
+    if (tree.paths.length > 0) {
+      fullTree = tree.paths;
+      // 用文件树的内容文件补全 fileList（README 表格可能没列全所有 .md/.ipynb）
+      const treeFiles = pathsToDiscoveredFiles(tree.paths);
+      const treeLessonFiles = filterLessonFiles(treeFiles).filter((f) => f.kind !== "other");
+      const existing = new Set(fileList.map((f) => f.path));
+      const added = treeLessonFiles.filter((f) => !existing.has(f.path));
+      if (added.length > 0) {
+        fileList = [...fileList, ...added];
+        send(`文件树补充 ${added.length} 个，共 ${fileList.length} 个课程文件`);
       }
-    } catch {
-      send("文件树拉取失败，使用 README 链接");
+      send(`目录树: ${fullTree.length} 个文件/目录`);
     }
-  } else {
-    send(`README 链接发现 ${readmeLinkCount} 个课程文件`);
+  } catch {
+    send("目录树拉取失败，使用 README 链接列表");
   }
 
   // 上限
   if (fileList.length > MAX_FILES) {
     send(`文件数 ${fileList.length} 超过上限 ${MAX_FILES}，截断`);
     fileList = fileList.slice(0, MAX_FILES);
-  }
-
-  // 4. 完整目录树（供 LLM 看仓库结构）
-  // 总是尝试拉取，即使 README 链接足够 —— LLM 需要看到 translations/、images/ 等目录
-  let fullTree: string[] = fileList.map((f) => f.path);
-  try {
-    send("扫描仓库完整目录结构…");
-    const tree = await fetchRepoFileTree(owner, repo, readmeBranch, fetchFn);
-    if (tree.paths.length > fullTree.length) {
-      fullTree = tree.paths;
-      send(`目录树: ${fullTree.length} 个文件/目录`);
-    }
-  } catch {
-    send("目录树拉取失败，使用 README 链接列表");
   }
 
   return { readmeMd, fileList, fullTree, branch: readmeBranch, detection };
@@ -1178,13 +1176,15 @@ export async function fetchRepoInventory(
 export interface FileOutline {
   /** 文件 H1 标题（第一个 # 开头的行） */
   h1: string;
-  /** H2/H3 标题列表（不含正文） */
-  headings: { level: number; title: string }[];
+  /** 文件总字符数（全文，含正文）—— 长文件拆分决策依据 */
+  totalChars: number;
+  /** H2/H3 标题列表（不含正文）+ 每段字符数（到下一个同级或更高级标题） */
+  headings: { level: number; title: string; chars: number }[];
 }
 
 /**
- * Step 3: 批量提取文件的标题大纲（H1/H2/H3，不含正文）。
- * 对每个文件拉取前 ~100 行，只提取标题行。
+ * Step 3: 批量提取文件的标题大纲（H1/H2/H3 + 每段字符数，不含正文）。
+ * 拉取完整文件文本（不只前 N 行），因为字符数统计需要全文。
  * 并发度 5，同 fetchMarkdownContents。
  */
 export async function fetchFileOutlines(
@@ -1206,38 +1206,8 @@ export async function fetchFileOutlines(
         const r = await fetchFn(url);
         if (!r.ok) return null;
         const text = await r.text();
-        // 只取前 150 行（标题通常在前面）
-        const lines = text.split(/\r?\n/).slice(0, 150);
-        let h1 = "";
-        const headings: { level: number; title: string }[] = [];
-        let inCodeFence = false;
-        for (const line of lines) {
-          if (/^(\s*)(```|~~~)/.test(line)) {
-            inCodeFence = !inCodeFence;
-            continue;
-          }
-          if (inCodeFence) continue;
-          const h1Match = line.match(/^#\s+(.+)$/);
-          if (h1Match && !h1) {
-            h1 = h1Match[1]!.trim();
-            continue;
-          }
-          const h2Match = line.match(/^##\s+(.+)$/);
-          if (h2Match) {
-            headings.push({ level: 2, title: h2Match[1]!.trim() });
-            continue;
-          }
-          const h3Match = line.match(/^###\s+(.+)$/);
-          if (h3Match) {
-            headings.push({ level: 3, title: h3Match[1]!.trim() });
-            continue;
-          }
-        }
-        // .ipynb: 没有 markdown 标题，用文件名
-        if (!h1 && filePath.endsWith(".ipynb")) {
-          h1 = filePath.split("/").pop()?.replace(/\.ipynb$/i, "") ?? filePath;
-        }
-        return { path: filePath, outline: { h1: h1 || (filePath.split("/").pop() ?? filePath), headings } };
+        const outline = extractOutlineWithCharCounts(text, filePath);
+        return { path: filePath, outline };
       }),
     );
     for (let j = 0; j < results.length; j++) {
@@ -1250,6 +1220,54 @@ export async function fetchFileOutlines(
   }
 
   return result;
+}
+
+/**
+ * 从 markdown 文本提取 H1/H2/H3 标题 + 每段字符数。
+ * 字符数 = 该标题行到下一个同级或更高级标题之间的字符数。
+ * H2 边界：下一个 H1/H2；H3 边界：下一个 H1/H2/H3。
+ * 代码块内的 # 不算标题。
+ */
+export function extractOutlineWithCharCounts(text: string, filePath: string): FileOutline {
+  const lines = text.split(/\r?\n/);
+  const totalChars = text.length;
+  let h1 = "";
+  // 先收集所有标题行（带行号）
+  const rawHeadings: { level: number; title: string; line: number }[] = [];
+  let inCodeFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (/^(\s*)(```|~~~)/.test(line)) { inCodeFence = !inCodeFence; continue; }
+    if (inCodeFence) continue;
+    const h1Match = line.match(/^#\s+(.+)$/);
+    if (h1Match) {
+      if (!h1) h1 = h1Match[1]!.trim();
+      rawHeadings.push({ level: 1, title: h1Match[1]!.trim(), line: i });
+      continue;
+    }
+    const h2Match = line.match(/^##\s+(.+)$/);
+    if (h2Match) { rawHeadings.push({ level: 2, title: h2Match[1]!.trim(), line: i }); continue; }
+    const h3Match = line.match(/^###\s+(.+)$/);
+    if (h3Match) { rawHeadings.push({ level: 3, title: h3Match[1]!.trim(), line: i }); continue; }
+  }
+  // 计算每个 H2/H3 的字符数（到下一个同级或更高级标题）
+  const headings: { level: number; title: string; chars: number }[] = [];
+  for (let idx = 0; idx < rawHeadings.length; idx++) {
+    const h = rawHeadings[idx]!;
+    if (h.level === 1) continue; // H1 不进 headings
+    // 找下一个 level <= h.level 的标题行号
+    let endLine = lines.length;
+    for (let j = idx + 1; j < rawHeadings.length; j++) {
+      if (rawHeadings[j]!.level <= h.level) { endLine = rawHeadings[j]!.line; break; }
+    }
+    const sectionText = lines.slice(h.line, endLine).join("\n");
+    headings.push({ level: h.level, title: h.title, chars: sectionText.length });
+  }
+  // .ipynb: 没有 markdown 标题，用文件名
+  if (!h1 && filePath.endsWith(".ipynb")) {
+    h1 = filePath.split("/").pop()?.replace(/\.ipynb$/i, "") ?? filePath;
+  }
+  return { h1: h1 || (filePath.split("/").pop() ?? filePath), totalChars, headings };
 }
 
 /**

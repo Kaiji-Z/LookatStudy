@@ -57,8 +57,14 @@ export interface RepoAnalysis {
   readmeMd: string;
   /** 实际分支 */
   branch: string;
+  /** 仓库原文语言 (en / zh-CN / zh-TW / ...), LLM Step 2 判断 */
+  sourceLang: string;
   /** 检测到的翻译语言列表 */
   languages: { code: string; name: string }[];
+  /** 导入时自动选定的语言 (null=用原文不拉翻译), 由 pref_lang + sourceLang 匹配得出 */
+  selectedLang: string | null;
+  /** 选定理由（供 UI 只读展示, 如"按偏好拉取简中翻译"） */
+  importReason: string;
   /** 原文课程文件路径 */
   originalFiles: string[];
   /** 实操文件路径 */
@@ -272,10 +278,10 @@ export interface ApiExpose {
   listCourses(): Promise<Course[]>;
   getCourseTree(courseId: string, locale?: string): Promise<ContentNode[]>;
   importCourseFromRepo(repoUrl: string, langCode?: string): Promise<Course>;
-  /** 新智能管线 Step 1+2: 分析仓库 → 返回翻译语言 + 文件角色 */
+  /** 新智能管线 Step 1+2: 分析仓库 → 自动按 pref_lang + sourceLang 选定翻译 */
   analyzeRepo(repoUrl: string): Promise<RepoAnalysis>;
-  /** 新智能管线 Step 3+4+5: 按分析结果导入（用户选了翻译后调） */
-  importAnalyzed(repoUrl: string, analysis: RepoAnalysis, langCode: string | null): Promise<Course>;
+  /** 新智能管线 Step 3+4+5: 按分析结果导入（langCode 从 analysis.selectedLang 取） */
+  importAnalyzed(repoUrl: string, analysis: RepoAnalysis): Promise<Course>;
   /** 检测仓库的可用翻译语言（从 README 的 translations/ 链接提取） */
   detectLanguages(repoUrl: string): Promise<{ code: string; name: string }[]>;
   /** 获取课程已导入的翻译语言列表 */
@@ -587,7 +593,9 @@ export type SettingKey =
   | "flag_image_download"
   // 多模态:可选的 vision 模型覆盖(不配则复用主模型)
   | "vision_provider_override"
-  | "vision_model_override";
+  | "vision_model_override"
+  // 语言偏好:导入时自动按此偏好选翻译 (en / zh-CN / zh-TW)
+  | "pref_lang";
 
 /* ---------- IPC 事件（main → renderer，单向推送） ---------- */
 

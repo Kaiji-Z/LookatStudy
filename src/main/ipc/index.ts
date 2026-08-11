@@ -330,16 +330,25 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
 
       const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
 
-      // Step 1: 拉取 README + 文件列表
-      send("正在分析仓库…");
+      // Step 1: 拉取 README + 文件列表 + 完整目录树
+      send("拉取仓库 README + 完整目录结构");
       const { fetchRepoInventory } = await import("../services/pure/repo-fetcher.js");
       const inventory = await fetchRepoInventory(owner, cleanRepo, "main", fetch, send);
+      send(`✓ README ${inventory.readmeMd.length} 字 · ${inventory.fileList.length} 个课程文件 · ${inventory.fullTree.length} 个目录路径`);
 
-      // Step 2: LLM 判文件角色
+      // Step 2: LLM 判文件角色 + sourceLang
       const { classifyFileRoles } = await import("../services/import-llm-service.js");
-      console.error("[import] Step 2: LLM 文件角色分类…");
+      console.error("[import] Step 2: LLM 文件角色分类 + 原文语言判断…");
       const roles = await classifyFileRoles(getDb(), inventory.readmeMd, inventory.fileList, inventory.fullTree, send);
-      console.error(`[import] Step 2 完成: ${roles.original.length} original, ${roles.practice.length} practice, ${roles.skip.length} skip, ${roles.languages.length} 翻译语言`);
+      send(`✓ 文件分类: ${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
+      console.error(`[import] Step 2 完成: ${roles.original.length} original, ${roles.practice.length} practice, ${roles.skip.length} skip, sourceLang=${roles.sourceLang}, ${roles.languages.length} 翻译语言`);
+
+      // 读用户语言偏好，按 sourceLang 模型自动决定导入语言（不弹窗）
+      const { getPrefLang, resolveImportLang } = await import("../services/lang-pref.js");
+      const pref = getPrefLang(getDb()) ?? "en";
+      const { langCode: selectedLang, reason } = resolveImportLang(pref, roles.sourceLang, roles.languages);
+      console.error(`[import] 语言决策: pref=${pref}, sourceLang=${roles.sourceLang} → selectedLang=${selectedLang ?? "(原文)"}, ${reason}`);
+      send(`语言决策: ${reason}`);
 
       // 转换 translationFiles Map 为 Record（IPC 序列化）
       const translationFiles: Record<string, string[]> = {};
@@ -351,7 +360,10 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
         repoUrl,
         readmeMd: inventory.readmeMd,
         branch: inventory.branch,
+        sourceLang: roles.sourceLang,
         languages: roles.languages,
+        selectedLang,
+        importReason: reason,
         originalFiles: roles.original,
         practiceFiles: roles.practice,
         skipFiles: roles.skip,
@@ -360,33 +372,35 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     },
   );
 
-  // 新智能管线 Step 3+4+5: 按分析结果导入
+  // 新智能管线 Step 3+4+5: 按分析结果导入（langCode 从 analysis.selectedLang 取）
   ipcMain.handle(
     "course:importAnalyzed",
-    async (_e, repoUrl: string, analysis: RepoAnalysis, langCode: string | null) => {
+    async (_e, repoUrl: string, analysis: RepoAnalysis) => {
       const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
       if (!m) throw new Error("无效的 GitHub URL");
       const [, owner, repoRaw] = m;
       const cleanRepo = repoRaw.replace(/\.git$/, "");
 
       const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+      const langCode = analysis.selectedLang; // analyzeRepo 已按 pref_lang + sourceLang 自动决定
 
-      // Step 3: 提取标题大纲
+      // Step 3: 提取标题大纲（拉完整文件，算每段字符数供 LLM 拆分决策）
       const { fetchFileOutlines } = await import("../services/pure/repo-fetcher.js");
       const allFiles = [...analysis.originalFiles, ...analysis.practiceFiles];
-      send(`提取 ${allFiles.length} 个文件的标题大纲…`);
+      send(`提取 ${allFiles.length} 个文件的标题大纲 + 字数`);
       const outlines = await fetchFileOutlines(
         allFiles, owner, cleanRepo, analysis.branch, fetch,
-        (done, total) => send(`\r提取大纲 ${done}/${total}`),
+        (done, total) => send(`提取大纲 ${done}/${total}`),
       );
 
-      // Step 4: LLM 设计课程结构
+      // Step 4: LLM 设计课程结构（study/practice/附属 三分类 + 字数驱动拆分）
       const { designCourseStructure } = await import("../services/import-llm-service.js");
       const structure = await designCourseStructure(
         getDb(), analysis.readmeMd, outlines,
         analysis.originalFiles, analysis.practiceFiles, send,
       );
-      send(`课程结构: ${structure.sections.length} 章`);
+      const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
+      send(`✓ 课程结构: ${structure.sections.length} 章 · ${lessonCount} 课`);
 
       // Step 5: 拉正文 + 图片内联 + 落库 + 验证
       const { executeImport } = await import("../services/import-pipeline.js");
@@ -401,6 +415,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
           repoUrl, repoName: cleanRepo,
           langCode,
           translationFiles: translationFilesMap,
+          sourceLang: analysis.sourceLang,
           markDirty,
         },
         send,

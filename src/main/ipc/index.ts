@@ -504,8 +504,9 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
 
   // LLM 课程结构化：把导入的碎片节点重组成教学结构
   ipcMain.handle("course:restructure", async (_e, courseId: string) => {
-    mainWindow?.webContents.send("import:progress", "AI 正在分析课程结构…");
-    const proposal = await analyzeCourseStructure(getDb(), courseId);
+    const restructureSend = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+    restructureSend("AI 正在分析课程结构…");
+    const proposal = await analyzeCourseStructure(getDb(), courseId, restructureSend);
     mainWindow?.webContents.send(
       "import:progress",
       `分析完成：${proposal.sections.length} 章节，重新组织中…`,
@@ -884,7 +885,7 @@ async function autoStructureCourse(courseId: string, send: (msg: string) => void
     return; // 无 key,跳过(不报错,用户可后续手动结构化)
   }
   send("AI 正在分析课程结构…");
-  const proposal = await analyzeCourseStructure(getDb(), courseId);
+  const proposal = await analyzeCourseStructure(getDb(), courseId, send);
   send(`AI 重组章节(${proposal.sections.length} 章)…`);
   applyCourseStructure(getDb(), courseId, proposal);
   markDirty();

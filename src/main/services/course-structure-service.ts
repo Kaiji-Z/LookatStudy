@@ -185,6 +185,7 @@ interface StructureProposal {
 export async function analyzeCourseStructure(
   db: Db,
   courseId: string,
+  onProgress?: (msg: string) => void,
 ): Promise<StructureProposal> {
   const llm = resolveLlm(db);
 
@@ -230,6 +231,7 @@ export async function analyzeCourseStructure(
     const chunk = lessonInputs.slice(i, i + CHUNK_SIZE);
     const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
     const totalChunks = Math.ceil(lessonInputs.length / CHUNK_SIZE);
+    onProgress?.(`AI 分析中（第 ${chunkNum}/${totalChunks} 批，${chunk.length} 课）…`);
     const prompt = buildStructurePrompt(
       `${courseTitle}（第 ${chunkNum}/${totalChunks} 部分）`, courseDesc, chunk,
     );

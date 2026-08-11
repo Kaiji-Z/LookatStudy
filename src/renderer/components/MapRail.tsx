@@ -212,33 +212,41 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   const [progressMsg, setProgressMsg] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string; rect: DOMRect } | null>(null);
   const [pendingLanguages, setPendingLanguages] = useState<{ code: string; name: string }[] | null>(null);
+  // 新智能管线: analyzeRepo 的结果暂存(供 importAnalyzed 用)
+  const [repoAnalysis, setRepoAnalysis] = useState<import("@shared/types").RepoAnalysis | null>(null);
 
   useEffect(() => { const off = api.on("import:progress", (msg: string) => setProgressMsg(msg)); return () => off(); }, []);
 
   const handleImportUrl = async () => {
     if (!repoUrl.trim() || busy) return;
-    setBusy(true); setError(null); setSuccess(null); setProgressMsg(null); setPendingLanguages(null);
+    setBusy(true); setError(null); setSuccess(null); setProgressMsg(null);
+    setPendingLanguages(null); setRepoAnalysis(null);
     try {
-      // Step 1: 检测翻译语言
-      const langs = await api.detectLanguages(repoUrl.trim());
-      if (langs.length > 0) {
-        setPendingLanguages(langs);
+      // 新管线 Step 1+2: 分析仓库(LLM 判文件角色 + 检测翻译)
+      const analysis = await api.analyzeRepo(repoUrl.trim());
+      setRepoAnalysis(analysis);
+      if (analysis.languages.length > 0) {
+        // 有翻译: 让用户选择
+        setPendingLanguages(analysis.languages);
         setBusy(false);
         return;
       }
-      // 无翻译:直接导入原文
-      await doImport(undefined);
+      // 无翻译: 直接导入原文
+      await doImport(null);
     } catch (e) {
       setError(e instanceof Error ? `${e.message}\n\n网络受限或私有仓库请改用「Markdown」方式。` : String(e));
       setBusy(false);
     }
   };
 
-  const doImport = async (langCode?: string) => {
+  const doImport = async (langCode: string | null) => {
+    if (!repoAnalysis) return;
     setBusy(true); setError(null); setSuccess(null); setProgressMsg(null); setPendingLanguages(null);
     try {
-      const course = await api.importCourseFromRepo(repoUrl.trim(), langCode);
+      // 新管线 Step 3+4+5: 提取大纲 → LLM 设计结构 → 拉正文+图片 → 落库
+      const course = await api.importAnalyzed(repoUrl.trim(), repoAnalysis, langCode);
       setSuccess(`导入成功：${course.title}${langCode ? `（含 ${langCode} 翻译）` : ""}`);
+      setRepoAnalysis(null);
       setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);
     } catch (e) { setError(e instanceof Error ? `${e.message}\n\n网络受限或私有仓库请改用「Markdown」方式。` : String(e)); } finally { setBusy(false); }
   };
@@ -330,7 +338,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
                 <p className="text-label font-bold text-white/90">🌐 该课程有 {pendingLanguages.length} 种语言翻译</p>
                 <p className="text-caption text-white/50">选择一种语言导入翻译版（原文也会导入，进度共享）</p>
                 <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                  <button onClick={() => doImport(undefined)} className="px-2 py-1 rounded-md text-caption font-bold bg-white/10 text-white/80 hover:bg-white/20">原文</button>
+                  <button onClick={() => doImport(null)} className="px-2 py-1 rounded-md text-caption font-bold bg-white/10 text-white/80 hover:bg-white/20">原文</button>
                   {pendingLanguages.slice(0, 20).map((l) => (
                     <button key={l.code} onClick={() => doImport(l.code)} className="px-2 py-1 rounded-md text-caption font-bold bg-brand/15 text-brand hover:bg-brand/25">{l.name}</button>
                   ))}

@@ -26,6 +26,7 @@ import type {
   SettingKey,
   ExerciseType,
   CustomProviderInput,
+  RepoAnalysis,
 } from "@shared/types";
 import {
   getDueReviewNodeIds,
@@ -315,6 +316,96 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       const cleanRepo = repoRaw.replace(/\.git$/, "");
       const { detectRepoLanguages } = await import("../services/pure/repo-fetcher.js");
       return detectRepoLanguages(owner, cleanRepo, "main", fetch);
+    },
+  );
+
+  // 新智能管线 Step 1+2: 分析仓库
+  ipcMain.handle(
+    "course:analyzeRepo",
+    async (_e, repoUrl: string) => {
+      const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+      if (!m) throw new Error("无效的 GitHub URL");
+      const [, owner, repoRaw] = m;
+      const cleanRepo = repoRaw.replace(/\.git$/, "");
+
+      const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+
+      // Step 1: 拉取 README + 文件列表
+      send("正在分析仓库…");
+      const { fetchRepoInventory } = await import("../services/pure/repo-fetcher.js");
+      const inventory = await fetchRepoInventory(owner, cleanRepo, "main", fetch, send);
+
+      // Step 2: LLM 判文件角色
+      const { classifyFileRoles } = await import("../services/import-llm-service.js");
+      const roles = await classifyFileRoles(getDb(), inventory.readmeMd, inventory.fileList, send);
+
+      // 转换 translationFiles Map 为 Record（IPC 序列化）
+      const translationFiles: Record<string, string[]> = {};
+      for (const [code, paths] of roles.translations) {
+        translationFiles[code] = paths;
+      }
+
+      return {
+        repoUrl,
+        readmeMd: inventory.readmeMd,
+        branch: inventory.branch,
+        languages: roles.languages,
+        originalFiles: roles.original,
+        practiceFiles: roles.practice,
+        skipFiles: roles.skip,
+        translationFiles,
+      };
+    },
+  );
+
+  // 新智能管线 Step 3+4+5: 按分析结果导入
+  ipcMain.handle(
+    "course:importAnalyzed",
+    async (_e, repoUrl: string, analysis: RepoAnalysis, langCode: string | null) => {
+      const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+      if (!m) throw new Error("无效的 GitHub URL");
+      const [, owner, repoRaw] = m;
+      const cleanRepo = repoRaw.replace(/\.git$/, "");
+
+      const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+
+      // Step 3: 提取标题大纲
+      const { fetchFileOutlines } = await import("../services/pure/repo-fetcher.js");
+      const allFiles = [...analysis.originalFiles, ...analysis.practiceFiles];
+      send(`提取 ${allFiles.length} 个文件的标题大纲…`);
+      const outlines = await fetchFileOutlines(
+        allFiles, owner, cleanRepo, analysis.branch, fetch,
+        (done, total) => send(`\r提取大纲 ${done}/${total}`),
+      );
+
+      // Step 4: LLM 设计课程结构
+      const { designCourseStructure } = await import("../services/import-llm-service.js");
+      const structure = await designCourseStructure(
+        getDb(), analysis.readmeMd, outlines,
+        analysis.originalFiles, analysis.practiceFiles, send,
+      );
+      send(`课程结构: ${structure.sections.length} 章`);
+
+      // Step 5: 拉正文 + 图片内联 + 落库 + 验证
+      const { executeImport } = await import("../services/import-pipeline.js");
+      const translationFilesMap = langCode && analysis.translationFiles[langCode]
+        ? new Map([[langCode, analysis.translationFiles[langCode]!]])
+        : null;
+
+      const result = await executeImport(
+        getDb(), structure,
+        {
+          owner, repo: cleanRepo, branch: analysis.branch, fetchFn: fetch,
+          repoUrl, repoName: cleanRepo,
+          langCode,
+          translationFiles: translationFilesMap,
+          markDirty,
+        },
+        send,
+      );
+
+      const course = getDb().select().from(courses).where(eq(courses.id, result.courseId)).get();
+      return course as unknown as Course;
     },
   );
 

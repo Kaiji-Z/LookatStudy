@@ -1064,4 +1064,248 @@ export async function fetchTranslatedContent(
   return result;
 }
 
+/* ============================================================
+ * 新智能导入管线: Step 1 (fetchRepoInventory) + Step 3 (fetchFileOutlines)
+ * ============================================================ */
+
+/** 仓库清单 —— Step 1 的输出 */
+export interface RepoInventory {
+  /** README 全文 */
+  readmeMd: string;
+  /** 发现的文件路径列表(含 kind) */
+  fileList: DiscoveredFile[];
+  /** README 实际用的分支 */
+  branch: string;
+  /** 仓库检测结果 */
+  detection: DetectionResult;
+}
+
+/**
+ * Step 1: 拉取仓库清单 —— README 全文 + 文件路径列表。
+ * 不拉正文，只拉 README 和发现文件路径。
+ */
+export async function fetchRepoInventory(
+  owner: string,
+  repo: string,
+  branch: string,
+  fetchFn: typeof fetch,
+  onProgress?: (msg: string) => void,
+): Promise<RepoInventory> {
+  const send = (msg: string) => onProgress?.(msg);
+
+  // 1. 拉 README
+  send("正在拉取 README…");
+  const branches = branch === "master" ? ["master", "main"] : ["main", "master"];
+  let readmeMd: string | null = null;
+  let readmeBranch = branch;
+  for (const br of branches) {
+    try {
+      const r = await fetchFn(cdnUrl(owner, repo, br, "README.md"));
+      if (r.ok) {
+        readmeMd = await r.text();
+        readmeBranch = br;
+        break;
+      }
+    } catch {
+      // network error, try next
+    }
+  }
+  if (!readmeMd) throw new Error(`无法拉取 README（试过分支: ${branches.join(", ")}）`);
+  send(`README 拉取成功（${readmeMd.length} 字符）`);
+
+  // 2. 检测形态 + 发现文件
+  const detection = detectRepoPattern(readmeMd);
+  if (detection.pattern === "unsupported") {
+    throw new Error(`仓库不支持: ${detection.reason}`);
+  }
+
+  let fileList = filterLessonFiles(detection.lessonFiles ?? []);
+  const readmeLinkCount = fileList.length;
+
+  // README 链接太少时补充文件树
+  if (readmeLinkCount < 5) {
+    try {
+      send("README 链接较少，扫描文件树补充…");
+      const tree = await fetchRepoFileTree(owner, repo, readmeBranch, fetchFn);
+      if (tree.paths.length > 0) {
+        const treeFiles = pathsToDiscoveredFiles(tree.paths);
+        const treeLessonFiles = filterLessonFiles(treeFiles).filter((f) => f.kind !== "other");
+        if (treeLessonFiles.length > fileList.length) {
+          fileList = treeLessonFiles;
+          send(`文件树发现 ${fileList.length} 个文件`);
+        }
+      }
+    } catch {
+      send("文件树拉取失败，使用 README 链接");
+    }
+  } else {
+    send(`README 链接发现 ${readmeLinkCount} 个文件`);
+  }
+
+  // 上限
+  if (fileList.length > MAX_FILES) {
+    send(`文件数 ${fileList.length} 超过上限 ${MAX_FILES}，截断`);
+    fileList = fileList.slice(0, MAX_FILES);
+  }
+
+  return { readmeMd, fileList, branch: readmeBranch, detection };
+}
+
+/** 文件标题大纲 —— Step 3 的输出 */
+export interface FileOutline {
+  /** 文件 H1 标题（第一个 # 开头的行） */
+  h1: string;
+  /** H2/H3 标题列表（不含正文） */
+  headings: { level: number; title: string }[];
+}
+
+/**
+ * Step 3: 批量提取文件的标题大纲（H1/H2/H3，不含正文）。
+ * 对每个文件拉取前 ~100 行，只提取标题行。
+ * 并发度 5，同 fetchMarkdownContents。
+ */
+export async function fetchFileOutlines(
+  filePaths: string[],
+  owner: string,
+  repo: string,
+  branch: string,
+  fetchFn: typeof fetch,
+  onProgress?: (done: number, total: number, path: string) => void,
+): Promise<Map<string, FileOutline>> {
+  const result = new Map<string, FileOutline>();
+  const CONCURRENCY = 5;
+
+  for (let i = 0; i < filePaths.length; i += CONCURRENCY) {
+    const batch = filePaths.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (filePath) => {
+        const url = cdnUrl(owner, repo, branch, filePath);
+        const r = await fetchFn(url);
+        if (!r.ok) return null;
+        const text = await r.text();
+        // 只取前 150 行（标题通常在前面）
+        const lines = text.split(/\r?\n/).slice(0, 150);
+        let h1 = "";
+        const headings: { level: number; title: string }[] = [];
+        let inCodeFence = false;
+        for (const line of lines) {
+          if (/^(\s*)(```|~~~)/.test(line)) {
+            inCodeFence = !inCodeFence;
+            continue;
+          }
+          if (inCodeFence) continue;
+          const h1Match = line.match(/^#\s+(.+)$/);
+          if (h1Match && !h1) {
+            h1 = h1Match[1]!.trim();
+            continue;
+          }
+          const h2Match = line.match(/^##\s+(.+)$/);
+          if (h2Match) {
+            headings.push({ level: 2, title: h2Match[1]!.trim() });
+            continue;
+          }
+          const h3Match = line.match(/^###\s+(.+)$/);
+          if (h3Match) {
+            headings.push({ level: 3, title: h3Match[1]!.trim() });
+            continue;
+          }
+        }
+        // .ipynb: 没有 markdown 标题，用文件名
+        if (!h1 && filePath.endsWith(".ipynb")) {
+          h1 = filePath.split("/").pop()?.replace(/\.ipynb$/i, "") ?? filePath;
+        }
+        return { path: filePath, outline: { h1: h1 || (filePath.split("/").pop() ?? filePath), headings } };
+      }),
+    );
+    for (let j = 0; j < results.length; j++) {
+      const res = results[j];
+      if (res.status === "fulfilled" && res.value) {
+        result.set(res.value.path, res.value.outline);
+      }
+      onProgress?.(i + j + 1, filePaths.length, batch[j] ?? "");
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 拉取单个文件的完整正文（Step 5a 用）。
+ * 复用 fetchMarkdownContents 的解析逻辑（.ipynb → parseNotebook, .rst → rst-parser 等），
+ * 但只拉一个文件，不做批量。
+ */
+export async function fetchSingleFileContent(
+  filePath: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  fetchFn: typeof fetch,
+): Promise<string | null> {
+  try {
+    const url = cdnUrl(owner, repo, branch, filePath);
+    const r = await fetchFn(url);
+    if (!r.ok) return null;
+    const lower = filePath.toLowerCase();
+    if (lower.endsWith(".ipynb")) {
+      const { parseNotebook } = await import("./notebook-parser.js");
+      const jsonText = await r.text();
+      const nbResult = parseNotebook(jsonText);
+      return nbResult.markdown;
+    }
+    const text = await r.text();
+    if (lower.endsWith(".rst")) {
+      const { parseRst } = await import("./rst-parser.js");
+      return parseRst(text).markdown;
+    }
+    if (lower.endsWith(".rmd")) {
+      const { parseRmd } = await import("./rmd-parser.js");
+      return parseRmd(text).markdown;
+    }
+    if (lower.endsWith(".org")) {
+      const { parseOrg } = await import("./org-parser.js");
+      return parseOrg(text).markdown;
+    }
+    if (lower.endsWith(".adoc")) {
+      const { parseAdoc } = await import("./adoc-parser.js");
+      return parseAdoc(text).markdown;
+    }
+    return text;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 下载图片并转 base64 data-url（Step 5b 用）。
+ * 返回 data:url 或 null（下载失败/太大）。
+ */
+export async function fetchImageAsDataUrl(
+  imgPath: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  fetchFn: typeof fetch,
+  maxBytes = 200_000,
+): Promise<string | null> {
+  try {
+    const url = cdnUrl(owner, repo, branch, imgPath);
+    const r = await fetchFn(url);
+    if (!r.ok) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > maxBytes) return null; // 太大不内联
+    const ext = imgPath.split(".").pop()?.toLowerCase() ?? "png";
+    const mime =
+      ext === "png" ? "image/png"
+      : ext === "jpg" || ext === "jpeg" ? "image/jpeg"
+      : ext === "gif" ? "image/gif"
+      : ext === "webp" ? "image/webp"
+      : ext === "svg" ? "image/svg+xml"
+      : ext === "bmp" ? "image/bmp"
+      : "image/png";
+    return `data:${mime};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
 

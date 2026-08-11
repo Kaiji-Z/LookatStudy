@@ -48,6 +48,27 @@ export interface Course {
   createdAt: string;
 }
 
+/* ---------- 仓库分析（新智能导入管线 Step 1+2 结果） ---------- */
+
+export interface RepoAnalysis {
+  /** 仓库 URL */
+  repoUrl: string;
+  /** README 全文（供后续 Step 3+4 用） */
+  readmeMd: string;
+  /** 实际分支 */
+  branch: string;
+  /** 检测到的翻译语言列表 */
+  languages: { code: string; name: string }[];
+  /** 原文课程文件路径 */
+  originalFiles: string[];
+  /** 实操文件路径 */
+  practiceFiles: string[];
+  /** 噪声文件路径 */
+  skipFiles: string[];
+  /** 翻译文件: 语言代码 → 文件路径列表 */
+  translationFiles: Record<string, string[]>;
+}
+
 /* ---------- 学习进度 ---------- */
 
 export interface Progress {
@@ -251,6 +272,10 @@ export interface ApiExpose {
   listCourses(): Promise<Course[]>;
   getCourseTree(courseId: string, locale?: string): Promise<ContentNode[]>;
   importCourseFromRepo(repoUrl: string, langCode?: string): Promise<Course>;
+  /** 新智能管线 Step 1+2: 分析仓库 → 返回翻译语言 + 文件角色 */
+  analyzeRepo(repoUrl: string): Promise<RepoAnalysis>;
+  /** 新智能管线 Step 3+4+5: 按分析结果导入（用户选了翻译后调） */
+  importAnalyzed(repoUrl: string, analysis: RepoAnalysis, langCode: string | null): Promise<Course>;
   /** 检测仓库的可用翻译语言（从 README 的 translations/ 链接提取） */
   detectLanguages(repoUrl: string): Promise<{ code: string; name: string }[]>;
   /** 获取课程已导入的翻译语言列表 */

@@ -239,6 +239,24 @@ export default function App() {
     api.getDashboard(selectedCourseId).then(setDashboard).catch(setErrorFromThrow);
   }, [selectedCourseId, currentLocale]);
 
+  // 重新拉取整个课程的 progress(解锁后 UI 实时更新用)。
+  // markNodeAttempted 可能解锁同章下一课 + 下一章第一课(双线推进),
+  // 这些被解锁的节点 progress 变化需要刷新才能在地图上亮起。
+  const reloadCourseProgress = useCallback(async () => {
+    const lessons = tree.filter((n) => n.type === "lesson" || n.type === "exam");
+    const entries = await Promise.all(
+      lessons.map(async (l) => {
+        const p = await api.getProgress(l.id);
+        return [l.id, p] as const;
+      }),
+    );
+    const map: Record<string, Progress> = {};
+    for (const [id, p] of entries) {
+      if (p) map[id] = p;
+    }
+    setProgressMap(map);
+  }, [tree]);
+
   // 节点切换时拉 starter prompts
   useEffect(() => {
     if (!selectedNodeId) {
@@ -308,13 +326,10 @@ export default function App() {
         return;
       }
       await api.markNodeAttempted(node.id);
-      const [progress, newStreak] = await Promise.all([
-        api.getProgress(node.id),
-        api.getStreak(),
-      ]);
-      if (progress) {
-        setProgressMap((m) => ({ ...m, [node.id]: progress }));
-      }
+      const newStreak = await api.getStreak();
+      // 刷新整个课程的 progress(markNodeAttempted 双线解锁了其他节点,
+      // 需要让地图实时显示新解锁的球,而不是等 Ctrl+R)
+      await reloadCourseProgress();
       setStreak(newStreak);
       setSelectedNodeId(node.id);
       setForceArtifactTab("content");
@@ -322,7 +337,7 @@ export default function App() {
     } catch (e) {
       setErrorFromThrow(e);
     }
-  }, [progressMap]);
+  }, [progressMap, reloadCourseProgress]);
 
   const handleSkillPick = async (name: string) => {
     try {

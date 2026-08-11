@@ -171,8 +171,15 @@ export function unlockNextLessonIfEligible(db: Db, currentNodeId: string): boole
 }
 
 /**
- * 解锁同父章节里、orderIdx 大于当前节点的第一个 lesson。
- * 如果当前章节没有下一课了，解锁下一章节的第一课。
+ * 解锁下一课 —— 双线推进(用户选择"双线推进"方案)。
+ *
+ * 每次触发时同时解锁两条线:
+ *   1. 同章节下一课(orderIdx > 当前节点的第一个 lesson)
+ *   2. 下一章节第一课(遍历后续 section 找第一个有 lesson 的)
+ *
+ * 这样用户点当前章节任意一课时,下一章入口就已打开,不会卡死在某章。
+ * 多邻国式逐课推进感保留(同章下一课解锁),同时章节间不再串行阻塞。
+ *
  * 硬门控:调用方负责判断 mastery 是否达标(见 markNodeAttempted / update_mastery 应用)。
  */
 function unlockNextLesson(db: Db, currentNodeId: string): void {
@@ -184,50 +191,59 @@ function unlockNextLesson(db: Db, currentNodeId: string): void {
     .get();
   if (!current) return;
 
-  // 同章节、orderIdx 更大的 lesson，取第一个
-  const siblings = db
+  // ⚠️ 所有 .all().filter() 必须带 courseId 条件!
+  // DB 里可能有多个课程,不加 courseId 过滤会把其他课程的 section/lesson
+  // 混进来,导致解锁到错误课程的节点上(看似没解锁,实际解锁了别的课程)。
+  const courseId = current.courseId;
+
+  // 收集所有需要解锁的目标 id(同章下一课 + 下一章第一课)
+  const targets: string[] = [];
+
+  // 线 1:同章节、orderIdx 更大的 lesson，取第一个
+  const sameSectionNext = db
     .select()
     .from(contentNodes)
     .all()
     .filter(
       (n) =>
+        n.courseId === courseId &&
         n.parentId === current.parentId &&
         n.type === "lesson" &&
         n.orderIdx > current.orderIdx,
     )
     .sort((a, b) => a.orderIdx - b.orderIdx);
 
-  let nextNodeId: string | null = null;
-  if (siblings.length > 0) {
-    // 同章节有下一课
-    nextNodeId = siblings[0]!.id;
-  } else {
-    // 同章节没下一课了 → 找下一章节的第一课。遍历所有后续 section,
-    // 跳过没有 lesson 的空 section(原 bug:只看第一个 next section,若它
-    // 全是 exam/skip 就停止,导致整条后续链路被锁死)。
-    const parentOrderIdx = current.parentId ? getParentOrderIdx(db, current.parentId) : -1;
-    const laterSections = db
+  if (sameSectionNext.length > 0) {
+    targets.push(sameSectionNext[0]!.id);
+  }
+
+  // 线 2:下一章节的第一课(不管当前是不是本章最后一课都解锁)
+  // 遍历当前节点所在 section 之后的所有 section,跳过空 section
+  const parentOrderIdx = current.parentId ? getParentOrderIdx(db, current.parentId) : -1;
+  const laterSections = db
+    .select()
+    .from(contentNodes)
+    .all()
+    .filter((n) => n.courseId === courseId && n.type === "section" && n.orderIdx > parentOrderIdx)
+    .sort((a, b) => a.orderIdx - b.orderIdx);
+  for (const sec of laterSections) {
+    const sectionLessons = db
       .select()
       .from(contentNodes)
       .all()
-      .filter((n) => n.type === "section" && n.orderIdx > parentOrderIdx)
+      .filter((n) => n.courseId === courseId && n.parentId === sec.id && n.type === "lesson")
       .sort((a, b) => a.orderIdx - b.orderIdx);
-    for (const sec of laterSections) {
-      const sectionLessons = db
-        .select()
-        .from(contentNodes)
-        .all()
-        .filter((n) => n.parentId === sec.id && n.type === "lesson")
-        .sort((a, b) => a.orderIdx - b.orderIdx);
-      if (sectionLessons.length > 0) {
-        nextNodeId = sectionLessons[0]!.id;
-        break; // 找到第一个有课的 section 就停
-      }
+    if (sectionLessons.length > 0) {
+      targets.push(sectionLessons[0]!.id);
+      break; // 找到第一个有课的 section 就停
     }
   }
 
-  if (nextNodeId) {
-    // 如果下一课还是 locked，解锁成 available
+  // 去重(同章最后一课触发时,线1空、线2有,不会重复;但安全起见去重)
+  const uniqueTargets = [...new Set(targets)];
+
+  // 解锁所有目标(locked → available)
+  for (const nextNodeId of uniqueTargets) {
     const nextProgress = db
       .select()
       .from(progressTable)

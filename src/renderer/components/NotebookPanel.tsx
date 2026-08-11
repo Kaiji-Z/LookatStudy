@@ -14,6 +14,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } fro
 import type { ContentNode, CanvasItem, NoteSourceAnchor, NodeAsset } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ErrorBoundary } from "./ErrorBoundary.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
@@ -167,7 +168,7 @@ function ContentTab({
       .catch(() => { if (!cancelled) { setContent(null); setLoadError(true); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [selectedNode?.id]);
+  }, [selectedNode?.id, locale]);
 
   // 多模态:加载当前节点的图片资源
   useEffect(() => {
@@ -305,6 +306,25 @@ function ContentTab({
           ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id, locale ?? undefined).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
         </div>
       ) : content ? (
+        <ErrorBoundary
+          key={`${selectedNode.id}-${locale ?? "orig"}`}
+          fallback={(_err, retry) => (
+            <div className="prose prose-sm max-w-[80ch] leading-relaxed">
+              <div className="text-body text-warning mb-2">
+                ⚠️ 这段内容渲染失败(可能翻译格式有问题)。
+              </div>
+              <pre className="text-caption text-neutral-500 whitespace-pre-wrap break-words bg-neutral-100 dark:bg-neutral-800 p-3 rounded">
+                {content.slice(0, 500)}
+                {content.length > 500 ? "\n…(截断)" : ""}
+              </pre>
+              <div className="flex gap-2 mt-2">
+                <button className="text-caption underline text-accent" onClick={retry}>
+                  重试渲染
+                </button>
+              </div>
+            </div>
+          )}
+        >
         <div ref={proseRef} className="prose prose-sm max-w-[80ch] leading-relaxed select-text">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
@@ -328,6 +348,7 @@ function ContentTab({
             {content}
           </ReactMarkdown>
         </div>
+        </ErrorBoundary>
       ) : (
         <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">
           这一节还没有讲解内容。问 AI 导师:「给我讲讲这一节」

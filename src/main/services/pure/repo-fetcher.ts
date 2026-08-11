@@ -335,29 +335,26 @@ export function buildCourseFromFiles(
       continue;
     }
 
-    // ---- uncertain 文件：先检查是否是 .ipynb/lab/example（需要合并代码到同目录 lesson）----
-    // 这些文件虽然是 uncertain（LLM 会判 keep/skip），但在 buildCourseFromFiles 阶段
-    // 先把它们的代码合并到同目录的 lesson 里，这样即使 LLM 判 skip，代码也不会丢。
+    // ---- uncertain 文件(notebook/lab/example):建独立 practice 节点 ----
+    // 两个世界设计:不再把 notebook/lab/example 合并进 study lesson 正文,
+    // 而是作为独立 practice lesson 入组(world=null,LLM 判 study/practice)。
+    // 这样 LLM 能看到它们并判 world,用户也能在实操世界独立探索。
     const lowerP = file.path.toLowerCase();
     const isNotebook = lowerP.endsWith(".ipynb");
     const isLab = /\/lab\//.test(lowerP) || /\/labs\//.test(lowerP) || /\/exercise/.test(lowerP);
     const isExample = /\/examples?\//.test(lowerP) || /\/demos?\//.test(lowerP);
-    if ((isNotebook || isLab || isExample) && group.lessons.length > 0) {
-      // 找同目录（sourceFilePath 的目录部分匹配）的最后一个 lesson
-      const fileDir = file.path.split("/").slice(0, -1).join("/");
-      const sameDirLessons = group.lessons.filter((l) => {
-        if (!l.sourceFilePath) return false;
-        const lessonDir = l.sourceFilePath.split("/").slice(0, -1).join("/");
-        return lessonDir === fileDir;
+    if (isNotebook || isLab || isExample) {
+      // notebook/lab/example → 独立 practice 节点(world=null 等 LLM 判)
+      const h1Match = file.md.match(/^#\s+(.+)$/m);
+      const lessonTitle = h1Match ? h1Match[1]!.trim() : file.title;
+      group.lessons.push({
+        title: lessonTitle,
+        anchor: file.path.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        body: file.md,
+        uncertain: true,
+        sourceFilePath: file.path,
+        world: null, // LLM 在 course-structure-service 判 study/practice
       });
-      const targetLesson = (sameDirLessons.length > 0 ? sameDirLessons : group.lessons)[sameDirLessons.length > 0 ? sameDirLessons.length - 1 : group.lessons.length - 1];
-      if (targetLesson && file.md.trim().length > 0) {
-        const label = isNotebook ? "📓 Notebook 代码" : isLab ? "🔧 练习" : "💡 示例";
-        targetLesson.body += `\n\n---\n\n**${label}**（来自 \`${file.path}\`）:\n\n${file.md}`;
-      }
-      // 合并后跳过——不作为独立 lesson（代码已附在对应 lesson 里）
-      // 注意:LLM 在 analyzeCourseStructure 时仍能看到这个文件（因为 keepAsLesson=true）
-      // 但 buildCourseFromFiles 不为它建独立 lesson 节点
       continue;
     }
 
@@ -365,6 +362,7 @@ export function buildCourseFromFiles(
     const parsed = parseMarkdownToCourse(file.md);
     const parsedLessonCount = parsed.sections.reduce((sum, s) => sum + s.lessons.length, 0);
     const isUncertain = classification.role === "uncertain";
+    const fileWorld = classification.world; // null for uncertain, "study" for section-intro
     const lessonCandidates: ParsedLesson[] =
       parsedLessonCount > 0
         ? parsed.sections
@@ -375,6 +373,7 @@ export function buildCourseFromFiles(
               body: l.body,
               uncertain: isUncertain,
               sourceFilePath: file.path,
+              world: fileWorld,
             })))
         : (() => {
             const h1Match = file.md.match(/^#\s+(.+)$/m);
@@ -385,6 +384,7 @@ export function buildCourseFromFiles(
               body: file.md,
               uncertain: isUncertain,
               sourceFilePath: file.path,
+              world: fileWorld,
             }];
           })();
 
@@ -400,13 +400,17 @@ export function buildCourseFromFiles(
   }
 
   // 第三步:每个分组 → 一个 section（去掉空 section）
+  // section.world: 全 practice 子节点 → practice, 否则 study(混或全 study)
   const sections: ParsedSection[] = groupOrder
     .filter((key) => groupMap.get(key)!.lessons.length > 0)
     .map((key) => {
       const g = groupMap.get(key)!;
+      const practiceCount = g.lessons.filter((l) => l.world === "practice").length;
+      const studyCount = g.lessons.filter((l) => l.world === "study").length;
       return {
         title: g.sectionTitle,
         anchor: g.sectionTitle.toLowerCase().replace(/\s+/g, "-"),
+        world: practiceCount > 0 && studyCount === 0 ? "practice" as const : "study" as const,
         lessons: g.lessons,
       };
     });
@@ -915,6 +919,44 @@ export interface TranslatedFile {
 }
 
 /**
+ * 净化翻译版 markdown —— 翻译内容是 CDN 原样拉取的,未经原文管道的
+ * code-fence-aware parser 处理,可能含畸形结构导致 react-markdown 崩溃。
+ *
+ * 处理:
+ *   1. 未闭合代码围栏:统计 ``` 和 ~~~ 数量,奇数则补一个闭合围栏
+ *   2. 去除 <script>/<style>/<iframe> 等危险 HTML(防 XSS + 防渲染崩溃)
+ *   3. 去 BOM、统一换行
+ *
+ * 这是确定性规则处理(高置信度),不是 LLM 判断 —— 格式修复是规则擅长的。
+ */
+export function sanitizeTranslatedMarkdown(md: string): string {
+  let s = md.replace(/^\uFEFF/, ""); // BOM
+  s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n"); // 统一换行
+
+  // 1. 代码围栏平衡:逐行状态机检测未闭合围栏
+  const lines = s.split("\n");
+  let fence: string | null = null; // 当前围栏类型("```" 或 "~~~")
+  for (const line of lines) {
+    const m = line.match(/^\s*(```|~~~)/);
+    if (m) {
+      fence = fence ? null : m[1]!; // 切换状态
+    }
+  }
+  if (fence) {
+    // 围栏没闭合 → 补一个
+    s = s + "\n" + fence + "\n";
+  }
+
+  // 2. 去除危险 HTML 标签(script/style/iframe/object/embed)
+  // react-markdown 默认不渲染 raw HTML(除非 rehype-raw),但保险起见仍剥离
+  s = s.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
+  s = s.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
+  s = s.replace(/<\/?(iframe|object|embed)\b[^>]*>/gi, "");
+
+  return s.trim();
+}
+
+/**
  * 拉取翻译版课程内容。
  *
  * 策略:不依赖翻译版 README 的链接（很多翻译只翻译了大纲，README 里没有 lesson 链接，
@@ -966,7 +1008,7 @@ export async function fetchTranslatedContent(
         const r = await fetchFn(url);
         if (!r.ok) return null; // 该文件无翻译
         const md = await r.text();
-        return { originalPath: file.path, title: file.title, content: md };
+        return { originalPath: file.path, title: file.title, content: sanitizeTranslatedMarkdown(md) };
       }),
     );
     for (const res of results) {

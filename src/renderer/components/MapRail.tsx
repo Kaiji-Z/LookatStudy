@@ -510,6 +510,9 @@ function MapSection({
     chapterLessonNodes.length > 0 &&
     chapterLessonNodes.every((l) => (progressMap[l.id]?.mastery ?? 0) >= UNLOCK_MASTERY_THRESHOLD);
 
+  // P1.5: 本章首个可学节点("从这里开始"指引)——常显标题,区别于仅选中/悬停才显示。
+  const firstAvailableId = lessons.find((l) => progressMap[l.id]?.status === "available")?.id;
+
   // 测量章节路径容器宽度,供布局引擎算 x 坐标。
   const pathRef = useRef<HTMLDivElement>(null);
   const [containerW, setContainerW] = useState(268);
@@ -606,6 +609,7 @@ function MapSection({
                 index={i}
                 progress={progressMap[lesson.id]}
                 isSelected={lesson.id === selectedNodeId}
+                alwaysShowLabel={lesson.id === firstAvailableId}
                 isDue={dueNodeIds.has(lesson.id)}
                 chapterLessonsMastered={chapterLessonsMastered}
                 onClick={() => onJumpNode(lesson.id)}
@@ -624,6 +628,7 @@ function MapNode({
   index,
   progress,
   isSelected,
+  alwaysShowLabel,
   isDue,
   chapterLessonsMastered,
   onClick,
@@ -632,6 +637,8 @@ function MapNode({
   index: number;
   progress?: Progress;
   isSelected: boolean;
+  /** P1.5 首个可学节点常显标题("从这里开始"指引)。 */
+  alwaysShowLabel?: boolean;
   isDue: boolean;
   /** 同 section 所有 lesson mastery 都 ≥0.5(考试解锁条件)。 */
   chapterLessonsMastered: boolean;
@@ -734,9 +741,17 @@ function MapNode({
         </div>
       )}
 
-      {/* 节点名:选中态常驻显示;hover 由全局 GlobalTooltip(data-tooltip)处理 */}
-      {isSelected && (
-        <div className="mt-1 text-caption text-center leading-tight max-w-[120px] font-bold px-1.5 py-0.5 rounded-md bg-brand/90 text-white shadow-sm">
+      {/* 节点名:选中态常驻显示;首个可学节点(P1.5)也常显——"从这里开始"指引。
+          hover 由全局 GlobalTooltip(data-tooltip)处理 */}
+      {(isSelected || alwaysShowLabel) && (
+        <div
+          data-testid={alwaysShowLabel && !isSelected ? "map-next-label" : undefined}
+          className={
+            isSelected
+              ? "mt-1 text-caption text-center leading-tight max-w-[120px] font-bold px-1.5 py-0.5 rounded-md bg-brand/90 text-white shadow-sm"
+              : "mt-1 text-caption text-center leading-tight max-w-[120px] font-bold px-1.5 py-0.5 rounded-md bg-surface-0 text-ink-strong shadow-sm border border-[var(--border)]"
+          }
+        >
           {lesson.title}
         </div>
       )}

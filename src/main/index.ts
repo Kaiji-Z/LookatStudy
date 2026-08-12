@@ -482,6 +482,15 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: interleave,
   });
 
+  // T_nextlabel (P1.5): 首个可学节点常显标题("从这里开始")——此时未选任何节点
+  const nextLabel = await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="map-next-label"]') !== null`,
+  );
+  results.push({
+    name: "first available node shows label as start-here cue (P1.5)",
+    ok: nextLabel === true,
+  });
+
   // T5: 点击一个未锁的 map-node → 触发 markNodeAttempted → 联动右栏
   let clickResult: { clicked?: boolean; totalBtns?: number; enabledCount?: number; error?: string } = {};
   try {

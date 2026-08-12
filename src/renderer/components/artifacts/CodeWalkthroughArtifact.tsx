@@ -10,6 +10,8 @@
  *   - harness 警告展示
  */
 import { useRef, useState } from "react";
+import { Code2, AlertTriangle } from "lucide-react";
+import { useLang } from "../../lib/i18n.js";
 
 interface Annotation {
   lineStart: number;
@@ -28,6 +30,7 @@ interface CodeWalkthroughData {
 
 export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
   const d = data as CodeWalkthroughData;
+  const t = useLang();
   const [activeAnnotation, setActiveAnnotation] = useState<number | null>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
   const lines = d.code.split("\n");
@@ -52,9 +55,9 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
   return (
     <div className="surface-card p-4" data-testid="artifact-code-walkthrough">
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-body">🔍</span>
+        <Code2 className="w-4 h-4 text-ink-muted shrink-0" />
         <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200">{d.title}</h3>
-        <span className="text-caption font-bold px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 font-mono">
+        <span className="text-caption font-bold px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-ink-muted font-mono">
           {d.language}
         </span>
       </div>
@@ -87,8 +90,8 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
 
         {/* 讲解列表 */}
         <div className="space-y-2">
-          <div className="text-caption font-bold text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 uppercase tracking-wider">
-            逐段讲解(点击定位代码)
+          <div className="text-caption font-bold text-ink-muted uppercase tracking-wider">
+            {t("artifact.codewalk.sectionLabel")}
           </div>
           {d.annotations.map((a, i) => (
             <button
@@ -102,7 +105,9 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
               }`}
             >
               <div className="text-caption font-bold text-brand mb-0.5">
-                第 {a.lineStart}{a.lineEnd !== a.lineStart ? `-${a.lineEnd}` : ""} 行
+                {a.lineEnd !== a.lineStart
+                  ? t("artifact.codewalk.lineRange", { a: a.lineStart, b: a.lineEnd })
+                  : t("artifact.codewalk.lineSingle", { n: a.lineStart })}
               </div>
               <div className="text-body text-neutral-700 dark:text-neutral-300 leading-relaxed">
                 {a.note}
@@ -113,8 +118,9 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
       </div>
 
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
-          ⚠️ {d.warnings.join("; ")}
+        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400 flex items-start gap-1" data-testid="artifact-warnings">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{d.warnings.join("; ")}</span>
         </div>
       )}
     </div>

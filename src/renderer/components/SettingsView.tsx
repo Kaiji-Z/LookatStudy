@@ -10,13 +10,31 @@
  *
  * 密钥边界：key 输入框是 password type；保存只走 setSetting，永不渲染层留全量 key。
  * 已配的 key 只显示"已配置"掩码（sk-…1234），不回显完整值。
+ *
+ * 设计语汇(v0.8 i18n 全量化 + 设计系统收敛):
+ *   - 所有用户可见字符串走 i18n(useLang);无硬编码中文。
+ *   - 表单控件统一 fieldCls(token 化 bg-surface-1 + border + focus);不再 bg-white/dark 散落。
+ *   - chrome 内无 emoji:状态用 lucide CheckCircle2/XCircle,自定义 provider 用 Wrench,
+ *     操作前缀用 Plus/RotateCw/Globe。emoji 仅留给 skill-tree 节点(见 AGENTS 设计系统)。
+ *   - pill 按钮(选语言/主题/provider)共用同一组 active/inactive class,跨行一致。
+ *   - 开关用 role="switch" + aria-checked + aria-label,屏幕阅读器可读。
  */
 import { useEffect, useState, useCallback } from "react";
+import { Plus, RotateCw, CheckCircle2, XCircle, Wrench, Globe } from "lucide-react";
 import { api } from "../lib/api.js";
 import type { ProviderPresetInfo, CustomProvider } from "@shared/types";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { useTheme, type ThemeMode } from "../lib/useTheme.js";
 import { useLang, setLang, getLang } from "../lib/i18n.js";
+
+/** 表单控件统一样式:token 化背景/边框/聚焦,placeholder 用 ink-faint 保 ≥4.5:1 对比。 */
+const fieldCls =
+  "bg-surface-1 text-ink text-body rounded-lg border border-[var(--border)] focus:border-brand focus:outline-none transition-colors placeholder:text-ink-faint";
+
+/** pill 按钮(语言/主题/provider 共用)。active=brand,inactive=surface 浅层 + ink-muted。 */
+const pillInactiveCls =
+  "bg-neutral-200 dark:bg-neutral-800 text-ink-muted hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-ink-strong";
+const pillActiveCls = "bg-brand text-white shadow-sm";
 
 export function SettingsView() {
   const t = useLang();
@@ -56,7 +74,7 @@ export function SettingsView() {
       if (r.ok && r.models) {
         setDiscoveredModels(r.models);
       } else {
-        setDiscoverError(r.error || "刷新失败（可能网络受限）");
+        setDiscoverError(r.error || t("settings.discover_failed"));
       }
     } catch (e) {
       setDiscoverError(e instanceof Error ? e.message : String(e));
@@ -89,7 +107,7 @@ export function SettingsView() {
       } else {
         // 自定义 provider：key 状态从 customProviders 查
         const cp = cps.find((c) => c.id === p);
-        setKeyMasked(cp?.hasApiKey ? "已配置" : null);
+        setKeyMasked(cp?.hasApiKey ? t("settings.key.configured") : null);
       }
       // model：自定义 provider 的默认 model
       if (p.startsWith("custom-")) {
@@ -103,7 +121,7 @@ export function SettingsView() {
     } catch (e) {
       console.error("[SettingsView] load() failed:", e);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load();
@@ -167,7 +185,7 @@ export function SettingsView() {
     setCustomTestResult(null);
     try {
       const r = await api.testCustomProvider({
-        label: customLabel || "(测试)",
+        label: customLabel || t("settings.custom.test_label"),
         protocol: customProtocol,
         baseUrl: customBaseUrl.trim(),
         apiKey: customApiKey.trim() || undefined,
@@ -249,10 +267,9 @@ export function SettingsView() {
               key={p.id}
               onClick={() => handleProviderChange(p.id)}
               data-testid={`provider-card-${p.id}`}
+              aria-pressed={activeProvider === p.id}
               className={`px-3 py-1.5 rounded-lg text-label font-medium whitespace-nowrap transition-colors ${
-                activeProvider === p.id
-                  ? "bg-brand text-white"
-                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700"
+                activeProvider === p.id ? pillActiveCls : pillInactiveCls
               }`}
             >
               {p.label}
@@ -263,47 +280,51 @@ export function SettingsView() {
               key={c.id}
               onClick={() => handleProviderChange(c.id)}
               data-testid={`provider-card-${c.id}`}
-              className={`px-3 py-1.5 rounded-lg text-label font-medium whitespace-nowrap transition-colors ${
-                activeProvider === c.id
-                  ? "bg-brand text-white"
-                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700"
+              aria-pressed={activeProvider === c.id}
+              className={`px-3 py-1.5 rounded-lg text-label font-medium whitespace-nowrap transition-colors inline-flex items-center gap-1 ${
+                activeProvider === c.id ? pillActiveCls : pillInactiveCls
               }`}
             >
-              🔧 {c.label}
+              <Wrench className="w-3.5 h-3.5" aria-hidden="true" />
+              {c.label}
             </button>
           ))}
           <button
             onClick={() => setShowCustomForm((s) => !s)}
             data-testid="add-custom-provider"
-            className="px-3 py-1.5 rounded-lg text-label whitespace-nowrap border border-dashed border-neutral-400 text-neutral-500 hover:border-neutral-500"
+            className="px-3 py-1.5 rounded-lg text-label whitespace-nowrap inline-flex items-center gap-1 border border-dashed border-[var(--border)] text-ink-muted hover:border-ink-muted hover:text-ink-strong transition-colors"
           >
-            ＋ 自定义
+            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+            {t("settings.add_custom")}
           </button>
         </div>
 
         {/* 自定义 provider 添加表单 */}
         {showCustomForm && (
-          <div className="mt-3 p-3 bg-neutral-100 dark:bg-neutral-900 rounded-lg border border-neutral-300 dark:border-neutral-700 space-y-2.5" data-testid="custom-provider-form">
+          <div className="mt-3 p-3 bg-surface-1 rounded-lg border border-[var(--border)] space-y-2.5" data-testid="custom-provider-form">
             <div className="flex gap-2">
-              <input type="text" value={customLabel} onChange={(e) => setCustomLabel(e.target.value)} placeholder="名称" data-testid="custom-label" className="flex-1 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none" />
-              <select value={customProtocol} onChange={(e) => setCustomProtocol(e.target.value as "openai-compatible" | "anthropic" | "google")} data-testid="custom-protocol" className="bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none">
-                <option value="openai-compatible">OpenAI 兼容</option>
+              <input type="text" value={customLabel} onChange={(e) => setCustomLabel(e.target.value)} placeholder={t("settings.custom.label_ph")} data-testid="custom-label" className={`${fieldCls} flex-1 px-2.5 py-1.5`} />
+              <select value={customProtocol} onChange={(e) => setCustomProtocol(e.target.value as "openai-compatible" | "anthropic" | "google")} data-testid="custom-protocol" className={`${fieldCls} px-2 py-1.5`}>
+                <option value="openai-compatible">{t("settings.proto.openai")}</option>
                 <option value="anthropic">Anthropic</option>
                 <option value="google">Google</option>
               </select>
             </div>
-            <input type="text" value={customBaseUrl} onChange={(e) => setCustomBaseUrl(e.target.value)} placeholder="Base URL（如 https://api.example.com/v1）" data-testid="custom-baseurl" className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono" />
+            <input type="text" value={customBaseUrl} onChange={(e) => setCustomBaseUrl(e.target.value)} placeholder={t("settings.custom.baseurl_ph")} data-testid="custom-baseurl" className={`${fieldCls} w-full px-2.5 py-1.5 font-mono`} />
             <div className="flex gap-2">
-              <input type="text" value={customModel} onChange={(e) => setCustomModel(e.target.value)} placeholder="模型 ID" data-testid="custom-model" className="flex-1 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono" />
-              <input type="password" value={customApiKey} onChange={(e) => setCustomApiKey(e.target.value)} placeholder="API Key（可选）" data-testid="custom-apikey" className="flex-1 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none" />
+              <input type="text" value={customModel} onChange={(e) => setCustomModel(e.target.value)} placeholder={t("settings.custom.model_ph")} data-testid="custom-model" className={`${fieldCls} flex-1 px-2.5 py-1.5 font-mono`} />
+              <input type="password" value={customApiKey} onChange={(e) => setCustomApiKey(e.target.value)} placeholder={t("settings.custom.apikey_ph")} data-testid="custom-apikey" className={`${fieldCls} flex-1 px-2.5 py-1.5`} />
             </div>
             {customTestResult && (
-              <div className={`text-label rounded p-2 ${customTestResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning"}`}>{customTestResult.ok ? "✅" : "❌"} {customTestResult.detail}</div>
+              <div className={`text-label rounded p-2 inline-flex items-start gap-1.5 ${customTestResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning"}`}>
+                {customTestResult.ok ? <CheckCircle2 className="w-4 h-4 mt-px shrink-0" aria-hidden="true" /> : <XCircle className="w-4 h-4 mt-px shrink-0" aria-hidden="true" />}
+                <span className="break-words">{customTestResult.detail}</span>
+              </div>
             )}
             <div className="flex gap-2">
-              <button onClick={handleTestCustom} disabled={!customBaseUrl.trim() || !customModel.trim() || customTesting} data-testid="custom-test" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">{customTesting ? "测试中…" : "测试连接"}</button>
-              <button onClick={handleSaveCustom} disabled={!customLabel.trim() || !customBaseUrl.trim() || !customModel.trim()} data-testid="custom-save" className="btn-3d-brand px-3 py-1.5 text-label disabled:opacity-40">保存</button>
-              <button onClick={() => setShowCustomForm(false)} className="text-label text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 px-3 py-1.5">取消</button>
+              <button onClick={handleTestCustom} disabled={!customBaseUrl.trim() || !customModel.trim() || customTesting} data-testid="custom-test" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">{customTesting ? t("settings.testing") : t("settings.test")}</button>
+              <button onClick={handleSaveCustom} disabled={!customLabel.trim() || !customBaseUrl.trim() || !customModel.trim()} data-testid="custom-save" className="btn-3d-brand px-3 py-1.5 text-label disabled:opacity-40">{t("settings.custom.save")}</button>
+              <button onClick={() => setShowCustomForm(false)} className="text-label text-ink-muted hover:text-ink-strong px-3 py-1.5 transition-colors">{t("action.cancel")}</button>
             </div>
           </div>
         )}
@@ -314,30 +335,30 @@ export function SettingsView() {
             <button
               onClick={(e) => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); const c = customProviders.find((x) => x.id === activeProvider); if (c) setConfirmDelete({ id: c.id, label: c.label, rect }); }}
               className="text-label text-warning hover:underline"
-            >删除此自定义 Provider</button>
+            >{t("settings.delete_custom")}</button>
           </div>
         )}
 
         {/* 选中 provider 的展开配置区 */}
         {currentPreset && (
-          <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 space-y-3">
+          <div className="mt-4 pt-4 border-t border-[var(--border-faint)] space-y-3">
             {/* Base URL */}
             {currentPreset.baseUrl && (
               <div className="flex items-center gap-2">
                 <span className="text-label text-ink-muted shrink-0">Base URL</span>
-                <code className="text-label text-neutral-600 dark:text-neutral-400 font-mono break-all">{currentPreset.baseUrl}</code>
+                <code className="text-label text-ink-faint font-mono break-all">{currentPreset.baseUrl}</code>
               </div>
             )}
 
             {/* Model 选择 */}
             <div className="flex items-center gap-2">
-              <span className="text-label text-ink-muted shrink-0 w-12">Model</span>
+              <span className="text-label text-ink-muted shrink-0 w-12">{t("settings.model")}</span>
               <div className="flex-1 flex items-center gap-2">
                 <select
                   value={activeModel}
                   onChange={(e) => setActiveModel(e.target.value)}
                   data-testid="model-select"
-                  className="flex-1 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
+                  className={`${fieldCls} flex-1 px-2.5 py-1.5`}
                 >
                   {currentPreset.models.map((m) => (
                     <option key={m.id} value={m.id}>{m.id}</option>
@@ -347,39 +368,46 @@ export function SettingsView() {
                   ))}
                 </select>
                 {activeProvider === "openrouter" && (
-                  <button onClick={handleDiscoverModels} disabled={discovering} data-testid="discover-models-btn" className="text-label text-accent hover:underline disabled:opacity-40 whitespace-nowrap">
-                    {discovering ? "刷新中…" : "🔄 刷新"}
+                  <button onClick={handleDiscoverModels} disabled={discovering} data-testid="discover-models-btn" className="text-label text-accent hover:underline disabled:opacity-40 whitespace-nowrap inline-flex items-center gap-1">
+                    <RotateCw className={`w-3.5 h-3.5 ${discovering ? "animate-spin" : ""}`} aria-hidden="true" />
+                    {discovering ? t("settings.discovering") : t("settings.refresh")}
                   </button>
                 )}
               </div>
             </div>
-            {discoverError && <div className="text-label text-neutral-600 ml-14">{discoverError}</div>}
+            {discoverError && <div className="text-label text-warning ml-14">{discoverError}</div>}
 
             {/* API Key */}
             <div className="flex items-center gap-2">
-              <span className="text-label text-ink-muted shrink-0 w-12">API Key</span>
+              <span className="text-label text-ink-muted shrink-0 w-12">{t("settings.apikey")}</span>
               <div className="flex-1 flex items-center gap-2">
-                {keyMasked && <span className="text-label text-brand shrink-0">✅ {keyMasked}</span>}
+                {keyMasked && (
+                  <span className="text-label text-brand shrink-0 inline-flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                    {keyMasked}
+                  </span>
+                )}
                 <input
                   type="password"
                   value={keyInput}
                   onChange={(e) => setKeyInput(e.target.value)}
-                  placeholder={keyMasked ? "覆盖…" : "粘贴 key"}
+                  placeholder={keyMasked ? t("settings.key.overwrite_ph") : t("settings.key.paste_ph")}
                   data-testid="settings-key-input"
-                  className="flex-1 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
+                  className={`${fieldCls} flex-1 px-2.5 py-1.5`}
                 />
-                <a href={currentPreset.keyUrl} target="_blank" rel="noopener noreferrer" className="text-label text-brand hover:underline whitespace-nowrap">获取 →</a>
+                <a href={currentPreset.keyUrl} target="_blank" rel="noopener noreferrer" className="text-label text-brand hover:underline whitespace-nowrap">{t("settings.key.get")}</a>
               </div>
             </div>
 
             {/* 测试连接 */}
             <div className="flex items-center gap-3">
               <button onClick={handleTest} disabled={testing} data-testid="test-connection-btn" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">
-                {testing ? "测试中…" : "测试连接"}
+                {testing ? t("settings.testing") : t("settings.test")}
               </button>
               {testResult && (
-                <span className={`text-label ${testResult.ok ? "text-brand" : "text-warning"}`}>
-                  {testResult.ok ? "✅" : "❌"} {testResult.detail}
+                <span className={`text-label inline-flex items-center gap-1 ${testResult.ok ? "text-brand" : "text-warning"}`}>
+                  {testResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
+                  {testResult.detail}
                 </span>
               )}
             </div>
@@ -388,28 +416,29 @@ export function SettingsView() {
 
         {/* 自定义 provider 的展开配置区 */}
         {activeCustomProvider && !currentPreset && (
-          <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 space-y-3">
+          <div className="mt-4 pt-4 border-t border-[var(--border-faint)] space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-label text-ink-muted shrink-0">Base URL</span>
-              <code className="text-label text-neutral-600 dark:text-neutral-400 font-mono break-all">{activeCustomProvider.baseUrl}</code>
+              <code className="text-label text-ink-faint font-mono break-all">{activeCustomProvider.baseUrl}</code>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-label text-ink-muted shrink-0 w-12">Model</span>
+              <span className="text-label text-ink-muted shrink-0 w-12">{t("settings.model")}</span>
               {activeCustomProvider.models.length > 1 ? (
-                <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)} data-testid="model-select-custom" className="flex-1 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none">
+                <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)} data-testid="model-select-custom" className={`${fieldCls} flex-1 px-2.5 py-1.5`}>
                   {activeCustomProvider.models.map((m) => (<option key={m.id} value={m.id}>{m.id}</option>))}
                 </select>
               ) : (
-                <input type="text" value={activeModel} onChange={(e) => setActiveModel(e.target.value)} placeholder="模型 ID" data-testid="model-input-custom" className="flex-1 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono" />
+                <input type="text" value={activeModel} onChange={(e) => setActiveModel(e.target.value)} placeholder={t("settings.custom.model_ph")} data-testid="model-input-custom" className={`${fieldCls} flex-1 px-2.5 py-1.5 font-mono`} />
               )}
             </div>
             <div className="flex items-center gap-3">
               <button onClick={handleTest} disabled={testing} data-testid="test-connection-btn" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">
-                {testing ? "测试中…" : "测试连接"}
+                {testing ? t("settings.testing") : t("settings.test")}
               </button>
               {testResult && (
-                <span className={`text-label ${testResult.ok ? "text-brand" : "text-warning"}`}>
-                  {testResult.ok ? "✅" : "❌"} {testResult.detail}
+                <span className={`text-label inline-flex items-center gap-1 ${testResult.ok ? "text-brand" : "text-warning"}`}>
+                  {testResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
+                  {testResult.detail}
                 </span>
               )}
             </div>
@@ -428,9 +457,9 @@ export function SettingsView() {
             min="1"
             max="500"
             data-testid="daily-goal-input"
-            className="w-24 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
+            className={`${fieldCls} w-24 px-3 py-2`}
           />
-          <span className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">XP / 天（每答对一题 +10 XP）</span>
+          <span className="text-label text-ink-muted">{t("settings.daily_goal.hint")}</span>
         </div>
       </section>
 
@@ -443,11 +472,8 @@ export function SettingsView() {
               key={l}
               onClick={() => setLang(l)}
               data-testid={`lang-${l}`}
-              className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
-                getLang() === l
-                  ? "bg-brand text-white shadow-sm"
-                  : "bg-neutral-200 dark:bg-neutral-800 text-ink-muted hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-ink-strong"
-              }`}
+              aria-pressed={getLang() === l}
+              className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${getLang() === l ? pillActiveCls : pillInactiveCls}`}
             >
               {l === "zh-CN" ? "中文" : "English"}
             </button>
@@ -457,29 +483,26 @@ export function SettingsView() {
 
       {/* 主题切换(v0.7 浅色模式):三态 auto/light/dark */}
       <section className="surface-card p-4">
-        <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-3">外观 / Theme</h3>
+        <h3 className="text-body font-semibold text-ink-muted mb-3">{t("settings.heading.theme")}</h3>
         <div className="flex gap-2">
           {([
-            { mode: "auto" as ThemeMode, label: "跟随系统" },
-            { mode: "light" as ThemeMode, label: "浅色" },
-            { mode: "dark" as ThemeMode, label: "深色" },
+            { mode: "auto" as ThemeMode, label: t("settings.theme.auto") },
+            { mode: "light" as ThemeMode, label: t("settings.theme.light") },
+            { mode: "dark" as ThemeMode, label: t("settings.theme.dark") },
           ]).map(({ mode: m, label }) => (
             <button
               key={m}
               onClick={() => theme.setMode(m)}
               data-testid={`theme-${m}`}
-              className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
-                theme.mode === m
-                  ? "bg-brand text-white shadow-sm"
-                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200"
-              }`}
+              aria-pressed={theme.mode === m}
+              className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${theme.mode === m ? pillActiveCls : pillInactiveCls}`}
             >
               {label}
             </button>
           ))}
         </div>
-        <p className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-2">
-          {theme.mode === "auto" ? `当前跟随系统: ${theme.resolved === "dark" ? "深色" : "浅色"}` : null}
+        <p className="text-label text-ink-muted mt-2">
+          {theme.mode === "auto" ? t("settings.theme.following", { mode: t(`settings.theme.${theme.resolved}`) }) : null}
         </p>
       </section>
 
@@ -503,16 +526,21 @@ export function SettingsView() {
         >
           {t("settings.save")}
         </button>
-        {saved && <span className="text-body text-brand font-bold">{t("settings.saved")}</span>}
+        {saved && (
+          <span className="text-body text-brand font-bold inline-flex items-center gap-1">
+            <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+            {t("settings.saved_text")}
+          </span>
+        )}
       </div>
 
       {/* 删除自定义 provider 的内联确认(替代 native confirm()) */}
       {confirmDelete && (
         <ConfirmCard
           anchorRect={confirmDelete.rect}
-          message={`删除自定义 Provider「${confirmDelete.label}」?无法撤销。`}
+          message={t("settings.delete_custom_confirm", { name: confirmDelete.label })}
           danger
-          confirmLabel="删除"
+          confirmLabel={t("action.delete")}
           testid="custom-provider-delete-confirm"
           onConfirm={() => { handleDeleteCustom(confirmDelete.id); setConfirmDelete(null); }}
           onCancel={() => setConfirmDelete(null)}
@@ -528,6 +556,7 @@ export function SettingsView() {
  * 仓库无对应翻译时用原文(严格 fallback)。
  */
 function LanguagePrefSection() {
+  const t = useLang();
   const [prefLang, setPrefLang] = useState<string>("en");
   const [loaded, setLoaded] = useState(false);
 
@@ -553,11 +582,12 @@ function LanguagePrefSection() {
 
   return (
     <section className="surface-card p-4">
-      <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-        🌐 语言偏好
+      <h3 className="text-body font-semibold text-ink-muted mb-1 inline-flex items-center gap-1.5">
+        <Globe className="w-4 h-4" aria-hidden="true" />
+        {t("settings.heading.lang_pref")}
       </h3>
-      <p className="text-label text-neutral-500 dark:text-neutral-400 mb-3">
-        导入课程时自动按此偏好选择翻译。仓库原文语言与偏好一致时直接用原文；无对应翻译时也用原文。
+      <p className="text-label text-ink-muted mb-3">
+        {t("settings.lang_pref.desc")}
       </p>
       <div className="flex gap-2" data-testid="pref-lang-options">
         {options.map((o) => (
@@ -565,11 +595,8 @@ function LanguagePrefSection() {
             key={o.code}
             onClick={() => handleChange(o.code)}
             data-testid={`pref-lang-${o.code}`}
-            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
-              prefLang === o.code
-                ? "bg-brand text-white shadow-elevated"
-                : "bg-neutral-200 dark:bg-neutral-800 text-ink-muted hover:bg-neutral-300 dark:hover:bg-neutral-700"
-            }`}
+            aria-pressed={prefLang === o.code}
+            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${prefLang === o.code ? pillActiveCls : pillInactiveCls}`}
           >
             {o.label}
           </button>
@@ -597,6 +624,7 @@ function MultimodalSection({
   presets: ProviderPresetInfo[];
   customProviders: CustomProvider[];
 }) {
+  const t = useLang();
   const [enabled, setEnabled] = useState(false);
   const [imgDownload, setImgDownload] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -647,71 +675,45 @@ function MultimodalSection({
 
   return (
     <section className="surface-card p-4">
-      <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-3">
-        多模态 / Multimodal
-      </h3>
+      <h3 className="text-body font-semibold text-ink-muted mb-3">{t("settings.heading.multimodal")}</h3>
       {/* 图片下载开关(默认 on) —— md/ipynb 里的图片引用直接下载,不涉及 AI */}
       <div className="flex items-center gap-3 mb-3">
-        <button
-          onClick={handleImgToggle}
-          data-testid="image-download-toggle"
-          className={`relative w-12 h-6 rounded-full transition-colors ${
-            imgDownload ? "bg-brand" : "bg-neutral-300 dark:bg-neutral-700"
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-              imgDownload ? "translate-x-6" : "translate-x-0.5"
-            }`}
-          />
-        </button>
+        <Toggle checked={imgDownload} onChange={handleImgToggle} label={t("settings.img_download")} testid="image-download-toggle" />
         <div className="flex-1">
-          <div className="text-body font-medium text-neutral-700 dark:text-neutral-300">
-            图片下载
+          <div className="text-body font-medium text-ink-strong">
+            {t("settings.img_download")}
           </div>
-          <div className="text-label text-neutral-500 dark:text-neutral-400">
-            导入课程时自动下载 md/notebook 里引用的图片(默认开启)
+          <div className="text-label text-ink-muted">
+            {t("settings.img_download.desc")}
           </div>
         </div>
       </div>
       <div className="flex items-center gap-3 mb-3">
-        <button
-          onClick={handleToggle}
-          data-testid="multimodal-toggle"
-          className={`relative w-12 h-6 rounded-full transition-colors ${
-            enabled ? "bg-brand" : "bg-neutral-300 dark:bg-neutral-700"
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-              enabled ? "translate-x-6" : "translate-x-0.5"
-            }`}
-          />
-        </button>
+        <Toggle checked={enabled} onChange={handleToggle} label={t("settings.multimodal.toggle")} testid="multimodal-toggle" />
         <div className="flex-1">
-          <div className="text-body font-medium text-neutral-700 dark:text-neutral-300">
-            图片识别导入 + AI 看图
+          <div className="text-body font-medium text-ink-strong">
+            {t("settings.multimodal.toggle")}
           </div>
-          <div className="text-label text-neutral-500 dark:text-neutral-400">
-            开启后:导入课程时收集图片(.png/.jpg) + PDF 图片;聊天时 AI 可以看图讲解
+          <div className="text-label text-ink-muted">
+            {t("settings.multimodal.toggle.desc")}
           </div>
         </div>
       </div>
       {enabled && (
         <div className="space-y-3">
           {/* 当前主模型 vision 能力提示 */}
-          <div className="text-label text-neutral-500 dark:text-neutral-400 bg-ink/5 dark:bg-ink/10 rounded-lg p-3">
-            <div className="font-medium mb-1">当前主模型:{activeModel || "(未选)"}</div>
+          <div className="text-label text-ink-muted bg-ink/5 rounded-lg p-3">
+            <div className="font-medium mb-1">{t("settings.multimodal.current_model", { model: activeModel || t("settings.multimodal.not_selected") })}</div>
             <div>
               {activeProvider.startsWith("custom-")
-                ? "自定义 provider — 视觉能力未知。如不支持看图,在下方覆盖一个 vision 模型。"
-                : "如当前模型不支持 vision,可在下方配置专门的 vision 模型。常见:GLM-4V / GPT-4o / Claude 3.5 / Gemini。"}
+                ? t("settings.multimodal.hint_custom")
+                : t("settings.multimodal.hint_preset")}
             </div>
           </div>
           {/* Vision 模型覆盖 */}
-          <div className="bg-ink/5 dark:bg-ink/10 rounded-lg p-3">
-            <div className="text-label font-medium text-neutral-600 dark:text-neutral-300 mb-2">
-              Vision 模型覆盖(可选 — 留空则复用主模型)
+          <div className="bg-ink/5 rounded-lg p-3">
+            <div className="text-label font-medium text-ink-muted mb-2">
+              {t("settings.multimodal.override_title")}
             </div>
             <div className="flex flex-col gap-2">
               <select
@@ -728,16 +730,16 @@ function MultimodalSection({
                     setOverrideModel(p?.defaultModel ?? "");
                   }
                 }}
-                className="w-full px-3 py-2 rounded-lg bg-surface-1 text-body border border-neutral-200 dark:border-neutral-700"
+                className={`${fieldCls} w-full px-3 py-2`}
               >
-                <option value="">(不覆盖 — 用主模型)</option>
-                <optgroup label="预设 Provider">
+                <option value="">{t("settings.multimodal.no_override")}</option>
+                <optgroup label={t("settings.multimodal.group_preset")}>
                   {presets.map((p) => (
                     <option key={p.id} value={p.id}>{p.label}</option>
                   ))}
                 </optgroup>
                 {customProviders.length > 0 && (
-                  <optgroup label="自定义 Provider">
+                  <optgroup label={t("settings.multimodal.group_custom")}>
                     {customProviders.map((c) => (
                       <option key={c.id} value={c.id}>{c.label}</option>
                     ))}
@@ -750,11 +752,11 @@ function MultimodalSection({
                     <select
                       value={overrideModel}
                       onChange={(e) => setOverrideModel(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-surface-1 text-body border border-neutral-200 dark:border-neutral-700"
+                      className={`${fieldCls} w-full px-3 py-2`}
                     >
                       {overridePreset!.models.map((m) => (
                         <option key={m.id} value={m.id}>
-                          {m.label}{(m.capabilities ?? []).includes("vision") ? " ✅ vision" : ""}
+                          {m.label}{(m.capabilities ?? []).includes("vision") ? ` · ${t("settings.multimodal.vision_capable")}` : ""}
                         </option>
                       ))}
                     </select>
@@ -763,8 +765,8 @@ function MultimodalSection({
                       type="text"
                       value={overrideModel}
                       onChange={(e) => setOverrideModel(e.target.value)}
-                      placeholder={overrideCustom?.defaultModel ?? "模型 ID"}
-                      className="w-full px-3 py-2 rounded-lg bg-surface-1 text-body border border-neutral-200 dark:border-neutral-700"
+                      placeholder={overrideCustom?.defaultModel ?? t("settings.custom.model_ph")}
+                      className={`${fieldCls} w-full px-3 py-2`}
                     />
                   )}
                   <button
@@ -772,7 +774,7 @@ function MultimodalSection({
                     data-testid="vision-override-save"
                     className="btn-3d-brand px-4 py-1.5 text-label self-start"
                   >
-                    保存覆盖配置
+                    {t("settings.multimodal.save_override")}
                   </button>
                 </>
               )}
@@ -783,3 +785,46 @@ function MultimodalSection({
     </section>
   );
 }
+
+/**
+ * Toggle —— 项目内唯一的开关控件(canonical form-control vocabulary)。
+ *
+ * 设计:
+ *   - 轨道 48×24,w-12 h-6,圆角 full。
+ *   - 滑块 20×20,显式 left-0.5 + top-1/2 -translate-y-1/2 居中(不靠 translate 撑位置)。
+ *   - ON = bg-brand(绿);OFF = bg-ink/20(主题感知半透明灰,深浅模式都对卡片有 ≥0.15 L 对比,
+ *     不再像 bg-surface-3 那样融进卡片)。
+ *   - 键盘焦点:ring-brand/60 + ring-offset,Tab 可见。
+ *   - role="switch" + aria-checked + aria-label,屏幕阅读器读得出状态。
+ *   - transition-transform 滑块滑动;transition-colors 轨道变色。
+ */
+function Toggle({
+  checked,
+  onChange,
+  label,
+  testid,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+  testid: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onChange}
+      data-testid={testid}
+      className={`relative w-12 h-6 rounded-full transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-2)] ${
+        checked ? "bg-brand" : "bg-ink/20 hover:bg-ink/25"
+      }`}
+    >
+      <span
+        className={`absolute left-0.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-6" : ""}`}
+      />
+    </button>
+  );
+}
+

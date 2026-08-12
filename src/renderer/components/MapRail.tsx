@@ -267,7 +267,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
       setSuccess(`${t("import.success.folder")}: ${course.title}`);
       setRepoAnalysis(null);
       setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);
-    } catch (e) { setError(e instanceof Error ? `${e.message}\n\n网络受限或私有仓库请改用「Markdown」方式。` : String(e)); } finally { setBusy(false); }
+    } catch (e) { setError(e instanceof Error ? `${e.message}${t("import.error.network")}` : String(e)); } finally { setBusy(false); }
   };
   const handleImportMd = async () => {
     if (!mdText.trim() || !repoName.trim() || busy) return;
@@ -289,7 +289,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   };
   const handleDelete = async (courseId: string, title: string) => {
-    try { await api.deleteCourse(courseId); setSuccess(`已删除：${title}`); onCoursesChanged(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try { await api.deleteCourse(courseId); setSuccess(t("import.deleted", { title })); onCoursesChanged(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
 
   return (
@@ -369,7 +369,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
               </div>
             )}
             {error && <div className="border border-warning/40 text-warning-light text-label rounded-lg p-2 whitespace-pre-wrap" data-testid="import-error">{error}</div>}
-            {success && <div className="border border-brand/30 text-brand text-label rounded-lg p-2" data-testid="import-success">✅ {success}</div>}
+            {success && <div className="border border-brand/30 text-brand text-label rounded-lg p-2" data-testid="import-success"><Check className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" />{success}</div>}
           </div>
         )}
       </div>
@@ -810,7 +810,7 @@ function LanguageSwitcher({ available, current, onChange }: { available: string[
           <div className="absolute top-full right-0 mt-1 z-50 bg-surface-0 rounded-lg shadow-elevated p-1 min-w-[100px] max-h-48 overflow-y-auto">
             <button
               onClick={() => { onChange(null); setOpen(false); }}
-              className={`w-full text-left px-2 py-1 rounded-md text-caption font-bold transition-colors ${current === null ? "bg-brand/15 text-brand" : "text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
+              className={`w-full text-left px-2 py-1 rounded-md text-caption font-bold transition-colors ${current === null ? "bg-brand/15 text-brand" : "text-ink-muted hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
             >
               {t("lang.original")}
             </button>
@@ -818,7 +818,7 @@ function LanguageSwitcher({ available, current, onChange }: { available: string[
               <button
                 key={code}
                 onClick={() => { onChange(code); setOpen(false); }}
-                className={`w-full text-left px-2 py-1 rounded-md text-caption font-bold transition-colors ${current === code ? "bg-brand/15 text-brand" : "text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
+                className={`w-full text-left px-2 py-1 rounded-md text-caption font-bold transition-colors ${current === code ? "bg-brand/15 text-brand" : "text-ink-muted hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
               >
                 {LOCALE_NAMES[code] ?? code}
               </button>

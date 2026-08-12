@@ -7,6 +7,8 @@
  * React 19 仍需 class 组件实现 ErrorBoundary(function 组件无生命周期 API)。
  */
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { AlertTriangle } from "lucide-react";
+import { useLang } from "../lib/i18n.js";
 
 interface Props {
   children: ReactNode;
@@ -16,6 +18,21 @@ interface Props {
 
 interface State {
   error: Error | null;
+}
+
+function DefaultFallback({ retry }: { error: Error; retry: () => void }) {
+  const t = useLang();
+  return (
+    <div className="text-body text-warning p-4 flex items-start gap-2">
+      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+      <span>
+        {t("error.renderFailed")}{" "}
+        <button className="underline ml-1" onClick={retry}>
+          {t("error.retry")}
+        </button>
+      </span>
+    </div>
+  );
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -34,14 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       if (this.props.fallback) return this.props.fallback(this.state.error, this.retry);
-      return (
-        <div className="text-body text-warning p-4">
-          ⚠️ 这部分内容渲染失败(可能格式有问题)。
-          <button className="underline ml-1" onClick={this.retry}>
-            重试
-          </button>
-        </div>
-      );
+      return <DefaultFallback error={this.state.error} retry={this.retry} />;
     }
     return this.props.children;
   }

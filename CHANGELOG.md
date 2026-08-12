@@ -17,11 +17,29 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **UI 全量 i18n + 设计系统收敛(6 组件文件)**:此前的 i18n 只完成了 chrome 外壳,
+  切到 English 后中栏对话 / 右栏笔记本 / 考试页 / 会话标签仍是中文。本轮把
+  ChatStream / NotebookPanel / MapRail / ExamView / ThreadSwitcher+ChatComposer /
+  ErrorBoundary+artifacts 全部硬编码中文抽到 i18n(新增 ~110 个 key,zh-CN/en 双语),
+  EN 用户现在拿到完整英文界面。同时清理 chrome emoji(违设计系统"emoji 仅限 skill-tree
+  节点 + 空状态卡"):🚀→Rocket、📋→ClipboardList、✓→Check/Copy、⚠️→AlertTriangle、
+  💬→MessageCircle、📷→ImageIcon、💡→Lightbulb、产物头 📊🗺️🔍🧩→Table2/Share2/Code2/Puzzle、
+  quiz ✅/❌→颜色徽章(去掉 emoji)。NotebookPanel 的 ZoneSection/ARTIFACT_ICON 的 `icon`
+  prop 从 string 升级为 ReactNode 以容纳 lucide 组件。ErrorBoundary 作为 class 组件,
+  抽出 `DefaultFallback` 函数组件来用 useLang。
 - **响应式 i18n(中英文全量提取)**:`lib/i18n.ts` 重写为 `useSyncExternalStore` 响应式
   store,新增 `useLang()` hook(身份稳定,可安全入 useCallback 依赖)。切换语言即时重渲染,
   **移除 `SettingsView` 的 `window.location.reload()` hack**。字典从 ~40 key 扩展到 ~120 key
   × 2 语言,覆盖 MapRail/CommandPalette/ReviewPanel/SettingsView/NotebookPanel/ChatComposer/
   Toast/Header 全部 chrome 文案。ui-test 新增断言验证:切到 en 后 `map-tab` 文本变 "Course Map"。
+- **设置页全量 i18n + 设计系统收敛(SettingsView)**:此前切到 English 后,设置页大半仍为
+  中文(自定义表单/主题/多模态/语言偏好/删除确认)。补齐 35 个 i18n key(zh-CN/en),
+  全部用户可见字符串走 `useLang()`。同时:chrome 内 emoji 全数换为 lucide 图标
+  (`🔧`→`Wrench`、`＋`→`Plus`、`🔄`→`RotateCw`、`🌐`→`Globe`、`✅/❌`→`CheckCircle2/XCircle`,
+  旋转图标在加载时 `animate-spin`),表单控件统一 `fieldCls`(token 化 `bg-surface-1` +
+  `border-[var(--border)]` + `placeholder:text-ink-faint`),两个开关补 `role="switch"`+
+  `aria-checked`+`aria-label`,所有 pill 按钮(provider/主题/语言/语言偏好)共用同一组
+  active/inactive class。
 - **a11y 焦点管理**:新增 `useFocusTrap` hook(Tab 困住 + 关闭还原焦点),应用于设置抽屉、
   复习抽屉、命令面板、ConfirmCard。抽屉补 `role="dialog" aria-modal="true"`;notebook 标签
   补 `role="tablist"/"role="tab" aria-selected`;康奈尔三区折叠补 `aria-expanded`;Toast 容器
@@ -117,6 +135,12 @@ Entry conventions for contributors:
   不硬依赖 README。无 LLM key 时纯规则降级(按目录分 section + 路径前缀图片关联)。
 
 ### Fixed
+- **`dark:` 重复声明 bug 全面清零**:同一属性写两条 `dark:`(如
+  `text-neutral-500 dark:text-neutral-600 dark:text-neutral-400`,后者覆盖前者,
+  意图错乱)的系统性问题,本轮扫净所有出现点 —— ChatStream(9 处)、NotebookPanel
+  (15+ 处,含 `dark:text-neutral-400 dark:text-neutral-600` 反序变体)、ExamView
+  (7 处)、artifacts(7 处)。全部迁移到 `text-ink-muted` token,深浅模式自动适配。
+  "浅色模式验证"测试套件全绿。
 - **dev:electron 启动崩溃 + 重启打不开**(两个独立根因):
   (1) **vite 6.4.3 deps optimizer 崩溃**:本机 `C:\Users\kaiji` 是 junction → 真实路径
   `d:\users\kaiji`,`process.cwd()`(C 盘大写)与 `realpathSync`(D 盘小写)不一致 →

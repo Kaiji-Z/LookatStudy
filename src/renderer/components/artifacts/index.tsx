@@ -11,6 +11,8 @@
  *   diagram        → MermaidArtifact
  *   code_walkthrough → CodeWalkthroughArtifact
  */
+import { Puzzle } from "lucide-react";
+import { useLang } from "../../lib/i18n.js";
 import { ConceptMapArtifact } from "./ConceptMapArtifact.js";
 import { QuizArtifact } from "./QuizArtifact.js";
 import { CompareTableArtifact } from "./CompareTableArtifact.js";
@@ -46,10 +48,14 @@ export function ArtifactRenderer({ data, onQuizAnswered }: ArtifactProps) {
 }
 
 function UnknownArtifact({ data }: ArtifactProps) {
+  const t = useLang();
   return (
-    <div className="surface-card p-4 text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400" data-testid="artifact-unknown">
-      <div className="font-bold mb-1">🧩 产物(未识别类型)</div>
-      <pre className="text-caption overflow-x-auto text-neutral-600 dark:text-neutral-400">
+    <div className="surface-card p-4 text-body text-ink-muted" data-testid="artifact-unknown">
+      <div className="font-bold mb-1 flex items-center gap-1.5">
+        <Puzzle className="w-4 h-4" />
+        {t("artifact.unknownHeader")}
+      </div>
+      <pre className="text-caption overflow-x-auto text-ink-muted">
         {JSON.stringify(data, null, 2)?.slice(0, 200)}
       </pre>
     </div>

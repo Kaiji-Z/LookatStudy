@@ -19,6 +19,7 @@ import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen } from "lucide-react";
+import { useLang } from "../lib/i18n.js";
 
 export type NotebookTab = "content" | "notes";
 
@@ -59,6 +60,7 @@ export function NotebookPanel({
   onQuoteToChat,
   locale,
 }: NotebookPanelProps) {
+  const t = useLang();
   const [internalTab, setInternalTab] = useState<NotebookTab>("content");
   const tab = forceTab ?? internalTab;
 
@@ -81,16 +83,16 @@ export function NotebookPanel({
           中性非当前 + lucide 图标)。容器底色用稳定深色(surface-3/60)替代
           左栏的毛玻璃——右栏底色不是动态天空,不需要 blur,但语法形态对齐。 */}
       <div className="px-3 pt-3 pb-1 shrink-0" data-testid="notebook-tabs">
-        <div className="flex p-1 rounded-lg gap-1 bg-ink/[0.08]">
+        <div className="flex p-1 rounded-lg gap-1 bg-ink/[0.08]" role="tablist" aria-label="Notebook">
           <TabBtn
-            label="讲解"
+            label={t("notebook.tab.explain")}
             icon={BookOpen}
             active={tab === "content"}
             onClick={() => handleTabClick("content")}
             testid="tab-content"
           />
           <TabBtn
-            label="笔记"
+            label={t("notebook.tab.notes")}
             icon={NotebookPen}
             active={tab === "notes"}
             onClick={() => handleTabClick("notes")}
@@ -101,7 +103,7 @@ export function NotebookPanel({
       </div>
 
       {/* 内容区:tab 切换时内容滑入(PROPERTY.md motion: 状态传达,150-250ms) */}
-      <div className="flex-1 overflow-y-auto min-h-0 animate-tab-slide" key={tab}>
+      <div className="flex-1 overflow-y-auto min-h-0 animate-tab-slide" key={tab} role="tabpanel">
         {tab === "content" ? (
           <ContentTab
             selectedNode={selectedNode}
@@ -426,11 +428,12 @@ function NotesTab({
   onUpdateNoteComment?: (id: string, comment: string) => void;
   onJumpToSource?: (anchor: NoteSourceAnchor) => void;
 }) {
+  const t = useLang();
   if (!selectedNode) {
-    return <EmptyNotebook message="选一个节点后,这里显示该节点的学习笔记" icon="📓" />;
+    return <EmptyNotebook message={t("notebook.empty.notes.title")} icon="📓" />;
   }
   if (loading) {
-    return <div className="text-center py-12 text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在整理这一节的笔记…</div>;
+    return <div className="text-center py-12 text-body text-ink-muted flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />{t("notebook.empty.notes.title")}</div>;
   }
 
   // 三区筛选
@@ -457,7 +460,7 @@ function NotesTab({
     <div className="p-4 space-y-3" data-testid="notes-list">
       {/* 🗺️ 理解区(线索区) */}
       <ZoneSection
-        title="理解"
+        title={t("notebook.zone.understand")}
         icon="🗺️"
         subtitle="AI 帮你梳理的知识结构"
         count={understandItems.length}
@@ -483,7 +486,7 @@ function NotesTab({
 
       {/* ✏️ 记录区(笔记区:user_note) */}
       <ZoneSection
-        title="记录"
+        title={t("notebook.zone.note")}
         icon="✏️"
         subtitle="你的画线,点击可跳回原位"
         count={noteItems.length}
@@ -509,7 +512,7 @@ function NotesTab({
 
       {/* 📝 练习区(总结区) */}
       <ZoneSection
-        title="练习"
+        title={t("notebook.zone.practice")}
         icon="📝"
         subtitle={
           practiceItems.length > 0
@@ -582,6 +585,7 @@ function ZoneSection({
     >
       <button
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
         className="w-full flex items-center gap-2 px-3 py-2.5 bg-neutral-100 dark:bg-neutral-900/50 hover:bg-neutral-200/60 dark:hover:bg-neutral-900 transition-colors text-left"
         data-testid={`${testid}-toggle`}
       >
@@ -870,10 +874,12 @@ function TabBtn({
     <button
       onClick={onClick}
       data-testid={testid}
+      role="tab"
+      aria-selected={active}
       className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${
         active
           ? "bg-brand/20 text-brand"
-          : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+          : "text-ink-muted hover:text-ink-strong"
       }`}
     >
       <Icon className="w-3 h-3" />

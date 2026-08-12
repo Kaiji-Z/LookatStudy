@@ -16,8 +16,10 @@ import { api } from "../lib/api.js";
 import type { ProviderPresetInfo, CustomProvider } from "@shared/types";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { useTheme, type ThemeMode } from "../lib/useTheme.js";
+import { useLang, setLang, getLang } from "../lib/i18n.js";
 
 export function SettingsView() {
+  const t = useLang();
   const [presets, setPresets] = useState<ProviderPresetInfo[]>([]);
   const [customProviders, setCustomProviders] = useState<CustomProvider[]>([]);
   const [activeProvider, setActiveProvider] = useState<string>("glm");
@@ -41,9 +43,6 @@ export function SettingsView() {
   const [discoveredModels, setDiscoveredModels] = useState<{ id: string; label: string; contextWindow: number | null }[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
-  const [currentLang] = useState<string>(() => {
-    try { return localStorage.getItem("lookatstudy-lang") || "zh-CN"; } catch { return "zh-CN"; }
-  });
   // 删除自定义 provider 的内联确认(v0.6:替代 native confirm())
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; label: string; rect: DOMRect } | null>(null);
   // 主题切换(v0.7 浅色模式)
@@ -237,11 +236,11 @@ export function SettingsView() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-extrabold text-neutral-900 dark:text-neutral-100 tracking-tight">设置</h2>
+      <h2 className="text-title font-extrabold text-ink-strong tracking-tight">{t("settings.title")}</h2>
 
       {/* Provider + Model + Key + Test 合并为一个折叠区 */}
       <section className="surface-card p-4">
-        <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-3">AI 服务商（Provider）</h3>
+        <h3 className="text-body font-semibold text-ink-muted mb-3">{t("settings.heading.provider")}</h3>
 
         {/* Provider 单行按钮列表 */}
         <div className="flex flex-wrap gap-1.5 mb-1" data-testid="provider-grid">
@@ -325,14 +324,14 @@ export function SettingsView() {
             {/* Base URL */}
             {currentPreset.baseUrl && (
               <div className="flex items-center gap-2">
-                <span className="text-label text-neutral-500 dark:text-neutral-500 shrink-0">Base URL</span>
+                <span className="text-label text-ink-muted shrink-0">Base URL</span>
                 <code className="text-label text-neutral-600 dark:text-neutral-400 font-mono break-all">{currentPreset.baseUrl}</code>
               </div>
             )}
 
             {/* Model 选择 */}
             <div className="flex items-center gap-2">
-              <span className="text-label text-neutral-500 dark:text-neutral-500 shrink-0 w-12">Model</span>
+              <span className="text-label text-ink-muted shrink-0 w-12">Model</span>
               <div className="flex-1 flex items-center gap-2">
                 <select
                   value={activeModel}
@@ -358,7 +357,7 @@ export function SettingsView() {
 
             {/* API Key */}
             <div className="flex items-center gap-2">
-              <span className="text-label text-neutral-500 dark:text-neutral-500 shrink-0 w-12">API Key</span>
+              <span className="text-label text-ink-muted shrink-0 w-12">API Key</span>
               <div className="flex-1 flex items-center gap-2">
                 {keyMasked && <span className="text-label text-brand shrink-0">✅ {keyMasked}</span>}
                 <input
@@ -391,11 +390,11 @@ export function SettingsView() {
         {activeCustomProvider && !currentPreset && (
           <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 space-y-3">
             <div className="flex items-center gap-2">
-              <span className="text-label text-neutral-500 dark:text-neutral-500 shrink-0">Base URL</span>
+              <span className="text-label text-ink-muted shrink-0">Base URL</span>
               <code className="text-label text-neutral-600 dark:text-neutral-400 font-mono break-all">{activeCustomProvider.baseUrl}</code>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-label text-neutral-500 dark:text-neutral-500 shrink-0 w-12">Model</span>
+              <span className="text-label text-ink-muted shrink-0 w-12">Model</span>
               {activeCustomProvider.models.length > 1 ? (
                 <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)} data-testid="model-select-custom" className="flex-1 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none">
                   {activeCustomProvider.models.map((m) => (<option key={m.id} value={m.id}>{m.id}</option>))}
@@ -420,7 +419,7 @@ export function SettingsView() {
 
       {/* 每日目标 */}
       <section className="surface-card p-4">
-        <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-3">每日学习目标（XP）</h3>
+        <h3 className="text-body font-semibold text-ink-muted mb-3">{t("settings.daily_goal")}</h3>
         <div className="flex gap-2 items-center">
           <input
             type="number"
@@ -435,22 +434,19 @@ export function SettingsView() {
         </div>
       </section>
 
-      {/* 语言选择 */}
+      {/* 语言选择 —— v0.8:响应式 setLang,无需 reload */}
       <section className="surface-card p-4">
-        <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-3">语言 / Language</h3>
+        <h3 className="text-body font-semibold text-ink-muted mb-3">{t("settings.heading.language")}</h3>
         <div className="flex gap-2">
           {(["zh-CN", "en"] as const).map((l) => (
             <button
               key={l}
-              onClick={() => {
-                try { localStorage.setItem("lookatstudy-lang", l); } catch { /* 忽略 */ }
-                window.location.reload();
-              }}
+              onClick={() => setLang(l)}
               data-testid={`lang-${l}`}
               className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
-                currentLang === l
+                getLang() === l
                   ? "bg-brand text-white shadow-sm"
-                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  : "bg-neutral-200 dark:bg-neutral-800 text-ink-muted hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-ink-strong"
               }`}
             >
               {l === "zh-CN" ? "中文" : "English"}
@@ -505,9 +501,9 @@ export function SettingsView() {
           data-testid="settings-save"
           className="btn-3d-brand px-6 py-2.5 text-body"
         >
-          保存设置
+          {t("settings.save")}
         </button>
-        {saved && <span className="text-body text-brand font-bold">✅ 已保存</span>}
+        {saved && <span className="text-body text-brand font-bold">{t("settings.saved")}</span>}
       </div>
 
       {/* 删除自定义 provider 的内联确认(替代 native confirm()) */}
@@ -571,8 +567,8 @@ function LanguagePrefSection() {
             data-testid={`pref-lang-${o.code}`}
             className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
               prefLang === o.code
-                ? "bg-brand text-white shadow-elevated-card"
-                : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700"
+                ? "bg-brand text-white shadow-elevated"
+                : "bg-neutral-200 dark:bg-neutral-800 text-ink-muted hover:bg-neutral-300 dark:hover:bg-neutral-700"
             }`}
           >
             {o.label}

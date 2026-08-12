@@ -19,6 +19,7 @@
  */
 import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
 import { X, CheckCircle2, AlertCircle, AlertTriangle, Info } from "lucide-react";
+import { useLang } from "../lib/i18n.js";
 
 export type ToastSeverity = "default" | "success" | "error" | "warning" | "info";
 
@@ -99,8 +100,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ show }}>
       {children}
-      {/* Toast 容器:底部居中,pointer-events-none 让容器不挡交互,子项 auto */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none">
+      {/* Toast 容器:底部居中,pointer-events-none 让容器不挡交互,子项 auto。
+          aria-live=polite:新 toast 到达时屏幕阅读器播报(不打断当前任务)。 */}
+      <div
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none"
+        role="region"
+        aria-live="polite"
+        aria-label="Notifications"
+      >
         {toasts.map((t) => (
           <ToastRow
             key={t.id}
@@ -130,6 +137,7 @@ function ToastRow({
   onDismiss: () => void;
   onExitDone: () => void;
 }) {
+  const t = useLang();
   const icon = SEVERITY_ICON[item.severity];
   return (
     <div
@@ -151,8 +159,8 @@ function ToastRow({
       )}
       <button
         onClick={onDismiss}
-        className="text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-800"
-        aria-label="关闭"
+        className="text-ink-muted hover:text-ink-strong shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors hover:bg-surface-3"
+        aria-label={t("action.close")}
       >
         <X className="w-3.5 h-3.5" />
       </button>

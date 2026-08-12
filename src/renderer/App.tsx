@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Settings, Flame, Target, PanelLeft, PanelRight } from "lucide-react";
+import { Settings, Flame, Target, PanelLeft, PanelRight, BookOpen } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -27,7 +27,8 @@ import { useChatStream } from "./lib/useChatStream.js";
 import { useThreads } from "./lib/useThreads.js";
 import { useToast } from "./components/Toast.js";
 import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
-import { translate } from "./lib/i18n.js";
+import { useLang } from "./lib/i18n.js";
+import { useFocusTrap } from "./lib/useFocusTrap.js";
 
 /**
  * v0.2 三栏布局(M1 重构):
@@ -49,16 +50,8 @@ const BUILTIN_SKILL_ORDER = [
   "review-mode",
 ];
 
-/** 产物类型中文标签(toast 用) */
-const ARTIFACT_TYPE_LABEL: Record<string, string> = {
-  concept_map: "概念图",
-  quiz: "练习题",
-  compare_table: "对比表",
-  diagram: "流程图",
-  code_walkthrough: "代码讲解",
-};
-
 export default function App() {
+  const t = useLang();
   const [courses, setCourses] = useState<Course[]>([]);
   const [tree, setTree] = useState<ContentNode[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, Progress>>({});
@@ -66,6 +59,12 @@ export default function App() {
   const [xp, setXp] = useState<{ todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 统一的异步错误处理:上屏 ErrorBanner(role=alert,用户可见)+ console 保留堆栈。
+  // 原 setErrorFromThrow 只 console.error,异步失败对用户完全不可见(audit P1 修复)。
+  const setErrorFromThrow = useCallback((e: unknown) => {
+    setError(e instanceof Error ? e.message : String(e));
+    console.error(e);
+  }, []);
   // 多语言:当前课程的可用翻译语言 + 选定语言
   const [availableLanguages, setAvailableLanguages] = useState<string[]>([]);
   const [currentLocale, setCurrentLocale] = useState<string | null>(null);
@@ -202,9 +201,9 @@ export default function App() {
     try {
       setAgentReady(await api.isAgentReady());
     } catch {
-      setAgentReady({ ready: false, missing: "无法检查就绪状态" });
+      setAgentReady({ ready: false, missing: t("error.checkReadyFailed") });
     }
-  }, []);
+  }, [t]);
   useEffect(() => {
     checkReady();
     const handler = () => checkReady();
@@ -237,7 +236,7 @@ export default function App() {
       setProgressMap(map);
     }).catch(setErrorFromThrow);
     api.getDashboard(selectedCourseId).then(setDashboard).catch(setErrorFromThrow);
-  }, [selectedCourseId, currentLocale]);
+  }, [selectedCourseId, currentLocale, setErrorFromThrow]);
 
   // 重新拉取整个课程的 progress(解锁后 UI 实时更新用)。
   // markNodeAttempted 可能解锁同章下一课 + 下一章第一课(双线推进),
@@ -337,7 +336,7 @@ export default function App() {
     } catch (e) {
       setErrorFromThrow(e);
     }
-  }, [progressMap, reloadCourseProgress]);
+  }, [progressMap, reloadCourseProgress, setErrorFromThrow]);
 
   const handleSkillPick = async (name: string) => {
     try {
@@ -357,7 +356,7 @@ export default function App() {
         setErrorFromThrow(e);
       }
     },
-    [chat],
+    [chat, setErrorFromThrow],
   );
 
   const handleRejectProposal = useCallback(
@@ -369,7 +368,7 @@ export default function App() {
         setErrorFromThrow(e);
       }
     },
-    [chat],
+    [chat, setErrorFromThrow],
   );
 
   const currentCourse = courses.find((c) => c.id === selectedCourseId);
@@ -406,7 +405,7 @@ export default function App() {
           chat.send(text, newId);
           return;
         }
-        toast.show("会话创建失败,请重试");
+        toast.show(t("toast.threadCreateFailed"));
         return;
       }
       // 当前 thread 标题为空(如"+ 新建会话"建的空 thread)→ 用首条消息截断自动命名,
@@ -417,7 +416,7 @@ export default function App() {
       }
       chat.send(text);
     },
-    [chat, thread, toast],
+    [chat, thread, toast, t],
   );
   // ref 桥接:让 handleStartLearning(定义在 toast 之前)能调用 sendMessage(定义在 toast 之后)
   sendRef.current = sendMessage;
@@ -446,9 +445,9 @@ export default function App() {
       });
       // 切到笔记标签让用户看到 + toast 反馈
       setForceArtifactTab("notes");
-      toast.show(`已保存到笔记本 · ${ARTIFACT_TYPE_LABEL[output.artifactType] ?? "产物"}`, { duration: 3000 });
+      toast.show(t("toast.artifactSaved"), { duration: 3000 });
     }
-  }, [artifacts, canvas, selectedNodeId, toast]);
+  }, [artifacts, canvas, selectedNodeId, toast, t]);
 
   // 视图切换时清除强制 tab
   useEffect(() => {
@@ -551,29 +550,29 @@ export default function App() {
                 onCreate={() => {
                   if (chat.streaming) return;
                   thread.create({ title: null });
-                  toast.show("已新建会话");
+                  toast.show(t("toast.threadCreated"));
                 }}
                 onRename={(id, title) => {
                   thread.update(id, { title });
-                  toast.show("已重命名");
+                  toast.show(t("toast.threadRenamed"));
                 }}
                 onArchive={(id) => {
                   thread.update(id, { status: "archived" });
-                  toast.show("已归档会话", {
+                  toast.show(t("toast.threadArchived"), {
                     duration: 5000,
-                    action: { label: "撤销", onClick: () => thread.update(id, { status: "active" }) },
+                    action: { label: t("action.undo"), onClick: () => thread.update(id, { status: "active" }) },
                   });
                 }}
                 onDelete={(id) => {
                   const removed = thread.removeWithUndo(id);
                   if (removed) {
-                    toast.show(`已删除会话「${removed.title ?? "新会话"}」`, {
+                    toast.show(`${t("toast.threadDeleted")}${removed.title ? `「${removed.title}」` : ""}`, {
                       duration: 5000,
                       action: {
-                        label: "撤销",
+                        label: t("action.undo"),
                         onClick: () => {
                           thread.restore(removed);
-                          toast.show("已恢复");
+                          toast.show(t("toast.restored"));
                         },
                       },
                     });
@@ -605,7 +604,7 @@ export default function App() {
                     sourceType: "chat",
                     sourceAnchor: { type: "chat", threadId: thread.activeId, msgId, startOffset, endOffset },
                   });
-                  toast.show("已加到笔记 · 记录区", { duration: 2000 });
+                  toast.show(t("toast.noteSaved"), { duration: 2000 });
                 }}
               />
               <ChatComposer
@@ -638,7 +637,7 @@ export default function App() {
                 onUserTabChange={() => setForceArtifactTab(null)}
                 onRemove={(id) => {
                   canvas.remove(id);
-                  toast.show("已删除笔记");
+                  toast.show(t("toast.noteDeleted"));
                 }}
                 onTogglePin={(id) => {
                   canvas.togglePin(id);
@@ -657,7 +656,7 @@ export default function App() {
                     sourceType: "content",
                     sourceAnchor: anchor,
                   });
-                  toast.show("已加到笔记 · 记录区", { duration: 2000 });
+                  toast.show(t("toast.noteSaved"), { duration: 2000 });
                 }}
                 onJumpToSource={handleJumpToSource}
                 onQuoteToChat={handleQuoteToChat}
@@ -738,6 +737,7 @@ function Header({
   onToggleLeft: () => void;
   onToggleRight: () => void;
 }) {
+  const t = useLang();
   return (
     <header className="app-header px-6 pt-2.5 pb-3 flex items-center justify-between shrink-0">
       <div className="flex items-center gap-2.5">
@@ -749,7 +749,7 @@ function Header({
             className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${
               leftVisible ? "text-neutral-500 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-800" : "text-neutral-600 bg-neutral-200 dark:bg-neutral-800"
             }`}
-            title="切换左栏 (Ctrl+B)"
+            title={t("header.toggleLeft")}
           >
             <PanelLeft className="w-4 h-4" />
           </button>
@@ -759,7 +759,7 @@ function Header({
             className={`w-7 h-7 flex items-center justify-center rounded-md transition-colors ${
               rightVisible ? "text-neutral-500 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-800" : "text-neutral-600 bg-neutral-200 dark:bg-neutral-800"
             }`}
-            title="切换右栏"
+            title={t("header.toggleRight")}
           >
             <PanelRight className="w-4 h-4" />
           </button>
@@ -781,15 +781,15 @@ function Header({
             onClick={() => onFontBump("down")}
             disabled={fontSize === "small"}
             data-testid="font-smaller"
-            className="text-label w-7 h-7 flex items-center justify-center rounded-md text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-ink/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-            title="缩小字号"
+            className="text-label w-7 h-7 flex items-center justify-center rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-ink/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+            title={t("header.font.smaller")}
           >A-</button>
           <button
             onClick={() => onFontBump("up")}
             disabled={fontSize === "large"}
             data-testid="font-larger"
-            className="text-body w-7 h-7 flex items-center justify-center rounded-md text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-ink/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-            title="放大字号"
+            className="text-body w-7 h-7 flex items-center justify-center rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-ink/5 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+            title={t("header.font.larger")}
           >A+</button>
         </div>
         {xp && (
@@ -801,7 +801,7 @@ function Header({
                 style={{ width: `${Math.max(3, xp.pct)}%` }}
               />
             </div>
-            <span className={`text-label font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-500 dark:text-neutral-600 dark:text-neutral-400"}`}>
+            <span className={`text-label font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-500 dark:text-neutral-400"}`}>
               {xp.todayXp}/{xp.dailyGoal}
             </span>
           </div>
@@ -809,8 +809,8 @@ function Header({
         <button
           onClick={onOpenSettings}
           data-testid="header-settings"
-          className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
-          title="设置 (Ctrl+S)"
+          className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
+          title={t("header.settings")}
         >
           <Settings className="w-4 h-4" />
         </button>
@@ -823,16 +823,26 @@ function Header({
 /* ---------- 设置抽屉 ---------- */
 
 function SettingsDrawer({ onClose }: { onClose: () => void }) {
+  const t = useLang();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef, true);
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="settings-drawer">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-md h-full bg-surface-0 border-l border-neutral-300 dark:border-neutral-800 shadow-elevated flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 shrink-0">
-          <h2 className="text-body font-bold">{translate("settings.title")}</h2>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("settings.title")}
+        className="relative w-full max-w-md h-full bg-surface-0 border-l border-[var(--border)] shadow-elevated flex flex-col"
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] shrink-0">
+          <h2 className="text-body font-bold">{t("settings.title")}</h2>
           <button
             onClick={onClose}
             data-testid="settings-close"
-            className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
+            aria-label={t("action.close")}
+            className="text-ink-muted hover:text-ink-strong w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-3"
           >
             ✕
           </button>
@@ -856,16 +866,28 @@ function ReviewDrawer({
   tree: ContentNode[];
   onPickNode: (id: string) => void;
 }) {
+  const t = useLang();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef, true);
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="review-drawer">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-md h-full bg-surface-0 border-l border-neutral-300 dark:border-neutral-800 shadow-elevated flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 shrink-0">
-          <h2 className="text-body font-bold">📖 复习</h2>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("review.title")}
+        className="relative w-full max-w-md h-full bg-surface-0 border-l border-[var(--border)] shadow-elevated flex flex-col"
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] shrink-0">
+          <h2 className="text-body font-bold flex items-center gap-1.5">
+            <BookOpen className="w-4 h-4" aria-hidden="true" /> {t("review.title")}
+          </h2>
           <button
             onClick={onClose}
             data-testid="review-close"
-            className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50"
+            aria-label={t("action.close")}
+            className="text-ink-muted hover:text-ink-strong w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-3"
           >
             ✕
           </button>
@@ -882,28 +904,31 @@ function ReviewDrawer({
 /* ---------- 杂项 ---------- */
 
 function ErrorBanner({ message, onClose }: { message: string; onClose: () => void }) {
+  const t = useLang();
   return (
-    <div className="px-4 py-2 border-b border-warning-tint-border text-warning text-body flex items-center justify-between" style={{ backgroundColor: "var(--warning-tint)" }}>
+    <div
+      role="alert"
+      data-testid="error-banner"
+      className="px-4 py-2 border-b border-warning-tint-border text-warning text-body flex items-center justify-between"
+      style={{ backgroundColor: "var(--warning-tint)" }}
+    >
       <span>⚠️ {message}</span>
-      <button className="ml-3 underline text-warning-light" onClick={onClose}>关闭</button>
+      <button className="ml-3 underline text-warning-light" onClick={onClose}>{t("action.close")}</button>
     </div>
   );
 }
 
 function StreakBadge({ streak }: { streak: Streak }) {
+  const t = useLang();
   return (
     <div
       className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-review/20"
       style={{ backgroundColor: "var(--review-tint)" }}
       data-testid="streak-badge"
-      title={`连续学习 ${streak.currentStreak} 天 · 最长 ${streak.longestStreak} 天`}
+      title={t("streak.title", { n: streak.currentStreak, m: streak.longestStreak })}
     >
       <Flame className="w-4 h-4 text-review" />
       <span className="text-body font-extrabold text-review">{streak.currentStreak}</span>
     </div>
   );
-}
-
-function setErrorFromThrow(e: unknown) {
-  console.error(e);
 }

@@ -17,6 +17,19 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **响应式 i18n(中英文全量提取)**:`lib/i18n.ts` 重写为 `useSyncExternalStore` 响应式
+  store,新增 `useLang()` hook(身份稳定,可安全入 useCallback 依赖)。切换语言即时重渲染,
+  **移除 `SettingsView` 的 `window.location.reload()` hack**。字典从 ~40 key 扩展到 ~120 key
+  × 2 语言,覆盖 MapRail/CommandPalette/ReviewPanel/SettingsView/NotebookPanel/ChatComposer/
+  Toast/Header 全部 chrome 文案。ui-test 新增断言验证:切到 en 后 `map-tab` 文本变 "Course Map"。
+- **a11y 焦点管理**:新增 `useFocusTrap` hook(Tab 困住 + 关闭还原焦点),应用于设置抽屉、
+  复习抽屉、命令面板、ConfirmCard。抽屉补 `role="dialog" aria-modal="true"`;notebook 标签
+  补 `role="tablist"/"role="tab" aria-selected`;康奈尔三区折叠补 `aria-expanded`;Toast 容器
+  补 `role="region" aria-live="polite"`;ErrorBanner 补 `role="alert"`。
+- **错误可见性**:`setErrorFromThrow` 从纯 `console.error` 改为同时上屏 ErrorBanner
+  (`role="alert" data-testid="error-banner"`),异步失败(拉课程树/proposal 应用/技能切换)
+  不再对用户静默。
+
 - **种子课程改为使用指南**:内置种子课程从 microsoft/AI-For-Beginners 换成
   **LookatStudy 使用指南**(6 章 / 18 课 / 6 章节测验)。课程内容直接内联在
   `build-guide-seed.mjs`，覆盖全部功能：导入课程、技能地图、AI 导师、BKT 掌握度、
@@ -37,6 +50,16 @@ Entry conventions for contributors:
   Hangul→ko、西里尔字母→ru 检测。解决日文被误判为中文的问题。
 
 ### Changed
+- **图标统一为 lucide**:CommandPalette 命令图标(💡📝🗺️📊🦉🎯→Lightbulb/FileText/Map/
+  BarChart3/GraduationCap/Target)、复习四象限(🔴🟡🟢⚪→lucide Circle + 语义色)、
+  MapRail 世界切换(📚/🔧→BookOpen/Wrench)、复习抽屉标题(📖→BookOpen)按 PRODUCT.md
+  规约从 emoji 改为 lucide 线性图标(skill-tree 节点状态与空状态 emoji 保留——明文允许)。
+- **设计 token 收敛**:`surface-card` 从裸 `bg-white dark:bg-neutral-900` 改用 surface ramp
+  token;滚动条 thumb 从裸 `rgb()` 改用 `--border`/`--surface-3`;移除孤立 `.mode-tab`/
+  `.mode-tab-active`(0 引用);`shadow-elevated-card`(未定义)→`shadow-elevated`;多处
+  `text-neutral-500 dark:text-neutral-500`(对比度不足)→`text-ink-muted`。
+- **App.tsx Header**:消除 4 处重复 `dark:text-neutral-600 dark:text-neutral-400`(后者总是赢)
+  冲突,统一为 `text-neutral-500 dark:text-neutral-400`。
 - **detectRepoPattern 放宽**:课程链接阈值 ≥3→≥1（文件树补全更多文件）。
   新增 `docs-rich` 模式（README 无链接但文件树可能有内容→不急着拒绝）。
   新增 awesome-list 检测（外链占比>60%→unsupported+友好消息）。
@@ -94,6 +117,10 @@ Entry conventions for contributors:
   不硬依赖 README。无 LLM key 时纯规则降级(按目录分 section + 路径前缀图片关联)。
 
 ### Fixed
+- **verify-color-semantics 从 8/9 → 9/9**:修复 7 处 `text-neutral-500 dark:text-neutral-500`
+  对比度违规(SettingsView 5 处 + ExamView 1 处 + ThreadSwitcher 1 处,全部 → `text-ink-muted`)。
+  该测试在 HEAD 即已失败,本次顺手修绿。
+- **语言切换不再整页 reload**:改走响应式 store,设置页改语言后所有 chrome 即时更新。
 - **翻译版正文切换不实时更新**:切换翻译语言后,讲解区标题立即变但正文不变,
   需 Ctrl+R 才刷新。根因是 `ContentTab` 拉取正文的 `useEffect` 依赖数组漏了
   `locale`,导致 locale 变化时 effect 不重跑。修复:依赖数组加 `locale`

@@ -71,7 +71,7 @@ npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
 npm run verify:core       # 39 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 18 DOM assertions)
+npm run ui-test           # real-GUI verification (headless Electron, 22 DOM assertions incl. a11y + reactive i18n)
 npm run lint              # oxlint
 npx tsc --noEmit                       # typecheck renderer
 npx tsc -p tsconfig.electron.json --noEmit  # typecheck main/preload
@@ -143,11 +143,12 @@ npm run verify:core && npx vite build && npm run self-test
 | AsciiDoc parser | `services/pure/adoc-parser.ts` | AsciiDoc → markdown:标题/source 块/image/link/粗体斜体 |
 | Translation | `services/translation-service.ts` | `content_node_translations` CRUD — persist/read per-locale title/content; `getCourseLanguages`; `getCourseTitleTranslations` |
 | Language pref | `services/lang-pref.ts` | `pref_lang` setting read/write + system locale detection + `resolveImportLang` (pref + sourceLang → import language) |
-| i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + `translate()` |
+| i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + reactive `useLang()` (useSyncExternalStore, no reload on switch) + `translate()` for non-component contexts |
 
 Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),
 `useThreads` (node-bound thread CRUD + soft-delete undo), `useCanvas` (canvas
-item CRUD), `useFontSize` (3-tier A-/A+).
+item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription),
+`useFocusTrap` (drawer/modal focus-trap + restore for a11y).
 
 ## Verification discipline
 

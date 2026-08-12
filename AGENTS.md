@@ -69,7 +69,7 @@ npm run dev               # vite only (renderer debugging, HMR)
 npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
-npm run verify:core       # 39 pure-Node/tsx logic test suites
+npm run verify:core       # 40 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
 npm run ui-test           # real-GUI verification (headless Electron, 22 DOM assertions incl. a11y + reactive i18n)
 npm run lint              # oxlint
@@ -146,15 +146,19 @@ npm run verify:core && npx vite build && npm run self-test
 | Translation | `services/translation-service.ts` | `content_node_translations` CRUD — persist/read per-locale title/content; `getCourseLanguages`; `getCourseTitleTranslations` |
 | Language pref | `services/lang-pref.ts` | `pref_lang` setting read/write + system locale detection + `resolveImportLang` (pref + sourceLang → import language) |
 | i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + reactive `useLang()` (useSyncExternalStore, no reload on switch) + `translate()` for non-component contexts |
+| Celebration bus | `src/renderer/lib/celebration.ts` + `components/CelebrationLayer.tsx` | `celebrate(kind)` event bus + 根级 canvas 粒子层;7 高光时刻统一渲染(correct/wrong/unlock/mastery/streak/energy-full/exam-pass);reduced-motion a11y 双轨(默认粒子爆发,reduced 静态图标淡入) |
+| State emitter | `src/main/lib/state-emitter.ts` | main→renderer `state:changed` 推送(xp/streak/mastery 变化);修能量条运行时不动 bug;service 内 fire-and-forget,测试时 noop(同 markDirty 模式) |
+| Motion infra | `src/renderer/lib/motion-presets.ts` + `usePrefersReducedMotion.ts` | `motion` 弹簧/stagger/enter-exit 预设 + a11y reduced-motion 响应式 hook(useSyncExternalStore on matchMedia) |
 
 Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),
 `useThreads` (node-bound thread CRUD + soft-delete undo), `useCanvas` (canvas
 item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription),
-`useFocusTrap` (drawer/modal focus-trap + restore for a11y).
+`useFocusTrap` (drawer/modal focus-trap + restore for a11y),
+`usePrefersReducedMotion` (a11y 双轨:响应式检测系统减少动效偏好,所有动效分支入口)。
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (39 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (40 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

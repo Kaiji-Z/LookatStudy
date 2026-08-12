@@ -18,6 +18,7 @@ import {
 import { attachSky, attachOrbWeather, pickPreset, PRESETS, PRESET_KEYS, type SkyPreset, type OrbPos } from "../lib/skyCanvas.js";
 import { api } from "../lib/api.js";
 import { useLang } from "../lib/i18n.js";
+import { celebrate } from "../lib/celebration.js";
 
 export type MapView = "map" | "import";
 
@@ -72,6 +73,22 @@ export function MapRail(props: MapRailProps) {
     if (prevCourseId.current !== null && prevCourseId.current !== props.courseId) setPanel("map");
     prevCourseId.current = props.courseId;
   }, [props.courseId]);
+
+  // Phase 2: 检测节点从 locked→available 的解锁瞬间,触发 celebrate("unlock") 粒子(完成 7 触点闭环)。
+  // 比较 progressMap 前后状态;首次加载(prev 为空)不触发,防误报。
+  const prevStatusRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    const cur: Record<string, string> = {};
+    let unlocked = false;
+    for (const n of props.tree) {
+      const s = props.progressMap[n.id]?.status ?? "locked";
+      cur[n.id] = s;
+      if (prev[n.id] === "locked" && s !== "locked") unlocked = true;
+    }
+    if (unlocked && Object.keys(prev).length > 0) celebrate("unlock");
+    prevStatusRef.current = cur;
+  }, [props.tree, props.progressMap]);
 
   return (
     <nav ref={navRef} className="relative h-full flex flex-col bg-surface-rail w-[300px] shrink-0 overflow-hidden" data-testid="map-rail">
@@ -459,23 +476,34 @@ function MapOrbWeatherCanvas({
     const scroll = scrollRef.current;
     if (!canvas || !nav || !scroll) return;
     // canvas 在 nav 层 → 坐标相对 nav 算
+    // 性能(Phase 0):缓存 .lesson-bubble 节点引用 + navRect,不每帧 querySelectorAll
+    // (原每帧重建 NodeList 是布局重排主因,随课程规模恶化)。
+    // 节点增删/重排由 MutationObserver 失效重建;navRect 仅 window resize 时变(nav 固定容器)。
+    // 每帧仍读 N 次 getBoundingClientRect(浏览器批处理为一次布局刷新),位置含 balloon-bob 实时位移。
+    let cachedBtns: HTMLButtonElement[] | null = null;
+    let cachedNavRect: DOMRect | null = null;
+    const invalidate = () => { cachedBtns = null; cachedNavRect = null; };
+    const mo = new MutationObserver(invalidate);
+    mo.observe(scroll, { childList: true, subtree: true });
+    window.addEventListener("resize", invalidate);
     const getOrbs = (): OrbPos[] => {
-      const navRect = nav.getBoundingClientRect();
-      const btns = scroll.querySelectorAll<HTMLButtonElement>(".lesson-bubble");
+      if (!cachedBtns) cachedBtns = Array.from(scroll.querySelectorAll<HTMLButtonElement>(".lesson-bubble"));
+      const navRect = cachedNavRect ?? nav.getBoundingClientRect();
+      cachedNavRect = navRect;
       const out: OrbPos[] = [];
-      btns.forEach((b) => {
+      for (const b of cachedBtns) {
         const r = b.getBoundingClientRect();
-        if (r.bottom < navRect.top || r.top > navRect.bottom) return;
+        if (r.bottom < navRect.top || r.top > navRect.bottom) continue;
         out.push({
           x: r.left - navRect.left + r.width / 2,
           y: r.top - navRect.top + r.height / 2,
           r: r.width / 2,
         });
-      });
+      }
       return out;
     };
     const detach = attachOrbWeather(canvas, nav, preset, getOrbs);
-    return detach;
+    return () => { detach(); mo.disconnect(); window.removeEventListener("resize", invalidate); };
   }, [scrollRef, navRef, preset]);
   return (
     <canvas ref={canvasRef} className="map-orb-weather-canvas" aria-hidden="true" />
@@ -706,7 +734,7 @@ function MapNode({
         ) : isLocked ? (
           <span aria-label="locked" className="relative z-10 opacity-50">🔒</span>
         ) : status === "mastered" ? (
-          <span aria-label="mastered" className="relative z-10 drop-shadow-lg">👑</span>
+          <span aria-label="mastered" className="relative z-10 drop-shadow-lg crown-sparkle">👑</span>
         ) : status === "in_progress" ? (
           <BookOpen aria-label="in-progress" className="relative z-10 w-6 h-6 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]" strokeWidth={2.5} />
         ) : (

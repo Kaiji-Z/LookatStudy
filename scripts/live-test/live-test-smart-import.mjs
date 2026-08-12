@@ -17,7 +17,7 @@ import { classifyFileRoles, designCourseStructure } from "../../src/main/service
 import { executeImport } from "../../src/main/services/import-pipeline.ts";
 
 const API_KEY = readApiKey();
-if (!API_KEY) { console.error("需要 Z_AI_API_KEY"); process.exit(1); }
+if (!API_KEY) { console.error("⏭️ 跳过:需要 Z_AI_API_KEY(live-test 可选,缺 key 时 graceful skip)"); process.exit(0); }
 console.log(`API key: ✅\n`);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

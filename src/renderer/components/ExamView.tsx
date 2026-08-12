@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ContentNode, Exercise } from "@shared/types";
 import { api } from "../lib/api.js";
+import { celebrate } from "../lib/celebration.js";
 import { useLang, translate } from "../lib/i18n.js";
 import { Target, Star, RotateCcw, Check, X, ArrowRight, AlertCircle } from "lucide-react";
 
@@ -102,6 +103,8 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
           setResult(r);
           setPhase("result");
           onExamCompleted?.();
+          // Phase 1: 考试通过(得星)触发庆祝爆发;全错不庆祝(避免负面庆祝)。
+          if (r.stars >= 1) celebrate("exam-pass");
         } catch (e) {
           setErrorMsg(e instanceof Error ? e.message : String(e));
           setPhase("error");

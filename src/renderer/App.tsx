@@ -29,6 +29,8 @@ import { useToast } from "./components/Toast.js";
 import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
 import { useLang } from "./lib/i18n.js";
 import { useFocusTrap } from "./lib/useFocusTrap.js";
+import { CelebrationLayer } from "./components/CelebrationLayer.js";
+import { celebrate } from "./lib/celebration.js";
 
 /**
  * v0.2 三栏布局(M1 重构):
@@ -210,6 +212,39 @@ export default function App() {
     window.addEventListener("llm-config-changed", handler);
     return () => window.removeEventListener("llm-config-changed", handler);
   }, [checkReady]);
+
+  // Phase 0/1(游戏感动效):订阅 main 进程状态变化推送,重拉对应数据 + 触发高光庆祝。
+  // 修原 bug:能量条/连击以前只在启动拉一次,答题后 main 写 DB 但 renderer 不知道 → 能量条从不动。
+  const prevXpRef = useRef(0);
+  const prevStreakRef = useRef(0);
+  // 同步 prev ref:每次 xp/streak state 变(含首次加载),记录为下一轮比较基准,防误触发。
+  useEffect(() => {
+    prevXpRef.current = xp?.todayXp ?? 0;
+  }, [xp]);
+  useEffect(() => {
+    prevStreakRef.current = streak?.currentStreak ?? 0;
+  }, [streak]);
+  useEffect(() => {
+    const off = api.on("state:changed", (kind: "xp" | "streak" | "mastery") => {
+      if (kind === "xp") {
+        api.getXpStatus().then((x) => {
+          setXp(x);
+          // 首次跨越 100 → 能量充满庆祝(prev<100 防已超 100 后重复触发)
+          if (prevXpRef.current < 100 && x.todayXp >= 100) celebrate("energy-full");
+        }).catch(() => {});
+      } else if (kind === "streak") {
+        api.getStreak().then((s) => {
+          setStreak(s);
+          if (s.currentStreak > prevStreakRef.current) celebrate("streak");
+        }).catch(() => {});
+      } else if (kind === "mastery") {
+        // mastery 变化(答题毕业/proposal apply)→ 加冕庆祝 + 全量刷新节点状态
+        celebrate("mastery");
+        refreshAll();
+      }
+    });
+    return off;
+  }, [refreshAll]);
 
   useEffect(() => {
     if (!selectedCourseId) return;
@@ -702,6 +737,8 @@ export default function App() {
 
       {/* 全局悬浮提示(Portal 到 body,脱离所有 stacking context,永远最上层) */}
       <GlobalTooltip />
+      {/* Phase 0:庆祝渲染层(粒子爆发/高光时刻,reduced-motion 自动降级)。根级 fixed,z-[60]。 */}
+      <CelebrationLayer />
     </div>
   );
 }
@@ -799,7 +836,7 @@ function Header({
             title={t("header.energy")}
           >
             <Zap
-              className="w-3.5 h-3.5 text-brand"
+              className={`w-3.5 h-3.5 text-brand ${xp.todayXp >= 100 ? "energy-breathe" : ""}`}
               fill={xp.todayXp >= 100 ? "currentColor" : "none"}
               aria-hidden="true"
             />
@@ -937,7 +974,7 @@ function StreakBadge({ streak }: { streak: Streak }) {
       data-testid="streak-badge"
       title={t("streak.title", { n: streak.currentStreak, m: streak.longestStreak })}
     >
-      <Flame className="w-4 h-4 text-review" />
+      <Flame className="w-4 h-4 text-review flame-flicker" />
       <span className="text-body font-extrabold text-review">{streak.currentStreak}</span>
     </div>
   );

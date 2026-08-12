@@ -19,6 +19,7 @@ import { ensureExamNodesForExistingCourses } from "./services/course-generator.j
 import { loadEnv, getZaiConfig } from "./services/env.js";
 import { seedBuiltinSkills } from "./services/skills/skill-service.js";
 import { createProposal } from "./services/proposal-service.js";
+import { setStateEmitter } from "./lib/state-emitter.js";
 import { courses, contentNodes, streaks, settings as settingsTable, customProviders } from "./db/schema.js";
 import { eq } from "drizzle-orm";
 
@@ -189,6 +190,8 @@ app.whenReady().then(async () => {
     createWindow();
     if (mainWindow) registerAllHandlers(mainWindow);
   }
+  // Phase 0: 注入状态变化 emitter。service 内 emitStateChange → 推 "state:changed" 给 renderer。
+  setStateEmitter((kind) => mainWindow?.webContents.send("state:changed", kind));
   console.error("[lookatstudy] window created, IPC registered");
 
   app.on("activate", () => {

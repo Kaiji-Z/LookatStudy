@@ -706,6 +706,43 @@ html.light ::-webkit-scrollbar-thumb:hover {
   background: rgb(0 0 0 / 0.28);
 }
 
+/* ============================================================
+ * v0.9 游戏感动效 — 状态指示器氛围动效(Phase 2)
+ * 克制的呼吸/摇曳/闪烁(单 hero 元素或成就展示氛围)。
+ * reduced-motion 由全局 guard(下方 @media)覆盖,自动降级瞬时。
+ * ============================================================ */
+
+/* 能量充满呼吸:能量条 ≥100 时 Zap 图标微光呼吸(单 hero,合规) */
+@keyframes energy-breathe {
+  0%, 100% { opacity: 0.78; filter: drop-shadow(0 0 0 var(--brand)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 4px var(--brand-glow)); }
+}
+.energy-breathe {
+  animation: energy-breathe 2s ease-in-out infinite;
+}
+
+/* 连击火焰摇曳:StreakBadge Flame 轻微缩放+摇曳(火焰跳动,单 hero) */
+@keyframes flame-flicker {
+  0%, 100% { transform: scale(1) rotate(-2deg); }
+  25% { transform: scale(1.06) rotate(1deg); }
+  50% { transform: scale(0.97) rotate(-1deg); }
+  75% { transform: scale(1.04) rotate(2deg); }
+}
+.flame-flicker {
+  animation: flame-flicker 1.4s ease-in-out infinite;
+  transform-origin: 50% 80%;
+}
+
+/* 皇冠闪烁:mastered 节点 👑 金色光晕脉冲(成就展示氛围,克制幅度) */
+@keyframes crown-sparkle {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 0 var(--gold)); }
+  50% { transform: scale(1.08); filter: drop-shadow(0 0 6px var(--gold-glow)); }
+}
+.crown-sparkle {
+  animation: crown-sparkle 1.6s ease-in-out infinite;
+  display: inline-block;
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

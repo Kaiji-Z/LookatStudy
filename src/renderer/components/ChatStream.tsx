@@ -17,7 +17,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { CanvasItem } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, X, ChevronDown, Pencil, XCircle, Wrench, Rocket, ClipboardList, Copy } from "lucide-react";
+import { Check, X, ChevronDown, Pencil, XCircle, Wrench, Rocket, ClipboardList, Copy, Settings } from "lucide-react";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
@@ -49,8 +49,12 @@ interface ChatStreamProps {
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   /** 当前节点摘要(空会话时显示,帮用户快速了解这课) */
   summary?: string | null;
-  /** 点"开始学习"→ 发学习方法请求,建立会话 */
+  /** 点"开始学习"→ 直接进入学习(核心概念+检索题),建立会话 */
   onStartLearning?: () => void;
+  /** AI 模型是否就绪(未就绪时空状态显示"去配置"卡而非🚀,消除冷启动死胡同) */
+  agentReady?: boolean;
+  /** 跳转设置(未配置 key 的空状态 CTA) */
+  onGotoSettings?: () => void;
   /** 是否已选中节点(false 时空状态显示"选节点"引导) */
   hasNode?: boolean;
   /** 当前节点 id(用于内联 quiz 产物的答题 → mastery 更新) */
@@ -63,7 +67,7 @@ interface ChatStreamProps {
   chatNotes?: CanvasItem[];
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onGotoSettings, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes }: ChatStreamProps) {
   const t = useLang();
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
@@ -250,38 +254,57 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
           <div className="mt-10 mx-auto max-w-md" data-testid="chat-empty-state">
             {hasNode ? (
               <>
-                <div className="text-center mb-5">
-                  <div className="text-4xl mb-3 opacity-30">📖</div>
-                  <div className="text-ink-muted text-body">{t("chat.empty.overview")}</div>
+                <div className="text-center mb-4">
+                  <div className="text-4xl mb-2 opacity-30">📖</div>
+                  {/* 问候(P1.4):降低启动能垒,纯前端无 DB 写 */}
+                  <div className="text-body font-bold text-neutral-700 dark:text-neutral-300 mb-1">{t("chat.empty.greeting")}</div>
+                  <div className="text-ink-muted text-label">{t("chat.empty.overview")}</div>
                 </div>
                 {/* 摘要卡片 */}
                 {summary ? (
-                  <div className="surface-card p-4 mb-5">
+                  <div className="surface-card p-4 mb-4">
                     <div className="text-caption font-bold text-brand uppercase tracking-wider mb-2">{t("chat.empty.summary.title")}</div>
                     <div className="text-body text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
                       {summary}
                     </div>
                   </div>
                 ) : (
-                  <div className="surface-card p-4 mb-5 text-center">
+                  <div className="surface-card p-4 mb-4 text-center">
                     <div className="text-body text-ink-muted">{t("chat.empty.summary.none")}</div>
                   </div>
                 )}
-                {/* 开始学习按钮 */}
-                {onStartLearning && (
-                  <button
-                    onClick={onStartLearning}
-                    disabled={streaming}
-                    data-testid="start-learning-btn"
-                    className="btn-3d-brand w-full py-3 text-body font-bold flex items-center justify-center gap-2 disabled:opacity-40"
-                  >
-                    <Rocket className="w-4 h-4" />
-                    <span>{t("chat.empty.start")}</span>
-                  </button>
+                {agentReady ? (
+                  <>
+                    {/* 开始学习:直接进入学习(核心概念+检索题),非方法论规划(P1.2) */}
+                    {onStartLearning && (
+                      <button
+                        onClick={onStartLearning}
+                        disabled={streaming}
+                        data-testid="start-learning-btn"
+                        className="btn-3d-brand w-full py-3 text-body font-bold flex items-center justify-center gap-2 disabled:opacity-40"
+                      >
+                        <Rocket className="w-4 h-4" />
+                        <span>{t("chat.empty.start")}</span>
+                      </button>
+                    )}
+                    <div className="text-center mt-4 text-label text-ink-muted">
+                      {t("chat.empty.quick_hint")}
+                    </div>
+                  </>
+                ) : (
+                  /* 未配置 AI 模型:内容已在右侧讲解,引导去配置——消除冷启动死胡同(P1.1/P1.3) */
+                  <div className="surface-card p-4 mb-2" data-testid="keyless-card">
+                    <div className="text-body font-bold text-neutral-700 dark:text-neutral-300 mb-1">{t("chat.empty.keyless.title")}</div>
+                    <div className="text-label text-ink-muted mb-3">{t("chat.empty.keyless.desc")}</div>
+                    <button
+                      onClick={onGotoSettings}
+                      className="btn-3d-brand w-full py-2 text-body font-bold flex items-center justify-center gap-2"
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span>{t("chat.empty.keyless.btn")}</span>
+                    </button>
+                  </div>
                 )}
-                <div className="text-center mt-4 text-label text-ink-muted">
-                  {t("chat.empty.quick_hint")}
-                </div>
               </>
             ) : (
               /* 未选节点:引导选节点(此时 ChatComposer 仍渲染,skill-picker 可见) */

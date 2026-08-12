@@ -71,7 +71,7 @@ npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
 npm run verify:core       # 39 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 22 DOM assertions incl. a11y + reactive i18n)
+npm run ui-test           # real-GUI verification (headless Electron, 24 DOM assertions incl. a11y + reactive i18n + cold-start gating)
 npm run lint              # oxlint
 npx tsc --noEmit                       # typecheck renderer
 npx tsc -p tsconfig.electron.json --noEmit  # typecheck main/preload

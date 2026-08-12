@@ -540,6 +540,24 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: linkage,
   });
 
+  // T8d (P1 启动沉浸): 选中节点后,空会话显示问候 + 开始学习按钮(agentReady=true 路径)
+  const startState = await win.webContents.executeJavaScript(`
+    (function() {
+      var empty = document.querySelector('[data-testid="chat-empty-state"]');
+      var txt = empty ? (empty.textContent || "") : "";
+      return {
+        hasEmpty: !!empty,
+        hasGreeting: /👋/.test(txt),
+        hasStartBtn: document.querySelector('[data-testid="start-learning-btn"]') !== null,
+      };
+    })()
+  `);
+  results.push({
+    name: "empty state shows greeting + start-learning button (P1.2/P1.4)",
+    ok: startState?.hasEmpty === true && startState?.hasStartBtn === true,
+    detail: startState,
+  });
+
   // T8c (v0.2 设置抽屉): 点 header settings → settings-drawer 出现
   const settingsDrawer = await win.webContents.executeJavaScript(`
     (async function() {
@@ -816,6 +834,45 @@ async function runUiTest(screenshot = false): Promise<void> {
     // headless 时 canvas 异步可能让 zone 未渲染,与 T15 同源;标 knownFail 防误报
     knownFail: true,
     knownFailReason: "依赖 notes tab canvas 异步加载,headless 时序不稳定(同 T15)",
+  });
+
+  // T20 (P1.1/P1.3 冷启动门控闭环): 删除 provider + active_provider → 重载 → 选节点
+  // → 应见 keyless-card,不见 start-learning-btn。证明"无 key 点🚀 → 死胡同"已修复。
+  // 放最后:需 reload,会破坏后续 DOM 断言所需的页面状态。
+  let keyless: { reloaded?: boolean; nodeClicked?: boolean; ready?: boolean; keylessCard?: boolean; startBtn?: boolean; error?: string } = {};
+  try {
+    const db = getDb();
+    db.delete(customProviders).run();
+    const apRow = db.select().from(settingsTable).where(eq(settingsTable.key, "active_provider")).get();
+    if (apRow) db.delete(settingsTable).where(eq(settingsTable.key, "active_provider")).run();
+    win.webContents.reload();
+    const reloaded = await waitRender();
+    const clicked = await win.webContents.executeJavaScript(`
+      (function() {
+        var btns = document.querySelectorAll('[data-testid^="map-node-"]');
+        for (var i = 0; i < btns.length; i++) { if (!btns[i].disabled) { btns[i].click(); return true; } }
+        return false;
+      })()
+    `);
+    await new Promise((r) => setTimeout(r, 700));
+    const dom = await win.webContents.executeJavaScript(`
+      (async function() {
+        var ready = await window.api.isAgentReady();
+        return {
+          ready: !!ready.ready,
+          keylessCard: document.querySelector('[data-testid="keyless-card"]') !== null,
+          startBtn: document.querySelector('[data-testid="start-learning-btn"]') !== null,
+        };
+      })()
+    `);
+    keyless = { reloaded, nodeClicked: clicked === true, ready: dom?.ready, keylessCard: dom?.keylessCard, startBtn: dom?.startBtn };
+  } catch (e) {
+    keyless = { error: String(e) };
+  }
+  results.push({
+    name: "keyless cold-start: no provider → keyless-card shown & start-learning-btn hidden (P1.1/P1.3)",
+    ok: keyless?.ready === false && keyless?.keylessCard === true && keyless?.startBtn === false,
+    detail: keyless,
   });
 
   // allOk: 所有测试通过 OR 仅 knownFail 测试未通过

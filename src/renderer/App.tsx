@@ -157,13 +157,14 @@ export default function App() {
     [tree, selectedNodeId],
   );
 
-  // "开始学习"→ 发学习方法请求,建立会话(空会话时点的大按钮)
+  // "开始学习"→ 直接进入学习(核心概念 + 一个检索题),而非"商量怎么学"。
+  // P1 启动沉浸:意志力最高的瞬间应进入学习本身,不是方法论规划。
   // 实际的 sendMessage 定义在 toast 声明之后(下面),通过 ref 桥接避免 TDZ。
   const sendRef = useRef<((t: string) => Promise<void>) | null>(null);
   const handleStartLearning = useCallback(() => {
     if (!selectedNode) return;
     void sendRef.current?.(
-      `请给我学习「${selectedNode.title}」的方法建议:应该按什么顺序学、重点关注什么、怎么检验自己学会了。简短给出学习路径。`,
+      `我想开始学「${selectedNode.title}」。请先用一两句话讲这课最核心的一个概念,然后出一个简单的小问题让我试着回答——直接开始,不要先讲学习方法论。`,
     );
   }, [selectedNode]);
 
@@ -589,7 +590,9 @@ export default function App() {
                 onApplyProposal={handleApplyProposal}
                 onRejectProposal={handleRejectProposal}
                 summary={nodeSummary}
-                onStartLearning={handleStartLearning}
+                onStartLearning={agentReady?.ready ? handleStartLearning : undefined}
+                agentReady={agentReady?.ready ?? false}
+                onGotoSettings={() => setShowSettings(true)}
                 hasNode={!!selectedNode}
                 selectedNodeId={selectedNodeId}
                 threadId={thread.activeId}

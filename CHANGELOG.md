@@ -17,6 +17,12 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **冷启动沉浸(learning-experience Phase 1)**:点"开始学习"现在直接进入学习——先讲核心概念、
+  再出一个检索题,而非"商量怎么学"(意志力最高的瞬间应进入学习本身)。修复无 AI key 时点🚀
+  → 建空会话 → 报错 toast 的冷启动死胡同:无 key 时空状态改显"内容已在右侧,先读一读 +
+  去配置"卡(种子首课内容本就静态、离线可读),配 key 解锁的是 AI 家教而非"学习"本身。
+  新增空会话问候(👋 降低启动能垒,纯前端无 DB 写)。新增 ui-test 闭环断言:T8d(问候+🚀
+  渲染)+ T20(删 provider→重载→keyless-card 显示且🚀 隐藏,已验证能抓回归)。
 - **PDF 文本提取改用 pdf-inspector(layout-aware)**:本地 PDF 导入的文本提取从 `pdf-parse`
   改为优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 +
   多栏阅读顺序), 失败/平台不支持(Intel Mac/Windows ARM 无预编译)时自动回退 `pdf-parse`。

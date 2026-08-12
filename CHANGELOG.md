@@ -55,6 +55,26 @@ Entry conventions for contributors:
   新增空会话问候(👋 降低启动能垒,纯前端无 DB 写)。新增 ui-test 闭环断言:T8d(问候+🚀
   渲染)+ T20(删 provider→重载→keyless-card 显示且🚀 隐藏,已验证能抓回归)。地图首可用节点常显标题
   ("从这里开始"指引,P1.5 + ui-test map-next-label 断言)。
+- **游戏感动效基础设施(Phase 0,见动效重构计划)**:为"丝滑 + 游戏感 + 沉浸式玩中学习"奠基。
+  新增 `motion` 库(PRODUCT.md sanction 的唯一新增依赖)+ 中央庆祝总线(`lib/celebration.ts`
+  的 `celebrate(kind)` event bus + `CelebrationLayer` 根级 canvas 粒子层,任何组件一行
+  `celebrate("correct")` 触发,渲染解耦)+ `usePrefersReducedMotion`(a11y 双轨:默认粒子爆发,
+  系统选"减少动效"时降级为静态图标淡入——WCAG 底线,非审美)+ `motion-presets`(spring/stagger
+  复用)+ main→renderer `state:changed` 推送通道(`state-emitter` 模块,xp/streak/mastery 变化 emit)。
+  **修原 bug**:能量条/连击以前只在启动拉一次,答题后 main 写 DB 但 renderer 不知道 → 从不动;
+  现在订阅 state:changed 精准重拉。**性能**:skyCanvas `getOrbs` 每帧 `querySelectorAll`+布局
+  重排(随课程规模恶化)→ 缓存节点引用 + MutationObserver 失效。**a11y 修复**:skyCanvas
+  reduced-motion bug(`frame()` 无条件 self-reschedule + `attachOrbWeather` 无视 reduced →
+  实际没降级)。新增 `scripts/verify-motion-infra.mjs`(26 项静态回归断言,覆盖 Phase 0+1)。
+- **游戏感动效 Phase 1(高光时刻接入庆祝总线)**:7 个反馈点接入 `celebrate()` 总线 ——
+  答对/答错(QuizArtifact 练习 + ReviewPanel SRS 自评)、考试通过(ExamView 得星)、能量充满
+  (App 订阅 XP 首次跨 100,用 prevXpRef 防重复触发)、连击递增(App 订阅 streak)、掌握度达成
+  (App 订阅 mastery 加冕)。所有高光时刻统一由 CelebrationLayer 渲染粒子爆发(reduced-motion
+  自动降级静态图标),触发与渲染解耦 —— 新增反馈点 = 一行 celebrate()。
+- **游戏感动效 Phase 2(节点解锁高光,完成 7 触点闭环)**:MapRail 检测节点从 locked→available
+  的解锁瞬间,触发 `celebrate("unlock")`。至此 7 个高光时刻全部接入庆祝总线:
+  correct/wrong/unlock/mastery/streak/energy-full/exam-pass。环境沉浸(错峰入场/微交互/皇冠
+  加冕视觉)作为后续迭代。
 - **PDF 文本提取改用 pdf-inspector(layout-aware)**:本地 PDF 导入的文本提取从 `pdf-parse`
   改为优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 +
   多栏阅读顺序), 失败/平台不支持(Intel Mac/Windows ARM 无预编译)时自动回退 `pdf-parse`。

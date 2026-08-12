@@ -706,6 +706,43 @@ html.light ::-webkit-scrollbar-thumb:hover {
   background: rgb(0 0 0 / 0.28);
 }
 
+/* ============================================================
+ * v0.9 游戏感动效 — 状态指示器氛围动效(Phase 2)
+ * 克制的呼吸/摇曳/闪烁(单 hero 元素或成就展示氛围)。
+ * reduced-motion 由全局 guard(下方 @media)覆盖,自动降级瞬时。
+ * ============================================================ */
+
+/* 能量充满呼吸:能量条 ≥100 时 Zap 图标微光呼吸(单 hero,合规) */
+@keyframes energy-breathe {
+  0%, 100% { opacity: 0.78; filter: drop-shadow(0 0 0 var(--brand)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 4px var(--brand-glow)); }
+}
+.energy-breathe {
+  animation: energy-breathe 2s ease-in-out infinite;
+}
+
+/* 连击火焰摇曳:StreakBadge Flame 轻微缩放+摇曳(火焰跳动,单 hero) */
+@keyframes flame-flicker {
+  0%, 100% { transform: scale(1) rotate(-2deg); }
+  25% { transform: scale(1.06) rotate(1deg); }
+  50% { transform: scale(0.97) rotate(-1deg); }
+  75% { transform: scale(1.04) rotate(2deg); }
+}
+.flame-flicker {
+  animation: flame-flicker 1.4s ease-in-out infinite;
+  transform-origin: 50% 80%;
+}
+
+/* 皇冠闪烁:mastered 节点 👑 金色光晕脉冲(成就展示氛围,克制幅度) */
+@keyframes crown-sparkle {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 0 var(--gold)); }
+  50% { transform: scale(1.08); filter: drop-shadow(0 0 6px var(--gold-glow)); }
+}
+.crown-sparkle {
+  animation: crown-sparkle 1.6s ease-in-out infinite;
+  display: inline-block;
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -713,30 +750,4 @@ html.light ::-webkit-scrollbar-thumb:hover {
     transition-duration: 0.01ms !important;
   }
   /* 天空 canvas:skyCanvas.ts 检测 reduced-motion 后只画单帧(不跑连续 rAF) */
-}
-
-/* ============================================================
- * ParticleFx(P4 能力感即时反馈):有品味的 CSS 粒子爆发。
- * 触发是确定性学习成就(答对/毕业/解锁),非随机盲盒(PRODUCT.md 反暗黑模式)。
- * 受上面 prefers-reduced-motion 统一约束(无障碍:用户关动效时近乎瞬完)。
- * ============================================================ */
-@keyframes particle-fx-fly {
-  0% {
-    transform: translate(-50%, 0) scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(calc(-50% + var(--tx, 0px)), var(--ty, 0px)) scale(0.2);
-    opacity: 0;
-  }
-}
-.particle-fx-dot {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 9999px;
-  animation: particle-fx-fly 800ms var(--ease-out-expo, ease-out) forwards;
-  will-change: transform, opacity;
 }

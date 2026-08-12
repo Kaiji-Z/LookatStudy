@@ -77,13 +77,17 @@ Banned: `text-[10px]`, `text-[11px]`, `text-xs` (all eliminated). When adding te
 | Empty states | emoji decorative (📓 🧩 📖), large + low opacity |
 
 ## Motion
-150-250ms transitions for state changes. Exponential ease-out curves. Reduced-motion respected globally.
+游戏感 + 沉浸是 Playful Product register 的 "Game" 一半 —— 动效服务"想再学一课"的动机,而非成瘾。`motion` 库做编排(入场/退场/弹簧/stagger),CSS 做微交互,canvas 做粒子爆发。指数 ease-out 曲线(`--ease-*` 变量)。
 
-**Allowed (state-conveying)**: lesson-bubble hover scale, msg-enter, tab slide, typing-dot (AI working), node-active-pulse on the "your turn" node only (restrained, 2.4s cycle).
+**中央庆祝总线(v0.9)**:`celebrate(kind)` event bus(`lib/celebration.ts`)+ `<CelebrationLayer>` 根级 canvas 粒子层。7 个高光时刻统一接入(correct/wrong/unlock/mastery/streak/energy-full/exam-pass),触发与渲染解耦 —— 新增反馈点 = 一行 `celebrate()`。renderer 订阅 main 的 `state:changed` 推送(xp/streak/mastery 变化)自动重拉 + 触发庆祝。
 
-**Banned (decorative)**: page-load choreography, ornament loops, infinite ambient pulses on multiple elements simultaneously.
+**Allowed**: 状态指示器氛围动效(单 hero 呼吸:`energy-breathe`/`flame-flicker`/`crown-sparkle`)、庆祝高光(300-1200ms 粒子爆发)、msg-enter/tab-slide/typing-dot/bubble-active-pulse、mastered 皇冠展示氛围。
 
-**Future hooks (reserved, not implemented)**: particle burst on correct answer, short sfx on unlock/streak, virtual teacher expressions. These are placeholders in `ParticleFx.tsx` — fill in a dedicated design pass, do not block v0.4.
+**a11y 双轨(红线,非审美)**:`prefers-reduced-motion` 是 WCAG 底线。默认丝滑游戏感;系统选"减少动效"时,`usePrefersReducedMotion`(`useSyncExternalStore`)+ 全局 CSS guard + skyCanvas 单帧降级 —— 所有动效降为淡入/瞬时,粒子层降级为静态图标淡入。这条任何升级都不能破。
+
+**engagement-extraction 禁令(红线)**:无 loot-box/损失厌恶/赌博式反馈。游戏感服务学习动机,不服务成瘾。
+
+**`ParticleFx.tsx` 已 deprecated**:被 `<CelebrationLayer>` + `celebrate()` 总线取代。保留文件作历史,新代码用 `celebrate()`。
 
 ## Key surfaces
 1. **Skill-tree map + import** (left rail, full-height, `surface-rail`) — Duolingo-style vertical winding path of 3D circular lesson nodes (locked/available/in-progress/mastered/exam states) with scroll-driven scrollytelling sky + seasonal×weather presets. Floating glass tab bar switches between 课程地图 / 导入课程 (sliding panels, shared sky background). Course mastery % + review-due badge as floating glass header. Full-height: panes are separated by surface depth, not borders. Left pane toggle via Ctrl+B or header button.

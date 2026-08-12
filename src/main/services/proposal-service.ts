@@ -28,6 +28,7 @@ import { updateMastery, BKT_DEFAULTS } from "./pure/bkt.js";
 import { addXpMastered } from "./xp-service.js";
 import { unlockNextLessonIfEligible } from "./progress-service.js";
 import { MASTERED_MASTERY_THRESHOLD } from "@shared/types";
+import { emitStateChange } from "../lib/state-emitter.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -220,6 +221,8 @@ function executeOperation(db: Db, op: LearningOperation): void {
       if (autoMastered) addXpMastered(db);
       // 硬门控:mastery 跨过 0.5 → 解锁下一课(首次答题/答对都可能触发)
       unlockNextLessonIfEligible(db, op.nodeId);
+      // Phase 0: mastery 变化通知 renderer(重拉节点状态 + 庆祝/加冕)。
+      emitStateChange("mastery");
       break;
     }
     case "mark_mastered": {
@@ -250,6 +253,8 @@ function executeOperation(db: Db, op: LearningOperation): void {
       addXpMastered(db);
       // 硬门控:mastered 必然 ≥ 阈值,解锁下一课。
       unlockNextLessonIfEligible(db, op.nodeId);
+      // Phase 0: mastery 变化通知 renderer(加冕庆祝)。
+      emitStateChange("mastery");
       break;
     }
     case "set_node_status": {

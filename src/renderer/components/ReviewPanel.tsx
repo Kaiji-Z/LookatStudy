@@ -12,6 +12,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Circle, Shuffle } from "lucide-react";
 import { api } from "../lib/api.js";
+import { celebrate } from "../lib/celebration.js";
 import type { ContentNode, ReviewQuality } from "@shared/types";
 import { useLang } from "../lib/i18n.js";
 
@@ -244,6 +245,8 @@ export function SelfRatingCard({
       await api.recordReview(nodeId, quality);
       setDone(true);
       onRated?.();
+      // Phase 1: SRS 自评高光 — remembered/mastered(quality≥4)答对爆发,again(≤1)柔红闪。
+      celebrate(quality >= 4 ? "correct" : "wrong");
     } catch {
       /* 忽略 */
     } finally {

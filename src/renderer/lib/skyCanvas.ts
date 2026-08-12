@@ -716,7 +716,8 @@ export function attachSky(
     if (preset.particles === "snow") drawSnow(ctx, W, H, flakes, now);
     if (preset.fogAlpha > 0) drawFog(ctx, W, H, preset.fogAlpha, sky);
     if (preset.lightning) drawLightning(ctx, W, H, true, now);
-    rafId = requestAnimationFrame(frame);
+    // reduced-motion: 不连续排程,只画单帧(配合下方 reduced 双轨降级)
+    if (!reduced) rafId = requestAnimationFrame(frame);
   }
 
   const onScroll = () => readScroll();
@@ -725,11 +726,23 @@ export function attachSky(
 
   resize();
   readScroll();
+  // reduced-motion 双轨:reduced 时不跑连续 rAF,scroll 时用 rAF coalesce 重绘单帧
+  // (原 bug:frame() 无条件 self-reschedule,reduced 路径反而连续动画 + 每事件重绘)
+  let onScrollHandler: (e: Event) => void;
   if (reduced) {
-    scroll.addEventListener("scroll", () => { readScroll(); frame(performance.now()); }, { passive: true });
-    frame(performance.now());
+    let pending = false;
+    onScrollHandler = () => {
+      readScroll();
+      if (!pending) {
+        pending = true;
+        requestAnimationFrame(() => { pending = false; frame(performance.now()); });
+      }
+    };
+    scroll.addEventListener("scroll", onScrollHandler, { passive: true });
+    frame(performance.now()); // 初始单帧
   } else {
-    scroll.addEventListener("scroll", onScroll, { passive: true });
+    onScrollHandler = onScroll;
+    scroll.addEventListener("scroll", onScrollHandler, { passive: true });
     rafId = requestAnimationFrame(frame);
   }
 
@@ -737,7 +750,7 @@ export function attachSky(
     running = false;
     cancelAnimationFrame(rafId);
     ro.disconnect();
-    scroll.removeEventListener("scroll", onScroll);
+    scroll.removeEventListener("scroll", onScrollHandler);
   };
 }
 
@@ -763,6 +776,11 @@ export function attachOrbWeather(
     if (c) c.clearRect(0, 0, canvas.width, canvas.height);
   };
   resetState();
+
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // reduced-motion: 球天气装饰(雪堆积/水流痕)是纯装饰动画,reduced 时不画(静态降级,
+  // 修原 bug:attachOrbWeather 完全无视 reduced 标志,总是启动 rAF)
+  if (reduced) return () => {};
 
   // 雪天/雨天之外不画(晴/多云:清完状态 + canvas 后早返回)
   if (preset.particles !== "rain" && preset.particles !== "snow") return () => {};

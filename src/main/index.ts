@@ -19,6 +19,7 @@ import { ensureExamNodesForExistingCourses } from "./services/course-generator.j
 import { loadEnv, getZaiConfig } from "./services/env.js";
 import { seedBuiltinSkills } from "./services/skills/skill-service.js";
 import { createProposal } from "./services/proposal-service.js";
+import { setStateEmitter } from "./lib/state-emitter.js";
 import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems } from "./db/schema.js";
 import { eq } from "drizzle-orm";
 
@@ -189,6 +190,8 @@ app.whenReady().then(async () => {
     createWindow();
     if (mainWindow) registerAllHandlers(mainWindow);
   }
+  // Phase 0: 注入状态变化 emitter。service 内 emitStateChange → 推 "state:changed" 给 renderer。
+  setStateEmitter((kind) => mainWindow?.webContents.send("state:changed", kind));
   console.error("[lookatstudy] window created, IPC registered");
 
   app.on("activate", () => {
@@ -445,23 +448,21 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: streakPresent === true,
   });
 
-  // T4a (P4 能力感): 等级徽章 + freeze 徽章 + ParticleFx 根(庆祝总线已挂载)
+  // T4a (P4 能力感): 等级徽章 + freeze 徽章(庆祝粒子层 CelebrationLayer 由 motion-infra 套件覆盖)
   const competenceBadges = await win.webContents.executeJavaScript(`
     (function() {
       var lvl = document.querySelector('[data-testid="level-badge"]');
       var frz = document.querySelector('[data-testid="freeze-badge"]');
-      var pfx = document.querySelector('[data-testid="particle-fx-root"]');
       return {
         levelBadge: !!lvl,
         levelText: lvl ? (lvl.textContent || "").trim() : null,
         freezeBadge: !!frz,
-        particleFxMounted: !!pfx,
       };
     })()
   `);
   results.push({
-    name: "level badge + freeze badge + ParticleFx mounted (P4 competence)",
-    ok: competenceBadges?.levelBadge === true && competenceBadges?.freezeBadge === true && competenceBadges?.particleFxMounted === true,
+    name: "level badge + freeze badge rendered (P4 competence)",
+    ok: competenceBadges?.levelBadge === true && competenceBadges?.freezeBadge === true,
     detail: competenceBadges,
   });
 

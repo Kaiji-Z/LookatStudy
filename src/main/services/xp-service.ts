@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
 import { settings as settingsTable } from "../db/schema.js";
+import { emitStateChange } from "../lib/state-emitter.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -60,6 +61,8 @@ export function addXp(db: Db, amount: number, now: Date = new Date()): number {
 
   // P4: 累计 XP(持久成长线,永不重置)。等级从中派生——区别于每日重置的"今日能量"。
   bumpTotalXp(db, safeAmount);
+  // Phase 0(main): 通知 renderer XP 变化(重拉能量条 + 触发庆祝)。所有 XP 来源都经此。
+  emitStateChange("xp");
 
   return next;
 }

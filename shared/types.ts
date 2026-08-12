@@ -649,4 +649,6 @@ export interface IpcEvents {
    * 与 chat:token 并存（兼容期），渲染层可二选一。M2 起优先用 chat:part。
    */
   "chat:part": (part: ChatStreamPart) => void;
+  /** main→renderer 状态变化推送(xp/streak/mastery 变化)。renderer 重拉 + 触发庆祝。 */
+  "state:changed": (kind: "xp" | "streak" | "mastery") => void;
 }

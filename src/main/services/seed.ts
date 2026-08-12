@@ -119,11 +119,15 @@ export function ensureSeedCourse(): void {
 
   // 版本号旧或不存在 → 删除旧种子课程(含 content_nodes 由 FK CASCADE,
   // 但 sql.js 的 FK 有时不稳,显式删更安全)
-  // 兼容清理:旧版种子 id 是 seed-fde-roadmap
-  const oldFde = db.select().from(courses).where(eq(courses.id, "seed-fde-roadmap")).get();
-  if (oldFde) {
-    db.delete(contentNodes).where(eq(contentNodes.courseId, "seed-fde-roadmap")).run();
-    db.delete(courses).where(eq(courses.id, "seed-fde-roadmap")).run();
+  // 兼容清理:旧版种子 id
+  const LEGACY_SEED_IDS = ["seed-fde-roadmap", "seed-ai-for-beginners"];
+  for (const oldId of LEGACY_SEED_IDS) {
+    const oldRow = db.select().from(courses).where(eq(courses.id, oldId)).get();
+    if (oldRow) {
+      db.delete(contentNodes).where(eq(contentNodes.courseId, oldId)).run();
+      db.delete(courses).where(eq(courses.id, oldId)).run();
+      console.error(`[lookatstudy] 清理旧种子课程: ${oldId}`);
+    }
   }
   if (existing) {
     db.delete(contentNodes).where(eq(contentNodes.courseId, COURSE_ID)).run();

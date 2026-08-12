@@ -206,6 +206,14 @@ Entry conventions for contributors:
   不硬依赖 README。无 LLM key 时纯规则降级(按目录分 section + 路径前缀图片关联)。
 
 ### Fixed
+- **清理预存类型债 + 2 个误标 knownFail**:
+  - `tsc --noEmit`(renderer)与 `tsc -p tsconfig.electron.json`(main)现在**零错误**(此前长期红的:
+    App.tsx 未用 `theme`、MapRail 未用 `PRESET_KEYS`/`index`/死代码 `MapNavBtn`+`statusClass`+`statusIcon`
+    + `pathLength` 样式类型、skyCanvas 的 `ctx` 可能 null(hoist 函数捕获 const 不收窄)+ 未用 `now` 参、
+    pptx-parser 的 `OfficeMimeType` 比较无重叠)。
+  - ui-test 的 T15(三区折叠)/T19(aria-expanded)长期标 knownFail,根因被记成"canvas 异步时序",
+    实为**种子课程无 canvas_item → notes tab 命中 total===0 空态、三区不渲染**。补播一条 canvas_item
+    后两测试真通过,移除 knownFail。ui-test 现 **knownFail=0 / realFails=0**。
 - **live-test 烟雾检查误判**:`verify-live-test-smoke.mjs` 的 API-key guard 模式只认
   `process.exit(0)`,但 `live-test-smart-import.mjs` 用的是合法的 `process.exit(1)`(缺 key 报错退出
   也是有效 guard),导致 verify:core 长期 33/34。改为认 `exit(0|1)`,verify:core 现在全绿。

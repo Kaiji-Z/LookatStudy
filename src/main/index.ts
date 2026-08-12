@@ -19,7 +19,7 @@ import { ensureExamNodesForExistingCourses } from "./services/course-generator.j
 import { loadEnv, getZaiConfig } from "./services/env.js";
 import { seedBuiltinSkills } from "./services/skills/skill-service.js";
 import { createProposal } from "./services/proposal-service.js";
-import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems } from "./db/schema.js";
+import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems } from "./db/schema.js";
 import { eq } from "drizzle-orm";
 
 // 主进程以 CJS 打包（见 vite.config.ts），__dirname 天然可用。
@@ -340,6 +340,24 @@ async function runUiTest(screenshot = false): Promise<void> {
       .run();
   } catch (e) {
     console.error("[lookatstudy] ui-test srs seed failed:", e);
+  }
+
+  // 笔记三区:为种子首课播一条 canvas_item。否则 notes tab 命中 total===0 空态、三区不渲染
+  // (此前 T15/T19 误标 knownFail 为"canvas 异步时序",实为 seed 无 canvas_item → 空态)。
+  try {
+    getDb()
+      .insert(canvasItems)
+      .values({
+        id: "ui-canvas-seed",
+        nodeId: "guide-les-1-1",
+        courseId: "seed-lookatstudy-guide",
+        artifactType: "concept_map",
+        title: "UI test seed",
+        data: "{}",
+      })
+      .run();
+  } catch (e) {
+    console.error("[lookatstudy] ui-test canvas seed failed:", e);
   }
 
   // 加载构建产物（不依赖 vite dev server，CI 友好）
@@ -845,8 +863,6 @@ async function runUiTest(screenshot = false): Promise<void> {
     name: "three zones (理解/记录/练习) collapsed by default after switching to notes tab",
     ok: zoneCollapse?.switched === true && zoneCollapse?.zones === 3 && zoneCollapse?.collapsed === 3,
     detail: zoneCollapse,
-    knownFail: true,
-    knownFailReason: "notebook 三区折叠状态依赖 canvas 异步加载，headless 时序不稳定",
   });
 
   // T16 (v0.8 a11y): 设置抽屉打开后具备 role=dialog + aria-modal(焦点管理语义)
@@ -931,9 +947,6 @@ async function runUiTest(screenshot = false): Promise<void> {
     name: "zone toggles expose aria-expanded (collapsible state for screen readers)",
     ok: zoneAria?.found === 3 && zoneAria?.withAriaExpanded === 3,
     detail: zoneAria,
-    // headless 时 canvas 异步可能让 zone 未渲染,与 T15 同源;标 knownFail 防误报
-    knownFail: true,
-    knownFailReason: "依赖 notes tab canvas 异步加载,headless 时序不稳定(同 T15)",
   });
 
   // T20 (P1.1/P1.3 冷启动门控闭环): 删除 provider + active_provider → 重载 → 选节点

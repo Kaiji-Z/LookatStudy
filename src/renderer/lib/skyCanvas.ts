@@ -374,7 +374,7 @@ let orbCaps: number[] = [];
 /* 雪盖:覆盖球顶一定比例,边缘用贝塞尔贴合球面弧线自然下垂收边,顶部微隆起。
    cov 控制覆盖比例(0.5 = 球顶 1/2),用宽度比例定义区域,避免角度参数化
    在 90° 时端点塌缩到中线的 bug。 */
-function drawSnowDome(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, cap: number, now: number) {
+function drawSnowDome(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, cap: number, _now: number) {
   const lift = r * (0.04 + cap * 0.05);   // 隆起:微凸出球顶
   const cov = 0.7 + cap * 0.15;           // 覆盖比例:0.7..0.85(球顶大半)
   // 雪线端点:按宽度比例定
@@ -469,7 +469,7 @@ function drawSplashes(ctx: CanvasRenderingContext2D, splashes: Splash[]) {
   ctx.restore();
 }
 
-function drawRainStreaks(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, streaks: OrbStreak[], now: number) {
+function drawRainStreaks(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, streaks: OrbStreak[], _now: number) {
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, r * 0.99, 0, Math.PI * 2);
@@ -658,8 +658,10 @@ export function attachSky(
   sizeEl: HTMLElement,
   preset: SkyPreset,
 ): () => void {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return () => {};
+  const ctx0 = canvas.getContext("2d");
+  if (!ctx0) return () => {};
+  // 下方 function 声明(hoist)捕获 ctx,TS 不对 const 做 hoist 收窄 → 显式非空类型固化。
+  const ctx: CanvasRenderingContext2D = ctx0;
   const sizeTarget = sizeEl;
   // 天空 canvas 永远是深色(夜空感)——浅色模式下也保留深色天空,不提亮。
   // 浅色模式的其他 UI(token/prose/组件)正常切浅色,但天空是沉浸场景保持深色。
@@ -765,8 +767,10 @@ export function attachOrbWeather(
   // 雪天/雨天之外不画(晴/多云:清完状态 + canvas 后早返回)
   if (preset.particles !== "rain" && preset.particles !== "snow") return () => {};
 
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return () => {};
+  const ctx0 = canvas.getContext("2d");
+  if (!ctx0) return () => {};
+  // 下方 function 声明(hoist)捕获 ctx,TS 不对 const 做 hoist 收窄 → 显式非空类型固化。
+  const ctx: CanvasRenderingContext2D = ctx0;
 
   let W = 0, H = 0, DPR = 1;
   let rafId = 0;

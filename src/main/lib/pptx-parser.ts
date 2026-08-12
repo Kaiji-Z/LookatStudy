@@ -51,7 +51,7 @@ export async function parsePptx(buf: Buffer): Promise<PptxProcessResult> {
       a?.type === "image" &&
       a.data &&
       a.mimeType &&
-      a.mimeType !== "application/octet-stream"
+      (a.mimeType as string) !== "application/octet-stream"
     ) {
       attMap.set(a.name, { buffer: Buffer.from(a.data, "base64"), mimeType: a.mimeType });
     }

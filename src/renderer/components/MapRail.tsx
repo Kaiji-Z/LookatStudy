@@ -7,7 +7,7 @@
  */
 import type { ContentNode, Progress, Course } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import {
@@ -15,7 +15,7 @@ import {
   balloonSegmentToPath,
   hashStr,
 } from "../lib/mapLayout.js";
-import { attachSky, attachOrbWeather, pickPreset, PRESETS, PRESET_KEYS, type SkyPreset, type OrbPos } from "../lib/skyCanvas.js";
+import { attachSky, attachOrbWeather, pickPreset, PRESETS, type SkyPreset, type OrbPos } from "../lib/skyCanvas.js";
 import { api } from "../lib/api.js";
 import { useLang } from "../lib/i18n.js";
 
@@ -576,7 +576,7 @@ function MapSection({
                 strokeDasharray={isPassed ? "none" : "3 7"}
                 style={
                   isPassed
-                    ? { pathLength: 1, animation: "path-draw 600ms var(--ease-out-expo)" }
+                    ? ({ pathLength: 1, animation: "path-draw 600ms var(--ease-out-expo)" } as CSSProperties)
                     : undefined
                 }
               />
@@ -606,7 +606,6 @@ function MapSection({
             >
               <MapNode
                 lesson={lesson}
-                index={i}
                 progress={progressMap[lesson.id]}
                 isSelected={lesson.id === selectedNodeId}
                 alwaysShowLabel={lesson.id === firstAvailableId}
@@ -625,7 +624,6 @@ function MapSection({
 /* ---------- 单个地图节点(多邻国式大圆球) ---------- */
 function MapNode({
   lesson,
-  index,
   progress,
   isSelected,
   alwaysShowLabel,
@@ -634,7 +632,6 @@ function MapNode({
   onClick,
 }: {
   lesson: ContentNode;
-  index: number;
   progress?: Progress;
   isSelected: boolean;
   /** P1.5 首个可学节点常显标题("从这里开始"指引)。 */
@@ -759,56 +756,7 @@ function MapNode({
   );
 }
 
-function MapNavBtn({
-  active,
-  onClick,
-  testid,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  testid: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      data-testid={testid}
-      className={`w-7 h-7 rounded-lg flex items-center justify-center text-body transition-colors ${
-        active
-          ? "bg-brand/15 text-brand"
-          : "text-white/50 hover:bg-white/10 hover:text-white/80"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 /* ---------- 样式辅助 ---------- */
-function statusClass(status: string): string {
-  switch (status) {
-    case "locked":
-      return "bg-white/10 text-white/40";
-    case "available":
-      return "bg-brand text-white";
-    case "in_progress":
-      return "bg-accent text-white";
-    case "mastered":
-      return "bg-gold text-neutral-900";
-    default:
-      return "bg-neutral-300 dark:bg-neutral-800";
-  }
-}
-function statusIcon(status: string): string {
-  switch (status) {
-    case "locked": return "🔒";
-    case "available": return "⭐";
-    case "in_progress": return "📖"; // 折叠态小圆球里用书 emoji(白色书页,对比足够)
-    case "mastered": return "👑";
-    default: return "•";
-  }
-}
 function bubbleClass(status: string): string {
   // 复用 v0.1 的 lesson-bubble 3D 样式(在 index.css)
   switch (status) {

@@ -111,8 +111,11 @@ function createWindow(): void {
 
 // 单实例锁:防止用户开多个主窗口(Windows 双击图标多次 / dev 叠加)。
 // 测试模式(--self-test / --ui-test)是独立 headless 实例,绕过锁,不和主窗口互斥。
+// dev 模式也绕过:dev 频繁重启,旧实例被 concurrently -k SIGTERM 后可能 zombie 持锁,
+// 导致重启时新实例 requestSingleInstanceLock() 拿不到锁立即 quit(表现:重启 dev 打不开、
+// electron exit 0 无任何日志)。production 打包后才需要锁(防用户双击多次开多窗口)。
 const isTestMode = process.argv.includes("--self-test") || process.argv.includes("--ui-test");
-if (!isTestMode) {
+if (!isTestMode && !isDev) {
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {
     // 自己是第二个实例,立即退出

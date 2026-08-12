@@ -18,11 +18,11 @@ import * as schema from "../../db/schema.js";
 import {
   settings as settingsTable,
   skills as skillsTable,
-  frictionLog,
 } from "../../db/schema.js";
 import { getActiveSkill } from "./skill-service.js";
 import { parseSkillFrontmatter } from "../pure/skill-frontmatter.js";
-import { randomUUID } from "node:crypto";
+// P3: friction 写入抽到 pure/(db 注入),本文件不再直接 insert frictionLog
+import { insertFrictionDb } from "../pure/friction-context.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -46,7 +46,7 @@ export function buildSystemPrompt(db: Db, basePrompt: string): string {
     .where(eq(skillsTable.name, activeName))
     .get();
   if (!row) {
-    logFriction(db, activeName, `active_skill "${activeName}" 不在 skills 表里，fallback 到 base prompt`);
+    logFriction(db, null, `active_skill "${activeName}" 不在 skills 表里，fallback 到 base prompt`);
     return basePrompt;
   }
 
@@ -88,13 +88,7 @@ function readFlag(db: Db): boolean {
   return row?.value === "true";
 }
 
-function logFriction(db: Db, nodeId: string, summary: string): void {
-  db.insert(frictionLog)
-    .values({
-      id: randomUUID(),
-      nodeId, // 复用字段记 skill 名（friction_log.node_id 可空）
-      category: "agent_error",
-      summary,
-    })
-    .run();
+function logFriction(db: Db, nodeId: string | null, summary: string): void {
+  // P3: 不再把 skill 名塞进 nodeId 列(agent_error 是系统级,nodeId 应留 null;真实节点卡点走 friction:log)。
+  insertFrictionDb(db, nodeId, "agent_error", summary);
 }

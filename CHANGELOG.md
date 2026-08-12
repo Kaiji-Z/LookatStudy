@@ -17,6 +17,14 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **激活 friction_log:让 AI 看见你的卡点(learning-experience Phase 3)**:此前 friction_log 表
+  设计完好却近乎空转——唯一写入方是 prompt-builder 的 agent_error,还把 nodeId 列复用存 skill 名;
+  人类卡点(confused/blocked/frustrated)从不被记录。现在:ChatComposer 加 🤔 "我卡住了" 入口
+  (选感受 + 可选一句)→ 写 friction_log;agent 下轮 system prompt 注入该节点近期人类卡点(排除系统
+  agent_error,上限 5 条),AI 据此调整讲法。这是 SDT relatedness 在 solo 学习 app 里的最可行代理——
+  一个"注意到你卡住并记得它"的 tutor,同时给自适应难度供数据。抽出 `pure/friction-context.ts`
+  (insertFrictionDb + buildFrictionContext,db 注入);修 prompt-builder 不再滥用 nodeId;
+  新增 `verify-friction.mjs`(break→fail 闭环验证)。
 - **冷启动沉浸(learning-experience Phase 1)**:点"开始学习"现在直接进入学习——先讲核心概念、
   再出一个检索题,而非"商量怎么学"(意志力最高的瞬间应进入学习本身)。修复无 AI key 时点🚀
   → 建空会话 → 报错 toast 的冷启动死胡同:无 key 时空状态改显"内容已在右侧,先读一读 +

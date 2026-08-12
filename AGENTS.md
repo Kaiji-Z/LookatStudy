@@ -69,9 +69,9 @@ npm run dev               # vite only (renderer debugging, HMR)
 npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
-npm run verify:core       # 40 pure-Node/tsx logic test suites
+npm run verify:core       # 41 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 24 DOM assertions incl. a11y + reactive i18n + cold-start gating)
+npm run ui-test           # real-GUI verification (headless Electron, 25 DOM assertions incl. a11y + reactive i18n + cold-start gating + friction entry)
 npm run lint              # oxlint
 npx tsc --noEmit                       # typecheck renderer
 npx tsc -p tsconfig.electron.json --noEmit  # typecheck main/preload
@@ -108,7 +108,7 @@ npm run verify:core && npx vite build && npm run self-test
 
 | Service | File | What it does |
 |---------|------|-------------|
-| Agent engine | `services/agent/agent-engine.ts` | `handleAgentChatThread` — thread-based context assembly, 5 display tools (`show_concept_map` / `generate_quiz` / `compare_table` / `draw_diagram` / `show_code_walkthrough`), `chat:part` emission, mastery-based teaching strategy |
+| Agent engine | `services/agent/agent-engine.ts` | `handleAgentChatThread` — thread-based context assembly, 5 display tools (`show_concept_map` / `generate_quiz` / `compare_table` / `draw_diagram` / `show_code_walkthrough`), `chat:part` emission, mastery-based teaching strategy; 注入近期 friction 卡点(`pure/friction-context.ts` buildFrictionContext)让 AI 看见学习者挣扎点 |
 | LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection`, `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels` |
 | LLM presets | `services/agent/llm-presets.ts` | 10 provider presets (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google) |
 | Threads | `services/thread-service.ts` | CRUD for `threads` + `chat_messages`; `findRecentThreadByNode`; thread is node-bound (`focus_node_id`) |
@@ -154,7 +154,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (40 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (41 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

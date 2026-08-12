@@ -97,6 +97,9 @@ import {
   updateMemory as updateMemoryService,
   getMemory as getMemoryService,
 } from "../services/search-service.js";
+// P3: friction_log 写入(纯函数,db 注入)
+import { insertFrictionDb } from "../services/pure/friction-context.js";
+import type { HumanFrictionCategory } from "@shared/types";
 // M4：Course Generator
 import { generateCourseFromMarkdown as generateCourseFromMarkdownService, generateCourseFromRepoFiles as generateCourseFromRepoFilesService, ensureExamNodesForExistingCourses } from "../services/course-generator.js";
 import {
@@ -1019,6 +1022,20 @@ export function registerM3Handlers(): void {
     };
     return searchContentService(sqljs, query);
   });
+
+  // P3: 学习者主动报"卡点" → 写 friction_log(供 agent 上下文自适应)。
+  ipcMain.handle(
+    "friction:log",
+    async (
+      _e,
+      nodeId: string | null,
+      category: HumanFrictionCategory,
+      summary: string | null,
+    ) => {
+      insertFrictionDb(getDb(), nodeId, category, summary);
+      markDirty();
+    },
+  );
 
   ipcMain.handle(
     "memory:update",

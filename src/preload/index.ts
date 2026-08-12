@@ -5,7 +5,7 @@
  * 渲染层通过 window.api.* 调用，无法直接访问 Node API。
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey, ExerciseType, CustomProviderInput, CanvasZone, NoteSourceAnchor } from "@shared/types";
+import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey, ExerciseType, CustomProviderInput, CanvasZone, NoteSourceAnchor, HumanFrictionCategory } from "@shared/types";
 
 const api = {
   /* 课程 */
@@ -140,6 +140,8 @@ const api = {
     ipcRenderer.invoke("proposal:reject", id)) as ApiExpose["rejectProposal"],
   recordQuizAnswer: ((nodeId: string, correct: boolean) =>
     ipcRenderer.invoke("quiz:recordAnswer", nodeId, correct)) as ApiExpose["recordQuizAnswer"],
+  logFriction: ((nodeId: string | null, category: HumanFrictionCategory, summary: string | null) =>
+    ipcRenderer.invoke("friction:log", nodeId, category, summary)) as ApiExpose["logFriction"],
 
   /* 仪表盘 + 检索 + 记忆（M3） */
   getDashboard: ((courseId: string) =>

@@ -41,6 +41,8 @@ import {
   createProposal,
   type LearningOperation,
 } from "../proposal-service.js";
+// P3: 注入学习者近期卡点,让 agent "看见并记住"挣扎点(relatedness + 自适应)
+import { buildFrictionContext } from "../pure/friction-context.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -194,13 +196,17 @@ export async function runAgentTurn(
   const mastery = nodeProgress?.mastery ?? null;
   const teachingStrategy = getTeachingStrategy(mastery);
 
+  // P3: 学习者近期在本节点的卡点(🤔 上报)。空字符串 = 无,不拼接。
+  const frictionContext = node ? buildFrictionContext(db, node.id) : "";
+
   const nodeContext = node
     ? `${courseContext}\n` +
       `当前学习节点：${node.title}（${node.type}）\n来源：${node.sourcePath ?? "(无)"}\n` +
       `内容：${node.content ?? "(尚未生成讲解，需要时基于标题引导)"}\n` +
       `学习者当前掌握度：${mastery != null ? mastery.toFixed(2) : "未知"}\n` +
       `进度状态：${nodeProgress?.status ?? "未开始"}\n\n` +
-      `教学策略指引：${teachingStrategy}`
+      `教学策略指引：${teachingStrategy}` +
+      (frictionContext ? `\n\n${frictionContext}` : "")
     : "(无当前节点上下文)";
 
   // 工具集：只读直接返回，写操作走 proposal

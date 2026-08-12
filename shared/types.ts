@@ -276,6 +276,9 @@ export interface NodeAsset {
  * 所有 IPC 调用都走 invoke/handle 模式。
  * 渲染层通过 preload 暴露的 window.api 调用。
  */
+/** 用户主动上报的卡点类型(写 friction_log,供 agent 上下文自适应)。 */
+export type HumanFrictionCategory = "confused" | "blocked" | "frustrated";
+
 export interface ApiExpose {
   /* 课程 */
   listCourses(): Promise<Course[]>;
@@ -456,6 +459,8 @@ export interface ApiExpose {
   rejectProposal(id: string): Promise<Proposal>;
   /** 本地评分的 quiz 产物答题观测 → 自动建+应用 update_mastery 提案(无需 LLM/人审)。 */
   recordQuizAnswer(nodeId: string, correct: boolean): Promise<{ applied: boolean; newMastery?: number }>;
+  /** 学习者主动报"卡点" → 写 friction_log(供 agent 上下文自适应)。nodeId 可空(课程级)。 */
+  logFriction(nodeId: string | null, category: HumanFrictionCategory, summary: string | null): Promise<void>;
 
   /* 仪表盘 + 检索 + 记忆（M3） */
   getDashboard(courseId: string): Promise<DashboardData>;

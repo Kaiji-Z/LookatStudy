@@ -10,8 +10,8 @@
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect } from "react";
-import { ArrowUp, Square, Compass, ClipboardCheck, Hammer, RefreshCw } from "lucide-react";
-import type { Skill, StarterPrompt } from "@shared/types";
+import { ArrowUp, Square, Compass, ClipboardCheck, Hammer, RefreshCw, HelpCircle } from "lucide-react";
+import type { Skill, StarterPrompt, HumanFrictionCategory } from "@shared/types";
 import { useLang } from "../lib/i18n.js";
 
 /** 模式名 → i18n key(短标签,显示在药丸里)。 */
@@ -48,6 +48,8 @@ interface ChatComposerProps {
   onPickSkill: (name: string) => void;
   onSend: (text: string) => void;
   onStop: () => void;
+  /** P3: 学习者报"卡点" → 写 friction_log(供 agent 上下文自适应)。无节点时不渲染入口。 */
+  onLogFriction?: (category: HumanFrictionCategory, summary: string | null) => void;
   onGotoSettings: () => void;
   /** 外部注入文字(哪里不会点哪里:右栏选中→追加到输入框)。每次变化触发追加。 */
   insertText?: string;
@@ -63,6 +65,7 @@ export function ChatComposer({
   onPickSkill,
   onSend,
   onStop,
+  onLogFriction,
   onGotoSettings,
   insertText,
 }: ChatComposerProps) {
@@ -80,6 +83,18 @@ export function ChatComposer({
     if (!input.trim() || streaming || !nodeId || !agentReady) return;
     onSend(input);
     setInput("");
+  };
+
+  // P3: 卡点上报(🤔)。选感受 + 可选一句话 → 写 friction_log,agent 下轮会"看见"并调整。
+  const [frictionOpen, setFrictionOpen] = useState(false);
+  const [frictionCat, setFrictionCat] = useState<HumanFrictionCategory | null>(null);
+  const [frictionText, setFrictionText] = useState("");
+  const handleSubmitFriction = () => {
+    if (!frictionCat || !onLogFriction) return;
+    onLogFriction(frictionCat, frictionText.trim() || null);
+    setFrictionOpen(false);
+    setFrictionCat(null);
+    setFrictionText("");
   };
 
   if (!agentReady) {
@@ -148,8 +163,64 @@ export function ChatComposer({
           </div>
         )}
 
-        {/* textarea + 发送钮:发送钮内嵌右下,圆形 */}
+        {/* P3: 卡点上报表单(🤔 展开时显示) */}
+        {frictionOpen && onLogFriction && nodeId && (
+          <div className="surface-card p-3 mb-2" data-testid="friction-form">
+            <div className="text-label text-ink-muted mb-2">{t("chat.friction.hint")}</div>
+            <div className="flex gap-1.5 mb-2">
+              {(["confused", "blocked", "frustrated"] as const).map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setFrictionCat(c)}
+                  data-testid={`friction-cat-${c}`}
+                  className={
+                    "shrink-0 text-body px-2.5 py-1 rounded-full transition-colors " +
+                    (frictionCat === c
+                      ? "bg-brand text-white font-bold"
+                      : "text-ink-muted hover:text-ink-strong hover:bg-ink/5")
+                  }
+                >
+                  {t(`chat.friction.${c}`)}
+                </button>
+              ))}
+            </div>
+            <input
+              value={frictionText}
+              onChange={(e) => setFrictionText(e.target.value)}
+              placeholder={t("chat.friction.desc_placeholder")}
+              className="w-full bg-transparent text-body rounded-lg px-1 py-1 mb-2 focus:outline-none placeholder:text-ink-faint"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setFrictionOpen(false)}
+                className="btn-3d-neutral px-3 py-1 text-label"
+              >
+                {t("chat.friction.cancel")}
+              </button>
+              <button
+                onClick={handleSubmitFriction}
+                disabled={!frictionCat}
+                data-testid="friction-submit"
+                className="btn-3d-brand px-3 py-1 text-label disabled:opacity-40"
+              >
+                {t("chat.friction.submit")}
+              </button>
+            </div>
+          </div>
+        )}
+        {/* textarea + 发送钮:发送钮内嵌右下,圆形。🤔 卡点入口在最左。 */}
         <div className="flex gap-2 items-end">
+          {onLogFriction && nodeId && (
+            <button
+              onClick={() => setFrictionOpen((o) => !o)}
+              title={t("chat.friction.trigger")}
+              aria-label={t("chat.friction.trigger")}
+              data-testid="friction-toggle"
+              className="shrink-0 w-9 h-9 rounded-full bg-neutral-200 dark:bg-neutral-700 text-ink-muted hover:text-ink-strong flex items-center justify-center transition-colors"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
+          )}
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}

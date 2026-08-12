@@ -620,6 +620,14 @@ export default function App() {
                 onPickSkill={handleSkillPick}
                 onSend={sendMessage}
                 onStop={chat.stop}
+                onLogFriction={
+                  selectedNodeId
+                    ? (category, summary) => {
+                        void api.logFriction(selectedNodeId, category, summary);
+                        toast.show(t("chat.friction.saved"), { duration: 2500 });
+                      }
+                    : undefined
+                }
                 onGotoSettings={() => setShowSettings(true)}
                 insertText={quoteText}
               />

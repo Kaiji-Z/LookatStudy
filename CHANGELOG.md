@@ -17,6 +17,13 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **PPTX(PowerPoint)本地导入支持**:新增 `.pptx` 格式。`lib/pptx-parser.ts` 用
+  officeparser(纯 JS, 无原生依赖)走 AST, 每张 slide 转一个 `##`(讲者备注用非标题
+  写法随 slide 走)→ 现有导入管线自动把每张 slide 变成一节课, 零新分块代码。内嵌图片
+  提取进 asset 管线(复用 pdf_page source, 避开 schema CHECK 迁移)。**已知局限**:
+  SmartArt/图表等复杂视觉只取文本(留给未来 vision 路径);仅 `.pptx`(老 `.ppt` 二进制
+  不支持);仅本地导入(GitHub PPTX 后续)。新增 `scripts/verify-pptx-parser.mjs`(devDep
+  pptxgenjs 测试内造 deck)。
 - **顶栏"今日能量"**:替换原"每日 XP / 目标"显示。能量值 = 今日所得 XP(`todayXp`),
   闪电图标(Zap)+ 进度条(软参考 100 满条,无配置目标)+ 数字。≥100 时 Zap 填充为实心
   表示"充满"。颜色用 brand 绿(PRODUCT.md:绿=进度/能量;gold 仍专属 mastery/crown)。

@@ -27,7 +27,7 @@ export interface ScannedDoc {
   /** 语言(zh/en/other),用于去重 */
   lang: "zh" | "en" | "other";
   /** 文件类型 */
-  kind: "txt" | "md" | "html" | "pdf" | "ipynb" | "rst" | "rmd" | "org" | "adoc" | "code";
+  kind: "txt" | "md" | "html" | "pdf" | "ipynb" | "rst" | "rmd" | "org" | "adoc" | "code" | "pptx";
 }
 
 /** 扫描到的图片资源(独立图片文件 / markdown 引用 / PDF 页面渲染图) */
@@ -59,6 +59,7 @@ const EXT_KIND: Record<string, ScannedDoc["kind"]> = {
   html: "html",
   htm: "html",
   pdf: "pdf",
+  pptx: "pptx",
   ipynb: "ipynb",
   rst: "rst",
   rmd: "rmd",
@@ -300,6 +301,34 @@ export async function scanFolder(
     }
   }
 
+  // 3b. PPTX 内嵌图片提取(每 slide 的图片对象)
+  // 复用 source="pdf_page"(都是 buffer 提取的文档图 + 带 page/slide 号);不新增
+  // "pptx_slide" kind —— schema.sql node_assets 有 CHECK 约束, 改了存量 DB 迁移不了。
+  // pageNumber 存 slideNumber。语义小瑕疵(slide 复用 pdf_page 标签)用此注释说明。
+  const pptxImages: ScannedImage[] = [];
+  for (const doc of dedupedDocs) {
+    if (doc.kind !== "pptx") continue;
+    try {
+      const { parsePptx } = await import("../../lib/pptx-parser.js");
+      const pptxBuf = await readFile(join(rootDir, doc.path));
+      const result = await parsePptx(pptxBuf);
+      for (const img of result.images) {
+        pptxImages.push({
+          path: `${doc.path}#slide${img.slideNumber}.png`,
+          absPath: "", // buffer 型, 无源文件
+          title: `${doc.title} - 图(第${img.slideNumber}页)`,
+          mime: img.mimeType,
+          source: "pdf_page" as const, // 复用(见上注释)
+          altText: `${doc.title} 第${img.slideNumber}页`,
+          buffer: img.buffer,
+          pageNumber: img.slideNumber,
+        });
+      }
+    } catch {
+      // PPTX 图片提取失败跳过(文字已在 doc.content 里)
+    }
+  }
+
   // 4. ipynb output 图片提取(notebook 的 code cell 执行输出图)
   const notebookImages: ScannedImage[] = [];
   for (const doc of dedupedDocs) {
@@ -326,7 +355,7 @@ export async function scanFolder(
   }
 
   // 全部图片合并(PDF/notebook 图用唯一 path,不会和文件图冲突)
-  const images = [...dedupedFileAndRefImages, ...pdfImages, ...notebookImages];
+  const images = [...dedupedFileAndRefImages, ...pdfImages, ...pptxImages, ...notebookImages];
 
   return { docs: dedupedDocs, images };
 }
@@ -506,6 +535,13 @@ async function readFileWithKind(absPath: string, kind: ScannedDoc["kind"]): Prom
     const pdfParse = require("pdf-parse") as (data: Buffer) => Promise<{ text: string }>;
     const data = await pdfParse(buf);
     return data.text.trim();
+  }
+  if (kind === "pptx") {
+    // .pptx → officeparser AST → markdown(每 slide 一个 ##, 讲者备注随 slide 走)。
+    // 现有导入管线按 ## 切, 自动每 slide 一节课。图片在下面 pptxImages 循环单独提取。
+    const buf = await readFile(absPath);
+    const { parsePptx } = await import("../../lib/pptx-parser.js");
+    return (await parsePptx(buf)).markdown;
   }
   if (kind === "ipynb") {
     // .ipynb 是 JSON,用 notebook-parser 转成 markdown(markdown cell + code block)

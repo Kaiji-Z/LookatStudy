@@ -17,6 +17,13 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **毕业时刻 + ParticleFx 庆祝(learning-experience Phase 4b)**:mastery 跨过 0.9 → mastered 此前**静默**
+  发生(数据库里改一行,用户无感)——最该有的"我做到了"峰值缺失。现在:quiz:recordAnswer 返回
+  `mastered` 过渡标志(检测本次从非mastered→mastered);答对/毕业经 `celebrate` 事件总线驱动 ParticleFx
+  (CSS 粒子爆发,有品味、非随机盲盒,受 prefers-reduced-motion 约束)+ 顶栏 toast `👑 你掌握了这一课`。
+  AI 主动 mark_mastered 被应用也触发庆祝。新增 `lib/celebrate.ts`(EventTarget 总线,零依赖);
+  ParticleFx 从 no-op 桩落地为真实 CSS 实现(playSfx 音效仍按 PRODUCT.md 留作专门设计 pass)。
+  verify-proposals T10(毕业过渡:2 次答对→mastered+crown5+mastery≥0.9);ui-test T4a 加 ParticleFx 挂载断言。
 - **能力感反馈:累计 XP + 等级 + freeze 可见(learning-experience Phase 4)**:此前 XP 午夜清零、无等级
   /累计——Duolingo 式最高的"升级"峰值完全缺失;freeze 默认 2 但从不渲染(安全网不可见)。现在:
   addXp 同写持久 `total_xp`(永不重置,跨天保留),由二次曲线派生等级(50·L²:L1=50,L2=200,L5=1250,

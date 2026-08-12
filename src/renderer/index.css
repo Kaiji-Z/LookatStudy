@@ -714,3 +714,29 @@ html.light ::-webkit-scrollbar-thumb:hover {
   }
   /* 天空 canvas:skyCanvas.ts 检测 reduced-motion 后只画单帧(不跑连续 rAF) */
 }
+
+/* ============================================================
+ * ParticleFx(P4 能力感即时反馈):有品味的 CSS 粒子爆发。
+ * 触发是确定性学习成就(答对/毕业/解锁),非随机盲盒(PRODUCT.md 反暗黑模式)。
+ * 受上面 prefers-reduced-motion 统一约束(无障碍:用户关动效时近乎瞬完)。
+ * ============================================================ */
+@keyframes particle-fx-fly {
+  0% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--tx, 0px)), var(--ty, 0px)) scale(0.2);
+    opacity: 0;
+  }
+}
+.particle-fx-dot {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  animation: particle-fx-fly 800ms var(--ease-out-expo, ease-out) forwards;
+  will-change: transform, opacity;
+}

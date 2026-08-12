@@ -20,6 +20,7 @@ import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } f
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote } from "lucide-react";
 import { useLang } from "../lib/i18n.js";
+import { celebrate } from "../lib/celebrate.js";
 
 export type NotebookTab = "content" | "notes";
 
@@ -679,9 +680,15 @@ function CanvasItemCard({
   const [draft, setDraft] = useState(item.notes ?? "");
   // quiz 产物答题 → 触发 mastery 更新 + 记录 last_result
   const handleQuizAnswered = useCallback(
-    (_q: { prompt: string }, _idx: number, correct: boolean) => {
+    async (_q: { prompt: string }, _idx: number, correct: boolean) => {
+      celebrate(correct ? "correct" : "wrong");
       if (item.nodeId) {
-        api.recordQuizAnswer(item.nodeId, correct).catch(() => {});
+        try {
+          const r = await api.recordQuizAnswer(item.nodeId, correct);
+          if (r?.mastered) celebrate("mastered");
+        } catch {
+          /* 静默:庆祝不该因 IPC 失败阻塞主流程 */
+        }
       }
       onRecordQuizResult(item.id, correct);
     },

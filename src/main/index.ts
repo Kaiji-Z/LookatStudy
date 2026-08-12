@@ -409,21 +409,23 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: streakPresent === true,
   });
 
-  // T4a (P4 能力感): 等级徽章 + freeze 徽章渲染(累计 XP/等级 + 可见安全网)
+  // T4a (P4 能力感): 等级徽章 + freeze 徽章 + ParticleFx 根(庆祝总线已挂载)
   const competenceBadges = await win.webContents.executeJavaScript(`
     (function() {
       var lvl = document.querySelector('[data-testid="level-badge"]');
       var frz = document.querySelector('[data-testid="freeze-badge"]');
+      var pfx = document.querySelector('[data-testid="particle-fx-root"]');
       return {
         levelBadge: !!lvl,
         levelText: lvl ? (lvl.textContent || "").trim() : null,
         freezeBadge: !!frz,
+        particleFxMounted: !!pfx,
       };
     })()
   `);
   results.push({
-    name: "level badge + freeze badge rendered (P4 competence)",
-    ok: competenceBadges?.levelBadge === true && competenceBadges?.freezeBadge === true,
+    name: "level badge + freeze badge + ParticleFx mounted (P4 competence)",
+    ok: competenceBadges?.levelBadge === true && competenceBadges?.freezeBadge === true && competenceBadges?.particleFxMounted === true,
     detail: competenceBadges,
   });
 

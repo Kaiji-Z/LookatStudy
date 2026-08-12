@@ -22,6 +22,7 @@ import { ArtifactRenderer } from "./artifacts/index.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { useLang } from "../lib/i18n.js";
+import { celebrate } from "../lib/celebrate.js";
 /** 一条消息 = role + parts 数组(v0.2 parts-based)。 */
 export interface ChatMessageV2 {
   id: string;
@@ -71,9 +72,14 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
   const t = useLang();
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
-    (_q: { prompt: string }, _idx: number, correct: boolean) => {
-      if (selectedNodeId) {
-        api.recordQuizAnswer(selectedNodeId, correct).catch(() => {});
+    async (_q: { prompt: string }, _idx: number, correct: boolean) => {
+      if (!selectedNodeId) return;
+      celebrate(correct ? "correct" : "wrong");
+      try {
+        const r = await api.recordQuizAnswer(selectedNodeId, correct);
+        if (r?.mastered) celebrate("mastered");
+      } catch {
+        /* 静默:庆祝不该因 IPC 失败阻塞主流程 */
       }
     },
     [selectedNodeId],

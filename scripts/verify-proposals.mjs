@@ -142,4 +142,26 @@ assert.ok(px1mastery >= 0.5, `T9: 课1 mastery 应 ≥0.5, 实际 ${px1mastery}`
 assert.strictEqual(px2status, "available", "T9: proposal update_mastery 级联 → 课2 应解锁 available");
 console.log(`✓ T9 proposal 级联解锁: update_mastery(px-1)→mastery=${px1mastery.toFixed(2)}→px-2 unlocked`);
 
+// === T10 (P4 毕业检测): update_mastery 反复答对让 mastery 跨过 0.9 → 自动 status=mastered + crown=5。
+//     quiz:recordAnswer 的 mastered flag 就是检测这个过渡(本次从非mastered→mastered)。 ===
+const { db: dbG } = await makeDb();
+let masteredAt = -1;
+for (let i = 0; i < 10; i++) {
+  const pg = createProposal(dbG, {
+    nodeId: "n1",
+    operations: [{ type: "update_mastery", nodeId: "n1", correct: true }],
+  });
+  applyProposal(dbG, pg.id);
+  if (getProgress(dbG, "n1")?.status === "mastered") {
+    masteredAt = i;
+    break;
+  }
+}
+assert.ok(masteredAt >= 0, "T10: 反复答对应最终毕业(status=mastered)");
+const gm = getProgress(dbG, "n1");
+assert.strictEqual(gm.status, "mastered", "T10: 毕业后 status=mastered");
+assert.strictEqual(gm.crownLevel, 5, "T10: 毕业后 crown=5");
+assert.ok(gm.mastery && gm.mastery >= 0.9, `T10: 毕业后 mastery≥0.9, 实际 ${gm.mastery}`);
+console.log(`✓ T10 毕业过渡: ${masteredAt + 1} 次答对后 status=mastered, crown=5, mastery=${gm.mastery.toFixed(3)}`);
+
 console.log("\n=== ALL PROPOSAL TESTS PASSED ✅ ===");

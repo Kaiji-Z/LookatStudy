@@ -993,6 +993,9 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   // 答题观测是确定性的(无需 LLM 判断/人审),直接 apply。
   ipcMain.handle("quiz:recordAnswer", async (_e, nodeId: string, correct: boolean) => {
     if (!nodeId) return { applied: false };
+    // P4: 记录应用前 status,用于检测"毕业时刻"过渡(mastered flag 驱动庆祝)。
+    const prevRow = getDb().select().from(progressTable).where(eq(progressTable.nodeId, nodeId)).get();
+    const wasMastered = prevRow?.status === "mastered";
     const proposal = createProposalService(getDb(), {
       nodeId,
       operations: [{ type: "update_mastery", nodeId, correct }],
@@ -1002,9 +1005,10 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
     // P2 闭环:quiz 答题经 service 直接 apply(不经 proposal:apply IPC),这里补 SRS 写。
     recordReview(nodeId, (correct ? 5 : 2) as ReviewQuality);
     markDirty();
-    // 读回新 mastery(UI 可选展示)
+    // 读回新 mastery + 检测毕业过渡(mastered=true 仅在本次从非 mastered → mastered)
     const row = getDb().select().from(progressTable).where(eq(progressTable.nodeId, nodeId)).get();
-    return { applied: true, newMastery: row?.mastery ?? undefined };
+    const mastered = !wasMastered && row?.status === "mastered";
+    return { applied: true, newMastery: row?.mastery ?? undefined, mastered };
   });
 }
 

@@ -458,7 +458,7 @@ export interface ApiExpose {
   applyProposal(id: string): Promise<Proposal>;
   rejectProposal(id: string): Promise<Proposal>;
   /** 本地评分的 quiz 产物答题观测 → 自动建+应用 update_mastery 提案(无需 LLM/人审)。 */
-  recordQuizAnswer(nodeId: string, correct: boolean): Promise<{ applied: boolean; newMastery?: number }>;
+  recordQuizAnswer(nodeId: string, correct: boolean): Promise<{ applied: boolean; newMastery?: number; mastered?: boolean }>;
   /** 学习者主动报"卡点" → 写 friction_log(供 agent 上下文自适应)。nodeId 可空(课程级)。 */
   logFriction(nodeId: string | null, category: HumanFrictionCategory, summary: string | null): Promise<void>;
 

@@ -13,6 +13,8 @@ import type {
   XpStatus,
 } from "@shared/types";
 import { MapRail, type MapView } from "./components/MapRail.js";
+import { ParticleFx } from "./components/ParticleFx.js";
+import { celebrate, onCelebration } from "./lib/celebrate.js";
 import { GlobalTooltip } from "./components/GlobalTooltip.js";
 import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
 import { useCanvas } from "./lib/useCanvas.js";
@@ -352,8 +354,12 @@ export default function App() {
   const handleApplyProposal = useCallback(
     async (proposalId: string, msgId: string, toolCallIdx: number) => {
       try {
-        await api.applyProposal(proposalId);
+        const result = await api.applyProposal(proposalId);
         chat.markProposalStatus(msgId, toolCallIdx, true);
+        // P4: AI 主动 mark_mastered 被应用 → 庆祝毕业
+        if (result?.operations?.some((op) => op.type === "mark_mastered")) {
+          celebrate("mastered");
+        }
       } catch (e) {
         setErrorFromThrow(e);
       }
@@ -423,6 +429,17 @@ export default function App() {
   // ref 桥接:让 handleStartLearning(定义在 toast 之前)能调用 sendMessage(定义在 toast 之后)
   sendRef.current = sendMessage;
 
+  // P4: 订阅庆祝总线——毕业时刻(mastered)弹 toast;ParticleFx 自己订阅播粒子。
+  // (toast 在上面才声明,故这个 effect 排在 toast 之后——同 sendRef 桥接模式。)
+  useEffect(() => {
+    const unsub = onCelebration((type) => {
+      if (type === "mastered") {
+        toast.show(t("chat.mastered.toast"), { duration: 3000 });
+      }
+    });
+    return unsub;
+  }, [toast, t]);
+
   // M2: 从对话流提取展示型 tool 产物 → 自动持久化到 canvas_items
   const artifacts = useMemo(() => extractArtifacts(chat.messages), [chat.messages]);
   const savedArtifactKeysRef = useRef<Set<string>>(new Set());
@@ -461,6 +478,7 @@ export default function App() {
 
   return (
     <div className="h-screen flex bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
+      <ParticleFx />
       {/* 左栏:MapRail 全高(顶到底),tab 切换地图/导入 */}
       {leftPaneVisible && (
         <MapRail

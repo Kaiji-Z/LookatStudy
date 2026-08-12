@@ -17,6 +17,12 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **PDF 文本提取改用 pdf-inspector(layout-aware)**:本地 PDF 导入的文本提取从 `pdf-parse`
+  改为优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 +
+  多栏阅读顺序), 失败/平台不支持(Intel Mac/Windows ARM 无预编译)时自动回退 `pdf-parse`。
+  PDF 图片提取不变(仍走 `lib/pdf-renderer.ts`)。**已知局限**: 不解码数学公式(文本层赛道
+  本质局限, STEM 教材留给未来 vision 渲染路径)。新增 `scripts/verify-pdf-text.mjs`;
+  `LOOKATSTUDY_NO_PDF_INSPECTOR=1` 可强制走 pdf-parse(测试/调试)。
 - **响应式 i18n(中英文全量提取)**:`lib/i18n.ts` 重写为 `useSyncExternalStore` 响应式
   store,新增 `useLang()` hook(身份稳定,可安全入 useCallback 依赖)。切换语言即时重渲染,
   **移除 `SettingsView` 的 `window.location.reload()` hack**。字典从 ~40 key 扩展到 ~120 key

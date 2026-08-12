@@ -135,7 +135,8 @@ npm run verify:core && npx vite build && npm run self-test
 | Export | `services/export-service.ts` | JSON + Markdown learning report export |
 | Starter prompts | `services/starter-prompts-service.ts` | Mastery-based prompt suggestions |
 | Multimodal assets | `services/asset-service.ts` | `node_assets` CRUD — 图片/PDF 渲染图元数据(二进制存 `userData/assets/{courseId}/`,不入 DB blob);`listAssetsByNode` / `getAssetDataUrl` (base64) |
-| PDF renderer | `lib/pdf-renderer.ts` | pdfjs-dist 封装:PDF 文字提取 + 内嵌图片提取(纯 JS PNG 编码,无 canvas 依赖);`classifyPdfPageByTextRatio` 判断纯文字/纯图片/混合 |
+| PDF text | `lib/pdf-text.ts` | `parsePdfText(buf)` — PDF **文本**提取路由:优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 + 多栏阅读顺序), 失败/平台不支持(Intel Mac/WinARM 无预编译)回退 `pdf-parse`;`LOOKATSTUDY_NO_PDF_INSPECTOR=1` 强制回退。**已知局限:不解码数学公式**(文本层赛道本质局限, STEM 留给未来 vision 路径) |
+| PDF renderer | `lib/pdf-renderer.ts` | pdfjs-dist 封装:**内嵌图片提取**(纯 JS PNG 编码,无 canvas 依赖);`classifyPdfPageByTextRatio` 判断纯文字/纯图片/混合。文字提取已移至 `lib/pdf-text.ts`,本文件现仅图片 |
 | Notebook parser | `services/pure/notebook-parser.ts` | Jupyter `.ipynb` JSON 解析:markdown cell 原文 + code cell → ```代码块 + output 图片提取(base64);`inferLanguage` 从 kernelspec 推断语言 |
 | RST parser | `services/pure/rst-parser.ts` | reStructuredText → markdown:标题下划线/code-block/image/note admonition/行内角色 |
 | RMD parser | `services/pure/rmd-parser.ts` | R Markdown → markdown:剥 YAML front matter + ```{r} chunk 归一化 |

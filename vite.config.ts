@@ -41,7 +41,8 @@ export default defineConfig({
             rollupOptions: {
               // sql.js 用 require.resolve 运行时定位 wasm，不能被 bundle
               // pdf-parse 内部用 require 动态加载,external 避免打包冲突
-              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse"],
+              // @firecrawl/pdf-inspector 是 napi .node 二进制, 运行时 require, 不能 bundle
+              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse", "@firecrawl/pdf-inspector"],
               output: {
                 format: "cjs", // CJS 让 __dirname 天然可用，避免 ESM 路径坑
               },

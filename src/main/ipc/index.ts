@@ -905,6 +905,7 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
       id: p.id,
       label: p.label,
       protocol: p.protocol,
+      baseUrl: p.baseUrl,
       defaultModel: p.defaultModel,
       models: p.models,
       apiKeySetting: p.apiKeySetting,

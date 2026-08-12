@@ -239,293 +239,181 @@ export function SettingsView() {
     <div className="space-y-6">
       <h2 className="text-xl font-extrabold text-neutral-900 dark:text-neutral-100 tracking-tight">设置</h2>
 
-      {/* Provider 选择 */}
+      {/* Provider + Model + Key + Test 合并为一个折叠区 */}
       <section className="surface-card p-4">
         <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-3">AI 服务商（Provider）</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" data-testid="provider-grid">
+
+        {/* Provider 单行按钮列表 */}
+        <div className="flex flex-wrap gap-1.5 mb-1" data-testid="provider-grid">
           {presets.map((p) => (
             <button
               key={p.id}
               onClick={() => handleProviderChange(p.id)}
               data-testid={`provider-card-${p.id}`}
-              className={`text-left p-3 rounded-lg border transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-label font-medium whitespace-nowrap transition-colors ${
                 activeProvider === p.id
-                  ? "border-brand bg-brand/10"
-                  : "border-neutral-300 dark:border-neutral-700 hover:border-neutral-600"
+                  ? "bg-brand text-white"
+                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700"
               }`}
             >
-              <div className="text-body font-medium text-neutral-900 dark:text-neutral-100">{p.label}</div>
-              {p.note && <div className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-0.5">{p.note}</div>}
+              {p.label}
             </button>
           ))}
-          {/* 自定义 provider 卡片 */}
           {customProviders.map((c) => (
             <button
               key={c.id}
               onClick={() => handleProviderChange(c.id)}
               data-testid={`provider-card-${c.id}`}
-              className={`text-left p-3 rounded-lg border transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-label font-medium whitespace-nowrap transition-colors ${
                 activeProvider === c.id
-                  ? "border-brand bg-brand/10"
-                  : "border-neutral-300 dark:border-neutral-700 hover:border-neutral-600"
+                  ? "bg-brand text-white"
+                  : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-700"
               }`}
             >
-              <div className="text-body font-medium text-neutral-900 dark:text-neutral-100">🔧 {c.label}</div>
-              <div className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-0.5 truncate">{c.baseUrl}</div>
+              🔧 {c.label}
             </button>
           ))}
-          {/* 添加自定义 provider 按钮 */}
           <button
             onClick={() => setShowCustomForm((s) => !s)}
             data-testid="add-custom-provider"
-            className="text-left p-3 rounded-lg border border-dashed border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:border-neutral-500 hover:text-neutral-700 dark:text-neutral-300"
+            className="px-3 py-1.5 rounded-lg text-label whitespace-nowrap border border-dashed border-neutral-400 text-neutral-500 hover:border-neutral-500"
           >
-            <div className="text-body">＋ 添加自定义 Provider</div>
-            <div className="text-label text-neutral-600 mt-0.5">智谱 CodingPlan / Ollama / 自建代理 等</div>
+            ＋ 自定义
           </button>
         </div>
 
         {/* 自定义 provider 添加表单 */}
         {showCustomForm && (
-          <div className="mt-4 p-4 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-300 dark:border-neutral-700 space-y-3" data-testid="custom-provider-form">
-            <h4 className="text-body font-semibold text-neutral-700 dark:text-neutral-200">添加自定义 Provider</h4>
-            <div>
-              <label className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 block mb-1">名称（自己起个名字）</label>
-              <input
-                type="text"
-                value={customLabel}
-                onChange={(e) => setCustomLabel(e.target.value)}
-                placeholder="如：智谱 CodingPlan CN"
-                data-testid="custom-label"
-                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 block mb-1">协议</label>
-              <select
-                value={customProtocol}
-                onChange={(e) => setCustomProtocol(e.target.value as "openai-compatible" | "anthropic" | "google")}
-                data-testid="custom-protocol"
-                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
-              >
-                <option value="openai-compatible">OpenAI 兼容（大多数，含 GLM/DeepSeek/Ollama）</option>
-                <option value="anthropic">Anthropic（Claude 原生）</option>
-                <option value="google">Google（Gemini 原生）</option>
+          <div className="mt-3 p-3 bg-neutral-100 dark:bg-neutral-900 rounded-lg border border-neutral-300 dark:border-neutral-700 space-y-2.5" data-testid="custom-provider-form">
+            <div className="flex gap-2">
+              <input type="text" value={customLabel} onChange={(e) => setCustomLabel(e.target.value)} placeholder="名称" data-testid="custom-label" className="flex-1 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none" />
+              <select value={customProtocol} onChange={(e) => setCustomProtocol(e.target.value as "openai-compatible" | "anthropic" | "google")} data-testid="custom-protocol" className="bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none">
+                <option value="openai-compatible">OpenAI 兼容</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="google">Google</option>
               </select>
             </div>
-            <div>
-              <label className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 block mb-1">Base URL（端点地址）</label>
-              <input
-                type="text"
-                value={customBaseUrl}
-                onChange={(e) => setCustomBaseUrl(e.target.value)}
-                placeholder="如 https://api.z.ai/api/coding/paas/v4"
-                data-testid="custom-baseurl"
-                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono"
-              />
-              <p className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-1">
-                智谱 CodingPlan CN: <code>https://api.z.ai/api/coding/paas/v4</code> ·
-                Ollama: <code>http://localhost:11434/v1</code>
-              </p>
+            <input type="text" value={customBaseUrl} onChange={(e) => setCustomBaseUrl(e.target.value)} placeholder="Base URL（如 https://api.example.com/v1）" data-testid="custom-baseurl" className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono" />
+            <div className="flex gap-2">
+              <input type="text" value={customModel} onChange={(e) => setCustomModel(e.target.value)} placeholder="模型 ID" data-testid="custom-model" className="flex-1 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono" />
+              <input type="password" value={customApiKey} onChange={(e) => setCustomApiKey(e.target.value)} placeholder="API Key（可选）" data-testid="custom-apikey" className="flex-1 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none" />
             </div>
-            <div>
-              <label className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 block mb-1">默认模型 ID</label>
-              <input
-                type="text"
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-                placeholder="如 glm-4.6 / gpt-4o / qwen2.5-coder:7b"
-                data-testid="custom-model"
-                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono"
-              />
-            </div>
-            <div>
-              <label className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 block mb-1">API Key（本地模型可留空）</label>
-              <input
-                type="password"
-                value={customApiKey}
-                onChange={(e) => setCustomApiKey(e.target.value)}
-                placeholder="粘贴 API key（Ollama/LM Studio 不需要）"
-                data-testid="custom-apikey"
-                className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
-              />
-            </div>
-            {/* 测试结果 */}
             {customTestResult && (
-              <div className={`text-body rounded p-2 ${customTestResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning"}`}>
-                {customTestResult.ok ? "✅" : "❌"} {customTestResult.detail}
-              </div>
+              <div className={`text-label rounded p-2 ${customTestResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning"}`}>{customTestResult.ok ? "✅" : "❌"} {customTestResult.detail}</div>
             )}
             <div className="flex gap-2">
-              <button
-                onClick={handleTestCustom}
-                disabled={!customBaseUrl.trim() || !customModel.trim() || customTesting}
-                data-testid="custom-test"
-                className="btn-3d-neutral px-3 py-2 text-body disabled:opacity-40"
-              >
-                {customTesting ? "测试中…" : "测试连接"}
-              </button>
-              <button
-                onClick={handleSaveCustom}
-                disabled={!customLabel.trim() || !customBaseUrl.trim() || !customModel.trim()}
-                data-testid="custom-save"
-                className="btn-3d-brand px-3 py-2 text-body disabled:opacity-40"
-              >
-                保存
-              </button>
-              <button
-                onClick={() => setShowCustomForm(false)}
-                className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 px-3 py-2 transition-colors"
-              >
-                取消
-              </button>
+              <button onClick={handleTestCustom} disabled={!customBaseUrl.trim() || !customModel.trim() || customTesting} data-testid="custom-test" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">{customTesting ? "测试中…" : "测试连接"}</button>
+              <button onClick={handleSaveCustom} disabled={!customLabel.trim() || !customBaseUrl.trim() || !customModel.trim()} data-testid="custom-save" className="btn-3d-brand px-3 py-1.5 text-label disabled:opacity-40">保存</button>
+              <button onClick={() => setShowCustomForm(false)} className="text-label text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 px-3 py-1.5">取消</button>
             </div>
           </div>
         )}
 
-        {/* 已添加的自定义 provider 列表（带删除） */}
-        {customProviders.length > 0 && (
-          <div className="mt-3 space-y-1">
-            {customProviders.map((c) => (
-              <div key={c.id} className="flex items-center justify-between text-label bg-neutral-100 dark:bg-neutral-950/50 px-3 py-1.5 rounded">
-                <span className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">🔧 {c.label} · {c.protocol}</span>
-                <button
-                  onClick={(e) => {
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setConfirmDelete({ id: c.id, label: c.label, rect });
-                  }}
-                  className="text-warning hover:underline font-bold"
-                >
-                  删除
-                </button>
+        {/* 已添加的自定义 provider 删除入口 */}
+        {customProviders.length > 0 && activeProvider.startsWith("custom-") && (
+          <div className="mt-2">
+            <button
+              onClick={(e) => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); const c = customProviders.find((x) => x.id === activeProvider); if (c) setConfirmDelete({ id: c.id, label: c.label, rect }); }}
+              className="text-label text-warning hover:underline"
+            >删除此自定义 Provider</button>
+          </div>
+        )}
+
+        {/* 选中 provider 的展开配置区 */}
+        {currentPreset && (
+          <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 space-y-3">
+            {/* Base URL */}
+            {currentPreset.baseUrl && (
+              <div className="flex items-center gap-2">
+                <span className="text-label text-neutral-500 dark:text-neutral-500 shrink-0">Base URL</span>
+                <code className="text-label text-neutral-600 dark:text-neutral-400 font-mono break-all">{currentPreset.baseUrl}</code>
               </div>
-            ))}
+            )}
+
+            {/* Model 选择 */}
+            <div className="flex items-center gap-2">
+              <span className="text-label text-neutral-500 dark:text-neutral-500 shrink-0 w-12">Model</span>
+              <div className="flex-1 flex items-center gap-2">
+                <select
+                  value={activeModel}
+                  onChange={(e) => setActiveModel(e.target.value)}
+                  data-testid="model-select"
+                  className="flex-1 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
+                >
+                  {currentPreset.models.map((m) => (
+                    <option key={m.id} value={m.id}>{m.id}</option>
+                  ))}
+                  {activeProvider === "openrouter" && discoveredModels.map((m) => (
+                    <option key={m.id} value={m.id}>{m.id}</option>
+                  ))}
+                </select>
+                {activeProvider === "openrouter" && (
+                  <button onClick={handleDiscoverModels} disabled={discovering} data-testid="discover-models-btn" className="text-label text-accent hover:underline disabled:opacity-40 whitespace-nowrap">
+                    {discovering ? "刷新中…" : "🔄 刷新"}
+                  </button>
+                )}
+              </div>
+            </div>
+            {discoverError && <div className="text-label text-neutral-600 ml-14">{discoverError}</div>}
+
+            {/* API Key */}
+            <div className="flex items-center gap-2">
+              <span className="text-label text-neutral-500 dark:text-neutral-500 shrink-0 w-12">API Key</span>
+              <div className="flex-1 flex items-center gap-2">
+                {keyMasked && <span className="text-label text-brand shrink-0">✅ {keyMasked}</span>}
+                <input
+                  type="password"
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  placeholder={keyMasked ? "覆盖…" : "粘贴 key"}
+                  data-testid="settings-key-input"
+                  className="flex-1 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
+                />
+                <a href={currentPreset.keyUrl} target="_blank" rel="noopener noreferrer" className="text-label text-brand hover:underline whitespace-nowrap">获取 →</a>
+              </div>
+            </div>
+
+            {/* 测试连接 */}
+            <div className="flex items-center gap-3">
+              <button onClick={handleTest} disabled={testing} data-testid="test-connection-btn" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">
+                {testing ? "测试中…" : "测试连接"}
+              </button>
+              {testResult && (
+                <span className={`text-label ${testResult.ok ? "text-brand" : "text-warning"}`}>
+                  {testResult.ok ? "✅" : "❌"} {testResult.detail}
+                </span>
+              )}
+            </div>
           </div>
         )}
-      </section>
 
-      {/* Model 选择 / 输入 */}
-      {currentPreset ? (
-        <section className="surface-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300">模型（Model）</h3>
-            {/* 只对 OpenRouter provider 显示"从 OpenRouter 刷新" */}
-            {activeProvider === "openrouter" && (
-              <button
-                onClick={handleDiscoverModels}
-                disabled={discovering}
-                data-testid="discover-models-btn"
-                className="text-label text-accent hover:underline disabled:opacity-40"
-              >
-                {discovering ? "刷新中…" : "🔄 刷新模型列表"}
-              </button>
-            )}
-          </div>
-          <select
-            value={activeModel}
-            onChange={(e) => setActiveModel(e.target.value)}
-            data-testid="model-select"
-            className="w-full bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
-          >
-            {currentPreset.models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-                {m.contextWindow ? ` · ${Math.round(m.contextWindow / 1000)}K 上下文` : ""}
-              </option>
-            ))}
-            {/* 只对 OpenRouter 显示发现的模型 */}
-            {activeProvider === "openrouter" && discoveredModels.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}（OpenRouter）{m.contextWindow ? ` · ${Math.round(m.contextWindow / 1000)}K` : ""}
-              </option>
-            ))}
-          </select>
-          {discoverError && (
-            <div className="text-label text-neutral-600 mt-1">{discoverError}</div>
-          )}
-        </section>
-      ) : activeCustomProvider ? (
-        <section className="surface-card p-4">
-          <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300 mb-3">模型（Model）</h3>
-          {activeCustomProvider.models.length > 1 ? (
-            <select
-              value={activeModel}
-              onChange={(e) => setActiveModel(e.target.value)}
-              data-testid="model-select-custom"
-              className="w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
-            >
-              {activeCustomProvider.models.map((m) => (
-                <option key={m.id} value={m.id}>{m.label}</option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="text"
-              value={activeModel}
-              onChange={(e) => setActiveModel(e.target.value)}
-              placeholder="输入模型 ID"
-              data-testid="model-input-custom"
-              className="w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono"
-            />
-          )}
-        </section>
-      ) : null}
-
-      {/* API Key */}
-      {currentPreset && (
-        <section className="surface-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300">API Key</h3>
-            <a
-              href={currentPreset.keyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-label text-brand hover:underline"
-            >
-              去获取 key →
-            </a>
-          </div>
-          {keyMasked && (
-            <div className="text-body text-neutral-600 dark:text-neutral-400 mb-2" data-testid="key-status">
-              ✅ 已配置：<code className="bg-neutral-200 dark:bg-neutral-800 px-1 rounded">{keyMasked}</code>
+        {/* 自定义 provider 的展开配置区 */}
+        {activeCustomProvider && !currentPreset && (
+          <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-label text-neutral-500 dark:text-neutral-500 shrink-0">Base URL</span>
+              <code className="text-label text-neutral-600 dark:text-neutral-400 font-mono break-all">{activeCustomProvider.baseUrl}</code>
             </div>
-          )}
-          <input
-            type="password"
-            value={keyInput}
-            onChange={(e) => setKeyInput(e.target.value)}
-            placeholder={keyMasked ? "输入新 key 覆盖…" : "粘贴 API key（sk-…）"}
-            data-testid="settings-key-input"
-            className="w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-3 py-2 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none"
-          />
-          <p className="text-label text-neutral-600 mt-2">
-            🔒 key 只存在本地主进程，不离开你的电脑。渲染层永远看不到完整 key。
-          </p>
-        </section>
-      )}
-
-      {/* 测试连接 */}
-      <section className="surface-card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-body font-semibold text-neutral-700 dark:text-neutral-300">测试连接</h3>
-          <button
-            onClick={handleTest}
-            disabled={testing}
-            data-testid="test-connection-btn"
-            className="text-body btn-3d-neutral px-3 py-2 text-body disabled:opacity-40"
-          >
-            {testing ? "测试中…" : "测试连接"}
-          </button>
-        </div>
-        {testResult && (
-          <div
-            className={`text-body rounded p-2 ${testResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning"}`}
-            data-testid="test-result"
-          >
-            {testResult.ok ? "✅" : "❌"} {testResult.detail}
-            {testResult.errorKind && testResult.errorKind !== "unknown" && (
-              <span className="block text-label mt-1 opacity-70">错误类型：{testResult.errorKind}</span>
-            )}
+            <div className="flex items-center gap-2">
+              <span className="text-label text-neutral-500 dark:text-neutral-500 shrink-0 w-12">Model</span>
+              {activeCustomProvider.models.length > 1 ? (
+                <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)} data-testid="model-select-custom" className="flex-1 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none">
+                  {activeCustomProvider.models.map((m) => (<option key={m.id} value={m.id}>{m.id}</option>))}
+                </select>
+              ) : (
+                <input type="text" value={activeModel} onChange={(e) => setActiveModel(e.target.value)} placeholder="模型 ID" data-testid="model-input-custom" className="flex-1 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-body rounded px-2.5 py-1.5 border border-neutral-300 dark:border-neutral-700 focus:border-brand focus:outline-none font-mono" />
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={handleTest} disabled={testing} data-testid="test-connection-btn" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">
+                {testing ? "测试中…" : "测试连接"}
+              </button>
+              {testResult && (
+                <span className={`text-label ${testResult.ok ? "text-brand" : "text-warning"}`}>
+                  {testResult.ok ? "✅" : "❌"} {testResult.detail}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </section>

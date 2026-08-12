@@ -180,6 +180,7 @@ export interface ProviderPresetInfo {
   id: string;
   label: string;
   protocol: "openai-compatible" | "anthropic" | "google";
+  baseUrl?: string;
   defaultModel: string;
   models: ProviderModelInfo[];
   apiKeySetting: string;

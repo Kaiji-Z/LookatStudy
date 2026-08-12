@@ -611,7 +611,6 @@ export default function App() {
               <ChatComposer
                 nodeId={selectedNodeId}
                 agentReady={agentReady?.ready ?? false}
-                missingHint={agentReady?.missing}
                 streaming={chat.streaming}
                 skills={orderedSkills}
                 activeSkill={activeSkill}

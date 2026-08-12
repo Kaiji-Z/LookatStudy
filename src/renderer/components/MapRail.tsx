@@ -151,9 +151,9 @@ export function MapRail(props: MapRailProps) {
       {/* 滑动内容区(透明,天空由 nav 层 canvas 提供)。全高,tab/标题悬浮其上。 */}
       <div className="absolute inset-0 overflow-hidden z-10">
         <div className="flex h-full transition-transform duration-300" style={{ transform: panel === "map" ? "translateX(0)" : "translateX(-50%)", width: "200%" }}>
-          {/* 地图面板(透明)。map-path 全高滚动(pt-24 留出 tab+标题悬浮空间)。 */}
+          {/* 地图面板(透明)。map-path 全高滚动(pt-48 留出 tab+标题+XP条+世界切换悬浮空间)。 */}
           <div className="w-1/2 h-full relative">
-            <div ref={mapPathRef} className="map-path h-full overflow-y-auto px-2 pt-32 pb-4" data-testid="map-path">
+            <div ref={mapPathRef} className="map-path h-full overflow-y-auto px-2 pt-48 pb-4" data-testid="map-path">
               <div className={`map-sky-content ${skyPreset ? `env-${skyPreset.season} env-${skyPreset.weather}` : ""}`}>
                 {props.streaming && (
                   <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-label text-brand font-medium backdrop-blur-sm" data-testid="streaming-notice">
@@ -189,8 +189,8 @@ export function MapRail(props: MapRailProps) {
               </div>
             </div>
           </div>
-          {/* 导入面板(透明,共享天空背景)。pt-32 避开悬浮 tab 区域(与地图面板一致) */}
-          <div className="w-1/2 h-full overflow-y-auto px-3 pt-32 pb-3 space-y-2.5">
+          {/* 导入面板(透明,共享天空背景)。pt-48 避开悬浮 tab 区域(与地图面板一致) */}
+          <div className="w-1/2 h-full overflow-y-auto px-3 pt-48 pb-3 space-y-2.5">
             <ImportPanel courses={props.courses} selectedCourseId={props.courseId} onSelectCourse={(id) => { props.onSelectCourse(id); setPanel("map"); }} onCoursesChanged={props.onCoursesChanged} />
           </div>
         </div>

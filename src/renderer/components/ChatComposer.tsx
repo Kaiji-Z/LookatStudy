@@ -40,7 +40,6 @@ const SKILL_FULL_DESC: Record<string, string> = {
 interface ChatComposerProps {
   nodeId: string | null;
   agentReady: boolean;
-  missingHint?: string;
   streaming: boolean;
   skills: Skill[];
   activeSkill: string | null;
@@ -56,7 +55,6 @@ interface ChatComposerProps {
 export function ChatComposer({
   nodeId,
   agentReady,
-  missingHint,
   streaming,
   skills,
   activeSkill,
@@ -86,7 +84,7 @@ export function ChatComposer({
     return (
       <div className="px-5 pb-4 shrink-0" data-testid="composer-nokey">
         <div className="flex items-center justify-center gap-3 py-3 text-body text-neutral-500">
-          <span>{missingHint ?? "未配置 AI 模型"}</span>
+          <span>未配置 AI 模型</span>
           <button onClick={onGotoSettings} className="text-brand hover:underline font-bold">去配置 →</button>
         </div>
       </div>

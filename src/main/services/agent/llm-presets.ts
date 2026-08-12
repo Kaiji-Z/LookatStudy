@@ -231,6 +231,173 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     docsUrl: "https://ai.google.dev/docs",
     note: "需海外网络 · 超长上下文",
   },
+  // ================================================================
+  // Groq — 超快推理（LPU），免费额度
+  // ================================================================
+  {
+    id: "groq",
+    label: "Groq",
+    protocol: "openai-compatible",
+    baseUrl: "https://api.groq.com/openai/v1",
+    defaultModel: "llama-3.3-70b-versatile",
+    models: [
+      { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B（均衡）", contextWindow: 128000, capabilities: ["chat", "tools"] },
+      { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B Instant（极速）", contextWindow: 128000, capabilities: ["chat"], free: true },
+      { id: "deepseek-r1-distill-llama-70b", label: "DeepSeek R1 Distill 70B（推理）", contextWindow: 128000, capabilities: ["chat", "reasoning"] },
+    ],
+    apiKeySetting: "groq_api_key",
+    keyUrl: "https://console.groq.com/keys",
+    docsUrl: "https://docs.groq.com/",
+    note: "超快推理 · 免费额度",
+  },
+  // ================================================================
+  // Together AI — 开源模型托管
+  // ================================================================
+  {
+    id: "together",
+    label: "Together AI",
+    protocol: "openai-compatible",
+    baseUrl: "https://api.together.xyz/v1",
+    defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    models: [
+      { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", label: "Llama 3.3 70B Turbo", contextWindow: 128000, capabilities: ["chat", "tools"] },
+      { id: "Qwen/Qwen2.5-72B-Instruct-Turbo", label: "Qwen2.5 72B Turbo", contextWindow: 32768, capabilities: ["chat"] },
+      { id: "deepseek-ai/DeepSeek-R1", label: "DeepSeek R1", contextWindow: 128000, capabilities: ["chat", "reasoning"] },
+    ],
+    apiKeySetting: "together_api_key",
+    keyUrl: "https://api.together.ai/settings/api-keys",
+    docsUrl: "https://docs.together.ai/",
+    note: "开源模型 · 海外",
+  },
+  // ================================================================
+  // Mistral AI — 欧洲开源模型
+  // ================================================================
+  {
+    id: "mistral",
+    label: "Mistral AI",
+    protocol: "openai-compatible",
+    baseUrl: "https://api.mistral.ai/v1",
+    defaultModel: "mistral-large-latest",
+    models: [
+      { id: "mistral-large-latest", label: "Mistral Large（旗舰）", contextWindow: 128000, capabilities: ["chat", "tools", "vision"] },
+      { id: "mistral-small-latest", label: "Mistral Small（快/便宜）", contextWindow: 32000, capabilities: ["chat", "tools"] },
+      { id: "codestral-latest", label: "Codestral（代码专用）", contextWindow: 256000, capabilities: ["chat"] },
+    ],
+    apiKeySetting: "mistral_api_key",
+    keyUrl: "https://console.mistral.ai/api-keys",
+    docsUrl: "https://docs.mistral.ai/",
+    note: "欧洲 · 开源 · 海外",
+  },
+  // ================================================================
+  // xAI Grok — Elon Musk 的 AI
+  // ================================================================
+  {
+    id: "xai",
+    label: "xAI Grok",
+    protocol: "openai-compatible",
+    baseUrl: "https://api.x.ai/v1",
+    defaultModel: "grok-3-mini",
+    models: [
+      { id: "grok-3", label: "Grok 3（旗舰）", contextWindow: 131072, capabilities: ["chat", "reasoning", "tools", "vision"] },
+      { id: "grok-3-mini", label: "Grok 3 Mini（快/便宜）", contextWindow: 131072, capabilities: ["chat", "reasoning"] },
+    ],
+    apiKeySetting: "xai_api_key",
+    keyUrl: "https://console.x.ai/",
+    docsUrl: "https://docs.x.ai/",
+    note: "海外 · 实时信息",
+  },
+  // ================================================================
+  // 火山引擎豆包（字节跳动）
+  // ================================================================
+  {
+    id: "volcano",
+    label: "火山引擎豆包",
+    protocol: "openai-compatible",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    defaultModel: "doubao-1.5-pro-32k",
+    models: [
+      { id: "doubao-1.5-pro-32k", label: "Doubao 1.5 Pro（旗舰）", contextWindow: 32000, capabilities: ["chat", "tools"] },
+      { id: "doubao-1.5-lite-32k", label: "Doubao 1.5 Lite（快/便宜）", contextWindow: 32000, capabilities: ["chat"] },
+      { id: "deepseek-r1-250120", label: "DeepSeek R1（火山版）", contextWindow: 64000, capabilities: ["chat", "reasoning"] },
+    ],
+    apiKeySetting: "volcano_api_key",
+    keyUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
+    docsUrl: "https://www.volcengine.com/docs/82379/",
+    note: "国内 · 字节跳动",
+  },
+  // ================================================================
+  // 百度文心一言（千帆 v2 OpenAI 兼容）
+  // ================================================================
+  {
+    id: "baidu",
+    label: "百度文心",
+    protocol: "openai-compatible",
+    baseUrl: "https://qianfan.baidubce.com/v2",
+    defaultModel: "ernie-4.0-8k-latest",
+    models: [
+      { id: "ernie-4.0-8k-latest", label: "ERNIE 4.0（旗舰）", contextWindow: 8000, capabilities: ["chat", "tools"] },
+      { id: "ernie-3.5-8k-latest", label: "ERNIE 3.5（均衡）", contextWindow: 8000, capabilities: ["chat"] },
+      { id: "ernie-speed-128k", label: "ERNIE Speed 128K（长上下文）", contextWindow: 128000, capabilities: ["chat"] },
+    ],
+    apiKeySetting: "baidu_api_key",
+    keyUrl: "https://console.bce.baidu.com/iam/#/iam/apikey/list",
+    docsUrl: "https://cloud.baidu.com/doc/WENXINWORKSHOP/index",
+    note: "国内 · 百度",
+  },
+  // ================================================================
+  // MiniMax
+  // ================================================================
+  {
+    id: "minimax",
+    label: "MiniMax",
+    protocol: "openai-compatible",
+    baseUrl: "https://api.minimax.chat/v1",
+    defaultModel: "abab6.5s-chat",
+    models: [
+      { id: "abab6.5s-chat", label: "abab6.5s（快/便宜）", contextWindow: 245760, capabilities: ["chat"] },
+      { id: "abab6.5-chat", label: "abab6.5（旗舰）", contextWindow: 8192, capabilities: ["chat", "tools"] },
+    ],
+    apiKeySetting: "minimax_api_key",
+    keyUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
+    docsUrl: "https://platform.minimaxi.com/document/",
+    note: "国内 · 长上下文",
+  },
+  // ================================================================
+  // 百川 Baichuan
+  // ================================================================
+  {
+    id: "baichuan",
+    label: "百川 Baichuan",
+    protocol: "openai-compatible",
+    baseUrl: "https://api.baichuan-ai.com/v1",
+    defaultModel: "Baichuan4-Turbo",
+    models: [
+      { id: "Baichuan4-Turbo", label: "Baichuan4 Turbo（快）", contextWindow: 32768, capabilities: ["chat", "tools"] },
+      { id: "Baichuan4-Air", label: "Baichuan4 Air（便宜）", contextWindow: 32768, capabilities: ["chat"] },
+    ],
+    apiKeySetting: "baichuan_api_key",
+    keyUrl: "https://platform.baichuan-ai.com/console/apikey",
+    docsUrl: "https://platform.baichuan-ai.com/docs/api",
+    note: "国内 · 百川智能",
+  },
+  // ================================================================
+  // 阶跃星辰 StepFun
+  // ================================================================
+  {
+    id: "stepfun",
+    label: "阶跃星辰 StepFun",
+    protocol: "openai-compatible",
+    baseUrl: "https://api.stepfun.com/v1",
+    defaultModel: "step-2-16k",
+    models: [
+      { id: "step-2-16k", label: "Step 2 16K（旗舰）", contextWindow: 16384, capabilities: ["chat", "tools"] },
+      { id: "step-1flash", label: "Step 1 Flash（快/免费）", contextWindow: 8192, capabilities: ["chat"], free: true },
+    ],
+    apiKeySetting: "stepfun_api_key",
+    keyUrl: "https://platform.stepfun.com/interface-key",
+    docsUrl: "https://platform.stepfun.com/docs",
+    note: "国内 · 阶跃星辰",
+  },
 ];
 
 export function getProviderPreset(id: string): ProviderPreset | undefined {

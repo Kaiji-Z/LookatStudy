@@ -17,6 +17,17 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **游戏感动效基础设施(Phase 0,见动效重构计划)**:为"丝滑 + 游戏感 + 沉浸式玩中学习"奠基。
+  新增 `motion` 库(PRODUCT.md sanction 的唯一新增依赖)+ 中央庆祝总线(`lib/celebration.ts`
+  的 `celebrate(kind)` event bus + `CelebrationLayer` 根级 canvas 粒子层,任何组件一行
+  `celebrate("correct")` 触发,渲染解耦)+ `usePrefersReducedMotion`(a11y 双轨:默认粒子爆发,
+  系统选"减少动效"时降级为静态图标淡入——WCAG 底线,非审美)+ `motion-presets`(spring/stagger
+  复用)+ main→renderer `state:changed` 推送通道(`state-emitter` 模块,xp/streak/mastery 变化 emit)。
+  **修原 bug**:能量条/连击以前只在启动拉一次,答题后 main 写 DB 但 renderer 不知道 → 从不动;
+  现在订阅 state:changed 精准重拉。**性能**:skyCanvas `getOrbs` 每帧 `querySelectorAll`+布局
+  重排(随课程规模恶化)→ 缓存节点引用 + MutationObserver 失效。**a11y 修复**:skyCanvas
+  reduced-motion bug(`frame()` 无条件 self-reschedule + `attachOrbWeather` 无视 reduced →
+  实际没降级)。新增 `scripts/verify-motion-infra.mjs`(20 项静态回归断言)。
 - **PDF 文本提取改用 pdf-inspector(layout-aware)**:本地 PDF 导入的文本提取从 `pdf-parse`
   改为优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 +
   多栏阅读顺序), 失败/平台不支持(Intel Mac/Windows ARM 无预编译)时自动回退 `pdf-parse`。

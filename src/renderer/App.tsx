@@ -29,6 +29,7 @@ import { useToast } from "./components/Toast.js";
 import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
 import { useLang } from "./lib/i18n.js";
 import { useFocusTrap } from "./lib/useFocusTrap.js";
+import { CelebrationLayer } from "./components/CelebrationLayer.js";
 
 /**
  * v0.2 三栏布局(M1 重构):
@@ -210,6 +211,22 @@ export default function App() {
     window.addEventListener("llm-config-changed", handler);
     return () => window.removeEventListener("llm-config-changed", handler);
   }, [checkReady]);
+
+  // Phase 0(游戏感动效):订阅 main 进程状态变化推送,重拉对应数据。
+  // 修原 bug:能量条/连击以前只在启动拉一次,答题后 main 写 DB 但 renderer 不知道 → 能量条从不动。
+  // mastery 变化影响节点状态/due,走全量 refreshAll;xp/streak 精准重拉(轻量)。
+  useEffect(() => {
+    const off = api.on("state:changed", (kind: "xp" | "streak" | "mastery") => {
+      if (kind === "xp") {
+        api.getXpStatus().then(setXp).catch(() => {});
+      } else if (kind === "streak") {
+        api.getStreak().then(setStreak).catch(() => {});
+      } else if (kind === "mastery") {
+        refreshAll();
+      }
+    });
+    return off;
+  }, [refreshAll]);
 
   useEffect(() => {
     if (!selectedCourseId) return;
@@ -702,6 +719,8 @@ export default function App() {
 
       {/* 全局悬浮提示(Portal 到 body,脱离所有 stacking context,永远最上层) */}
       <GlobalTooltip />
+      {/* Phase 0:庆祝渲染层(粒子爆发/高光时刻,reduced-motion 自动降级)。根级 fixed,z-[60]。 */}
+      <CelebrationLayer />
     </div>
   );
 }

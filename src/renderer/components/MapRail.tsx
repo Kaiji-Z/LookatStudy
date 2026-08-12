@@ -459,23 +459,34 @@ function MapOrbWeatherCanvas({
     const scroll = scrollRef.current;
     if (!canvas || !nav || !scroll) return;
     // canvas 在 nav 层 → 坐标相对 nav 算
+    // 性能(Phase 0):缓存 .lesson-bubble 节点引用 + navRect,不每帧 querySelectorAll
+    // (原每帧重建 NodeList 是布局重排主因,随课程规模恶化)。
+    // 节点增删/重排由 MutationObserver 失效重建;navRect 仅 window resize 时变(nav 固定容器)。
+    // 每帧仍读 N 次 getBoundingClientRect(浏览器批处理为一次布局刷新),位置含 balloon-bob 实时位移。
+    let cachedBtns: HTMLButtonElement[] | null = null;
+    let cachedNavRect: DOMRect | null = null;
+    const invalidate = () => { cachedBtns = null; cachedNavRect = null; };
+    const mo = new MutationObserver(invalidate);
+    mo.observe(scroll, { childList: true, subtree: true });
+    window.addEventListener("resize", invalidate);
     const getOrbs = (): OrbPos[] => {
-      const navRect = nav.getBoundingClientRect();
-      const btns = scroll.querySelectorAll<HTMLButtonElement>(".lesson-bubble");
+      if (!cachedBtns) cachedBtns = Array.from(scroll.querySelectorAll<HTMLButtonElement>(".lesson-bubble"));
+      const navRect = cachedNavRect ?? nav.getBoundingClientRect();
+      cachedNavRect = navRect;
       const out: OrbPos[] = [];
-      btns.forEach((b) => {
+      for (const b of cachedBtns) {
         const r = b.getBoundingClientRect();
-        if (r.bottom < navRect.top || r.top > navRect.bottom) return;
+        if (r.bottom < navRect.top || r.top > navRect.bottom) continue;
         out.push({
           x: r.left - navRect.left + r.width / 2,
           y: r.top - navRect.top + r.height / 2,
           r: r.width / 2,
         });
-      });
+      }
       return out;
     };
     const detach = attachOrbWeather(canvas, nav, preset, getOrbs);
-    return detach;
+    return () => { detach(); mo.disconnect(); window.removeEventListener("resize", invalidate); };
   }, [scrollRef, navRef, preset]);
   return (
     <canvas ref={canvasRef} className="map-orb-weather-canvas" aria-hidden="true" />

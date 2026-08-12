@@ -18,6 +18,7 @@ import {
   computeStreakTransition as computeStreakTransitionPure,
   type StreakState,
 } from "./pure/streak-transition.js";
+import { emitStateChange } from "../lib/state-emitter.js";
 
 // re-export 纯函数，让 ipc/index.ts 等业务代码用同一入口
 export { computeStreakTransitionPure as computeStreakTransition };
@@ -71,6 +72,8 @@ export function touchStreakToday(now: Date = new Date()): Streak {
     .where(eq(streaks.id, "singleton"))
     .run();
   markDirty();
+  // Phase 0: streak 变化通知 renderer(重拉火焰 + 触发庆祝)。幂等无变化时不达此处。
+  emitStateChange("streak");
 
   return next;
 }

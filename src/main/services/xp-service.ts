@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
 import { settings as settingsTable } from "../db/schema.js";
+import { emitStateChange } from "../lib/state-emitter.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -58,6 +59,8 @@ export function addXp(db: Db, amount: number, now: Date = new Date()): number {
       .run();
   }
 
+  // Phase 0: 通知 renderer XP 变化(重拉能量条 + 触发庆祝)。所有 XP 来源都经此。
+  emitStateChange("xp");
   return next;
 }
 

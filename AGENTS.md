@@ -14,7 +14,7 @@ Output that violates a red line in VERIFICATION.md §7 is void.
 Open-source, local-first, AI-driven desktop learning platform. Turns any GitHub
 learning repository into a Duolingo-style course (gated skill map, AI tutor with
 BKT mastery tracking, SM-2 spaced repetition, XP/streak/crown retention).
-Supports 9 document formats (.md/.ipynb/.rst/.Rmd/.org/.adoc/.pdf/.html/.txt) +
+Supports 10 document formats (.md/.ipynb/.rst/.Rmd/.org/.adoc/.pdf/.pptx/.html/.txt) +
 30+ code file types (.py/.js/.ts/.go/.rs/.java/.c/.cpp/.rb/.sh/etc) +
 multimodal image import + AI vision.
 Electron app, local SQLite (sql.js), BYO LLM API key. Light/dark theme.
@@ -136,6 +136,7 @@ npm run verify:core && npx vite build && npm run self-test
 | Starter prompts | `services/starter-prompts-service.ts` | Mastery-based prompt suggestions |
 | Multimodal assets | `services/asset-service.ts` | `node_assets` CRUD — 图片/PDF 渲染图元数据(二进制存 `userData/assets/{courseId}/`,不入 DB blob);`listAssetsByNode` / `getAssetDataUrl` (base64) |
 | PDF renderer | `lib/pdf-renderer.ts` | pdfjs-dist 封装:PDF 文字提取 + 内嵌图片提取(纯 JS PNG 编码,无 canvas 依赖);`classifyPdfPageByTextRatio` 判断纯文字/纯图片/混合 |
+| PPTX parser | `lib/pptx-parser.ts` | officeparser AST → `{markdown, images}`;每 slide 一个 `##`(讲者备注非标题随 slide), 现有导入管线自动每 slide 一节课。内嵌图片复用 pdf_page source(避 schema CHECK 迁移)。仅 `.pptx` |
 | Notebook parser | `services/pure/notebook-parser.ts` | Jupyter `.ipynb` JSON 解析:markdown cell 原文 + code cell → ```代码块 + output 图片提取(base64);`inferLanguage` 从 kernelspec 推断语言 |
 | RST parser | `services/pure/rst-parser.ts` | reStructuredText → markdown:标题下划线/code-block/image/note admonition/行内角色 |
 | RMD parser | `services/pure/rmd-parser.ts` | R Markdown → markdown:剥 YAML front matter + ```{r} chunk 归一化 |

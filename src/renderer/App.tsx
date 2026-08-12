@@ -836,7 +836,7 @@ function Header({
             title={t("header.energy")}
           >
             <Zap
-              className="w-3.5 h-3.5 text-brand"
+              className={`w-3.5 h-3.5 text-brand ${xp.todayXp >= 100 ? "energy-breathe" : ""}`}
               fill={xp.todayXp >= 100 ? "currentColor" : "none"}
               aria-hidden="true"
             />
@@ -974,7 +974,7 @@ function StreakBadge({ streak }: { streak: Streak }) {
       data-testid="streak-badge"
       title={t("streak.title", { n: streak.currentStreak, m: streak.longestStreak })}
     >
-      <Flame className="w-4 h-4 text-review" />
+      <Flame className="w-4 h-4 text-review flame-flicker" />
       <span className="text-body font-extrabold text-review">{streak.currentStreak}</span>
     </div>
   );

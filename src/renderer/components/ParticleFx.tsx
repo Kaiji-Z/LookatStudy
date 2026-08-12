@@ -1,11 +1,13 @@
 /**
- * ParticleFx —— v0.3 趣味性钩子(占位,后续专门设计)。
+ * @deprecated v0.9 起被 <CelebrationLayer> + celebrate() 总线取代。
  *
- * 用户决策:"按最高要求预留,未来可进行专门设计"。
- * 当前:导出组件和触发函数,但实现是 no-op(不阻塞功能)。
- * 后续:填 Canvas/CSS 粒子(答对星星飞溅、连击火焰弹)。
+ * ParticleFx —— v0.3 趣味性钩子(原占位)。
  *
- * 用法:<ParticleFx trigger="correct" /> —— trigger 变化时触发一次
+ * 历史:v0.3 预留的粒子占位(no-op)。v0.9 游戏感动效重构落地中央庆祝总线
+ * (lib/celebration.ts 的 celebrate() + components/CelebrationLayer.tsx 根级 canvas
+ * 粒子层),本文件的功能已被取代。保留作历史 + 防旧引用报错,新代码用 celebrate()。
+ *
+ * 用法(新):celebrate("correct") —— 触发 CelebrationLayer 统一渲染粒子爆发。
  */
 import { useEffect, useRef } from "react";
 

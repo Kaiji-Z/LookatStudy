@@ -734,7 +734,7 @@ function MapNode({
         ) : isLocked ? (
           <span aria-label="locked" className="relative z-10 opacity-50">🔒</span>
         ) : status === "mastered" ? (
-          <span aria-label="mastered" className="relative z-10 drop-shadow-lg">👑</span>
+          <span aria-label="mastered" className="relative z-10 drop-shadow-lg crown-sparkle">👑</span>
         ) : status === "in_progress" ? (
           <BookOpen aria-label="in-progress" className="relative z-10 w-6 h-6 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]" strokeWidth={2.5} />
         ) : (

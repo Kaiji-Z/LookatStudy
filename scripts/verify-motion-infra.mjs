@@ -87,7 +87,21 @@ const app = read("src/renderer/App.tsx");
 check("T19 App 挂载 <CelebrationLayer/>", app.includes("<CelebrationLayer />"));
 check('T20 App 订阅 state:changed 重拉', app.includes('"state:changed"') && app.includes("getXpStatus"));
 
-console.log(`\n=== Phase 0 动效基础设施: ${pass}/${pass + fail} 通过 ${fail ? "❌" : "✅"} ===`);
+/* ---- Phase 1: 高光时刻接入庆祝总线 ---- */
+const quiz = read("src/renderer/components/artifacts/QuizArtifact.tsx");
+check('T21 QuizArtifact 答题 celebrate(correct/wrong)', quiz.includes('celebrate(correct ? "correct" : "wrong")'));
+
+const exam = read("src/renderer/components/ExamView.tsx");
+check('T22 ExamView 考试通过 celebrate(exam-pass)', exam.includes('celebrate("exam-pass")'));
+
+const review = read("src/renderer/components/ReviewPanel.tsx");
+check('T23 ReviewPanel 自评 celebrate(correct/wrong)', review.includes('celebrate(quality >= 4 ? "correct" : "wrong")'));
+
+check('T24 App 能量充满 celebrate(energy-full)', app.includes('celebrate("energy-full")'));
+check('T25 App 连击 celebrate(streak)', app.includes('celebrate("streak")'));
+check('T26 App 掌握度 celebrate(mastery)', app.includes('celebrate("mastery")'));
+
+console.log(`\n=== Phase 0+1 动效基础设施 + 庆祝接入: ${pass}/${pass + fail} 通过 ${fail ? "❌" : "✅"} ===`);
 if (fail) {
   process.exit(1);
 }

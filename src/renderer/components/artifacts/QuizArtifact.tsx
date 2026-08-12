@@ -7,6 +7,7 @@
  * 这是 v0.2 把"📝练习 tab"并入对话流的核心:练习题作为 Generative UI 产物出现。
  */
 import { useState } from "react";
+import { celebrate } from "../../lib/celebration.js";
 import { ListChecks, Check, X, AlertTriangle } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
 
@@ -61,6 +62,8 @@ export function QuizArtifact({
     const correct = selected === q.answer;
     setScore((s) => ({ correct: s.correct + (correct ? 1 : 0), total: s.total + 1 }));
     onAnswered?.(q, selected, correct);
+    // Phase 1: 答题高光时刻 — 答对粒子爆发,答错柔红光闪(CelebrationLayer 统一渲染)。
+    celebrate(correct ? "correct" : "wrong");
   };
 
   const handleNext = () => {

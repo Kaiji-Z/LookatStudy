@@ -27,7 +27,12 @@ Entry conventions for contributors:
   现在订阅 state:changed 精准重拉。**性能**:skyCanvas `getOrbs` 每帧 `querySelectorAll`+布局
   重排(随课程规模恶化)→ 缓存节点引用 + MutationObserver 失效。**a11y 修复**:skyCanvas
   reduced-motion bug(`frame()` 无条件 self-reschedule + `attachOrbWeather` 无视 reduced →
-  实际没降级)。新增 `scripts/verify-motion-infra.mjs`(20 项静态回归断言)。
+  实际没降级)。新增 `scripts/verify-motion-infra.mjs`(26 项静态回归断言,覆盖 Phase 0+1)。
+- **游戏感动效 Phase 1(高光时刻接入庆祝总线)**:7 个反馈点接入 `celebrate()` 总线 ——
+  答对/答错(QuizArtifact 练习 + ReviewPanel SRS 自评)、考试通过(ExamView 得星)、能量充满
+  (App 订阅 XP 首次跨 100,用 prevXpRef 防重复触发)、连击递增(App 订阅 streak)、掌握度达成
+  (App 订阅 mastery 加冕)。所有高光时刻统一由 CelebrationLayer 渲染粒子爆发(reduced-motion
+  自动降级静态图标),触发与渲染解耦 —— 新增反馈点 = 一行 celebrate()。
 - **PDF 文本提取改用 pdf-inspector(layout-aware)**:本地 PDF 导入的文本提取从 `pdf-parse`
   改为优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 +
   多栏阅读顺序), 失败/平台不支持(Intel Mac/Windows ARM 无预编译)时自动回退 `pdf-parse`。

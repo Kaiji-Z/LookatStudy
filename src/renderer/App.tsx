@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen } from "lucide-react";
+import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -10,6 +10,7 @@ import type {
   DashboardData,
   StarterPrompt,
   NoteSourceAnchor,
+  XpStatus,
 } from "@shared/types";
 import { MapRail, type MapView } from "./components/MapRail.js";
 import { GlobalTooltip } from "./components/GlobalTooltip.js";
@@ -56,7 +57,7 @@ export default function App() {
   const [tree, setTree] = useState<ContentNode[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, Progress>>({});
   const [streak, setStreak] = useState<Streak | null>(null);
-  const [xp, setXp] = useState<{ todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null>(null);
+  const [xp, setXp] = useState<XpStatus | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 统一的异步错误处理:上屏 ErrorBanner(role=alert,用户可见)+ console 保留堆栈。
@@ -739,7 +740,7 @@ function Header({
   onToggleRight,
 }: {
   streak: Streak | null;
-  xp: { todayXp: number; dailyGoal: number; achieved: boolean; pct: number } | null;
+  xp: XpStatus | null;
   fontSize: "small" | "medium" | "large";
   onFontBump: (dir: "up" | "down") => void;
   onOpenSettings: () => void;
@@ -823,6 +824,15 @@ function Header({
             <span className="text-label font-bold tabular-nums text-brand">
               {xp.todayXp}
             </span>
+          </div>
+        )}
+        {xp && (
+          <div
+            className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand/10"
+            data-testid="level-badge"
+            title={t("header.level.title")}
+          >
+            <span className="text-label font-bold text-brand">Lv.{xp.level}</span>
           </div>
         )}
         {streak && <StreakBadge streak={streak} />}
@@ -950,6 +960,16 @@ function StreakBadge({ streak }: { streak: Streak }) {
     >
       <Flame className="w-4 h-4 text-review" />
       <span className="text-body font-extrabold text-review">{streak.currentStreak}</span>
+      {streak.freezeCount > 0 && (
+        <span
+          className="flex items-center gap-0.5 ml-0.5"
+          data-testid="freeze-badge"
+          title={t("streak.freeze.title", { n: streak.freezeCount })}
+        >
+          <Shield className="w-3 h-3 text-review/80" aria-hidden="true" />
+          <span className="text-label font-bold text-review/80">{streak.freezeCount}</span>
+        </span>
+      )}
     </div>
   );
 }

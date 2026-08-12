@@ -183,6 +183,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "settings.footer.hint": "AI 模型区的改动需保存后生效,其余即时生效",
     "settings.footer.save": "保存 AI 配置",
     "header.energy": "今日能量",
+    "header.level.title": "等级(累计经验值的持久成长线,不随每日能量清零)",
     "settings.title": "设置",
 
     // —— Views / 兼容旧 key ——
@@ -448,6 +449,7 @@ const translations: Record<Lang, Record<string, string>> = {
     // —— Streak ——
     "streak.days": "天",
     "streak.title": "连续学习 {n} 天 · 最长 {m} 天",
+    "streak.freeze.title": "剩余冻结 {n} 个:漏签一天可自动保住连击",
   },
   en: {
     // —— Header / common actions ——
@@ -594,6 +596,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "settings.footer.hint": "AI Model changes need Save; everything else is instant.",
     "settings.footer.save": "Save AI config",
     "header.energy": "Today's energy",
+    "header.level.title": "Level (cumulative XP growth line — doesn't reset with daily energy)",
     "settings.title": "Settings",
 
     // —— Views (legacy) ——
@@ -859,6 +862,7 @@ const translations: Record<Lang, Record<string, string>> = {
     // —— Streak ——
     "streak.days": "days",
     "streak.title": "{n}-day streak · longest {m} days",
+    "streak.freeze.title": "{n} freeze left: saves your streak on a missed day",
   },
 };
 

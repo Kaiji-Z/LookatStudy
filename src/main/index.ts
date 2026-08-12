@@ -409,6 +409,24 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: streakPresent === true,
   });
 
+  // T4a (P4 能力感): 等级徽章 + freeze 徽章渲染(累计 XP/等级 + 可见安全网)
+  const competenceBadges = await win.webContents.executeJavaScript(`
+    (function() {
+      var lvl = document.querySelector('[data-testid="level-badge"]');
+      var frz = document.querySelector('[data-testid="freeze-badge"]');
+      return {
+        levelBadge: !!lvl,
+        levelText: lvl ? (lvl.textContent || "").trim() : null,
+        freezeBadge: !!frz,
+      };
+    })()
+  `);
+  results.push({
+    name: "level badge + freeze badge rendered (P4 competence)",
+    ok: competenceBadges?.levelBadge === true && competenceBadges?.freezeBadge === true,
+    detail: competenceBadges,
+  });
+
   // T5: 点击一个未锁的 map-node → 触发 markNodeAttempted → 联动右栏
   let clickResult: { clicked?: boolean; totalBtns?: number; enabledCount?: number; error?: string } = {};
   try {

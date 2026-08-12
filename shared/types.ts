@@ -487,7 +487,7 @@ export interface ApiExpose {
   setSetting(key: SettingKey, value: string): Promise<void>;
 
   /** XP 状态（今日经验值 + 每日目标 + 达成百分比） */
-  getXpStatus(): Promise<{ todayXp: number; dailyGoal: number; achieved: boolean; pct: number }>;
+  getXpStatus(): Promise<XpStatus>;
   /** 导出学习记录（JSON / Markdown 格式） */
   exportCourse(courseId: string, format: "json" | "markdown"): Promise<string>;
 
@@ -572,6 +572,20 @@ export type NoteSourceAnchor =
   | { type: "chat"; threadId: string; msgId: string; startOffset?: number; endOffset?: number }; // 对话流:thread + 消息 id + 消息内字符偏移
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;
+
+/** XP 状态(今日能量 + P4 累计/等级持久成长线)。 */
+export interface XpStatus {
+  todayXp: number;
+  dailyGoal: number;
+  achieved: boolean;
+  pct: number;
+  /** P4: 累计 XP(永不重置) */
+  totalXp: number;
+  /** P4: 由累计 XP 派生的等级 */
+  level: number;
+  /** P4: 当前等级进度 0-100 */
+  levelPct: number;
+}
 
 export interface Streak {
   currentStreak: number;

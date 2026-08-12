@@ -17,6 +17,13 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **能力感反馈:累计 XP + 等级 + freeze 可见(learning-experience Phase 4)**:此前 XP 午夜清零、无等级
+  /累计——Duolingo 式最高的"升级"峰值完全缺失;freeze 默认 2 但从不渲染(安全网不可见)。现在:
+  addXp 同写持久 `total_xp`(永不重置,跨天保留),由二次曲线派生等级(50·L²:L1=50,L2=200,L5=1250,
+  早期快后期缓);header 加 `Lv.{n}` 徽章;StreakBadge 加 🛡️ 剩余冻结数(可见的试错安全网=autonomy)。
+  等级是持久成长线(非消耗型货币),全程在 PRODUCT.md 反暗黑红线内。ParticleFx 按 PRODUCT.md 预留为桩
+  (留作专门设计 pass)。抽出 `levelFromTotalXp` 纯函数;verify-xp.mjs 扩展 T13-T15(等级曲线 + 累计持久
+  + 跨天保留);ui-test T4a(level+freeze 徽章)。
 - **激活 friction_log:让 AI 看见你的卡点(learning-experience Phase 3)**:此前 friction_log 表
   设计完好却近乎空转——唯一写入方是 prompt-builder 的 agent_error,还把 nodeId 列复用存 skill 名;
   人类卡点(confused/blocked/frustrated)从不被记录。现在:ChatComposer 加 🤔 "我卡住了" 入口

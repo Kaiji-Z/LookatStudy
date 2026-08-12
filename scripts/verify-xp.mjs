@@ -15,6 +15,8 @@ import {
   addXpMastered,
   getXpStatus,
   cleanupOldXp,
+  bumpTotalXp,
+  levelFromTotalXp,
   XP_CORRECT,
   XP_WRONG,
   XP_MASTERED,
@@ -123,6 +125,38 @@ getXpStatus(db);
 const afterRead = sqljs.exec("SELECT value FROM settings WHERE key='daily_goal_xp'")[0].values[0][0];
 assert.strictEqual(beforeRead, afterRead, "T12: getXpStatus 不应改 DB");
 console.log("✓ T12 getXpStatus 纯只读（不改 DB）");
+
+// === P4: 累计 XP + 等级(持久成长线)===
+
+// T13: levelFromTotalXp 边界(纯函数,二次曲线 50·L²)
+assert.strictEqual(levelFromTotalXp(0).level, 0, "T13: 0 XP → Lv0");
+assert.strictEqual(levelFromTotalXp(49).level, 0, "T13: 49 → Lv0");
+assert.strictEqual(levelFromTotalXp(50).level, 1, "T13: 50 → Lv1");
+assert.strictEqual(levelFromTotalXp(199).level, 1, "T13: 199 → Lv1");
+assert.strictEqual(levelFromTotalXp(200).level, 2, "T13: 200 → Lv2");
+assert.strictEqual(levelFromTotalXp(450).level, 3, "T13: 450 → Lv3");
+assert.strictEqual(levelFromTotalXp(5000).level, 10, "T13: 5000 → Lv10");
+assert.strictEqual(levelFromTotalXp(50).pct, 0, "T13: Lv1 起点 pct=0");
+assert.ok(levelFromTotalXp(75).pct > 0 && levelFromTotalXp(75).pct < 100, "T13: Lv1 中段 0<pct<100");
+assert.ok(levelFromTotalXp(199).pct > 90, "T13: 接近 Lv2 时 pct 接近满");
+console.log("✓ T13 levelFromTotalXp: 0/50/200/450/5000 → Lv0/1/2/3/10 + pct 单调递增");
+
+// T14: addXp 累计进 total_xp(getXpStatus 读回,只增)
+const xs = getXpStatus(db);
+assert.ok(xs.totalXp > 0, `T14: 累计 XP 应 >0(多次 addXp 累加), 实际 ${xs.totalXp}`);
+assert.ok(xs.level >= 0 && typeof xs.levelPct === "number", "T14: level/levelPct 字段存在");
+bumpTotalXp(db, 1000);
+const xs2 = getXpStatus(db);
+assert.ok(xs2.totalXp === xs.totalXp + 1000, `T14: bump 后 totalXp 精确 +1000, ${xs.totalXp}→${xs2.totalXp}`);
+assert.ok(xs2.level >= xs.level, "T14: level 不减");
+console.log(`✓ T14 累计 XP: totalXp=${xs.totalXp}→${xs2.totalXp}, level ${xs.level}→${xs2.level}(持久成长)`);
+
+// T15: total_xp 不随每日重置(跨天 todayXp 归零,totalXp 保留)
+sqljs.run("DELETE FROM settings WHERE key LIKE 'daily_xp_%'");
+const nextDay = getXpStatus(db);
+assert.strictEqual(nextDay.todayXp, 0, "T15: 跨天 todayXp 归零");
+assert.strictEqual(nextDay.totalXp, xs2.totalXp, "T15: 跨天 totalXp 保留(持久成长线)");
+console.log(`✓ T15 跨天: todayXp 归零, totalXp=${nextDay.totalXp} 保留(不随每日清零)`);
 
 console.log("\n=== 对抗性测试 PASSED ✅ ===");
 

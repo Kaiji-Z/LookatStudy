@@ -58,7 +58,43 @@ export function addXp(db: Db, amount: number, now: Date = new Date()): number {
       .run();
   }
 
+  // P4: 累计 XP(持久成长线,永不重置)。等级从中派生——区别于每日重置的"今日能量"。
+  bumpTotalXp(db, safeAmount);
+
   return next;
+}
+
+/** 累计 XP(settings.total_xp),只增不贬。供 addXp 内部 + 测试用。 */
+export function bumpTotalXp(db: Db, amount: number): void {
+  const safe = Math.max(0, amount);
+  const tRow = db.select().from(settingsTable).where(eq(settingsTable.key, "total_xp")).get();
+  const total = (tRow ? parseInt(tRow.value ?? "0", 10) : 0) + safe;
+  if (tRow) {
+    db.update(settingsTable).set({ value: String(total) }).where(eq(settingsTable.key, "total_xp")).run();
+  } else {
+    db.insert(settingsTable).values({ key: "total_xp", value: String(total), isSecret: false }).run();
+  }
+}
+
+/**
+ * P4: 由累计 XP 派生等级(二次曲线:到达 level L 需累计 50·L² XP)。
+ * 早期升级快(competence 即时反馈),后期放缓。纯函数,可测。
+ *   L1=50, L2=200, L3=450, L4=800, L5=1250, L10=5000
+ */
+export function levelFromTotalXp(totalXp: number): {
+  level: number;
+  pct: number;
+  intoLevel: number;
+  levelSpan: number;
+} {
+  const safe = Math.max(0, Math.floor(totalXp));
+  const level = Math.floor(Math.sqrt(safe / 50));
+  const curStart = 50 * level * level;
+  const nextStart = 50 * (level + 1) * (level + 1);
+  const span = nextStart - curStart;
+  const into = safe - curStart;
+  const pct = span > 0 ? Math.min(100, Math.round((into / span) * 100)) : 0;
+  return { level, pct, intoLevel: into, levelSpan: span };
 }
 
 /** 答对一题的 XP */
@@ -85,6 +121,9 @@ export function getXpStatus(db: Db, now: Date = new Date()): {
   dailyGoal: number;
   achieved: boolean;
   pct: number;
+  totalXp: number;
+  level: number;
+  levelPct: number;
 } {
   const key = dailyXpKey(now);
   const xpRow = db
@@ -103,11 +142,22 @@ export function getXpStatus(db: Db, now: Date = new Date()): {
   const parsedGoal = goalRow ? parseInt(goalRow.value ?? String(DEFAULT_DAILY_GOAL), 10) : DEFAULT_DAILY_GOAL;
   const dailyGoal = Number.isNaN(parsedGoal) || parsedGoal < 1 ? DEFAULT_DAILY_GOAL : parsedGoal;
 
+  const tRow = db
+    .select()
+    .from(settingsTable)
+    .where(eq(settingsTable.key, "total_xp"))
+    .get();
+  const totalXp = tRow ? parseInt(tRow.value ?? "0", 10) : 0;
+  const lvl = levelFromTotalXp(Number.isNaN(totalXp) ? 0 : totalXp);
+
   return {
     todayXp,
     dailyGoal,
     achieved: todayXp >= dailyGoal,
     pct: dailyGoal > 0 ? Math.min(100, Math.round((todayXp / dailyGoal) * 100)) : 0,
+    totalXp: Number.isNaN(totalXp) ? 0 : totalXp,
+    level: lvl.level,
+    levelPct: lvl.pct,
   };
 }
 

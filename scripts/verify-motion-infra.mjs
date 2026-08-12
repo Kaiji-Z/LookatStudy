@@ -101,7 +101,9 @@ check('T24 App 能量充满 celebrate(energy-full)', app.includes('celebrate("en
 check('T25 App 连击 celebrate(streak)', app.includes('celebrate("streak")'));
 check('T26 App 掌握度 celebrate(mastery)', app.includes('celebrate("mastery")'));
 
-console.log(`\n=== Phase 0+1 动效基础设施 + 庆祝接入: ${pass}/${pass + fail} 通过 ${fail ? "❌" : "✅"} ===`);
+check('T27 MapRail 节点解锁 celebrate(unlock)', mapRail.includes('celebrate("unlock")'));
+
+console.log(`\n=== Phase 0+1+2 动效基础设施 + 庆祝接入: ${pass}/${pass + fail} 通过 ${fail ? "❌" : "✅"} ===`);
 if (fail) {
   process.exit(1);
 }

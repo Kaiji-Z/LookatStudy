@@ -33,6 +33,10 @@ Entry conventions for contributors:
   (App 订阅 XP 首次跨 100,用 prevXpRef 防重复触发)、连击递增(App 订阅 streak)、掌握度达成
   (App 订阅 mastery 加冕)。所有高光时刻统一由 CelebrationLayer 渲染粒子爆发(reduced-motion
   自动降级静态图标),触发与渲染解耦 —— 新增反馈点 = 一行 celebrate()。
+- **游戏感动效 Phase 2(节点解锁高光,完成 7 触点闭环)**:MapRail 检测节点从 locked→available
+  的解锁瞬间,触发 `celebrate("unlock")`。至此 7 个高光时刻全部接入庆祝总线:
+  correct/wrong/unlock/mastery/streak/energy-full/exam-pass。环境沉浸(错峰入场/微交互/皇冠
+  加冕视觉)作为后续迭代。
 - **PDF 文本提取改用 pdf-inspector(layout-aware)**:本地 PDF 导入的文本提取从 `pdf-parse`
   改为优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 +
   多栏阅读顺序), 失败/平台不支持(Intel Mac/Windows ARM 无预编译)时自动回退 `pdf-parse`。

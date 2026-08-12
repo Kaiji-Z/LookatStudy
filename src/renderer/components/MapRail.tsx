@@ -18,6 +18,7 @@ import {
 import { attachSky, attachOrbWeather, pickPreset, PRESETS, PRESET_KEYS, type SkyPreset, type OrbPos } from "../lib/skyCanvas.js";
 import { api } from "../lib/api.js";
 import { useLang } from "../lib/i18n.js";
+import { celebrate } from "../lib/celebration.js";
 
 export type MapView = "map" | "import";
 
@@ -72,6 +73,22 @@ export function MapRail(props: MapRailProps) {
     if (prevCourseId.current !== null && prevCourseId.current !== props.courseId) setPanel("map");
     prevCourseId.current = props.courseId;
   }, [props.courseId]);
+
+  // Phase 2: 检测节点从 locked→available 的解锁瞬间,触发 celebrate("unlock") 粒子(完成 7 触点闭环)。
+  // 比较 progressMap 前后状态;首次加载(prev 为空)不触发,防误报。
+  const prevStatusRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    const cur: Record<string, string> = {};
+    let unlocked = false;
+    for (const n of props.tree) {
+      const s = props.progressMap[n.id]?.status ?? "locked";
+      cur[n.id] = s;
+      if (prev[n.id] === "locked" && s !== "locked") unlocked = true;
+    }
+    if (unlocked && Object.keys(prev).length > 0) celebrate("unlock");
+    prevStatusRef.current = cur;
+  }, [props.tree, props.progressMap]);
 
   return (
     <nav ref={navRef} className="relative h-full flex flex-col bg-surface-rail w-[300px] shrink-0 overflow-hidden" data-testid="map-rail">

@@ -218,6 +218,8 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string; rect: DOMRect } | null>(null);
   // 新智能管线: analyzeRepo 的结果暂存(供 importAnalyzed 用)
   const [repoAnalysis, setRepoAnalysis] = useState<import("@shared/types").RepoAnalysis | null>(null);
+  /** 进度屏滚动容器:新步骤进来自动滚到底,最新进度始终可见。 */
+  const progressScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const off = api.on("import:progress", (msg: string) => {
@@ -240,6 +242,12 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
     return () => { off(); clearInterval(timer); };
   }, []);
 
+  // 进度屏自动滚到底:新步骤进来时把滚动容器拉到底,最新进度可见。
+  useEffect(() => {
+    const el = progressScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [progressSteps]);
+
   const handleImportUrl = async () => {
     if (!repoUrl.trim() || busy) return;
     setBusy(true); setError(null); setSuccess(null); setProgressSteps([]);
@@ -259,7 +267,9 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   const doImport = async (analysisOverride?: import("@shared/types").RepoAnalysis | null) => {
     const analysis = analysisOverride ?? repoAnalysis;
     if (!analysis) return;
-    setBusy(true); setError(null); setSuccess(null); setProgressSteps([]);
+    // 不清空 progressSteps —— 让 analyze(阶段1)→ import(阶段2)的进度连续累加,
+    // 避免用户看到"分析进度爬完→瞬间清空→导入进度从0重开"的两屏断裂感。
+    setBusy(true); setError(null); setSuccess(null);
     try {
       // 新管线 Step 3+4+5: 提取大纲 → LLM 设计结构 → 拉正文+图片 → 落库
       const course = await api.importAnalyzed(repoUrl.trim(), analysis);
@@ -324,48 +334,66 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
         </button>
         {showImport && (
           <div className="mt-3 space-y-3">
-            <div className="flex gap-1 p-1 bg-black/30 rounded-lg">
-              {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }]).map(({ k, label, icon: Icon }) => (
-                <button key={k} onClick={() => setTab(k)} className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
-                  <Icon className="w-3 h-3" /> {label}
-                </button>
-              ))}
-            </div>
-            {tab === "url" ? (
-              <section className="space-y-2" data-testid="import-url-section">
-                <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/owner/repo" data-testid="repo-url-input" className="w-full bg-black/30 text-white placeholder:text-white/40 text-body rounded-lg px-2.5 py-2 border border-white/20 focus:border-brand focus:outline-none" />
-                <button onClick={handleImportUrl} disabled={!repoUrl.trim() || busy} data-testid="import-url-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{busy ? t("import.btn.url.busy") : t("import.btn.url")}</button>
-              </section>
-            ) : tab === "markdown" ? (
-              <section className="space-y-2" data-testid="import-md-section">
-                <input type="text" value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder={t("import.placeholder.name")} data-testid="md-name-input" className="w-full bg-black/30 text-white placeholder:text-white/40 text-body rounded-lg px-2.5 py-2 border border-white/20 focus:border-brand focus:outline-none" />
-                <textarea value={mdText} onChange={(e) => setMdText(e.target.value)} placeholder={t("import.placeholder.md")} data-testid="md-text-input" rows={4} className="w-full bg-black/30 text-white placeholder:text-white/40 text-body rounded-lg px-2.5 py-2 border border-white/20 focus:border-brand focus:outline-none resize-none" />
-                <button onClick={handleImportMd} disabled={!mdText.trim() || !repoName.trim() || busy} data-testid="import-md-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{busy ? t("import.btn.md.busy") : t("import.btn.md")}</button>
-              </section>
-            ) : (
-              <section className="space-y-2" data-testid="import-folder-section">
-                <p className="text-caption text-white/50 leading-relaxed">{t("import.folder.desc")}</p>
-                <button onClick={handleImportFolder} disabled={busy} data-testid="import-folder-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{busy ? t("import.btn.folder.busy") : t("import.btn.folder")}</button>
-              </section>
-            )}
-            {busy && progressSteps.length > 0 && (
-              <div className="bg-black/30 rounded-lg p-2 max-h-52 overflow-y-auto space-y-1" data-testid="import-progress">
-                {progressSteps.map((step, i) => (
-                  <div key={i} className="flex items-start gap-1.5 text-caption">
-                    {step.status === "done" ? (
-                      <span className="text-brand shrink-0 leading-tight">✓</span>
-                    ) : (
-                      <span className="inline-block w-2.5 h-2.5 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0 mt-px"></span>
-                    )}
-                    <span className={step.status === "done" ? "text-white/40" : "text-white/90"}>
-                      {step.msg}
-                      {step.status === "working" && (
-                        <span className="text-white/35 ml-1">（{t("import.progress.elapsed", { s: Math.floor((Date.now() - step.ts) / 1000) })}）</span>
-                      )}
-                    </span>
+            {busy ? (
+              // 一个进度屏:从点导入到完成,连续显示全部步骤(analyze + import 不再分屏)。
+              // 导入中表单无意义 —— 进度屏成为唯一焦点,替代表单。
+              <div className="rounded-xl bg-black/30 border border-brand/30 p-4" data-testid="import-progress">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0" />
+                  <span className="text-body font-bold text-white/90">{t("import.progress.title")}</span>
+                </div>
+                {(tab === "url" ? repoUrl.trim() : tab === "markdown" ? repoName.trim() : "") ? (
+                  <div className="text-caption text-white/40 font-mono truncate mb-2.5">
+                    {tab === "url" ? repoUrl.trim() : repoName.trim()}
                   </div>
-                ))}
+                ) : null}
+                <div ref={progressScrollRef} className="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1">
+                  {progressSteps.length === 0 ? (
+                    <div className="text-caption text-white/50 py-1">{t("import.progress.starting")}</div>
+                  ) : progressSteps.map((step, i) => (
+                    <div key={i} className="flex items-start gap-1.5 text-caption">
+                      {step.status === "done" ? (
+                        <Check className="w-3 h-3 text-brand shrink-0 mt-px" />
+                      ) : (
+                        <span className="inline-block w-2.5 h-2.5 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0 mt-px" />
+                      )}
+                      <span className={step.status === "done" ? "text-white/40" : "text-white/90"}>
+                        {step.msg}
+                        {step.status === "working" && (
+                          <span className="text-white/35 ml-1">（{t("import.progress.elapsed", { s: Math.floor((Date.now() - step.ts) / 1000) })}）</span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="flex gap-1 p-1 bg-black/30 rounded-lg">
+                  {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }]).map(({ k, label, icon: Icon }) => (
+                    <button key={k} onClick={() => setTab(k)} className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
+                      <Icon className="w-3 h-3" /> {label}
+                    </button>
+                  ))}
+                </div>
+                {tab === "url" ? (
+                  <section className="space-y-2" data-testid="import-url-section">
+                    <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/owner/repo" data-testid="repo-url-input" className="w-full bg-black/30 text-white placeholder:text-white/40 text-body rounded-lg px-2.5 py-2 border border-white/20 focus:border-brand focus:outline-none" />
+                    <button onClick={handleImportUrl} disabled={!repoUrl.trim() || busy} data-testid="import-url-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.url")}</button>
+                  </section>
+                ) : tab === "markdown" ? (
+                  <section className="space-y-2" data-testid="import-md-section">
+                    <input type="text" value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder={t("import.placeholder.name")} data-testid="md-name-input" className="w-full bg-black/30 text-white placeholder:text-white/40 text-body rounded-lg px-2.5 py-2 border border-white/20 focus:border-brand focus:outline-none" />
+                    <textarea value={mdText} onChange={(e) => setMdText(e.target.value)} placeholder={t("import.placeholder.md")} data-testid="md-text-input" rows={4} className="w-full bg-black/30 text-white placeholder:text-white/40 text-body rounded-lg px-2.5 py-2 border border-white/20 focus:border-brand focus:outline-none resize-none" />
+                    <button onClick={handleImportMd} disabled={!mdText.trim() || !repoName.trim() || busy} data-testid="import-md-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.md")}</button>
+                  </section>
+                ) : (
+                  <section className="space-y-2" data-testid="import-folder-section">
+                    <p className="text-caption text-white/50 leading-relaxed">{t("import.folder.desc")}</p>
+                    <button onClick={handleImportFolder} disabled={busy} data-testid="import-folder-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.folder")}</button>
+                  </section>
+                )}
+              </>
             )}
             {error && <div className="border border-warning/40 text-warning-light text-label rounded-lg p-2 whitespace-pre-wrap" data-testid="import-error">{error}</div>}
             {success && <div className="border border-brand/30 text-brand text-label rounded-lg p-2" data-testid="import-success"><Check className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" />{success}</div>}

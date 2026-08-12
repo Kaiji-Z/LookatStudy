@@ -17,6 +17,9 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **顶栏"今日能量"**:替换原"每日 XP / 目标"显示。能量值 = 今日所得 XP(`todayXp`),
+  闪电图标(Zap)+ 进度条(软参考 100 满条,无配置目标)+ 数字。≥100 时 Zap 填充为实心
+  表示"充满"。颜色用 brand 绿(PRODUCT.md:绿=进度/能量;gold 仍专属 mastery/crown)。
 - **UI 全量 i18n + 设计系统收敛(6 组件文件)**:此前的 i18n 只完成了 chrome 外壳,
   切到 English 后中栏对话 / 右栏笔记本 / 考试页 / 会话标签仍是中文。本轮把
   ChatStream / NotebookPanel / MapRail / ExamView / ThreadSwitcher+ChatComposer /
@@ -117,6 +120,15 @@ Entry conventions for contributors:
   无 LLM 时按路径前缀匹配降级(同目录图挂到同目录 lesson)。
 
 ### Changed
+- **设置页重排为分组设置(iOS / Linear 式)**:删掉重复的"设置"标题(只留抽屉头一个);
+  6 个平铺卡片合并成 3 个语义组(AI 模型 / AI 看图 / 外观与语言),每组一张 surface-card,
+  卡内用发丝线(`border-t border-faint`)分行(左标签右控件);自定义 provider 表单从嵌套卡
+  改为卡内扁平展开;抽屉加宽 `max-w-md → max-w-lg`;新增粘性页脚(保存按钮 + 即时/显式语义 hint)。
+- **移除"每日目标"设置项**:不再可配置;顶栏改由"今日能量"展示今日所得(见上)。
+  XP service 后端逻辑不变(仍读 daily_goal_xp 兜底默认,只是 UI 不再写/显示)。
+- **图片下载改为永久开启**:`flag_image_download` 默认 true 且设置页移除其开关 ——
+  导入时下载 md/notebook 引用图片是默认合理行为,无需用户干预。AI 看图开关保留
+  (不是所有模型都支持 vision)。
 - **翻译图片放弃拉取,改位置映射**:学习仓库的翻译图片是机翻效果差,
   放弃下载。翻译正文里的图片引用按出现位置替换成原文对应位置的图片
   (已 base64 内联)。结果:翻译正文 = 翻译文字 + 原文图片,切换语言时

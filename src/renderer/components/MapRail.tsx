@@ -12,7 +12,6 @@ import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as L
 import { ConfirmCard } from "./ConfirmCard.js";
 import {
   computeBalloonLayout,
-  sectionHeight,
   balloonSegmentToPath,
   hashStr,
 } from "../lib/mapLayout.js";
@@ -498,9 +497,9 @@ function MapSection({
     return () => ro.disconnect();
   }, []);
 
-  // v0.6:气球布局(种子确定性抖动)。同 section id 每次渲染位置稳定。
+  // v0.6:气球布局(种子确定性抖动)+ v0.8 贪心防重叠。同 section id 每次渲染位置稳定。
   const layout = computeBalloonLayout(lessons.length, containerW, section.id);
-  const pathHeight = sectionHeight(lessons.length);
+  const pathHeight = layout.height;
   const NODE_W = 110; // MapNode 卡片宽(球+名字)
   const NODE_H = 76;  // 球 56 + 名字行 20
 

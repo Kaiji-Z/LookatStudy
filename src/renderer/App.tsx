@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Settings, Flame, Target, PanelLeft, PanelRight, BookOpen } from "lucide-react";
+import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -740,9 +740,15 @@ function Header({
   const t = useLang();
   return (
     <header className="app-header px-6 pt-2.5 pb-3 flex items-center justify-between shrink-0">
-      <div className="flex items-center gap-2.5">
-        {/* 布局切换按钮(Cursor 风格) */}
-        <div className="flex items-center gap-0.5 mr-1">
+      {/* 左:仅项目名(v0.8 重排 —— 图标移除,所有控件归右) */}
+      <h1 className="text-body font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none">
+        Lookat<span className="text-brand">Study</span>
+      </h1>
+
+      {/* 右:控件按"视图 → 阅读 → 进度 → 配置"分组 */}
+      <div className="flex items-center gap-3">
+        {/* 视图:左右栏显隐 */}
+        <div className="flex items-center gap-0.5">
           <button
             onClick={onToggleLeft}
             data-testid="layout-toggle-left"
@@ -764,18 +770,8 @@ function Header({
             <PanelRight className="w-4 h-4" />
           </button>
         </div>
-        <div
-          className="w-7 h-7 rounded-xl bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center text-white font-extrabold text-label shadow-md"
-          style={{ boxShadow: "0 2px 8px rgb(var(--brand-rgb) / 0.3)" }}
-        >
-          L
-        </div>
-        <h1 className="text-body font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100">
-          Lookat<span className="text-brand">Study</span>
-        </h1>
-      </div>
-      <div className="flex items-center gap-3">
-        {/* 全局字号控制(A-/A+):三档,影响整个应用的 rem 基准 */}
+
+        {/* 阅读:全局字号(A-/A+,三档,影响整个应用 rem 基准) */}
         <div className="flex items-center gap-0.5" data-testid="font-size-control">
           <button
             onClick={() => onFontBump("down")}
@@ -792,20 +788,35 @@ function Header({
             title={t("header.font.larger")}
           >A+</button>
         </div>
+
+        {/* 进度:今日学习能量(= todayXp,软参考 100 满条,无配置目标)+ 连击。
+            绿色(brand)= 进度/能量(PRODUCT.md);gold 留给 mastery/crown,这里不用。
+            ≥100 时填充 Zap 图标(实心闪电)表示"充满",颜色不变。 */}
         {xp && (
-          <div className="flex items-center gap-1.5" data-testid="xp-bar">
-            <Target className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-400" />
-            <div className="w-20 h-2 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
+          <div
+            className="flex items-center gap-1.5"
+            data-testid="xp-bar"
+            title={t("header.energy")}
+          >
+            <Zap
+              className="w-3.5 h-3.5 text-brand"
+              fill={xp.todayXp >= 100 ? "currentColor" : "none"}
+              aria-hidden="true"
+            />
+            <div className="w-16 h-2 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all duration-500 ${xp.achieved ? "bg-gold" : "bg-brand"}`}
-                style={{ width: `${Math.max(3, xp.pct)}%` }}
+                className="h-full rounded-full bg-brand transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(3, xp.todayXp))}%` }}
               />
             </div>
-            <span className={`text-label font-bold tabular-nums ${xp.achieved ? "text-gold" : "text-neutral-500 dark:text-neutral-400"}`}>
-              {xp.todayXp}/{xp.dailyGoal}
+            <span className="text-label font-bold tabular-nums text-brand">
+              {xp.todayXp}
             </span>
           </div>
         )}
+        {streak && <StreakBadge streak={streak} />}
+
+        {/* 配置:设置(最右,惯例位置) */}
         <button
           onClick={onOpenSettings}
           data-testid="header-settings"
@@ -814,7 +825,6 @@ function Header({
         >
           <Settings className="w-4 h-4" />
         </button>
-        {streak && <StreakBadge streak={streak} />}
       </div>
     </header>
   );
@@ -834,7 +844,7 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label={t("settings.title")}
-        className="relative w-full max-w-md h-full bg-surface-0 border-l border-[var(--border)] shadow-elevated flex flex-col"
+        className="relative w-full max-w-lg h-full bg-surface-0 border-l border-[var(--border)] shadow-elevated flex flex-col"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] shrink-0">
           <h2 className="text-body font-bold">{t("settings.title")}</h2>

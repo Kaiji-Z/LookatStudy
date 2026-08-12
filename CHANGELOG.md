@@ -117,6 +117,17 @@ Entry conventions for contributors:
   不硬依赖 README。无 LLM key 时纯规则降级(按目录分 section + 路径前缀图片关联)。
 
 ### Fixed
+- **dev:electron 启动崩溃 + 重启打不开**(两个独立根因):
+  (1) **vite 6.4.3 deps optimizer 崩溃**:本机 `C:\Users\kaiji` 是 junction → 真实路径
+  `d:\users\kaiji`,`process.cwd()`(C 盘大写)与 `realpathSync`(D 盘小写)不一致 →
+  optimizer 的 `esbuildOutputFromId` case-sensitive 比较失败,连 `react` 都预构建崩溃
+  (`Cannot read properties of undefined (reading 'imports')`,dev server 起不来)。
+  修复:`vite.config.ts` 顶部 `process.chdir(realpathSync(cwd))` + `__dirname` 走 realpath,
+  全进程路径统一(无 junction 的机器 no-op)。
+  (2) **single-instance lock 阻塞重启**:dev 模式未绕过 `requestSingleInstanceLock`,旧实例
+  被 `concurrently -k` SIGTERM 后 zombie 持锁,重启时新实例 `gotLock=false` 立即 quit
+  (exit 0 无日志,因检查在 whenReady 之前)。修复:`if (!isTestMode && !isDev)` dev 跳过 lock。
+- **vite-plugin-electron 0.29.1 → 1.1.1**:老版本配 vite 6 有兼容风险,顺带升级。
 - **verify-color-semantics 从 8/9 → 9/9**:修复 7 处 `text-neutral-500 dark:text-neutral-500`
   对比度违规(SettingsView 5 处 + ExamView 1 处 + ThreadSwitcher 1 处,全部 → `text-ink-muted`)。
   该测试在 HEAD 即已失败,本次顺手修绿。

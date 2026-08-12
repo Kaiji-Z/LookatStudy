@@ -3,8 +3,16 @@ import react from "@vitejs/plugin-react";
 import electron from "vite-plugin-electron";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname = realpathSync(dirname(fileURLToPath(import.meta.url)));
+// Windows 双盘 junction 修复:本机 C:\Users\kaiji 是 junction → d:\users\kaiji(真实路径)。
+// vite 6.4.3 deps optimizer 在 cwd(C 盘)与 realpath(D 盘)盘符/大小写不一致时,
+// esbuildOutputFromId case-sensitive 比较失败 → react 等基础 dep 预构建崩溃
+// ("Cannot read properties of undefined (reading 'imports')",dev server 起不来)。
+// chdir 到 realpath,让全进程路径形式统一(D 盘),消除 C/D 不一致。
+// 无 junction 的机器 realpath===cwd,chdir 是 no-op,无副作用。
+try { process.chdir(realpathSync(process.cwd())); } catch { /* 非 junction 或无权限,忽略 */ }
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -87,6 +95,12 @@ export default defineConfig({
   root: resolve(__dirname, "src/renderer"),
   base: "./", // Electron file:// 加载需要相对路径
   resolve: {
+    // preserveSymlinks: 本机 C:\Users\kaiji 是 junction → d:\users\kaiji(双盘映射)。
+    // 默认 false 时 vite 会 realpathSync 到 D 盘,与 C 盘 cwd 大小写不一致 → vite 6.4.3
+    // deps optimizer 的 esbuildOutputFromId case-sensitive 比较失败 → "Cannot read
+    // properties of undefined (reading 'imports')" 崩溃(react 等基础 dep 都中招)。
+    // 设 true 让 vite 保持调用路径(C 盘),不 follow junction,路径形式全局一致。
+    preserveSymlinks: true,
     alias: {
       "@shared": resolve(__dirname, "shared"),
       "@renderer": resolve(__dirname, "src/renderer"),
@@ -99,8 +113,11 @@ export default defineConfig({
   // mermaid v11 是大型纯 ESM 包(含 d3/cytoscape/elkjs/dagre 等子依赖)。
   // dev 模式下 dynamic import 一个未预构建的 ESM 包会因内部 bare import 解析失败 → 渲染报错。
   // 显式 include 让 vite 预转换为浏览器可用的 ESM。生产 build 不受影响(rollup 会处理)。
+  // esbuildOptions.preserveSymlinks: 与上层 resolve.preserveSymlinks 同理,让 optimizer 的
+  // esbuild 也保持 C 盘路径,不 follow 双盘 junction(否则 case-sensitive 比较失败崩溃)。
   optimizeDeps: {
     include: ["mermaid"],
+    esbuildOptions: { preserveSymlinks: true },
   },
   server: {
     host: true,

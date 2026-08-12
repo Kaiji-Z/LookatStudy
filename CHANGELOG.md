@@ -147,7 +147,11 @@ Entry conventions for contributors:
   不硬依赖 README。无 LLM key 时纯规则降级(按目录分 section + 路径前缀图片关联)。
 
 ### Fixed
-- **`dark:` 重复声明 bug 全面清零**:同一属性写两条 `dark:`(如
+- **导入进度"两屏断裂"修复**:此前 URL 导入分两阶段 —— `analyzeRepo`(分析)进度爬完后,
+  `doImport` 开头 `setProgressSteps([])` **把进度清空重开**,用户看到"分析进度→瞬间清零→
+  导入进度从0重爬"的两个断开屏。删掉该 reset,让 analyze→import 进度连续累加。同时把进度
+  从表单下方 `max-h-52` 小框改为 `busy` 时**整块进度屏替代表单**(`max-h-[40vh]` + 自动滚到底
+  + 步骤标题/目标 URL),从点导入到完成一个屏显示全部进度。
   `text-neutral-500 dark:text-neutral-600 dark:text-neutral-400`,后者覆盖前者,
   意图错乱)的系统性问题,本轮扫净所有出现点 —— ChatStream(9 处)、NotebookPanel
   (15+ 处,含 `dark:text-neutral-400 dark:text-neutral-600` 反序变体)、ExamView

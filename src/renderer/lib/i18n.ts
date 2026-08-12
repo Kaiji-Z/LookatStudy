@@ -91,6 +91,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "import.success.folder": "导入成功",
     "import.error.network": "\n\n网络受限或私有仓库请改用「Markdown」方式。",
     "import.progress.elapsed": "已 {s}s",
+    "import.progress.title": "正在导入课程…",
+    "import.progress.starting": "正在启动…",
 
     // —— Toast ——
     "toast.threadCreateFailed": "会话创建失败,请重试",
@@ -487,6 +489,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "import.success.folder": "Imported",
     "import.error.network": "\n\nFor restricted networks or private repos, use the Markdown method.",
     "import.progress.elapsed": "{s}s elapsed",
+    "import.progress.title": "Importing course…",
+    "import.progress.starting": "Starting…",
 
     // —— Toast ——
     "toast.threadCreateFailed": "Failed to create thread. Please retry.",

@@ -4,6 +4,8 @@
  * tool compare_table 返回 { headers, rows },渲染成对比表格。
  * 第一列通常是维度名,加粗;数据行斑马纹;暗色模式适配。
  */
+import { Table2, AlertTriangle } from "lucide-react";
+
 interface CompareTableData {
   artifactType: "compare_table";
   title: string;
@@ -18,7 +20,7 @@ export function CompareTableArtifact({ data }: { data: unknown }) {
   return (
     <div className="surface-card p-4" data-testid="artifact-compare-table">
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-body">📊</span>
+        <Table2 className="w-4 h-4 text-ink-muted shrink-0" />
         <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200">{d.title}</h3>
       </div>
       <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
@@ -59,8 +61,9 @@ export function CompareTableArtifact({ data }: { data: unknown }) {
         </table>
       </div>
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
-          ⚠️ {d.warnings.join("; ")}
+        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400 flex items-start gap-1" data-testid="artifact-warnings">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{d.warnings.join("; ")}</span>
         </div>
       )}
     </div>

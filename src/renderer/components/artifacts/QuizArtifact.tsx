@@ -7,6 +7,8 @@
  * 这是 v0.2 把"📝练习 tab"并入对话流的核心:练习题作为 Generative UI 产物出现。
  */
 import { useState } from "react";
+import { ListChecks, Check, X, AlertTriangle } from "lucide-react";
+import { useLang } from "../../lib/i18n.js";
 
 interface QuizQuestion {
   prompt: string;
@@ -29,6 +31,7 @@ export function QuizArtifact({
   onAnswered?: (question: QuizQuestion, selectedIndex: number, correct: boolean) => void;
 }) {
   const d = data as QuizData;
+  const t = useLang();
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -40,10 +43,10 @@ export function QuizArtifact({
       <div className="surface-card p-4 text-center" data-testid="artifact-quiz-done">
         <div className="text-2xl mb-2">{score.correct === score.total ? "🎉" : "📚"}</div>
         <div className="text-body font-bold text-neutral-800 dark:text-neutral-200">
-          {score.correct}/{score.total} 答对
+          {t("quiz.scoreSummary", { correct: score.correct, total: score.total })}
         </div>
-        <div className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mt-1">
-          {score.correct === score.total ? "全部答对,掌握度已提议更新" : "再练一组巩固一下"}
+        <div className="text-label text-ink-muted mt-1">
+          {score.correct === score.total ? t("quiz.allCorrectHint") : t("quiz.tryAgainHint")}
         </div>
       </div>
     );
@@ -70,13 +73,13 @@ export function QuizArtifact({
     <div className="surface-card p-4" data-testid="artifact-quiz">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="text-body">📝</span>
+          <ListChecks className="w-4 h-4 text-brand" />
           <span className="text-label font-bold text-brand">
-            第 {current + 1}/{d.questions.length} 题
+            {t("quiz.questionProgress", { cur: current + 1, total: d.questions.length })}
           </span>
         </div>
-        <span className="text-label text-neutral-600 dark:text-neutral-400">
-          已答对 {score.correct}
+        <span className="text-label text-ink-muted">
+          {t("quiz.answeredCorrect", { n: score.correct })}
         </span>
       </div>
 
@@ -107,8 +110,8 @@ export function QuizArtifact({
             >
               <span className="font-bold mr-2">{String.fromCharCode(65 + idx)}</span>
               {opt}
-              {isAnswer && <span className="float-right">✅</span>}
-              {isWrongSelected && <span className="float-right">❌</span>}
+              {isAnswer && <span className="float-right"><Check className="w-4 h-4 inline-block" /></span>}
+              {isWrongSelected && <span className="float-right"><X className="w-4 h-4 inline-block" /></span>}
             </button>
           );
         })}
@@ -123,7 +126,10 @@ export function QuizArtifact({
             }`}
             data-testid="quiz-explanation"
         >
-          <div className="font-bold mb-1">{isCorrect ? "✅ 答对了" : "❌ 答错了"}</div>
+          <div className="font-bold mb-1 flex items-center gap-1.5">
+            {isCorrect ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+            <span>{isCorrect ? t("quiz.correct") : t("quiz.wrong")}</span>
+          </div>
           <div className="text-neutral-700 dark:text-neutral-300">{q.explanation}</div>
         </div>
       )}
@@ -135,7 +141,7 @@ export function QuizArtifact({
           data-testid="quiz-submit"
           className="btn-3d-brand w-full py-2 text-body disabled:opacity-40"
         >
-          提交答案
+          {t("exercise.submit")}
         </button>
       ) : (
         <button
@@ -143,13 +149,14 @@ export function QuizArtifact({
           data-testid="quiz-next"
           className="btn-3d-brand w-full py-2 text-body"
         >
-          {current + 1 < d.questions.length ? "下一题 →" : "完成练习"}
+          {current + 1 < d.questions.length ? t("exercise.next") : t("quiz.finish")}
         </button>
       )}
 
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
-          ⚠️ {d.warnings.join("; ")}
+        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400 flex items-start gap-1" data-testid="artifact-warnings">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{d.warnings.join("; ")}</span>
         </div>
       )}
     </div>

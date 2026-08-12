@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ContentNode, Exercise } from "@shared/types";
 import { api } from "../lib/api.js";
+import { useLang, translate } from "../lib/i18n.js";
 import { Target, Star, RotateCcw, Check, X, ArrowRight, AlertCircle } from "lucide-react";
 
 interface ExamViewProps {
@@ -25,6 +26,7 @@ interface ExamViewProps {
 type Phase = "loading" | "answering" | "submitting" | "result" | "error";
 
 export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
+  const t = useLang();
   const [phase, setPhase] = useState<Phase>("loading");
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -56,7 +58,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
         const res = await api.examStart(examNode.id);
         if (cancelled) return;
         if (res.exercises.length === 0) {
-          setErrorMsg("题目生成失败,请稍后重试");
+          setErrorMsg(translate("exam.errorEmpty"));
           setPhase("error");
           return;
         }
@@ -121,11 +123,11 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6" data-testid="exam-loading">
         <Target className="w-12 h-12 text-accent mb-4 opacity-60" />
-        <div className="flex items-center gap-1.5 text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">
+        <div className="flex items-center gap-1.5 text-body text-ink-muted">
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
-          <span className="ml-1">正在生成章节考试题…</span>
+          <span className="ml-1">{t("exam.loading")}</span>
         </div>
       </div>
     );
@@ -136,13 +138,13 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" data-testid="exam-error">
         <AlertCircle className="w-10 h-10 text-warning mb-3" />
-        <div className="text-body font-bold text-neutral-800 dark:text-neutral-200 mb-1">考试加载失败</div>
-        <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mb-4 max-w-xs">{errorMsg}</div>
+        <div className="text-body font-bold text-neutral-800 dark:text-neutral-200 mb-1">{t("exam.errorTitle")}</div>
+        <div className="text-body text-ink-muted mb-4 max-w-xs">{errorMsg}</div>
         <button
           onClick={() => window.location.reload()}
           className="btn-3d-neutral px-4 py-1.5 text-body"
         >
-          重新加载
+          {t("exam.reload")}
         </button>
       </div>
     );
@@ -175,7 +177,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
         </div>
         {/* 进度条 */}
         <div className="flex items-center gap-2">
-          <span className="text-label font-bold tabular-nums text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 shrink-0">
+          <span className="text-label font-bold tabular-nums text-ink-muted shrink-0">
             {currentIdx + 1}/{exercises.length}
           </span>
           <div className="flex-1 h-1.5 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
@@ -186,7 +188,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
 
       {/* 题目卡片 */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="text-label font-bold text-accent mb-2">第 {currentIdx + 1} 题</div>
+        <div className="text-label font-bold text-accent mb-2">{t("exam.question.label", { n: currentIdx + 1 })}</div>
         <div className="text-body text-neutral-900 dark:text-neutral-100 font-medium mb-4 leading-relaxed">
           {ex.prompt}
         </div>
@@ -228,9 +230,9 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
           }`}
         >
           {currentIdx + 1 < exercises.length ? (
-            <>下一题 <ArrowRight className="w-4 h-4 inline ml-1" /></>
+            <>{t("exam.next")} <ArrowRight className="w-4 h-4 inline ml-1" /></>
           ) : (
-            "提交考试"
+            t("exam.submit")
           )}
         </button>
       </div>
@@ -265,6 +267,7 @@ function ExamResultCard({
   answers: Record<string, string>;
   onRetry: () => void;
 }) {
+  const t = useLang();
   const { correctCount, totalCount, stars, bestStars, perQuestion } = result;
   const passed = stars > 0;
 
@@ -275,8 +278,8 @@ function ExamResultCard({
         <div className={`text-4xl font-extrabold mb-1 ${passed ? "text-accent" : "text-neutral-600 dark:text-neutral-400"}`}>
           {correctCount}/{totalCount}
         </div>
-        <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 mb-3">
-          正确率 {Math.round((correctCount / totalCount) * 100)}%
+        <div className="text-body text-ink-muted mb-3">
+          {t("exam.accuracy", { n: Math.round((correctCount / totalCount) * 100) })}
         </div>
         {/* 星星 */}
         <div className="flex justify-center gap-1.5 mb-1" data-testid="exam-stars">
@@ -288,18 +291,18 @@ function ExamResultCard({
           ))}
         </div>
         {/* 本次/最佳 */}
-        <div className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">
+        <div className="text-label text-ink-muted">
           {passed ? (
-            bestStars > stars ? `本次 ${stars} 星 · 历史最佳 ${bestStars} 星` : `恭喜,获得 ${stars} 星!`
+            bestStars > stars ? t("exam.stars.thisAndBest", { n: stars, m: bestStars }) : t("exam.stars.congrats", { n: stars })
           ) : (
-            "未达 60%,再接再厉"
+            t("exam.stars.failed")
           )}
         </div>
       </div>
 
       {/* 逐题回顾 */}
       <div className="space-y-2.5 mb-4">
-        <div className="text-label font-bold text-neutral-700 dark:text-neutral-300 mb-1">逐题回顾</div>
+        <div className="text-label font-bold text-neutral-700 dark:text-neutral-300 mb-1">{t("exam.review.title")}</div>
         {perQuestion.map((pq, i) => {
           const ex = exercises.find((e) => e.id === pq.exerciseId);
           return (
@@ -315,20 +318,20 @@ function ExamResultCard({
                   <X className="w-4 h-4 text-warning shrink-0 mt-0.5" />
                 )}
                 <div className="text-body text-neutral-800 dark:text-neutral-200 font-medium leading-relaxed">
-                  {ex?.prompt ?? `(题目 ${i + 1})`}
+                  {ex?.prompt ?? t("exam.review.questionFallback", { n: i + 1 })}
                 </div>
               </div>
               {!pq.correct && ex?.options && (
-                <div className="text-label text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 ml-6 mb-1">
-                  <span className="text-warning">你的答案:</span>{" "}
-                  {ex.options[Number.parseInt(pq.userAnswer)] ?? pq.userAnswer ?? "(未答)"}{" "}
+                <div className="text-label text-ink-muted ml-6 mb-1">
+                  <span className="text-warning">{t("exam.review.yourAnswer")}</span>{" "}
+                  {ex.options[Number.parseInt(pq.userAnswer)] ?? pq.userAnswer ?? t("exam.review.unanswered")}{" "}
                   <span className="text-neutral-600 dark:text-neutral-400">·</span>{" "}
-                  <span className="text-brand">正确:</span>{" "}
+                  <span className="text-brand">{t("exam.review.correctAnswer")}</span>{" "}
                   {ex.options[Number.parseInt(pq.correctAnswer)] ?? pq.correctAnswer}
                 </div>
               )}
               {pq.explanation && (
-                <div className="text-label text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 ml-6 leading-relaxed">
+                <div className="text-label text-ink-muted ml-6 leading-relaxed">
                   {pq.explanation}
                 </div>
               )}
@@ -344,7 +347,7 @@ function ExamResultCard({
         className="btn-3d-neutral w-full py-2 text-body font-bold flex items-center justify-center gap-1.5"
       >
         <RotateCcw className="w-4 h-4" />
-        重新考试(题目已缓存)
+        {t("exam.retry")}
       </button>
     </div>
   );

@@ -12,6 +12,8 @@
  * 交互:缩放(+/- 按钮 + Ctrl+滚轮)+ 可滚动视口(内容大时双向滚动,不限死高度)
  */
 import { useCallback, useEffect, useId, useState } from "react";
+import { Workflow, AlertTriangle } from "lucide-react";
+import { useLang } from "../../lib/i18n.js";
 import { renderMermaid } from "../../lib/lazy-mermaid.js";
 import { useDragPan } from "../../lib/useDragPan.js";
 
@@ -24,12 +26,6 @@ interface MermaidData {
   warnings?: string[];
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  flowchart: "流程图",
-  sequence: "时序图",
-  state: "状态图",
-};
-
 type RenderState =
   | { status: "loading" }
   | { status: "rendered"; svg: string }
@@ -41,6 +37,12 @@ const ZOOM_STEP = 0.2;
 
 export function MermaidArtifact({ data }: { data: unknown }) {
   const d = data as MermaidData;
+  const t = useLang();
+  const TYPE_LABELS: Record<string, string> = {
+    flowchart: t("artifact.diagram.flowchart"),
+    sequence: t("artifact.diagram.sequence"),
+    state: t("artifact.diagram.state"),
+  };
   // useId 保证 SSR-safe 唯一 id,mermaid v11 需要它作为内部 dom 节点 id
   const reactId = useId().replace(/[:]/g, "_");
   const [state, setState] = useState<RenderState>({ status: "loading" });
@@ -101,7 +103,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
     <div className="surface-card p-4" data-testid="artifact-mermaid">
       <div className="flex items-center justify-between mb-3 gap-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-body shrink-0">📐</span>
+          <Workflow className="w-4 h-4 text-ink-muted shrink-0" />
           <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200 truncate">
             {d.title}
           </h3>
@@ -116,7 +118,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
               onClick={zoomOut}
               disabled={zoom <= MIN_ZOOM}
               className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-label font-bold flex items-center justify-center"
-              title="缩小"
+              title={t("artifact.zoomOut")}
               data-testid="mermaid-zoom-out"
             >
               −
@@ -124,7 +126,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
             <button
               onClick={zoomReset}
               className="px-1.5 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-caption font-bold tabular-nums"
-              title="重置缩放"
+              title={t("artifact.zoomReset")}
               data-testid="mermaid-zoom-reset"
             >
               {Math.round(zoom * 100)}%
@@ -133,7 +135,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
               onClick={zoomIn}
               disabled={zoom >= MAX_ZOOM}
               className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-label font-bold flex items-center justify-center"
-              title="放大"
+              title={t("artifact.zoomIn")}
               data-testid="mermaid-zoom-in"
             >
               +
@@ -144,7 +146,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
           onClick={() => window.open(liveUrl, "_blank")}
           className="text-caption text-accent hover:underline font-bold shrink-0"
           data-testid="mermaid-open-live"
-          title="在 mermaid.live 打开(可编辑)"
+          title={t("artifact.mermaid.openLive")}
         >
           mermaid.live ↗
         </button>
@@ -160,9 +162,9 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         data-testid="mermaid-render-area"
       >
         {state.status === "loading" && (
-          <div className="flex items-center gap-2 text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 my-8 justify-center" data-testid="mermaid-loading">
+          <div className="flex items-center gap-2 text-body text-ink-muted my-8 justify-center" data-testid="mermaid-loading">
             <span className="typing-dot w-1.5 h-1.5 bg-accent rounded-full inline-block" />
-            <span>渲染图中…</span>
+            <span>{t("artifact.mermaid.rendering")}</span>
           </div>
         )}
         {state.status === "rendered" && (
@@ -204,27 +206,29 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         )}
         {state.status === "error" && (
           <div className="w-full text-center my-4" data-testid="mermaid-fallback">
-            <div className="text-body text-warning mb-2">
-              ⚠️ 渲染失败,显示源码(可复制到 mermaid.live 查看)
+            <div className="text-body text-warning mb-2 flex items-center justify-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{t("artifact.mermaid.renderFailed")}</span>
             </div>
             <pre className="text-label bg-neutral-100 dark:bg-neutral-900/60 rounded p-2 overflow-x-auto text-neutral-700 dark:text-neutral-300 font-mono text-left">
               {d.mermaid}
             </pre>
-            <div className="text-caption text-neutral-600 dark:text-neutral-400 mt-2">错误: {state.message}</div>
+            <div className="text-caption text-ink-muted mt-2">{t("artifact.mermaid.errorPrefix", { msg: state.message })}</div>
           </div>
         )}
       </div>
 
       {(state.status === "rendered") && (
-        <div className="mt-1.5 text-caption text-neutral-600 dark:text-neutral-400 dark:text-neutral-600 flex items-center gap-2">
-          <span>Ctrl+滚轮缩放 · 拖动平移查看</span>
+        <div className="mt-1.5 text-caption text-ink-muted flex items-center gap-2">
+          <span>{t("artifact.mermaid.hint")}</span>
         </div>
       )}
 
       {/* harness 修复警告 */}
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
-          ⚠️ {d.warnings.join("; ")}
+        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400 flex items-start gap-1" data-testid="artifact-warnings">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{d.warnings.join("; ")}</span>
         </div>
       )}
     </div>

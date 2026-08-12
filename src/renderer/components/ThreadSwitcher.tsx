@@ -20,6 +20,7 @@ import { useState, useRef, useEffect } from "react";
 import type { Thread } from "@shared/types";
 import { Plus, Settings, Edit, Archive, Trash } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
+import { useLang } from "../lib/i18n.js";
 
 interface ThreadSwitcherProps {
   threads: Thread[];
@@ -42,6 +43,7 @@ export function ThreadSwitcher({
   onArchive,
   onDelete,
 }: ThreadSwitcherProps) {
+  const t = useLang();
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -69,9 +71,9 @@ export function ThreadSwitcher({
     setMenuFor(menuFor === threadId ? null : threadId);
   };
 
-  const startRename = (t: Thread) => {
-    setRenamingId(t.id);
-    setRenameValue(t.title ?? "");
+  const startRename = (th: Thread) => {
+    setRenamingId(th.id);
+    setRenameValue(th.title ?? "");
     setMenuFor(null);
     setMenuPos(null);
   };
@@ -85,10 +87,10 @@ export function ThreadSwitcher({
     return (
       <div className="px-4 py-2 shrink-0 flex items-center gap-2 text-label bg-surface-1 opacity-60" data-testid="thread-switcher-empty">
         <span className="w-1 h-1 rounded-full bg-brand shrink-0" />
-        <span className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 truncate flex-1">
-          {focusNodeTitle ?? "未选节点"}
+        <span className="text-ink-muted truncate flex-1">
+          {focusNodeTitle ?? t("thread.empty.no_node")}
         </span>
-        <span className="text-caption text-neutral-500 shrink-0">输入问题开始</span>
+        <span className="text-caption text-ink-muted shrink-0">{t("thread.empty.hint")}</span>
       </div>
     );
   }
@@ -98,19 +100,19 @@ export function ThreadSwitcher({
       {/* 极薄行:低对比文字标签,当前会话仅用 brand 点 + 加粗,无填充无描边。
           整行 opacity-70 淡入背景,hover 提到 100%。内容是主角,tab 让位。 */}
       <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin px-3 py-1.5 opacity-70 hover:opacity-100 transition-opacity">
-        {threads.map((t) => {
-          const isActive = t.id === activeThread?.id;
-          const isRenaming = renamingId === t.id;
+        {threads.map((th) => {
+          const isActive = th.id === activeThread?.id;
+          const isRenaming = renamingId === th.id;
           return (
             <div
-              key={t.id}
+              key={th.id}
               className={`group relative flex items-center gap-1.5 px-2 py-0.5 cursor-pointer whitespace-nowrap transition-colors shrink-0 rounded ${
                 isActive
-                  ? "text-neutral-900 dark:text-neutral-200"
+                  ? "text-ink-strong"
                   : "text-ink-muted hover:text-ink-strong"
               }`}
-              onClick={() => !isRenaming && onPickThread(t.id)}
-              data-testid={`thread-tab-${t.id.slice(0, 8)}`}
+              onClick={() => !isRenaming && onPickThread(th.id)}
+              data-testid={`thread-tab-${th.id.slice(0, 8)}`}
             >
               <span className={`w-1 h-1 rounded-full shrink-0 transition-opacity ${isActive ? "bg-brand opacity-100" : "bg-neutral-400 dark:bg-neutral-600 opacity-0 group-hover:opacity-60"}`} />
 
@@ -125,22 +127,22 @@ export function ThreadSwitcher({
                   onBlur={commitRename}
                   onClick={(e) => e.stopPropagation()}
                   autoFocus
-                  className="bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 text-label rounded px-1.5 py-0.5 border border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 w-28"
+                  className="bg-white dark:bg-neutral-950 text-ink-strong text-label rounded px-1.5 py-0.5 border border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 w-28"
                   data-testid="thread-rename-input"
                 />
               ) : (
-                <span className={`text-label max-w-[120px] truncate ${isActive ? "font-semibold" : "font-normal"}`} data-tooltip={t.title || "新会话"}>
-                  {t.title || "新会话"}
+                <span className={`text-label max-w-[120px] truncate ${isActive ? "font-semibold" : "font-normal"}`} data-tooltip={th.title || t("toast.threadDefault")}>
+                  {th.title || t("toast.threadDefault")}
                 </span>
               )}
 
               {!isRenaming && (
                 <button
-                  onClick={(e) => openMenu(e, t.id)}
-                  className="flex items-center justify-center w-4 h-4 rounded text-neutral-600 hover:text-neutral-300 hover:bg-ink/5 opacity-0 group-hover:opacity-100 transition-all"
-                  data-testid={`thread-gear-${t.id.slice(0, 8)}`}
-                  title="操作"
-                  aria-label="会话操作"
+                  onClick={(e) => openMenu(e, th.id)}
+                  className="flex items-center justify-center w-4 h-4 rounded text-ink-muted hover:text-ink-strong hover:bg-ink/5 opacity-0 group-hover:opacity-100 transition-all"
+                  data-testid={`thread-gear-${th.id.slice(0, 8)}`}
+                  title={t("thread.actions.label")}
+                  aria-label={t("thread.actions.label")}
                 ><Settings className="w-3 h-3" /></button>
               )}
             </div>
@@ -150,42 +152,42 @@ export function ThreadSwitcher({
         {/* + 新建:纯图标,极淡 */}
         <button
           onClick={onCreate}
-          className="flex items-center justify-center w-6 h-6 ml-1 rounded text-neutral-600 hover:text-brand hover:bg-ink/5 transition-colors shrink-0"
+          className="flex items-center justify-center w-6 h-6 ml-1 rounded text-ink-muted hover:text-brand hover:bg-ink/5 transition-colors shrink-0"
           data-testid="thread-new"
-          title="新建会话"
-          aria-label="新建会话"
+          title={t("thread.new.label")}
+          aria-label={t("thread.new.label")}
         ><Plus className="w-3.5 h-3.5" /></button>
       </div>
 
       {/* 齿轮菜单:fixed 定位,脱离滚动容器 */}
       {menuFor && menuPos && (() => {
-        const t = threads.find((x) => x.id === menuFor);
-        if (!t) return null;
+        const th = threads.find((x) => x.id === menuFor);
+        if (!th) return null;
         return (
           <div
             ref={menuRef}
             style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
             className="z-50 w-32 bg-white dark:bg-neutral-900 rounded-lg shadow-pop py-1 border border-neutral-200 dark:border-neutral-700"
-            data-testid={`thread-menu-${t.id.slice(0, 8)}`}
+            data-testid={`thread-menu-${th.id.slice(0, 8)}`}
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              onClick={() => startRename(t)}
-              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-white transition-colors"
-            ><Edit className="w-3 h-3" />重命名</button>
+              onClick={() => startRename(th)}
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-ink-muted hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-ink-strong transition-colors"
+            ><Edit className="w-3 h-3" />{t("thread.menu.rename")}</button>
             <button
-              onClick={() => { onArchive(t.id); setMenuFor(null); setMenuPos(null); }}
-              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-white transition-colors"
-            ><Archive className="w-3 h-3" />归档</button>
+              onClick={() => { onArchive(th.id); setMenuFor(null); setMenuPos(null); }}
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-ink-muted hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-ink-strong transition-colors"
+            ><Archive className="w-3 h-3" />{t("thread.menu.archive")}</button>
             <button
               onClick={(e) => {
                 const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                setConfirmDelete({ id: t.id, title: t.title ?? "新会话", rect });
+                setConfirmDelete({ id: th.id, title: th.title ?? t("toast.threadDefault"), rect });
                 setMenuFor(null);
                 setMenuPos(null);
               }}
               className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-warning hover:bg-warning/10 transition-colors"
-            ><Trash className="w-3 h-3" />删除</button>
+            ><Trash className="w-3 h-3" />{t("action.delete")}</button>
           </div>
         );
       })()}
@@ -194,9 +196,9 @@ export function ThreadSwitcher({
       {confirmDelete && (
         <ConfirmCard
           anchorRect={confirmDelete.rect}
-          message={`删除会话「${confirmDelete.title}」?消息也会一并删除。`}
+          message={t("thread.delete.confirm", { name: confirmDelete.title })}
           danger
-          confirmLabel="删除"
+          confirmLabel={t("action.delete")}
           testid="thread-delete-confirm"
           onConfirm={() => { onDelete(confirmDelete.id); setConfirmDelete(null); }}
           onCancel={() => setConfirmDelete(null)}

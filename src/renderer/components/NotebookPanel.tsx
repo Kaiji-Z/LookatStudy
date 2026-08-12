@@ -10,7 +10,7 @@
  *
  * 砍掉了"全部"tab —— 笔记跟随节点,跨节点靠左侧地图切换。
  */
-import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode, type ComponentType } from "react";
 import type { ContentNode, CanvasItem, NoteSourceAnchor, NodeAsset } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -18,10 +18,36 @@ import { ErrorBoundary } from "./ErrorBoundary.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
-import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen } from "lucide-react";
+import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote } from "lucide-react";
 import { useLang } from "../lib/i18n.js";
 
 export type NotebookTab = "content" | "notes";
+
+/** Translate function shape returned by useLang(). */
+type TranslateFn = (key: string, vars?: Record<string, string | number>) => string;
+
+/** AI 产物类型 → lucide 图标(组件, 非 emoji)。CanvasItemCard 卡顶用。 */
+const ARTIFACT_ICON: Record<string, ComponentType<{ className?: string }>> = {
+  concept_map: Share2,
+  quiz: ListChecks,
+  compare_table: Table2,
+  diagram: GitBranch,
+  code_walkthrough: Code2,
+};
+
+/** 已知 AI 产物类型白名单(用于在 i18n 字典里命中 artifact.type.{type})。 */
+const KNOWN_ARTIFACT_TYPES = new Set([
+  "concept_map",
+  "quiz",
+  "compare_table",
+  "diagram",
+  "code_walkthrough",
+]);
+
+/** 产物类型显示名(走 i18n, 复用 artifact.type.* key;未知类型回退到 artifact.type.unknown)。 */
+function artifactLabel(t: TranslateFn, type: string): string {
+  return KNOWN_ARTIFACT_TYPES.has(type) ? t(`artifact.type.${type}`) : t("artifact.type.unknown");
+}
 
 interface NotebookPanelProps {
   selectedNode: ContentNode | null;
@@ -146,6 +172,7 @@ function ContentTab({
   onSaveContentNote: (text: string, anchor: NoteSourceAnchor) => void;
   locale?: string | null;
 }) {
+  const t = useLang();
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -263,10 +290,10 @@ function ContentTab({
   const handleQuoteClick = useCallback(() => {
     if (!quoteBtn || !onQuoteToChat) return;
     const truncated = quoteBtn.text.length > 200 ? quoteBtn.text.slice(0, 200) + "…" : quoteBtn.text;
-    onQuoteToChat(`关于这段内容「${truncated}」,我不太懂,请帮我解释:`);
+    onQuoteToChat(t("notebook.quote.template", { text: truncated }));
     setQuoteBtn(null);
     window.getSelection()?.removeAllRanges();
-  }, [quoteBtn, onQuoteToChat]);
+  }, [quoteBtn, onQuoteToChat, t]);
 
   const handleSaveNoteClick = useCallback(() => {
     if (!quoteBtn || !onSaveContentNote || !selectedNode) return;
@@ -287,8 +314,8 @@ function ContentTab({
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-6">
         <div className="text-4xl mb-3 opacity-30">📖</div>
-        <div className="text-body text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 max-w-xs">
-          从左侧地图选一个节点开始学习,讲解会显示在这里
+        <div className="text-body text-ink-muted max-w-xs">
+          {t("notebook.empty.select_node")}
         </div>
       </div>
     );
@@ -296,16 +323,20 @@ function ContentTab({
   return (
     <div className="p-5 relative" data-testid="node-content" ref={contentRef} onMouseUp={handleMouseUp}>
       <div className="text-caption font-bold text-brand uppercase tracking-wider mb-1">
-        {selectedNode.type === "section" ? "章节" : selectedNode.type === "concept" ? "概念" : "课时"}
+        {selectedNode.type === "section"
+          ? t("notebook.node_type.section")
+          : selectedNode.type === "concept"
+            ? t("notebook.node_type.concept")
+            : t("notebook.node_type.lesson")}
       </div>
       <h2 className="text-xl font-extrabold mb-4 text-neutral-900 dark:text-neutral-100 tracking-tight">
         {selectedNode.title}
       </h2>
       {loading ? (
-        <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 flex items-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />正在加载这一节的讲解…</div>
+        <div className="text-body text-ink-muted flex items-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />{t("notebook.content.loading")}</div>
       ) : loadError ? (
         <div className="text-body text-warning">
-          ⚠️ 内容加载失败。<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id, locale ?? undefined).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>重试</button>
+          {t("notebook.content.load_failed")}<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id, locale ?? undefined).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>{t("notebook.content.retry")}</button>
         </div>
       ) : content ? (
         <ErrorBoundary
@@ -313,15 +344,15 @@ function ContentTab({
           fallback={(_err, retry) => (
             <div className="prose prose-sm max-w-[80ch] leading-relaxed [&_pre]:max-w-full [&_pre]:overflow-x-auto">
               <div className="text-body text-warning mb-2">
-                ⚠️ 这段内容渲染失败(可能翻译格式有问题)。
+                {t("notebook.content.render_failed")}
               </div>
               <pre className="text-caption text-neutral-500 whitespace-pre-wrap break-words bg-neutral-100 dark:bg-neutral-800 p-3 rounded">
                 {content.slice(0, 500)}
-                {content.length > 500 ? "\n…(截断)" : ""}
+                {content.length > 500 ? "\n" + t("notebook.content.truncated") : ""}
               </pre>
               <div className="flex gap-2 mt-2">
                 <button className="text-caption underline text-accent" onClick={retry}>
-                  重试渲染
+                  {t("notebook.content.retry_render")}
                 </button>
               </div>
             </div>
@@ -353,15 +384,16 @@ function ContentTab({
         </div>
         </ErrorBoundary>
       ) : (
-        <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">
-          这一节还没有讲解内容。问 AI 导师:「给我讲讲这一节」
+        <div className="text-body text-ink-muted">
+          {t("notebook.content.empty")}
         </div>
       )}
       {/* 多模态:集中插图区(当前节点的全部图片缩略图网格) */}
       {assets.length > 0 && (
         <div className="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700">
-          <div className="text-label font-bold text-neutral-600 dark:text-neutral-300 mb-2">
-            📷 插图({assets.length})
+          <div className="text-label font-bold text-neutral-600 dark:text-neutral-300 mb-2 flex items-center gap-1">
+            <ImageIcon className="w-3.5 h-3.5" />
+            <span>{t("notebook.images.heading", { n: assets.length })}</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {assets.map((asset) => (
@@ -380,29 +412,34 @@ function ContentTab({
             <button
               onClick={handleQuoteClick}
               data-testid="quote-to-chat-btn"
+              aria-label={t("notebook.quote.ask")}
               className="px-3 py-1.5 rounded-lg bg-brand text-white text-body font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition-colors"
             >
-              💬 提问
+              <MessageCircle className="w-3.5 h-3.5" />
+              {t("notebook.quote.ask")}
             </button>
           )}
           <button
             onClick={handleSaveNoteClick}
             data-testid="save-note-btn"
+            aria-label={t("notebook.quote.add_note")}
             className="px-3 py-1.5 rounded-lg bg-accent text-white text-body font-bold shadow-elevated flex items-center gap-1 hover:brightness-110 transition"
-            title="把选中文字存到记录区,带溯源跳转"
+            title={t("notebook.quote.save_note.title")}
           >
-            ✏️ 加笔记
+            <Pencil className="w-3.5 h-3.5" />
+            {t("notebook.quote.add_note")}
           </button>
         </div>
       )}
       {selectedNode.sourcePath && (
-        <div className="mt-6 pt-3 border-t border-neutral-200 dark:border-neutral-800 text-label text-neutral-600 dark:text-neutral-400 dark:text-neutral-600">
-          来源:{selectedNode.sourcePath}
+        <div className="mt-6 pt-3 border-t border-neutral-200 dark:border-neutral-800 text-label text-ink-muted">
+          {t("notebook.source.label", { path: selectedNode.sourcePath })}
         </div>
       )}
       {/* 笔记提示 */}
-      <div className="mt-4 p-3 rounded-lg bg-accent/5 border border-accent/20 text-body text-neutral-600 dark:text-neutral-600 dark:text-neutral-400">
-        💡 选中讲解文字可「✏️ 加笔记」;AI 生成的概念图/对比表/练习卡会自动进「笔记」标签
+      <div className="mt-4 p-3 rounded-lg bg-accent/5 border border-accent/20 text-body text-ink-muted flex items-start gap-1.5">
+        <Lightbulb className="w-3.5 h-3.5 shrink-0 mt-0.5 text-accent" />
+        <span>{t("notebook.quote.hint")}</span>
       </div>
     </div>
   );
@@ -450,7 +487,7 @@ function NotesTab({
   if (total === 0) {
     return (
       <EmptyNotebook
-        message="这一节还没有笔记。选中讲解文字「✏️ 加笔记」,或问 AI「画个概念图」「出 3 道题」「做个对比表」"
+        message={t("notebook.empty.no_notes_message")}
         icon="🧩"
       />
     );
@@ -458,17 +495,17 @@ function NotesTab({
 
   return (
     <div className="p-4 space-y-3" data-testid="notes-list">
-      {/* 🗺️ 理解区(线索区) */}
+      {/* 理解区(线索区) */}
       <ZoneSection
         title={t("notebook.zone.understand")}
-        icon="🗺️"
-        subtitle="AI 帮你梳理的知识结构"
+        icon={<Share2 className="w-4 h-4" />}
+        subtitle={t("notebook.zone.understand.subtitle")}
         count={understandItems.length}
         testid="zone-understand"
         defaultOpen={false}
       >
         {understandItems.length === 0 ? (
-          <ZoneEmpty hint="问 AI「画个概念图」「做个对比表」梳理这一节" />
+          <ZoneEmpty hint={t("notebook.zone.understand.empty_hint")} />
         ) : (
           understandItems.map((item) => (
             <CanvasItemCard
@@ -484,17 +521,17 @@ function NotesTab({
         )}
       </ZoneSection>
 
-      {/* ✏️ 记录区(笔记区:user_note) */}
+      {/* 记录区(笔记区:user_note) */}
       <ZoneSection
         title={t("notebook.zone.note")}
-        icon="✏️"
-        subtitle="你的画线,点击可跳回原位"
+        icon={<Pencil className="w-4 h-4" />}
+        subtitle={t("notebook.zone.note.subtitle")}
         count={noteItems.length}
         testid="zone-note"
         defaultOpen={false}
       >
         {noteItems.length === 0 ? (
-          <ZoneEmpty hint="选中讲解或对话的文字,点「✏️ 加笔记」存到这里" />
+          <ZoneEmpty hint={t("notebook.zone.note.empty_hint")} />
         ) : (
           noteItems.map((item) => (
             <CanvasItemCard
@@ -510,21 +547,21 @@ function NotesTab({
         )}
       </ZoneSection>
 
-      {/* 📝 练习区(总结区) */}
+      {/* 练习区(总结区) */}
       <ZoneSection
         title={t("notebook.zone.practice")}
-        icon="📝"
+        icon={<ListChecks className="w-4 h-4" />}
         subtitle={
           practiceItems.length > 0
-            ? `${practiceItems.length} 题 · 上次答对 ${correctCount} · 答错 ${wrongCount}`
-            : "做题检验掌握,可重做"
+            ? t("notebook.zone.practice.subtitle_stats", { total: practiceItems.length, correct: correctCount, wrong: wrongCount })
+            : t("notebook.zone.practice.subtitle_empty")
         }
         count={practiceItems.length}
         testid="zone-practice"
         defaultOpen={false}
       >
         {practiceItems.length === 0 ? (
-          <ZoneEmpty hint="问 AI「出 3 道题考考我」,题目会自动进这里" />
+          <ZoneEmpty hint={t("notebook.zone.practice.empty_hint")} />
         ) : (
           practiceItems.map((item) => (
             <CanvasItemCard
@@ -554,7 +591,7 @@ function ZoneSection({
   children,
 }: {
   title: string;
-  icon: string;
+  icon: ReactNode;
   subtitle: string;
   count: number;
   testid: string;
@@ -589,11 +626,11 @@ function ZoneSection({
         className="w-full flex items-center gap-2 px-3 py-2.5 bg-neutral-100 dark:bg-neutral-900/50 hover:bg-neutral-200/60 dark:hover:bg-neutral-900 transition-colors text-left"
         data-testid={`${testid}-toggle`}
       >
-        <ChevronDown className={`w-4 h-4 text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 transition-transform duration-200 ease-out-back ${open ? "" : "-rotate-90"}`} />
-        <span className="text-body">{icon}</span>
+        <ChevronDown className={`w-4 h-4 text-ink-muted transition-transform duration-200 ease-out-back ${open ? "" : "-rotate-90"}`} />
+        <span className="text-body text-ink-strong flex items-center">{icon}</span>
         <span className="text-body font-bold text-neutral-800 dark:text-neutral-200">{title}</span>
         <span className="text-caption font-bold px-1.5 py-0.5 rounded-full bg-brand/15 text-brand">{count}</span>
-        <span className="text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 ml-auto truncate">{subtitle}</span>
+        <span className="text-label text-ink-muted ml-auto truncate">{subtitle}</span>
       </button>
       {/*
         折叠用 grid-template-rows 0fr↔1fr 过渡(CSS 动画高度的标准技巧)。
@@ -616,7 +653,7 @@ function ZoneSection({
 
 function ZoneEmpty({ hint }: { hint: string }) {
   return (
-    <div className="text-center py-3 text-body text-neutral-600 dark:text-neutral-400 dark:text-neutral-600">{hint}</div>
+    <div className="text-center py-3 text-body text-ink-muted">{hint}</div>
   );
 }
 
@@ -636,6 +673,7 @@ function CanvasItemCard({
   onUpdateNoteComment?: (id: string, comment: string) => void;
   onJumpToSource?: (anchor: NoteSourceAnchor, noteText?: string, noteId?: string) => void;
 }) {
+  const t = useLang();
   // user_note 注释编辑态(本地 state,保存/取消即退出)
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.notes ?? "");
@@ -703,7 +741,7 @@ function CanvasItemCard({
         data-testid={`canvas-item-${item.id.slice(0, 8)}`}
       >
         <div className="flex items-start gap-2">
-          <span className="text-accent text-body shrink-0 mt-0.5">❝</span>
+          <Quote className="w-4 h-4 text-accent shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <div className="text-body text-neutral-800 dark:text-neutral-200 leading-relaxed whitespace-pre-wrap">
               {noteText}
@@ -717,8 +755,8 @@ function CanvasItemCard({
                   rows={2}
                   placeholder={
                     existingComment
-                      ? "编辑注释…(清空保存即可删除)"
-                      : "写下你对这段画线的注释…"
+                      ? t("notebook.note.comment.ph_edit")
+                      : t("notebook.note.comment.ph_new")
                   }
                   className="w-full text-label leading-relaxed p-2 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 resize-none focus:outline-none focus:border-brand"
                   data-testid={`note-comment-textarea-${item.id.slice(0, 8)}`}
@@ -729,41 +767,41 @@ function CanvasItemCard({
                     className="inline-flex items-center gap-1 text-caption font-bold text-white bg-brand hover:bg-brand/90 px-2 py-0.5 rounded"
                     data-testid={`note-comment-save-${item.id.slice(0, 8)}`}
                   >
-                    <Check className="w-3 h-3" /> 保存
+                    <Check className="w-3 h-3" /> {t("notebook.action.save")}
                   </button>
                   <button
                     onClick={handleCancelEdit}
-                    className="inline-flex items-center gap-1 text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                    className="inline-flex items-center gap-1 text-caption text-ink-muted hover:text-neutral-800 dark:hover:text-neutral-200"
                     data-testid={`note-comment-cancel-${item.id.slice(0, 8)}`}
                   >
-                    <X className="w-3 h-3" /> 取消
+                    <X className="w-3 h-3" /> {t("notebook.action.cancel")}
                   </button>
                 </div>
               </div>
             ) : existingComment ? (
               <div className="mt-2 pl-2 border-l-2 border-accent/40">
-                <div className="text-label text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 italic leading-relaxed whitespace-pre-wrap">
+                <div className="text-label text-ink-muted italic leading-relaxed whitespace-pre-wrap">
                   {existingComment}
                 </div>
                 {onUpdateNoteComment && (
                   <button
                     onClick={handleStartEdit}
-                    className="mt-1 inline-flex items-center gap-0.5 text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-accent"
+                    className="mt-1 inline-flex items-center gap-0.5 text-caption text-ink-muted hover:text-accent"
                     data-testid={`note-comment-edit-btn-${item.id.slice(0, 8)}`}
-                    title="编辑注释"
+                    title={t("notebook.note.edit_comment")}
                   >
-                    <Pencil className="w-2.5 h-2.5" /> 编辑注释
+                    <Pencil className="w-2.5 h-2.5" /> {t("notebook.note.edit_comment")}
                   </button>
                 )}
               </div>
             ) : onUpdateNoteComment ? (
               <button
                 onClick={handleStartEdit}
-                className="mt-2 inline-flex items-center gap-0.5 text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-accent"
+                className="mt-2 inline-flex items-center gap-0.5 text-caption text-ink-muted hover:text-accent"
                 data-testid={`note-comment-add-${item.id.slice(0, 8)}`}
-                title="加注释"
+                title={t("notebook.note.add_comment")}
               >
-                <Pencil className="w-2.5 h-2.5" /> 加注释
+                <Pencil className="w-2.5 h-2.5" /> {t("notebook.note.add_comment")}
               </button>
             ) : null}
             {/* 溯源跳转 */}
@@ -773,16 +811,26 @@ function CanvasItemCard({
                 className="mt-2 inline-flex items-center gap-1 text-caption text-accent hover:underline font-bold"
                 data-testid={`note-source-${item.id.slice(0, 8)}`}
               >
-                {noteAnchor.type === "content" ? "📖 跳到讲解原位" : "💬 跳到对话原位"}
+                {noteAnchor.type === "content" ? (
+                  <>
+                    <BookOpen className="w-3 h-3" />
+                    {t("notebook.source.jump_content")}
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="w-3 h-3" />
+                    {t("notebook.source.jump_chat")}
+                  </>
+                )}
               </button>
             )}
             <div className="flex items-center gap-2 mt-2">
-              <span className="text-caption text-neutral-600 dark:text-neutral-400 dark:text-neutral-600">{timeStr}</span>
+              <span className="text-caption text-ink-muted">{timeStr}</span>
               <button
                 onClick={() => onRemove(item.id)}
-                className="text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-warning"
+                className="text-caption text-ink-muted hover:text-warning"
                 data-testid={`canvas-delete-${item.id.slice(0, 8)}`}
-                title="删除"
+                title={t("notebook.note.delete")}
               >
                 <Trash className="w-3 h-3" />
               </button>
@@ -794,6 +842,7 @@ function CanvasItemCard({
   }
 
   // AI 产物卡(理解区 / 练习区)
+  const ArtifactIcon = ARTIFACT_ICON[item.artifactType] ?? Puzzle;
   return (
     <div
       className={`surface-card p-3 relative ${item.pinned ? "border-brand/40 bg-brand/5" : ""}`}
@@ -801,9 +850,11 @@ function CanvasItemCard({
     >
       {/* 卡顶:类型 + 标题 + last_result 徽章 + 操作 */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-body">{ARTIFACT_ICON[item.artifactType] ?? "🧩"}</span>
+        <span className="text-body inline-flex items-center text-ink-strong">
+          <ArtifactIcon className="w-4 h-4" />
+        </span>
         <span className="text-label font-bold text-neutral-700 dark:text-neutral-300 flex-1 truncate">
-          {item.title ?? ARTIFACT_LABEL[item.artifactType] ?? item.artifactType}
+          {item.title ?? artifactLabel(t, item.artifactType)}
         </span>
         {/* quiz 上次结果徽章 */}
         {item.artifactType === "quiz" && item.lastResult && (
@@ -811,23 +862,23 @@ function CanvasItemCard({
             className={`text-caption font-bold px-1.5 py-0.5 rounded-full ${item.lastResult === "correct" ? "bg-brand/15 text-brand" : "bg-warning/15 text-warning"}`}
             data-testid={`quiz-result-${item.id.slice(0, 8)}`}
           >
-            {item.lastResult === "correct" ? "✅ 上次答对" : "❌ 上次答错"}
+            {item.lastResult === "correct" ? t("notebook.quiz.last_correct") : t("notebook.quiz.last_wrong")}
           </span>
         )}
-        {item.pinned ? <span className="text-caption text-brand font-bold flex items-center gap-0.5"><Pin className="w-2.5 h-2.5" />已置顶</span> : null}
+        {item.pinned ? <span className="text-caption text-brand font-bold flex items-center gap-0.5"><Pin className="w-2.5 h-2.5" />{t("notebook.note.pinned")}</span> : null}
         <button
           onClick={() => onTogglePin(item.id)}
-          className="text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-brand"
+          className="text-caption text-ink-muted hover:text-brand"
           data-testid={`canvas-pin-${item.id.slice(0, 8)}`}
-          title={item.pinned ? "取消置顶" : "置顶"}
+          title={item.pinned ? t("notebook.note.unpin") : t("notebook.note.pin")}
         >
           <Pin className="w-3 h-3" />
         </button>
         <button
           onClick={() => onRemove(item.id)}
-          className="text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-warning"
+          className="text-caption text-ink-muted hover:text-warning"
           data-testid={`canvas-delete-${item.id.slice(0, 8)}`}
-          title="删除"
+          title={t("notebook.note.delete")}
         >
           <Trash className="w-3 h-3" />
         </button>
@@ -835,11 +886,11 @@ function CanvasItemCard({
 
       {/* 产物内容 */}
       <div className="text-label">
-        {parsed ? <ArtifactRenderer data={parsed} onQuizAnswered={handleQuizAnswered} /> : <div className="text-neutral-600 dark:text-neutral-400">产物数据损坏</div>}
+        {parsed ? <ArtifactRenderer data={parsed} onQuizAnswered={handleQuizAnswered} /> : <div className="text-ink-muted">{t("notebook.artifact.broken")}</div>}
       </div>
 
       {/* 时间 */}
-      <div className="text-caption text-neutral-600 dark:text-neutral-400 dark:text-neutral-600 mt-2">{timeStr}</div>
+      <div className="text-caption text-ink-muted mt-2">{timeStr}</div>
     </div>
   );
 }
@@ -848,7 +899,7 @@ function EmptyNotebook({ message, icon }: { message: string; icon: string }) {
   return (
     <div className="text-center py-16" data-testid="empty-notebook">
       <div className="text-4xl mb-3 opacity-30">{icon}</div>
-      <div className="text-body text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 max-w-xs mx-auto leading-relaxed">
+      <div className="text-body text-ink-muted max-w-xs mx-auto leading-relaxed">
         {message}
       </div>
     </div>
@@ -894,21 +945,6 @@ function TabBtn({
     </button>
   );
 }
-
-const ARTIFACT_LABEL: Record<string, string> = {
-  concept_map: "概念图",
-  quiz: "练习题",
-  compare_table: "对比表",
-  diagram: "流程图",
-  code_walkthrough: "代码讲解",
-};
-const ARTIFACT_ICON: Record<string, string> = {
-  concept_map: "🗺️",
-  quiz: "📝",
-  compare_table: "📊",
-  diagram: "📐",
-  code_walkthrough: "🔍",
-};
 
 /* ============================================================
  * 多模态:图片展示组件(内嵌渲染 + 集中插图区缩略图)
@@ -976,6 +1012,7 @@ function InlineAssetImage({
  * 集中插图区缩略图:点击放大查看(lightbox)。
  */
 function AssetThumb({ asset }: { asset: NodeAsset }) {
+  const t = useLang();
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -999,7 +1036,7 @@ function AssetThumb({ asset }: { asset: NodeAsset }) {
         {dataUrl ? (
           <img src={dataUrl} alt={asset.altText ?? asset.filename} data-asset-id={asset.id} className="w-full h-24 object-cover" loading="lazy" />
         ) : (
-          <div className="w-full h-24 flex items-center justify-center text-neutral-400 text-caption">加载中…</div>
+          <div className="w-full h-24 flex items-center justify-center text-neutral-400 text-caption">{t("notebook.asset.loading")}</div>
         )}
       </button>
       {expanded && dataUrl && (
@@ -1009,13 +1046,14 @@ function AssetThumb({ asset }: { asset: NodeAsset }) {
         >
           <img src={dataUrl} alt={asset.altText ?? asset.filename} data-asset-id={asset.id} className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" />
           <button
-            className="absolute top-4 right-4 text-white/70 hover:text-white text-2xl"
+            className="absolute top-4 right-4 text-white/70 hover:text-white"
+            aria-label={t("action.close")}
             onClick={(e) => {
               e.stopPropagation();
               setExpanded(false);
             }}
           >
-            ✕
+            <X className="w-6 h-6" />
           </button>
         </div>
       )}

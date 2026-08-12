@@ -17,10 +17,11 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { CanvasItem } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, X, ChevronDown, Pencil, XCircle, Wrench } from "lucide-react";
+import { Check, X, ChevronDown, Pencil, XCircle, Wrench, Rocket, ClipboardList, Copy } from "lucide-react";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
+import { useLang } from "../lib/i18n.js";
 /** 一条消息 = role + parts 数组(v0.2 parts-based)。 */
 export interface ChatMessageV2 {
   id: string;
@@ -63,6 +64,7 @@ interface ChatStreamProps {
 }
 
 export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes }: ChatStreamProps) {
+  const t = useLang();
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
     (_q: { prompt: string }, _idx: number, correct: boolean) => {
@@ -250,19 +252,19 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
               <>
                 <div className="text-center mb-5">
                   <div className="text-4xl mb-3 opacity-30">📖</div>
-                  <div className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 text-body">这是这一课的概览</div>
+                  <div className="text-ink-muted text-body">{t("chat.empty.overview")}</div>
                 </div>
                 {/* 摘要卡片 */}
                 {summary ? (
                   <div className="surface-card p-4 mb-5">
-                    <div className="text-caption font-bold text-brand uppercase tracking-wider mb-2">本课摘要</div>
+                    <div className="text-caption font-bold text-brand uppercase tracking-wider mb-2">{t("chat.empty.summary.title")}</div>
                     <div className="text-body text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
                       {summary}
                     </div>
                   </div>
                 ) : (
                   <div className="surface-card p-4 mb-5 text-center">
-                    <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">暂无摘要,点开始学习让 AI 帮你了解这一课</div>
+                    <div className="text-body text-ink-muted">{t("chat.empty.summary.none")}</div>
                   </div>
                 )}
                 {/* 开始学习按钮 */}
@@ -273,12 +275,12 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                     data-testid="start-learning-btn"
                     className="btn-3d-brand w-full py-3 text-body font-bold flex items-center justify-center gap-2 disabled:opacity-40"
                   >
-                    <span>🚀</span>
-                    <span>开始学习</span>
+                    <Rocket className="w-4 h-4" />
+                    <span>{t("chat.empty.start")}</span>
                   </button>
                 )}
-                <div className="text-center mt-4 text-label text-neutral-500 dark:text-neutral-600 dark:text-neutral-400">
-                  或从下面的快捷按钮选一个
+                <div className="text-center mt-4 text-label text-ink-muted">
+                  {t("chat.empty.quick_hint")}
                 </div>
               </>
             ) : (
@@ -286,10 +288,10 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
               <div className="text-center mt-16" data-testid="no-node-selected">
                 <div className="text-5xl mb-3 opacity-25">🗺️</div>
                 <div className="text-body font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                  从左侧地图选一个节点
+                  {t("chat.empty.no_node.title")}
                 </div>
-                <div className="text-body text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 max-w-xs mx-auto">
-                  点击圆球节点开始学习。绿色=可学,金色=已掌握,紫色 🎯=章节考试
+                <div className="text-body text-ink-muted max-w-xs mx-auto">
+                  {t("chat.empty.no_node.desc")}
                 </div>
               </div>
             )}
@@ -320,8 +322,8 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         <button
           onClick={scrollToBottom}
           data-testid="scroll-to-bottom"
-          aria-label="回到底部"
-          title="回到底部"
+          aria-label={t("chat.scroll.bottom")}
+          title={t("chat.scroll.bottom")}
           className="absolute bottom-4 right-4 w-9 h-9 rounded-full bg-neutral-900 dark:bg-neutral-100 text-neutral-100 dark:text-neutral-900 shadow-elevated flex items-center justify-center hover:scale-105 active:scale-95 transition-transform msg-enter"
         >
           <ChevronDown className="w-5 h-5" />
@@ -338,9 +340,9 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
           data-testid="save-chat-note-btn"
           style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: "translate(-50%, -100%)" }}
           className="absolute z-20 px-3 py-1.5 rounded-lg bg-brand text-white text-body font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition msg-enter"
-          title="把这段对话存到记录区"
+          title={t("chat.note.add.title")}
         >
-          <Pencil className="w-3 h-3" /> 加笔记
+          <Pencil className="w-3 h-3" /> {t("chat.note.add")}
         </button>
       )}
     </div>
@@ -469,6 +471,7 @@ function PartRenderer({
 
 /** Reasoning 折叠块(Cursor 痛点:思考过程必须可折叠)。 */
 function ReasoningBlock({ text }: { text: string }) {
+  const t = useLang();
   const [open, setOpen] = useState(false);
   return (
     <div
@@ -479,11 +482,11 @@ function ReasoningBlock({ text }: { text: string }) {
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-3 py-1.5 text-label font-bold text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
       >
-        <span>{open ? "▾" : "▸"} 思考过程</span>
-        <span className="text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 font-normal">{text.length} 字</span>
+        <span>{open ? "▾" : "▸"} {t("chat.reasoning.label")}</span>
+        <span className="text-ink-muted font-normal">{t("chat.reasoning.chars", { n: text.length })}</span>
       </button>
       {open && (
-        <div className="px-3 pb-2.5 text-label text-neutral-600 dark:text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap leading-relaxed border-t border-neutral-200 dark:border-neutral-800/60 pt-2">
+        <div className="px-3 pb-2.5 text-label text-ink-muted whitespace-pre-wrap leading-relaxed border-t border-neutral-200 dark:border-neutral-800/60 pt-2">
           {text}
         </div>
       )}
@@ -513,6 +516,7 @@ function ToolCallBlock({
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
 }) {
+  const t = useLang();
   // proposal 类工具(record_answer/mark_mastered):output 里有 proposalId + summary
   const isProposal = toolName === "record_answer" || toolName === "mark_mastered";
   const proposalData = isProposal && state === "output-available" && typeof output === "object" && output !== null
@@ -523,11 +527,11 @@ function ToolCallBlock({
     return (
       <div className="proposal-card rounded-xl p-3 border border-brand/30 bg-brand/5" data-testid="part-proposal">
         <div className="text-neutral-700 dark:text-neutral-200 text-body mb-2 flex items-center gap-1.5">
-          <span className="text-body">📋</span>
-          <span className="font-bold">AI 提议</span>
+          <ClipboardList className="w-3.5 h-3.5" />
+          <span className="font-bold">{t("chat.proposal.title")}</span>
         </div>
         <div className="text-neutral-600 dark:text-neutral-300 text-body mb-3">
-          {proposalData.message ?? `提议(${toolName})`}
+          {proposalData.message ?? t("chat.proposal.fallback", { tool: toolName })}
         </div>
         <div className="flex gap-2">
           <button
@@ -535,14 +539,14 @@ function ToolCallBlock({
             data-testid="proposal-apply"
             className="btn-3d-brand px-4 py-1.5 text-body"
           >
-            <Check className="w-3 h-3 inline" />应用
+            <Check className="w-3 h-3 inline" />{t("chat.proposal.apply")}
           </button>
           <button
             onClick={() => onRejectProposal?.(proposalData.proposalId!, msgId, toolCallIdx)}
             data-testid="proposal-reject"
             className="btn-3d-neutral px-4 py-1.5 text-body"
           >
-            <X className="w-3 h-3 inline" />拒绝
+            <X className="w-3 h-3 inline" />{t("chat.proposal.reject")}
           </button>
         </div>
       </div>
@@ -570,7 +574,7 @@ function ToolCallBlock({
   }
 
   // 通用 tool 块
-  const label = TOOL_LABELS[toolName] ?? toolName;
+  const label = toolLabel(toolName, t);
   return (
     <div
       className="inline-flex items-center gap-1.5 text-label px-2.5 py-1 rounded-md bg-neutral-100 dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800"
@@ -581,7 +585,7 @@ function ToolCallBlock({
       {state === "input-available" ? (
         <>
           <span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />
-          <span className="text-neutral-600 dark:text-neutral-600 dark:text-neutral-400">{label}…</span>
+          <span className="text-ink-muted">{label}…</span>
         </>
       ) : state === "output-error" ? (
         <>
@@ -591,7 +595,7 @@ function ToolCallBlock({
       ) : (
         <>
           <Wrench className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-          <span className="text-neutral-600 dark:text-neutral-600 dark:text-neutral-400">{label}</span>
+          <span className="text-ink-muted">{label}</span>
         </>
       )}
     </div>
@@ -625,6 +629,7 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components
 
 /** 代码块:语言标签 + 一键复制(学习场景高频需求)。 */
 function CodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
+  const t = useLang();
   const [copied, setCopied] = useState(false);
   // 从子级 code 的 className 提取语言(如 language-typescript → typescript)
   const child = Array.isArray(children) ? children[0] : children;
@@ -654,10 +659,15 @@ function CodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreElement>)
         </span>
         <button
           onClick={handleCopy}
-          className="text-caption text-neutral-500 dark:text-neutral-600 dark:text-neutral-400 hover:text-brand transition-colors opacity-0 group-hover:opacity-100"
+          aria-label={t("chat.copy")}
+          className="text-caption text-ink-muted hover:text-brand transition-colors opacity-0 group-hover:opacity-100 inline-flex items-center gap-1"
           data-testid="md-copy"
         >
-          {copied ? "✓ 已复制" : "复制"}
+          {copied ? (
+            <><Check className="w-3 h-3 inline" />{t("chat.copied")}</>
+          ) : (
+            <><Copy className="w-3 h-3 inline" />{t("chat.copy")}</>
+          )}
         </button>
       </div>
       <pre
@@ -670,13 +680,17 @@ function CodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreElement>)
   );
 }
 
-const TOOL_LABELS: Record<string, string> = {
-  get_node_info: "读取节点信息",
-  record_answer: "记录答题观测",
-  mark_mastered: "标记掌握",
-  show_concept_map: "生成概念图",
-  generate_quiz: "出练习题",
-  compare_table: "生成对比表",
-  draw_diagram: "画流程图",
-  show_code_walkthrough: "代码讲解",
-};
+/** 工具名 → 本地化标签(module-level helper,接受 t 函数避免 hook 限制)。 */
+function toolLabel(name: string, t: ReturnType<typeof useLang>): string {
+  const labels: Record<string, string> = {
+    get_node_info: t("chat.tool.get_node_info"),
+    record_answer: t("chat.tool.record_answer"),
+    mark_mastered: t("chat.tool.mark_mastered"),
+    show_concept_map: t("chat.tool.show_concept_map"),
+    generate_quiz: t("chat.tool.generate_quiz"),
+    compare_table: t("chat.tool.compare_table"),
+    draw_diagram: t("chat.tool.draw_diagram"),
+    show_code_walkthrough: t("chat.tool.show_code_walkthrough"),
+  };
+  return labels[name] ?? name;
+}

@@ -16,60 +16,22 @@
  */
 import { getDb, markDirty } from "../db/index.js";
 import { srsItems } from "../db/schema.js";
-import { eq, lte } from "drizzle-orm";
+import { lte } from "drizzle-orm";
 import type { ReviewQuality } from "@shared/types";
-import { randomUUID } from "node:crypto";
 // 纯算法抽出到 ./pure/sm2.ts，让测试可直接 import 真实源码（不走 DB/electron）
 import { computeSm2 } from "./pure/sm2.js";
+// P2: recordReviewDb 抽到 pure/(不触 electron),verify 脚本可直接 import 测 BKT↔SRS 闭环
+import { recordReviewDb } from "./pure/srs-db.js";
 
 // re-export：业务代码（ipc）从 srs.ts 取 computeSm2，测试从 pure/sm2.ts 取——同一个函数
 export { computeSm2 };
 
 /**
- * 记录一次复习，更新 SM-2 状态
+ * 记录一次复习，更新 SM-2 状态（进程级包装：用全局 db + markDirty）。
+ * 真实逻辑在 ./pure/srs-db.ts 的 recordReviewDb（db 注入，headless 可测）。
  */
 export function recordReview(nodeId: string, quality: ReviewQuality): void {
-  const db = getDb();
-  const existing = db
-    .select()
-    .from(srsItems)
-    .where(eq(srsItems.nodeId, nodeId))
-    .get();
-
-  const prev = existing
-    ? {
-        easeFactor: existing.easeFactor / 100,
-        intervalDays: existing.intervalDays,
-        repetitions: existing.repetitions,
-      }
-    : { easeFactor: 2.5, intervalDays: 0, repetitions: 0 };
-
-  const result = computeSm2(prev, quality);
-
-  if (existing) {
-    db.update(srsItems)
-      .set({
-        easeFactor: Math.round(result.easeFactor * 100),
-        intervalDays: result.intervalDays,
-        repetitions: result.repetitions,
-        dueAt: result.dueAt,
-        lastReviewedAt: new Date().toISOString(),
-      })
-      .where(eq(srsItems.id, existing.id))
-      .run();
-  } else {
-    db.insert(srsItems)
-      .values({
-        id: randomUUID(),
-        nodeId,
-        easeFactor: Math.round(result.easeFactor * 100),
-        intervalDays: result.intervalDays,
-        repetitions: result.repetitions,
-        dueAt: result.dueAt,
-        lastReviewedAt: new Date().toISOString(),
-      })
-      .run();
-  }
+  recordReviewDb(getDb(), nodeId, quality);
   markDirty();
 }
 

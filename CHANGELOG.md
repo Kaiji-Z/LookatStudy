@@ -90,6 +90,14 @@ Entry conventions for contributors:
   Hangul→ko、西里尔字母→ru 检测。解决日文被误判为中文的问题。
 
 ### Changed
+- **BKT↔SRS 闭环(learning-experience Phase 2)**:修复掌握度与间隔复习解耦的问题——此前
+  唯一耦合点是"毕业时 recordReview(5)",答错既不回写掌握度也不重排复习。现在一次答题观测
+  **同时**更新 BKT 与 SRS:答对推迟复习、答错重置到 1 天近期重练(可验证:连续答对 interval
+  1→6d,答错卡 1d)。三处接线:`proposal:apply`(覆盖 exercise/AI-record 的 pending 提议 apply 路径,
+  update_mastery→recordReview)、`quiz:recordAnswer`(经 service 直接 apply,补 SRS 写)、`srs:record`
+  (自评复习 quality≤2/≥4 反向回写 BKT,走 service apply 不双写)。抽出 `pure/srs-db.ts`(
+  recordReviewDb,db 注入,不触 electron)让 verify 脚本可直测。新增 `verify-srs-bkt-loop.mjs`
+  (已 break→fail/fix→pass 闭环验证)。
 - **图标统一为 lucide**:CommandPalette 命令图标(💡📝🗺️📊🦉🎯→Lightbulb/FileText/Map/
   BarChart3/GraduationCap/Target)、复习四象限(🔴🟡🟢⚪→lucide Circle + 语义色)、
   MapRail 世界切换(📚/🔧→BookOpen/Wrench)、复习抽屉标题(📖→BookOpen)按 PRODUCT.md

@@ -760,6 +760,16 @@ export function registerSrsHandlers(): void {
     "srs:record",
     async (_e, nodeId: string, quality: ReviewQuality) => {
       recordReview(nodeId, quality);
+      // P2 闭环反向:自评复习结果回写 BKT(quality≤2 降掌握度→近期重练;≥4 升→推迟)。
+      // 走 service 直接 apply,不触发 proposal:apply 的 SRS 钩子,避免双写。quality==3 边界不动。
+      if (quality <= 2 || quality >= 4) {
+        const prop = createProposalService(getDb(), {
+          nodeId,
+          operations: [{ type: "update_mastery", nodeId, correct: quality >= 4 }],
+          rationale: `复习自评(quality=${quality})`,
+        });
+        applyProposalService(getDb(), prop.id);
+      }
     },
   );
 }
@@ -959,10 +969,14 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   );
   ipcMain.handle("proposal:apply", async (_e, id: string) => {
     const result = applyProposalService(getDb(), id);
-    // 如果包含 mark_mastered 操作，把节点加入 SRS 复习队列
-    const hasMastered = result.operations?.some((op) => op.type === "mark_mastered");
-    if (hasMastered && result.nodeId) {
-      recordReview(result.nodeId, 5 as 5);
+    // P2 闭环:应用掌握度观测 → 同步写 SRS(答对推迟复习,答错提前重练)。
+    // 覆盖 exercise:submit / AI record_answer 的 pending 提议在此 apply 的路径。
+    for (const op of result.operations ?? []) {
+      if (op.type === "update_mastery" && op.nodeId) {
+        recordReview(op.nodeId, ((op.correct ?? false) ? 5 : 2) as ReviewQuality);
+      } else if (op.type === "mark_mastered" && result.nodeId) {
+        recordReview(result.nodeId, 5 as 5);
+      }
     }
     markDirty();
     return result;
@@ -982,6 +996,8 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
       rationale: correct ? "quiz 产物答对" : "quiz 产物答错",
     });
     applyProposalService(getDb(), proposal.id);
+    // P2 闭环:quiz 答题经 service 直接 apply(不经 proposal:apply IPC),这里补 SRS 写。
+    recordReview(nodeId, (correct ? 5 : 2) as ReviewQuality);
     markDirty();
     // 读回新 mastery(UI 可选展示)
     const row = getDb().select().from(progressTable).where(eq(progressTable.nodeId, nodeId)).get();

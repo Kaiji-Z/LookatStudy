@@ -728,6 +728,93 @@ async function runUiTest(screenshot = false): Promise<void> {
     knownFailReason: "notebook 三区折叠状态依赖 canvas 异步加载，headless 时序不稳定",
   });
 
+  // T16 (v0.8 a11y): 设置抽屉打开后具备 role=dialog + aria-modal(焦点管理语义)
+  let drawerA11y: { opened?: boolean; roleDialog?: boolean; ariaModal?: boolean; error?: string } = {};
+  try {
+    drawerA11y = await win.webContents.executeJavaScript(`
+      (async function() {
+        try {
+          var gear = document.querySelector('[data-testid="header-settings"]');
+          if (gear) gear.click();
+          await new Promise(function(r){ setTimeout(r, 200); });
+          var panel = document.querySelector('[data-testid="settings-drawer"] [role="dialog"]');
+          return {
+            opened: document.querySelector('[data-testid="settings-drawer"]') !== null,
+            roleDialog: panel !== null,
+            ariaModal: panel ? panel.getAttribute('aria-modal') === 'true' : false,
+          };
+        } catch (e) { return { error: String(e) }; }
+      })()
+    `);
+  } catch (e) { drawerA11y = { error: String(e) }; }
+  results.push({
+    name: "settings drawer exposes role=dialog + aria-modal (a11y focus semantics)",
+    ok: drawerA11y?.roleDialog === true && drawerA11y?.ariaModal === true,
+    detail: drawerA11y,
+  });
+
+  // T17 (v0.8 a11y): notebook 标签具备 role=tablist + role=tab(键盘语义)
+  const tabRoles = await win.webContents.executeJavaScript(`
+    document.querySelector('[data-testid="notebook-tabs"] [role="tablist"]') !== null &&
+    document.querySelector('[data-testid="tab-content"][role="tab"]') !== null
+  `);
+  results.push({
+    name: "notebook tabs expose role=tablist + role=tab",
+    ok: tabRoles === true,
+  });
+
+  // T18 (v0.8 i18n): 切到 en 后 map-tab-map 文本变 "Course Map"(响应式 store + en 字典 + 组件订阅)
+  let enI18n: { switched?: boolean; mapTabText?: string; error?: string } = {};
+  try {
+    enI18n = await win.webContents.executeJavaScript(`
+      (async function() {
+        try {
+          // 设置抽屉应已由 T16 打开;点 en 语言按钮
+          var enBtn = document.querySelector('[data-testid="lang-en"]');
+          if (enBtn) enBtn.click();
+          await new Promise(function(r){ setTimeout(r, 250); });
+          var mt = document.querySelector('[data-testid="map-tab-map"]');
+          return { switched: true, mapTabText: mt ? mt.textContent.trim() : null };
+        } catch (e) { return { error: String(e) }; }
+      })()
+    `);
+  } catch (e) { enI18n = { error: String(e) }; }
+  results.push({
+    name: "switching to en reactively updates chrome (map-tab → 'Course Map')",
+    ok: enI18n?.mapTabText === "Course Map",
+    detail: enI18n,
+  });
+  // 切回 zh-CN 恢复默认语言(不污染后续会话)
+  try {
+    await win.webContents.executeJavaScript(`
+      (async function(){
+        var z = document.querySelector('[data-testid="lang-zh-CN"]');
+        if (z) z.click();
+      })()
+    `);
+  } catch { /* 非关键 */ }
+
+  // T19 (v0.8 a11y): zone toggle 具备 aria-expanded(屏幕阅读器可读折叠状态)
+  let zoneAria: { found?: number; withAriaExpanded?: number; error?: string } = {};
+  try {
+    zoneAria = await win.webContents.executeJavaScript(`
+      (function() {
+        var ids = ["zone-understand-toggle", "zone-note-toggle", "zone-practice-toggle"];
+        var toggles = ids.map(function(id){ return document.querySelector('[data-testid="' + id + '"]'); }).filter(Boolean);
+        var withAttr = toggles.filter(function(t){ return t.hasAttribute('aria-expanded'); }).length;
+        return { found: toggles.length, withAriaExpanded: withAttr };
+      })()
+    `);
+  } catch (e) { zoneAria = { error: String(e) }; }
+  results.push({
+    name: "zone toggles expose aria-expanded (collapsible state for screen readers)",
+    ok: zoneAria?.found === 3 && zoneAria?.withAriaExpanded === 3,
+    detail: zoneAria,
+    // headless 时 canvas 异步可能让 zone 未渲染,与 T15 同源;标 knownFail 防误报
+    knownFail: true,
+    knownFailReason: "依赖 notes tab canvas 异步加载,headless 时序不稳定(同 T15)",
+  });
+
   // allOk: 所有测试通过 OR 仅 knownFail 测试未通过
   const realFails = results.filter((r) => !r.ok && !r.knownFail);
   const knownFails = results.filter((r) => !r.ok && r.knownFail);

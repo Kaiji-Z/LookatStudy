@@ -107,7 +107,7 @@ export function ThreadSwitcher({
               className={`group relative flex items-center gap-1.5 px-2 py-0.5 cursor-pointer whitespace-nowrap transition-colors shrink-0 rounded ${
                 isActive
                   ? "text-neutral-900 dark:text-neutral-200"
-                  : "text-neutral-500 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                  : "text-ink-muted hover:text-ink-strong"
               }`}
               onClick={() => !isRenaming && onPickThread(t.id)}
               data-testid={`thread-tab-${t.id.slice(0, 8)}`}

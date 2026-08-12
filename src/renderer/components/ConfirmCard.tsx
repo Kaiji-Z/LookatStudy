@@ -31,6 +31,8 @@
  */
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useLang } from "../lib/i18n.js";
+import { useFocusTrap } from "../lib/useFocusTrap.js";
 
 interface ConfirmCardProps {
   /** 触发元素的视口坐标(getBoundingClientRect)。卡片定位的锚点。 */
@@ -52,12 +54,17 @@ export function ConfirmCard({
   message,
   onConfirm,
   onCancel,
-  confirmLabel = "确认",
-  cancelLabel = "取消",
+  confirmLabel,
+  cancelLabel,
   danger = false,
   testid = "confirm-card",
 }: ConfirmCardProps) {
+  const t = useLang();
   const cardRef = useRef<HTMLDivElement>(null);
+  // Phase 3 a11y:focus 进入卡片 + 困住 Tab + 关闭时还原
+  useFocusTrap(cardRef, true);
+  const confirmText = confirmLabel ?? t("action.confirm");
+  const cancelText = cancelLabel ?? t("action.cancel");
 
   // 点外部 / Esc → 取消
   useEffect(() => {
@@ -103,9 +110,9 @@ export function ConfirmCard({
         <button
           onClick={onCancel}
           data-testid={`${testid}-cancel`}
-          className="px-2.5 py-1 rounded-md text-label font-bold text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
+          className="px-2.5 py-1 rounded-md text-label font-bold text-ink-muted hover:text-ink-strong hover:bg-surface-3 transition-colors"
         >
-          {cancelLabel}
+          {cancelText}
         </button>
         <button
           onClick={onConfirm}
@@ -115,7 +122,7 @@ export function ConfirmCard({
             ? { background: "var(--warning)", boxShadow: "0 3px 0 0 var(--warning-dark)" }
             : undefined}
         >
-          {confirmLabel}
+          {confirmText}
         </button>
       </div>
     </div>,

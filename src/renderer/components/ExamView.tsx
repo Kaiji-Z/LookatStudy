@@ -223,7 +223,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
           data-testid="exam-next"
           className={`w-full py-2 rounded-xl text-body font-bold transition-all ${
             selected === null
-              ? "bg-neutral-200 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-500 cursor-not-allowed"
+              ? "bg-neutral-200 dark:bg-neutral-800 text-ink-muted cursor-not-allowed"
               : "btn-3d-brand"
           }`}
         >

@@ -8,25 +8,30 @@
  * 注:命令实际触发见 useChatStream 的 lookatstudy-command 事件监听。
  */
 import { useState, useEffect, useRef } from "react";
-import { Search } from "lucide-react";
+import { Search, Lightbulb, FileText, Map as MapIcon, BarChart3, GraduationCap, Target, type LucideIcon } from "lucide-react";
+import { useLang } from "../lib/i18n.js";
+import { useFocusTrap } from "../lib/useFocusTrap.js";
+
+type GroupKey = "command.group.node" | "command.group.mode" | "command.group.nav";
 
 interface Command {
   id: string;
-  icon: string;
-  label: string;
-  hint?: string;
-  group: "基于当前节点" | "学习模式" | "导航";
+  icon: LucideIcon;
+  labelKey: string;
+  group: GroupKey;
   requiresNode?: boolean;
 }
 
 const COMMANDS: Command[] = [
-  { id: "explain_simple", icon: "💡", label: "用大白话解释这一节", group: "基于当前节点", requiresNode: true },
-  { id: "quiz_3", icon: "📝", label: "出 3 道练习题考考我", group: "基于当前节点", requiresNode: true },
-  { id: "concept_map", icon: "🗺️", label: "画个概念图理清结构", group: "基于当前节点", requiresNode: true },
-  { id: "compare_prev", icon: "📊", label: "和上一节做对比表", group: "基于当前节点", requiresNode: true },
-  { id: "socratic", icon: "🦉", label: "切到苏格拉底模式(提问引导)", group: "学习模式" },
-  { id: "exam_mode", icon: "🎯", label: "切到考试冲刺模式", group: "学习模式" },
+  { id: "explain_simple", icon: Lightbulb, labelKey: "command.explain_simple", group: "command.group.node", requiresNode: true },
+  { id: "quiz_3", icon: FileText, labelKey: "command.quiz_3", group: "command.group.node", requiresNode: true },
+  { id: "concept_map", icon: MapIcon, labelKey: "command.concept_map", group: "command.group.node", requiresNode: true },
+  { id: "compare_prev", icon: BarChart3, labelKey: "command.compare_prev", group: "command.group.node", requiresNode: true },
+  { id: "socratic", icon: GraduationCap, labelKey: "command.socratic", group: "command.group.mode" },
+  { id: "exam_mode", icon: Target, labelKey: "command.exam_mode", group: "command.group.mode" },
 ];
+
+const GROUP_ORDER: GroupKey[] = ["command.group.node", "command.group.mode", "command.group.nav"];
 
 export function CommandPalette({
   onClose,
@@ -37,20 +42,23 @@ export function CommandPalette({
   onPick: (action: string) => void;
   hasNode: boolean;
 }) {
+  const t = useLang();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
+  // Phase 3 a11y: focus-trap + restore on close
+  useFocusTrap(panelRef, true);
+
   const filtered = COMMANDS.filter((c) =>
-    c.label.toLowerCase().includes(query.toLowerCase()),
+    t(c.labelKey).toLowerCase().includes(query.toLowerCase()),
   );
   const visible = filtered.filter((c) => !c.requiresNode || hasNode);
-  // 导航分组(占位,M3 可扩展)
-  const groups = ["基于当前节点", "学习模式", "导航"] as const;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -68,7 +76,13 @@ export function CommandPalette({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] px-4" data-testid="command-palette">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-elevated overflow-hidden">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("command.footer.hint")}
+        className="relative w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-elevated overflow-hidden"
+      >
         {/* 搜索框 */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
           <Search className="w-4 h-4 text-neutral-600 dark:text-neutral-400" />
@@ -80,8 +94,8 @@ export function CommandPalette({
               setSelected(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="输入指令或问题…(↑↓ 选择,Enter 确认)"
-            className="flex-1 bg-transparent text-body text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-600 dark:text-neutral-400 focus:outline-none"
+            placeholder={t("command.placeholder")}
+            className="flex-1 bg-transparent text-body text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-600 dark:placeholder:text-neutral-400 focus:outline-none"
             data-testid="command-input"
           />
           <kbd className="text-caption text-neutral-600 dark:text-neutral-400 px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-700">
@@ -93,19 +107,20 @@ export function CommandPalette({
         <div className="max-h-80 overflow-y-auto py-2" data-testid="command-list">
           {visible.length === 0 ? (
             <div className="px-4 py-6 text-center text-body text-neutral-600 dark:text-neutral-400">
-              {hasNode ? "没有匹配的命令" : "先在左侧选一个节点,才能用这些命令"}
+              {hasNode ? t("command.empty.node") : t("command.empty.nonode")}
             </div>
           ) : (
-            groups.map((group) => {
+            GROUP_ORDER.map((group) => {
               const cmds = visible.filter((c) => c.group === group);
               if (cmds.length === 0) return null;
               return (
                 <div key={group}>
                   <div className="px-4 pt-2 pb-1 text-caption font-bold text-neutral-600 dark:text-neutral-400 uppercase tracking-wider">
-                    {group}
+                    {t(group)}
                   </div>
                   {cmds.map((cmd) => {
                     const idx = visible.indexOf(cmd);
+                    const Icon = cmd.icon;
                     return (
                       <button
                         key={cmd.id}
@@ -118,9 +133,8 @@ export function CommandPalette({
                             : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
                         }`}
                       >
-                        <span className="text-base w-5 text-center">{cmd.icon}</span>
-                        <span className="text-body font-medium flex-1">{cmd.label}</span>
-                        {cmd.hint && <span className="text-caption text-neutral-600 dark:text-neutral-400">{cmd.hint}</span>}
+                        <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+                        <span className="text-body font-medium flex-1">{t(cmd.labelKey)}</span>
                       </button>
                     );
                   })}
@@ -132,8 +146,8 @@ export function CommandPalette({
 
         {/* 底部提示 */}
         <div className="px-4 py-2 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between text-caption text-neutral-600 dark:text-neutral-400">
-          <span>AI 导师会根据指令生成对应内容</span>
-          <span>↵ 确认 · esc 关闭</span>
+          <span>{t("command.footer.hint")}</span>
+          <span>{t("command.footer.keys")}</span>
         </div>
       </div>
     </div>

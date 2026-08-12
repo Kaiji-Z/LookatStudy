@@ -487,22 +487,13 @@ html.light .exam-bubble-locked {
 .env-autumn .lesson-bubble  { filter: hue-rotate(-22deg) saturate(1.1) brightness(0.97); }
 .env-winter .lesson-bubble  { filter: saturate(0.5) brightness(1.05) hue-rotate(8deg); }
 
-/* Card surface */
+/* Card surface — token-driven (audit: was raw bg-white/bg-neutral-900, bypassed surface ramp) */
 .surface-card {
-  @apply bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl;
+  background: var(--surface-2);
+  border: 1px solid var(--border-faint);
+  border-radius: 1rem; /* = rounded-2xl */
 }
-
-/* Mode tab underline */
-.mode-tab {
-  @apply relative py-2 text-sm font-medium transition-colors duration-150;
-}
-.mode-tab-active {
-  @apply text-brand;
-}
-.mode-tab-active::after {
-  content: "";
-  @apply absolute bottom-0 left-0 right-0 h-0.5 bg-brand rounded-full;
-}
+/* .mode-tab / .mode-tab-active removed (audit: orphan, 0 usages — dead since v0.6 segmented-control migration) */
 
 /* Chat message entrance */
 @keyframes msg-enter {
@@ -698,13 +689,13 @@ html.light .exam-bubble-locked {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgb(63 63 70);
+  background: var(--border);
   border-radius: 9999px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(82 82 91);
+  background: var(--surface-3);
   background-clip: padding-box;
 }
 /* 浅色模式 scrollbar(浅底上用深灰 thumb) */

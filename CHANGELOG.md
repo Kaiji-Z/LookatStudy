@@ -17,6 +17,12 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **种子课程改为使用指南**:内置种子课程从 microsoft/AI-For-Beginners 换成
+  **LookatStudy 使用指南**(6 章 / 18 课 / 6 章节测验)。课程内容直接内联在
+  `build-guide-seed.mjs`，覆盖全部功能：导入课程、技能地图、AI 导师、BKT 掌握度、
+  Propose→Apply、康奈尔笔记本、画线溯源、生成式 UI、间隔重复、连续打卡、XP/皇冠、
+  自定义 Provider、多语言翻译、导出报告。首次启动即学即用。重新启用 `ensureSeedCourse`，
+  SEED_VERSION bump 到 9。seed-course.json 从 985KB 缩小到 14KB。
 - **代码文件导入支持(.py/.js/.go 等 30+ 语言)**:代码文件现在和 .md/.ipynb
   一样被管线识别和导入。新增 `code-parser.ts`：提取模块级 docstring/注释块
   作为正文讲解 + 代码体用围栏包裹。解锁 karpathy/nanoGPT、算法题解、
@@ -81,8 +87,8 @@ Entry conventions for contributors:
 - **lesson 三分类**:study(讲解)/ practice(实操)/ 附属(quiz链接/
   总结/挑战/参考文献不独立成节点,内容保留进相邻 study lesson)。
   课程设计 prompt 更新为字数驱动的自适应拆分指引。
-- **种子课程暂时停用**:两个世界重构期间用 GitHub 真实导入验证,
-  不依赖固化种子。恢复时取消注释 `ensureSeedCourse()` 即可。
+- **种子课程改为使用指南**:种子课程从 AI-For-Beginners 换成项目自身的使用指南
+  (6 章 18 课)，内容内联在 build-guide-seed.mjs 中，不再依赖外部仓库。
 - **本地导入 prompt fallback**:无 README 文件时,LLM 文件角色分类和
   课程结构设计 prompt 自动切换为"根据文件名 + 目录结构 + 文件类型判断",
   不硬依赖 README。无 LLM key 时纯规则降级(按目录分 section + 路径前缀图片关联)。

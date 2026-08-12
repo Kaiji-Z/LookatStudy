@@ -183,7 +183,7 @@ item CRUD), `useFontSize` (3-tier A-/A+).
 8. **No native module compilation.** If a dep fails to build, switch to pure-JS.
 9. **Electron stderr unreliable in headless.** Use `--self-test` / `--ui-test` and read JSON result files.
 10. **HMR**: renderer changes (CSS/TSX) auto-reload. Main/preload changes need full restart.
-11. **Seed versioning**: `SEED_VERSION` in `seed.ts` — bump to trigger seed course rebuild. 种子课程内置为静态 `src/main/assets/seed-course.json`(离线、无网络、无 LLM,启动瞬时加载)。要刷新 JSON 内容:跑 `npx tsx scripts/build-seed-json.mjs`(联网拉 microsoft/AI-For-Beginners → 验证 → 导出)再 bump `SEED_VERSION`。Never delete the DB to re-seed; it wipes custom providers.
+11. **Seed versioning**: `SEED_VERSION` in `seed.ts` — bump to trigger seed course rebuild. 种子课程是 **LookatStudy 使用指南**(6 章 18 课，内置为静态 `src/main/assets/seed-course.json`，离线、无网络、无 LLM，启动瞬时加载)。内容源码在 `scripts/build-guide-seed.mjs`(课程定义内联在脚本里)。要刷新:跑 `npx tsx scripts/build-guide-seed.mjs` 再 bump `SEED_VERSION`。Never delete the DB to re-seed; it wipes custom providers.
 
 ## Docs to read before sensitive changes
 

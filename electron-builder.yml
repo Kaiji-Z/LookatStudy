@@ -9,8 +9,12 @@ files:
   - package.json
   # sql.js 的 wasm 文件需要在运行时可访问
   - node_modules/sql.js/dist/sql-wasm.wasm
+  # pdf-inspector 预编译 .node 二进制(平台子包 @firecrawl/pdf-inspector-{win32-x64-msvc,...})
+  - node_modules/@firecrawl/**/*
 asarUnpack:
   - "node_modules/sql.js/dist/sql-wasm.wasm"
+  # napi .node 必须从 asar 解包才能被 require 加载(否则 ENOENT)
+  - "node_modules/@firecrawl/**/*"
 mac:
   category: public.app-category.education
   target: dmg

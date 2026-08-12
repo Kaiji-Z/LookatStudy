@@ -17,6 +17,12 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **PDF 文本提取改用 pdf-inspector(layout-aware)**:本地 PDF 导入的文本提取从 `pdf-parse`
+  改为优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 +
+  多栏阅读顺序), 失败/平台不支持(Intel Mac/Windows ARM 无预编译)时自动回退 `pdf-parse`。
+  PDF 图片提取不变(仍走 `lib/pdf-renderer.ts`)。**已知局限**: 不解码数学公式(文本层赛道
+  本质局限, STEM 教材留给未来 vision 渲染路径)。新增 `scripts/verify-pdf-text.mjs`;
+  `LOOKATSTUDY_NO_PDF_INSPECTOR=1` 可强制走 pdf-parse(测试/调试)。
 - **PPTX(PowerPoint)本地导入支持**:新增 `.pptx` 格式。`lib/pptx-parser.ts` 用
   officeparser(纯 JS, 无原生依赖)走 AST, 每张 slide 转一个 `##`(讲者备注用非标题
   写法随 slide 走)→ 现有导入管线自动把每张 slide 变成一节课, 零新分块代码。内嵌图片

@@ -43,7 +43,8 @@ export default defineConfig({
               // pdf-parse 内部用 require 动态加载,external 避免打包冲突
               // officeparser 内部 PdfGenerator 动态 import puppeteer(仅 PDF 路径),
               // rollup 解析不了 → externalize;我们只走 PPTX 路径, puppeteer 永不加载
-              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse", "officeparser"],
+              // @firecrawl/pdf-inspector 是 napi .node 二进制, 运行时 require, 不能 bundle
+              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse", "officeparser", "@firecrawl/pdf-inspector"],
               output: {
                 format: "cjs", // CJS 让 __dirname 天然可用，避免 ESM 路径坑
               },

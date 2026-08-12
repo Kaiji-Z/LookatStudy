@@ -530,11 +530,11 @@ async function walkDir(root: string, current: string, acc: { absPath: string; re
 
 async function readFileWithKind(absPath: string, kind: ScannedDoc["kind"]): Promise<string> {
   if (kind === "pdf") {
-    // pdf-parse 动态 require(避免打包时直接解析它的测试文件坑)
+    // 优先 pdf-inspector(layout-aware markdown), 失败/平台不支持回退 pdf-parse。
+    // 路由 + 兜底集中在 lib/pdf-text.ts(平台缺预编译时 require 会抛, 不能让导入挂)。
     const buf = await readFile(absPath);
-    const pdfParse = require("pdf-parse") as (data: Buffer) => Promise<{ text: string }>;
-    const data = await pdfParse(buf);
-    return data.text.trim();
+    const { parsePdfText } = await import("../../lib/pdf-text.js");
+    return parsePdfText(buf);
   }
   if (kind === "pptx") {
     // .pptx → officeparser AST → markdown(每 slide 一个 ##, 讲者备注随 slide 走)。

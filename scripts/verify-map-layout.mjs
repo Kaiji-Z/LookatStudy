@@ -20,6 +20,8 @@ import {
   sectionHeight,
   balloonSegmentToPath,
   hashStr,
+  MIN_GAP_Y,
+  NODE_BOX_H,
 } from "../src/renderer/lib/mapLayout.ts";
 
 const TESTS = [];
@@ -125,6 +127,49 @@ test("T10 节点球不溢出容器", () => {
       nodes[i].x >= NODE_RADIUS - 0.5 && nodes[i].x <= containerWidth - NODE_RADIUS + 0.5,
       `节点 ${i} 球溢出容器: x=${nodes[i].x}, 容器宽 ${containerWidth}, 半径 ${NODE_RADIUS}`,
     );
+  }
+});
+
+// T11: 防重叠 —— 任意 seed / 任意课数,相邻节点视觉盒永不重叠(核心回归锁)
+//   旧布局(NODE_SPACING_Y=96, Y_JITTER=30)最差中心距 36 < 盒高 76 → 重叠 40px。
+//   v0.8 贪心推下保证 ≥ MIN_GAP_Y(84)。本测试跨 240 个 seed × 多种课数穷举验证。
+test("T11 防重叠: 任意 seed 相邻节点中心距 ≥ MIN_GAP_Y(盒高+呼吸)", () => {
+  const counts = [2, 3, 5, 8, 12];
+  let checked = 0;
+  for (let s = 0; s < 240; s++) {
+    const seed = `overlap-seed-${s}`;
+    for (const n of counts) {
+      const { nodes } = computeBalloonLayout(n, 268, seed);
+      // 首节点不顶撞路牌:y ≥ TOP_PAD(34)。wrapper 顶 = y - NODE_H/2 + 12 = y-26 ≥ 8
+      assert.ok(nodes[0].y >= 34 - 0.5, `seed ${seed} n=${n} 首节点顶撞路牌 y=${nodes[0].y}`);
+      for (let i = 1; i < nodes.length; i++) {
+        const gap = nodes[i].y - nodes[i - 1].y;
+        assert.ok(
+          gap >= MIN_GAP_Y - 0.5,
+          `seed ${seed} n=${n} 节点 ${i-1}→${i} 重叠: 中心距 ${gap} < ${MIN_GAP_Y}`,
+        );
+        checked++;
+      }
+    }
+  }
+  assert.ok(checked > 1000, `应至少检查 1000 对节点,实际 ${checked}`);
+});
+
+// T12: layout.height 精确且充足 —— 大于最后节点底边,且随课数增长
+test("T12 layout.height: 精确(≥末节点底边) + 随课数增长", () => {
+  const heights = [];
+  for (const n of [0, 1, 3, 6, 10]) {
+    const { nodes, height } = computeBalloonLayout(n, 268, "h-seed");
+    if (n > 0) {
+      const lastBottom = nodes[nodes.length - 1].y + NODE_BOX_H / 2;
+      assert.ok(height >= lastBottom, `n=${n} height ${height} 应 ≥ 末节点底边 ${lastBottom}`);
+    }
+    assert.ok(height > 0, `n=${n} height 应为正`);
+    heights.push(height);
+  }
+  // 单调递增(0/1 除外,从 1 起严格)
+  for (let i = 2; i < heights.length; i++) {
+    assert.ok(heights[i] > heights[i - 1], `height 应随课数增长: ${heights}`);
   }
 });
 

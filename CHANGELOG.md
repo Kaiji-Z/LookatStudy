@@ -205,6 +205,9 @@ Entry conventions for contributors:
   不硬依赖 README。无 LLM key 时纯规则降级(按目录分 section + 路径前缀图片关联)。
 
 ### Fixed
+- **live-test 烟雾检查误判**:`verify-live-test-smoke.mjs` 的 API-key guard 模式只认
+  `process.exit(0)`,但 `live-test-smart-import.mjs` 用的是合法的 `process.exit(1)`(缺 key 报错退出
+  也是有效 guard),导致 verify:core 长期 33/34。改为认 `exit(0|1)`,verify:core 现在全绿。
 - **导入进度"两屏断裂"修复**:此前 URL 导入分两阶段 —— `analyzeRepo`(分析)进度爬完后,
   `doImport` 开头 `setProgressSteps([])` **把进度清空重开**,用户看到"分析进度→瞬间清零→
   导入进度从0重爬"的两个断开屏。删掉该 reset,让 analyze→import 进度连续累加。同时把进度

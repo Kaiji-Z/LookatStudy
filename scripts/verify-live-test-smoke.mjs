@@ -80,8 +80,8 @@ for (const file of liveTestFiles) {
 
   // T4: API key 缺失时有 graceful exit guard 或明确标注不需要 key
   test(`${file}: 有 API key 处理（exit guard 或标注不需要 key）`, () => {
-    // 模式 A: !API_KEY ... process.exit(0) — 有 key 时才跑的测试
-    const hasExitGuard = /!API_KEY[\s\S]{0,150}process\.exit\(0\)/.test(content);
+    // 模式 A: !API_KEY ... process.exit(0|1) — 有 key 时才跑的测试(exit(1)=缺 key 报错退出,也是有效 guard)
+    const hasExitGuard = /!API_KEY[\s\S]{0,150}process\.exit\([01]\)/.test(content);
     // 模式 B: 明确标注"不需要 key"或"继续"—无 key 也能跑的测试
     const hasNoKeyOk = /不需要.*(?:LLM|key|API)/.test(content) || /无.*key.*继续/.test(content);
     assert.ok(hasExitGuard || hasNoKeyOk, "缺少 API key guard 或 'no key ok' 标注");

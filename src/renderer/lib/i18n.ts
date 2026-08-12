@@ -132,11 +132,13 @@ const translations: Record<Lang, Record<string, string>> = {
 
     // —— 复习 ——
     "review.title": "复习",
+    "review.nudge": "📅 今天有 {n} 个待复习,点左侧地图的「复习」入口巩固一下",
     "review.loading": "正在检查哪些课该复习了…",
     "review.empty.title": "还没有复习项",
     "review.empty.desc": "完成一些练习后,这里会出现间隔复习提醒",
     "review.due.count": "个待复习",
     "review.start": "开始复习",
+    "review.shuffle": "混合练习(随机交错)",
     "review.quadrant.overdue": "逾期",
     "review.quadrant.short": "短期",
     "review.quadrant.long": "长期",
@@ -439,6 +441,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "dashboard.export.md": "📄 导出报告",
     "dashboard.export.json": "导出 JSON",
     "dashboard.section_mastery": "按章节掌握度",
+    "dashboard.mini.sections": "章节掌握度",
+    "dashboard.mini.struggle": "你的薄弱点(点开重学)",
 
     // —— Import(兼容)——
     "import.title": "导入课程",
@@ -546,11 +550,13 @@ const translations: Record<Lang, Record<string, string>> = {
 
     // —— Review ——
     "review.title": "Review",
+    "review.nudge": "📅 {n} review(s) due today — tap the Review entry in the map to consolidate",
     "review.loading": "Checking what to review…",
     "review.empty.title": "No reviews yet",
     "review.empty.desc": "Complete some exercises and spaced-repetition reminders will appear here",
     "review.due.count": "due",
     "review.start": "Start Review",
+    "review.shuffle": "Shuffle (interleaved)",
     "review.quadrant.overdue": "Overdue",
     "review.quadrant.short": "Short-term",
     "review.quadrant.long": "Long-term",
@@ -853,6 +859,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "dashboard.export.md": "📄 Export Report",
     "dashboard.export.json": "Export JSON",
     "dashboard.section_mastery": "Mastery by Section",
+    "dashboard.mini.sections": "Mastery by section",
+    "dashboard.mini.struggle": "Your struggle spots (tap to relearn)",
 
     // —— Import (legacy) ——
     "import.title": "Import Course",

@@ -144,6 +144,8 @@ export interface SectionMastery {
 
 export interface DashboardData {
   sections: SectionMastery[];
+  /** P3.4 薄弱点:按 friction 次数排序的节点(排除 agent_error,上限 5) */
+  frictionByNode: Array<{ nodeId: string; title: string; count: number }>;
   dueToday: number;
   currentStreak: number;
   freezeCount: number;

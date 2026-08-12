@@ -10,7 +10,7 @@
  * 用户在内容标签看完后,用右下角的自评按钮(recordReview)打分。
  */
 import { useState, useEffect, useMemo } from "react";
-import { Circle } from "lucide-react";
+import { Circle, Shuffle } from "lucide-react";
 import { api } from "../lib/api.js";
 import type { ContentNode, ReviewQuality } from "@shared/types";
 import { useLang } from "../lib/i18n.js";
@@ -97,6 +97,23 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
           className="btn-3d-brand w-full py-2.5 text-body mb-5"
         >
           {t("review.start")}({sessionCount}/{MAX_SESSION}) →
+        </button>
+      )}
+
+      {/* 混合练习(交错复习):随机抽一个待复习节点——随机化检索顺序是 desirable difficulty,
+          区别于默认顺序复习。(完整自动推进 session 留作后续增强。) */}
+      {totalDue > 0 && (
+        <button
+          onClick={() => {
+            const pool = groups.overdue;
+            const pick = pool[Math.floor(Math.random() * pool.length)];
+            if (pick) onReviewNode(pick.nodeId);
+          }}
+          data-testid="review-shuffle"
+          className="btn-3d-neutral w-full py-2 text-label mb-5 flex items-center justify-center gap-1.5"
+        >
+          <Shuffle className="w-3.5 h-3.5" />
+          {t("review.shuffle")}
         </button>
       )}
 

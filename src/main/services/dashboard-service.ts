@@ -12,6 +12,7 @@ import {
   progress as progressTable,
   srsItems,
   streaks,
+  frictionLog,
 } from "../db/schema.js";
 
 type Db = SQLJsDatabase<typeof schema>;
@@ -37,6 +38,8 @@ export interface DashboardData {
   freezeCount: number;
   /** 整体平均掌握度 */
   overallMastery: number;
+  /** P3.4 薄弱点:按 friction 次数排序的节点(排除 agent_error,上限 5) */
+  frictionByNode: Array<{ nodeId: string; title: string; count: number }>;
 }
 
 /**
@@ -122,11 +125,24 @@ export function getDashboard(
       ? allLessons.reduce((sum, l) => sum + progressContribution(l.id), 0) / allLessons.length
       : 0;
 
+  // P3.4 薄弱点:本课程节点上的人类 friction(confused/blocked/frustrated)计数,排除 agent_error。
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const frictionCount = new Map<string, number>();
+  for (const f of db.select().from(frictionLog).all()) {
+    if (f.category === "agent_error" || !f.nodeId || !nodeById.has(f.nodeId)) continue;
+    frictionCount.set(f.nodeId, (frictionCount.get(f.nodeId) ?? 0) + 1);
+  }
+  const frictionByNode = [...frictionCount.entries()]
+    .map(([nodeId, count]) => ({ nodeId, title: nodeById.get(nodeId)?.title ?? nodeId, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
   return {
     sections: sectionAggs,
     dueToday,
     currentStreak: streakRow?.currentStreak ?? 0,
     freezeCount: streakRow?.freezeCount ?? 2,
     overallMastery: overall,
+    frictionByNode,
   };
 }

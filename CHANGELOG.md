@@ -17,6 +17,15 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **复习可见性 + 交错练习 + 仪表盘薄弱点(learning-experience 收尾)**:
+  - **待复习顶出(P2.3)**:session 开始若有到期复习,弹一次 nudge(每进程最多一次,不刷屏);
+    持久 surface 复用 MapRail 的 map-review-badge(待复习数 + 入口)。
+  - **交错复习(P2.4)**:复习抽屉加「🔀 混合练习」入口——随机抽一个待复习节点(随机化检索顺序
+    = desirable difficulty,区别于默认顺序)。
+  - **仪表盘薄弱点(P3.4)+ 消费此前丢弃的数据(P4.5)**:getDashboard 新增 `frictionByNode`
+    (按节点聚合人类卡点次数,排除 agent_error,上限 5);复习抽屉加「章节掌握度热力图 + 薄弱点」
+    面板——此前 dashboard.sections 被算了就丢,现在真正面世。verify-dashboard T8(frictionByNode);
+    ui-test T4b(待复习徽章)+ T4c(抽屉 shuffle + dashboard-mini 面板)。
 - **毕业时刻 + ParticleFx 庆祝(learning-experience Phase 4b)**:mastery 跨过 0.9 → mastered 此前**静默**
   发生(数据库里改一行,用户无感)——最该有的"我做到了"峰值缺失。现在:quiz:recordAnswer 返回
   `mastered` 过渡标志(检测本次从非mastered→mastered);答对/毕业经 `celebrate` 事件总线驱动 ParticleFx

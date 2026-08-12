@@ -440,6 +440,16 @@ export default function App() {
     return unsub;
   }, [toast, t]);
 
+  // P2.3: session 开始若有待复习,弹一次 nudge(每进程生命周期最多一次,避免刷屏)。
+  // 持久 surface 是 MapRail 的 map-review-badge;这里是"拉你回来练"的主动提示。
+  const reviewNudgedRef = useRef(false);
+  useEffect(() => {
+    if (dueCount > 0 && !reviewNudgedRef.current) {
+      reviewNudgedRef.current = true;
+      toast.show(t("review.nudge", { n: dueCount }), { duration: 4000 });
+    }
+  }, [dueCount, toast, t]);
+
   // M2: 从对话流提取展示型 tool 产物 → 自动持久化到 canvas_items
   const artifacts = useMemo(() => extractArtifacts(chat.messages), [chat.messages]);
   const savedArtifactKeysRef = useRef<Set<string>>(new Set());
@@ -710,6 +720,7 @@ export default function App() {
         <ReviewDrawer
           onClose={() => setShowReviewDrawer(false)}
           tree={tree}
+          dashboard={dashboard}
           onPickNode={(id) => {
             setSelectedNodeId(id);
             setForceArtifactTab("content");
@@ -910,10 +921,12 @@ function ReviewDrawer({
   onClose,
   tree,
   onPickNode,
+  dashboard,
 }: {
   onClose: () => void;
   tree: ContentNode[];
   onPickNode: (id: string) => void;
+  dashboard: DashboardData | null;
 }) {
   const t = useLang();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -942,6 +955,36 @@ function ReviewDrawer({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto">
+          {/* P3.4/P4.5 章节掌握度热力图 + 薄弱点(消费此前被丢弃的 dashboard.sections + 新增 frictionByNode) */}
+          {dashboard && (dashboard.sections.length > 0 || dashboard.frictionByNode.length > 0) && (
+            <div className="p-4 border-b border-[var(--border)] space-y-3" data-testid="dashboard-mini">
+              {dashboard.sections.length > 0 && (
+                <div>
+                  <div className="text-caption font-bold text-ink-muted uppercase tracking-wider mb-1.5">{t("dashboard.mini.sections")}</div>
+                  {dashboard.sections.map((s) => (
+                    <div key={s.sectionId} className="flex items-center gap-2 py-0.5">
+                      <span className="text-label text-ink-strong truncate flex-1">{s.sectionTitle}</span>
+                      <div className="w-20 h-1.5 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-brand rounded-full" style={{ width: `${Math.round(s.avgMastery * 100)}%` }} />
+                      </div>
+                      <span className="text-label tabular-nums text-ink-muted w-9 text-right">{Math.round(s.avgMastery * 100)}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {dashboard.frictionByNode.length > 0 && (
+                <div>
+                  <div className="text-caption font-bold text-review uppercase tracking-wider mb-1.5">{t("dashboard.mini.struggle")}</div>
+                  {dashboard.frictionByNode.map((f) => (
+                    <button key={f.nodeId} onClick={() => onPickNode(f.nodeId)} className="flex items-center gap-2 py-0.5 w-full text-left hover:bg-surface-3 rounded px-1">
+                      <span className="text-label text-review font-bold tabular-nums">{f.count}×</span>
+                      <span className="text-label text-ink-strong truncate flex-1">{f.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <ReviewPanel tree={tree} onReviewNode={onPickNode} />
         </div>
       </div>

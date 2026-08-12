@@ -93,4 +93,19 @@ assert.strictEqual(empty.sections.length, 0, "T7: 空课程 0 section");
 assert.strictEqual(empty.overallMastery, 0, "T7: 空 overall=0");
 console.log(`✓ T7 空课程：sections=0, overall=0`);
 
+// === T8 (P3.4): frictionByNode 薄弱点(排除 agent_error + 非本课程节点,按次数降序,上限 5) ===
+sqljs.run(`INSERT INTO friction_log (id, node_id, category, summary) VALUES ('f1','l2','confused','a')`);
+sqljs.run(`INSERT INTO friction_log (id, node_id, category, summary) VALUES ('f2','l2','blocked','b')`); // l2 = 2
+sqljs.run(`INSERT INTO friction_log (id, node_id, category, summary) VALUES ('f3','l1','frustrated','c')`); // l1 = 1
+sqljs.run(`INSERT INTO friction_log (id, node_id, category, summary) VALUES ('f4','l1','agent_error','sys')`); // 排除
+sqljs.run(`INSERT INTO friction_log (id, node_id, category, summary) VALUES ('f5','ghost','confused','x')`); // 非本课程 → 排除
+const dash3 = getDashboard(db, "c1");
+assert.ok(Array.isArray(dash3.frictionByNode), "T8: frictionByNode 是数组");
+assert.strictEqual(dash3.frictionByNode.length, 2, `T8: 应 2 个薄弱点(l1/l2), 实际 ${dash3.frictionByNode.length}`);
+assert.strictEqual(dash3.frictionByNode[0].nodeId, "l2", "T8: l2(2次)应排第一");
+assert.strictEqual(dash3.frictionByNode[0].count, 2, "T8: l2 count=2");
+assert.strictEqual(dash3.frictionByNode[1].nodeId, "l1", "T8: l1(1次)应排第二");
+assert.ok(!dash3.frictionByNode.some((f) => f.nodeId === "ghost"), "T8: 非本课程节点不出现");
+console.log(`✓ T8 frictionByNode: ${dash3.frictionByNode.map((f) => f.title + "=" + f.count).join(", ")} (排除 agent_error + 非课程节点,按次数降序)`);
+
 console.log("\n=== ALL DASHBOARD TESTS PASSED ✅ ===");

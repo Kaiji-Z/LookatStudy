@@ -19,7 +19,7 @@ import { ensureExamNodesForExistingCourses } from "./services/course-generator.j
 import { loadEnv, getZaiConfig } from "./services/env.js";
 import { seedBuiltinSkills } from "./services/skills/skill-service.js";
 import { createProposal } from "./services/proposal-service.js";
-import { courses, contentNodes, streaks, settings as settingsTable, customProviders } from "./db/schema.js";
+import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems } from "./db/schema.js";
 import { eq } from "drizzle-orm";
 
 // 主进程以 CJS 打包（见 vite.config.ts），__dirname 天然可用。
@@ -324,6 +324,24 @@ async function runUiTest(screenshot = false): Promise<void> {
     console.error("[lookatstudy] ui-test provider seed failed:", e);
   }
 
+  // P2.3: 播一条已到期 srs 项,验证"待复习"在地图上浮现(map-review-badge)。
+  try {
+    getDb()
+      .insert(srsItems)
+      .values({
+        id: "ui-due-seed",
+        nodeId: "guide-les-1-1",
+        easeFactor: 250,
+        intervalDays: 1,
+        repetitions: 1,
+        dueAt: "2020-01-01T00:00:00.000Z",
+        lastReviewedAt: "2020-01-01T00:00:00.000Z",
+      })
+      .run();
+  } catch (e) {
+    console.error("[lookatstudy] ui-test srs seed failed:", e);
+  }
+
   // 加载构建产物（不依赖 vite dev server，CI 友好）
   await win.loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"));
 
@@ -427,6 +445,41 @@ async function runUiTest(screenshot = false): Promise<void> {
     name: "level badge + freeze badge + ParticleFx mounted (P4 competence)",
     ok: competenceBadges?.levelBadge === true && competenceBadges?.freezeBadge === true && competenceBadges?.particleFxMounted === true,
     detail: competenceBadges,
+  });
+
+  // T4b (P2.3 待复习顶出): 播的逾期 srs 项 → map-review-badge 显示待复习数
+  const dueBadge = await win.webContents.executeJavaScript(`
+    (function() {
+      var b = document.querySelector('[data-testid="map-review-badge"]');
+      return { present: !!b, text: b ? (b.textContent || "").trim() : null };
+    })()
+  `);
+  results.push({
+    name: "due-review surfacing: overdue item → map-review badge (P2.3)",
+    ok: dueBadge?.present === true,
+    detail: dueBadge,
+  });
+
+  // T4c (P2.4 交错复习): 打开复习抽屉 → 混合练习(随机起点)按钮在;然后关掉抽屉不影响后续。
+  const interleave = await win.webContents.executeJavaScript(`
+    (async function() {
+      var badge = document.querySelector('[data-testid="map-review-badge"]');
+      if (!badge) return { ok: false, reason: "no badge" };
+      badge.click();
+      await new Promise(function(r){ setTimeout(r, 400); });
+      var panel = document.querySelector('[data-testid="review-panel"]');
+      var shuffle = document.querySelector('[data-testid="review-shuffle"]');
+      var mini = document.querySelector('[data-testid="dashboard-mini"]');
+      var close = document.querySelector('[data-testid="review-close"]');
+      if (close) close.click();
+      await new Promise(function(r){ setTimeout(r, 150); });
+      return { ok: !!panel && !!shuffle && !!mini, panel: !!panel, shuffle: !!shuffle, mini: !!mini };
+    })()
+  `);
+  results.push({
+    name: "interleaved review: drawer opens + shuffle entry present (P2.4)",
+    ok: interleave?.ok === true,
+    detail: interleave,
   });
 
   // T5: 点击一个未锁的 map-node → 触发 markNodeAttempted → 联动右栏

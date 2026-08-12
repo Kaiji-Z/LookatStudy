@@ -14,7 +14,8 @@ Output that violates a red line in VERIFICATION.md §7 is void.
 Open-source, local-first, AI-driven desktop learning platform. Turns any GitHub
 learning repository into a Duolingo-style course (gated skill map, AI tutor with
 BKT mastery tracking, SM-2 spaced repetition, XP/streak/crown retention).
-Supports 9 file formats (.md/.ipynb/.rst/.Rmd/.org/.adoc/.pdf/.html/.txt) +
+Supports 9 document formats (.md/.ipynb/.rst/.Rmd/.org/.adoc/.pdf/.html/.txt) +
+30+ code file types (.py/.js/.ts/.go/.rs/.java/.c/.cpp/.rb/.sh/etc) +
 multimodal image import + AI vision.
 Electron app, local SQLite (sql.js), BYO LLM API key. Light/dark theme.
 
@@ -116,11 +117,13 @@ npm run verify:core && npx vite build && npm run self-test
 | Custom providers | `services/custom-provider-service.ts` | BYO user-defined provider rows; bypass preset settings, resolved by `custom-` prefix |
 | Course generator | `services/course-generator.ts` | `generateCourseFromMarkdown` + `generateCourseFromRepoFiles` |
 | Course structure | `services/course-structure-service.ts` | LLM-based course restructuring (two-phase: classify uncertain → group sections) + `generateLessonSummaries` |
-| Repo fetcher | `services/pure/repo-fetcher.ts` | CDN fetch + `detectRepoPattern` + `fetchRepoInventory` (Step1: README + tree + file list) + `fetchFileOutlines` (Step3: H1/H2/H3 + chars) + `extractOutlineWithCharCounts` |
-| Import pipeline | `services/import-pipeline.ts` | `executeImport` (Step5): 拉正文 → 图片 base64 内联 → attachImages → 翻译落库 → 验证。通过 `ContentSource` 抽象不关心来源 |
-| Import LLM | `services/import-llm-service.ts` | `classifyFileRoles` (Step2: LLM 文件角色 + sourceLang) + `designCourseStructure` (Step4: section/lesson/world + 长文件拆分 + attachImages 关联) |
+| Repo fetcher | `services/pure/repo-fetcher.ts` | CDN fetch + `detectRepoPattern` (course/well-organized/single-file/docs-rich/unsupported + awesome-list 检测) + `fetchRepoInventory` (Step1: 多入口 README + 多分支 + tree + file list) + `fetchFileOutlines` (Step3: H1/H2/H3 + chars) + `extractOutlineWithCharCounts` |
+| Import pipeline | `services/import-pipeline.ts` | `executeImport` (Step5): 拉正文 → 图片 base64 内联 → attachImages → 翻译落库(多布局 pathResolver) → 验证。通过 `ContentSource` 抽象不关心来源 |
+| Import LLM | `services/import-llm-service.ts` | `classifyFileRoles` (Step2: LLM 文件角色 + sourceLang + 翻译布局检测) + `designCourseStructure` (Step4: section/lesson/world + 长文件拆分 + attachImages 关联) |
 | Content source | `services/content-source.ts` | `ContentSource` 接口 + `GithubContentSource` (CDN) + `LocalContentSource` (磁盘) — 统一 executeImport 的文件/图片获取 |
-| Local scanner | `services/pure/local-folder-scanner.ts` | `scanFolder` (递归扫 9 种格式) + `buildLocalInventory` (本地清点: docs + images + translations + README + fullTree + standaloneImages) |
+| Code parser | `services/pure/code-parser.ts` | 代码文件(.py/.js/.go 等 30+ 语言) → markdown: docstring/注释块提取为正文 + 代码体围栏包裹。纯函数 |
+| Translation layout | `services/pure/translation-layout.ts` | `detectTranslationLayout`(tree) — 自动检测翻译约定: microsoft(translations/{lang}/) / parallel({lang}/) / suffix({file}.{lang}.md)。返回 pathResolver |
+| Local scanner | `services/pure/local-folder-scanner.ts` | `scanFolder` (递归扫 9 种文档格式 + 30+ 代码格式) + `buildLocalInventory` (本地清点: docs + images + translations + README + fullTree + standaloneImages) |
 | File classifier | `services/pure/file-classifier.ts` | Rule-based `classifyFile` — high-confidence noise filter (translations/notebook/lab/example/section-intro/meta) + uncertain flag for LLM |
 | Exercise | `services/exercise-service.ts` | AI exercise generation (mcq/fill_blank/true_false) + grading |
 | Dashboard | `services/dashboard-service.ts` | `getDashboard` — section mastery, metrics |

@@ -2,13 +2,13 @@
  * 本地文件夹通用扫描器 —— 把任意课程文件夹(如 Coursera 下载包)递归扫描成文档清单。
  *
  * 设计原则:通用,不硬编码某一种文件夹结构。
- *   - 扫描所有文本类文件:.txt/.md/.markdown/.html/.htm/.pdf
- *   - 图片文件:.png/.jpg/.jpeg/.gif/.webp/.svg/.bmp(多模态 flag on 时收集)
+ *   - 扫描文档类:.txt/.md/.mdx/.markdown/.html/.htm/.pdf/.ipynb/.rst/.rmd/.org/.adoc/.asciidoc
+ *   - 扫描代码类:.py/.js/.ts/.go/.rs/.java/.c/.cpp/.rb/.sh/.lua/.sql/.r/.jl/.dart/... (30+ 语言, code-parser 转 markdown)
+ *   - 图片文件:.png/.jpg/.jpeg/.gif/.webp/.svg/.bmp/.avif/.ico/.tiff/.heic(多模态 flag on 时收集)
  *   - 中文优先去重(同内容 .zh-CN 和 .en 只留中文)
  *   - 按文件名 NN_ 前缀排序
  *   - HTML 去标签转纯文本(<co-content> 富文本质量足够)
- *   - PDF 用 pdf-parse 提取文本(图表提取不了,但文字说明能拿到)
- *   - PDF 图片提取由 pdf-renderer 处理(纯文字/纯图片/混合自动分类)
+ *   - PDF 用 pdf-renderer 提取文字 + 图片(纯文字/纯图片/混合自动分类)
  *
  * 纯函数为主(htmlToText/标题推断/去重/图片引用解析),便于 verify 脚本测。
  * scanFolder 本身用 fs(异步),verify 用临时目录造文件测。

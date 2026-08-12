@@ -15,7 +15,7 @@ Most "read the docs" learning fails because docs aren't a course: no structure, 
 
 ## Features
 
-- **Course Generator** — supports **9 file formats**: Markdown, Jupyter Notebook (`.ipynb`), reStructuredText (`.rst`), R Markdown (`.Rmd`), Org-mode (`.org`), AsciiDoc (`.adoc`), PDF, HTML, and plain text. Import from a GitHub repo URL, a local folder, or paste markdown directly. Each format has a dedicated parser that converts to a unified internal markdown representation.
+- **Course Generator** — supports **9 document formats + 30+ code file types**: Markdown, Jupyter Notebook (`.ipynb`), reStructuredText (`.rst`), R Markdown (`.Rmd`), Org-mode (`.org`), AsciiDoc (`.adoc`), PDF, HTML, plain text, plus source code files (`.py`/`.js`/`.ts`/`.go`/`.rs`/`.java`/`.c`/`.cpp`/`.rb`/`.sh` and many more — code is teaching material too). Import from a GitHub repo URL, a local folder, or paste markdown directly. Each format has a dedicated parser that converts to a unified internal markdown representation.
 - **Multimodal image support** — course images (`.png`/`.jpg`/`.gif`/`.webp`/`.svg`) are collected during import, including Markdown `![](img)`, HTML `<img>` tags, Jupyter notebook output images, and PDF embedded images. Images are stored locally and displayed inline in the notebook panel. The AI can view images (via multimodal LLM) when you ask about diagrams or figures.
 - **Native right-click menu** — copy selected text, copy/save images (system save dialog), and standard edit operations in text fields. Interact with content like a web page.
 - **4 built-in learning modes** (skills, swappable):
@@ -81,7 +81,9 @@ lookatstudy/
 │   │       │   ├── rmd-parser.ts          # .Rmd → markdown
 │   │       │   ├── org-parser.ts          # .org → markdown
 │   │       │   ├── adoc-parser.ts         # .adoc → markdown
-│   │       │   ├── local-folder-scanner.ts # folder scanner (9 formats)
+│   │       │   ├── code-parser.ts         # .py/.js/.go → markdown (code-as-content)
+│   │       │   ├── translation-layout.ts  # auto-detect translation convention
+│   │       │   ├── local-folder-scanner.ts # folder scanner (9 doc + 30+ code formats)
 │   │       │   ├── repo-fetcher.ts        # GitHub repo → course files
 │   │       │   └── flag-defaults.ts       # feature flags (default off)
 │   │       ├── skills/            # M1 skill system
@@ -137,11 +139,11 @@ Alternatively, configure via IPC: `window.api.setSetting("glm_api_key", "sk-..."
 ### Turn any repo into a course
 
 Click the **📚 导入课程** tab:
-- **GitHub URL** — paste `https://github.com/owner/repo`; the README is fetched, the file tree is discovered via GitHub API / jsdelivr CDN, and all course files are pulled and parsed.
-- **本地文件夹** — select a local folder (e.g. a downloaded Coursera package or cloned repo); files are recursively scanned and parsed.
+- **GitHub URL** — paste `https://github.com/owner/repo`; the README is fetched (trying `README.md`/`README.rst`/`index.md`/`SUMMARY.md` across `main`/`master`/`develop` branches), the file tree is discovered via GitHub API / jsdelivr CDN, and all course files are pulled and parsed.
+- **本地文件夹** — select a local folder (e.g. a downloaded Coursera package or cloned repo); files are recursively scanned (documents + code + images + translations) and parsed.
 - **粘贴 Markdown** — paste raw markdown directly (for private repos, network-restricted environments, or local notes).
 
-Supported file formats: `.md` / `.markdown`, `.ipynb` (Jupyter Notebook), `.rst` (reStructuredText), `.Rmd` (R Markdown), `.org` (Org-mode), `.adoc` / `.asciidoc` (AsciiDoc), `.pdf`, `.html` / `.htm`, `.txt`. Images (`.png`/`.jpg`/`.gif`/`.webp`/`.svg`) are collected when the multimodal flag is on.
+Supported file formats: `.md` / `.markdown`, `.ipynb` (Jupyter Notebook), `.rst` (reStructuredText), `.Rmd` (R Markdown), `.org` (Org-mode), `.adoc` / `.asciidoc` (AsciiDoc), `.pdf`, `.html` / `.htm`, `.txt`, plus **30+ code file types** (`.py` / `.js` / `.ts` / `.go` / `.rs` / `.java` / `.c` / `.cpp` / `.rb` / `.sh` / `.lua` / `.sql` / `.r` / `.jl` / `.dart` / `.scala` / `.kt` / `.swift` / `.php` / `.cs` / `.hs` / `.clj` / `.ex` / `.erl` / `.ml` / `.fs` / `.pl` / `.elm` and more — code is teaching material, module docstrings are extracted as prose). Images (`.png`/`.jpg`/`.gif`/`.webp`/`.svg`/`.avif`/`.ico`/`.tiff`) are collected when the multimodal flag is on.
 
 The generator detects H2 → section, H3 → lesson, infers LabType from code blocks / notebook keywords, and sets the first lesson as `available` (rest `locked`). With an LLM key configured, the AI automatically restructures the course tree into a pedagogically sound sequence. You can manage multiple courses (switch / delete) from the same tab.
 
@@ -175,7 +177,7 @@ npm run verify:core && npx vite build && npm run self-test
 
 ## Status
 
-The core learning loop is complete and verified: **course generation (9 formats) → skill map UI → AI agent with BKT + Propose/Apply → RAG + memory + dashboard**. Current features include a three-pane layout (skill map · chat · notebook), thread sessions, Generative UI (concept maps / quizzes / Mermaid diagrams / compare tables / code walkthroughs), Duolingo-style map art, a Cornell-style notebook (understand / notes / practice zones with highlight-and-source-trace), multimodal image import + AI vision, native right-click copy/save, light/dark theme, and custom provider support. See `CHANGELOG.md` for the full version history.
+The core learning loop is complete and verified: **course generation (9 doc formats + 30+ code types) → skill map UI → AI agent with BKT + Propose/Apply → RAG + memory + dashboard**. Current features include a three-pane layout (skill map · chat · notebook), thread sessions, Generative UI (concept maps / quizzes / Mermaid diagrams / compare tables / code walkthroughs), Duolingo-style map art, a Cornell-style notebook (understand / notes / practice zones with highlight-and-source-trace), multimodal image import + AI vision, native right-click copy/save, light/dark theme, and custom provider support. See `CHANGELOG.md` for the full version history.
 
 ## License
 

@@ -161,10 +161,11 @@ export function detectWellOrganized(files: { path: string }[]): boolean {
  *
  * 原则:规则管确定性，不确定的给 LLM 兜底（通过下游 analyzeCourseStructure）。
  *
- * - well-organized: README 链接 ≥3 个且路径有编号目录组织 → 保留原始结构,只判 world
- * - course: README 链接里有 ≥3 个课程文件(.md/.ipynb 等)指向子目录 → LLM 重组
- * - single-file: 无子文件链接但 README 有实质教学正文（正文 prose >1000 字，非徽章/构建指令）
- * - unsupported: README 太短且无子文件
+ * - well-organized: README 链接 ≥1 个且路径有编号/组织目录(数字/week/unit/topic) → 保留原始结构
+ * - course: README 链接里有 ≥1 个课程文件(.md/.ipynb/.py 等) → LLM 重组
+ * - single-file: 无子文件链接但 README 有实质教学正文（prose >1000 字）
+ * - docs-rich: README 无链接但文件树可能有内容 → 不急着拒绝，让 fetchRepoInventory 用文件树补全
+ * - unsupported: awesome-list（外链占比>60%且正文极少）
  */
 export function detectRepoPattern(readmeMd: string): DetectionResult {
   const allLinks = extractInternalLinks(readmeMd);

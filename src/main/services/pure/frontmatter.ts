@@ -1,14 +1,17 @@
 /**
  * Pure YAML-frontmatter 解析器（零依赖，可被测试直接 import，不走 DB/electron）。
  *
- * 处理 SKILL.md / learning-mode skill 的三种 description 形态：
+ * 通用件：同时服务 soul（教学人设）和未来的真 skill（过程性 playbook）——凡是
+ * Markdown + frontmatter（name/description + body）的存储格式都用它解析。
+ *
+ * 处理 description 的三种形态：
  *   - plain 单行（`description: xxx`）
  *   - 双引号（`description: "xxx"`）
  *   - | block scalar（多行，缩进折叠）
  * 返回 body（`---` 之后的逐字内容）。手写 YAML 子集，不引入额外依赖。
  */
 
-export interface SkillFront {
+export interface FrontmatterParsed {
   name: string;
   description: string;
   body: string;
@@ -16,7 +19,7 @@ export interface SkillFront {
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
-export function parseSkillFrontmatter(raw: string): SkillFront {
+export function parseFrontmatter(raw: string): FrontmatterParsed {
   const m = raw.match(FRONTMATTER);
   if (!m) return { name: "", description: "", body: raw };
   const [, front, body] = m;

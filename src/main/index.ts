@@ -17,7 +17,7 @@ import { setupContextMenu } from "./context-menu.js";
 import { ensureSeedCourse } from "./services/seed.js";
 import { ensureExamNodesForExistingCourses } from "./services/course-generator.js";
 import { loadEnv, getZaiConfig } from "./services/env.js";
-import { seedBuiltinSkills } from "./services/skills/skill-service.js";
+import { seedBuiltinSouls } from "./services/souls/soul-service.js";
 import { createProposal } from "./services/proposal-service.js";
 import { setStateEmitter } from "./lib/state-emitter.js";
 import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems } from "./db/schema.js";
@@ -148,9 +148,9 @@ app.whenReady().then(async () => {
       console.error(`[lookatstudy] 补了 ${patched} 个章节考试节点`);
       markDirty();
     }
-    // M1: 幂等 seed 4 个内置 learning-mode skill
-    seedBuiltinSkills(getDb());
-    console.error("[lookatstudy] builtin skills ensured");
+    // 幂等 seed 3 个内置教学人设(direct/guide/practice)
+    seedBuiltinSouls(getDb());
+    console.error("[lookatstudy] builtin souls ensured");
     // 语言偏好: 首次启动按系统语言写默认值 (用户可在 Settings 改)
     const { ensurePrefLang } = await import("./services/lang-pref.js");
     ensurePrefLang(getDb(), app.getLocale());
@@ -326,7 +326,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   } catch (e) {
     console.error("[lookatstudy] ui-test proposal seed failed:", e);
   }
-  // 造一个 custom provider + active 设置(让 agentReady=true,ChatComposer 渲染 skill-picker)。
+  // 造一个 custom provider + active 设置(让 agentReady=true,ChatComposer 渲染 soul-picker)。
   // 优先用 .env 里的真实 ZAI key(让 ui-test 能真实出题/答题);没有则用占位假 key(只验证渲染)。
   try {
     // schema 已在顶部 static import(消除 rollup 混合 static+dynamic 导入警告)
@@ -404,9 +404,9 @@ async function runUiTest(screenshot = false): Promise<void> {
   await win.loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"));
 
   // 等渲染层拉完数据 + React 渲染完。轮询所有关键 testid 都出现——
-  // 不能只等容器，因为 skills/courses 是异步并行拉的，容器早出、内容晚出，会 race。
+  // 不能只等容器，因为 souls/courses 是异步并行拉的，容器早出、内容晚出，会 race。
   // v0.2: 三栏布局后 testid 变了——map-rail + map-node-* + chat-panel + notebook-panel
-  // 注:skill-picker 在 ChatComposer 内,需选中节点才渲染,不在初始等待条件里。
+  // 注:soul-picker 在 ChatComposer 内,需选中节点才渲染,不在初始等待条件里。
   const waitRender = async (timeoutMs = 10000): Promise<boolean> => {
     const deadline = Date.now() + timeoutMs;
     const checkAll = () =>
@@ -430,7 +430,7 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   const rendered = await waitRender();
   results.push({
-    name: "renderer mounted skill-tree + skill-picker",
+    name: "renderer mounted (map-rail + chat-panel + notebook-panel)",
     ok: rendered,
     detail: rendered ? "DOM testids present" : "timeout waiting for render",
   });
@@ -445,13 +445,13 @@ async function runUiTest(screenshot = false): Promise<void> {
     return;
   }
 
-  // T1: skill-picker(v0.7 药丸行)里应有 ≥4 个模式药丸(4 个内置 skill)
+  // T1: soul-picker(教学人设药丸行)里应有 3 个内置 soul(direct/guide/practice)
   const optionCount = await win.webContents.executeJavaScript(
-    `document.querySelectorAll('[data-testid^="skill-pill-"]').length`,
+    `document.querySelectorAll('[data-testid^="soul-pill-"]').length`,
   );
   results.push({
-    name: "skill-picker has ≥4 builtin skill options",
-    ok: typeof optionCount === "number" && optionCount >= 4,
+    name: "soul-picker has 3 builtin souls (direct/guide/practice)",
+    ok: typeof optionCount === "number" && optionCount === 3,
     detail: { optionCount },
   });
 
@@ -576,20 +576,20 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: clickResult,
   });
 
-  // T6: 点 skill 药丸 → setActiveSkill IPC roundtrip(点按钮触发 onClick)
-  const skillSelect = await win.webContents.executeJavaScript(`
+  // T6: 点 soul 药丸 → setActiveSoul IPC roundtrip(点按钮触发 onClick)
+  const soulSelect = await win.webContents.executeJavaScript(`
     (function() {
-      const pill = document.querySelector('[data-testid="skill-pill-socratic-mode"]');
-      if (!pill) return { ok: false, reason: "skill-pill not found" };
+      const pill = document.querySelector('[data-testid="soul-pill-direct"]');
+      if (!pill) return { ok: false, reason: "soul-pill not found" };
       pill.click();
-      return { ok: true, value: "socratic-mode" };
+      return { ok: true, value: "direct" };
     })()
   `);
   await new Promise((r) => setTimeout(r, 300));
   results.push({
-    name: "skill select change triggers setActiveSkill",
-    ok: skillSelect?.ok === true && skillSelect?.value === "socratic-mode",
-    detail: skillSelect,
+    name: "soul select change triggers setActiveSoul",
+    ok: soulSelect?.ok === true && soulSelect?.value === "direct",
+    detail: soulSelect,
   });
 
   // T7 (M2): isAgentReady 在未配 key 时返回 ready:false（渲染层只见布尔，不见 key）

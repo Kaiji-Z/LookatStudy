@@ -6,7 +6,7 @@ import type {
   ContentNode,
   Progress,
   Streak,
-  Skill,
+  Soul,
   DashboardData,
   StarterPrompt,
   NoteSourceAnchor,
@@ -45,12 +45,7 @@ import { celebrate } from "./lib/celebration.js";
  * testid 兼容:保留 skill-tree/section-unit/lesson-bubble/xp-bar/streak-badge/chat-panel 等
  * 供 ui-test 不破。新增 nav-rail/artifact-panel/chat-stream/composer。
  */
-const BUILTIN_SKILL_ORDER = [
-  "socratic-mode",
-  "exam-prep-mode",
-  "project-mode",
-  "review-mode",
-];
+const BUILTIN_SOUL_ORDER = ["direct", "guide", "practice"];
 
 export default function App() {
   const t = useLang();
@@ -71,9 +66,9 @@ export default function App() {
   const [availableLanguages, setAvailableLanguages] = useState<string[]>([]);
   const [currentLocale, setCurrentLocale] = useState<string | null>(null);
 
-  // Skill 系统
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [activeSkill, setActiveSkill] = useState<string | null>(null);
+  // Soul 系统（教学人设/persona）
+  const [souls, setSouls] = useState<Soul[]>([]);
+  const [activeSoul, setActiveSoul] = useState<string | null>(null);
 
   // 视图 + 仪表盘
   const [view, setView] = useState<MapView>("map");
@@ -177,19 +172,19 @@ export default function App() {
 
   const refreshAll = useCallback(async () => {
     try {
-      const [courseList, streakData, skillList, currentSkill, xpData, due] = await Promise.all([
+      const [courseList, streakData, soulList, currentSoul, xpData, due] = await Promise.all([
         api.listCourses(),
         api.getStreak(),
-        api.listSkills(),
-        api.getActiveSkill(),
+        api.listSouls(),
+        api.getActiveSoul(),
         api.getXpStatus(),
         api.getDueReviews(),
       ]);
       setCourses(courseList);
       setStreak(streakData);
-      setSkills(skillList);
+      setSouls(soulList);
       setXp(xpData);
-      setActiveSkill(currentSkill);
+      setActiveSoul(currentSoul);
       setDueNodeIds(new Set(due));
       if (courseList.length > 0 && !selectedCourseId) {
         setSelectedCourseId(courseList[0]!.id);
@@ -378,10 +373,10 @@ export default function App() {
     }
   }, [progressMap, reloadCourseProgress, setErrorFromThrow]);
 
-  const handleSkillPick = async (name: string) => {
+  const handleSoulPick = async (name: string) => {
     try {
-      await api.setActiveSkill(name);
-      setActiveSkill(name);
+      await api.setActiveSoul(name);
+      setActiveSoul(name);
     } catch (e) {
       setErrorFromThrow(e);
     }
@@ -427,13 +422,13 @@ export default function App() {
     [tree],
   );
 
-  const orderedSkills = useMemo(() => {
-    const builtin = BUILTIN_SKILL_ORDER.map((name) =>
-      skills.find((s) => s.name === name),
-    ).filter((s): s is Skill => !!s);
-    const custom = skills.filter((s) => !BUILTIN_SKILL_ORDER.includes(s.name));
+  const orderedSouls = useMemo(() => {
+    const builtin = BUILTIN_SOUL_ORDER.map((name) =>
+      souls.find((s) => s.name === name),
+    ).filter((s): s is Soul => !!s);
+    const custom = souls.filter((s) => !BUILTIN_SOUL_ORDER.includes(s.name));
     return [...builtin, ...custom];
-  }, [skills]);
+  }, [souls]);
 
   // v0.3: 黑板笔记本(canvas_items 持久化)
   const canvas = useCanvas(selectedCourseId);
@@ -672,10 +667,10 @@ export default function App() {
                 nodeId={selectedNodeId}
                 agentReady={agentReady?.ready ?? false}
                 streaming={chat.streaming}
-                skills={orderedSkills}
-                activeSkill={activeSkill}
+                souls={orderedSouls}
+                activeSoul={activeSoul}
                 starterPrompts={chat.messages.length > 0 ? starterPrompts : []}
-                onPickSkill={handleSkillPick}
+                onPickSoul={handleSoulPick}
                 onSend={sendMessage}
                 onStop={chat.stop}
                 onLogFriction={

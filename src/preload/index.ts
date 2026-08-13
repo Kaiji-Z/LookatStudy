@@ -88,16 +88,16 @@ const api = {
   touchStreakToday: (() =>
     ipcRenderer.invoke("streak:touchToday")) as ApiExpose["touchStreakToday"],
 
-  /* Skill 系统（M1） */
-  listSkills: (() => ipcRenderer.invoke("skill:list")) as ApiExpose["listSkills"],
-  getSkill: ((name: string) =>
-    ipcRenderer.invoke("skill:get", name)) as ApiExpose["getSkill"],
-  createSkill: ((input: any) =>
-    ipcRenderer.invoke("skill:create", input)) as ApiExpose["createSkill"],
-  setActiveSkill: ((name: string) =>
-    ipcRenderer.invoke("skill:setActive", name)) as ApiExpose["setActiveSkill"],
-  getActiveSkill: (() =>
-    ipcRenderer.invoke("skill:getActive")) as ApiExpose["getActiveSkill"],
+  /* Soul 系统（教学人设/persona） */
+  listSouls: (() => ipcRenderer.invoke("soul:list")) as ApiExpose["listSouls"],
+  getSoul: ((name: string) =>
+    ipcRenderer.invoke("soul:get", name)) as ApiExpose["getSoul"],
+  createSoul: ((input: any) =>
+    ipcRenderer.invoke("soul:create", input)) as ApiExpose["createSoul"],
+  setActiveSoul: ((name: string) =>
+    ipcRenderer.invoke("soul:setActive", name)) as ApiExpose["setActiveSoul"],
+  getActiveSoul: (() =>
+    ipcRenderer.invoke("soul:getActive")) as ApiExpose["getActiveSoul"],
 
   /* Agent 引擎 + Proposal（M2） */
   agentChat: ((nodeId: string, msg: string) =>

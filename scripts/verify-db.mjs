@@ -25,7 +25,7 @@ db.run(schemaSql);
 console.log("✓ schema.sql 建表成功");
 
 // 1b. 验证 v2 新增的表都建出来了
-const requiredTables = ["courses", "content_nodes", "exercises", "progress", "srs_items", "streaks", "chat_sessions", "settings", "skills", "proposals", "friction_log"];
+const requiredTables = ["courses", "content_nodes", "exercises", "progress", "srs_items", "streaks", "chat_sessions", "settings", "souls", "proposals", "friction_log"];
 const actualTables = db.exec("SELECT name FROM sqlite_master WHERE type='table'")[0].values.map(r => r[0]);
 const missing = requiredTables.filter(t => !actualTables.includes(t));
 console.assert(missing.length === 0, `缺少表: ${missing.join(", ")}`);

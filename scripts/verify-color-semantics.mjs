@@ -150,7 +150,7 @@ test("T8 关键 testid 存在", () => {
   const combined = allLines.map((h) => h.line).join("\n");
   const required = [
     "map-rail", "chat-panel", "chat-stream", "notebook-panel",
-    "composer", "skill-picker", "xp-bar", "streak-badge",
+    "composer", "soul-picker", "xp-bar", "streak-badge",
     "command-palette", "thread-switcher",
   ];
   for (const id of required) {

@@ -131,7 +131,9 @@ function runMigrations(db: Database): void {
   // v2 新列
   addColumnIfMissing("courses", "lab_type", "TEXT NOT NULL DEFAULT 'doc'");
   addColumnIfMissing("chat_sessions", "provider", "TEXT");
-  addColumnIfMissing("chat_sessions", "active_skill", "TEXT");
+  // soul 重构:active_skill → active_soul(新库 schema.sql 已直接建 active_soul;
+  // 老库在此补列,migrateSoulRename 再把 active_skill 数据搬过来)
+  addColumnIfMissing("chat_sessions", "active_soul", "TEXT");
   // M2 新列：BKT 掌握度
   addColumnIfMissing("progress", "mastery", "REAL");
   // 课节摘要(LLM 生成,导入时批量填)
@@ -149,6 +151,52 @@ function runMigrations(db: Database): void {
   // 考试节点(type='exam'):老库的 content_nodes CHECK 约束不含 'exam',
   // 需重建表加约束(SQLite 不能 ALTER CHECK)。幂等:检测现有 CHECK 是否已含 'exam'。
   ensureExamTypeAllowed(db);
+
+  // soul 重构:skills 表 → souls 表 + active_skill → active_soul + 删 flag_skill_system
+  migrateSoulRename(db);
+}
+
+/**
+ * Soul 重构迁移(幂等):
+ *  - skills 表(老的教学模式:socratic/exam/project/review)→ souls 表。
+ *    老 builtin 内容已废弃(由 3 个新 soul direct/guide/practice 取代),只搬运用户自建的。
+ *  - chat_sessions.active_skill → active_soul(复制数据;旧列留死列,SQLite 老版本不便 DROP COLUMN)。
+ *  - settings: active_skill → active_soul;删 flag_skill_system(soul 注入常开,不再门控)。
+ * 新库(schema.sql 已建 souls/active_soul)跑此函数基本 no-op:skills 表不存在、列已在。
+ */
+function migrateSoulRename(db: Database): void {
+  const tableRows =
+    db.exec(`SELECT name FROM sqlite_master WHERE type='table'`)[0]?.values.map((r) => String(r[0])) ??
+    [];
+
+  // 1. skills → souls:只搬用户自建的(is_builtin=0),老 builtin 废弃由新 seed 取代
+  if (tableRows.includes("skills")) {
+    db.run(`INSERT OR IGNORE INTO souls (id, name, description, type, body, is_builtin, created_at)
+            SELECT id, name, description, 'custom', body, 0, created_at
+            FROM skills WHERE is_builtin = 0`);
+    db.run(`DROP TABLE skills`);
+  }
+
+  // 2. chat_sessions.active_skill → active_soul(两列并存时搬数据)
+  const cols =
+    db.exec(`PRAGMA table_info(chat_sessions)`)[0]?.values.map((r) => String(r[1])) ?? [];
+  if (cols.includes("active_skill") && cols.includes("active_soul")) {
+    db.run(
+      `UPDATE chat_sessions SET active_soul = COALESCE(active_soul, active_skill) WHERE active_soul IS NULL`,
+    );
+  }
+
+  // 3. settings: active_skill → active_soul
+  const hasOldKey = db.exec(`SELECT 1 FROM settings WHERE key='active_skill' LIMIT 1`).length > 0;
+  const hasNewKey = db.exec(`SELECT 1 FROM settings WHERE key='active_soul' LIMIT 1`).length > 0;
+  if (hasOldKey && !hasNewKey) {
+    db.run(
+      `INSERT INTO settings(key, value, is_secret) SELECT 'active_soul', value, is_secret FROM settings WHERE key='active_skill'`,
+    );
+  }
+  db.run(`DELETE FROM settings WHERE key='active_skill'`);
+  // 4. 删 flag_skill_system(soul 注入常开)
+  db.run(`DELETE FROM settings WHERE key='flag_skill_system'`);
 }
 
 /** 重建 content_nodes 表以加入 'exam' 到 type CHECK 约束(SQLite 不能直接改 CHECK)。

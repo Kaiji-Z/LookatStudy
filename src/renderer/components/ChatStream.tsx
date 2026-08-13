@@ -333,7 +333,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                 )}
               </>
             ) : (
-              /* 未选节点:引导选节点(此时 ChatComposer 仍渲染,skill-picker 可见) */
+              /* 未选节点:引导选节点(此时 ChatComposer 仍渲染,soul-picker 可见) */
               <div className="text-center mt-16" data-testid="no-node-selected">
                 <div className="text-5xl mb-3 opacity-25">🗺️</div>
                 <div className="text-body font-bold text-neutral-700 dark:text-neutral-300 mb-1">

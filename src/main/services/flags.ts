@@ -5,7 +5,7 @@
  * 让 flag=off 等于改动前的行为，flag=on 才启用新行为。这样任何改动都能用同一份
  * 回归套件在 on/off 两种态下比较，避免"开了新功能静默打坏了旧路径"。
  *
- * 存储位置：settings 表，key 形如 `flag_skill_system`。DB 未初始化时一律返回默认值（off），
+ * 存储位置：settings 表，key 形如 `flag_agent_engine`。DB 未初始化时一律返回默认值（off），
  * 所以启动早期、测试环境都能安全调用。
  *
  * 新增 flag 的流程：

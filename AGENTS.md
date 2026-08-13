@@ -36,7 +36,7 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 
 - **Renderer never touches DB, files, or API keys directly.** All cross-process calls go through `window.api.*` (contextBridge isolation in `src/preload/index.ts`).
 - **IPC contract is `shared/types.ts` → `ApiExpose` interface.** Editing it = editing the protocol; both ends (preload + main handlers) must sync.
-- **Channel naming: `domain:action`** (e.g. `course:list`, `skill:setActive`, `proposal:apply`, `thread:create`, `canvas:save`, `xp:getStatus`, `asset:listByNode`, `asset:getDataUrl`). Handlers in `src/main/ipc/index.ts`, grouped by domain.
+- **Channel naming: `domain:action`** (e.g. `course:list`, `soul:setActive`, `proposal:apply`, `thread:create`, `canvas:save`, `xp:getStatus`, `asset:listByNode`, `asset:getDataUrl`). Handlers in `src/main/ipc/index.ts`, grouped by domain.
 - **Native context menu** (`src/main/context-menu.ts`): right-click copy text / copy+save images / editable roles. Registered in `index.ts` via `setupContextMenu(mainWindow)`.
 - **LLM calls and API keys stay in main process.** CSP in `src/renderer/index.html` forbids renderer-side LLM endpoints; renderer only sees booleans for key presence (`agent:isReady`).
 - **AI persistent-state mutations go through Proposal (Propose→Apply).** AI drafts state changes, human applies/rejects — never let AI write learner state directly (see `proposal-service.ts`).
@@ -56,7 +56,7 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 ```
 
 - **Left (MapRail)**: Duolingo-style skill map. A node is a *session group*: clicking it filters the middle pane's threads by `focus_node_id`. Node states: locked / available / in_progress / mastered. Collapsible (`Ctrl+B`).
-- **Middle (chat)**: `ThreadSwitcher` (Chrome-style horizontal tabs, one thread per tab) + `ChatStream` (parts rendering) + `ChatComposer` (input + font size + skill mode + starter prompts). `Ctrl+K` opens the command palette; `Ctrl+Tab` cycles threads.
+- **Middle (chat)**: `ThreadSwitcher` (Chrome-style horizontal tabs, one thread per tab) + `ChatStream` (parts rendering) + `ChatComposer` (input + font size + 教学人设 soul 药丸 + starter prompts). `Ctrl+K` opens the command palette; `Ctrl+Tab` cycles threads.
 - **Right (NotebookPanel)**: 康奈尔笔记法三区(讲解/笔记)。讲解 tab 显示节点 markdown + 支持选区画线(`✏️ 加笔记`)。笔记 tab 三区:🗺️理解区(AI 产物:概念图/对比表/流程图/代码讲解)、✏️笔记区(用户画线 user_note,带溯源跳转)、📝练习区(quiz + last_result 答题记录)。画线用 `highlightText.ts` 的文本搜索方案(不依赖 DOM offset 稳定性)。
 - **Focus lock**: while the AI is streaming, node/thread switching is blocked so the learner stays in one context. Do not remove this without an explicit off switch the user controls.
 - **HMR rule**: renderer-only changes (CSS/TSX) auto-hot-reload via Vite — no restart needed. Main process or preload changes require `taskkill electron + npm run dev:electron`.
@@ -101,7 +101,7 @@ npm run verify:core && npx vite build && npm run self-test
 5. When you add a table, **bump this list** below (don't make agents recount).
 
 18 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
-`streaks`, `chat_sessions`, `settings`, `skills`, `proposals`, `friction_log`,
+`streaks`, `chat_sessions`, `settings`, `souls`, `proposals`, `friction_log`,
 `memory`, `custom_providers`, `canvas_items`, `threads`, `chat_messages`,
 `node_assets`, `content_node_translations`.
 
@@ -110,6 +110,7 @@ npm run verify:core && npx vite build && npm run self-test
 | Service | File | What it does |
 |---------|------|-------------|
 | Agent engine | `services/agent/agent-engine.ts` | `handleAgentChatThread` — thread-based context assembly, 6 display tools (`show_concept_map` / `generate_quiz` / `compare_table` / `draw_diagram` / `show_code_walkthrough` / `pose_guess`), `chat:part` emission, mastery-based teaching strategy; 注入近期 friction 卡点(`pure/friction-context.ts` buildFrictionContext)让 AI 看见学习者挣扎点 |
+| Soul (教学人设) | `services/souls/soul-service.ts` + `prompt-builder.ts` | 教学人设/persona CRUD + 激活;`buildSystemPrompt(db, BASE)` 把激活 soul 的 body 拼到 base prompt 后面注入 `streamText({system})`。3 内置 soul:精讲(direct)/引导(guide)/实战(practice)。**注:soul=persona,非过程性 playbook**;真 skill(多步任务固化)是未来独立模块。`active_soul=null` 时返回 base(等价关闭,无 flag 门控) |
 | LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection`, `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels` |
 | LLM presets | `services/agent/llm-presets.ts` | 10 provider presets (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google) |
 | Threads | `services/thread-service.ts` | CRUD for `threads` + `chat_messages`; `findRecentThreadByNode`; thread is node-bound (`focus_node_id`) |
@@ -202,7 +203,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 - `VERIFICATION.md` — red lines + supervisor-judge protocol
 
 **Dev-process docs (gitignored, in `dev-docs/` — kept locally only):**
-- `dev-docs/ARCHITECTURE.md` — design (Agent engine + Skill system + Propose/Apply + BKT + RAG)
+- `dev-docs/ARCHITECTURE.md` — design (Agent engine + Soul system + Propose/Apply + BKT + RAG)
 - `dev-docs/ROADMAP.md` — milestone roadmap
 - `dev-docs/BUILD-NOTES.md` — known environment/build pitfalls
 - `dev-docs/DESIGN-PLAN-v0.2.md` / `v0.3.md` / `v0.4-threads.md` — historical design plans. Read for intent, not current code state; the code has moved on.

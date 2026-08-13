@@ -132,21 +132,21 @@ export const chatSessions = sqliteTable("chat_sessions", {
   messagesJson: text("messages_json").notNull().default("[]"),
   /** 记录这次对话用的 Provider，便于切换时不丢上下文 */
   provider: text("provider"),
-  /** 记录激活的 skill，便于复现教学风格 */
-  activeSkill: text("active_skill"),
+  /** 记录激活的 soul（教学人设），便于复现教学风格 */
+  activeSoul: text("active_soul"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),
 });
 
-/* ---------- Skill 系统（v2 新增） ---------- */
+/* ---------- Soul 系统（教学人设/persona） ---------- */
 
-export const skills = sqliteTable("skills", {
+export const souls = sqliteTable("souls", {
   id: text("id").primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description").notNull(),
   type: text("type", {
-    enum: ["learning-mode", "subject-pack", "user-custom"],
+    enum: ["builtin", "custom"],
   }).notNull(),
   body: text("body").notNull(),
   isBuiltin: integer("is_builtin", { mode: "boolean" }).notNull().default(false),

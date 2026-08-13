@@ -89,16 +89,16 @@ export interface Progress {
   mastery: number | null;
 }
 
-/* ---------- Skill 系统（v2 / M1） ---------- */
+/* ---------- Soul 系统（教学人设/persona） ---------- */
 
-export type SkillType = "learning-mode" | "subject-pack" | "user-custom";
+export type SoulType = "builtin" | "custom";
 
-export interface Skill {
+export interface Soul {
   id: string;
   name: string;
   description: string;
-  type: SkillType;
-  /** 完整 raw（含 frontmatter）。运行时用 parseSkillFrontmatter 取 body 注入 system prompt */
+  type: SoulType;
+  /** 完整 raw（含 frontmatter）。运行时用 parseFrontmatter 取 body 注入 system prompt */
   body: string;
   isBuiltin: boolean;
 }
@@ -398,17 +398,17 @@ export interface ApiExpose {
   /** v0.4: 中断某 thread 的 agent 回复 */
   abortAgentChatThread(threadId: string): Promise<void>;
 
-  /* Skill 系统（M1） */
-  listSkills(): Promise<Skill[]>;
-  getSkill(name: string): Promise<Skill | null>;
-  createSkill(input: {
+  /* Soul 系统（教学人设/persona） */
+  listSouls(): Promise<Soul[]>;
+  getSoul(name: string): Promise<Soul | null>;
+  createSoul(input: {
     name: string;
     description: string;
-    type: SkillType;
+    type: SoulType;
     body: string;
-  }): Promise<Skill>;
-  setActiveSkill(name: string): Promise<void>;
-  getActiveSkill(): Promise<string | null>;
+  }): Promise<Soul>;
+  setActiveSoul(name: string): Promise<void>;
+  getActiveSoul(): Promise<string | null>;
 
   /** LLM provider 是否就绪（渲染层只见布尔，不见 key） */
   isAgentReady(): Promise<{

@@ -167,6 +167,16 @@ Entry conventions for contributors:
   Hangul→ko、西里尔字母→ru 检测。解决日文被误判为中文的问题。
 
 ### Changed
+- **教学模式正名为「教学人设 soul」(精讲/引导/实战 三选一)** —— 原 `skills` 系统混了两个不同
+  概念:(1) 教学人设(persona,贯穿对话的行为姿态,本应是 system-prompt overlay);(2) 未来才该有的
+  真 skill(过程性多步 playbook)。把 (1) 正名为 **soul**,与未来真 skill 彻底分开。同时把原来
+  混了三条正交轴(教学姿态/考试压力/内容范围)的 4 个模式重做成 3 个教育学依据分明的 soul:
+  **精讲**(worked-example + 费曼,新手/低能耗友好)、**引导**(productive struggle,有基础时用)、
+  **实战**(围绕真实世界非结构化问题的 PBL,覆盖理论科目)。砍掉的 exam-prep/review 归位到
+  quiz 工具 + SRS 排程(它们是内容范围/压力档,不是教学姿态)。表 `skills`→`souls`、列
+  `active_skill`→`active_soul`、IPC `skill:*`→`soul:*`、删 `flag_skill_system`(soul 注入常开,
+  `active_soul=null` 即等价关闭)。老库幂等迁移(留用户自建 soul、弃旧 builtin)。新增
+  `verify-souls.mjs`(含迁移专项)+ 改附带测试;闭环证明已做(break→fail→restore→pass)。
 - **BKT↔SRS 闭环(learning-experience Phase 2)**:修复掌握度与间隔复习解耦的问题——此前
   唯一耦合点是"毕业时 recordReview(5)",答错既不回写掌握度也不重排复习。现在一次答题观测
   **同时**更新 BKT 与 SRS:答对推迟复习、答错重置到 1 天近期重练(可验证:连续答对 interval

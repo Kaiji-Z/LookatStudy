@@ -68,9 +68,11 @@ interface ChatStreamProps {
   onSaveChatNote?: (text: string, msgId: string, startOffset?: number, endOffset?: number) => void;
   /** 所有 user_note(用于对话流持久画线渲染)。按 msgId 分组应用 mark */
   chatNotes?: CanvasItem[];
+  /** 答完一组题后点"下一步"动作 → 把消息发进对话(父组件接 sendMessage)。消灭"答完不知道干嘛"死胡同。 */
+  onPickQuizAction?: (message: string) => void;
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onGotoSettings, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onGotoSettings, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction }: ChatStreamProps) {
   const t = useLang();
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
@@ -82,6 +84,26 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
     },
     [selectedNodeId],
   );
+
+  // 答完题下一步动作(常开):拉当前节点掌握度,决定给"标记掌握"还是"深入"。
+  const [quizMastery, setQuizMastery] = useState<number | null>(null);
+  useEffect(() => {
+    if (!selectedNodeId) {
+      setQuizMastery(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getProgress(selectedNodeId)
+      .then((p: { mastery?: number | null } | null) => {
+        if (!cancelled) setQuizMastery(p?.mastery ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedNodeId]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   // 用户是否"贴底"——只在贴底时自动跟随,避免用户上滑翻历史被强拉回来。
   // 用 ref 存判断结果(useEffect 里读,无需触发重渲染)。
@@ -332,6 +354,8 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
             onApplyProposal={onApplyProposal}
             onRejectProposal={onRejectProposal}
             onQuizAnswered={handleQuizAnswered}
+            quizMastery={quizMastery}
+            onPickAction={onPickQuizAction}
           />
         ))}
 
@@ -402,11 +426,15 @@ function MessageRowV2({
   onApplyProposal,
   onRejectProposal,
   onQuizAnswered,
+  quizMastery,
+  onPickAction,
 }: {
   msg: ChatMessageV2;
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
+  quizMastery?: number | null;
+  onPickAction?: (message: string) => void;
 }) {
   if (msg.role === "user") {
     // user:极简阅读流(claude.ai 风)。右对齐 + 极轻微染,无气泡边框。
@@ -440,6 +468,8 @@ function MessageRowV2({
             onApplyProposal={onApplyProposal}
             onRejectProposal={onRejectProposal}
             onQuizAnswered={onQuizAnswered}
+            quizMastery={quizMastery}
+            onPickAction={onPickAction}
           />
         ))}
       </div>
@@ -454,6 +484,8 @@ function PartRenderer({
   onApplyProposal,
   onRejectProposal,
   onQuizAnswered,
+  quizMastery,
+  onPickAction,
 }: {
   part: ChatMessagePart;
   msgId: string;
@@ -461,6 +493,8 @@ function PartRenderer({
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
+  quizMastery?: number | null;
+  onPickAction?: (message: string) => void;
 }) {
   if (part.type === "text") {
     return (
@@ -497,6 +531,8 @@ function PartRenderer({
       onApplyProposal={onApplyProposal}
       onRejectProposal={onRejectProposal}
       onQuizAnswered={onQuizAnswered}
+      quizMastery={quizMastery}
+      onPickAction={onPickAction}
     />
   );
 }
@@ -537,6 +573,8 @@ function ToolCallBlock({
   onApplyProposal,
   onRejectProposal,
   onQuizAnswered,
+  quizMastery,
+  onPickAction,
 }: {
   toolName: string;
   state: "input-available" | "output-available" | "output-error";
@@ -547,6 +585,8 @@ function ToolCallBlock({
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
+  quizMastery?: number | null;
+  onPickAction?: (message: string) => void;
 }) {
   const t = useLang();
   // proposal 类工具(record_answer/mark_mastered):output 里有 proposalId + summary
@@ -600,7 +640,12 @@ function ToolCallBlock({
         data-testid={`inline-artifact-${artifactType}`}
         data-tool={toolName}
       >
-        <ArtifactRenderer data={output} onQuizAnswered={onQuizAnswered} />
+        <ArtifactRenderer
+          data={output}
+          onQuizAnswered={onQuizAnswered}
+          quizMastery={quizMastery}
+          onPickAction={onPickAction}
+        />
       </div>
     );
   }

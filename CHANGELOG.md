@@ -17,6 +17,17 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **"开始学习"重塑为 hook 起手式(动机层)** —— 用户点进节点时往往"提不起劲"(streak 断了/冷启动)。
+  此前"开始学习"发的是"讲核心概念 + 出一道小问题"——在意志力最低的瞬间堆两次摩擦(吸收讲座 +
+  被评估),是作业形状,不是吸引形状。现改成:**反直觉钩子 + 二选一猜测 + 不计分**。把"考"(有失败
+  风险)改成"猜"(玩),用好奇心缺口做内驱(补上 streak 断了之后缺失的拉力);顺序从"先给答案再考"
+  反过来成"先吊胃口、让他想要、再揭晓"。`handleStartLearning` 的 canned prompt 重写,明令起手不用
+  `generate_quiz` 工具、不计分。**live-test-hook-opener** 拿真 GLM(glm-5.2)验证形状(有钩子 +
+  二选一 + 不计分 + 不抢答),非"粘段 prompt 然后嘴硬"。
+- **答完题下一步动作(常开,消灭死胡同)**:quiz 完成卡不再"到此为止"——按答对率 + 掌握度给出
+  ≥2 个明确去向(讲讲我答错的 / 再来一组 / 深入原理 / 确认我掌握了 / 下一个知识点)。纯函数
+  `getPostQuizActions` 驱动,永远 ≥2 个动作;首动作用 `btn-3d-brand` 引导。verify-post-quiz-actions
+  覆盖。
 - **复习可见性 + 交错练习 + 仪表盘薄弱点(learning-experience 收尾)**:
   - **待复习顶出(P2.3)**:session 开始若有到期复习,弹一次 nudge(每进程最多一次,不刷屏);
     持久 surface 复用 MapRail 的 map-review-badge(待复习数 + 入口)。
@@ -226,6 +237,11 @@ Entry conventions for contributors:
   不硬依赖 README。无 LLM key 时纯规则降级(按目录分 section + 路径前缀图片关联)。
 
 ### Fixed
+- **ui-test SRS 种子幂等 + 清死代码**(feat/adaptive-tutor 顺带修的预存债):
+  - `--ui-test` 播的到期 SRS 项此前用裸 `insert`,持久 DB 下重复运行触发
+    `UNIQUE constraint failed: srs_items.id` → 种子静默失败 → "待复习"徽章断言红。
+    改为 `onConflictDoUpdate`(幂等),2 个预存 ui-test 失败(due-review / interleaved)转绿。
+  - 删 App.tsx 里写而不读的死状态 `dueCount`(`dueInCourseCount` 才是活变量)→ renderer tsc 0 错误。
 - **清理预存类型债 + 2 个误标 knownFail**:
   - `tsc --noEmit`(renderer)与 `tsc -p tsconfig.electron.json`(main)现在**零错误**(此前长期红的:
     App.tsx 未用 `theme`、MapRail 未用 `PRESET_KEYS`/`index`/死代码 `MapNavBtn`+`statusClass`+`statusIcon`

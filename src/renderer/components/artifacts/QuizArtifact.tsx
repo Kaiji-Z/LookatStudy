@@ -8,8 +8,10 @@
  */
 import { useState } from "react";
 import { celebrate } from "../../lib/celebration.js";
-import { ListChecks, Check, X, AlertTriangle } from "lucide-react";
+import { ListChecks, Check, X, AlertTriangle, HelpCircle, RotateCcw, Sparkles, CheckCircle2, ArrowRight } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
+import { getPostQuizActions, type PostQuizActionId } from "../../lib/post-quiz-actions.js";
+import type { LucideIcon } from "lucide-react";
 
 interface QuizQuestion {
   prompt: string;
@@ -24,12 +26,51 @@ interface QuizData {
   warnings?: string[];
 }
 
+/**
+ * 答完一组题后"下一步"动作的渲染元数据(常开)。
+ * 动作 id 来自纯函数 getPostQuizActions(已测);这里只把 id 映射成图标 + i18n 文案 + 要发送的消息。
+ * 消息是学习者"会说的话"(具体中文),发给 AI 后由 AI 接住(record_answer/mark_mastered 等)。
+ */
+const ACTION_META: Record<PostQuizActionId, { icon: LucideIcon; labelKey: string; message: string }> = {
+  "explain-wrong": {
+    icon: HelpCircle,
+    labelKey: "quiz.action.explainWrong",
+    message: "我刚才有题答错了,帮我讲讲为什么错、正确的思路是什么。",
+  },
+  "retry": {
+    icon: RotateCcw,
+    labelKey: "quiz.action.retry",
+    message: "再来一组类似的题巩固一下。",
+  },
+  "go-deeper": {
+    icon: Sparkles,
+    labelKey: "quiz.action.goDeeper",
+    message: "这组我答得不错,帮我深入讲讲背后的原理和容易混淆的地方。",
+  },
+  "mark-mastered": {
+    icon: CheckCircle2,
+    labelKey: "quiz.action.markMastered",
+    message: "这课我觉得掌握了,帮我确认一下——出个综合题检验,通过了就标记为掌握。",
+  },
+  "next-topic": {
+    icon: ArrowRight,
+    labelKey: "quiz.action.nextTopic",
+    message: "进入下一个知识点。",
+  },
+};
+
 export function QuizArtifact({
   data,
   onAnswered,
+  quizMastery,
+  onPickAction,
 }: {
   data: unknown;
   onAnswered?: (question: QuizQuestion, selectedIndex: number, correct: boolean) => void;
+  /** 当前节点掌握度(决定是否给出"标记掌握";空=未评估,按低掌握处理,不冒险标记)。 */
+  quizMastery?: number | null;
+  /** 点某个动作 → 把对应消息发进对话(父组件接 sendMessage)。常开:有回调就显示下一步动作(消灭死胡同)。 */
+  onPickAction?: (message: string) => void;
 }) {
   const d = data as QuizData;
   const t = useLang();
@@ -40,6 +81,9 @@ export function QuizArtifact({
 
   if (current >= d.questions.length) {
     // 全部做完
+    // 答完题不再"到此为止"——给出下一步动作,消灭死胡同。常开:有 onPickAction 就显示。
+    const showActions = !!onPickAction;
+    const actions = showActions ? getPostQuizActions(score, quizMastery ?? null) : [];
     return (
       <div className="surface-card p-4 text-center" data-testid="artifact-quiz-done">
         <div className="text-2xl mb-2">{score.correct === score.total ? "🎉" : "📚"}</div>
@@ -49,6 +93,26 @@ export function QuizArtifact({
         <div className="text-label text-ink-muted mt-1">
           {score.correct === score.total ? t("quiz.allCorrectHint") : t("quiz.tryAgainHint")}
         </div>
+        {actions.length > 0 && (
+          <div className="mt-3 space-y-2 text-left" data-testid="quiz-next-actions">
+            <div className="text-label text-ink-muted">{t("quiz.action.nextPrompt")}</div>
+            {actions.map((a, idx) => {
+              const meta = ACTION_META[a.id];
+              const Icon = meta.icon;
+              return (
+                <button
+                  key={a.id}
+                  onClick={() => onPickAction?.(meta.message)}
+                  data-testid={`quiz-action-${a.id}`}
+                  className={`${idx === 0 ? "btn-3d-brand" : "btn-3d-neutral"} w-full py-2 text-body flex items-center justify-center gap-1.5`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {t(meta.labelKey)}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }

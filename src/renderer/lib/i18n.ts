@@ -416,6 +416,12 @@ const translations: Record<Lang, Record<string, string>> = {
     "quiz.scoreSummary": "{correct}/{total} 答对",
     "quiz.allCorrectHint": "全部答对,掌握度已提议更新",
     "quiz.tryAgainHint": "再练一组巩固一下",
+    "quiz.action.nextPrompt": "接下来可以:",
+    "quiz.action.explainWrong": "讲讲我答错的",
+    "quiz.action.retry": "再来一组",
+    "quiz.action.goDeeper": "深入讲讲原理",
+    "quiz.action.markMastered": "确认我掌握了",
+    "quiz.action.nextTopic": "下一个知识点",
 
     // —— Import(补充)——
     "import.deleted": "已删除:{title}",
@@ -834,6 +840,12 @@ const translations: Record<Lang, Record<string, string>> = {
     "quiz.scoreSummary": "{correct}/{total} correct",
     "quiz.allCorrectHint": "All correct! Mastery update proposed.",
     "quiz.tryAgainHint": "Practice another set to consolidate.",
+    "quiz.action.nextPrompt": "What's next:",
+    "quiz.action.explainWrong": "Explain what I got wrong",
+    "quiz.action.retry": "Another set",
+    "quiz.action.goDeeper": "Go deeper",
+    "quiz.action.markMastered": "Confirm I've mastered it",
+    "quiz.action.nextTopic": "Next topic",
 
     // —— Import (extra) ——
     "import.deleted": "Deleted: {title}",

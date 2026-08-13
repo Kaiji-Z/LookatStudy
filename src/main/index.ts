@@ -538,13 +538,14 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: interleave,
   });
 
-  // T_nextlabel (P1.5): 首个可学节点常显标题("从这里开始")——此时未选任何节点
+  // T_nextlabel: 节点名牌仅选中态显示(干净地图原则);首可学不再常显 label,
+  // 节点名靠 hover GlobalTooltip(data-tooltip)。验证 map-next-label 不存在。
   const nextLabel = await win.webContents.executeJavaScript(
     `document.querySelector('[data-testid="map-next-label"]') !== null`,
   );
   results.push({
-    name: "first available node shows label as start-here cue (P1.5)",
-    ok: nextLabel === true,
+    name: "node label only on selected; first-available does NOT pin a label (clean map)",
+    ok: nextLabel === false,
   });
 
   // T5: 点击一个未锁的 map-node → 触发 markNodeAttempted → 联动右栏

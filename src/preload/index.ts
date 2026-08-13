@@ -152,6 +152,8 @@ const api = {
     ipcRenderer.invoke("memory:update", input)) as ApiExpose["updateMemory"],
   getMemory: ((nodeId: string | null, category?: any) =>
     ipcRenderer.invoke("memory:get", nodeId, category)) as ApiExpose["getMemory"],
+  consolidateMemory: ((courseId: string) =>
+    ipcRenderer.invoke("consolidate:run", courseId)) as ApiExpose["consolidateMemory"],
 
   /* 设置 */
   getSetting: ((key: SettingKey) =>

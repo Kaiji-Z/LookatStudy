@@ -495,6 +495,12 @@ export interface ApiExpose {
       category: string;
     }>
   >;
+  /** 记忆固化:从课程的对话+friction 采集 → LLM 提炼进全三类 memory。flag off 时 no-op。 */
+  consolidateMemory(courseId: string): Promise<{
+    ok: boolean;
+    written?: string[];
+    reason?: string;
+  }>;
 
   /* 设置 */
   getSetting(key: SettingKey): Promise<string | null>;
@@ -627,6 +633,7 @@ export type SettingKey =
   // 多模态:feature flag(存 settings 表,key 形如 flag_xxx)
   | "flag_multimodal_import"
   | "flag_image_download"
+  | "flag_memory_system"
   // 多模态:可选的 vision 模型覆盖(不配则复用主模型)
   | "vision_provider_override"
   | "vision_model_override"

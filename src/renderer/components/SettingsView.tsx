@@ -450,6 +450,14 @@ export function SettingsView() {
           </div>
         </section>
 
+        {/* ========== 组 2.5:学习者记忆 ========== */}
+        <section>
+          <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.memory")}</h3>
+          <div className="surface-card overflow-hidden">
+            <MemoryContent />
+          </div>
+        </section>
+
         {/* ========== 组 3:外观与语言 ========== */}
         <section>
           <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.appearance")}</h3>
@@ -724,6 +732,38 @@ function MultimodalContent({
         </div>
       )}
     </>
+  );
+}
+
+/** 记忆开关:读写 flag_memory_system。开 → agent 记住学习者(remember tool + 里程碑自动固化)。 */
+function MemoryContent() {
+  const t = useLang();
+  const [enabled, setEnabled] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.getSetting("flag_memory_system").then((flag) => {
+      setEnabled(flag === "true");
+      setLoaded(true);
+    });
+  }, []);
+
+  const handleToggle = async () => {
+    const next = !enabled;
+    setEnabled(next);
+    await api.setSetting("flag_memory_system", String(next));
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <div className="px-4 py-3.5 flex items-center gap-3">
+      <Toggle checked={enabled} onChange={handleToggle} label={t("settings.memory.toggle")} testid="memory-toggle" />
+      <div className="flex-1 min-w-0">
+        <div className="text-body font-medium text-ink-strong">{t("settings.memory.toggle")}</div>
+        <div className="text-label text-ink-muted">{t("settings.memory.toggle.desc")}</div>
+      </div>
+    </div>
   );
 }
 

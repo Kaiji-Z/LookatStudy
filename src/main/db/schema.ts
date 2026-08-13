@@ -220,6 +220,8 @@ export const memory = sqliteTable("memory", {
   id: text("id").primaryKey(),
   /** 关联节点（可空，全局记忆） */
   nodeId: text("node_id"),
+  /** 课程作用域：仅 friction_pattern 用（领域卡点不跨课程串）；NULL=跨课程（如 global 风格） */
+  courseId: text("course_id"),
   summary: text("summary").notNull(),
   category: text("category", {
     enum: ["global", "node", "friction_pattern"],

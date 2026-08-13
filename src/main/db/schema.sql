@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS memory (
   id TEXT PRIMARY KEY,
   node_id TEXT,                      -- 关联的节点（可空，全局记忆）
+  course_id TEXT,                    -- 课程作用域：仅 friction_pattern 用（领域卡点不跨课程串）；NULL=跨课程（如 global 风格）
   summary TEXT NOT NULL,             -- 滚动摘要正文
   category TEXT NOT NULL CHECK (category IN ('global', 'node', 'friction_pattern')),
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
@@ -182,6 +183,8 @@ CREATE TABLE IF NOT EXISTS memory (
 );
 CREATE INDEX IF NOT EXISTS idx_memory_node ON memory(node_id);
 CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category);
+-- idx_memory_course 不放这:旧库迁移时 course_id 列由 addColumnIfMissing 在 schema.sql
+-- 之后才加,此处建索引会因列不存在而崩。改在 runMigrations 里 addColumn 之后建。
 
 -- ============================================================
 -- 自定义 Provider（用户自建 LLM 端点，覆盖预设无法穷举的场景）

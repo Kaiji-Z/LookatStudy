@@ -14,6 +14,7 @@ import {
   srsItems,
   exercises,
   chatSessions,
+  proposals,
 } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import type {
@@ -75,7 +76,8 @@ import {
 } from "../services/souls/soul-service.js";
 // Agent 引擎 + Proposal（M2）
 import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory, handleAgentChatThread, abortAgentChatThread } from "../services/agent/agent-engine.js";
-import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels } from "../services/agent/llm-client.js";
+import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels, resolveLlm } from "../services/agent/llm-client.js";
+import { gatherConsolidationWindow, consolidate, defaultLlmConsolidate, getConsolidationWatermark, setConsolidationWatermark } from "../services/memory-service.js";
 import { PROVIDER_PRESETS } from "../services/agent/llm-presets.js";
 // 自定义 Provider
 import {
@@ -970,7 +972,12 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
     listPendingProposalsService(getDb()),
   );
   ipcMain.handle("proposal:apply", async (_e, id: string) => {
-    const result = applyProposalService(getDb(), id);
+    const db = getDb();
+    // 拿皇冠过渡检测:apply 前该 proposal 节点是否已 mastered(已 mastered 就不算"首次拿皇冠")
+    const prop = db.select().from(proposals).where(eq(proposals.id, id)).get();
+    const wasMastered = !!prop?.nodeId
+      && db.select().from(progressTable).where(eq(progressTable.nodeId, prop.nodeId)).get()?.status === "mastered";
+    const result = applyProposalService(db, id);
     // P2 闭环:应用掌握度观测 → 同步写 SRS(答对推迟复习,答错提前重练)。
     // 覆盖 exercise:submit / AI record_answer 的 pending 提议在此 apply 的路径。
     for (const op of result.operations ?? []) {
@@ -978,6 +985,8 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
         recordReview(op.nodeId, ((op.correct ?? false) ? 5 : 2) as ReviewQuality);
       } else if (op.type === "mark_mastered" && result.nodeId) {
         recordReview(result.nodeId, 5 as 5);
+        // 里程碑(拿皇冠):仅首次掌握(!wasMastered)触发固化——一个节点只拿一次皇冠
+        if (!wasMastered) triggerConsolidationOnMilestone(result.nodeId);
       }
     }
     markDirty();
@@ -1016,11 +1025,41 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
     // 读回新 mastery + 检测毕业过渡(mastered=true 仅在本次从非 mastered → mastered)
     const row = getDb().select().from(progressTable).where(eq(progressTable.nodeId, nodeId)).get();
     const mastered = !wasMastered && row?.status === "mastered";
+    // 里程碑(拿皇冠):首次 mastered → 触发记忆固化该课程
+    if (mastered) triggerConsolidationOnMilestone(nodeId);
     return { applied: true, newMastery: row?.mastery ?? undefined, mastered };
   });
 }
 
 /* ---------- 仪表盘 + 检索 + 记忆（M3） ---------- */
+
+/**
+ * 里程碑触发记忆固化:节点首次 mastered(拿皇冠/通关)时,固化该课程的学习者记忆。
+ * 里程碑稀有 → 不像时间节流那样无脑烧 token;且"刚完成一件有意义的事"是最自然的固化时机。
+ * flag 门控,fire-and-forget(不阻塞答题响应),错误只记日志。
+ */
+function triggerConsolidationOnMilestone(nodeId: string): void {
+  try {
+    if (!isFlagOn("memory_system")) return;
+    const db = getDb();
+    const node = db.select().from(contentNodes).where(eq(contentNodes.id, nodeId)).get();
+    const courseId = node?.courseId;
+    if (!courseId) return;
+    const llm = resolveLlm(db);
+    // 增量:只采上次固化水位之后的新数据(避免重复处理历史)
+    const since = getConsolidationWatermark(db, courseId) ?? undefined;
+    const win = gatherConsolidationWindow(db, { courseId, since });
+    void consolidate(db, win, defaultLlmConsolidate(llm.languageModel))
+      .then(() => {
+        // 推进水位(无论是否写入新 memory,都标记"已处理到此刻",下次只采增量)
+        setConsolidationWatermark(db, courseId);
+        markDirty();
+      })
+      .catch((e) => console.error("[consolidate] milestone failed", e));
+  } catch (e) {
+    console.error("[consolidate] milestone trigger error", e);
+  }
+}
 
 export function registerM3Handlers(): void {
   ipcMain.handle("dashboard:get", async (_e, courseId: string) => {
@@ -1073,6 +1112,20 @@ export function registerM3Handlers(): void {
       category?: "global" | "node" | "friction_pattern",
     ) => getMemoryService(getDb(), nodeId, category),
   );
+
+  // 记忆固化:从课程的对话+friction 采集窗口 → LLM 提炼+合并进全三类 memory。
+  // memory_system flag off 时 no-op(off=baseline)。返回写入的类别。
+  ipcMain.handle("consolidate:run", async (_e, courseId: string) => {
+    if (!isFlagOn("memory_system")) {
+      return { ok: false, reason: "memory_system flag off" };
+    }
+    const db = getDb();
+    const llm = resolveLlm(db);
+    const win = gatherConsolidationWindow(db, { courseId });
+    const result = await consolidate(db, win, defaultLlmConsolidate(llm.languageModel));
+    markDirty();
+    return { ok: true, written: Object.keys(result) };
+  });
 }
 
 /**

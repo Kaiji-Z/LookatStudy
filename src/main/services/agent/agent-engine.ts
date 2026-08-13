@@ -46,7 +46,8 @@ import { getKnowledgePoints, getKcMastery } from "../kc-service.js";
 import { recordReview } from "../srs.js";
 import type { ReviewQuality } from "@shared/types";
 // P3: 注入学习者近期卡点,让 agent "看见并记住"挣扎点(relatedness + 自适应)
-import { buildFrictionContext } from "../pure/friction-context.js";
+import { remember, defaultLlmMerge } from "../memory-service.js";
+import { buildLearnerSnapshot } from "../learner-model-service.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -109,22 +110,7 @@ export interface ChatTurn {
   content: string;
 }
 
-/**
- * 根据掌握度返回教学策略指引。
- * 让 AI 知道"现在该怎么教"——这是 harness 的核心。
- */
-function getTeachingStrategy(mastery: number | null): string {
-  if (mastery === null || mastery < 0.1) {
-    return "学习者刚开始学这一课。先建立直觉再讲细节：用类比引入概念，确认理解后再深入。不要一次性倾倒所有信息，分步骤引导。";
-  }
-  if (mastery < 0.4) {
-    return "学习者有初步了解但还不扎实。用提问检验理解（'你能用自己的话说说X是什么吗？'），发现误解时立即纠正。多给实际例子。";
-  }
-  if (mastery < 0.7) {
-    return "学习者基本理解了核心内容。现在要深化：对比相似概念的区别，考察边界情况，引导思考'什么时候不该用这个'。可以出一些有迷惑性的问题。";
-  }
-  return "学习者接近掌握。进入综合应用阶段：让学习者尝试教别人（费曼技巧），考察知识在更大系统中的角色。如果学习者能清晰复述并举例，考虑提议标记掌握。";
-}
+// getTeachingStrategy 已移至 learner-model-service(它本就是学习者模型逻辑,由 buildLearnerSnapshot 内部用)。
 
 /**
  * 检测用户提问是否与图片/图表/示意图相关。
@@ -210,10 +196,6 @@ export async function runAgentTurn(
       `课程章节结构：\n${courseOutline || "  (无)"}\n`
     : "(无课程级上下文)";
 
-  // 根据掌握度生成教学策略指引
-  const mastery = nodeProgress?.mastery ?? null;
-  const teachingStrategy = getTeachingStrategy(mastery);
-
   // Per-KC BKT: 知识组件清单 + 各 KC 掌握度（让 AI 看见薄弱项，精准出题）
   const kps = node ? getKnowledgePoints(db, node.id) : [];
   const kcMasteryRows = kps.length > 0 && node ? getKcMastery(db, node.id) : [];
@@ -228,19 +210,21 @@ export async function runAgentTurn(
       `\n（出题/判分时请用 knowledgeComponent 参数标注考察哪个知识点；优先覆盖薄弱项）`
     : "";
 
-  // P3: 学习者近期在本节点的卡点(🤔 上报)。空字符串 = 无,不拼接。
-  const frictionContext = node ? buildFrictionContext(db, node.id) : "";
-
+  // 节点上下文:只放"教什么"(课程结构 + 节点内容 + 本节知识点清单)。
+  // 学习者状态(掌握度/friction/记忆)由下方 buildLearnerSnapshot 统一投影(Phase 1.5 收口)。
   const nodeContext = node
     ? `${courseContext}\n` +
       `当前学习节点：${node.title}（${node.type}）\n来源：${node.sourcePath ?? "(无)"}\n` +
-      `内容：${node.content ?? "(尚未生成讲解，需要时基于标题引导)"}\n` +
-      (kcContext ? `${kcContext}\n` : "") +
-      `学习者当前掌握度：${mastery != null ? mastery.toFixed(2) : "未知"}${kps.length > 0 ? "（最薄弱知识点）" : ""}\n` +
-      `进度状态：${nodeProgress?.status ?? "未开始"}\n\n` +
-      `教学策略指引：${teachingStrategy}` +
-      (frictionContext ? `\n\n${frictionContext}` : "")
+      `内容：${node.content ?? "(尚未生成讲解，需要时基于标题引导)"}` +
+      (kcContext ? `\n\n${kcContext}` : "")
     : "(无当前节点上下文)";
+
+  // 学习者当前状态(读投影):掌握度+教学策略(定量 BKT) + 近期 friction(原始事件)
+  // + memory(综合层,memory_system flag 门控)→ 一个块。mastery/friction/strategy 不再散注。
+  const learnerSnapshot = buildLearnerSnapshot(db, node?.id, {
+    includeMemory: isFlagOn("memory_system"),
+    courseId: node?.courseId,
+  });
 
   // 工具集：只读直接返回，写操作走 proposal
   const tools: ToolSet = {
@@ -532,6 +516,35 @@ export async function runAgentTurn(
     }),
   };
 
+  // memory_system flag on → 加 remember tool:agent 记学习者持久事实(跨会话,写时 LLM 合并)。
+  if (isFlagOn("memory_system")) {
+    tools.remember = tool({
+      description:
+        "记下关于这位学习者的持久事实(供以后会话用)。只在学到**值得跨会话保留**的事时调:" +
+        "反复出现的知识缺口/混淆、对这位学习者管用的讲法(如'用斐波那契类比讲递归才通')、" +
+        "节奏/风格偏好。不要记临时闲聊或单次提问内容。" +
+        "category:global=整体风格/偏好;node=本节点具体缺口(须带 nodeId);friction_pattern=跨节点反复模式。",
+      inputSchema: z.object({
+        category: z
+          .enum(["global", "node", "friction_pattern"])
+          .describe("global=整体;node=本节点(须带 nodeId);friction_pattern=跨节点反复模式"),
+        content: z.string().describe("要记的事实,简洁(如'用类比讲递归才通')"),
+        nodeId: z.string().optional().describe("仅 category=node 时填当前节点 id"),
+      }),
+      execute: async (input) => {
+        events.onToolCall?.("remember", input);
+        const res = await remember(
+          db,
+          input,
+          defaultLlmMerge(llm.languageModel),
+          node?.courseId,
+        );
+        markDirty();
+        return res;
+      },
+    });
+  }
+
   try {
     // v0.8 多模态:用户问图相关问题时,主动把当前节点的图片注入到最后一条 user 消息
     // (方案 B:不依赖 tool-result vision,直接把图作为 message file-part 喂给 LLM)
@@ -581,7 +594,9 @@ export async function runAgentTurn(
 
     const result = streamText({
       model: llm.languageModel,
-      system: `${system}\n\n${nodeContext}`,
+      system: `${system}\n\n${nodeContext}${
+        learnerSnapshot ? `\n\n${learnerSnapshot}` : ""
+      }`,
       messages: preparedMessages,
       tools,
       stopWhen: stepCountIs(6),

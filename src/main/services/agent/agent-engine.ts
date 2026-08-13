@@ -42,8 +42,8 @@ import {
   type LearningOperation,
 } from "../proposal-service.js";
 // P3: 注入学习者近期卡点,让 agent "看见并记住"挣扎点(relatedness + 自适应)
-import { buildFrictionContext } from "../pure/friction-context.js";
-import { getLearnerMemory, remember, defaultLlmMerge } from "../memory-service.js";
+import { remember, defaultLlmMerge } from "../memory-service.js";
+import { buildLearnerSnapshot } from "../learner-model-service.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -106,22 +106,7 @@ export interface ChatTurn {
   content: string;
 }
 
-/**
- * 根据掌握度返回教学策略指引。
- * 让 AI 知道"现在该怎么教"——这是 harness 的核心。
- */
-function getTeachingStrategy(mastery: number | null): string {
-  if (mastery === null || mastery < 0.1) {
-    return "学习者刚开始学这一课。先建立直觉再讲细节：用类比引入概念，确认理解后再深入。不要一次性倾倒所有信息，分步骤引导。";
-  }
-  if (mastery < 0.4) {
-    return "学习者有初步了解但还不扎实。用提问检验理解（'你能用自己的话说说X是什么吗？'），发现误解时立即纠正。多给实际例子。";
-  }
-  if (mastery < 0.7) {
-    return "学习者基本理解了核心内容。现在要深化：对比相似概念的区别，考察边界情况，引导思考'什么时候不该用这个'。可以出一些有迷惑性的问题。";
-  }
-  return "学习者接近掌握。进入综合应用阶段：让学习者尝试教别人（费曼技巧），考察知识在更大系统中的角色。如果学习者能清晰复述并举例，考虑提议标记掌握。";
-}
+// getTeachingStrategy 已移至 learner-model-service(它本就是学习者模型逻辑,由 buildLearnerSnapshot 内部用)。
 
 /**
  * 检测用户提问是否与图片/图表/示意图相关。
@@ -207,26 +192,19 @@ export async function runAgentTurn(
       `课程章节结构：\n${courseOutline || "  (无)"}\n`
     : "(无课程级上下文)";
 
-  // 根据掌握度生成教学策略指引
-  const mastery = nodeProgress?.mastery ?? null;
-  const teachingStrategy = getTeachingStrategy(mastery);
-
-  // P3: 学习者近期在本节点的卡点(🤔 上报)。空字符串 = 无,不拼接。
-  const frictionContext = node ? buildFrictionContext(db, node.id) : "";
-
+  // 节点上下文:只放"教什么"(课程结构 + 节点内容)。学习者状态(掌握度/friction/记忆)
+  // 由 buildLearnerSnapshot 统一投影成一块注入,不再散织在 nodeContext 里(Phase 1.5 收口)。
   const nodeContext = node
     ? `${courseContext}\n` +
       `当前学习节点：${node.title}（${node.type}）\n来源：${node.sourcePath ?? "(无)"}\n` +
-      `内容：${node.content ?? "(尚未生成讲解，需要时基于标题引导)"}\n` +
-      `学习者当前掌握度：${mastery != null ? mastery.toFixed(2) : "未知"}\n` +
-      `进度状态：${nodeProgress?.status ?? "未开始"}\n\n` +
-      `教学策略指引：${teachingStrategy}` +
-      (frictionContext ? `\n\n${frictionContext}` : "")
+      `内容：${node.content ?? "(尚未生成讲解，需要时基于标题引导)"}`
     : "(无当前节点上下文)";
 
-  // 学习者记忆(跨会话,定性层,补 BKT 定量 + friction 原始事件之缺)。
-  // memory_system flag off 或无记忆时为 null → 不注入(新用户零副作用)。
-  const learnerMemory = isFlagOn("memory_system") ? getLearnerMemory(db, node?.id) : null;
+  // 学习者当前状态(读投影):掌握度+教学策略(定量 BKT) + 近期 friction(原始事件)
+  // + memory(综合层,memory_system flag 门控)→ 一个块。mastery/friction/strategy 不再散注。
+  const learnerSnapshot = buildLearnerSnapshot(db, node?.id, {
+    includeMemory: isFlagOn("memory_system"),
+  });
 
   // 工具集：只读直接返回，写操作走 proposal
   const tools: ToolSet = {
@@ -584,7 +562,7 @@ export async function runAgentTurn(
     const result = streamText({
       model: llm.languageModel,
       system: `${system}\n\n${nodeContext}${
-        learnerMemory ? `\n\n【学习者记忆（跨会话）】\n${learnerMemory}` : ""
+        learnerSnapshot ? `\n\n${learnerSnapshot}` : ""
       }`,
       messages: preparedMessages,
       tools,

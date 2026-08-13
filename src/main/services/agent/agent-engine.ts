@@ -42,6 +42,7 @@ import {
   applyProposal,
 } from "../proposal-service.js";
 import { addXpCorrect, addXpWrong } from "../xp-service.js";
+import { getKnowledgePoints, getKcMastery } from "../kc-service.js";
 // P3: 注入学习者近期卡点,让 agent "看见并记住"挣扎点(relatedness + 自适应)
 import { buildFrictionContext } from "../pure/friction-context.js";
 
@@ -211,6 +212,20 @@ export async function runAgentTurn(
   const mastery = nodeProgress?.mastery ?? null;
   const teachingStrategy = getTeachingStrategy(mastery);
 
+  // Per-KC BKT: 知识组件清单 + 各 KC 掌握度（让 AI 看见薄弱项，精准出题）
+  const kps = node ? getKnowledgePoints(db, node.id) : [];
+  const kcMasteryRows = kps.length > 0 && node ? getKcMastery(db, node.id) : [];
+  const kcContext = kps.length > 0
+    ? `知识点及掌握度（课级掌握度 = 最薄弱知识点）：\n` +
+      kps.map((kp, i) => {
+        const row = kcMasteryRows.find((r) => r.kcIndex === i);
+        const pct = row ? Math.round(row.mastery * 100) : 50;
+        const weak = (row?.mastery ?? 0.5) < 0.7 ? " ← 薄弱" : "";
+        return `  ${i}. ${kp.title}（${pct}%）${weak}`;
+      }).join("\n") +
+      `\n（出题/判分时请用 knowledgeComponent 参数标注考察哪个知识点；优先覆盖薄弱项）`
+    : "";
+
   // P3: 学习者近期在本节点的卡点(🤔 上报)。空字符串 = 无,不拼接。
   const frictionContext = node ? buildFrictionContext(db, node.id) : "";
 
@@ -218,7 +233,8 @@ export async function runAgentTurn(
     ? `${courseContext}\n` +
       `当前学习节点：${node.title}（${node.type}）\n来源：${node.sourcePath ?? "(无)"}\n` +
       `内容：${node.content ?? "(尚未生成讲解，需要时基于标题引导)"}\n` +
-      `学习者当前掌握度：${mastery != null ? mastery.toFixed(2) : "未知"}\n` +
+      (kcContext ? `${kcContext}\n` : "") +
+      `学习者当前掌握度：${mastery != null ? mastery.toFixed(2) : "未知"}${kps.length > 0 ? "（最薄弱知识点）" : ""}\n` +
       `进度状态：${nodeProgress?.status ?? "未开始"}\n\n` +
       `教学策略指引：${teachingStrategy}` +
       (frictionContext ? `\n\n${frictionContext}` : "")
@@ -292,14 +308,22 @@ export async function runAgentTurn(
       inputSchema: z.object({
         correct: z.boolean().describe("这次观测学习者是否答对"),
         rationale: z.string().describe("为什么这么判定（一句）"),
+        knowledgeComponent: z.string().optional().describe("考察的知识组件标题（从上方知识点清单中选一个）"),
       }),
       execute: async (input) => {
-        const { correct, rationale } = input;
+        const { correct, rationale, knowledgeComponent } = input;
         events.onToolCall?.("record_answer", { correct, rationale });
+        // Per-KC BKT: 将 KC 标题解析为下标
+        let kcIndex: number | undefined;
+        if (knowledgeComponent) {
+          const kps = getKnowledgePoints(db, nodeId);
+          const idx = kps.findIndex((k) => k.title === knowledgeComponent);
+          if (idx >= 0) kcIndex = idx;
+        }
         // 自动 create + apply（与 quiz:recordAnswer 对齐：AI 已判分，不需人再确认）。
         const proposal = createProposal(db, {
           nodeId,
-          operations: [{ type: "update_mastery", nodeId, correct }],
+          operations: [{ type: "update_mastery", nodeId, correct, kcIndex }],
           rationale: `答题观测：${rationale}`,
         });
         applyProposal(db, proposal.id);
@@ -376,7 +400,8 @@ export async function runAgentTurn(
       description:
         "生成一组练习题(选择题/判断题),用于巩固当前节点的学习。" +
         "当学习者需要检验理解、或主动要求练习时调用。" +
-        "返回的题目会渲染成可交互的练习卡产物(提交后自动判分 + 触发 ExplainCard)。\n\n" +
+        "返回的题目会渲染成可交互的练习卡产物(提交后自动判分 + 触发 ExplainCard)。" +
+        "如果上方有知识点清单，每题用 kc 标注考察哪个知识点，优先覆盖薄弱项。\n\n" +
         QUALITY_GUIDE.quiz,
       inputSchema: z.object({
         questions: z
@@ -386,6 +411,7 @@ export async function runAgentTurn(
               options: z.array(z.string()).min(2).describe("选项列表"),
               answer: z.number().describe("正确选项的索引(从 0 开始)"),
               explanation: z.string().describe("为什么这个答案对(答题反馈时展示)"),
+              kc: z.string().optional().describe("考察的知识点标题（从上方知识点清单中选一个）"),
             }),
           )
           .min(1)

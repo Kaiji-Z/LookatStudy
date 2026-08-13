@@ -138,8 +138,8 @@ const api = {
     ipcRenderer.invoke("proposal:apply", id)) as ApiExpose["applyProposal"],
   rejectProposal: ((id: string) =>
     ipcRenderer.invoke("proposal:reject", id)) as ApiExpose["rejectProposal"],
-  recordQuizAnswer: ((nodeId: string, correct: boolean) =>
-    ipcRenderer.invoke("quiz:recordAnswer", nodeId, correct)) as ApiExpose["recordQuizAnswer"],
+  recordQuizAnswer: ((nodeId: string, correct: boolean, kc?: string) =>
+    ipcRenderer.invoke("quiz:recordAnswer", nodeId, correct, kc)) as ApiExpose["recordQuizAnswer"],
   logFriction: ((nodeId: string | null, category: HumanFrictionCategory, summary: string | null) =>
     ipcRenderer.invoke("friction:log", nodeId, category, summary)) as ApiExpose["logFriction"],
 

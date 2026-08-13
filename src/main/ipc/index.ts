@@ -90,6 +90,8 @@ import {
   rejectProposal as rejectProposalService,
   createProposal as createProposalService,
 } from "../services/proposal-service.js";
+// Per-KC BKT: KC 标题 → 下标解析
+import { getKnowledgePoints } from "../services/kc-service.js";
 // M3：仪表盘 + 检索 + 记忆
 import { getDashboard as getDashboardService } from "../services/dashboard-service.js";
 import { searchContent as searchContentService } from "../services/search-service.js";
@@ -988,16 +990,23 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   });
   // quiz 产物本地评分 → 自动建+应用 update_mastery 提案。
   // 答题观测是确定性的(无需 LLM 判断/人审),直接 apply。
-  ipcMain.handle("quiz:recordAnswer", async (_e, nodeId: string, correct: boolean) => {
+  ipcMain.handle("quiz:recordAnswer", async (_e, nodeId: string, correct: boolean, kc?: string) => {
     if (!nodeId) return { applied: false };
     // XP 即时反馈(与 exercise:submit 对齐:答对+10/答错+1)。
     correct ? addXpCorrect(getDb()) : addXpWrong(getDb());
+    // Per-KC BKT: 将 KC 标题解析为下标（proposal 用 kcIndex 归因）
+    let kcIndex: number | undefined;
+    if (kc) {
+      const kps = getKnowledgePoints(getDb(), nodeId);
+      const idx = kps.findIndex((k) => k.title === kc);
+      if (idx >= 0) kcIndex = idx;
+    }
     // P4: 记录应用前 status,用于检测"毕业时刻"过渡(mastered flag 驱动庆祝)。
     const prevRow = getDb().select().from(progressTable).where(eq(progressTable.nodeId, nodeId)).get();
     const wasMastered = prevRow?.status === "mastered";
     const proposal = createProposalService(getDb(), {
       nodeId,
-      operations: [{ type: "update_mastery", nodeId, correct }],
+      operations: [{ type: "update_mastery", nodeId, correct, kcIndex }],
       rationale: correct ? "quiz 产物答对" : "quiz 产物答错",
     });
     applyProposalService(getDb(), proposal.id);

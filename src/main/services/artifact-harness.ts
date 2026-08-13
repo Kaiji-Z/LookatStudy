@@ -48,6 +48,8 @@ export interface QuizData {
     options: string[];
     answer: number;
     explanation: string;
+    /** 考察的知识组件标题（对应 knowledge_points 中的 title）。per-KC BKT 归因用。 */
+    kc?: string;
   }[];
 }
 
@@ -135,6 +137,7 @@ export const quizSchema = z.object({
           options: z.array(z.string().min(1)).min(2).max(6),
           answer: z.number().int(),
           explanation: z.string().min(1),
+          kc: z.string().optional(),
         })
         .refine((q) => q.answer >= 0 && q.answer < q.options.length, {
           message: "answer 必须满足 0 ≤ answer < options.length",
@@ -247,6 +250,7 @@ function sanitizeQuiz(input: unknown): SanitizeResult<QuizData> {
         options: q.options.slice(0, 6),
         answer,
         explanation: q.explanation || "(无解释)",
+        ...(typeof q.kc === "string" && q.kc.trim() ? { kc: q.kc.trim() } : {}),
       };
     })
     .slice(0, 5);

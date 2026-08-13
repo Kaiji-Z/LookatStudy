@@ -196,6 +196,122 @@ export function defaultLlmMerge(llm: unknown): MergeFn {
   };
 }
 
+/* ---------- Consolidation(记忆固化:全三类) ---------- */
+
+/**
+ * Consolidation 窗口:调用方(触发/采集层)从原始数据 gather 出来的快照。
+ * 核心不关心怎么采,只消费 window。
+ */
+export interface ConsolidationWindow {
+  courseId?: string | null;
+  nodeId?: string | null;
+  conversation: Array<{ role: string; content: string }>;
+  frictionEntries: Array<{ category: string; summary?: string | null }>;
+  answers: Array<{ correct: boolean; summary?: string | null }>;
+}
+
+export type ExistingMemory = {
+  global?: string | null;
+  node?: string | null;
+  friction_pattern?: string | null;
+};
+/** 每个类别返回更新后的 summary(已与 existing 合并);未返回的类别不被触碰 */
+export type ConsolidatedMemory = Partial<Record<MemoryCategory, string>>;
+
+/**
+ * consolidateFn:看 window(原始)+ existing(现有 memory)→ 返回每类更新后 summary。
+ * 生产 defaultLlmConsolidate(llm) 一次 LLM 调用 extract+merge 全三类;测试用确定性 stub。
+ */
+export type ConsolidateFn = (
+  win: ConsolidationWindow,
+  existing: ExistingMemory,
+) => Promise<ConsolidatedMemory>;
+
+/**
+ * 记忆固化:把原始数据(对话/friction/答题)固化进全三类 memory。
+ * 这是 agent `remember`(实时手动)的系统级兜底——不靠 agent 自觉。
+ * 触发无关:window 由调用方采集传入;合并由 consolidateFn 做(它收到 existing)。
+ * @returns 实际写入的类别 summary(未返回的类别不写)
+ */
+export async function consolidate(
+  db: Db,
+  win: ConsolidationWindow,
+  fn: ConsolidateFn,
+): Promise<ConsolidatedMemory> {
+  const existing: ExistingMemory = {
+    global: getSlot(db, "global")?.summary ?? null,
+    node: win.nodeId ? (getSlot(db, "node", win.nodeId)?.summary ?? null) : null,
+    friction_pattern: (win.courseId
+      ? getSlot(db, "friction_pattern", undefined, win.courseId)
+      : getSlot(db, "friction_pattern")
+    )?.summary ?? null,
+  };
+
+  const updated = await fn(win, existing);
+
+  if (updated.global !== undefined) {
+    upsertSlot(db, {
+      category: "global",
+      nodeId: null,
+      courseId: null,
+      summary: updated.global,
+      existingId: getSlot(db, "global")?.id,
+    });
+  }
+  if (updated.node !== undefined && win.nodeId) {
+    upsertSlot(db, {
+      category: "node",
+      nodeId: win.nodeId,
+      courseId: null,
+      summary: updated.node,
+      existingId: getSlot(db, "node", win.nodeId)?.id,
+    });
+  }
+  if (updated.friction_pattern !== undefined) {
+    const fpCourse = win.courseId ?? null;
+    upsertSlot(db, {
+      category: "friction_pattern",
+      nodeId: null,
+      courseId: fpCourse,
+      summary: updated.friction_pattern,
+      existingId: getSlot(db, "friction_pattern", undefined, fpCourse)?.id,
+    });
+  }
+  return updated;
+}
+
+/**
+ * 生产 consolidateFn:一次 LLM 调用,看 window(原始)+ existing(现有 memory),
+ * 产出每类更新后 summary(extract + merge 合一,Mem0 思路)。
+ * 动态 import "ai";测试侧(用 stub)不触发此路径。
+ */
+export function defaultLlmConsolidate(llm: unknown): ConsolidateFn {
+  return async (win, existing) => {
+    const { generateText } = await import("ai");
+    const prompt =
+      `你是学习者记忆固化器。从下面的原始数据提炼/更新学习者记忆(跨会话用)。\n\n` +
+      `【原始数据】\n对话:\n${win.conversation.map((m) => `- ${m.role}: ${m.content}`).join("\n") || "(无)"}\n` +
+      `近期卡点:\n${win.frictionEntries.map((f) => `- ${f.category}: ${f.summary ?? ""}`).join("\n") || "(无)"}\n` +
+      `答题:${win.answers.map((a) => ` ${a.correct ? "对" : "错"}(${a.summary ?? ""})`).join(" / ") || "(无)"}\n\n` +
+      `【现有记忆(已有的,别丢)】global:${existing.global ?? "(无)"} | node:${existing.node ?? "(无)"} | friction_pattern:${existing.friction_pattern ?? "(无)"}\n\n` +
+      `输出 JSON,键为 global/node/friction_pattern,值为更新后的简洁中文 summary(每类 1-3 句):\n` +
+      `- global=学习风格/偏好/目标(从对话推);node=本节点(${win.nodeId ?? "?"})具体缺口;friction_pattern=跨节点反复模式\n` +
+      `- 把新观察和 existing 合并、去重;某类有 existing 但本次无新观察→输出 existing 原值(保留);既无 existing 也无新观察→省略该键\n` +
+      `- 只输出 JSON,不要前后缀。如 {"global":"...","friction_pattern":"..."}`;
+    const res = await generateText({ model: llm as never, prompt });
+    try {
+      const parsed = JSON.parse(res.text.trim().replace(/^```json\s*|\s*```$/g, ""));
+      const out: ConsolidatedMemory = {};
+      for (const k of ["global", "node", "friction_pattern"] as const) {
+        if (typeof parsed[k] === "string" && parsed[k].trim()) out[k] = parsed[k].trim();
+      }
+      return out;
+    } catch {
+      return {}; // LLM 返回非合法 JSON → 不写(保守,不破坏现有 memory)
+    }
+  };
+}
+
 /* ---------- 内部 ---------- */
 
 function mapRow(row: {

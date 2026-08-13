@@ -1105,6 +1105,10 @@ async function autoStructureCourse(
     ensureExamNodesForExistingCourses(getDb());
     markDirty();
     send(`AI 分类完成：📚 学习 ${result.studyCount} 课 / 🔧 实操 ${result.practiceCount} 课 / 跳过 ${result.skippedCount}`);
+    // Per-KC BKT: 提取知识点(KC) + 摘要 → per-KC BKT 毕业门控的基础
+    send("AI 正在提取知识点…");
+    await generateLessonSummaries(getDb(), courseId).catch(() => {});
+    send("知识点提取完成");
     return;
   }
 
@@ -1117,6 +1121,10 @@ async function autoStructureCourse(
   ensureExamNodesForExistingCourses(getDb());
   markDirty();
   send("AI 结构化完成");
+  // Per-KC BKT: 提取知识点(KC) + 摘要
+  send("AI 正在提取知识点…");
+  await generateLessonSummaries(getDb(), courseId).catch(() => {});
+  send("知识点提取完成");
 }
 
 export function registerAllHandlers(mainWindow: BrowserWindow): void {

@@ -75,7 +75,8 @@ import {
 } from "../services/souls/soul-service.js";
 // Agent 引擎 + Proposal（M2）
 import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory, handleAgentChatThread, abortAgentChatThread } from "../services/agent/agent-engine.js";
-import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels } from "../services/agent/llm-client.js";
+import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels, resolveLlm } from "../services/agent/llm-client.js";
+import { gatherConsolidationWindow, consolidate, defaultLlmConsolidate } from "../services/memory-service.js";
 import { PROVIDER_PRESETS } from "../services/agent/llm-presets.js";
 // 自定义 Provider
 import {
@@ -1062,6 +1063,20 @@ export function registerM3Handlers(): void {
       category?: "global" | "node" | "friction_pattern",
     ) => getMemoryService(getDb(), nodeId, category),
   );
+
+  // 记忆固化:从课程的对话+friction 采集窗口 → LLM 提炼+合并进全三类 memory。
+  // memory_system flag off 时 no-op(off=baseline)。返回写入的类别。
+  ipcMain.handle("consolidate:run", async (_e, courseId: string) => {
+    if (!isFlagOn("memory_system")) {
+      return { ok: false, reason: "memory_system flag off" };
+    }
+    const db = getDb();
+    const llm = resolveLlm(db);
+    const win = gatherConsolidationWindow(db, { courseId });
+    const result = await consolidate(db, win, defaultLlmConsolidate(llm.languageModel));
+    markDirty();
+    return { ok: true, written: Object.keys(result) };
+  });
 }
 
 /**

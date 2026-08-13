@@ -21,9 +21,15 @@
  * Phase 1.5 将建 learner-model 投影统一 mastery+friction+memory 三处注入；本服务只管 memory。
  */
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, inArray, desc, ne } from "drizzle-orm";
 import * as schema from "../db/schema.js";
-import { memory as memoryTable } from "../db/schema.js";
+import {
+  memory as memoryTable,
+  threads as threadsTable,
+  chatMessages,
+  frictionLog,
+  contentNodes,
+} from "../db/schema.js";
 import { randomUUID } from "node:crypto";
 
 type Db = SQLJsDatabase<typeof schema>;
@@ -278,6 +284,60 @@ export async function consolidate(
     });
   }
   return updated;
+}
+
+/**
+ * 窗口采集:从原始数据(thread 消息 + friction_log)gather 出 ConsolidationWindow。
+ * 整课程范围(friction_pattern 本就跨节点);近期窗口防过长。
+ * answers v1 暂空(答题历史无干净查询源,可后续从 proposals/canvas last_result 补)。
+ */
+export function gatherConsolidationWindow(
+  db: Db,
+  opts: { courseId: string; messageLimit?: number; frictionLimit?: number },
+): ConsolidationWindow {
+  const messageLimit = opts.messageLimit ?? 30;
+  const frictionLimit = opts.frictionLimit ?? 20;
+
+  // 课程节点 id(给 friction 按 course 圈定)
+  const nodeIds = db
+    .select({ id: contentNodes.id })
+    .from(contentNodes)
+    .where(eq(contentNodes.courseId, opts.courseId))
+    .all()
+    .map((r) => r.id);
+
+  // 课程所有 active thread 的近期消息(每 thread 内时间正序)
+  const courseThreads = db
+    .select()
+    .from(threadsTable)
+    .where(and(eq(threadsTable.courseId, opts.courseId), eq(threadsTable.status, "active")))
+    .all();
+  const conversation: Array<{ role: string; content: string }> = [];
+  for (const t of courseThreads) {
+    const msgs = db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.threadId, t.id))
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(messageLimit)
+      .all()
+      .reverse();
+    conversation.push(...msgs.map((m) => ({ role: m.role, content: m.content })));
+  }
+
+  // 课程节点上的近期 friction(排除 agent_error 系统级)
+  const frictionEntries = nodeIds.length
+    ? db
+        .select()
+        .from(frictionLog)
+        .where(and(inArray(frictionLog.nodeId, nodeIds), ne(frictionLog.category, "agent_error")))
+        .orderBy(desc(frictionLog.createdAt))
+        .limit(frictionLimit)
+        .all()
+        .map((f) => ({ category: f.category, summary: f.summary }))
+    : [];
+
+  return { courseId: opts.courseId, nodeId: null, conversation, frictionEntries, answers: [] };
 }
 
 /**

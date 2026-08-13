@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
-import { consolidate, getSlot } from "../src/main/services/memory-service.ts";
+import { consolidate, getSlot, gatherConsolidationWindow } from "../src/main/services/memory-service.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -125,5 +125,41 @@ await consolidate(env3.db, { courseId: "c1", nodeId: "n1", conversation: [], fri
 assert.strictEqual(getSlot(env3.db, "global").summary, "只爱例子", "T5: global 写入");
 assert.strictEqual(getSlot(env3.db, "node", "n1"), null, "T5: node 未被碰(consolidateFn 没返回 node)");
 console.log("✓ T5 部分类别返回:只写返回的,不碰其它");
+
+// ============================================================
+// T6-T8: gatherConsolidationWindow 从真实表采 + 端到端
+// ============================================================
+let envG = await makeDb();
+// FK 链:course → content_node;thread → course;chat_messages → thread;friction_log.node_id 无 FK
+envG.sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('gc','r','GCourse')`);
+envG.sqljs.run(`INSERT INTO content_nodes (id, course_id, type, title) VALUES ('gn','gc','lesson','GNode')`);
+envG.sqljs.run(`INSERT INTO threads (id, course_id, status, title) VALUES ('gt','gc','active','T')`);
+envG.sqljs.run(`INSERT INTO chat_messages (id, thread_id, role, content) VALUES ('m1','gt','user','用例子讲一下递归')`);
+envG.sqljs.run(`INSERT INTO chat_messages (id, thread_id, role, content) VALUES ('m2','gt','assistant','好的,用斐波那契')`);
+envG.sqljs.run(`INSERT INTO friction_log (id, node_id, category, summary) VALUES ('fg1','gn','confused','基线条件不懂')`);
+envG.sqljs.run(`INSERT INTO friction_log (id, node_id, category, summary) VALUES ('fg2','gn','blocked','返回值搞混')`);
+
+// T6: gather 采到 conversation
+const winG = gatherConsolidationWindow(envG.db, { courseId: "gc" });
+assert.ok(winG.conversation.length === 2, `T6: gather 采到 2 条消息,实际 ${winG.conversation.length}`);
+assert.ok(winG.conversation.some((m) => m.content.includes("用例子")), "T6: conversation 含用户消息");
+console.log("✓ T6 gatherConsolidationWindow 采到 thread 消息");
+
+// T7: gather 采到 friction(课程的节点)
+assert.ok(winG.frictionEntries.length === 2, `T7: gather 采到 2 条 friction,实际 ${winG.frictionEntries.length}`);
+assert.ok(winG.frictionEntries.some((f) => f.summary.includes("基线")), "T7: friction 含基线条件");
+console.log("✓ T7 gatherConsolidationWindow 采到课程的 friction");
+
+// T8: 端到端 gather → consolidate → memory 写入
+await consolidate(envG.db, winG, stubFn);
+assert.ok(
+  getSlot(envG.db, "global")?.summary.includes("偏好例子"),
+  "T8: 端到端后 global 从对话提炼出'偏好例子'",
+);
+assert.ok(
+  getSlot(envG.db, "friction_pattern", undefined, "gc")?.summary.includes("概念边界"),
+  "T8: 端到端后 friction_pattern 固化(课程隔离 gc)",
+);
+console.log("✓ T8 端到端 gather→consolidate:memory 从真实数据固化");
 
 console.log("\n=== ALL CONSOLIDATION TESTS PASSED ✅ ===");

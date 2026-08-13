@@ -503,7 +503,9 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: competenceBadges,
   });
 
-  // T4b (P2.3 待复习顶出): 播的逾期 srs 项 → map-review-badge 显示待复习数
+  // T4b (P2.3 待复习顶出): 播的逾期 srs 项 → map-review-badge 显示待复习数。
+  // 等 due 数据 + panel 切换(courseId useEffect → setPanel("map"))异步完成。
+  await new Promise((r) => setTimeout(r, 800));
   const dueBadge = await win.webContents.executeJavaScript(`
     (function() {
       var b = document.querySelector('[data-testid="map-review-badge"]');

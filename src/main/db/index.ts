@@ -15,7 +15,8 @@ import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import { drizzle, type SQLJsDatabase } from "drizzle-orm/sql-js";
 import { app } from "electron";
 import { join, dirname } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import * as schema from "./schema.js";
 
 // vite ?raw import：构建时把 schema.sql 内容内联成字符串。
@@ -82,11 +83,25 @@ export function flushDb(): void {
 export async function initDb(): Promise<void> {
   if (_db) return;
 
-  const userDataDir = app.getPath("userData");
-  if (!existsSync(userDataDir)) {
-    mkdirSync(userDataDir, { recursive: true });
+  // --ui-test 模式:独立全新 temp DB。避免持久化 userData DB 的累积状态(threads/provider/
+  // SRS)污染 ui-test 断言(empty-state/keyless/due 等)。每次先删 → 全新 → ensureSeedCourse
+  // + ui-test 自带 seed 重新灌,断言确定性。
+  if (process.argv.includes("--ui-test")) {
+    _dbPath = join(tmpdir(), "lookatstudy-uitest.db");
+    if (existsSync(_dbPath)) {
+      try {
+        rmSync(_dbPath);
+      } catch {
+        /* 文件锁等无法删——继续(下次尽量全新) */
+      }
+    }
+  } else {
+    const userDataDir = app.getPath("userData");
+    if (!existsSync(userDataDir)) {
+      mkdirSync(userDataDir, { recursive: true });
+    }
+    _dbPath = join(userDataDir, "lookatstudy.db");
   }
-  _dbPath = join(userDataDir, "lookatstudy.db");
 
   _sqlStatic = await initSqlJs({ locateFile: (file: string) => join(locateWasm(), file) });
 

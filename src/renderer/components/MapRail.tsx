@@ -70,7 +70,9 @@ export function MapRail(props: MapRailProps) {
 
   const prevCourseId = useRef<string | null>(null);
   useEffect(() => {
-    if (prevCourseId.current !== null && prevCourseId.current !== props.courseId) {
+    // 有课程时切到 map 面板:首次加载(prevCourseId=null)有课也切,不只限课程切换。
+    // 无课程(courseId 空)时留在 import 面板(引导导入)。
+    if (props.courseId && (prevCourseId.current === null || prevCourseId.current !== props.courseId)) {
       setPanel("map");
       setWorld("study"); // 切课时重置世界:新课可能没有实操世界,practice 残留会导致空画面卡死
     }

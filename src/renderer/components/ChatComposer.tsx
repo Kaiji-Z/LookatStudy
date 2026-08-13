@@ -180,7 +180,7 @@ export function ChatComposer({
             <button
               onClick={onStop}
               data-testid="chat-stop"
-              className="shrink-0 w-9 h-9 rounded-full bg-warning text-white flex items-center justify-center hover:bg-warning-light transition-colors"
+              className="btn-icon-3d-warning shrink-0 w-9 h-9"
               title={t("chat.stop")}
               aria-label={t("chat.stop")}
             >
@@ -191,7 +191,7 @@ export function ChatComposer({
               onClick={handleSend}
               disabled={streaming || !input.trim() || !nodeId}
               data-testid="chat-send"
-              className="shrink-0 w-9 h-9 rounded-full bg-brand text-white flex items-center justify-center hover:bg-brand-light disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed transition-colors"
+              className="btn-icon-3d-brand shrink-0 w-9 h-9"
               title={t("chat.send")}
               aria-label={t("chat.send")}
             >

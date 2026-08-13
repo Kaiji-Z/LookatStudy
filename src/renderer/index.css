@@ -362,6 +362,26 @@ html.light .exam-bubble-locked {
   .btn-3d-neutral:active {
     box-shadow: 0 1px 0 0 rgb(var(--shadow-rgb) / 0.2);
   }
+
+  /* 圆形 3D icon 按钮(发送/停止钮等高频圆形主操作)。
+     btn-3d-brand 是矩形(rounded-2xl),圆形 icon 钮套它会变形,故单独词汇。
+     复刻 3D 下阴影手感(rounded-full + 实色 + dark 源色下阴影 + spring 回弹)。 */
+  .btn-icon-3d {
+    @apply relative rounded-full flex items-center justify-center font-bold transition-all duration-150 ease-spring active:translate-y-0.5;
+  }
+  .btn-icon-3d-brand {
+    @apply btn-icon-3d bg-brand text-white;
+    box-shadow: 0 3px 0 0 var(--brand-dark);
+  }
+  .btn-icon-3d-brand:hover { @apply bg-brand-light; }
+  .btn-icon-3d-brand:active { box-shadow: 0 1px 0 0 var(--brand-dark); }
+  .btn-icon-3d-brand:disabled { @apply bg-neutral-500/50 cursor-not-allowed; box-shadow: none; }
+  .btn-icon-3d-warning {
+    @apply btn-icon-3d bg-warning text-white;
+    box-shadow: 0 3px 0 0 var(--warning-dark);
+  }
+  .btn-icon-3d-warning:hover { @apply bg-warning-light; }
+  .btn-icon-3d-warning:active { box-shadow: 0 1px 0 0 var(--warning-dark); }
 }
 
 /* ============================================================

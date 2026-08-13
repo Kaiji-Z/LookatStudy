@@ -141,7 +141,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" data-testid="exam-error">
         <AlertCircle className="w-10 h-10 text-warning mb-3" />
-        <div className="text-body font-bold text-neutral-800 dark:text-neutral-200 mb-1">{t("exam.errorTitle")}</div>
+        <div className="text-body font-bold text-ink mb-1">{t("exam.errorTitle")}</div>
         <div className="text-body text-ink-muted mb-4 max-w-xs">{errorMsg}</div>
         <button
           onClick={() => window.location.reload()}
@@ -176,14 +176,14 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
       <div className="px-4 pt-3 pb-2 shrink-0 bg-surface-2/30">
         <div className="flex items-center gap-2 mb-2">
           <Target className="w-4 h-4 text-accent" />
-          <span className="text-body font-bold text-neutral-900 dark:text-neutral-100 truncate">{examNode.title}</span>
+          <span className="text-body font-bold text-ink-strong truncate">{examNode.title}</span>
         </div>
         {/* 进度条 */}
         <div className="flex items-center gap-2">
           <span className="text-label font-bold tabular-nums text-ink-muted shrink-0">
             {currentIdx + 1}/{exercises.length}
           </span>
-          <div className="flex-1 h-1.5 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
+          <div className="flex-1 h-1.5 bg-surface-3 rounded-full overflow-hidden">
             <div className="h-full bg-accent rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
           </div>
         </div>
@@ -192,7 +192,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
       {/* 题目卡片 */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="text-label font-bold text-accent mb-2">{t("exam.question.label", { n: currentIdx + 1 })}</div>
-        <div className="text-body text-neutral-900 dark:text-neutral-100 font-medium mb-4 leading-relaxed">
+        <div className="text-body text-ink-strong font-medium mb-4 leading-relaxed">
           {ex.prompt}
         </div>
 
@@ -207,8 +207,8 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
                   data-testid={`exam-option-${idx}`}
                   className={`w-full text-left text-body p-2.5 rounded-lg border font-medium transition-all duration-150 ${
                     isSelected
-                      ? "border-accent bg-accent/10 text-neutral-900 dark:text-neutral-100 ring-2 ring-accent/20"
-                      : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                      ? "border-accent bg-accent/10 text-ink-strong ring-2 ring-accent/20"
+                      : "border-[var(--border)] text-ink-muted hover:border-[var(--border)] hover:bg-surface-1"
                   } cursor-pointer`}
                 >
                   <span className={`font-bold mr-2 ${isSelected ? "text-accent" : ""}`}>{String.fromCharCode(65 + idx)}</span>
@@ -228,7 +228,7 @@ export function ExamView({ examNode, onExamCompleted }: ExamViewProps) {
           data-testid="exam-next"
           className={`w-full py-2 rounded-xl text-body font-bold transition-all ${
             selected === null
-              ? "bg-neutral-200 dark:bg-neutral-800 text-ink-muted cursor-not-allowed"
+              ? "bg-surface-3 text-ink-muted cursor-not-allowed"
               : "btn-3d-brand"
           }`}
         >
@@ -278,7 +278,7 @@ function ExamResultCard({
     <div className="flex-1 overflow-y-auto px-4 py-4" data-testid="exam-result">
       {/* 得分头部 */}
       <div className="text-center mb-5">
-        <div className={`text-4xl font-extrabold mb-1 ${passed ? "text-accent" : "text-neutral-600 dark:text-neutral-400"}`}>
+        <div className={`text-hero font-extrabold mb-1 ${passed ? "text-accent" : "text-ink-faint"}`}>
           {correctCount}/{totalCount}
         </div>
         <div className="text-body text-ink-muted mb-3">
@@ -289,7 +289,7 @@ function ExamResultCard({
           {[0, 1, 2].map((s) => (
             <Star
               key={s}
-              className={`w-8 h-8 ${s < stars ? "text-gold fill-gold" : "text-neutral-300 dark:text-neutral-700"}`}
+              className={`w-8 h-8 ${s < stars ? "text-gold fill-gold" : "text-ink-faint"}`}
             />
           ))}
         </div>
@@ -305,7 +305,7 @@ function ExamResultCard({
 
       {/* 逐题回顾 */}
       <div className="space-y-2.5 mb-4">
-        <div className="text-label font-bold text-neutral-700 dark:text-neutral-300 mb-1">{t("exam.review.title")}</div>
+        <div className="text-label font-bold text-ink-muted mb-1">{t("exam.review.title")}</div>
         {perQuestion.map((pq, i) => {
           const ex = exercises.find((e) => e.id === pq.exerciseId);
           return (
@@ -320,7 +320,7 @@ function ExamResultCard({
                 ) : (
                   <X className="w-4 h-4 text-warning shrink-0 mt-0.5" />
                 )}
-                <div className="text-body text-neutral-800 dark:text-neutral-200 font-medium leading-relaxed">
+                <div className="text-body text-ink font-medium leading-relaxed">
                   {ex?.prompt ?? t("exam.review.questionFallback", { n: i + 1 })}
                 </div>
               </div>
@@ -328,7 +328,7 @@ function ExamResultCard({
                 <div className="text-label text-ink-muted ml-6 mb-1">
                   <span className="text-warning">{t("exam.review.yourAnswer")}</span>{" "}
                   {ex.options[Number.parseInt(pq.userAnswer)] ?? pq.userAnswer ?? t("exam.review.unanswered")}{" "}
-                  <span className="text-neutral-600 dark:text-neutral-400">·</span>{" "}
+                  <span className="text-ink-faint">·</span>{" "}
                   <span className="text-brand">{t("exam.review.correctAnswer")}</span>{" "}
                   {ex.options[Number.parseInt(pq.correctAnswer)] ?? pq.correctAnswer}
                 </div>

@@ -104,7 +104,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
       <div className="flex items-center justify-between mb-3 gap-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Workflow className="w-4 h-4 text-ink-muted shrink-0" />
-          <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200 truncate">
+          <h3 className="text-body font-bold text-ink truncate">
             {d.title}
           </h3>
           <span className="text-caption font-bold px-1.5 py-0.5 rounded bg-accent/15 text-accent shrink-0">
@@ -117,7 +117,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
             <button
               onClick={zoomOut}
               disabled={zoom <= MIN_ZOOM}
-              className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-label font-bold flex items-center justify-center"
+              className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
               title={t("artifact.zoomOut")}
               data-testid="mermaid-zoom-out"
             >
@@ -125,7 +125,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
             </button>
             <button
               onClick={zoomReset}
-              className="px-1.5 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-caption font-bold tabular-nums"
+              className="px-1.5 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 text-caption font-bold tabular-nums"
               title={t("artifact.zoomReset")}
               data-testid="mermaid-zoom-reset"
             >
@@ -134,7 +134,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
             <button
               onClick={zoomIn}
               disabled={zoom >= MAX_ZOOM}
-              className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-label font-bold flex items-center justify-center"
+              className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
               title={t("artifact.zoomIn")}
               data-testid="mermaid-zoom-in"
             >
@@ -157,7 +157,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         ref={dragPan.containerRef}
         onMouseDown={dragPan.onMouseDown}
         onWheel={handleWheel}
-        className={`bg-neutral-50 dark:bg-neutral-900/40 rounded-lg p-3 overflow-auto min-h-[120px] max-h-[500px] select-none ${dragPan.isDragging ? "cursor-grabbing" : "cursor-grab"}`}
+        className={`bg-surface-0/40 rounded-lg p-3 overflow-auto min-h-[120px] max-h-[500px] select-none ${dragPan.isDragging ? "cursor-grabbing" : "cursor-grab"}`}
         style={{ touchAction: "pinch-zoom" }}
         data-testid="mermaid-render-area"
       >
@@ -210,7 +210,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span>{t("artifact.mermaid.renderFailed")}</span>
             </div>
-            <pre className="text-label bg-neutral-100 dark:bg-neutral-900/60 rounded p-2 overflow-x-auto text-neutral-700 dark:text-neutral-300 font-mono text-left">
+            <pre className="text-label bg-surface-1/60 rounded p-2 overflow-x-auto text-ink-muted font-mono text-left">
               {d.mermaid}
             </pre>
             <div className="text-caption text-ink-muted mt-2">{t("artifact.mermaid.errorPrefix", { msg: state.message })}</div>
@@ -226,7 +226,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
 
       {/* harness 修复警告 */}
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400 flex items-start gap-1" data-testid="artifact-warnings">
+        <div className="mt-2 text-caption text-warning flex items-start gap-1" data-testid="artifact-warnings">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{d.warnings.join("; ")}</span>
         </div>

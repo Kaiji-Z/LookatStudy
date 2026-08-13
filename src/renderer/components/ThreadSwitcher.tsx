@@ -114,7 +114,7 @@ export function ThreadSwitcher({
               onClick={() => !isRenaming && onPickThread(th.id)}
               data-testid={`thread-tab-${th.id.slice(0, 8)}`}
             >
-              <span className={`w-1 h-1 rounded-full shrink-0 transition-opacity ${isActive ? "bg-brand opacity-100" : "bg-neutral-400 dark:bg-neutral-600 opacity-0 group-hover:opacity-60"}`} />
+              <span className={`w-1 h-1 rounded-full shrink-0 transition-opacity ${isActive ? "bg-brand opacity-100" : "bg-[var(--border)] opacity-0 group-hover:opacity-60"}`} />
 
               {isRenaming ? (
                 <input
@@ -127,7 +127,7 @@ export function ThreadSwitcher({
                   onBlur={commitRename}
                   onClick={(e) => e.stopPropagation()}
                   autoFocus
-                  className="bg-white dark:bg-neutral-950 text-ink-strong text-label rounded px-1.5 py-0.5 border border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 w-28"
+                  className="bg-surface-0 text-ink-strong text-label rounded px-1.5 py-0.5 border border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 w-28"
                   data-testid="thread-rename-input"
                 />
               ) : (
@@ -167,17 +167,17 @@ export function ThreadSwitcher({
           <div
             ref={menuRef}
             style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
-            className="z-50 w-32 bg-white dark:bg-neutral-900 rounded-lg shadow-pop py-1 border border-neutral-200 dark:border-neutral-700"
+            className="z-50 w-32 bg-surface-0 rounded-lg shadow-pop py-1 border border-[var(--border-faint)]"
             data-testid={`thread-menu-${th.id.slice(0, 8)}`}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => startRename(th)}
-              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-ink-muted hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-ink-strong transition-colors"
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-ink-muted hover:bg-surface-1 hover:bg-surface-3 hover:text-ink-strong transition-colors"
             ><Edit className="w-3 h-3" />{t("thread.menu.rename")}</button>
             <button
               onClick={() => { onArchive(th.id); setMenuFor(null); setMenuPos(null); }}
-              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-ink-muted hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-ink-strong transition-colors"
+              className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-label text-ink-muted hover:bg-surface-1 hover:bg-surface-3 hover:text-ink-strong transition-colors"
             ><Archive className="w-3 h-3" />{t("thread.menu.archive")}</button>
             <button
               onClick={(e) => {

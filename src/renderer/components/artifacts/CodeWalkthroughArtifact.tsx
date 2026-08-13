@@ -56,8 +56,8 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
     <div className="surface-card p-4" data-testid="artifact-code-walkthrough">
       <div className="flex items-center gap-2 mb-3">
         <Code2 className="w-4 h-4 text-ink-muted shrink-0" />
-        <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200">{d.title}</h3>
-        <span className="text-caption font-bold px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-ink-muted font-mono">
+        <h3 className="text-body font-bold text-ink">{d.title}</h3>
+        <span className="text-caption font-bold px-1.5 py-0.5 rounded bg-surface-3 text-ink-muted font-mono">
           {d.language}
         </span>
       </div>
@@ -80,7 +80,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
                     <span className="select-none text-neutral-600 pr-3 pl-3 text-right w-10 shrink-0 border-r border-neutral-800">
                       {lineNum}
                     </span>
-                    <span className="text-neutral-700 dark:text-neutral-300 pl-3 whitespace-pre">{line || " "}</span>
+                    <span className="text-ink-muted pl-3 whitespace-pre">{line || " "}</span>
                   </div>
                 );
               })}
@@ -101,7 +101,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
               className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
                 activeAnnotation === i
                   ? "border-brand bg-brand/10"
-                  : "border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-500"
+                  : "border-[var(--border-faint)] hover:border-[var(--border)]"
               }`}
             >
               <div className="text-caption font-bold text-brand mb-0.5">
@@ -109,7 +109,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
                   ? t("artifact.codewalk.lineRange", { a: a.lineStart, b: a.lineEnd })
                   : t("artifact.codewalk.lineSingle", { n: a.lineStart })}
               </div>
-              <div className="text-body text-neutral-700 dark:text-neutral-300 leading-relaxed">
+              <div className="text-body text-ink-muted leading-relaxed">
                 {a.note}
               </div>
             </button>
@@ -118,7 +118,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
       </div>
 
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400 flex items-start gap-1" data-testid="artifact-warnings">
+        <div className="mt-2 text-caption text-warning flex items-start gap-1" data-testid="artifact-warnings">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{d.warnings.join("; ")}</span>
         </div>

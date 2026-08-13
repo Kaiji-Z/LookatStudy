@@ -30,7 +30,7 @@ const fieldCls =
 
 /** pill 按钮(语言/主题/provider 共用)。 */
 const pillInactiveCls =
-  "bg-neutral-200 dark:bg-neutral-800 text-ink-muted hover:bg-neutral-300 dark:hover:bg-neutral-700 hover:text-ink-strong";
+  "bg-surface-3 text-ink-muted hover:bg-surface-3 hover:bg-surface-3 hover:text-ink-strong";
 const pillActiveCls = "bg-brand text-white shadow-sm";
 
 /** 卡内行:第一行无线,后续行顶发丝线分隔。 */

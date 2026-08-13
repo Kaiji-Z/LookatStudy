@@ -174,10 +174,10 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 - **Pane separation = surface depth tiers, no dividers** (v0.6). `bg-surface-rail` (left, deepest) / `bg-surface-0` (modals) / `bg-surface-1` (chat) / `bg-surface-2` (notebook, brightest). L step 0.04+ (Weber-Fechner: smaller is invisible on dark). Never add `border-r`/`border-l` between panes — adjust the L values instead. See PRODUCT.md "Pane separation".
 - **6-tier semantic font scale** (v0.7): `text-caption/label/body/lead/title/hero`, all rem. Driven by `useFontSize` (html font-size 16/17/18px, A-/A+ in header). **Banned: `text-[10px]`, `text-[11px]`, `text-xs`** (0 remaining). Pick the semantic tier by role. See PRODUCT.md "6-tier semantic font scale".
 - **Component primitives**: `ConfirmCard` (inline confirm, replaces ALL `confirm()` — never use native), `Toast` with `severity` prop (success/error/warning/info), `GlobalTooltip` (any `data-tooltip` element gets hover tooltip).
-- **Button vocabulary**: `btn-3d-brand` = primary action everywhere (`btn-3d-blue` removed as orphan). `btn-3d-neutral` = secondary. Don't reintroduce raw `bg-brand`/`bg-neutral-200` buttons.
+- **Button vocabulary**: `btn-3d-brand` = primary action everywhere (`btn-3d-blue` removed as orphan). `btn-3d-neutral` = secondary. `btn-icon-3d-brand`/`-warning` = circular 3D icon buttons (send/stop). Don't reintroduce raw `bg-brand`/`bg-neutral-200` buttons.
 - **Brand colors** (Tailwind config): brand `#58cc02` (green), accent `#1cb0f6` (blue), gold `#ffc800`, warning `#ff4b4b` → orange `#ff7a00`.
 - **Iconography**: unified on `lucide-react`. Emoji is reserved for skill-tree nodes and empty-state CTA cards only — do not reintroduce emoji in chrome, buttons, or copy. Tool-call status uses lucide `Wrench`/`XCircle`.
-- **Theme**: **dark-only** as of v0.5. `html.dark` is forced in `index.html`; do not add `dark:` / light-mode pairings or a theme toggle. Light mode will return as a dedicated milestone with systematic theme pairing (see `CHANGELOG.md` v0.5 Removed).
+- **Theme**: **dual** (auto/light/dark) via `useTheme`. Dark default. Left rail (MapRail) locks dark via `map-rail-scope` (gamified scene, doesn't switch); middle/right panes + modals switch. Use ink/surface tokens for text/bg (not raw `neutral-X dark:neutral-Y` dual-writes).
 - **i18n**: all user-facing strings use `translate("key")` from `lib/i18n.ts`.
 
 ## Gotchas (details in `dev-docs/BUILD-NOTES.md`)

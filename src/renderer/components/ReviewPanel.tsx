@@ -82,7 +82,7 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
   return (
     <div className="p-5 max-w-2xl mx-auto" data-testid="review-panel">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-extrabold text-ink-strong">{t("review.title")}</h2>
+        <h2 className="text-title font-extrabold text-ink-strong">{t("review.title")}</h2>
         {totalDue > 0 && (
           <span className="text-label font-bold text-review" data-testid="review-due-count">
             {totalDue} {t("review.due.count")}

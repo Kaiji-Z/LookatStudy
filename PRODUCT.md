@@ -32,7 +32,7 @@ The line we hold: **game-like feedback serves learning motivation, not engagemen
 
 The single source of truth is `:root` in `src/renderer/index.css` (OKLCH variables). Tailwind colors reference them via `rgb(var(--xxx-rgb) / <alpha-value>)`. To change a color, edit only the `:root` variable — all utilities (`text-brand`, `bg-exam`, `border-review`) and component classes update automatically. `scripts/verify-color-semantics.mjs` enforces the semantic rules (no raw `red`/`orange`/`green`/`purple` in classNames).
 
-Dark-only (neutral-950 base). Light mode is not supported in v0.5 — it will be added as a dedicated milestone with systematic theme pairing (not ad-hoc fixes). Every text/background pair must hit ≥4.5:1 contrast (≥3:1 for large/bold).
+**Dual theme (auto / light / dark)** via `useTheme` (`src/renderer/lib/useTheme.ts`): matchMedia listens to system preference, localStorage persists manual choice, anti-FOUC inline script in `index.html` sets the class before React mounts. Dark is the default/anchor. The **left rail (MapRail) is a gamified dark scene** — it does NOT participate in light switching (`map-rail-scope` class locks its tokens to dark under `html.light`); only middle chat / right notebook / header / modals switch. Semantic colors drop L in `html.light` (e.g. brand 0.748→0.55) to keep ≥4.5:1 contrast on white.
 
 ### Pane separation = depth-tiered surfaces, no dividers (v0.6)
 
@@ -100,6 +100,7 @@ Banned: `text-[10px]`, `text-[11px]`, `text-xs` (all eliminated). When adding te
 
 ### Component primitives (v0.6)
 - **`btn-3d-brand`** = primary action everywhere (no `btn-3d-blue`, removed as orphan).
+- **`btn-icon-3d-brand` / `-warning`** = circular 3D icon buttons (send/stop). `btn-3d-brand` is rectangular (`rounded-2xl`); circular icon buttons use this vocabulary to avoid distortion.
 - **`ConfirmCard`** — inline confirmation popover (portal to body), replaces ALL native `confirm()`. Danger actions get warning-red left stripe.
 - **`Toast`** with `severity` prop (success/error/warning/info/default), each with semantic left-stripe + lucide icon, exit animation.
 - **`GlobalTooltip`** — portal-based, follows mouse, left-bottom anchor. Any element with `data-tooltip` attribute gets hover tooltip. Use this for truncated titles, mode explanations, node names.

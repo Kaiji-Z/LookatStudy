@@ -141,7 +141,7 @@ function ToastRow({
   const icon = SEVERITY_ICON[item.severity];
   return (
     <div
-      className={`pointer-events-auto flex items-center gap-2.5 pl-3 pr-2 py-2.5 rounded-xl bg-surface-0 text-neutral-900 dark:text-neutral-100 text-body shadow-elevated max-w-md ${SEVERITY_CLASS[item.severity]} ${item.exiting ? "toast-exit" : "toast-enter"}`}
+      className={`pointer-events-auto flex items-center gap-2.5 pl-3 pr-2 py-2.5 rounded-xl bg-surface-0 text-ink-strong text-body shadow-elevated max-w-md ${SEVERITY_CLASS[item.severity]} ${item.exiting ? "toast-exit" : "toast-enter"}`}
       data-testid={`toast-${item.id}`}
       data-severity={item.severity}
       onAnimationEnd={item.exiting ? onExitDone : undefined}

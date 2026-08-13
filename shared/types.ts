@@ -21,6 +21,12 @@ export const UNLOCK_MASTERY_THRESHOLD = 0.5;
 /** 自动毕业:mastery ≥ 此值 → status 转 mastered。 */
 export const MASTERED_MASTERY_THRESHOLD = 0.9;
 
+/** 知识组件定义（per-KC BKT 的基础），LLM 从课程内容提取 */
+export interface KnowledgePoint {
+  title: string;
+  description: string;
+}
+
 export interface ContentNode {
   id: string;
   courseId: string;
@@ -35,6 +41,8 @@ export interface ContentNode {
   summary?: string | null;
   /** 两个世界: study(学习主线) / practice(实操练习)。默认 study。 */
   world: World;
+  /** JSON array of KnowledgePoint — LLM 提取的知识组件（per-KC BKT 基础）。null=未提取。 */
+  knowledgePoints?: string | null;
 }
 
 export interface Course {
@@ -117,6 +125,8 @@ export interface LearningOperation {
   correct?: boolean;
   status?: NodeStatus;
   quality?: number;
+  /** Per-KC BKT: 考察的知识组件下标（对应 knowledgePoints JSON 数组）。不传=无 KC 回退或更新全部。 */
+  kcIndex?: number;
 }
 
 export type ProposalStatus = "pending" | "applied" | "rejected" | "stale";

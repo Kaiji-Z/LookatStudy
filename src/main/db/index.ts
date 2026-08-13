@@ -140,6 +140,8 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("content_nodes", "summary", "TEXT");
   // 两个世界: study(学习主线) / practice(实操练习)
   addColumnIfMissing("content_nodes", "world", "TEXT NOT NULL DEFAULT 'study'");
+  // Per-KC BKT: 知识组件定义(JSON array of {title, description})
+  addColumnIfMissing("content_nodes", "knowledge_points", "TEXT");
   // 仓库原文语言 (LLM Step 2 判断)
   addColumnIfMissing("courses", "source_lang", "TEXT");
   // v0.3 康奈尔笔记法:canvas_items 加溯源 + 练习记录字段

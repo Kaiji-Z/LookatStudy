@@ -100,10 +100,10 @@ npm run verify:core && npx vite build && npm run self-test
 4. Run `npm run verify:core` to confirm consistency.
 5. When you add a table, **bump this list** below (don't make agents recount).
 
-18 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
+19 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
 `streaks`, `chat_sessions`, `settings`, `souls`, `proposals`, `friction_log`,
 `memory`, `custom_providers`, `canvas_items`, `threads`, `chat_messages`,
-`node_assets`, `content_node_translations`.
+`node_assets`, `content_node_translations`, `knowledge_component_mastery`.
 
 ## Key services
 

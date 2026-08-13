@@ -110,6 +110,8 @@ function createWindow(): void {
   }
 }
 
+// (seedDevProviderFromEnv 逻辑已内联到 app.whenReady 的 isDev 块,避免 esbuild chunk splitting)
+
 // 单实例锁:防止用户开多个主窗口(Windows 双击图标多次 / dev 叠加)。
 // 测试模式(--self-test / --ui-test)是独立 headless 实例,绕过锁,不和主窗口互斥。
 // dev 模式也绕过:dev 频繁重启,旧实例被 concurrently -k SIGTERM 后可能 zombie 持锁,
@@ -153,6 +155,31 @@ app.whenReady().then(async () => {
     const { ensurePrefLang } = await import("./services/lang-pref.js");
     ensurePrefLang(getDb(), app.getLocale());
     console.error(`[lookatstudy] pref_lang ensured (system locale: ${app.getLocale()})`);
+    // dev 模式:从 .env seed provider(内联到 whenReady,避免 esbuild chunk splitting 拆函数致 not defined)
+    if (isDev) {
+      const zai = getZaiConfig();
+      if (!zai) {
+        console.error("[lookatstudy] dev: .env 无 Z_AI_API_KEY,跳过 provider seed(在 Settings 手动配)");
+      } else {
+        try {
+          const PID = "custom-dev-env";
+          const ex = getDb().select().from(customProviders).where(eq(customProviders.id, PID)).get();
+          if (!ex) {
+            getDb().insert(customProviders).values({ id: PID, label: "ZAI (.env dev)", baseUrl: zai.baseUrl, apiKey: zai.apiKey, defaultModel: zai.model }).run();
+          } else {
+            getDb().update(customProviders).set({ apiKey: zai.apiKey, baseUrl: zai.baseUrl, defaultModel: zai.model }).where(eq(customProviders.id, PID)).run();
+          }
+          const active = getDb().select().from(settingsTable).where(eq(settingsTable.key, "active_provider")).get();
+          if (!active) {
+            getDb().insert(settingsTable).values({ key: "active_provider", value: PID }).run();
+          }
+          markDirty();
+          console.error(`[lookatstudy] dev: .env provider seeded (ZAI ${zai.apiKey.slice(0, 4)}…${zai.apiKey.slice(-4)}, model ${zai.model})`);
+        } catch (e) {
+          console.error("[lookatstudy] dev provider seed failed:", e);
+        }
+      }
+    }
   } catch (e) {
     console.error("[lookatstudy] FATAL during init:", e);
     app.quit();

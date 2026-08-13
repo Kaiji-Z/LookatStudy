@@ -139,6 +139,18 @@ export function isImageRelatedQuery(query: string): boolean {
 }
 
 /**
+ * 从 markdown 正文提取 base64 内嵌图的 data-url(markdown ![](data:...) 和 HTML <img src="data:...">)。
+ * 多模态方案 B:小图 base64 内联进 content 不进 node_assets,这里提取出来喂给 vision LLM。
+ * 只取 data:(base64),跳过 http 外链(方案 B 不下载外链,只喂已内联的)。
+ */
+function extractInlineDataImages(content: string): string[] {
+  const out: string[] = [];
+  for (const m of content.matchAll(/!\[[^\]]*\]\((data:[^)]+)\)/g)) out.push(m[1]!);
+  for (const m of content.matchAll(/<img[^>]+src=["'](data:[^"']+)["']/gi)) out.push(m[1]!);
+  return out;
+}
+
+/**
  * 运行一轮 agent loop。
  *
  * @param nodeId       当前在学的 content node id（提供上下文）
@@ -476,33 +488,38 @@ export async function runAgentTurn(
     if (isFlagOn("multimodal_import")) {
       const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
       if (lastUserMsg && isImageRelatedQuery(lastUserMsg.content)) {
+        // 多模态方案 B:把当前课的图片作为 file-part 注入最后一条 user 消息(vision input)。
+        // 图源两处(去重):① node_assets 关联图(大图 CDN / PDF 提取图) ② 讲解 content 的 base64
+        // 内嵌图(小图内联不进 node_assets,旧方案 B 漏掉)。合并喂 vision,去重 + 限量防 token 爆。
         const assets = listAssetsByNode(db, nodeId);
-        if (assets.length > 0) {
-          const imageParts: Array<{ type: "text"; text: string } | { type: "file"; mediaType: string; data: string }> = [
-            { type: "text", text: lastUserMsg.content },
-            { type: "text", text: `\n(以下是当前课的 ${assets.length} 张关联图片,请结合图片内容回答:)` },
-          ];
-          for (const asset of assets.slice(0, 5)) {
-            try {
-              const dataUrl = await getAssetDataUrl(db, asset.id);
-              if (dataUrl) {
-                imageParts.push({
-                  type: "file",
-                  mediaType: asset.mimeType,
-                  data: dataUrl,
-                });
-              }
-            } catch {
-              /* 单张图加载失败跳过 */
+        const imageParts: Array<{ type: "text"; text: string } | { type: "file"; mediaType: string; data: string }> = [
+          { type: "text", text: lastUserMsg.content },
+          { type: "text", text: `\n(以下是当前课的图片,请结合图片内容回答:)` },
+        ];
+        // ① node_assets 关联图
+        for (const asset of assets.slice(0, 5)) {
+          try {
+            const dataUrl = await getAssetDataUrl(db, asset.id);
+            if (dataUrl) {
+              imageParts.push({ type: "file", mediaType: asset.mimeType, data: dataUrl });
             }
+          } catch {
+            /* 单张图加载失败跳过 */
           }
-          if (imageParts.length > 2) {
-            preparedMessages = preparedMessages.map((m) =>
-              m.role === "user" && m.content === lastUserMsg.content
-                ? { role: "user", content: imageParts }
-                : m,
-            );
-          }
+        }
+        // ② 讲解 content 的 base64 内嵌图。去重:跳过已喂的同 data-url(node_assets 可能已含)
+        for (const dataUrl of extractInlineDataImages(node?.content ?? "").slice(0, 4)) {
+          if (imageParts.some((p) => p.type === "file" && p.data === dataUrl)) continue;
+          const semi = dataUrl.indexOf(";");
+          const mt = semi > 5 ? dataUrl.slice(5, semi) : "image/png";
+          imageParts.push({ type: "file", mediaType: mt, data: dataUrl });
+        }
+        if (imageParts.length > 2) {
+          preparedMessages = preparedMessages.map((m) =>
+            m.role === "user" && m.content === lastUserMsg.content
+              ? { role: "user", content: imageParts }
+              : m,
+          );
         }
       }
     }

@@ -98,9 +98,13 @@
   --surface-3: oklch(0.29 0.005 270);      /* neutral-700 hover/elevated */
   --surface-3-rgb: 42 43 46;
   --ink: oklch(0.96 0.003 270);            /* neutral-100 主文字 */
+  --ink-rgb: 245 245 250;
   --ink-strong: oklch(0.985 0 0);          /* neutral-50 标题/强调 */
+  --ink-strong-rgb: 250 250 250;
   --ink-muted: oklch(0.7 0.005 270);       /* neutral-400 次文字 */
+  --ink-muted-rgb: 166 166 176;
   --ink-faint: oklch(0.55 0.005 270);      /* neutral-500 弱文字(time stamp) */
+  --ink-faint-rgb: 117 117 126;
   --border: oklch(0.27 0.005 270);         /* neutral-800 边框 */
   --border-faint: oklch(0.22 0.005 270);   /* neutral-850 弱边框 */
 
@@ -113,7 +117,7 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   /* ease-out-back:轻回弹(卡片入场、解锁动画),克制不弹过头 */
   --ease-out-back: cubic-bezier(0.34, 1.2, 0.64, 1);
-  /* ease-spring:按钮按下回弹(btn-3d active 回弹),Duolingo 标志性手感 */
+  /* ease-spring:按钮按下回弹(btn-3d active 回弹),标志性 3D 回弹手感 */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   /* ease-out-quart:通用状态过渡(hover/focus),比默认 ease 更利落 */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
@@ -241,10 +245,10 @@ html.light .map-rail-scope {
   --surface-0: oklch(0.16 0.005 270);    --surface-0-rgb: 12 13 15;
   --surface-1: oklch(0.18 0.005 270);    --surface-1-rgb: 17 17 20;
   --surface-2: oklch(0.22 0.005 270);    --surface-2-rgb: 26 26 29;
-  --ink: oklch(0.96 0.003 270);
-  --ink-strong: oklch(0.985 0 0);
-  --ink-muted: oklch(0.7 0.005 270);
-  --ink-faint: oklch(0.55 0.005 270);
+  --ink: oklch(0.96 0.003 270);            --ink-rgb: 245 245 250;
+  --ink-strong: oklch(0.985 0 0);          --ink-strong-rgb: 250 250 250;
+  --ink-muted: oklch(0.7 0.005 270);       --ink-muted-rgb: 166 166 176;
+  --ink-faint: oklch(0.55 0.005 270);      --ink-faint-rgb: 117 117 126;
   --border: oklch(0.27 0.005 270);
   --border-faint: oklch(0.22 0.005 270);
 }
@@ -305,7 +309,7 @@ html.light .exam-bubble-locked {
      等中性层即可;5 个语义色深浅模式同源(hue 不变),无需双套。 */
 }
 
-/* === Duolingo-inspired design system === */
+/* === playful 3D design system === */
 
 /* v0.4 设计 token:统一的 elevation(阴影)+ radius(圆角)语义。
    所有组件用这些 token,禁止裸 tailwind shadow / rounded 混用。
@@ -336,10 +340,10 @@ html.light .exam-bubble-locked {
   }
 }
 
-/* 3D push down buttons (Duolingo signature style) */
+/* 3D push down buttons (signature style) */
 @layer components {
   .btn-3d {
-    /* spring 曲线让按下/回弹有 Duolingo 标志性手感(原默认 ease 偏软) */
+    /* spring 曲线让按下/回弹有标志性手感(原默认 ease 偏软) */
     @apply relative font-bold rounded-2xl transition-all duration-150 ease-spring active:translate-y-0.5;
   }
   .btn-3d-brand {
@@ -726,7 +730,7 @@ html.light .exam-bubble-locked {
   transform-origin: 50% 50%;
 }
 
-/* Custom scrollbar — Duolingo style rounded */
+/* Custom scrollbar — rounded style */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

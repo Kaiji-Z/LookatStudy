@@ -4,7 +4,7 @@
  * 与 sm2.ts 同理：streak.ts 顶层 import electron + DB，纯 Node 测试环境加载即崩。
  * 把"纯状态机逻辑"抽到这里，streak.ts 调用它 + 负责读写 DB。
  *
- * 语义（参考多邻国 Streak Freeze）：
+ * 语义（streak freeze 通用语义）：
  * - lastActiveDate == today: 不变（同日幂等）
  * - lastActiveDate == yesterday: currentStreak++
  * - gap=2（前天打、昨天漏、今天回）+ freeze>0: 消耗一个 freeze，currentStreak++

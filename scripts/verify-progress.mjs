@@ -93,7 +93,7 @@ assert.strictEqual(t7.status, "mastered", "T7: 不传 status 应保留 mastered"
 assert.strictEqual(t7.crownLevel, 5, "T7: crownLevel=5");
 console.log(`✓ T7 updateProgress(patch 缺 status): mastered 保留, crown→5`);
 
-// === T8: markNodeAttempted 解锁同章节下一课（Duolingo 式关卡门控）===
+// === T8: markNodeAttempted 解锁同章节下一课（关卡门控）===
 // 建一个新课程 + 章节 + 3 课（用 orderIdx 排序）
 sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('c2', 'r2', 'T2')`);
 sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('sec-a', 'c2', NULL, 'section', '章节A', 0)`);

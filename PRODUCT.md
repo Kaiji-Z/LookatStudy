@@ -17,7 +17,7 @@ This is a hybrid register. It inherits Product's discipline (state semantics, co
 The line we hold: **game-like feedback serves learning motivation, not engagement extraction.** No gems shop, no loot-box animations, no loss-aversion streaks, no leaderboards that punish. Streaks use free monthly freezes, not virtual currency. Stars reflect real mastery (BKT-driven), not grinding.
 
 ## Color strategy
-**Full palette** — six named roles, each used deliberately. Duolingo-inspired on dark surfaces.
+**Full palette** — six named roles, each used deliberately. Playful and purposeful on dark surfaces.
 
 | Role | Color | Token | Used for | Never for |
 |------|-------|-------|----------|-----------|

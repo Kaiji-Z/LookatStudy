@@ -5,7 +5,7 @@
  * 这里 import { computeStreakTransition } from "../src/main/services/pure/streak-transition.ts" ——
  * streak.ts re-export 这同一个函数并应用到 DB。测的是真实状态机逻辑。
  *
- * freeze 真实语义（参考多邻国）：
+ * freeze 真实语义：
  *   gap=2（前天打、昨天漏、今天回）→ freeze 补上漏的那天，streak 继续
  *   gap>=3 → 漏太多，即使有 freeze 也断了
  */

@@ -577,25 +577,18 @@ html.light .exam-bubble-locked {
  * Toast 四级 severity 用语义色描边 + 浅 tint,保持深色基调。
  * ============================================================ */
 
-/* Toast 入场:从下方滑入 + 微缩放(状态传达:新反馈到达) */
+/* Toast 入场:从上方滑下 + 微缩放(通知从标题栏下方进入) */
 @keyframes toast-enter {
-  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  from { opacity: 0; transform: translateY(-12px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-/* Toast 退场:淡出 + 下沉(避免硬消失的 glitch 感) */
+/* Toast 退场:淡出 + 上滑(回收方向与入场一致) */
 @keyframes toast-exit {
   from { opacity: 1; transform: translateY(0) scale(1); }
-  to   { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to   { opacity: 0; transform: translateY(-8px) scale(0.97); }
 }
 .toast-enter { animation: toast-enter 220ms var(--ease-out-back); }
 .toast-exit  { animation: toast-exit 180ms var(--ease-out-quart) forwards; }
-
-/* Toast severity tint:左色条 + 浅 tint 背景,深色基调不变 */
-.toast-default { border-left: 3px solid var(--ink-muted); }
-.toast-success { border-left: 3px solid var(--brand); }
-.toast-error   { border-left: 3px solid var(--warning); }
-.toast-warning { border-left: 3px solid var(--review); }
-.toast-info    { border-left: 3px solid var(--accent); }
 
 /* 内联确认卡(替代 native confirm()):危险动作的二次确认浮层。
    嵌入式(非 modal),出现在触发按钮原位附近,不打断任务流。 */

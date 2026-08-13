@@ -224,6 +224,25 @@ export default function App() {
   useEffect(() => {
     prevStreakRef.current = streak?.currentStreak ?? 0;
   }, [streak]);
+  // 重新拉取整个课程的 progress(解锁后 UI 实时更新用)。
+  // markNodeAttempted 可能解锁同章下一课 + 下一章第一课(双线推进),
+  // 这些被解锁的节点 progress 变化需要刷新才能在地图上亮起。
+  // 也用于 state:changed:"mastery" 事件——答题毕业/proposal apply 后实时刷新地图。
+  const reloadCourseProgress = useCallback(async () => {
+    const lessons = tree.filter((n) => n.type === "lesson" || n.type === "exam");
+    const entries = await Promise.all(
+      lessons.map(async (l) => {
+        const p = await api.getProgress(l.id);
+        return [l.id, p] as const;
+      }),
+    );
+    const map: Record<string, Progress> = {};
+    for (const [id, p] of entries) {
+      if (p) map[id] = p;
+    }
+    setProgressMap(map);
+  }, [tree]);
+
   useEffect(() => {
     const off = api.on("state:changed", (kind: "xp" | "streak" | "mastery") => {
       if (kind === "xp") {
@@ -238,13 +257,14 @@ export default function App() {
           if (s.currentStreak > prevStreakRef.current) celebrate("streak");
         }).catch(() => {});
       } else if (kind === "mastery") {
-        // mastery 变化(答题毕业/proposal apply)→ 加冕庆祝 + 全量刷新节点状态
+        // mastery 变化(答题毕业/proposal apply)→ 加冕庆祝 + 刷新 xp/streak/due + 重载进度图
         celebrate("mastery");
         refreshAll();
+        reloadCourseProgress();
       }
     });
     return off;
-  }, [refreshAll]);
+  }, [refreshAll, reloadCourseProgress]);
 
   useEffect(() => {
     if (!selectedCourseId) return;
@@ -272,24 +292,6 @@ export default function App() {
     }).catch(setErrorFromThrow);
     api.getDashboard(selectedCourseId).then(setDashboard).catch(setErrorFromThrow);
   }, [selectedCourseId, currentLocale, setErrorFromThrow]);
-
-  // 重新拉取整个课程的 progress(解锁后 UI 实时更新用)。
-  // markNodeAttempted 可能解锁同章下一课 + 下一章第一课(双线推进),
-  // 这些被解锁的节点 progress 变化需要刷新才能在地图上亮起。
-  const reloadCourseProgress = useCallback(async () => {
-    const lessons = tree.filter((n) => n.type === "lesson" || n.type === "exam");
-    const entries = await Promise.all(
-      lessons.map(async (l) => {
-        const p = await api.getProgress(l.id);
-        return [l.id, p] as const;
-      }),
-    );
-    const map: Record<string, Progress> = {};
-    for (const [id, p] of entries) {
-      if (p) map[id] = p;
-    }
-    setProgressMap(map);
-  }, [tree]);
 
   // 节点切换时拉 starter prompts
   useEffect(() => {
@@ -494,8 +496,8 @@ export default function App() {
         title: output.title ?? null,
         data: output,
       });
-      // 切到笔记标签让用户看到 + toast 反馈
-      setForceArtifactTab("notes");
+      // 不自动切 tab——保持用户当前 tab,笔记 tab 的数字 badge 实时反映新增。
+      // toast 提示用户"有新笔记了",想看再自己点过去。
       toast.show(t("toast.artifactSaved"), { duration: 3000 });
     }
   }, [artifacts, canvas, selectedNodeId, toast, t]);

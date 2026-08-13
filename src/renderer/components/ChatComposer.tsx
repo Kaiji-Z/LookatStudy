@@ -103,23 +103,20 @@ export function ChatComposer({
   return (
     <div className="px-5 pb-4 pt-1 shrink-0" data-testid="composer">
       {/* 巩固选择:只在对话开始后(App 传非空 starterPrompts)才出现 = 语境前零决策税。
-          4 个正交的"一瞥→懂"路径(精加工/具体化/检索/困惑处置)。hint 默认可见,不靠 hover。 */}
+          4 个正交的"一瞥→懂"路径(精加工/具体化/检索/困惑处置)。单行药丸排列(省空间,
+          不过度遮挡对话区);hint 走 data-tooltip(GlobalTooltip),hover 才显示。 */}
       {starterPrompts.length > 0 && nodeId && (
-        <div className="grid grid-cols-2 gap-1.5 pb-2" data-testid="starter-prompts">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-2" data-testid="starter-prompts">
           {starterPrompts.map((p, i) => (
             <button
               key={i}
               onClick={() => handleStarterPick(p)}
               disabled={streaming}
               data-testid={`starter-prompt-${i}`}
-              title={p.hint ?? p.label}
-              className="flex flex-col items-start gap-0.5 text-left px-2.5 py-1.5 rounded-lg text-ink-muted hover:text-ink-strong hover:bg-ink/[0.04] transition-colors disabled:opacity-30"
+              data-tooltip={p.hint ?? p.label}
+              className="shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-caption font-medium text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06] transition-colors disabled:opacity-30"
             >
-              <span className="flex items-center gap-1 text-body font-medium">
-                <span className="opacity-70">{p.icon}</span>
-                {p.label}
-              </span>
-              <span className="text-caption text-ink-faint">{p.hint}</span>
+              {p.label}
             </button>
           ))}
         </div>

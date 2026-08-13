@@ -103,6 +103,13 @@ export function NotebookPanel({
     ? items.filter((i) => i.nodeId === selectedNode.id)
     : [];
 
+  // 讲解区滚动容器:切节点时回到顶部(key={tab} 只管 tab 切换的 remount,
+  // 同 tab 切节点不会 remount → 滚动位置残留,用户会看到上一个节点滚到底的位置)。
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [selectedNode?.id]);
+
   return (
     <div
       className="h-full flex flex-col bg-surface-2"
@@ -132,7 +139,7 @@ export function NotebookPanel({
       </div>
 
       {/* 内容区:tab 切换时内容滑入(PROPERTY.md motion: 状态传达,150-250ms) */}
-      <div className="flex-1 overflow-y-auto min-h-0 animate-tab-slide" key={tab} role="tabpanel">
+      <div className="flex-1 overflow-y-auto min-h-0 animate-tab-slide" key={tab} ref={scrollRef} role="tabpanel">
         {tab === "content" ? (
           <ContentTab
             selectedNode={selectedNode}

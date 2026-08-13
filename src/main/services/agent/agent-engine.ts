@@ -43,6 +43,8 @@ import {
 } from "../proposal-service.js";
 import { addXpCorrect, addXpWrong } from "../xp-service.js";
 import { getKnowledgePoints, getKcMastery } from "../kc-service.js";
+import { recordReview } from "../srs.js";
+import type { ReviewQuality } from "@shared/types";
 // P3: 注入学习者近期卡点,让 agent "看见并记住"挣扎点(relatedness + 自适应)
 import { buildFrictionContext } from "../pure/friction-context.js";
 
@@ -327,6 +329,8 @@ export async function runAgentTurn(
           rationale: `答题观测：${rationale}`,
         });
         applyProposal(db, proposal.id);
+        // BKT↔SRS 闭环：答题同时更新 SRS 复习计划（与 quiz:recordAnswer 对齐）
+        recordReview(nodeId, (correct ? 5 : 2) as ReviewQuality);
         // XP 即时反馈（答对+10/答错+1），与 quiz/exercise 对齐。
         correct ? addXpCorrect(db) : addXpWrong(db);
         return {

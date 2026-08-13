@@ -1,16 +1,13 @@
 /**
- * Toast —— v0.6 反馈层重构。
+ * Toast —— 通知胶囊,定位在标题栏下方居中。
  *
- * 解决 P0/P1:
- *  - 严重度变体(success/error/warning/info/default),各一语义色左条 + 浅 tint,
- *    反馈与状态对应(成功≠错误≠警告),不再是"所有反馈看起来一样"。
- *  - 退场动画(toast-exit):淡出 + 微下沉,避免硬消失 glitch 感。
- *  - 关闭按钮换 lucide-react X(全应用 icon 词汇统一,lucide-only for utility)。
- *  - 修复历史 dark class 重复 bug(现在统一用 bg-surface-0 token)。
+ * 严重度变体(success/error/warning/info/default)通过语义色图标传达,
+ * 不用 border-left 色条(设计系统禁令:side-stripe)。rounded-full 胶囊形 +
+ * shadow-elevated 悬浮感,从顶部滑入/滑出。
  *
  * 用法:
  *   const { show } = useToast();
- *   show("已归档会话", { severity: "info", action: { label: "撤销", onClick: undo }, duration: 5000 });
+ *   show("已归档", { severity: "info", action: { label: "撤销", onClick: undo }, duration: 5000 });
  *   show("保存失败", { severity: "error" });
  *   show("答对了!", { severity: "success" });
  *
@@ -59,13 +56,6 @@ const SEVERITY_DEFAULT_DURATION: Record<ToastSeverity, number> = {
   warning: 5000,
   error: 6000,
 };
-const SEVERITY_CLASS: Record<ToastSeverity, string> = {
-  default: "toast-default",
-  success: "toast-success",
-  info: "toast-info",
-  warning: "toast-warning",
-  error: "toast-error",
-};
 const SEVERITY_ICON: Record<ToastSeverity, ReactNode> = {
   default: null,
   success: <CheckCircle2 className="w-4 h-4 text-brand shrink-0" />,
@@ -103,7 +93,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {/* Toast 容器:底部居中,pointer-events-none 让容器不挡交互,子项 auto。
           aria-live=polite:新 toast 到达时屏幕阅读器播报(不打断当前任务)。 */}
       <div
-        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none"
+        className="fixed top-14 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none"
         role="region"
         aria-live="polite"
         aria-label="Notifications"
@@ -141,7 +131,7 @@ function ToastRow({
   const icon = SEVERITY_ICON[item.severity];
   return (
     <div
-      className={`pointer-events-auto flex items-center gap-2.5 pl-3 pr-2 py-2.5 rounded-xl bg-surface-0 text-ink-strong text-body shadow-elevated max-w-md ${SEVERITY_CLASS[item.severity]} ${item.exiting ? "toast-exit" : "toast-enter"}`}
+      className={`pointer-events-auto flex items-center gap-2.5 pl-4 pr-2 py-2 rounded-full bg-surface-0 text-ink-strong text-body shadow-elevated max-w-md ${item.exiting ? "toast-exit" : "toast-enter"}`}
       data-testid={`toast-${item.id}`}
       data-severity={item.severity}
       onAnimationEnd={item.exiting ? onExitDone : undefined}

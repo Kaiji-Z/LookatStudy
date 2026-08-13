@@ -313,9 +313,6 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                         <span>{t("chat.empty.start")}</span>
                       </button>
                     )}
-                    <div className="text-center mt-4 text-label text-ink-muted">
-                      {t("chat.empty.quick_hint")}
-                    </div>
                   </>
                 ) : (
                   /* 未配置 AI 模型:内容已在右侧讲解,引导去配置——消除冷启动死胡同(P1.1/P1.3) */

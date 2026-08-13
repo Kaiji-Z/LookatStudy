@@ -95,16 +95,16 @@ const translations: Record<Lang, Record<string, string>> = {
     "import.progress.starting": "正在启动…",
 
     // —— Toast ——
-    "toast.threadCreateFailed": "会话创建失败,请重试",
-    "toast.threadCreated": "已新建会话",
+    "toast.threadCreateFailed": "创建失败了,再试一次",
+    "toast.threadCreated": "新对话",
     "toast.threadRenamed": "已重命名",
-    "toast.threadArchived": "已归档会话",
-    "toast.threadDeleted": "已删除会话",
+    "toast.threadArchived": "已归档",
+    "toast.threadDeleted": "已删除",
     "toast.threadDefault": "新会话",
     "toast.restored": "已恢复",
-    "toast.noteSaved": "已加到笔记 · 记录区",
+    "toast.noteSaved": "已加到笔记",
     "toast.noteDeleted": "已删除笔记",
-    "toast.artifactSaved": "已保存到笔记本",
+    "toast.artifactSaved": "已记到笔记本",
 
     // —— 产物类型 ——
     "artifact.type.concept_map": "概念图",
@@ -278,7 +278,6 @@ const translations: Record<Lang, Record<string, string>> = {
     "chat.empty.summary.title": "本课摘要",
     "chat.empty.summary.none": "暂无摘要,点开始学习让 AI 帮你了解这一课",
     "chat.empty.start": "开始学习",
-    "chat.empty.quick_hint": "或从下面的快捷按钮选一个",
     "chat.empty.greeting": "👋 准备好了吗?这一课我们慢慢来。",
     "chat.empty.keyless.title": "内容已在右侧,先读一读",
     "chat.empty.keyless.desc": "配置好 AI 模型,就能和我对练、做练习、追踪掌握度。",
@@ -520,14 +519,14 @@ const translations: Record<Lang, Record<string, string>> = {
     "import.progress.starting": "Starting…",
 
     // —— Toast ——
-    "toast.threadCreateFailed": "Failed to create thread. Please retry.",
-    "toast.threadCreated": "Thread created",
+    "toast.threadCreateFailed": "Couldn't create — try again",
+    "toast.threadCreated": "New chat",
     "toast.threadRenamed": "Renamed",
-    "toast.threadArchived": "Thread archived",
-    "toast.threadDeleted": "Thread deleted",
+    "toast.threadArchived": "Archived",
+    "toast.threadDeleted": "Deleted",
     "toast.threadDefault": "New thread",
     "toast.restored": "Restored",
-    "toast.noteSaved": "Saved to notes",
+    "toast.noteSaved": "Added to notes",
     "toast.noteDeleted": "Note deleted",
     "toast.artifactSaved": "Saved to notebook",
 
@@ -703,7 +702,6 @@ const translations: Record<Lang, Record<string, string>> = {
     "chat.empty.summary.title": "Lesson Summary",
     "chat.empty.summary.none": "No summary yet — click Start to let the AI walk you through this lesson.",
     "chat.empty.start": "Start Learning",
-    "chat.empty.quick_hint": "or pick a quick prompt below",
     "chat.empty.greeting": "👋 Ready? Let's take this one step at a time.",
     "chat.empty.keyless.title": "The lesson is on the right — give it a read",
     "chat.empty.keyless.desc": "Configure an AI model to practice with me, do exercises, and track mastery.",

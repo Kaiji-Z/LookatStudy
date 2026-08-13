@@ -51,7 +51,7 @@ interface MapRailProps {
 
 export function MapRail(props: MapRailProps) {
   const t = useLang();
-  const [panel, setPanel] = useState<"map" | "import">("map");
+  const [panel, setPanel] = useState<"map" | "import">("import");
   /** 当前显示的世界: study(学习) / practice(实操)。默认 study。 */
   const [world, setWorld] = useState<"study" | "practice">("study");
   const navRef = useRef<HTMLElement>(null);
@@ -70,7 +70,10 @@ export function MapRail(props: MapRailProps) {
 
   const prevCourseId = useRef<string | null>(null);
   useEffect(() => {
-    if (prevCourseId.current !== null && prevCourseId.current !== props.courseId) setPanel("map");
+    if (prevCourseId.current !== null && prevCourseId.current !== props.courseId) {
+      setPanel("map");
+      setWorld("study"); // 切课时重置世界:新课可能没有实操世界,practice 残留会导致空画面卡死
+    }
     prevCourseId.current = props.courseId;
   }, [props.courseId]);
 
@@ -321,17 +324,20 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   return (
     <>
       {courses.length === 0 ? (
-        <p className="text-label text-white/60 text-center py-8">{t("import.empty")}</p>
+        <div className="text-center py-10">
+          <div className="text-3xl mb-2 opacity-30">📚</div>
+          <p className="text-label text-white/45 leading-relaxed">{t("import.empty")}</p>
+        </div>
       ) : (
         <div className="space-y-2" data-testid="course-list">
           {courses.map((c) => {
             const isCurrent = c.id === selectedCourseId;
             return (
-              <button key={c.id} onClick={() => onSelectCourse(c.id)} className={`w-full text-left p-3 rounded-xl border transition-all duration-150 group ${isCurrent ? "border-brand bg-brand/10 shadow-[0_0_0_1px_var(--brand-ring)]" : "border-white/15 hover:border-white/30 hover:bg-white/5"}`}>
+              <button key={c.id} onClick={() => onSelectCourse(c.id)} className={`w-full text-left p-3 rounded-xl transition-all duration-150 group ${isCurrent ? "bg-brand/12 ring-1 ring-brand/40" : "bg-white/5 hover:bg-white/10 hover:-translate-y-0.5"}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className={`text-body font-bold truncate ${isCurrent ? "text-brand" : "text-white/90"}`}>{c.title}</div>
-                    <div className="text-caption text-white/50 truncate mt-0.5">{c.repoName}</div>
+                    <div className="text-caption text-white/40 truncate mt-0.5">{c.repoName}</div>
                   </div>
                   {isCurrent && <span className="shrink-0 w-5 h-5 rounded-full bg-brand flex items-center justify-center"><Check className="w-3 h-3 text-white" /></span>}
                 </div>
@@ -345,9 +351,9 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
           })}
         </div>
       )}
-      <div className="pt-3 border-t border-white/10">
-        <button onClick={() => setShowImport(!showImport)} className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/10 border border-white/20 hover:border-brand/40 hover:bg-brand/10 text-body font-bold text-white/90 hover:text-brand transition-all">
-          <Plus className="w-4 h-4" /> {t("import.cta")}
+      <div className={courses.length > 0 ? "mt-6" : ""}>
+        <button onClick={() => setShowImport(!showImport)} className={`w-full flex items-center justify-center gap-1.5 py-3 rounded-xl border-2 border-dashed transition-all text-body font-bold ${showImport ? "border-brand/40 bg-brand/8 text-brand" : "border-white/20 hover:border-brand/50 hover:bg-brand/8 text-white/70 hover:text-brand"}`}>
+          <Plus className={`w-4 h-4 transition-transform ${showImport ? "rotate-45" : ""}`} /> {t("import.cta")}
         </button>
         {showImport && (
           <div className="mt-3 space-y-3">
@@ -386,7 +392,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
               </div>
             ) : (
               <>
-                <div className="flex gap-1 p-1 bg-black/30 rounded-lg">
+                <div className="flex gap-1 p-1 bg-white/5 rounded-lg">
                   {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }]).map(({ k, label, icon: Icon }) => (
                     <button key={k} onClick={() => setTab(k)} className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
                       <Icon className="w-3 h-3" /> {label}
@@ -395,13 +401,13 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
                 </div>
                 {tab === "url" ? (
                   <section className="space-y-2" data-testid="import-url-section">
-                    <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/owner/repo" data-testid="repo-url-input" className="w-full bg-black/30 text-white placeholder:text-white/40 text-body rounded-lg px-2.5 py-2 border border-white/20 focus:border-brand focus:outline-none" />
+                    <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/owner/repo" data-testid="repo-url-input" className="w-full bg-black/25 text-white placeholder:text-white/35 text-body rounded-lg px-3 py-2 border border-white/15 focus:border-brand focus:outline-none transition-colors" />
                     <button onClick={handleImportUrl} disabled={!repoUrl.trim() || busy} data-testid="import-url-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.url")}</button>
                   </section>
                 ) : tab === "markdown" ? (
                   <section className="space-y-2" data-testid="import-md-section">
-                    <input type="text" value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder={t("import.placeholder.name")} data-testid="md-name-input" className="w-full bg-black/30 text-white placeholder:text-white/40 text-body rounded-lg px-2.5 py-2 border border-white/20 focus:border-brand focus:outline-none" />
-                    <textarea value={mdText} onChange={(e) => setMdText(e.target.value)} placeholder={t("import.placeholder.md")} data-testid="md-text-input" rows={4} className="w-full bg-black/30 text-white placeholder:text-white/40 text-body rounded-lg px-2.5 py-2 border border-white/20 focus:border-brand focus:outline-none resize-none" />
+                    <input type="text" value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder={t("import.placeholder.name")} data-testid="md-name-input" className="w-full bg-black/25 text-white placeholder:text-white/35 text-body rounded-lg px-3 py-2 border border-white/15 focus:border-brand focus:outline-none transition-colors" />
+                    <textarea value={mdText} onChange={(e) => setMdText(e.target.value)} placeholder={t("import.placeholder.md")} data-testid="md-text-input" rows={4} className="w-full bg-black/25 text-white placeholder:text-white/35 text-body rounded-lg px-3 py-2 border border-white/15 focus:border-brand focus:outline-none transition-colors resize-none" />
                     <button onClick={handleImportMd} disabled={!mdText.trim() || !repoName.trim() || busy} data-testid="import-md-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.md")}</button>
                   </section>
                 ) : (
@@ -673,8 +679,10 @@ function MapNode({
   //   - 考试:要求同 section 所有 lesson 都 mastery≥0.5 才解锁(整章通关感)
   const isLocked = isExam ? !chapterLessonsMastered : status === "locked";
   const examLocked = isExam && isLocked; // 考试专属锁定态(用于样式/文案)
-  // in_progress(仅普通课):用 mastery 算进度环(0-1 → 0-100%)
-  const masteryPct = status === "in_progress" && !isExam ? Math.round((progress?.mastery ?? 0) * 100) : 0;
+  // in_progress(仅普通课):用 mastery 算进度环(0-1 → 0-100%)。
+  // mastered:满环(100%)金色——进度环闭环,视觉上"完成"。
+  const showRing = !isExam && (status === "in_progress" || status === "mastered");
+  const ringPct = status === "mastered" ? 100 : status === "in_progress" ? Math.round((progress?.mastery ?? 0) * 100) : 0;
   // 节点位置由外层布局引擎(MapSection)绝对定位决定,这里只管自身样式。
   // index 仅用于 testid/可访问性,不参与定位(原 alignLeft/margin 逻辑已废弃)。
 
@@ -706,17 +714,17 @@ function MapNode({
                   : lesson.title
         }
       >
-        {/* in_progress 进度环(仅普通课;考试不画进度环) */}
-        {status === "in_progress" && !isExam && (
+        {/* 进度环(普通课:in_progress 白色部分环 / mastered 金色满环闭环;考试不画) */}
+        {showRing && (
           <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 56 56" aria-hidden="true">
             <circle cx="28" cy="28" r="25" fill="none" stroke="rgb(255 255 255 / 0.2)" strokeWidth="2.5" />
             <circle
               cx="28" cy="28" r="25"
               fill="none"
-              stroke="white"
+              stroke={status === "mastered" ? "#ffc800" : "white"}
               strokeWidth="2.5"
               strokeLinecap="round"
-              strokeDasharray={`${(masteryPct / 100) * 157} 157`}
+              strokeDasharray={`${(ringPct / 100) * 157} 157`}
               className="transition-all duration-500"
             />
           </svg>

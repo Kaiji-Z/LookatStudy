@@ -273,6 +273,14 @@ you in a public release notes draft, it belongs in `dev-docs/`.
   *then* code. Trivial one-line fixes can go straight to `main`. If work already
   happened on `main` (you forgot), don't retroactively branch — commit to `main`
   and worktree-first next time.
+- **`main` is merge-only — never iterate a feature on it.** The primary worktree
+  (the repo dir itself) sits on `main`; it's where you merge feature branches in
+  (`--no-ff`), not where you code them. Doing feature work directly on `main`
+  defeats the whole point of the worktree rule (and `git worktree add`-ing a
+  second tree for `main` is rejected by git anyway — `main` is already checked
+  out in the primary worktree). Each iteration = one fresh branch + one worktree;
+  don't pile features onto one branch or reuse an already-merged branch. Trivial
+  one-line fixes are the sole exception — those may land on `main` directly.
 - **Features ship on a branch and merge to `main` with `--no-ff`.** The merge
   commit summarizes the feature; the branch holds the granular history.
 - **Never rewrite public history.** `main` is shared; if a commit is wrong,

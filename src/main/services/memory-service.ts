@@ -21,7 +21,7 @@
  * Phase 1.5 将建 learner-model 投影统一 mastery+friction+memory 三处注入；本服务只管 memory。
  */
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
-import { eq, and, isNull, inArray, desc, ne } from "drizzle-orm";
+import { eq, and, isNull, inArray, desc, ne, gt } from "drizzle-orm";
 import * as schema from "../db/schema.js";
 import {
   memory as memoryTable,
@@ -29,8 +29,14 @@ import {
   chatMessages,
   frictionLog,
   contentNodes,
+  settings as settingsTable,
 } from "../db/schema.js";
 import { randomUUID } from "node:crypto";
+
+/** 当前 UTC 时间,格式对齐 SQLite CURRENT_TIMESTAMP("YYYY-MM-DD HH:MM:SS"),便于字符串比较。 */
+function sqlUtcNow(): string {
+  return new Date().toISOString().slice(0, 19).replace("T", " ");
+}
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -289,14 +295,16 @@ export async function consolidate(
 /**
  * 窗口采集:从原始数据(thread 消息 + friction_log)gather 出 ConsolidationWindow。
  * 整课程范围(friction_pattern 本就跨节点);近期窗口防过长。
+ * `since`(可选):只采 createdAt > since 的增量数据(watermark 增量采集,避免重复处理)。
  * answers v1 暂空(答题历史无干净查询源,可后续从 proposals/canvas last_result 补)。
  */
 export function gatherConsolidationWindow(
   db: Db,
-  opts: { courseId: string; messageLimit?: number; frictionLimit?: number },
+  opts: { courseId: string; messageLimit?: number; frictionLimit?: number; since?: string },
 ): ConsolidationWindow {
   const messageLimit = opts.messageLimit ?? 30;
   const frictionLimit = opts.frictionLimit ?? 20;
+  const since = opts.since;
 
   // 课程节点 id(给 friction 按 course 圈定)
   const nodeIds = db
@@ -317,7 +325,7 @@ export function gatherConsolidationWindow(
     const msgs = db
       .select()
       .from(chatMessages)
-      .where(eq(chatMessages.threadId, t.id))
+      .where(and(eq(chatMessages.threadId, t.id), ...(since ? [gt(chatMessages.createdAt, since)] : [])))
       .orderBy(desc(chatMessages.createdAt))
       .limit(messageLimit)
       .all()
@@ -330,7 +338,13 @@ export function gatherConsolidationWindow(
     ? db
         .select()
         .from(frictionLog)
-        .where(and(inArray(frictionLog.nodeId, nodeIds), ne(frictionLog.category, "agent_error")))
+        .where(
+          and(
+            inArray(frictionLog.nodeId, nodeIds),
+            ne(frictionLog.category, "agent_error"),
+            ...(since ? [gt(frictionLog.createdAt, since)] : []),
+          ),
+        )
         .orderBy(desc(frictionLog.createdAt))
         .limit(frictionLimit)
         .all()
@@ -338,6 +352,29 @@ export function gatherConsolidationWindow(
     : [];
 
   return { courseId: opts.courseId, nodeId: null, conversation, frictionEntries, answers: [] };
+}
+
+/** 读取课程的固化水位(上次固化到的时间点,"YYYY-MM-DD HH:MM:SS" UTC)。null=从未固化。 */
+export function getConsolidationWatermark(db: Db, courseId: string): string | null {
+  const row = db
+    .select()
+    .from(settingsTable)
+    .where(eq(settingsTable.key, `consolidate_watermark:${courseId}`))
+    .get();
+  return row?.value ?? null;
+}
+
+/** 更新课程固化水位(固化后调用,设为当前 UTC 时间)。 */
+export function setConsolidationWatermark(db: Db, courseId: string): string {
+  const ts = sqlUtcNow();
+  db.insert(settingsTable)
+    .values({ key: `consolidate_watermark:${courseId}`, value: ts, isSecret: false })
+    .onConflictDoUpdate({
+      target: settingsTable.key,
+      set: { value: ts, isSecret: false },
+    })
+    .run();
+  return ts;
 }
 
 /**

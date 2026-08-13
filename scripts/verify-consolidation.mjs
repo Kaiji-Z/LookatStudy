@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
-import { consolidate, getSlot, gatherConsolidationWindow } from "../src/main/services/memory-service.ts";
+import { consolidate, getSlot, gatherConsolidationWindow, getConsolidationWatermark, setConsolidationWatermark } from "../src/main/services/memory-service.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -161,5 +161,39 @@ assert.ok(
   "T8: 端到端后 friction_pattern 固化(课程隔离 gc)",
 );
 console.log("✓ T8 端到端 gather→consolidate:memory 从真实数据固化");
+
+// ============================================================
+// T9-T11: watermark 增量采集(只采 since 之后的新数据)
+// ============================================================
+let envW = await makeDb();
+envW.sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('gc2','r','GC2')`);
+envW.sqljs.run(`INSERT INTO content_nodes (id, course_id, type, title) VALUES ('gn2','gc2','lesson','N')`);
+envW.sqljs.run(`INSERT INTO threads (id, course_id, status) VALUES ('gt2','gc2','active')`);
+envW.sqljs.run(`INSERT INTO chat_messages (id, thread_id, role, content, created_at) VALUES ('mold','gt2','user','旧消息','2026-08-14 09:00:00')`);
+envW.sqljs.run(`INSERT INTO chat_messages (id, thread_id, role, content, created_at) VALUES ('mnew','gt2','user','新消息','2026-08-14 11:00:00')`);
+envW.sqljs.run(`INSERT INTO friction_log (id, node_id, category, summary, created_at) VALUES ('fold','gn2','confused','旧卡点','2026-08-14 09:00:00')`);
+envW.sqljs.run(`INSERT INTO friction_log (id, node_id, category, summary, created_at) VALUES ('fnew','gn2','blocked','新卡点','2026-08-14 11:00:00')`);
+
+// T9: gather since 过滤消息(只采水位之后的)
+const winSince = gatherConsolidationWindow(envW.db, { courseId: "gc2", since: "2026-08-14 10:00:00" });
+assert.strictEqual(winSince.conversation.length, 1, "T9: since 过滤后只 1 条消息");
+assert.ok(winSince.conversation[0].content === "新消息", "T9: 保留水位之后的新消息");
+console.log("✓ T9 gather since 过滤消息(只采增量)");
+
+// T10: gather since 过滤 friction
+assert.strictEqual(winSince.frictionEntries.length, 1, "T10: since 过滤后只 1 条 friction");
+assert.ok(winSince.frictionEntries[0].summary === "新卡点", "T10: 保留水位之后的新 friction");
+console.log("✓ T10 gather since 过滤 friction");
+
+// T11: watermark round-trip(首次 null,set 后可读)
+assert.strictEqual(getConsolidationWatermark(envW.db, "gc2"), null, "T11: 首次水位 null");
+const ts = setConsolidationWatermark(envW.db, "gc2");
+assert.ok(typeof ts === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(ts), "T11: 水位是 YYYY-MM-DD HH:MM:SS 格式");
+assert.strictEqual(getConsolidationWatermark(envW.db, "gc2"), ts, "T11: set 后可读回");
+// 再 set → 推进(upsert,不堆叠)
+setConsolidationWatermark(envW.db, "gc2");
+const rows = envW.db.select().from(schema.settings).all().filter((r) => r.key === "consolidate_watermark:gc2");
+assert.strictEqual(rows.length, 1, "T11: 同课程 watermark 只 1 行(upsert 不堆叠)");
+console.log("✓ T11 watermark get/set round-trip + upsert 不堆叠");
 
 console.log("\n=== ALL CONSOLIDATION TESTS PASSED ✅ ===");

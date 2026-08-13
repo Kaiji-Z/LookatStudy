@@ -408,6 +408,13 @@ export default function App() {
   );
 
   const currentCourse = courses.find((c) => c.id === selectedCourseId);
+  // due 按当前课程过滤:getDueReviews 返回全局 due,切换到无 due 的课程时徽章/nudge 不该显示。
+  // 派生 dueInCourseIds = 全局 due ∩ 当前课程 tree 的 nodeId。
+  const dueInCourseIds = useMemo(() => {
+    const treeIds = new Set(tree.map((n) => n.id));
+    return new Set([...dueNodeIds].filter((id) => treeIds.has(id)));
+  }, [dueNodeIds, tree]);
+  const dueInCourseCount = dueInCourseIds.size;
   const sections = useMemo(
     () =>
       tree
@@ -460,11 +467,11 @@ export default function App() {
   // 持久 surface 是 MapRail 的 map-review-badge;这里是"拉你回来练"的主动提示。
   const reviewNudgedRef = useRef(false);
   useEffect(() => {
-    if (dueCount > 0 && !reviewNudgedRef.current) {
+    if (dueInCourseCount > 0 && !reviewNudgedRef.current) {
       reviewNudgedRef.current = true;
-      toast.show(t("review.nudge", { n: dueCount }), { duration: 4000 });
+      toast.show(t("review.nudge", { n: dueInCourseCount }), { duration: 4000 });
     }
-  }, [dueCount, toast, t]);
+  }, [dueInCourseCount, toast, t]);
 
   // M2: 从对话流提取展示型 tool 产物 → 自动持久化到 canvas_items
   const artifacts = useMemo(() => extractArtifacts(chat.messages), [chat.messages]);
@@ -516,8 +523,8 @@ export default function App() {
           tree={tree}
           progressMap={progressMap}
           selectedNodeId={selectedNodeId}
-          dueCount={dueCount}
-          dueNodeIds={dueNodeIds}
+          dueCount={dueInCourseCount}
+          dueNodeIds={dueInCourseIds}
           overallMastery={dashboard?.overallMastery ?? 0}
           streak={streak?.currentStreak ?? 0}
           streaming={chat.streaming}

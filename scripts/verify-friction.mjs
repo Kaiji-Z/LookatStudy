@@ -46,7 +46,7 @@ assert.ok(ctx2.includes("slip 和 guess"), `T2: 应含描述, 实际: ${ctx2}`);
 console.log(`✓ T2 写 confused → 注入: "${ctx2.replace(/\n/g, " | ")}"`);
 
 // === T3: agent_error 不被注入(系统级,非学习者主观卡点) ===
-insertFrictionDb(db, "n1", "agent_error", "active_skill xyz 不在 skills 表里");
+insertFrictionDb(db, "n1", "agent_error", "active_soul xyz 不在 souls 表里");
 const ctx3 = buildFrictionContext(db, "n1");
 assert.ok(!ctx3.includes("xyz"), `T3: agent_error 不应被注入, 实际: ${ctx3}`);
 assert.ok(ctx3.includes("糊涂"), "T3: 人类卡点仍在");

@@ -1,5 +1,5 @@
 /**
- * Agent 引擎 —— AI 导师的核心 loop（ARCHITECTURE v2 原则 1: Agent 通用，Skill 决定怎么教）。
+ * Agent 引擎 —— AI 导师的核心 loop（ARCHITECTURE v2 原则 1: Agent 通用，Soul 决定怎么教）。
  *
  * 结构：streamText 包一层工具调度循环，执行工具，写操作走 Proposal。
  *   buildSystemPrompt(db, BASE) → streamText({model, system, messages, tools, maxSteps})
@@ -36,7 +36,7 @@ import {
   getThreadMessages,
   appendMessage,
 } from "../thread-service.js";
-import { buildSystemPrompt } from "../skills/prompt-builder.js";
+import { buildSystemPrompt } from "../souls/prompt-builder.js";
 import {
   createProposal,
   type LearningOperation,
@@ -46,7 +46,7 @@ import { buildFrictionContext } from "../pure/friction-context.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
-/** Agent 给学习者的基础人设（skill body 会追加在后面，由 buildSystemPrompt 负责） */
+/** Agent 给学习者的基础人设（激活的 soul body 会追加在后面，由 buildSystemPrompt 负责） */
 const BASE_AGENT_PROMPT =
   "你是 LookatStudy 的 AI 学习导师。学习者正在学一门由 GitHub 文档生成的课程。" +
   "你的职责是帮学习者真正理解知识，不是简单复述文档。" +

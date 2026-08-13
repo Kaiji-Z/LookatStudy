@@ -3,49 +3,46 @@
  *
  * 重构自 ChatPanel 的输入区。包含:
  *   - starter prompts 横条(常驻,基于掌握度)
- *   - 学习模式下拉(苏格拉底/考试/项目/复习,默认收起)
+ *   - 教学人设药丸(精讲/引导/实战,默认收起)
  *   - textarea(Enter 发送,Shift+Enter 换行)
  *   - 发送 / 停止按钮
  *
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect } from "react";
-import { ArrowUp, Square, Compass, ClipboardCheck, Hammer, RefreshCw } from "lucide-react";
-import type { Skill, StarterPrompt, HumanFrictionCategory } from "@shared/types";
+import { ArrowUp, Square, BookOpen, Compass, Hammer } from "lucide-react";
+import type { Soul, StarterPrompt, HumanFrictionCategory } from "@shared/types";
 import { useLang } from "../lib/i18n.js";
 
-/** 模式名 → i18n key(短标签,显示在药丸里)。 */
-const SKILL_LABEL_KEY: Record<string, string> = {
-  "socratic-mode": "skill.socratic",
-  "exam-prep-mode": "skill.exam",
-  "project-mode": "skill.project",
-  "review-mode": "skill.review",
+/** soul 名 → i18n key(短标签,显示在药丸里)。 */
+const SOUL_LABEL_KEY: Record<string, string> = {
+  direct: "soul.direct",
+  guide: "soul.guide",
+  practice: "soul.practice",
 };
 
-/** 模式 → lucide 图标(场景语义,非装饰)。 */
-const SKILL_ICONS: Record<string, typeof Compass> = {
-  "socratic-mode": Compass,        // 罗盘:探索/指引方向
-  "exam-prep-mode": ClipboardCheck, // 答题卡:考试
-  "project-mode": Hammer,           // 锤子:动手做
-  "review-mode": RefreshCw,         // 循环:间隔复习
+/** soul → lucide 图标(场景语义,非装饰)。 */
+const SOUL_ICONS: Record<string, typeof Compass> = {
+  direct: BookOpen, // 书:讲解/精讲
+  guide: Compass, // 罗盘:探索/指引方向
+  practice: Hammer, // 锤子:动手做
 };
 
-/** 模式名 → i18n key(完整说明,data-tooltip 显示)。 */
-const SKILL_DESC_KEY: Record<string, string> = {
-  "socratic-mode": "skill.socratic.desc",
-  "exam-prep-mode": "skill.exam.desc",
-  "project-mode": "skill.project.desc",
-  "review-mode": "skill.review.desc",
+/** soul 名 → i18n key(完整说明,data-tooltip 显示)。 */
+const SOUL_DESC_KEY: Record<string, string> = {
+  direct: "soul.direct.desc",
+  guide: "soul.guide.desc",
+  practice: "soul.practice.desc",
 };
 
 interface ChatComposerProps {
   nodeId: string | null;
   agentReady: boolean;
   streaming: boolean;
-  skills: Skill[];
-  activeSkill: string | null;
+  souls: Soul[];
+  activeSoul: string | null;
   starterPrompts: StarterPrompt[];
-  onPickSkill: (name: string) => void;
+  onPickSoul: (name: string) => void;
   onSend: (text: string) => void;
   onStop: () => void;
   /** "我没太懂"等带 frictionCategory 的选择会额外记一条 friction(原 ? 卡点的归宿)。 */
@@ -59,10 +56,10 @@ export function ChatComposer({
   nodeId,
   agentReady,
   streaming,
-  skills,
-  activeSkill,
+  souls,
+  activeSoul,
   starterPrompts,
-  onPickSkill,
+  onPickSoul,
   onSend,
   onStop,
   onLogFriction,
@@ -133,19 +130,19 @@ export function ChatComposer({
           模式选择是输入框的一部分(决定"这段话用什么方式教"),不是独立工具栏。
           字号控制已移到顶栏(全局字号,不只中栏)。 */}
       <div className="rounded-2xl bg-ink/[0.05] focus-within:bg-ink/[0.07] transition-colors px-3 pt-2 pb-1.5">
-        {/* 模式药丸:"模式:" 标签 + 四个药丸(图标+名字),hover 显示完整说明 */}
-        {skills.length > 0 && (
-          <div className="flex items-center gap-1 overflow-x-auto mb-1" data-testid="skill-picker">
-            <span className="text-body text-ink-faint shrink-0">{t("chat.mode.label")}</span>
-            {skills.map((s) => {
-              const isActive = activeSkill === s.name;
-              const Icon = SKILL_ICONS[s.name] ?? Compass;
-              const fullDesc = t(SKILL_DESC_KEY[s.name] ?? "skill.socratic.desc");
+        {/* 风格药丸:"风格:" 标签 + 三个教学人设药丸(图标+名字),hover 显示完整说明 */}
+        {souls.length > 0 && (
+          <div className="flex items-center gap-1 overflow-x-auto mb-1" data-testid="soul-picker">
+            <span className="text-body text-ink-faint shrink-0">{t("chat.soul.label")}</span>
+            {souls.map((s) => {
+              const isActive = activeSoul === s.name;
+              const Icon = SOUL_ICONS[s.name] ?? Compass;
+              const fullDesc = t(SOUL_DESC_KEY[s.name] ?? "soul.direct.desc");
               return (
                 <button
                   key={s.id}
-                  onClick={() => onPickSkill(s.name)}
-                  data-testid={`skill-pill-${s.name}`}
+                  onClick={() => onPickSoul(s.name)}
+                  data-testid={`soul-pill-${s.name}`}
                   data-tooltip={fullDesc}
                   className={`shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-body font-medium transition-colors ${
                     isActive
@@ -154,7 +151,7 @@ export function ChatComposer({
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
-                  <span>{t(SKILL_LABEL_KEY[s.name] ?? "skill.socratic")}</span>
+                  <span>{t(SOUL_LABEL_KEY[s.name] ?? "soul.direct")}</span>
                 </button>
               );
             })}

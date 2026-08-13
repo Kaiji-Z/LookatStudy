@@ -8,7 +8,6 @@
  */
 
 export type FlagName =
-  | "skill_system" // M1: Skill 系统 + 课程树 UI
   | "agent_engine" // M2: Agent 引擎 + Propose/Apply
   | "bkt_mastery" // M2: BKT 掌握度
   | "lightweight_rag" // M3: 轻量 RAG
@@ -17,7 +16,6 @@ export type FlagName =
   | "multimodal_import"; // AI 多模态:vision 模型识图/看图(需要 API key + vision 模型)
 
 export const FLAG_DEFAULTS: Record<FlagName, boolean> = {
-  skill_system: false,
   agent_engine: false,
   bkt_mastery: false,
   lightweight_rag: false,

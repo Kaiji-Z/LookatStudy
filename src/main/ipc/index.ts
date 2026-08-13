@@ -65,14 +65,14 @@ import {
   findPracticeForLesson,
   findLessonForPractice,
 } from "../services/practice-service.js";
-// Skill 系统（M1）—— 业务逻辑在 skill-service，IPC 是薄壳
+// Soul 系统（教学人设）—— 业务逻辑在 soul-service，IPC 是薄壳
 import {
-  listSkills as listSkillsService,
-  getSkill as getSkillService,
-  createSkill as createSkillService,
-  setActiveSkill as setActiveSkillService,
-  getActiveSkill as getActiveSkillService,
-} from "../services/skills/skill-service.js";
+  listSouls as listSoulsService,
+  getSoul as getSoulService,
+  createSoul as createSoulService,
+  setActiveSoul as setActiveSoulService,
+  getActiveSoul as getActiveSoulService,
+} from "../services/souls/soul-service.js";
 // Agent 引擎 + Proposal（M2）
 import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory, handleAgentChatThread, abortAgentChatThread } from "../services/agent/agent-engine.js";
 import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels } from "../services/agent/llm-client.js";
@@ -834,28 +834,25 @@ export function registerSettingsHandlers(): void {
   });
 }
 
-/* ---------- Skill 系统（M1） ---------- */
+/* ---------- Soul 系统（教学人设/persona） ---------- */
 
-export function registerSkillHandlers(): void {
-  ipcMain.handle("skill:list", async () => listSkillsService(getDb()));
+export function registerSoulHandlers(): void {
+  ipcMain.handle("soul:list", async () => listSoulsService(getDb()));
 
-  ipcMain.handle("skill:get", async (_e, name: string) =>
-    getSkillService(getDb(), name),
+  ipcMain.handle("soul:get", async (_e, name: string) =>
+    getSoulService(getDb(), name),
   );
 
   ipcMain.handle(
-    "skill:create",
+    "soul:create",
     async (
       _e,
       input: { name: string; description: string; type: string; body: string },
     ) => {
-      const result = createSkillService(getDb(), {
+      const result = createSoulService(getDb(), {
         name: input.name,
         description: input.description,
-        type: input.type as
-          | "learning-mode"
-          | "subject-pack"
-          | "user-custom",
+        type: input.type as "builtin" | "custom",
         body: input.body,
       });
       markDirty();
@@ -863,12 +860,12 @@ export function registerSkillHandlers(): void {
     },
   );
 
-  ipcMain.handle("skill:setActive", async (_e, name: string) => {
-    setActiveSkillService(getDb(), name);
+  ipcMain.handle("soul:setActive", async (_e, name: string) => {
+    setActiveSoulService(getDb(), name);
     markDirty();
   });
 
-  ipcMain.handle("skill:getActive", async () => getActiveSkillService(getDb()));
+  ipcMain.handle("soul:getActive", async () => getActiveSoulService(getDb()));
 }
 
 /* ---------- Agent 引擎 + Proposal（M2） ---------- */
@@ -1117,7 +1114,7 @@ export function registerAllHandlers(mainWindow: BrowserWindow): void {
   registerSrsHandlers();
   registerStreakHandlers();
   registerSettingsHandlers();
-  registerSkillHandlers();
+  registerSoulHandlers();
   registerAgentHandlers(mainWindow);
   registerM3Handlers();
   registerExerciseHandlers();

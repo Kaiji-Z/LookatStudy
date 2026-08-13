@@ -94,19 +94,19 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   node_id TEXT REFERENCES content_nodes(id) ON DELETE CASCADE,
   messages_json TEXT NOT NULL DEFAULT '[]',
   provider TEXT,
-  active_skill TEXT,
+  active_soul TEXT,
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 
 -- ============================================================
--- Skill 系统（v2 新增）
+-- Soul 系统（教学人设/persona）
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS skills (
+CREATE TABLE IF NOT EXISTS souls (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
   description TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('learning-mode', 'subject-pack', 'user-custom')),
+  type TEXT NOT NULL CHECK (type IN ('builtin', 'custom')),
   body TEXT NOT NULL,
   is_builtin INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)

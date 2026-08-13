@@ -39,7 +39,6 @@ sqljs.run(readFileSync(join(ROOT, "src/main/db/schema.sql"), "utf8"));
 sqljs.run("INSERT INTO custom_providers (id, label, protocol, base_url, api_key, default_model) VALUES ('test', 'test', 'openai-compatible', 'https://api.z.ai/api/coding/paas/v4', ?, 'glm-5.2')", [API_KEY]);
 sqljs.run("INSERT INTO settings (key, value) VALUES ('active_provider', 'test')");
 sqljs.run("INSERT INTO settings (key, value) VALUES ('active_model', 'glm-5.2')");
-sqljs.run("INSERT INTO settings (key, value) VALUES ('flag_skill_system', 'true')");
 const BASE_PROMPT =
   "你是 LookatStudy 的 AI 学习导师。学习者正在学一门由 GitHub 文档生成的课程。" +
   "你的职责是帮学习者真正理解知识，不是简单复述文档。" +

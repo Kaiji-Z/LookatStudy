@@ -25,12 +25,12 @@ import { readApiKey } from "./_load-env.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "../..");
 
-const apiKey = readApiKey();
-if (!apiKey) {
+const API_KEY = readApiKey();
+if (!API_KEY) {
   console.log("⚠ 无 API key,跳过 KC BKT live test");
   process.exit(0);
 }
-console.log(`✓ API key loaded (${apiKey.slice(0, 8)}...)`);
+console.log(`✓ API key loaded (${API_KEY.slice(0, 8)}...)`);
 
 // 建真实 sql.js DB + schema
 const wasmDir = join(ROOT, "node_modules/sql.js/dist");
@@ -46,7 +46,7 @@ const zaiBaseUrl = process.env.Z_AI_BASE_URL || "https://api.z.ai/api/coding/paa
 const zaiModel = process.env.Z_AI_MODEL || "glm-4-flash";
 sqljs.run(
   `INSERT INTO custom_providers (id, label, protocol, base_url, api_key, default_model) VALUES ('custom-test', 'ZAI Test', 'openai-compatible', ?, ?, ?)`,
-  [zaiBaseUrl, apiKey, zaiModel],
+  [zaiBaseUrl, API_KEY, zaiModel],
 );
 sqljs.run(`INSERT INTO settings (key, value, is_secret) VALUES ('active_provider', 'custom-test', 0)`);
 sqljs.run(`INSERT INTO settings (key, value, is_secret) VALUES ('active_model', ?, 0)`, [zaiModel]);

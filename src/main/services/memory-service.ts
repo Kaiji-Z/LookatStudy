@@ -52,28 +52,64 @@ export type MergeFn = (existing: string | null, incoming: string) => Promise<str
 
 /* ---------- 读 ---------- */
 
-/** 取某槽位 (category + nodeId) 的当前条目。global/pattern 作用域 nodeId=null。 */
+/**
+ * 取某槽位的当前条目。槽位键按类别不同：
+ *   - global:node_id IS NULL,course_id 无关(跨课程风格)
+ *   - node:node_id = nodeId(节点自带课程,不需 course_id)
+ *   - friction_pattern:node_id IS NULL + course_id = courseId(课程隔离);
+ *                       courseId 缺省 → 匹配 course_id IS NULL(无课程上下文的兜底槽)
+ */
 export function getSlot(
   db: Db,
   category: MemoryCategory,
   nodeId?: string | null,
+  courseId?: string | null,
 ): MemoryEntry | null {
-  const where =
-    nodeId === undefined || nodeId === null
-      ? and(eq(memoryTable.category, category), isNull(memoryTable.nodeId))
-      : and(eq(memoryTable.category, category), eq(memoryTable.nodeId, nodeId));
-  const row = db.select().from(memoryTable).where(where).get();
+  let row;
+  if (category === "node") {
+    row = db
+      .select()
+      .from(memoryTable)
+      .where(and(eq(memoryTable.category, "node"), eq(memoryTable.nodeId, nodeId ?? "")))
+      .get();
+  } else if (category === "friction_pattern") {
+    const courseCond = courseId
+      ? eq(memoryTable.courseId, courseId)
+      : isNull(memoryTable.courseId);
+    row = db
+      .select()
+      .from(memoryTable)
+      .where(
+        and(
+          eq(memoryTable.category, "friction_pattern"),
+          isNull(memoryTable.nodeId),
+          courseCond,
+        ),
+      )
+      .get();
+  } else {
+    // global:跨课程
+    row = db
+      .select()
+      .from(memoryTable)
+      .where(and(eq(memoryTable.category, "global"), isNull(memoryTable.nodeId)))
+      .get();
+  }
   return row ? mapRow(row) : null;
 }
 
 /**
  * 读学习者记忆 → 拼成"学习者记忆"块字符串。
- * 含：global（必带）+ node（仅当传 nodeId 且该节点有记忆）+ friction_pattern（有则带）。
+ * 含：global（必带,跨课程）+ node（仅当传 nodeId）+ friction_pattern（按 courseId 过滤,课程隔离）。
  * 全空 → 返回 null（agent-engine 不注入该块，新用户零副作用）。
  */
-export function getLearnerMemory(db: Db, nodeId?: string | null): string | null {
+export function getLearnerMemory(
+  db: Db,
+  nodeId?: string | null,
+  courseId?: string | null,
+): string | null {
   const globalRow = getSlot(db, "global");
-  const patternRow = getSlot(db, "friction_pattern");
+  const patternRow = getSlot(db, "friction_pattern", undefined, courseId);
   const nodeRow = nodeId ? getSlot(db, "node", nodeId) : null;
 
   const lines: string[] = [];
@@ -94,18 +130,33 @@ export async function remember(
   db: Db,
   input: RememberInput,
   merge: MergeFn,
+  courseId?: string | null,
 ): Promise<{ ok: true; summary: string }> {
   const category = input.category;
   const nodeId = category === "node" ? (input.nodeId ?? null) : null;
-  const existing = getSlot(db, category, nodeId);
+  // friction_pattern 课程隔离:存 course_id;global/node 不用(node 自带课程,global 跨课程)
+  const memCourseId = category === "friction_pattern" ? (courseId ?? null) : null;
+  const existing = getSlot(db, category, nodeId, memCourseId);
   const merged = await merge(existing?.summary ?? null, input.content);
-  upsertSlot(db, { category, nodeId, summary: merged, existingId: existing?.id });
+  upsertSlot(db, {
+    category,
+    nodeId,
+    courseId: memCourseId,
+    summary: merged,
+    existingId: existing?.id,
+  });
   return { ok: true, summary: merged };
 }
 
 function upsertSlot(
   db: Db,
-  args: { category: MemoryCategory; nodeId: string | null; summary: string; existingId?: string },
+  args: {
+    category: MemoryCategory;
+    nodeId: string | null;
+    courseId: string | null;
+    summary: string;
+    existingId?: string;
+  },
 ): void {
   if (args.existingId) {
     db.update(memoryTable)
@@ -117,6 +168,7 @@ function upsertSlot(
       .values({
         id: randomUUID(),
         nodeId: args.nodeId,
+        courseId: args.courseId,
         summary: args.summary,
         category: args.category,
       })

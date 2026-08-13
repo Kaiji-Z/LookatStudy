@@ -130,7 +130,7 @@ npm run verify:core && npx vite build && npm run self-test
 | Exercise | `services/exercise-service.ts` | AI exercise generation (mcq/fill_blank/true_false) + grading |
 | Dashboard | `services/dashboard-service.ts` | `getDashboard` — section mastery, metrics |
 | Progress | `services/progress-service.ts` | DB-injected progress read/write (headless-testable) |
-| Memory | `services/memory-service.ts` | 学习者模型(定性层,补 BKT 定量 + friction 原始事件之缺)。`remember(db,input,merge)` 注入式 merge(生产 `defaultLlmMerge(llm)` 写时 LLM 合并去重,测试确定性 stub);`getLearnerMemory(db,nodeId)` 拼块注入 agent 上下文;按 `(category,nodeId)` 槽位 upsert(global/node/friction_pattern)。flag `memory_system` 门控(默认 off,off=baseline) |
+| Memory | `services/memory-service.ts` | 学习者模型(定性层,补 BKT 定量 + friction 原始事件之缺)。`remember(db,input,merge,courseId)` 注入式 merge(生产 `defaultLlmMerge(llm)` 写时 LLM 合并去重,测试确定性 stub);`getLearnerMemory(db,nodeId,courseId)` 拼块注入 agent 上下文;按 `(category,nodeId,courseId)` 槽位 upsert。**课程隔离**:friction_pattern 带 course_id(领域卡点不跨课程串)、global 跨课程(风格不分课程)、node 靠 node_id(节点自带课程)。flag `memory_system` 门控(默认 off,off=baseline) |
 | Learner model | `services/learner-model-service.ts` | **读投影**(CQRS):`buildLearnerSnapshot(db,nodeId,{includeMemory})` 把散落的三处学习者状态注入(掌握度+教学策略 in 原 nodeContext + buildFrictionContext + memory)收成一个"【学习者当前状态】"块。`getTeachingStrategy(mastery)`(4 档,从 agent-engine 移入)。**不合并底层 store**(BKT/friction/memory 是不同数据类型,合并降正交)——只在读侧投影;`includeMemory` 显式传入(解耦 flag 机制) |
 | Search | `services/search-service.ts` | RAG `LIKE`-fallback search |
 | XP | `services/xp-service.ts` | Daily XP tracking (correct+10/wrong+1/mastered+50) |

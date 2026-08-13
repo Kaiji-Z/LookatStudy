@@ -204,6 +204,7 @@ export async function runAgentTurn(
   // + memory(综合层,memory_system flag 门控)→ 一个块。mastery/friction/strategy 不再散注。
   const learnerSnapshot = buildLearnerSnapshot(db, node?.id, {
     includeMemory: isFlagOn("memory_system"),
+    courseId: node?.courseId,
   });
 
   // 工具集：只读直接返回，写操作走 proposal
@@ -505,7 +506,12 @@ export async function runAgentTurn(
       }),
       execute: async (input) => {
         events.onToolCall?.("remember", input);
-        const res = await remember(db, input, defaultLlmMerge(llm.languageModel));
+        const res = await remember(
+          db,
+          input,
+          defaultLlmMerge(llm.languageModel),
+          node?.courseId,
+        );
         markDirty();
         return res;
       },

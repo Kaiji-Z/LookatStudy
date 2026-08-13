@@ -49,7 +49,7 @@ export function getTeachingStrategy(mastery: number | null): string {
 export function buildLearnerSnapshot(
   db: Db,
   nodeId: string | null | undefined,
-  opts?: { includeMemory?: boolean },
+  opts?: { includeMemory?: boolean; courseId?: string | null },
 ): string | null {
   if (!nodeId) return null;
 
@@ -62,8 +62,8 @@ export function buildLearnerSnapshot(
   // 原始事件层:近期 friction
   const friction = buildFrictionContext(db, nodeId);
 
-  // 综合层:memory(可选)
-  const memory = opts?.includeMemory ? getLearnerMemory(db, nodeId) : null;
+  // 综合层:memory(可选;courseId 用于 friction_pattern 课程隔离)
+  const memory = opts?.includeMemory ? getLearnerMemory(db, nodeId, opts.courseId) : null;
 
   const lines: string[] = [];
   lines.push("【学习者当前状态】");

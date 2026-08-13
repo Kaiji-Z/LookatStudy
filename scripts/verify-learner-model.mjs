@@ -17,6 +17,9 @@ import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
 import { buildLearnerSnapshot } from "../src/main/services/learner-model-service.ts";
+import { remember } from "../src/main/services/memory-service.ts";
+
+const detMerge = async (existing, incoming) => (existing ? `${existing} | ${incoming}` : incoming);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -110,5 +113,17 @@ console.log("✓ T5 无 nodeId → null");
 const snapDefault = buildLearnerSnapshot(env.db, "n1");
 assert.ok(!snapDefault.includes("偏好类比讲解"), "T6: 默认 includeMemory=undefined → memory 不进块");
 console.log("✓ T6 includeMemory 默认 undefined=不注入 memory(baseline)");
+
+// ============================================================
+// T7: snapshot 按 course 过滤 friction_pattern(方案2:friction_pattern 课程隔离)
+// ============================================================
+let envC = await makeDb();
+seed(envC, "nc", 0.3, "in_progress");
+await remember(envC.db, { category: "friction_pattern", content: "React hooks 依赖数组搞不清" }, detMerge, "courseReact");
+await remember(envC.db, { category: "friction_pattern", content: "极限的 epsilon 含义模糊" }, detMerge, "courseMath");
+const snapReact = buildLearnerSnapshot(envC.db, "nc", { includeMemory: true, courseId: "courseReact" });
+assert.ok(snapReact.includes("hooks"), "T7: snapshot(courseReact) 含 React pattern");
+assert.ok(!snapReact.includes("极限"), "T7: snapshot(courseReact) 不含 courseMath pattern(不串味)");
+console.log("✓ T7 snapshot 按 course 过滤 friction_pattern(buildLearnerSnapshot 透传 courseId)");
 
 console.log("\n=== ALL LEARNER-MODEL SNAPSHOT TESTS PASSED ✅ ===");

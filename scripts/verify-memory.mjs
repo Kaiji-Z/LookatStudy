@@ -132,4 +132,34 @@ assert.ok(res.ok === true, "T9: remember 返回 ok:true");
 assert.strictEqual(res.summary, "目标:转行前端", "T9: 返回合并后 summary");
 console.log("✓ T9 remember 返回值:{ok, summary}");
 
+// ============================================================
+// T10-T12: friction_pattern 按课程隔离(方案2);global 仍跨课程
+// ============================================================
+const c = await makeDb();
+// 不同课程的 friction_pattern 各自独立槽位
+await remember(c.db, { category: "friction_pattern", content: "混淆参数和变量" }, detMerge, "courseReact");
+await remember(c.db, { category: "friction_pattern", content: "极限定义搞不清" }, detMerge, "courseMath");
+
+const reactPat = getSlot(c.db, "friction_pattern", undefined, "courseReact");
+const mathPat = getSlot(c.db, "friction_pattern", undefined, "courseMath");
+assert.ok(reactPat && reactPat.summary.includes("参数"), "T10: courseReact 的 pattern 在");
+assert.ok(mathPat && mathPat.summary.includes("极限"), "T10: courseMath 的 pattern 在");
+assert.ok(!reactPat.summary.includes("极限"), "T10: courseReact 槽不被 courseMath 污染");
+const fpRows = c.db.select().from(schema.memory).all().filter((r) => r.category === "friction_pattern");
+assert.strictEqual(fpRows.length, 2, "T10: 两个课程各一个 friction_pattern 槽(不合并)");
+console.log("✓ T10 friction_pattern 按课程隔离:不同课程各自独立槽位");
+
+// T11: getLearnerMemory(db, nodeId, courseId) 按 course 过滤 friction_pattern
+const blockReact = getLearnerMemory(c.db, undefined, "courseReact");
+assert.ok(blockReact.includes("参数"), "T11: courseReact 块含其 pattern");
+assert.ok(!blockReact.includes("极限"), "T11: courseReact 块不含 courseMath 的 pattern(不串味)");
+console.log("✓ T11 getLearnerMemory 按 course 过滤:不串味");
+
+// T12: global 仍跨课程(courseMath 块也含 global,因 global 无 course 作用域)
+await remember(c.db, { category: "global", content: "吃类比讲解" }, detMerge);
+const blockMath = getLearnerMemory(c.db, undefined, "courseMath");
+assert.ok(blockMath.includes("吃类比"), "T12: global 跨课程,courseMath 块也含 global(风格不分课程)");
+assert.ok(blockMath.includes("极限"), "T12: courseMath 块含自己的 friction_pattern");
+console.log("✓ T12 global 仍跨课程(风格/偏好不分课程)");
+
 console.log("\n=== ALL MEMORY SYSTEM TESTS PASSED ✅ ===");

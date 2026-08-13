@@ -142,6 +142,8 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("content_nodes", "world", "TEXT NOT NULL DEFAULT 'study'");
   // 仓库原文语言 (LLM Step 2 判断)
   addColumnIfMissing("courses", "source_lang", "TEXT");
+  // 学习者记忆:friction_pattern 课程隔离(方案2);NULL=跨课程(如 global 风格)
+  addColumnIfMissing("memory", "course_id", "TEXT");
   // v0.3 康奈尔笔记法:canvas_items 加溯源 + 练习记录字段
   addColumnIfMissing("canvas_items", "source_type", "TEXT");
   addColumnIfMissing("canvas_items", "source_anchor", "TEXT");

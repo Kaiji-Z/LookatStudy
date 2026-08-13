@@ -258,16 +258,20 @@ you in a public release notes draft, it belongs in `dev-docs/`.
   `dev-docs/` (architecture/build/roadmap/historical design plans), and
   `memory/` (per-developer agent memory) are gitignored. They are not project
   content and must never appear in a public release.
-- **Branch BEFORE you start coding, not at commit time.** The maintainer often
-  iterates on **multiple features in parallel sessions**, so a branch's value is
-  isolation *during the work* — keeping concurrent sessions from colliding on
-  `main`. That value is lost if you do all the work on `main` and only open a
-  branch right before committing (by then the work was never isolated). So: at
-  the **start** of each iteration, decide — discrete feature / parallel work in
-  play? → `git checkout -b feat/...` first, *then* code. Trivial one-line fixes
-  can go straight to `main`. If work already happened on `main` (e.g. you
-  forgot), don't retroactively branch — commit it to `main` and branch-first
-  next time.
+- **Open a worktree (not just a branch) before coding on any iteration.** The
+  maintainer iterates on **multiple features in parallel sessions**. A bare
+  `git checkout -b` is *not* enough isolation: all sessions share one working
+  directory, so when session B checks out its branch it silently carries session
+  A's uncommitted changes along — they drift onto the wrong branch. (This
+  actually happened: soul-rename work done on `feat/soul-rename` got carried onto
+  another session's `feature/ui-polish-token-a11y` when the branch was switched
+  mid-session.) A **worktree** gives each branch its own working directory, so
+  concurrent sessions never trample each other's tree. So: at the **start** of
+  each iteration — `git worktree add -b feat/xxx ../LookatStudy-xxx` (sibling dir
+  convention), `npm install` in it (a worktree has its own `node_modules`),
+  *then* code. Trivial one-line fixes can go straight to `main`. If work already
+  happened on `main` (you forgot), don't retroactively branch — commit to `main`
+  and worktree-first next time.
 - **Features ship on a branch and merge to `main` with `--no-ff`.** The merge
   commit summarizes the feature; the branch holds the granular history.
 - **Never rewrite public history.** `main` is shared; if a commit is wrong,

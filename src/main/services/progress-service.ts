@@ -120,10 +120,13 @@ export function markNodeAttempted(
   // 已有 mastery 的保留(BKT 累积值不被尝试动作重置)。
   const mastery = existing?.mastery ?? BKT_DEFAULTS.pInit;
   const crownLevel = existing?.crownLevel ?? 0;
+  // 皇冠持久:已通关(mastered)的节点点击复习不降级——只刷新 lastAttemptAt,
+  // 保留 mastered 状态 + 累积 mastery + crownLevel。否则用户一点已通关课就丢皇冠。
+  const nextStatus = existing?.status === "mastered" ? "mastered" : "in_progress";
 
   if (existing) {
     db.update(progressTable)
-      .set({ lastAttemptAt: iso, status: "in_progress", mastery })
+      .set({ lastAttemptAt: iso, status: nextStatus, mastery })
       .where(eq(progressTable.nodeId, nodeId))
       .run();
   } else {
@@ -147,7 +150,7 @@ export function markNodeAttempted(
   onAttempted?.();
   return {
     nodeId,
-    status: "in_progress",
+    status: nextStatus,
     crownLevel,
     lastAttemptAt: iso,
     mastery,

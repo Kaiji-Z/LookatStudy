@@ -123,7 +123,7 @@ import {
 // Starter prompts
 import { getStarterPrompts } from "../services/starter-prompts-service.js";
 // XP 系统
-import { getXpStatus } from "../services/xp-service.js";
+import { getXpStatus, addXpCorrect, addXpWrong } from "../services/xp-service.js";
 // 导出
 import { collectExportData, exportJson, exportMarkdown } from "../services/export-service.js";
 // 练习题服务
@@ -990,6 +990,8 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   // 答题观测是确定性的(无需 LLM 判断/人审),直接 apply。
   ipcMain.handle("quiz:recordAnswer", async (_e, nodeId: string, correct: boolean) => {
     if (!nodeId) return { applied: false };
+    // XP 即时反馈(与 exercise:submit 对齐:答对+10/答错+1)。
+    correct ? addXpCorrect(getDb()) : addXpWrong(getDb());
     // P4: 记录应用前 status,用于检测"毕业时刻"过渡(mastered flag 驱动庆祝)。
     const prevRow = getDb().select().from(progressTable).where(eq(progressTable.nodeId, nodeId)).get();
     const wasMastered = prevRow?.status === "mastered";

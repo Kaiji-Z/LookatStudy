@@ -172,4 +172,20 @@ assert.strictEqual(getProgress(db, "les-8")?.status, "available", "T12: 同章�
 assert.strictEqual(getProgress(db, "les-9")?.status, "available", "T12: 下一章第一课(les-9)应同时解锁(双线推进)");
 console.log(`✓ T12 双线推进: 点课7(sec-E)→课8(同章)+课9(下章)同时解锁`);
 
+// === T13: 皇冠持久 —— 已通关节点点击复习不降级 ===
+// 场景:用户已掌握一课(mastered, mastery≥0.9, crown=5)。点击该节点复习,
+// markNodeAttempted 不应把 status 降级为 in_progress(否则皇冠消失,用户体验差)。
+// 只刷新 lastAttemptAt,保留 mastered + mastery + crownLevel。
+// 注:updateProgress 不写 mastery(设计如此),用 SQL 直写模拟 proposal-service 路径。
+sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, order_idx) VALUES ('les-m', 'c2', 'sec-a', 'lesson', '已通关课', 3)`);
+sqljs.run(`INSERT INTO progress (node_id, status, mastery, crown_level) VALUES ('les-m', 'mastered', 0.95, 5)`);
+const markedMastered = markNodeAttempted(db, "les-m");
+assert.strictEqual(markedMastered.status, "mastered", "T13: 通关节点点击后 status 仍为 mastered(不降级)");
+assert.strictEqual(markedMastered.crownLevel, 5, "T13: crownLevel 仍为 5");
+assert.ok((markedMastered.mastery ?? 0) >= 0.9, "T13: mastery 保留≥0.9");
+const lesMDB = getProgress(db, "les-m");
+assert.strictEqual(lesMDB?.status, "mastered", "T13: DB 里 status 仍 mastered");
+assert.strictEqual(lesMDB?.crownLevel, 5, "T13: DB 里 crownLevel 仍 5");
+console.log(`✓ T13 皇冠持久: 通关节点点击复习 → status 保持 mastered(不降级), crown+mastery 保留`);
+
 console.log("\n=== ALL PROGRESS SERVICE TESTS PASSED ✅ ===");

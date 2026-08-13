@@ -40,7 +40,9 @@ export async function generateExercise(
   const node = db.select().from(contentNodes).where(eq(contentNodes.id, nodeId)).get();
   if (!node) throw new Error(`节点不存在: ${nodeId}`);
 
-  const exerciseType: ExerciseType = type ?? "mcq";
+  // fill_blank 已废弃(归一化匹配无法处理同义词/改写,不够客观)→ 降级为 mcq。
+  // 保留 ExerciseType 联合体 + gradeAnswer 分支仅为兼容 DB 中的历史 fill_blank 题。
+  const exerciseType: ExerciseType = !type || type === "fill_blank" ? "mcq" : type;
   const llm = resolveLlm(db);
 
   const prompt = buildGenerationPrompt(node.title, node.content ?? "(无内容，基于标题出题)", exerciseType);

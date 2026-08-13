@@ -39,8 +39,9 @@ import {
 import { buildSystemPrompt } from "../souls/prompt-builder.js";
 import {
   createProposal,
-  type LearningOperation,
+  applyProposal,
 } from "../proposal-service.js";
+import { addXpCorrect, addXpWrong } from "../xp-service.js";
 // P3: 注入学习者近期卡点,让 agent "看见并记住"挣扎点(relatedness + 自适应)
 import { buildFrictionContext } from "../pure/friction-context.js";
 
@@ -287,7 +288,7 @@ export async function runAgentTurn(
 
     record_answer: tool({
       description:
-        "记录学习者的一次答题观测。会生成一个 Proposal（pending）等人确认——不会直接改掌握度。",
+        "记录学习者的一次答题观测，自动更新掌握度（答对涨、答错降）。不需要人确认——判分由你(AI)完成，结果即时生效。",
       inputSchema: z.object({
         correct: z.boolean().describe("这次观测学习者是否答对"),
         rationale: z.string().describe("为什么这么判定（一句）"),
@@ -295,22 +296,18 @@ export async function runAgentTurn(
       execute: async (input) => {
         const { correct, rationale } = input;
         events.onToolCall?.("record_answer", { correct, rationale });
-        const ops: LearningOperation[] = [
-          { type: "update_mastery", nodeId, correct },
-        ];
+        // 自动 create + apply（与 quiz:recordAnswer 对齐：AI 已判分，不需人再确认）。
         const proposal = createProposal(db, {
           nodeId,
-          operations: ops,
+          operations: [{ type: "update_mastery", nodeId, correct }],
           rationale: `答题观测：${rationale}`,
         });
-        events.onProposalCreated?.(
-          proposal.id,
-          `提议更新掌握度（${correct ? "答对" : "答错"}）：${rationale}`,
-        );
+        applyProposal(db, proposal.id);
+        // XP 即时反馈（答对+10/答错+1），与 quiz/exercise 对齐。
+        correct ? addXpCorrect(db) : addXpWrong(db);
         return {
-          proposalId: proposal.id,
-          status: "pending",
-          message: "已生成提议，等学习者确认后才会更新掌握度。",
+          status: "applied",
+          message: `掌握度已更新（${correct ? "答对" : "答错"}）：${rationale}`,
         };
       },
     }),

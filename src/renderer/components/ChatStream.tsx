@@ -465,7 +465,7 @@ function PartRenderer({
   if (part.type === "text") {
     return (
       <div
-        className="prose prose-sm max-w-[80ch] leading-relaxed select-text"
+        className="prose prose-sm max-w-[80ch] leading-relaxed break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_img]:max-w-full [&_video]:max-w-full [&_iframe]:max-w-full select-text"
         data-testid="part-text"
       >
         <ReactMarkdown
@@ -656,6 +656,10 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components
         {children}
       </a>
     );
+  },
+  // 宽表格包进 overflow 容器,横向滚动不撑爆对话流
+  table({ children }) {
+    return <div className="overflow-x-auto my-4"><table>{children}</table></div>;
   },
 };
 

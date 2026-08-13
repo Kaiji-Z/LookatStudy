@@ -361,7 +361,7 @@ function ContentTab({
             </div>
           )}
         >
-        <div ref={proseRef} className="prose prose-sm max-w-[80ch] leading-relaxed [&_pre]:max-w-full [&_pre]:overflow-x-auto select-text">
+        <div ref={proseRef} className="prose prose-sm max-w-[80ch] leading-relaxed break-words overflow-x-auto [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_img]:max-w-full [&_video]:max-w-full [&_iframe]:max-w-full select-text">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
@@ -380,6 +380,10 @@ function ContentTab({
               // 匹配不到则保持原 src(可能是外部 URL,浏览器直接加载)。
               img({ src, alt, ...props }) {
                 return <InlineAssetImage src={src} alt={alt} assets={assets} {...props} />;
+              },
+              // 宽表格(如课程大纲多列表)包进 overflow 容器,横向滚动不撑爆讲解区
+              table({ children }) {
+                return <div className="overflow-x-auto my-4"><table>{children}</table></div>;
               },
             }}
           >

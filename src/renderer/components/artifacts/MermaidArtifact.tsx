@@ -226,7 +226,7 @@ export function MermaidArtifact({ data }: { data: unknown }) {
 
       {/* harness 修复警告 */}
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400 flex items-start gap-1" data-testid="artifact-warnings">
+        <div className="mt-2 text-caption text-warning flex items-start gap-1" data-testid="artifact-warnings">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{d.warnings.join("; ")}</span>
         </div>

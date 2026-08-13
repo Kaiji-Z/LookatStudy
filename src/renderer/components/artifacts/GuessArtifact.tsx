@@ -86,7 +86,7 @@ export function GuessArtifact({
       )}
 
       {d.warnings && d.warnings.length > 0 && (
-        <div className="mt-2 text-caption text-amber-600 dark:text-amber-400" data-testid="artifact-warnings">
+        <div className="mt-2 text-caption text-warning" data-testid="artifact-warnings">
           {d.warnings.join("; ")}
         </div>
       )}

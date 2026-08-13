@@ -87,7 +87,7 @@ export function QuizArtifact({
     return (
       <div className="surface-card p-4 text-center" data-testid="artifact-quiz-done">
         <div className="text-2xl mb-2">{score.correct === score.total ? "🎉" : "📚"}</div>
-        <div className="text-body font-bold text-neutral-800 dark:text-neutral-200">
+        <div className="text-body font-bold text-ink">
           {t("quiz.scoreSummary", { correct: score.correct, total: score.total })}
         </div>
         <div className="text-label text-ink-muted mt-1">
@@ -150,7 +150,7 @@ export function QuizArtifact({
         </span>
       </div>
 
-      <div className="text-body text-neutral-800 dark:text-neutral-200 font-medium mb-3 leading-relaxed">
+      <div className="text-body text-ink font-medium mb-3 leading-relaxed">
         {q.prompt}
       </div>
 
@@ -172,7 +172,7 @@ export function QuizArtifact({
                     ? "border-warning bg-warning/10 text-warning animate-answer-wrong"
                     : isSelected
                       ? "border-accent bg-accent/10 text-accent"
-                      : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600"
+                      : "border-[var(--border)] text-ink-muted hover:border-[var(--border)]"
               } ${submitted ? "cursor-default" : "cursor-pointer"}`}
             >
               <span className="font-bold mr-2">{String.fromCharCode(65 + idx)}</span>
@@ -197,7 +197,7 @@ export function QuizArtifact({
             {isCorrect ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
             <span>{isCorrect ? t("quiz.correct") : t("quiz.wrong")}</span>
           </div>
-          <div className="text-neutral-700 dark:text-neutral-300">{q.explanation}</div>
+          <div className="text-ink-muted">{q.explanation}</div>
         </div>
       )}
 

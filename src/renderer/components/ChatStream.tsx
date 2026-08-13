@@ -283,14 +283,14 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                 <div className="text-center mb-4">
                   <div className="text-4xl mb-2 opacity-30">📖</div>
                   {/* 问候(P1.4):降低启动能垒,纯前端无 DB 写 */}
-                  <div className="text-body font-bold text-neutral-700 dark:text-neutral-300 mb-1">{t("chat.empty.greeting")}</div>
+                  <div className="text-body font-bold text-ink-muted mb-1">{t("chat.empty.greeting")}</div>
                   <div className="text-ink-muted text-label">{t("chat.empty.overview")}</div>
                 </div>
                 {/* 摘要卡片 */}
                 {summary ? (
                   <div className="surface-card p-4 mb-4">
                     <div className="text-caption font-bold text-brand uppercase tracking-wider mb-2">{t("chat.empty.summary.title")}</div>
-                    <div className="text-body text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
+                    <div className="text-body text-ink-muted leading-relaxed whitespace-pre-wrap">
                       {summary}
                     </div>
                   </div>
@@ -320,7 +320,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                 ) : (
                   /* 未配置 AI 模型:内容已在右侧讲解,引导去配置——消除冷启动死胡同(P1.1/P1.3) */
                   <div className="surface-card p-4 mb-2" data-testid="keyless-card">
-                    <div className="text-body font-bold text-neutral-700 dark:text-neutral-300 mb-1">{t("chat.empty.keyless.title")}</div>
+                    <div className="text-body font-bold text-ink-muted mb-1">{t("chat.empty.keyless.title")}</div>
                     <div className="text-label text-ink-muted mb-3">{t("chat.empty.keyless.desc")}</div>
                     <button
                       onClick={onGotoSettings}
@@ -336,7 +336,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
               /* 未选节点:引导选节点(此时 ChatComposer 仍渲染,soul-picker 可见) */
               <div className="text-center mt-16" data-testid="no-node-selected">
                 <div className="text-5xl mb-3 opacity-25">🗺️</div>
-                <div className="text-body font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                <div className="text-body font-bold text-ink-muted mb-1">
                   {t("chat.empty.no_node.title")}
                 </div>
                 <div className="text-body text-ink-muted max-w-xs mx-auto">
@@ -375,11 +375,11 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
           data-testid="scroll-to-bottom"
           aria-label={t("chat.scroll.bottom")}
           title={t("chat.scroll.bottom")}
-          className="absolute bottom-4 right-4 w-9 h-9 rounded-full bg-neutral-900 dark:bg-neutral-100 text-neutral-100 dark:text-neutral-900 shadow-elevated flex items-center justify-center hover:scale-105 active:scale-95 transition-transform msg-enter"
+          className="absolute bottom-4 right-4 w-9 h-9 rounded-full bg-ink-strong text-surface-0 shadow-elevated flex items-center justify-center hover:scale-105 active:scale-95 transition-transform msg-enter"
         >
           <ChevronDown className="w-5 h-5" />
           {streaming && (
-            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-brand rounded-full border-2 border-neutral-950 animate-pulse" />
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-brand rounded-full border-2 border-[var(--ink-strong)] animate-pulse" />
           )}
         </button>
       )}
@@ -442,7 +442,7 @@ function MessageRowV2({
     return (
       <div className="msg-enter flex justify-end" data-testid="msg-user" data-msg-id={msg.id}>
         <div className="max-w-[85%] bg-ink/[0.04] rounded-2xl rounded-br-md px-4 py-2.5">
-          <div className="font-medium text-neutral-900 dark:text-neutral-100 whitespace-pre-wrap select-text text-body">
+          <div className="font-medium text-ink-strong whitespace-pre-wrap select-text text-body">
             {msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
           </div>
         </div>
@@ -543,18 +543,18 @@ function ReasoningBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div
-      className="rounded-lg bg-neutral-100 dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800"
+      className="rounded-lg bg-surface-1/60 border border-[var(--border-faint)]"
       data-testid="part-reasoning"
     >
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-3 py-1.5 text-label font-bold text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-1.5 text-label font-bold text-ink-muted hover:text-ink-strong transition-colors"
       >
         <span>{open ? "▾" : "▸"} {t("chat.reasoning.label")}</span>
         <span className="text-ink-muted font-normal">{t("chat.reasoning.chars", { n: text.length })}</span>
       </button>
       {open && (
-        <div className="px-3 pb-2.5 text-label text-ink-muted whitespace-pre-wrap leading-relaxed border-t border-neutral-200 dark:border-neutral-800/60 pt-2">
+        <div className="px-3 pb-2.5 text-label text-ink-muted whitespace-pre-wrap leading-relaxed border-t border-[var(--border-faint)]/60 pt-2">
           {text}
         </div>
       )}
@@ -598,11 +598,11 @@ function ToolCallBlock({
   if (proposalData?.proposalId) {
     return (
       <div className="proposal-card rounded-xl p-3 border border-brand/30 bg-brand/5" data-testid="part-proposal">
-        <div className="text-neutral-700 dark:text-neutral-200 text-body mb-2 flex items-center gap-1.5">
+        <div className="text-ink-muted text-body mb-2 flex items-center gap-1.5">
           <ClipboardList className="w-3.5 h-3.5" />
           <span className="font-bold">{t("chat.proposal.title")}</span>
         </div>
-        <div className="text-neutral-600 dark:text-neutral-300 text-body mb-3">
+        <div className="text-ink-muted text-body mb-3">
           {proposalData.message ?? t("chat.proposal.fallback", { tool: toolName })}
         </div>
         <div className="flex gap-2">
@@ -654,7 +654,7 @@ function ToolCallBlock({
   const label = toolLabel(toolName, t);
   return (
     <div
-      className="inline-flex items-center gap-1.5 text-label px-2.5 py-1 rounded-md bg-neutral-100 dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800"
+      className="inline-flex items-center gap-1.5 text-label px-2.5 py-1 rounded-md bg-surface-1/60 border border-[var(--border-faint)]"
       data-testid="part-tool"
       data-tool={toolName}
       data-state={state}
@@ -671,7 +671,7 @@ function ToolCallBlock({
         </>
       ) : (
         <>
-          <Wrench className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+          <Wrench className="w-3.5 h-3.5 text-ink-faint shrink-0" />
           <span className="text-ink-muted">{label}</span>
         </>
       )}
@@ -734,8 +734,8 @@ function CodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreElement>)
 
   return (
     <div className="relative group my-3" data-testid="md-codeblock">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-neutral-100 dark:bg-neutral-900 border border-b-0 border-neutral-200 dark:border-neutral-700 rounded-t-md">
-        <span className="text-caption font-mono text-neutral-600 dark:text-neutral-400 uppercase tracking-wider">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-surface-1 border border-b-0 border-[var(--border-faint)] rounded-t-md">
+        <span className="text-caption font-mono text-ink-faint uppercase tracking-wider">
           {lang || "code"}
         </span>
         <button

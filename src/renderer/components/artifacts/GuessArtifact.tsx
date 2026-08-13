@@ -50,7 +50,7 @@ export function GuessArtifact({
         <span className="text-label font-bold text-accent">{t("guess.header")}</span>
       </div>
 
-      <div className="text-body text-neutral-800 dark:text-neutral-200 font-medium mb-3 leading-relaxed">
+      <div className="text-body text-ink font-medium mb-3 leading-relaxed">
         {d.prompt}
       </div>
 
@@ -68,8 +68,8 @@ export function GuessArtifact({
                 isPicked
                   ? "border-accent bg-accent/10 text-accent"
                   : disabled
-                    ? "border-neutral-200 dark:border-neutral-800 text-neutral-400 dark:text-neutral-600 cursor-default"
-                    : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-accent hover:text-accent cursor-pointer"
+                    ? "border-[var(--border-faint)] text-ink-faint cursor-default"
+                    : "border-[var(--border)] text-ink-muted hover:border-accent hover:text-accent cursor-pointer"
               }`}
             >
               <span>{opt.label}</span>

@@ -332,7 +332,7 @@ function ContentTab({
             ? t("notebook.node_type.concept")
             : t("notebook.node_type.lesson")}
       </div>
-      <h2 className="text-xl font-extrabold mb-4 text-neutral-900 dark:text-neutral-100 tracking-tight">
+      <h2 className="text-xl font-extrabold mb-4 text-ink-strong tracking-tight">
         {selectedNode.title}
       </h2>
       {loading ? (
@@ -349,7 +349,7 @@ function ContentTab({
               <div className="text-body text-warning mb-2">
                 {t("notebook.content.render_failed")}
               </div>
-              <pre className="text-caption text-neutral-500 whitespace-pre-wrap break-words bg-neutral-100 dark:bg-neutral-800 p-3 rounded">
+              <pre className="text-caption text-ink-faint whitespace-pre-wrap break-words bg-surface-1 p-3 rounded">
                 {content.slice(0, 500)}
                 {content.length > 500 ? "\n" + t("notebook.content.truncated") : ""}
               </pre>
@@ -398,8 +398,8 @@ function ContentTab({
       )}
       {/* 多模态:集中插图区(当前节点的全部图片缩略图网格) */}
       {assets.length > 0 && (
-        <div className="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700">
-          <div className="text-label font-bold text-neutral-600 dark:text-neutral-300 mb-2 flex items-center gap-1">
+        <div className="mt-6 pt-4 border-t border-[var(--border-faint)]">
+          <div className="text-label font-bold text-ink-muted mb-2 flex items-center gap-1">
             <ImageIcon className="w-3.5 h-3.5" />
             <span>{t("notebook.images.heading", { n: assets.length })}</span>
           </div>
@@ -440,7 +440,7 @@ function ContentTab({
         </div>
       )}
       {selectedNode.sourcePath && (
-        <div className="mt-6 pt-3 border-t border-neutral-200 dark:border-neutral-800 text-label text-ink-muted">
+        <div className="mt-6 pt-3 border-t border-[var(--border-faint)] text-label text-ink-muted">
           {t("notebook.source.label", { path: selectedNode.sourcePath })}
         </div>
       )}
@@ -625,18 +625,18 @@ function ZoneSection({
   }, [count]);
   return (
     <section
-      className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden"
+      className="rounded-xl border border-[var(--border-faint)] overflow-hidden"
       data-testid={testid}
     >
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="w-full flex items-center gap-2 px-3 py-2.5 bg-neutral-100 dark:bg-neutral-900/50 hover:bg-neutral-200/60 dark:hover:bg-neutral-900 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2.5 bg-surface-1/50 hover:bg-surface-3/60 transition-colors text-left"
         data-testid={`${testid}-toggle`}
       >
         <ChevronDown className={`w-4 h-4 text-ink-muted transition-transform duration-200 ease-out-back ${open ? "" : "-rotate-90"}`} />
         <span className="text-body text-ink-strong flex items-center">{icon}</span>
-        <span className="text-body font-bold text-neutral-800 dark:text-neutral-200">{title}</span>
+        <span className="text-body font-bold text-ink">{title}</span>
         <span className="text-caption font-bold px-1.5 py-0.5 rounded-full bg-brand/15 text-brand">{count}</span>
         <span className="text-label text-ink-muted ml-auto truncate">{subtitle}</span>
       </button>
@@ -752,7 +752,7 @@ function CanvasItemCard({
         <div className="flex items-start gap-2">
           <Quote className="w-4 h-4 text-accent shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <div className="text-body text-neutral-800 dark:text-neutral-200 leading-relaxed whitespace-pre-wrap">
+            <div className="text-body text-ink leading-relaxed whitespace-pre-wrap">
               {noteText}
             </div>
             {/* 用户注释:已有 → 显示引用块 + 编辑;编辑态 → textarea */}
@@ -767,7 +767,7 @@ function CanvasItemCard({
                       ? t("notebook.note.comment.ph_edit")
                       : t("notebook.note.comment.ph_new")
                   }
-                  className="w-full text-label leading-relaxed p-2 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 resize-none focus:outline-none focus:border-brand"
+                  className="w-full text-label leading-relaxed p-2 rounded-md border border-[var(--border-faint)] bg-surface-0 text-ink resize-none focus:outline-none focus:border-brand"
                   data-testid={`note-comment-textarea-${item.id.slice(0, 8)}`}
                 />
                 <div className="flex items-center gap-2">
@@ -780,7 +780,7 @@ function CanvasItemCard({
                   </button>
                   <button
                     onClick={handleCancelEdit}
-                    className="inline-flex items-center gap-1 text-caption text-ink-muted hover:text-neutral-800 dark:hover:text-neutral-200"
+                    className="inline-flex items-center gap-1 text-caption text-ink-muted hover:text-ink"
                     data-testid={`note-comment-cancel-${item.id.slice(0, 8)}`}
                   >
                     <X className="w-3 h-3" /> {t("notebook.action.cancel")}
@@ -862,7 +862,7 @@ function CanvasItemCard({
         <span className="text-body inline-flex items-center text-ink-strong">
           <ArtifactIcon className="w-4 h-4" />
         </span>
-        <span className="text-label font-bold text-neutral-700 dark:text-neutral-300 flex-1 truncate">
+        <span className="text-label font-bold text-ink-muted flex-1 truncate">
           {item.title ?? artifactLabel(t, item.artifactType)}
         </span>
         {/* quiz 上次结果徽章 */}
@@ -946,7 +946,7 @@ function TabBtn({
       <span>{label}</span>
       {badge && (
         <span className={`text-caption px-1.5 py-0.5 rounded-full font-bold ${
-          active ? "bg-brand/30 text-brand" : "bg-ink/10 text-neutral-600 dark:text-neutral-400"
+          active ? "bg-brand/30 text-brand" : "bg-ink/10 text-ink-faint"
         }`}>
           {badge}
         </span>
@@ -1045,7 +1045,7 @@ function AssetThumb({ asset }: { asset: NodeAsset }) {
         {dataUrl ? (
           <img src={dataUrl} alt={asset.altText ?? asset.filename} data-asset-id={asset.id} className="w-full h-24 object-cover" loading="lazy" />
         ) : (
-          <div className="w-full h-24 flex items-center justify-center text-neutral-400 text-caption">{t("notebook.asset.loading")}</div>
+          <div className="w-full h-24 flex items-center justify-center text-ink-faint text-caption">{t("notebook.asset.loading")}</div>
         )}
       </button>
       {expanded && dataUrl && (

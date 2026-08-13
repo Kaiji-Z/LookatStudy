@@ -144,7 +144,7 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
       <div className="flex items-center justify-between mb-3 gap-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Share2 className="w-4 h-4 text-ink-muted shrink-0" />
-          <h3 className="text-body font-bold text-neutral-800 dark:text-neutral-200 truncate">
+          <h3 className="text-body font-bold text-ink truncate">
             {d.title}
           </h3>
         </div>
@@ -153,14 +153,14 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
           <button
             onClick={zoomOut}
             disabled={zoom <= MIN_ZOOM}
-            className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-label font-bold flex items-center justify-center"
+            className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
             title={t("artifact.zoomOut")}
           >
             −
           </button>
           <button
             onClick={zoomReset}
-            className="px-1.5 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-caption font-bold tabular-nums"
+            className="px-1.5 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 text-caption font-bold tabular-nums"
             title={t("artifact.zoomReset")}
           >
             {Math.round(zoom * 100)}%
@@ -168,7 +168,7 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
           <button
             onClick={zoomIn}
             disabled={zoom >= MAX_ZOOM}
-            className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-30 text-label font-bold flex items-center justify-center"
+            className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
             title={t("artifact.zoomIn")}
           >
             +
@@ -184,7 +184,7 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
         ref={dragPan.containerRef}
         onMouseDown={dragPan.onMouseDown}
         onWheel={handleWheel}
-        className={`bg-neutral-50 dark:bg-neutral-900/40 rounded-lg p-2 overflow-auto min-h-[160px] max-h-[500px] select-none ${dragPan.isDragging ? "cursor-grabbing" : "cursor-grab"}`}
+        className={`bg-surface-0/40 rounded-lg p-2 overflow-auto min-h-[160px] max-h-[500px] select-none ${dragPan.isDragging ? "cursor-grabbing" : "cursor-grab"}`}
         style={{ touchAction: "pinch-zoom" }}
         data-testid="conceptmap-render-area"
       >

@@ -170,7 +170,8 @@ CREATE TABLE IF NOT EXISTS memory (
 );
 CREATE INDEX IF NOT EXISTS idx_memory_node ON memory(node_id);
 CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category);
-CREATE INDEX IF NOT EXISTS idx_memory_course ON memory(course_id);
+-- idx_memory_course 不放这:旧库迁移时 course_id 列由 addColumnIfMissing 在 schema.sql
+-- 之后才加,此处建索引会因列不存在而崩。改在 runMigrations 里 addColumn 之后建。
 
 -- ============================================================
 -- 自定义 Provider（用户自建 LLM 端点，覆盖预设无法穷举的场景）

@@ -144,6 +144,8 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("courses", "source_lang", "TEXT");
   // 学习者记忆:friction_pattern 课程隔离(方案2);NULL=跨课程(如 global 风格)
   addColumnIfMissing("memory", "course_id", "TEXT");
+  // course_id 列加完后再建索引(不能放 schema.sql——旧库迁移时列还没加,建索引会崩)
+  db.run("CREATE INDEX IF NOT EXISTS idx_memory_course ON memory(course_id);");
   // v0.3 康奈尔笔记法:canvas_items 加溯源 + 练习记录字段
   addColumnIfMissing("canvas_items", "source_type", "TEXT");
   addColumnIfMissing("canvas_items", "source_anchor", "TEXT");

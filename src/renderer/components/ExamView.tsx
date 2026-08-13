@@ -278,7 +278,7 @@ function ExamResultCard({
     <div className="flex-1 overflow-y-auto px-4 py-4" data-testid="exam-result">
       {/* 得分头部 */}
       <div className="text-center mb-5">
-        <div className={`text-4xl font-extrabold mb-1 ${passed ? "text-accent" : "text-ink-faint"}`}>
+        <div className={`text-hero font-extrabold mb-1 ${passed ? "text-accent" : "text-ink-faint"}`}>
           {correctCount}/{totalCount}
         </div>
         <div className="text-body text-ink-muted mb-3">

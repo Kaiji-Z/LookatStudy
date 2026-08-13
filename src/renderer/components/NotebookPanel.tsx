@@ -332,7 +332,7 @@ function ContentTab({
             ? t("notebook.node_type.concept")
             : t("notebook.node_type.lesson")}
       </div>
-      <h2 className="text-xl font-extrabold mb-4 text-ink-strong tracking-tight">
+      <h2 className="text-title font-extrabold mb-4 text-ink-strong tracking-tight">
         {selectedNode.title}
       </h2>
       {loading ? (
@@ -625,7 +625,7 @@ function ZoneSection({
   }, [count]);
   return (
     <section
-      className="rounded-xl border border-[var(--border-faint)] overflow-hidden"
+      className="rounded-xl bg-surface-1 overflow-hidden"
       data-testid={testid}
     >
       <button
@@ -746,7 +746,7 @@ function CanvasItemCard({
     };
     return (
       <div
-        className={`surface-card p-3 relative ${item.pinned ? "border-brand/40 bg-brand/5" : ""}`}
+        className={`bg-surface-2 rounded-lg p-3 relative ${item.pinned ? "ring-1 ring-brand/40 bg-brand/5" : ""}`}
         data-testid={`canvas-item-${item.id.slice(0, 8)}`}
       >
         <div className="flex items-start gap-2">
@@ -854,7 +854,7 @@ function CanvasItemCard({
   const ArtifactIcon = ARTIFACT_ICON[item.artifactType] ?? Puzzle;
   return (
     <div
-      className={`surface-card p-3 relative ${item.pinned ? "border-brand/40 bg-brand/5" : ""}`}
+      className={`bg-surface-2 rounded-lg p-3 relative ${item.pinned ? "ring-1 ring-brand/40 bg-brand/5" : ""}`}
       data-testid={`canvas-item-${item.id.slice(0, 8)}`}
     >
       {/* 卡顶:类型 + 标题 + last_result 徽章 + 操作 */}

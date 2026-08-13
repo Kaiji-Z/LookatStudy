@@ -69,7 +69,7 @@ npm run dev               # vite only (renderer debugging, HMR)
 npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
-npm run verify:core       # 42 pure-Node/tsx logic test suites
+npm run verify:core       # 52 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
 npm run ui-test           # real-GUI verification (headless Electron, 29 DOM assertions incl. a11y + reactive i18n + cold-start gating + friction entry + competence badges + due/interleave/dashboard + start-here cue)
 npm run lint              # oxlint
@@ -78,6 +78,7 @@ npx tsc -p tsconfig.electron.json --noEmit  # typecheck main/preload
 npx tsx scripts/live-test/live-test-teaching.mjs    # LLM teaching behavior test (needs API key)
 npx tsx scripts/live-test/live-test-exercise.mjs    # LLM exercise quality test
 npx tsx scripts/live-test/live-test-summary.mjs     # LLM summary + Ollama test
+npx tsx scripts/live-test/live-test-hook-opener.mjs # LLM "开始学习" hook 起手式形状测试(动机层:钩子+二选一猜测+不计分)
 npx tsx scripts/live-test/live-test-import-pipeline.mjs  # full import → structure pipeline
 ```
 

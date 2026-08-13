@@ -78,7 +78,6 @@ export default function App() {
   // 视图 + 仪表盘
   const [view, setView] = useState<MapView>("map");
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-  const [dueCount, setDueCount] = useState(0);
   // M3: overdue 的 nodeId 集合(供 MapRail 在路径上标记复习节点)
   const [dueNodeIds, setDueNodeIds] = useState<Set<string>>(new Set());
 
@@ -159,14 +158,20 @@ export default function App() {
     [tree, selectedNodeId],
   );
 
-  // "开始学习"→ 直接进入学习(核心概念 + 一个检索题),而非"商量怎么学"。
-  // P1 启动沉浸:意志力最高的瞬间应进入学习本身,不是方法论规划。
+  // "开始学习"→ hook + 无风险猜测,不是讲义+计分题。
+  // 动机层:用户点进来时往往"提不起劲"(streak 断了 / 冷启动)。"讲概念+出题"是作业形状,
+  // 在意志力最低的瞬间堆两次摩擦(吸收讲座 + 被评估)。改成 hook(好奇心缺口 = 内驱)+
+  // 二选一猜测(玩,不是考试)——零失败风险,先把人勾进来,动量起来再讲、再测。
   // 实际的 sendMessage 定义在 toast 声明之后(下面),通过 ref 桥接避免 TDZ。
   const sendRef = useRef<((t: string) => Promise<void>) | null>(null);
   const handleStartLearning = useCallback(() => {
     if (!selectedNode) return;
     void sendRef.current?.(
-      `我想开始学「${selectedNode.title}」。请先用一两句话讲这课最核心的一个概念,然后出一个简单的小问题让我试着回答——直接开始,不要先讲学习方法论。`,
+      `我想开始学「${selectedNode.title}」。但我现在没什么劲——别直接讲概念,也别出计分题考我。请这样开场:\n` +
+        `1. 一两句抛个钩子:反直觉的、或跟我日常有关的,让我产生好奇;\n` +
+        `2. 给我一个二选一的小猜测(就是玩,不是考试,别说"答对/答错");\n` +
+        `3. 我猜完,你再揭晓,顺带把这课最核心的一点讲清楚。\n` +
+        `铁律:起手不要讲座、不要用出题工具(generate_quiz)、不要计分。把我勾住是唯一目标。`,
     );
   }, [selectedNode]);
 
@@ -185,7 +190,6 @@ export default function App() {
       setSkills(skillList);
       setXp(xpData);
       setActiveSkill(currentSkill);
-      setDueCount(due.length);
       setDueNodeIds(new Set(due));
       if (courseList.length > 0 && !selectedCourseId) {
         setSelectedCourseId(courseList[0]!.id);
@@ -647,6 +651,9 @@ export default function App() {
                 hasNode={!!selectedNode}
                 selectedNodeId={selectedNodeId}
                 threadId={thread.activeId}
+                onPickQuizAction={(msg) => {
+                  void sendMessage(msg);
+                }}
                 chatNotes={canvas.items.filter(
                   (i) => i.artifactType === "user_note" && i.sourceAnchor,
                 )}

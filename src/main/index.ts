@@ -355,6 +355,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   }
 
   // P2.3: 播一条已到期 srs 项,验证"待复习"在地图上浮现(map-review-badge)。
+  // 幂等:onConflictDoUpdate —— 持久 DB 下重复运行不再 UNIQUE 冲突,到期项始终就位。
   try {
     getDb()
       .insert(srsItems)
@@ -366,6 +367,15 @@ async function runUiTest(screenshot = false): Promise<void> {
         repetitions: 1,
         dueAt: "2020-01-01T00:00:00.000Z",
         lastReviewedAt: "2020-01-01T00:00:00.000Z",
+      })
+      .onConflictDoUpdate({
+        target: srsItems.id,
+        set: {
+          dueAt: "2020-01-01T00:00:00.000Z",
+          lastReviewedAt: "2020-01-01T00:00:00.000Z",
+          repetitions: 1,
+          intervalDays: 1,
+        },
       })
       .run();
   } catch (e) {

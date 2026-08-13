@@ -7,7 +7,7 @@
  * - SRS 用 SM-2 算法字段（easeFactor + intervalDays + repetitions）
  * - 所有金额/时间戳用 ISO string，避免 Date 序列化坑
  */
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 /* ---------- 课程 ---------- */
@@ -51,6 +51,8 @@ export const contentNodes = sqliteTable("content_nodes", {
   summary: text("summary"),
   /** 两个世界: study(学习主线讲解) / practice(实操练习 notebook/lab/exercise) */
   world: text("world", { enum: ["study", "practice"] }).notNull().default("study"),
+  /** JSON array of {title, description} — LLM 提取的知识组件(KC)定义，per-KC BKT 的基础 */
+  knowledgePoints: text("knowledge_points"),
 });
 
 /* ---------- 练习题（按需生成后缓存） ---------- */
@@ -89,9 +91,25 @@ export const progress = sqliteTable("progress", {
   /** 1-5，参照多邻国 crown level */
   crownLevel: integer("crown_level").notNull().default(0),
   lastAttemptAt: text("last_attempt_at"),
-  /** M2: BKT 掌握度概率 0-1（NULL=从未评估） */
+  /** M2: BKT 掌握度概率 0-1（NULL=从未评估）。Per-KC: 有 KC 时 = min(各 KC)，聚合只读 */
   mastery: real("mastery"),
 });
+
+/* ---------- Per-Knowledge-Component BKT（第 19 张表） ---------- */
+
+export const knowledgeComponentMastery = sqliteTable("knowledge_component_mastery", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id")
+    .notNull()
+    .references(() => contentNodes.id, { onDelete: "cascade" }),
+  /** 对应 content_nodes.knowledge_points JSON 数组下标 */
+  kcIndex: integer("kc_index").notNull(),
+  /** per-KC BKT P(L)，初始 pInit(0.5) */
+  mastery: real("mastery").notNull().default(0.5),
+  testedCount: integer("tested_count").notNull().default(0),
+}, (t) => [
+  uniqueIndex("idx_kcm_node_kc").on(t.nodeId, t.kcIndex),
+]);
 
 /* ---------- SRS 复习项（SM-2 字段） ---------- */
 

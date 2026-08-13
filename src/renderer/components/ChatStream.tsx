@@ -76,10 +76,10 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
   const t = useLang();
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
-    (_q: { prompt: string }, _idx: number, correct: boolean) => {
+    (q: { prompt: string; kc?: string }, _idx: number, correct: boolean) => {
       // 庆祝由 CelebrationLayer 统一处理(recordQuizAnswer 触发 mastery 状态变化 → state:changed)。
       if (selectedNodeId) {
-        api.recordQuizAnswer(selectedNodeId, correct).catch(() => {});
+        api.recordQuizAnswer(selectedNodeId, correct, q.kc).catch(() => {});
       }
     },
     [selectedNodeId],

@@ -121,15 +121,17 @@ ${lessonTitles}
       console.error(`[generateLessonSummaries] section ${section.id} failed`);
     }
 
-    // ── Lesson 摘要(批量:每批 5 个 lesson,基于 content 正文)──
+    // ── Lesson 摘要 + 知识组件提取(批量:每批 5 个 lesson,基于 content 正文)──
     const BATCH_SIZE = 5;
     for (let i = 0; i < lessons.length; i += BATCH_SIZE) {
       const batch = lessons.slice(i, i + BATCH_SIZE);
       const lessonInputs = batch
-        .map((l, idx) => `${idx + 1}. [${l.id}] ${l.title}\n${(l.content ?? "").slice(0, 300).replace(/\n/g, " ").trim()}`)
+        .map((l, idx) => `${idx + 1}. [${l.id}] ${l.title}\n${(l.content ?? "").slice(0, 800).replace(/\n/g, " ").trim()}`)
         .join("\n\n");
 
-      const lessonPrompt = `你是课程设计专家。为以下每个课时生成 1-2 句中文摘要(这课学什么 + 核心要点),用户据此快速判断要不要学。
+      const lessonPrompt = `你是课程设计专家。为以下每个课时生成:
+1. 1-2 句中文摘要(这课学什么 + 核心要点)
+2. 3-7 个知识组件(Knowledge Component)——这课可以拆成哪些可独立考察的知识点
 
 课程: ${course.title}
 章节: ${section.title}
@@ -137,21 +139,41 @@ ${lessonTitles}
 课时:
 ${lessonInputs}
 
+知识组件要求:
+- 每个 KC 是一个可独立出题考察的知识点(不是章节标题的拆分)
+- title 简短(10字以内),description 说明"理解这个 KC 意味着什么"
+- 覆盖这课的核心概念,数量 3-7 个(内容少的课 3 个,多的 5-7 个)
+
 严格返回 JSON 数组,不要加 markdown 代码块标记,每项 id 必须和上面一致:
 [
-  { "id": "${batch[0]!.id}", "summary": "1-2 句中文摘要" }
+  { "id": "${batch[0]!.id}", "summary": "1-2 句中文摘要", "knowledgePoints": [{"title": "知识组件名", "description": "理解这意味着什么"}] }
 ]`;
 
       try {
         const result = await generateText({ model: llm.languageModel, prompt: lessonPrompt });
         const cleaned = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-        const arr = JSON.parse(cleaned) as Array<{ id: string; summary: string }>;
+        const arr = JSON.parse(cleaned) as Array<{ id: string; summary: string; knowledgePoints?: Array<{ title: string; description: string }> }>;
         for (const item of arr) {
           if (typeof item.id === "string" && typeof item.summary === "string" && item.summary.trim()) {
-            // 验证 id 在本批次(防 LLM 编 id)
             if (batch.some((b) => b.id === item.id)) {
+              const updateSet: { summary: string; knowledgePoints?: string } = {
+                summary: item.summary.trim(),
+              };
+              // 知识组件提取：验证格式后写入 knowledge_points JSON 列
+              if (Array.isArray(item.knowledgePoints) && item.knowledgePoints.length >= 2) {
+                const validKps = item.knowledgePoints
+                  .filter((kp) => typeof kp.title === "string" && kp.title.trim())
+                  .slice(0, 7) // 上限 7 个
+                  .map((kp) => ({
+                    title: kp.title.trim(),
+                    description: typeof kp.description === "string" ? kp.description.trim() : "",
+                  }));
+                if (validKps.length >= 2) {
+                  updateSet.knowledgePoints = JSON.stringify(validKps);
+                }
+              }
               db.update(contentNodes)
-                .set({ summary: item.summary.trim() })
+                .set(updateSet)
                 .where(eq(contentNodes.id, item.id))
                 .run();
               lessonsUpdated++;

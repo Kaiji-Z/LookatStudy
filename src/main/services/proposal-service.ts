@@ -25,6 +25,13 @@ import {
 } from "../db/schema.js";
 import { randomUUID } from "node:crypto";
 import { updateMastery, BKT_DEFAULTS } from "./pure/bkt.js";
+import {
+  getKnowledgePoints,
+  ensureKcRows,
+  updateKcMastery,
+  computeAggregateMastery,
+  floorAllKcMastery,
+} from "./kc-service.js";
 import { addXpMastered } from "./xp-service.js";
 import { unlockNextLessonIfEligible } from "./progress-service.js";
 import { MASTERED_MASTERY_THRESHOLD } from "@shared/types";
@@ -51,6 +58,8 @@ export interface LearningOperation {
   status?: "locked" | "available" | "in_progress" | "mastered";
   // add_to_srs: quality = 初始 SM-2 评分
   quality?: number;
+  // update_mastery: 考察的知识组件下标(per-KC BKT)。不传=无 KC 回退或更新全部。
+  kcIndex?: number;
 }
 
 export interface Proposal {
@@ -193,10 +202,32 @@ function executeOperation(db: Db, op: LearningOperation): void {
         .from(progressTable)
         .where(eq(progressTable.nodeId, op.nodeId))
         .get();
-      const prevMastery = existing?.mastery ?? null;
-      const newMastery = updateMastery(prevMastery, op.correct ?? false, BKT_DEFAULTS);
-      // 自动毕业:mastery ≥ 0.9 → status 转 mastered,发 +50 XP(与 mark_mastered 同等待遇)。
-      // 注:crownLevel 不再从 mastery 派生——星星归考试节点专用,普通课只在 mastered 时 crown=5。
+      const correct = op.correct ?? false;
+
+      // Per-KC BKT: 如果 lesson 有知识组件定义，走 per-KC 路径。
+      const kps = getKnowledgePoints(db, op.nodeId);
+      let newMastery: number;
+      if (kps.length > 0) {
+        // 确保 KC mastery 行存在（首次答题初始化）
+        ensureKcRows(db, op.nodeId);
+        if (op.kcIndex !== undefined && op.kcIndex >= 0 && op.kcIndex < kps.length) {
+          // 精准更新指定 KC
+          updateKcMastery(db, op.nodeId, op.kcIndex, correct);
+        } else {
+          // 无 kcIndex：保守更新所有 KC（观测未标注具体 KC 时）
+          for (let i = 0; i < kps.length; i++) {
+            updateKcMastery(db, op.nodeId, i, correct);
+          }
+        }
+        // 课级 mastery = min(各 KC)——最薄弱环节决定整体
+        newMastery = computeAggregateMastery(db, op.nodeId) ?? BKT_DEFAULTS.pInit;
+      } else {
+        // 无 KC 定义：回退到单值 BKT（向后兼容）
+        const prevMastery = existing?.mastery ?? null;
+        newMastery = updateMastery(prevMastery, correct, BKT_DEFAULTS);
+      }
+
+      // 自动毕业:聚合 mastery ≥ 0.9 → 全部 KC 都达标 → status 转 mastered
       const autoMastered = newMastery >= MASTERED_MASTERY_THRESHOLD;
       if (existing) {
         db.update(progressTable)
@@ -217,11 +248,8 @@ function executeOperation(db: Db, op: LearningOperation): void {
           })
           .run();
       }
-      // 自动毕业发 XP(与 mark_mastered 对齐)
       if (autoMastered) addXpMastered(db);
-      // 硬门控:mastery 跨过 0.5 → 解锁下一课(首次答题/答对都可能触发)
       unlockNextLessonIfEligible(db, op.nodeId);
-      // Phase 0: mastery 变化通知 renderer(重拉节点状态 + 庆祝/加冕)。
       emitStateChange("mastery");
       break;
     }
@@ -231,6 +259,8 @@ function executeOperation(db: Db, op: LearningOperation): void {
         .from(progressTable)
         .where(eq(progressTable.nodeId, op.nodeId))
         .get();
+      // Per-KC: force-graduation 时把所有 KC floor 到 0.95（不抹掉已更高的值）
+      floorAllKcMastery(db, op.nodeId, 0.95);
       // 尊重 BKT 累积:如果已有更高的 mastery,不向下覆盖(mark_mastered 是"提前毕业",
       // 不该抹掉学习者答题累积出的真实掌握度)。至少给 0.95(满足 mastered 语义)。
       const preservedMastery = Math.max(existing?.mastery ?? 0, 0.95);

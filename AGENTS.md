@@ -100,10 +100,10 @@ npm run verify:core && npx vite build && npm run self-test
 4. Run `npm run verify:core` to confirm consistency.
 5. When you add a table, **bump this list** below (don't make agents recount).
 
-18 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
+19 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
 `streaks`, `chat_sessions`, `settings`, `souls`, `proposals`, `friction_log`,
 `memory`, `custom_providers`, `canvas_items`, `threads`, `chat_messages`,
-`node_assets`, `content_node_translations`.
+`node_assets`, `content_node_translations`, `knowledge_component_mastery`.
 
 ## Key services
 
@@ -130,6 +130,7 @@ npm run verify:core && npx vite build && npm run self-test
 | Exercise | `services/exercise-service.ts` | AI exercise generation (mcq/fill_blank/true_false) + grading |
 | Dashboard | `services/dashboard-service.ts` | `getDashboard` — section mastery, metrics |
 | Progress | `services/progress-service.ts` | DB-injected progress read/write (headless-testable) |
+| Per-KC BKT | `services/kc-service.ts` | Per-Knowledge-Component BKT: `getKnowledgePoints`/`ensureKcRows`/`updateKcMastery`/`computeAggregateMastery`(min)/`floorAllKcMastery`。课级 mastery=min(各 KC)；防假毕业 |
 | Search | `services/search-service.ts` | RAG `LIKE`-fallback search + memory get/update |
 | XP | `services/xp-service.ts` | Daily XP tracking (correct+10/wrong+1/mastered+50) |
 | SRS | `services/srs.ts` | SM-2 spaced repetition; `recordReviewDb`(pure/srs-db.ts, db 注入)与 BKT 闭环——答题/复习双向同步(答对推迟、答错近期重练) |

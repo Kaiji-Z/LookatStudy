@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS content_nodes (
   order_idx INTEGER NOT NULL DEFAULT 0,
   content TEXT,
   summary TEXT,
-  world TEXT NOT NULL DEFAULT 'study' CHECK (world IN ('study', 'practice'))
+  world TEXT NOT NULL DEFAULT 'study' CHECK (world IN ('study', 'practice')),
+  knowledge_points TEXT  -- JSON array of {title, description}，LLM 提取的知识组件定义
 );
 CREATE INDEX IF NOT EXISTS idx_content_nodes_course ON content_nodes(course_id);
 CREATE INDEX IF NOT EXISTS idx_content_nodes_parent ON content_nodes(parent_id);
@@ -62,8 +63,20 @@ CREATE TABLE IF NOT EXISTS progress (
   crown_level INTEGER NOT NULL DEFAULT 0,
   last_attempt_at TEXT,
   -- M2: BKT 掌握度概率 0-1（NULL=从未评估过，按未知处理）。存 REAL 避免整数缩放。
+  -- Per-KC BKT: 有 knowledge_points 时此值 = min(各 KC mastery)（聚合值，只读）。
   mastery REAL
 );
+
+-- Per-Knowledge-Component BKT: 每个知识点独立的 BKT P(L)。课级 mastery = min(各 KC)。
+CREATE TABLE IF NOT EXISTS knowledge_component_mastery (
+  id TEXT PRIMARY KEY,
+  node_id TEXT NOT NULL REFERENCES content_nodes(id) ON DELETE CASCADE,
+  kc_index INTEGER NOT NULL,         -- 对应 content_nodes.knowledge_points JSON 数组下标
+  mastery REAL NOT NULL DEFAULT 0.5, -- per-KC BKT P(L)，初始 pInit
+  tested_count INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(node_id, kc_index)
+);
+CREATE INDEX IF NOT EXISTS idx_kcm_node ON knowledge_component_mastery(node_id);
 
 CREATE TABLE IF NOT EXISTS srs_items (
   id TEXT PRIMARY KEY,

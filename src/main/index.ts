@@ -696,23 +696,8 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: startState,
   });
 
-  // T8e (P3 friction UI): 🤔 卡点入口在(选中节点),点击展开表单 + 3 个类别。
-  const frictionUi = await win.webContents.executeJavaScript(`
-    (async function() {
-      var toggle = document.querySelector('[data-testid="friction-toggle"]');
-      if (!toggle) return { ok: false, reason: "friction-toggle not found" };
-      toggle.click();
-      await new Promise(function(r){ setTimeout(r, 250); });
-      var form = document.querySelector('[data-testid="friction-form"]');
-      var cats = document.querySelectorAll('[data-testid^="friction-cat-"]').length;
-      return { ok: !!form && cats === 3, toggle: true, form: !!form, cats: cats };
-    })()
-  `);
-  results.push({
-    name: "friction 🤔 toggle opens form with 3 categories (P3)",
-    ok: frictionUi?.ok === true,
-    detail: frictionUi,
-  });
+  // 原 🤔 卡点 toggle+表单已撤(friction 折进"我没太懂"巩固选择)。
+  // 巩固选择的"内容"由 verify-starter-prompts 覆盖;"语境前不出现"由 App 的 prop 门控(tsc 保证)。
 
   // T8c (v0.2 设置抽屉): 点 header settings → settings-drawer 出现
   const settingsDrawer = await win.webContents.executeJavaScript(`

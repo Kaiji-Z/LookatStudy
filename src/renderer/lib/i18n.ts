@@ -422,6 +422,9 @@ const translations: Record<Lang, Record<string, string>> = {
     "quiz.action.goDeeper": "深入讲讲原理",
     "quiz.action.markMastered": "确认我掌握了",
     "quiz.action.nextTopic": "下一个知识点",
+    "guess.header": "来猜一个",
+    "guess.pickedPrefix": "我猜:",
+    "guess.waitReveal": "已猜,等 AI 揭晓 ⋯",
 
     // —— Import(补充)——
     "import.deleted": "已删除:{title}",
@@ -846,6 +849,9 @@ const translations: Record<Lang, Record<string, string>> = {
     "quiz.action.goDeeper": "Go deeper",
     "quiz.action.markMastered": "Confirm I've mastered it",
     "quiz.action.nextTopic": "Next topic",
+    "guess.header": "Take a guess",
+    "guess.pickedPrefix": "I guess: ",
+    "guess.waitReveal": "Guessed — waiting for the reveal…",
 
     // —— Import (extra) ——
     "import.deleted": "Deleted: {title}",

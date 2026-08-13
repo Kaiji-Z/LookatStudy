@@ -66,6 +66,8 @@ const BASE_AGENT_PROMPT =
   "- compare_table:对比 A vs B,学习者问'区别''对比'时用;" +
   "- draw_diagram:画流程/时序/状态图,讲流程类内容时用;" +
   "- show_code_walkthrough:逐段讲解代码,学习者问'这段代码'时用。" +
+  "- pose_guess:抛一个二选一猜测(是'猜'/玩,不计分、不是考),学习者没劲/需要被勾住时用——" +
+  "配合一两句钩子把人带进来,他猜完你下一回合再揭晓。起手式专用,别当测验用。" +
   "工具是手段不是目的:能用工具让知识更清晰就用,否则正常文字讲解即可。一次回复最多用 1 个工具,避免过载。\n\n" +
   "【回答排版规范】你的回答支持完整 Markdown 渲染(标题/列表/表格/代码块/引用/粗斜体),请充分利用结构化排版让内容更易读:" +
   "- 用 ##/### 划分段落,不要一整块文字;" +
@@ -396,6 +398,32 @@ export async function runAgentTurn(
       execute: async (input) => {
         events.onToolCall?.("generate_quiz", input);
         const { data, warnings } = sanitizeArtifact({ ...input, artifactType: "quiz" }, "quiz");
+        return warnings.length > 0 ? { ...(data as Record<string, unknown>), warnings } : data;
+      },
+    }),
+    pose_guess: tool({
+      description:
+        "在'开始学习'起手式(或学习者没劲、需要被勾住时)抛一个二选一猜测,让学习者猜——是玩,不是考试。" +
+        "用法:先用一两句散文抛个钩子(反直觉/跟日常有关的,引发好奇),然后调本工具给出猜测问题 + 恰好 2 个选项。" +
+        "学习者点一个选项后,你的【下一回合】揭晓答案 + 顺带讲清这课最核心的一点。" +
+        "铁律:不计分、不碰掌握度、别说'答对/答错'。这是把人勾进来的钩子,不是测验。\n\n" +
+        QUALITY_GUIDE.guess,
+      inputSchema: z.object({
+        prompt: z.string().describe("猜测的问题,如'你觉得:递归算阶乘会比循环——更慢,还是差不多?'"),
+        options: z
+          .array(
+            z.object({
+              id: z.string().describe("选项 id(英文,如 a / b)"),
+              label: z.string().describe("选项文本(简短,≤ 15 字)"),
+            }),
+          )
+          .min(2)
+          .max(2)
+          .describe("恰好 2 个选项"),
+      }),
+      execute: async (input) => {
+        events.onToolCall?.("pose_guess", input);
+        const { data, warnings } = sanitizeArtifact({ ...input, artifactType: "guess" }, "guess");
         return warnings.length > 0 ? { ...(data as Record<string, unknown>), warnings } : data;
       },
     }),

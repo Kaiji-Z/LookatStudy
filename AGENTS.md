@@ -71,7 +71,7 @@ npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
 npm run verify:core       # 52 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 29 DOM assertions incl. a11y + reactive i18n + cold-start gating + friction entry + competence badges + due/interleave/dashboard + start-here cue)
+npm run ui-test           # real-GUI verification (headless Electron, 29 DOM assertions incl. a11y + reactive i18n + cold-start gating + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
 npm run lint              # oxlint
 npx tsc --noEmit                       # typecheck renderer
 npx tsc -p tsconfig.electron.json --noEmit  # typecheck main/preload
@@ -109,7 +109,7 @@ npm run verify:core && npx vite build && npm run self-test
 
 | Service | File | What it does |
 |---------|------|-------------|
-| Agent engine | `services/agent/agent-engine.ts` | `handleAgentChatThread` — thread-based context assembly, 5 display tools (`show_concept_map` / `generate_quiz` / `compare_table` / `draw_diagram` / `show_code_walkthrough`), `chat:part` emission, mastery-based teaching strategy; 注入近期 friction 卡点(`pure/friction-context.ts` buildFrictionContext)让 AI 看见学习者挣扎点 |
+| Agent engine | `services/agent/agent-engine.ts` | `handleAgentChatThread` — thread-based context assembly, 6 display tools (`show_concept_map` / `generate_quiz` / `compare_table` / `draw_diagram` / `show_code_walkthrough` / `pose_guess`), `chat:part` emission, mastery-based teaching strategy; 注入近期 friction 卡点(`pure/friction-context.ts` buildFrictionContext)让 AI 看见学习者挣扎点 |
 | LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection`, `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels` |
 | LLM presets | `services/agent/llm-presets.ts` | 10 provider presets (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google) |
 | Threads | `services/thread-service.ts` | CRUD for `threads` + `chat_messages`; `findRecentThreadByNode`; thread is node-bound (`focus_node_id`) |
@@ -134,7 +134,7 @@ npm run verify:core && npx vite build && npm run self-test
 | SRS | `services/srs.ts` | SM-2 spaced repetition; `recordReviewDb`(pure/srs-db.ts, db 注入)与 BKT 闭环——答题/复习双向同步(答对推迟、答错近期重练) |
 | Streak | `services/streak.ts` | Streak + freeze transitions |
 | Export | `services/export-service.ts` | JSON + Markdown learning report export |
-| Starter prompts | `services/starter-prompts-service.ts` | Mastery-based prompt suggestions |
+| Starter prompts | `services/starter-prompts-service.ts` | 4 巩固选择(深入/举个例子/考考我/我没太懂),hook 揭晓后、对话开始后才出现(语境前零决策税);原 ? 卡点表单折进「我没太懂」(发消息+记 friction);`frictionCategory` 字段标记 |
 | Multimodal assets | `services/asset-service.ts` | `node_assets` CRUD — 图片/PDF 渲染图元数据(二进制存 `userData/assets/{courseId}/`,不入 DB blob);`listAssetsByNode` / `getAssetDataUrl` (base64) |
 | PDF text | `lib/pdf-text.ts` | `parsePdfText(buf)` — PDF **文本**提取路由:优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 + 多栏阅读顺序), 失败/平台不支持(Intel Mac/WinARM 无预编译)回退 `pdf-parse`;`LOOKATSTUDY_NO_PDF_INSPECTOR=1` 强制回退。**已知局限:不解码数学公式**(文本层赛道本质局限, STEM 留给未来 vision 路径) |
 | PDF renderer | `lib/pdf-renderer.ts` | pdfjs-dist 封装:**内嵌图片提取**(纯 JS PNG 编码,无 canvas 依赖);`classifyPdfPageByTextRatio` 判断纯文字/纯图片/混合。文字提取已移至 `lib/pdf-text.ts`,本文件现仅图片 |
@@ -258,6 +258,16 @@ you in a public release notes draft, it belongs in `dev-docs/`.
   `dev-docs/` (architecture/build/roadmap/historical design plans), and
   `memory/` (per-developer agent memory) are gitignored. They are not project
   content and must never appear in a public release.
+- **Branch BEFORE you start coding, not at commit time.** The maintainer often
+  iterates on **multiple features in parallel sessions**, so a branch's value is
+  isolation *during the work* — keeping concurrent sessions from colliding on
+  `main`. That value is lost if you do all the work on `main` and only open a
+  branch right before committing (by then the work was never isolated). So: at
+  the **start** of each iteration, decide — discrete feature / parallel work in
+  play? → `git checkout -b feat/...` first, *then* code. Trivial one-line fixes
+  can go straight to `main`. If work already happened on `main` (e.g. you
+  forgot), don't retroactively branch — commit it to `main` and branch-first
+  next time.
 - **Features ship on a branch and merge to `main` with `--no-ff`.** The merge
   commit summarizes the feature; the branch holds the granular history.
 - **Never rewrite public history.** `main` is shared; if a commit is wrong,

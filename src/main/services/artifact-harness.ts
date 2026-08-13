@@ -31,7 +31,8 @@ export type ArtifactType =
   | "quiz"
   | "compare_table"
   | "diagram"
-  | "code_walkthrough";
+  | "code_walkthrough"
+  | "guess";
 
 export interface ConceptMapData {
   artifactType: "concept_map";
@@ -70,6 +71,20 @@ export interface CodeWalkthroughData {
   language: string;
   code: string;
   annotations: { lineStart: number; lineEnd: number; note: string }[];
+}
+
+/**
+ * guess:hook 起手式的"二选一猜测"按钮卡(动机层)。和 quiz 的本质区别:
+ *   - 不计分、无正确答案、不碰掌握度——"猜"是玩,不是考。
+ *   - 揭晓由 AI 下一回合给出(不在卡上判定),卡只负责捕获学习者选了哪个。
+ *   - 恰好 2 个选项(降低决策成本,正是 hook 起手的目的)。
+ */
+export interface GuessData {
+  artifactType: "guess";
+  /** 猜测的问题,如"你觉得:递归算阶乘会比循环——更慢,还是差不多?" */
+  prompt: string;
+  /** 恰好 2 个选项 */
+  options: { id: string; label: string }[];
 }
 
 /** sanitize 的统一返回类型 */
@@ -172,6 +187,14 @@ export const codeWalkthroughSchema = z
     },
     { message: "标注行号必须满足 1 ≤ lineStart ≤ lineEnd ≤ code 总行数" },
   );
+
+/** guess:恰好 2 个选项,每个有 id + label。 */
+export const guessSchema = z.object({
+  prompt: z.string().min(1),
+  options: z
+    .array(z.object({ id: z.string().min(1), label: z.string().min(1) }))
+    .length(2, "guess 必须恰好 2 个选项"),
+});
 
 // ============================================================
 // §3  sanitize —— graceful 修复(LLM 输出总会出错,不 throw)
@@ -358,12 +381,34 @@ function sanitizeCodeWalkthrough(input: unknown): SanitizeResult<CodeWalkthrough
   };
 }
 
+/** 修复 guess:只保留有 id+label 的选项,不足 2 个补占位(保证按钮卡永远能渲染 2 个)。 */
+function sanitizeGuess(input: unknown): SanitizeResult<GuessData> {
+  const warnings: string[] = [];
+  const d = (input ?? {}) as Partial<GuessData>;
+  const opts = Array.isArray(d.options)
+    ? d.options.filter((o) => o && o.id && o.label).slice(0, 2)
+    : [];
+  while (opts.length < 2) {
+    warnings.push(`选项不足 2 个,补了占位选项 ${opts.length + 1}`);
+    opts.push({ id: `opt${opts.length}`, label: opts.length === 0 ? "(选项 A)" : "(选项 B)" });
+  }
+  return {
+    data: {
+      artifactType: "guess",
+      prompt: typeof d.prompt === "string" && d.prompt ? d.prompt : "你猜哪个?",
+      options: opts as GuessData["options"],
+    },
+    warnings,
+  };
+}
+
 const SANITIZERS: Record<ArtifactType, (input: unknown) => SanitizeResult> = {
   concept_map: sanitizeConceptMap,
   quiz: sanitizeQuiz,
   compare_table: sanitizeCompareTable,
   diagram: sanitizeDiagram,
   code_walkthrough: sanitizeCodeWalkthrough,
+  guess: sanitizeGuess,
 };
 
 /**
@@ -393,4 +438,6 @@ export const QUALITY_GUIDE = {
     "质量要求:只返回合法 mermaid 语法(不含外层```),节点 id 用英文,标签可中文。优先 flowchart TD/LR;时序用 sequenceDiagram;状态用 stateDiagram-v2。代码 ≤ 30 行。",
   code_walkthrough:
     "质量要求:代码 ≤ 30 行(超长请节选关键片段),分段 3-6 段,每段讲解 1-2 句(说清 this does what),行号从 1 开始。",
+  guess:
+    "质量要求:恰好 2 个选项,每个 label 简短(≤ 15 字)。这是'猜'不是'考'——选项要有趣、能引发好奇(反直觉更好),不要明显有对错。id 用英文(如 a / b)。",
 } as const;

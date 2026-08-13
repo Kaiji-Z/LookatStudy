@@ -1,19 +1,17 @@
 /**
- * Live test: "开始学习"的 hook 起手式 —— 动机层验证。
+ * Live test: "开始学习"的 hook 起手式 v2(二选一按钮卡)—— 动机层验证。
  *
  * 跑法: npx tsx scripts/live-test/live-test-hook-opener.mjs  (需要 .env 里有 Z_AI_API_KEY)
  *
- * 验证的不是"知识点对不对",而是**起手式的形状**——这是 feat: hook opener 的核心承诺:
- *   - 不讲义开场(别一上来"这课讲…/核心概念是…")
- *   - 不计分(不出现"答对/答错/计分/判定"——把猜测当玩,不是考试)
- *   - 有一个二选一猜测(含"还是/或者"或两个选项)
- *   - 不抢答(把钩子+猜测抛出后停下,等用户猜,不直接揭晓)
+ * v2:猜测不再是纯文字,而是 AI 调用 pose_guess 工具 → 渲染成二选一按钮卡(一点即猜)。
+ * 本测试给 GLM 注册 pose_guess 工具(tool_choice=auto,不强制),喂"开始学习"canned prompt,
+ * 断言模型【主动】产出了合规的 pose_guess 调用(否则它就没用上新机制):
+ *   T1  调用了 pose_guess(不是只用文字给猜测)
+ *   T2  prose 钩子非空(先写散文钩子,再调工具)
+ *   T3  pose_guess 参数合规:prompt 非空 + 恰好 2 个选项(各有 id+label)
+ *   T4  整段(钩子+猜测)不含计分语言(答对/答错/计分/判定)——把猜测当玩,不是考
  *
- * 这是"别让我又在 prompt 末尾粘一段然后嘴硬"的护栏:模型如果偷偷变回讲义+计分题,
- * 这里的形状断言会抓到。继续率(真正的产品裁判)要等真实用户量,这里先守住机制层。
- *
- * 注:裸调 GLM 不带工具定义,所以无法直接断言"没调 generate_quiz 工具"——
- * 但若模型 lapsing 成计分题,文本里会出现"答对/答错/判定"等词,形状断言同样能抓。
+ * 这是"别让我又在 prompt 末尾粘一段然后嘴硬"的护栏:模型若偷偷只用文字、或给出计分题,这里会红。
  */
 import { readApiKey } from "./_load-env.mjs";
 
@@ -23,7 +21,6 @@ if (!API_KEY) {
   process.exit(0);
 }
 
-// 近似 agent-engine 注入:导师人设 + 一课内容(用递归做样本,内容短、钩子点明显)
 const SAMPLE_CONTENT =
   "递归:函数在内部调用自身。必须有基线条件(base case)停止,否则无限递归。" +
   "每层调用压栈,栈深过大会 Stack Overflow。典型用例:阶乘、斐波那契、树遍历。";
@@ -34,10 +31,42 @@ const SYSTEM =
 
 const USER_PROMPT =
   `我想开始学「递归」。但我现在没什么劲——别直接讲概念,也别出计分题考我。请这样开场:\n` +
-  `1. 一两句抛个钩子:反直觉的、或跟我日常有关的,让我产生好奇;\n` +
-  `2. 给我一个二选一的小猜测(就是玩,不是考试,别说"答对/答错");\n` +
-  `3. 我猜完,你再揭晓,顺带把这课最核心的一点讲清楚。\n` +
-  `铁律:起手不要讲座、不要用出题工具(generate_quiz)、不要计分。把我勾住是唯一目标。`;
+  `1. 先用一两句散文抛个钩子(反直觉的、或跟我日常有关的,让我产生好奇);\n` +
+  `2. 然后调用 pose_guess 工具,给我一个二选一的小猜测(就是玩,不是考试);\n` +
+  `3. 我会点选项猜,你【下一回合】再揭晓,顺带把这课最核心的一点讲清楚。\n` +
+  `铁律:起手不要讲座、不要用 generate_quiz 出计分题、不要计分。把我勾住是唯一目标。`;
+
+// 注册 pose_guess 工具(OpenAI function-calling 格式;对齐 agent-engine 的 zod schema)
+const tools = [
+  {
+    type: "function",
+    function: {
+      name: "pose_guess",
+      description:
+        "抛一个二选一猜测(是猜/玩,不计分、不是考)。先写一两句散文钩子,再调本工具给猜测问题 + 恰好 2 个选项。",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "猜测的问题" },
+          options: {
+            type: "array",
+            minItems: 2,
+            maxItems: 2,
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string", description: "选项 id(如 a/b)" },
+                label: { type: "string", description: "选项文本" },
+              },
+              required: ["id", "label"],
+            },
+          },
+        },
+        required: ["prompt", "options"],
+      },
+    },
+  },
+];
 
 async function callGlm() {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -50,13 +79,12 @@ async function callGlm() {
           { role: "system", content: SYSTEM },
           { role: "user", content: USER_PROMPT },
         ],
+        tools,
+        tool_choice: "auto", // 不强制 —— 测的是模型会不会主动用 pose_guess
         temperature: 0.7,
       }),
     });
-    if (r.ok) {
-      const j = await r.json();
-      return j.choices?.[0]?.message?.content ?? "";
-    }
+    if (r.ok) return (await r.json()).choices?.[0]?.message ?? {};
     if (r.status === 429 && attempt === 0) {
       console.log(`  429 限流,重试一次…`);
       await new Promise((res) => setTimeout(res, 4000));
@@ -67,35 +95,52 @@ async function callGlm() {
   throw new Error("两次重试后仍失败");
 }
 
-console.log("调用 GLM(glm-5.2) 模拟「开始学习」起手式…\n");
-const reply = await callGlm();
-console.log("===== AI 起手式回复 =====");
-console.log(reply);
-console.log("=========================\n");
+console.log("调用 GLM(glm-5.2)模拟「开始学习」v2(带 pose_guess 工具)…\n");
+const msg = await callGlm();
 
-// === 形状断言 ===
-const GRADE_WORDS = ["答对", "答错", "计分", "判定对错", "得分", "评分"];
-const foundGrade = GRADE_WORDS.filter((w) => reply.includes(w));
-assert(foundGrade.length === 0, `T1 不计分:不应出现计分语言,实际命中 ${JSON.stringify(foundGrade)}`);
-console.log(`✓ T1 无计分语言(把猜测当玩,不是考试)`);
+const prose = typeof msg.content === "string" ? msg.content : "";
+const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+const guessCall = toolCalls.find((c) => c?.function?.name === "pose_guess");
 
-const hasChoice = /还是|或者/.test(reply) || /\bA[.、)]/.test(reply);
-assert(hasChoice, `T2 二选一猜测:应含"还是/或者"或选项标记`);
-console.log(`✓ T2 含二选一猜测`);
+console.log("===== 散文钩子 =====");
+console.log(prose || "(无散文,直接调了工具)");
+console.log("===== pose_guess 调用 =====");
+console.log(guessCall ? JSON.stringify(guessCall.function, null, 2) : "(没调 pose_guess!)");
+console.log("===================\n");
 
-assert(/？|\?/.test(reply), `T3 钩子以问句抛出:应含问号`);
-console.log(`✓ T3 有问句(钩子/猜测)`);
-
-// 起手式不该是讲义开场
-const LECTURE_OPEN = /^(这课|这节课|核心概念|我们来|本章|这一课讲)/;
-assert(!LECTURE_OPEN.test(reply.trim()), `T4 不讲义开场:不应以"这课讲…/核心概念是…"开头`);
-console.log(`✓ T4 非讲义开场`);
-
-console.log("\n=== HOOK OPENER LIVE TEST PASSED ✅ ===");
-
+// === 断言 ===
 function assert(cond, msg) {
   if (!cond) {
     console.error(`\n❌ FAIL: ${msg}`);
     process.exit(1);
   }
 }
+
+assert(!!guessCall, `T1 应调用 pose_guess 工具(实际 tool_calls: ${toolCalls.map((c) => c?.function?.name).join(",") || "无"})`);
+console.log(`✓ T1 调用了 pose_guess(不是只用文字给猜测)`);
+
+assert(prose.trim().length > 0, `T2 应先写散文钩子再调工具, 实际 prose 长度 ${prose.length}`);
+console.log(`✓ T2 散文钩子非空(先暖场,再给猜测)`);
+
+// 解析工具参数
+let args = {};
+try {
+  args = JSON.parse(guessCall.function.arguments || "{}");
+} catch (e) {
+  assert(false, `T3 pose_guess arguments 不是合法 JSON: ${guessCall.function.arguments}`);
+}
+
+assert(typeof args.prompt === "string" && args.prompt.length > 0, `T3 prompt 应非空, 实际: ${args.prompt}`);
+assert(Array.isArray(args.options) && args.options.length === 2, `T3 应恰好 2 个选项, 实际: ${args.options?.length}`);
+for (const [i, o] of (args.options || []).entries()) {
+  assert(typeof o?.id === "string" && typeof o?.label === "string" && o.label, `T3 选项 ${i} 需 id+label, 实际: ${JSON.stringify(o)}`);
+}
+console.log(`✓ T3 pose_guess 参数合规:prompt + 恰好 2 选项(${args.options.map((o) => o.label).join(" / ")})`);
+
+const fullText = prose + JSON.stringify(args);
+const GRADE_WORDS = ["答对", "答错", "计分", "判定对错", "得分", "评分"];
+const foundGrade = GRADE_WORDS.filter((w) => fullText.includes(w));
+assert(foundGrade.length === 0, `T4 不计分:不应出现 ${JSON.stringify(foundGrade)}`);
+console.log(`✓ T4 无计分语言(猜测当玩,不是考)`);
+
+console.log("\n=== HOOK OPENER v2 LIVE TEST PASSED ✅ ===");

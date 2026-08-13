@@ -10,6 +10,7 @@
  *   compare_table  → CompareTableArtifact
  *   diagram        → MermaidArtifact
  *   code_walkthrough → CodeWalkthroughArtifact
+ *   guess          → GuessArtifact(hook 起手式的二选一猜测,不计分)
  */
 import { Puzzle } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
@@ -18,6 +19,7 @@ import { QuizArtifact } from "./QuizArtifact.js";
 import { CompareTableArtifact } from "./CompareTableArtifact.js";
 import { MermaidArtifact } from "./MermaidArtifact.js";
 import { CodeWalkthroughArtifact } from "./CodeWalkthroughArtifact.js";
+import { GuessArtifact } from "./GuessArtifact.js";
 
 export interface ArtifactProps {
   data: unknown;
@@ -53,6 +55,8 @@ export function ArtifactRenderer({ data, onQuizAnswered, quizMastery, onPickActi
       return <MermaidArtifact data={data} />;
     case "code_walkthrough":
       return <CodeWalkthroughArtifact data={data} />;
+    case "guess":
+      return <GuessArtifact data={data} onPickAction={onPickAction} />;
     default:
       return <UnknownArtifact data={data} />;
   }
@@ -73,4 +77,4 @@ function UnknownArtifact({ data }: ArtifactProps) {
   );
 }
 
-export { ConceptMapArtifact, QuizArtifact, CompareTableArtifact, MermaidArtifact, CodeWalkthroughArtifact };
+export { ConceptMapArtifact, QuizArtifact, CompareTableArtifact, MermaidArtifact, CodeWalkthroughArtifact, GuessArtifact };

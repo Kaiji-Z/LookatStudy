@@ -17,6 +17,20 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **底部按钮重构:语境化 4 巩固选择 + 撤 ? 卡点表单(接住 hook 之后的动量)** —— 原 starter chips
+  进节点就给(语境前 = 决策税)、含义模糊、hint 只靠 hover;? 卡点是无标签图标 + 糊涂/卡住/受挫三选
+  下拉(在认知负荷最高处做元数据归类,反学习习惯)。重构:starter 改成固定的 4 个"一瞥→懂"巩固选择
+  (深入这点=精加工 / 举个例子=具体化 / 考考我=检索 / 我没太懂=困惑处置,各有学习科学依据),
+  **仅在对话开始后出现**(语境前零决策税);hint 默认可见(2×2 grid,不靠 hover);原 ? 折进
+  「我没太懂」(点它 → 发消息让 AI 追问"哪部分?" + 暗记一条 friction)。不再按 mastery 分档。
+  shared `StarterPrompt` 加 `frictionCategory` 字段;verify-starter-prompts 重写(7 断言);闭环证明已做。
+- **"开始学习"的猜测升级为二选一按钮卡(hook 起手式 v2)** —— v1 的猜测是纯文字(要打字),
+  v2 改成一点即猜的按钮(比打字更低门槛,更像 Duolingo)。新增第 6 个展示型 tool `pose_guess`
+  (schema:prompt + 恰好 2 选项;不计分、不碰掌握度),AI 先写一两句散文钩子再调它 → 渲染成
+  `GuessArtifact` 按钮卡。学习者点选项 →"我猜:X"发进对话 → AI 下一回合揭晓。复用既有
+  `onPickAction` 透传,无新铺线。artifact-harness 加 guess 类型(schema `.length(2)` + sanitize
+  补占位);verify-artifact-harness T18-20;live-test-hook-opener 升级为 tool-calling 断言
+  (真 GLM 验证模型主动调 pose_guess + 合规参数 + 无计分语言)。
 - **"开始学习"重塑为 hook 起手式(动机层)** —— 用户点进节点时往往"提不起劲"(streak 断了/冷启动)。
   此前"开始学习"发的是"讲核心概念 + 出一道小问题"——在意志力最低的瞬间堆两次摩擦(吸收讲座 +
   被评估),是作业形状,不是吸引形状。现改成:**反直觉钩子 + 二选一猜测 + 不计分**。把"考"(有失败

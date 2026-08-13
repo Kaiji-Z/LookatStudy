@@ -168,10 +168,10 @@ export default function App() {
     if (!selectedNode) return;
     void sendRef.current?.(
       `我想开始学「${selectedNode.title}」。但我现在没什么劲——别直接讲概念,也别出计分题考我。请这样开场:\n` +
-        `1. 一两句抛个钩子:反直觉的、或跟我日常有关的,让我产生好奇;\n` +
-        `2. 给我一个二选一的小猜测(就是玩,不是考试,别说"答对/答错");\n` +
-        `3. 我猜完,你再揭晓,顺带把这课最核心的一点讲清楚。\n` +
-        `铁律:起手不要讲座、不要用出题工具(generate_quiz)、不要计分。把我勾住是唯一目标。`,
+        `1. 先用一两句散文抛个钩子(反直觉的、或跟我日常有关的,让我产生好奇);\n` +
+        `2. 然后调用 pose_guess 工具,给我一个二选一的小猜测(就是玩,不是考试);\n` +
+        `3. 我会点选项猜,你【下一回合】再揭晓,顺带把这课最核心的一点讲清楚。\n` +
+        `铁律:起手不要讲座、不要用 generate_quiz 出计分题、不要计分。把我勾住是唯一目标。`,
     );
   }, [selectedNode]);
 
@@ -674,7 +674,7 @@ export default function App() {
                 streaming={chat.streaming}
                 skills={orderedSkills}
                 activeSkill={activeSkill}
-                starterPrompts={starterPrompts}
+                starterPrompts={chat.messages.length > 0 ? starterPrompts : []}
                 onPickSkill={handleSkillPick}
                 onSend={sendMessage}
                 onStop={chat.stop}

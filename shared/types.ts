@@ -223,10 +223,12 @@ export interface StarterPrompt {
   message: string;
   /** 图标 emoji */
   icon: string;
-  /** hover 提示(说明这个按钮做什么) */
+  /** 可见提示(说明这个按钮做什么;默认显示,不靠 hover) */
   hint?: string;
   /** 标记:点这个按钮能涨掌握度(渲染层加视觉提示) */
   advancesMastery?: boolean;
+  /** 标记:点这个按钮除了发消息,还额外记一条 friction(原 ? 卡点的归宿) */
+  frictionCategory?: HumanFrictionCategory;
 }
 
 /* ---------- 练习题（M2 exercises 表的 UI 契约） ---------- */

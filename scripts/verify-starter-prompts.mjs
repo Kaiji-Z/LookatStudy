@@ -1,12 +1,14 @@
 /**
  * Starter Prompts 验证 —— 测 starter-prompts-service.ts。
  *
- * 覆盖:
- *   - 新课阶段（mastery null）: 引导类 prompts（讲讲/关键点/前置/为什么）
- *   - 学习中阶段（mastery 0.1-0.7）: 深入类 prompts（疑问/辨析/应用/考考我）
- *   - 接近掌握阶段（mastery >0.7）: 检验类 prompts（总结/关联/进阶/费曼）
- *   - 不存在的节点 → 空数组
- *   - 每个 prompt 有 label + message + icon
+ * 设计转向(2026-08-13):starter 不再按 mastery 分档,改成固定的 4 个"巩固选择"
+ * (深入 / 举个例子 / 考考我 / 我没太懂),只在对话开始后才渲染。
+ * 本套验证这组的不变量:
+ *   - 恰好 4 个,label 是约定的 4 个
+ *   - 每个结构完整(label + message + icon + hint)
+ *   - 只有"考考我"advancesMastery;只有"我没太懂"带 frictionCategory
+ *   - message 引用节点标题(个性化)
+ *   - 不存在节点 → []
  */
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
@@ -28,60 +30,52 @@ const schemaSql = readFileSync(join(ROOT, "src/main/db/schema.sql"), "utf8");
 sqljs.run(schemaSql);
 const db = drizzle(sqljs, { schema });
 
-// 建测试数据
 const NODE_ID = "test-node-1";
 sqljs.run("INSERT INTO courses (id, repo_name, title) VALUES ('c1', 'r', 'T')");
 sqljs.run("INSERT INTO content_nodes (id, course_id, type, title) VALUES (?, 'c1', 'lesson', '神经网络基础')", [NODE_ID]);
 
-// === T1: 新课阶段（无 mastery） ===
-sqljs.run("INSERT INTO progress (node_id, status, crown_level) VALUES (?, 'available', 0)", [NODE_ID]);
-const newPrompts = getStarterPrompts(db, NODE_ID);
-assert.ok(newPrompts.length >= 3, `T1: 新课应有≥3个 prompts, 实际 ${newPrompts.length}`);
-assert.ok(newPrompts.some((p) => p.message.includes("核心概念")), "T1: 应有'核心概念'引导");
-assert.ok(newPrompts.some((p) => p.message.includes("基础")), "T1: 应有'前置知识'引导");
-console.log(`✓ T1 新课阶段: ${newPrompts.length} 个 prompts（讲讲/关键点/前置/为什么）`);
+const prompts = getStarterPrompts(db, NODE_ID);
 
-// === T2: 每个 prompt 结构完整 ===
-for (const p of newPrompts) {
-  assert.ok(p.label && p.label.length > 0, "T2: label 非空");
-  assert.ok(p.message && p.message.length > 10, "T2: message 有实质内容");
-  assert.ok(p.icon && p.icon.length > 0, "T2: icon 非空");
+// === T1: 恰好 4 个 ===
+assert.strictEqual(prompts.length, 4, `T1: 应恰好 4 个巩固选择, 实际 ${prompts.length}`);
+console.log(`✓ T1 恰好 4 个巩固选择`);
+
+// === T2: 4 个 label 是约定的 ===
+const labels = prompts.map((p) => p.label);
+for (const expected of ["深入这点", "举个例子", "考考我", "我没太懂"]) {
+  assert.ok(labels.includes(expected), `T2: 应含"${expected}", 实际 ${JSON.stringify(labels)}`);
 }
-console.log("✓ T2 每个 prompt 有 label + message + icon");
+console.log(`✓ T2 4 个 label: ${labels.join(" / ")}`);
 
-// === T3: 学习中阶段（mastery 0.3） ===
-sqljs.run("UPDATE progress SET mastery = 0.3 WHERE node_id = ?", [NODE_ID]);
-const midPrompts = getStarterPrompts(db, NODE_ID);
-assert.ok(midPrompts.length >= 3, `T3: 学习中应有≥3个 prompts`);
-assert.ok(midPrompts.some((p) => p.message.includes("深入") || p.message.includes("不懂")), "T3: 应有深入引导");
-assert.ok(midPrompts.some((p) => p.message.includes("练习题") || p.message.includes("考")), "T3: 应有考考我");
-console.log(`✓ T3 学习中阶段(mastery=0.3): ${midPrompts.length} 个 prompts（疑问/辨析/应用/考考我）`);
+// === T3: 每个结构完整(label + message + icon + 可见 hint) ===
+for (const p of prompts) {
+  assert.ok(p.label && p.label.length > 0, `T3: label 非空`);
+  assert.ok(p.message && p.message.length > 10, `T3: message 有实质内容`);
+  assert.ok(p.icon && p.icon.length > 0, `T3: icon 非空`);
+  assert.ok(p.hint && p.hint.length > 0, `T3: hint 非空(hint 必须可见,不靠 hover)`);
+}
+console.log(`✓ T3 每个 prompt 结构完整(label + message + icon + hint)`);
 
-// === T4: 新课和学习中的 prompts 不同 ===
-const newLabels = new Set(newPrompts.map((p) => p.label));
-const midLabels = new Set(midPrompts.map((p) => p.label));
-const overlap = [...newLabels].filter((l) => midLabels.has(l));
-assert.ok(overlap.length < newLabels.size, "T4: 两阶段 prompts 应大部分不同");
-console.log(`✓ T4 新课 vs 学习中: prompts 内容不同（${overlap.length} 个重叠）`);
+// === T4: 只有"考考我"advancesMastery ===
+const mastery = prompts.filter((p) => p.advancesMastery);
+assert.strictEqual(mastery.length, 1, `T4: 应只有 1 个 advancesMastery, 实际 ${mastery.length}`);
+assert.strictEqual(mastery[0].label, "考考我", `T4: advancesMastery 应是"考考我"`);
+console.log(`✓ T4 只有"考考我"涨掌握度`);
 
-// === T5: 接近掌握阶段（mastery 0.85） ===
-sqljs.run("UPDATE progress SET mastery = 0.85 WHERE node_id = ?", [NODE_ID]);
-const masterPrompts = getStarterPrompts(db, NODE_ID);
-assert.ok(masterPrompts.length >= 3, `T5: 接近掌握应有≥3个 prompts`);
-assert.ok(masterPrompts.some((p) => p.message.includes("总结") || p.message.includes("复述")), "T5: 应有总结/费曼");
-assert.ok(masterPrompts.some((p) => p.message.includes("关联") || p.message.includes("体系")), "T5: 应有知识关联");
-console.log(`✓ T5 接近掌握阶段(mastery=0.85): ${masterPrompts.length} 个 prompts（总结/关联/进阶/费曼）`);
+// === T5: 只有"我没太懂"带 frictionCategory ===
+const friction = prompts.filter((p) => p.frictionCategory);
+assert.strictEqual(friction.length, 1, `T5: 应只有 1 个 frictionCategory, 实际 ${friction.length}`);
+assert.strictEqual(friction[0].label, "我没太懂", `T5: frictionCategory 应是"我没太懂"`);
+assert.strictEqual(friction[0].frictionCategory, "confused", `T5: frictionCategory 值应为 confused`);
+console.log(`✓ T5 只有"我没太懂"记 friction(原 ? 卡点的归宿)`);
 
-// === T6: 不存在的节点 → 空数组 ===
-const empty = getStarterPrompts(db, "nonexistent");
-assert.strictEqual(empty.length, 0, "T6: 不存在节点应返回空数组");
-console.log("✓ T6 不存在节点 → 空数组");
+// === T6: message 引用节点标题(个性化) ===
+const allMentionTitle = prompts.every((p) => p.message.includes("神经网络基础"));
+assert.ok(allMentionTitle, "T6: 每个 prompt 的 message 都应引用节点标题");
+console.log(`✓ T6 prompts 引用节点标题(个性化)`);
 
-// === T7: prompts 引用了节点标题 ===
-sqljs.run("UPDATE progress SET mastery = NULL WHERE node_id = ?", [NODE_ID]);
-const titledPrompts = getStarterPrompts(db, NODE_ID);
-const allMentionTitle = titledPrompts.every((p) => p.message.includes("神经网络基础"));
-assert.ok(allMentionTitle, "T7: 每个 prompt 的 message 都应引用节点标题");
-console.log("✓ T7 prompts 引用节点标题（个性化）");
+// === T7: 不存在节点 → [] ===
+assert.strictEqual(getStarterPrompts(db, "nonexistent").length, 0, "T7: 不存在节点应返回 []");
+console.log(`✓ T7 不存在节点 → []`);
 
 console.log("\n=== ALL STARTER PROMPTS TESTS PASSED ✅ ===");

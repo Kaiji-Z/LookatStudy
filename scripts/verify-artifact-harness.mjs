@@ -280,11 +280,48 @@ test("T16 null/undefined 输入不 crash", () => {
   assert.ok(Array.isArray(r2.data.questions));
 });
 
-test("T17 QUALITY_GUIDE 5 种类型都有指南", () => {
-  const types = ["concept_map", "quiz", "compare_table", "diagram", "code_walkthrough"];
+test("T17 QUALITY_GUIDE 6 种类型都有指南", () => {
+  const types = ["concept_map", "quiz", "compare_table", "diagram", "code_walkthrough", "guess"];
   for (const t of types) {
     assert.ok(typeof QUALITY_GUIDE[t] === "string" && QUALITY_GUIDE[t].length > 10, `${t} 应有质量指南`);
   }
+});
+
+// ============================================================
+// § guess(hook 起手式的二选一猜测卡,不计分)
+// ============================================================
+
+test("T18 guess 合法数据通过,2 个选项不变,无 warning", () => {
+  const r = sanitizeArtifact(
+    {
+      prompt: "递归算阶乘会比循环——更慢,还是差不多?",
+      options: [
+        { id: "a", label: "更慢" },
+        { id: "b", label: "差不多" },
+      ],
+    },
+    "guess",
+  );
+  assert.strictEqual(r.warnings.length, 0, "T18: 合法数据不应有 warning");
+  assert.strictEqual(r.data.artifactType, "guess");
+  assert.strictEqual(r.data.options.length, 2, "T18: 应保留 2 个选项");
+  assert.strictEqual(r.data.options[0].id, "a");
+});
+
+test("T19 guess 选项不足 2 个 → 补占位 + warning(保证按钮卡永远能渲染 2 个)", () => {
+  const r = sanitizeArtifact(
+    { prompt: "你猜?", options: [{ id: "a", label: "只有 A" }] },
+    "guess",
+  );
+  assert.ok(r.warnings.length > 0, "T19: 选项不足应有 warning");
+  assert.strictEqual(r.data.options.length, 2, "T19: 应补到 2 个");
+  assert.ok(r.data.options[1].label.includes("选项"), `T19: 占位 label 应含'选项', 实际: ${r.data.options[1].label}`);
+});
+
+test("T20 guess 空 options → 补两个占位,仍能渲染", () => {
+  const r = sanitizeArtifact({ prompt: "猜" }, "guess");
+  assert.strictEqual(r.data.options.length, 2, "T20: 空应补到 2 个");
+  assert.strictEqual(r.data.prompt, "猜");
 });
 
 // ---------- 跑测 ----------

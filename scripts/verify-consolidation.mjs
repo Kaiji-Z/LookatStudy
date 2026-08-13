@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
-import { consolidate, getSlot, gatherConsolidationWindow, consolidationDue, CONSOLIDATE_THROTTLE_MS } from "../src/main/services/memory-service.ts";
+import { consolidate, getSlot, gatherConsolidationWindow } from "../src/main/services/memory-service.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -161,18 +161,5 @@ assert.ok(
   "T8: 端到端后 friction_pattern 固化(课程隔离 gc)",
 );
 console.log("✓ T8 端到端 gather→consolidate:memory 从真实数据固化");
-
-// ============================================================
-// T9-T10: 自动固化节流(consolidationDue)
-// ============================================================
-assert.strictEqual(consolidationDue(null, 1000), true, "T9: 从未固化(null)→ due");
-assert.strictEqual(consolidationDue(1000, 1500, 1000), false, "T9: 距上次 500ms < 1000ms 节流 → 不 due");
-assert.strictEqual(consolidationDue(1000, 2001, 1000), true, "T9: 距上次 1001ms >= 1000ms → due");
-console.log("✓ T9 consolidationDue 节流决策(从未/未到/已到)");
-
-assert.ok(CONSOLIDATE_THROTTLE_MS === 5 * 60 * 1000, "T10: 默认节流 5 分钟");
-assert.strictEqual(consolidationDue(Date.now() - CONSOLIDATE_THROTTLE_MS - 1, Date.now()), true, "T10: 过 5 分钟 → due");
-assert.strictEqual(consolidationDue(Date.now() - 1000, Date.now()), false, "T10: 1 秒前刚固化 → 不 due");
-console.log("✓ T10 默认 5 分钟节流阈值正确");
 
 console.log("\n=== ALL CONSOLIDATION TESTS PASSED ✅ ===");

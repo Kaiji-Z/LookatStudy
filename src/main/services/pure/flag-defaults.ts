@@ -11,7 +11,7 @@ export type FlagName =
   | "agent_engine" // M2: Agent 引擎 + Propose/Apply
   | "bkt_mastery" // M2: BKT 掌握度
   | "lightweight_rag" // M3: 轻量 RAG
-  | "memory_system" // M3: 记忆系统
+  | "memory_system" // 学习者记忆(remember tool + 注入);Phase1 已接线,默认 off(off=baseline)
   | "image_download" // 导入时从 CDN 下载 md/ipynb 里引用的相对路径图片(不涉及 AI)
   | "multimodal_import"; // AI 多模态:vision 模型识图/看图(需要 API key + vision 模型)
 

@@ -130,7 +130,8 @@ npm run verify:core && npx vite build && npm run self-test
 | Exercise | `services/exercise-service.ts` | AI exercise generation (mcq/fill_blank/true_false) + grading |
 | Dashboard | `services/dashboard-service.ts` | `getDashboard` — section mastery, metrics |
 | Progress | `services/progress-service.ts` | DB-injected progress read/write (headless-testable) |
-| Search | `services/search-service.ts` | RAG `LIKE`-fallback search + memory get/update |
+| Memory | `services/memory-service.ts` | 学习者模型(定性层,补 BKT 定量 + friction 原始事件之缺)。`remember(db,input,merge)` 注入式 merge(生产 `defaultLlmMerge(llm)` 写时 LLM 合并去重,测试确定性 stub);`getLearnerMemory(db,nodeId)` 拼块注入 agent 上下文;按 `(category,nodeId)` 槽位 upsert(global/node/friction_pattern)。flag `memory_system` 门控(默认 off,off=baseline) |
+| Search | `services/search-service.ts` | RAG `LIKE`-fallback search |
 | XP | `services/xp-service.ts` | Daily XP tracking (correct+10/wrong+1/mastered+50) |
 | SRS | `services/srs.ts` | SM-2 spaced repetition; `recordReviewDb`(pure/srs-db.ts, db 注入)与 BKT 闭环——答题/复习双向同步(答对推迟、答错近期重练) |
 | Streak | `services/streak.ts` | Streak + freeze transitions |

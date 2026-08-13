@@ -43,6 +43,7 @@ import {
 } from "../proposal-service.js";
 // P3: 注入学习者近期卡点,让 agent "看见并记住"挣扎点(relatedness + 自适应)
 import { buildFrictionContext } from "../pure/friction-context.js";
+import { getLearnerMemory, remember, defaultLlmMerge } from "../memory-service.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -222,6 +223,10 @@ export async function runAgentTurn(
       `教学策略指引：${teachingStrategy}` +
       (frictionContext ? `\n\n${frictionContext}` : "")
     : "(无当前节点上下文)";
+
+  // 学习者记忆(跨会话,定性层,补 BKT 定量 + friction 原始事件之缺)。
+  // memory_system flag off 或无记忆时为 null → 不注入(新用户零副作用)。
+  const learnerMemory = isFlagOn("memory_system") ? getLearnerMemory(db, node?.id) : null;
 
   // 工具集：只读直接返回，写操作走 proposal
   const tools: ToolSet = {
@@ -505,6 +510,30 @@ export async function runAgentTurn(
     }),
   };
 
+  // memory_system flag on → 加 remember tool:agent 记学习者持久事实(跨会话,写时 LLM 合并)。
+  if (isFlagOn("memory_system")) {
+    tools.remember = tool({
+      description:
+        "记下关于这位学习者的持久事实(供以后会话用)。只在学到**值得跨会话保留**的事时调:" +
+        "反复出现的知识缺口/混淆、对这位学习者管用的讲法(如'用斐波那契类比讲递归才通')、" +
+        "节奏/风格偏好。不要记临时闲聊或单次提问内容。" +
+        "category:global=整体风格/偏好;node=本节点具体缺口(须带 nodeId);friction_pattern=跨节点反复模式。",
+      inputSchema: z.object({
+        category: z
+          .enum(["global", "node", "friction_pattern"])
+          .describe("global=整体;node=本节点(须带 nodeId);friction_pattern=跨节点反复模式"),
+        content: z.string().describe("要记的事实,简洁(如'用类比讲递归才通')"),
+        nodeId: z.string().optional().describe("仅 category=node 时填当前节点 id"),
+      }),
+      execute: async (input) => {
+        events.onToolCall?.("remember", input);
+        const res = await remember(db, input, defaultLlmMerge(llm.languageModel));
+        markDirty();
+        return res;
+      },
+    });
+  }
+
   try {
     // v0.8 多模态:用户问图相关问题时,主动把当前节点的图片注入到最后一条 user 消息
     // (方案 B:不依赖 tool-result vision,直接把图作为 message file-part 喂给 LLM)
@@ -554,7 +583,9 @@ export async function runAgentTurn(
 
     const result = streamText({
       model: llm.languageModel,
-      system: `${system}\n\n${nodeContext}`,
+      system: `${system}\n\n${nodeContext}${
+        learnerMemory ? `\n\n【学习者记忆（跨会话）】\n${learnerMemory}` : ""
+      }`,
       messages: preparedMessages,
       tools,
       stopWhen: stepCountIs(6),

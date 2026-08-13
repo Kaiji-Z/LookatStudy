@@ -17,6 +17,7 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **学习者记忆系统 Phase 1(agent 终于"认识"用户)** —— 此前 agent 功能上无记忆(`memory` 表+CRUD 是休眠骨架,agent-engine 从不读/写)。定位为**学习者模型(定性层)**,正交补 BKT(定量掌握度)+ friction_log(原始卡点事件)之缺——记的是"怎么学/什么讲法管用/跨节点反复卡点",而非从"提问+讲解"窗口里抽不到的个人画像。写侧:agent 第 11 个 tool `remember`(flag `memory_system` 门控)→ **写时 LLM 合并**(注入式 merge,生产 `defaultLlmMerge` 去重/解冲突/保简洁,测试确定性 stub)→ 按 `(category,nodeId)` 槽位 upsert(global/node/friction_pattern),合并而非覆盖防"越用越乱"。读侧:`getLearnerMemory` 拼块注入 system(空则不注入,新用户零副作用)。**借 Mem0 的 extract+merge 算法,不移植包**(向量/抽取 pass 与 local-first/BYO-key/无 native 三重冲突)。新增 `memory-service.ts` + `verify-memory.mjs`(9 断言,闭环已证)。Phase 1.5 将建 learner-model 投影统一 mastery+friction+memory 三处注入;Phase 3 friction_pattern 自动提炼。
 - **UI/UX 全量打磨(a11y + light mode + token 一致性)** —— (1) 全局 `:focus-visible` 焦点环(WCAG 2.4.7;101 个按钮原先仅 1 个有 focus-visible→全应用键盘焦点可见);(2) `btn-icon-3d` 圆形 3D 按钮词汇(发送/停止钮复刻 3D 手感但 rounded-full,消除裸 bg-brand 圆形钮);(3) `map-rail-scope` 左栏锁深色(游戏化场景不参与 light 切换);(4) 中右栏 90 处 neutral 双套写→ink/surface token(浅色模式真正可用);(5) 6 个 artifacts amber→warning;(6) NotebookPanel nested card 消除 + 标题字号语义化(text-xl/lg→text-title);(7) PRODUCT/AGENTS 承认双主题(原先误标 dark-only)。
 - **底部按钮重构:语境化 4 巩固选择 + 撤 ? 卡点表单(接住 hook 之后的动量)** —— 原 starter chips
   进节点就给(语境前 = 决策税)、含义模糊、hint 只靠 hover;? 卡点是无标签图标 + 糊涂/卡住/受挫三选

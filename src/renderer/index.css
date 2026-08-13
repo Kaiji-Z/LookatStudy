@@ -122,6 +122,15 @@
      曾有 --sky-* 变量但 canvas 不读它们(死代码),已删除。浅色天空在批次2 实现。 */
 }
 
+/* —— 全局焦点环(a11y WCAG 2.4.7):键盘聚焦时所有交互元素显示 brand ring。
+     限定 button/a/role=button/tabindex,不碰 input/textarea(它们用 focus:border 表焦点)。
+     outline 不挤布局;reduced-motion 下被全局 guard 自动同步为瞬时。 —— */
+:where(button, a, [role="button"], [tabindex="0"]):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 /* ============================================================
  * 浅色模式(v0.7)—— html.light 覆盖块
  * useTheme hook 在 <html> 上加/移 .light/.dark class。本块只覆盖会变的:
@@ -221,6 +230,23 @@ html.light {
   --exam-locked-rgb: 117 109 134;
   --exam-glow: oklch(0.50 0.20 303.9 / 0.25);
   --exam-ring: oklch(0.50 0.20 303.9 / 0.18);
+}
+
+/* 左栏(MapRail)游戏化深色场景:light 模式下强制锁回深色 token。
+   左栏按深色设计(天空 canvas + 气球),不参与深浅切换;只有中右栏/modal/drawer 切换浅色。
+   复制 :root 深色默认值到此 scope,覆盖 html.light 的浅色值,保证左栏任何子元素
+   (含未来 token 化的)在浅色模式下仍呈现深色游戏化观感。 */
+html.light .map-rail-scope {
+  --surface-rail: oklch(0.14 0.005 270); --surface-rail-rgb: 8 9 11;
+  --surface-0: oklch(0.16 0.005 270);    --surface-0-rgb: 12 13 15;
+  --surface-1: oklch(0.18 0.005 270);    --surface-1-rgb: 17 17 20;
+  --surface-2: oklch(0.22 0.005 270);    --surface-2-rgb: 26 26 29;
+  --ink: oklch(0.96 0.003 270);
+  --ink-strong: oklch(0.985 0 0);
+  --ink-muted: oklch(0.7 0.005 270);
+  --ink-faint: oklch(0.55 0.005 270);
+  --border: oklch(0.27 0.005 270);
+  --border-faint: oklch(0.22 0.005 270);
 }
 
 /* 浅色模式下锁定球的球体光照:浅底上需要深色球才有立体感。

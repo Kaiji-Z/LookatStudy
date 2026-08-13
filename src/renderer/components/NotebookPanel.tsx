@@ -14,6 +14,9 @@ import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode, type
 import type { ContentNode, CanvasItem, NoteSourceAnchor, NodeAsset } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
@@ -361,6 +364,7 @@ function ContentTab({
         <div ref={proseRef} className="prose prose-sm max-w-[80ch] leading-relaxed [&_pre]:max-w-full [&_pre]:overflow-x-auto select-text">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
             urlTransform={(url) => url}
             components={{
               // 外链强制新窗口 → setWindowOpenHandler → 系统浏览器,

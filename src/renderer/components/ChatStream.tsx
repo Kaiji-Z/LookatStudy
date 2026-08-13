@@ -17,6 +17,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { CanvasItem } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
 import { Check, X, ChevronDown, Pencil, XCircle, Wrench, Rocket, ClipboardList, Copy, Settings } from "lucide-react";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { api } from "../lib/api.js";
@@ -465,7 +468,12 @@ function PartRenderer({
         className="prose prose-sm max-w-[80ch] leading-relaxed select-text"
         data-testid="part-text"
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
+          urlTransform={(url) => url}
+          components={markdownComponents}
+        >
           {part.text}
         </ReactMarkdown>
       </div>

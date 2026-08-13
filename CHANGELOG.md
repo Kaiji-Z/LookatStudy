@@ -17,6 +17,7 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **UI/UX 全量打磨(a11y + light mode + token 一致性)** —— (1) 全局 `:focus-visible` 焦点环(WCAG 2.4.7;101 个按钮原先仅 1 个有 focus-visible→全应用键盘焦点可见);(2) `btn-icon-3d` 圆形 3D 按钮词汇(发送/停止钮复刻 3D 手感但 rounded-full,消除裸 bg-brand 圆形钮);(3) `map-rail-scope` 左栏锁深色(游戏化场景不参与 light 切换);(4) 中右栏 90 处 neutral 双套写→ink/surface token(浅色模式真正可用);(5) 6 个 artifacts amber→warning;(6) NotebookPanel nested card 消除 + 标题字号语义化(text-xl/lg→text-title);(7) PRODUCT/AGENTS 承认双主题(原先误标 dark-only)。
 - **底部按钮重构:语境化 4 巩固选择 + 撤 ? 卡点表单(接住 hook 之后的动量)** —— 原 starter chips
   进节点就给(语境前 = 决策税)、含义模糊、hint 只靠 hover;? 卡点是无标签图标 + 糊涂/卡住/受挫三选
   下拉(在认知负荷最高处做元数据归类,反学习习惯)。重构:starter 改成固定的 4 个"一瞥→懂"巩固选择

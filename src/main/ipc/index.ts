@@ -14,6 +14,7 @@ import {
   srsItems,
   exercises,
   chatSessions,
+  threads,
 } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import type {
@@ -76,7 +77,7 @@ import {
 // Agent 引擎 + Proposal（M2）
 import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory, handleAgentChatThread, abortAgentChatThread } from "../services/agent/agent-engine.js";
 import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels, resolveLlm } from "../services/agent/llm-client.js";
-import { gatherConsolidationWindow, consolidate, defaultLlmConsolidate } from "../services/memory-service.js";
+import { gatherConsolidationWindow, consolidate, defaultLlmConsolidate, consolidationDue } from "../services/memory-service.js";
 import { PROVIDER_PRESETS } from "../services/agent/llm-presets.js";
 // 自定义 Provider
 import {
@@ -889,7 +890,14 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(
     "agent:chatThread",
     async (_e, threadId: string, userMessage: string) => {
-      return handleAgentChatThread(mainWindow, threadId, userMessage);
+      const result = await handleAgentChatThread(mainWindow, threadId, userMessage);
+      // turn 完成后,自动触发记忆固化(节流 5min/课程,fire-and-forget,flag 门控)
+      try {
+        maybeAutoConsolidate(threadId);
+      } catch (e) {
+        console.error("[consolidate] auto trigger error", e);
+      }
+      return result;
     },
   );
   ipcMain.handle("agent:abortThread", async (_e, threadId: string) => {
@@ -1011,6 +1019,31 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
 }
 
 /* ---------- 仪表盘 + 检索 + 记忆（M3） ---------- */
+
+// 自动记忆固化的节流状态(每课程上次固化的时间戳)。进程内,单用户桌面 app 足够。
+const autoConsolidateLastAt = new Map<string, number>();
+
+/**
+ * turn 完成后自动触发记忆固化:查 thread→courseId,flag 门控 + 节流(5min/课程)通过后,
+ * fire-and-forget 跑 consolidate(不阻塞响应,错误只记日志)。flag off 时 no-op。
+ */
+function maybeAutoConsolidate(threadId: string): void {
+  if (!isFlagOn("memory_system")) return;
+  const db = getDb();
+  const thread = db.select().from(threads).where(eq(threads.id, threadId)).get();
+  if (!thread?.courseId) return;
+  const courseId = thread.courseId;
+  const now = Date.now();
+  if (!consolidationDue(autoConsolidateLastAt.get(courseId) ?? null, now)) return;
+  autoConsolidateLastAt.set(courseId, now);
+  const llm = resolveLlm(db);
+  const win = gatherConsolidationWindow(db, { courseId });
+  void consolidate(db, win, defaultLlmConsolidate(llm.languageModel))
+    .then((written) => {
+      if (Object.keys(written).length > 0) markDirty();
+    })
+    .catch((e) => console.error("[consolidate] auto failed", e));
+}
 
 export function registerM3Handlers(): void {
   ipcMain.handle("dashboard:get", async (_e, courseId: string) => {

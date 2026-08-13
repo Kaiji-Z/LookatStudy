@@ -239,6 +239,18 @@ export type ConsolidateFn = (
  * 触发无关:window 由调用方采集传入;合并由 consolidateFn 做(它收到 existing)。
  * @returns 实际写入的类别 summary(未返回的类别不写)
  */
+/** 自动固化的节流间隔(每课程):避免每个 turn 都跑 LLM 固化。 */
+export const CONSOLIDATE_THROTTLE_MS = 5 * 60 * 1000;
+
+/** 节流决策(纯函数):该课程距上次固化是否已过 throttle。lastAtMs=null=从未固化→true。 */
+export function consolidationDue(
+  lastAtMs: number | null,
+  nowMs: number,
+  throttleMs: number = CONSOLIDATE_THROTTLE_MS,
+): boolean {
+  return lastAtMs === null || nowMs - lastAtMs >= throttleMs;
+}
+
 export async function consolidate(
   db: Db,
   win: ConsolidationWindow,

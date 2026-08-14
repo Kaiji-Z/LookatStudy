@@ -10,7 +10,7 @@
  */
 import { app, BrowserWindow, shell } from "electron";
 import { join, resolve } from "node:path";
-import { writeFileSync, appendFileSync } from "node:fs";
+import { writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { initDb, getDb, markDirty } from "./db/index.js";
 import { registerAllHandlers } from "./ipc/index.js";
 import { setupContextMenu } from "./context-menu.js";
@@ -52,7 +52,10 @@ const PROJECT_ROOT = resolve(__dirname, "../..");
 // 导致渲染层 DOM 正常但合成失败 → 黑屏窗口。
 // 软件合成对本应用（无 3D / 无视频）完全够用，且更稳定。
 // 必须在 app.whenReady() 之前调用。
-app.disableHardwareAcceleration();
+// --shots(README 截图模式)例外:capturePage 需要真实 GPU 合成,禁用后可能抓到空帧。
+if (!process.argv.includes("--shots")) {
+  app.disableHardwareAcceleration();
+}
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -118,7 +121,7 @@ function createWindow(): void {
 // dev 模式也绕过:dev 频繁重启,旧实例被 concurrently -k SIGTERM 后可能 zombie 持锁,
 // 导致重启时新实例 requestSingleInstanceLock() 拿不到锁立即 quit(表现:重启 dev 打不开、
 // electron exit 0 无任何日志)。production 打包后才需要锁(防用户双击多次开多窗口)。
-const isTestMode = process.argv.includes("--self-test") || process.argv.includes("--ui-test");
+const isTestMode = process.argv.includes("--self-test") || process.argv.includes("--ui-test") || process.argv.includes("--shots");
 if (!isTestMode && !isDev) {
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {
@@ -200,6 +203,13 @@ app.whenReady().then(async () => {
   if (process.argv.includes("--ui-test")) {
     const screenshot = process.argv.includes("--screenshot");
     await runUiTest(screenshot);
+    app.quit();
+    return;
+  }
+
+  // 截图模式:npm run shots → docs/screenshots/*.png(README 素材维护)。
+  if (process.argv.includes("--shots")) {
+    await runShots();
     app.quit();
     return;
   }
@@ -286,6 +296,186 @@ async function runSelfTest(): Promise<void> {
   console.error("SELF_TEST_RESULT=" + JSON.stringify(report));
 
   if (!allOk) process.exitCode = 1;
+}
+
+/**
+ * 截图模式（npm run shots）：为 README 产出真实界面截图 → docs/screenshots/。
+ *
+ * 独立临时 DB + .env 真 provider（LLM 开场是真实对话）;进度/待复习/XP/streak
+ * seed 出"学过一阵"的地图观感(皇冠/进度环/锁/复习角标/能量条)。
+ * 序列:选课 → 点首课球(选中+讲解) → 01-overview;开始学习 → 猜一轮等揭晓 →
+ * 02-ai-tutor;搜索面板(全课程树) → 03-course-search。
+ * GPU 合成保持开启(whenReady 前的 disable 对 --shots 跳过),capturePage 才有真实帧。
+ */
+async function runShots(): Promise<void> {
+  const outDir = join(PROJECT_ROOT, "docs", "screenshots");
+  mkdirSync(outDir, { recursive: true });
+  const saved: string[] = [];
+
+  // provider:同 ui-test——.env 真 key → 真实 LLM 开场;无 key 用占位(只截界面)
+  try {
+    const zai = getZaiConfig();
+    const PROVIDER_ID = "custom-shots-provider";
+    if (getDb().select().from(customProviders).all().length === 0) {
+      getDb().insert(customProviders).values({
+        id: PROVIDER_ID,
+        label: zai ? "ZAI (env)" : "Shots Provider",
+        baseUrl: zai?.baseUrl ?? "https://example.com/v1",
+        apiKey: zai?.apiKey ?? "test-key",
+        defaultModel: zai?.model ?? "test-model",
+      }).run();
+    }
+    const activeRow = getDb().select().from(settingsTable).where(eq(settingsTable.key, "active_provider")).get();
+    if (!activeRow) getDb().insert(settingsTable).values({ key: "active_provider", value: PROVIDER_ID }).run();
+  } catch (e) {
+    console.error("[lookatstudy] shots provider seed failed:", e);
+  }
+
+  // 造"学过一阵"的状态:1 课毕业(皇冠) / 2 课进行中(进度环) / 3 课可点 / 其余锁;
+  // 首课一条到期复习(地图复习角标) + streak 5 天 + 今日 XP 40。
+  try {
+    const seeds: Array<{ nodeId: string; status: "mastered" | "in_progress" | "available"; mastery: number; crownLevel: number }> = [
+      { nodeId: "guide-les-1-1", status: "mastered", mastery: 0.95, crownLevel: 1 },
+      { nodeId: "guide-les-1-2", status: "in_progress", mastery: 0.6, crownLevel: 0 },
+      { nodeId: "guide-les-1-3", status: "available", mastery: 0, crownLevel: 0 },
+    ];
+    for (const p of seeds) {
+      getDb()
+        .insert(progressTable)
+        .values({ nodeId: p.nodeId, status: p.status, mastery: p.mastery, crownLevel: p.crownLevel, lastAttemptAt: new Date().toISOString() })
+        .onConflictDoUpdate({ target: progressTable.nodeId, set: { status: p.status, mastery: p.mastery, crownLevel: p.crownLevel } })
+        .run();
+    }
+    getDb()
+      .insert(srsItems)
+      .values({ id: "shot-due-1", nodeId: "guide-les-1-1", easeFactor: 250, intervalDays: 1, repetitions: 3, dueAt: "2020-01-01T00:00:00.000Z", lastReviewedAt: "2020-01-01T00:00:00.000Z" })
+      .onConflictDoUpdate({ target: srsItems.id, set: { dueAt: "2020-01-01T00:00:00.000Z" } })
+      .run();
+    getDb().update(streaks).set({ currentStreak: 5, longestStreak: 12 }).where(eq(streaks.id, "singleton")).run();
+    const today = new Date().toISOString().slice(0, 10);
+    for (const kv of [{ key: `daily_xp_${today}`, value: "40" }, { key: "total_xp", value: "1240" }]) {
+      const ex = getDb().select().from(settingsTable).where(eq(settingsTable.key, kv.key)).get();
+      if (!ex) getDb().insert(settingsTable).values(kv).run();
+    }
+    markDirty();
+  } catch (e) {
+    console.error("[lookatstudy] shots state seed failed:", e);
+  }
+
+  const win = new BrowserWindow({
+    width: 1600,
+    height: 1000,
+    show: true,
+    webPreferences: {
+      preload: join(PROJECT_ROOT, "dist-electron/preload/index.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  registerAllHandlers(win);
+  setStateEmitter((kind) => win.webContents.send("state:changed", kind));
+  setExamStatusSender((payload) => win.webContents.send("exam:status", payload));
+  await win.loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"));
+
+  const js = (code: string): Promise<unknown> =>
+    win.webContents.executeJavaScript(code).catch(() => null);
+  const shot = async (name: string): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 800)); // 等入场动画/合成稳定
+    const img = await win.webContents.capturePage();
+    const png = img.toPNG();
+    writeFileSync(join(outDir, name), png);
+    saved.push(name);
+    console.error(`[lookatstudy] shot saved: ${name} (${png.length} bytes)`);
+  };
+
+  // 渲染层挂载
+  await js(`(async function(){
+    for (var i = 0; i < 60; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      if (document.querySelector('[data-testid="course-list"]')) return true;
+    }
+    return false;
+  })()`);
+
+  // 选课 → 等地图节点
+  await js(`(async function(){
+    var row = document.querySelector('[data-testid="course-list"] button');
+    if (!row) return false;
+    row.click();
+    for (var i = 0; i < 40; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      if (document.querySelectorAll('[data-testid^="map-node-"]').length >= 1) return true;
+    }
+    return false;
+  })()`);
+
+  // 点首个可点的球(mastered 课) → 选中环 + 讲解内容
+  await js(`(async function(){
+    var btns = document.querySelectorAll('[data-testid^="map-node-"]');
+    for (const b of btns) { if (!b.disabled) { b.click(); break; } }
+    for (var i = 0; i < 40; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      if (document.querySelector('[data-testid="notebook-panel"]')) return true;
+    }
+    return false;
+  })()`);
+  await shot("01-overview.png");
+
+  // 开始学习 → 等 LLM 第一轮(hook + 二选一卡) → 点一个选项 → 等第二轮揭晓
+  const WAIT_REPLY = `(async function(){
+    // 等 assistant 出现且流式结束(chat-stop 消失),文本长度 1.2s 不再增长才算稳
+    var lastLen = -1, stableSince = -1;
+    var start = Date.now();
+    while (Date.now() - start < 90000) {
+      await new Promise(function(r){ setTimeout(r, 400); });
+      var streaming = document.querySelector('[data-testid="chat-stop"]');
+      var msgs = document.querySelectorAll('[data-testid="msg-assistant"]');
+      var len = 0; for (const m of msgs) len += (m.textContent || "").length;
+      var now = Date.now();
+      if (!streaming && msgs.length > 0) {
+        if (len === lastLen) {
+          if (stableSince < 0) stableSince = now;
+          else if (now - stableSince > 1200) return true;
+        } else stableSince = -1;
+      }
+      lastLen = len;
+    }
+    return false;
+  })()`;
+  const started = await js(`(async function(){
+    var btn = document.querySelector('[data-testid="start-learning-btn"]');
+    if (!btn) return false;
+    btn.click();
+    return true;
+  })()`);
+  if (started === true) {
+    await js(WAIT_REPLY);
+    const picked = await js(`(async function(){
+      // 有二选一卡就点第一个选项,再等一轮揭晓;没有就算了(直接截第一轮)
+      var opts = document.querySelectorAll('[data-testid^="guess-option-"]');
+      if (opts.length === 0) return false;
+      opts[0].click();
+      return true;
+    })()`);
+    if (picked === true) await js(WAIT_REPLY);
+  }
+  await shot("02-ai-tutor.png");
+
+  // 课程搜索面板:全课程树大纲
+  await js(`(async function(){
+    var btn = document.querySelector('[data-testid="map-search-btn"]');
+    if (!btn) return false;
+    btn.click();
+    for (var i = 0; i < 20; i++) {
+      await new Promise(function(r){ setTimeout(r, 100); });
+      if (document.querySelector('[data-testid="course-search-panel"]')) return true;
+    }
+    return false;
+  })()`);
+  await shot("03-course-search.png");
+
+  console.error("SHOTS_RESULT=" + JSON.stringify({ ok: saved.length === 3, saved }));
 }
 
 app.on("window-all-closed", () => {

@@ -74,7 +74,7 @@ npm run verify:core       # 62 pure-Node/tsx logic test suites
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 29 DOM assertions incl. a11y + reactive i18n + cold-start gating + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
+npm run ui-test           # real-GUI verification (headless Electron, 32 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
 npm run lint              # oxlint
 npx tsc --noEmit                       # typecheck renderer
 npx tsc -p tsconfig.electron.json --noEmit  # typecheck main/preload

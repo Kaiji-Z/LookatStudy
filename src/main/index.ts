@@ -428,16 +428,15 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   // 等渲染层拉完数据 + React 渲染完。轮询所有关键 testid 都出现——
   // 不能只等容器，因为 souls/courses 是异步并行拉的，容器早出、内容晚出，会 race。
-  // v0.2: 三栏布局后 testid 变了——map-rail + map-node-* + chat-panel + notebook-panel
-  // 注:soul-picker 在 ChatComposer 内,需选中节点才渲染,不在初始等待条件里。
+  // 课程空选启动:map-node-* 要等手动选课后才出现,初始等待只等三栏 + 课程列表(导入面板)。
   const waitRender = async (timeoutMs = 10000): Promise<boolean> => {
     const deadline = Date.now() + timeoutMs;
     const checkAll = () =>
       win.webContents.executeJavaScript(`
         document.querySelector('[data-testid="map-rail"]') !== null &&
-        document.querySelectorAll('[data-testid^="map-node-"]').length >= 1 &&
         document.querySelector('[data-testid="chat-panel"]') !== null &&
-        document.querySelector('[data-testid="notebook-panel"]') !== null
+        document.querySelector('[data-testid="notebook-panel"]') !== null &&
+        document.querySelector('[data-testid="course-list"]') !== null
       `);
     while (Date.now() < deadline) {
       try {
@@ -451,9 +450,24 @@ async function runUiTest(screenshot = false): Promise<void> {
     return false;
   };
 
+  /** 模拟用户手动选课(空选启动后):点课程列表第一行 → 等地图节点渲染。reload 后复用。 */
+  const selectFirstCourse = (): Promise<boolean> =>
+    win.webContents.executeJavaScript(`
+      (async function() {
+        var row = document.querySelector('[data-testid="course-list"] button');
+        if (!row) return false;
+        row.click();
+        for (var i = 0; i < 40; i++) {
+          await new Promise(function(r){ setTimeout(r, 250); });
+          if (document.querySelectorAll('[data-testid^="map-node-"]').length >= 1) return true;
+        }
+        return false;
+      })()
+    `).catch(() => false);
+
   const rendered = await waitRender();
   results.push({
-    name: "renderer mounted (map-rail + chat-panel + notebook-panel)",
+    name: "renderer mounted (map-rail + chat-panel + notebook-panel + course-list)",
     ok: rendered,
     detail: rendered ? "DOM testids present" : "timeout waiting for render",
   });
@@ -467,6 +481,29 @@ async function runUiTest(screenshot = false): Promise<void> {
     process.exitCode = 1;
     return;
   }
+
+  // T0 (课程空选启动): 不自动选课 —— 中栏选课引导空态 + 地图零节点 + 导入面板课程列表可见。
+  const emptyStart = await win.webContents.executeJavaScript(`
+    (function() {
+      var noCourse = document.querySelector('[data-testid="chat-no-course"]');
+      var mapNodes = document.querySelectorAll('[data-testid^="map-node-"]').length;
+      var courseList = document.querySelectorAll('[data-testid="course-list"] > *').length;
+      return { noCourse: !!noCourse, mapNodes: mapNodes, courseRows: courseList };
+    })()
+  `);
+  results.push({
+    name: "startup: no course pre-selected (empty-state + zero map nodes + course list)",
+    ok: emptyStart?.noCourse === true && emptyStart?.mapNodes === 0 && emptyStart?.courseRows >= 1,
+    detail: emptyStart,
+  });
+
+  // T0b (手动选课): 点课程行 → 不跳界面地加载该课,自动切地图面板 + 节点渲染。
+  const picked = await selectFirstCourse();
+  results.push({
+    name: "manual course select: course row click → map nodes rendered",
+    ok: picked === true,
+    detail: picked ? "map nodes present after click" : "map nodes never appeared",
+  });
 
   // T1: soul-picker(教学人设药丸行)里应有 3 个内置 soul(direct/guide/practice)
   const optionCount = await win.webContents.executeJavaScript(
@@ -997,10 +1034,10 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: zoneAria,
   });
 
-  // T20 (P1.1/P1.3 冷启动门控闭环): 删除 provider + active_provider → 重载 → 选节点
+  // T20 (P1.1/P1.3 冷启动门控闭环): 删除 provider + active_provider → 重载 → 手动选课 → 选节点
   // → 应见 keyless-card,不见 start-learning-btn。证明"无 key 点🚀 → 死胡同"已修复。
-  // 放最后:需 reload,会破坏后续 DOM 断言所需的页面状态。
-  let keyless: { reloaded?: boolean; nodeClicked?: boolean; ready?: boolean; keylessCard?: boolean; startBtn?: boolean; error?: string } = {};
+  // 放后段:需 reload,会破坏后续 DOM 断言所需的页面状态。
+  let keyless: { reloaded?: boolean; reselected?: boolean; nodeClicked?: boolean; ready?: boolean; keylessCard?: boolean; startBtn?: boolean; error?: string } = {};
   try {
     const db = getDb();
     db.delete(customProviders).run();
@@ -1008,6 +1045,8 @@ async function runUiTest(screenshot = false): Promise<void> {
     if (apRow) db.delete(settingsTable).where(eq(settingsTable.key, "active_provider")).run();
     win.webContents.reload();
     const reloaded = await waitRender();
+    // reload 后回到空选初始态(选择不持久化) → 重新手动选课,再点节点
+    const reselected = await selectFirstCourse();
     const clicked = await win.webContents.executeJavaScript(`
       (function() {
         var btns = document.querySelectorAll('[data-testid^="map-node-"]');
@@ -1026,7 +1065,7 @@ async function runUiTest(screenshot = false): Promise<void> {
         };
       })()
     `);
-    keyless = { reloaded, nodeClicked: clicked === true, ready: dom?.ready, keylessCard: dom?.keylessCard, startBtn: dom?.startBtn };
+    keyless = { reloaded, reselected, nodeClicked: clicked === true, ready: dom?.ready, keylessCard: dom?.keylessCard, startBtn: dom?.startBtn };
   } catch (e) {
     keyless = { error: String(e) };
   }
@@ -1034,6 +1073,49 @@ async function runUiTest(screenshot = false): Promise<void> {
     name: "keyless cold-start: no provider → keyless-card shown & start-learning-btn hidden (P1.1/P1.3)",
     ok: keyless?.ready === false && keyless?.keylessCard === true && keyless?.startBtn === false,
     detail: keyless,
+  });
+
+  // T21 (课程删除闭环): 地图头"删除当前课程"按钮 → ConfirmCard 确认 → 课程删除,
+  // 中栏回到未选课空态 + 课程列表少一门。ui-test 用临时 DB,删种子课不影响下次运行。
+  let courseDelete: { trash?: boolean; card?: boolean; noCourse?: boolean; before?: number; after?: number; importPanel?: boolean; error?: string } = {};
+  try {
+    courseDelete = await win.webContents.executeJavaScript(`
+      (async function() {
+        try {
+          var trash = document.querySelector('[data-testid="course-delete-btn"]');
+          if (!trash) return { trash: false };
+          var before = document.querySelectorAll('[data-testid="course-list"] > *').length;
+          trash.click();
+          await new Promise(function(r){ setTimeout(r, 300); });
+          var card = document.querySelector('[data-testid="course-delete-confirm"]');
+          if (!card) return { trash: true, card: false, before: before };
+          var confirmBtn = card.querySelector('[data-testid="course-delete-confirm-confirm"]');
+          if (confirmBtn) confirmBtn.click();
+          // 等删除 IPC + refreshAll + 重渲染(空态出现为完成信号)
+          for (var i = 0; i < 40; i++) {
+            await new Promise(function(r){ setTimeout(r, 250); });
+            if (document.querySelector('[data-testid="chat-no-course"]')) break;
+          }
+          var after = document.querySelectorAll('[data-testid="course-list"] > *').length;
+          return {
+            trash: true,
+            card: true,
+            noCourse: document.querySelector('[data-testid="chat-no-course"]') !== null,
+            before: before,
+            after: after,
+          };
+        } catch (e) { return { error: String(e) }; }
+      })()
+    `);
+  } catch (e) {
+    courseDelete = { error: String(e) };
+  }
+  results.push({
+    name: "course delete: header trash → confirm card → deleted & back to empty-selection state",
+    ok: courseDelete?.trash === true && courseDelete?.card === true && courseDelete?.noCourse === true
+      && typeof courseDelete?.after === "number" && typeof courseDelete?.before === "number"
+      && courseDelete.after < courseDelete.before,
+    detail: courseDelete,
   });
 
   // allOk: 所有测试通过 OR 仅 knownFail 测试未通过

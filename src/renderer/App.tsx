@@ -191,8 +191,16 @@ export default function App() {
       setXp(xpData);
       setActiveSoul(currentSoul);
       setDueNodeIds(new Set(due));
-      if (courseList.length > 0 && !selectedCourseId) {
-        setSelectedCourseId(courseList[0]!.id);
+      // 不自动选课:每次启动落在"未选课"初始状态,用户手动选择或导入。
+      // 已选课程在列表中消失(被删除)→ 清空课程维度状态,回到未选课初始态。
+      if (selectedCourseId && !courseList.some((c) => c.id === selectedCourseId)) {
+        setSelectedCourseId(null);
+        setSelectedNodeId(null);
+        setTree([]);
+        setProgressMap({});
+        setDashboard(null);
+        setAvailableLanguages([]);
+        setCurrentLocale(null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -509,6 +517,22 @@ export default function App() {
     return off;
   }, [selectedNodeId, tree, toast, t]);
 
+  // 删除课程(当前课也可删):MapRail 的 ConfirmCard 确认后调用。
+  // 删除后 refreshAll 检测选中课程消失 → 自动清空选中态(回到未选课初始态)。
+  const handleDeleteCourse = useCallback(
+    async (courseId: string) => {
+      const course = courses.find((c) => c.id === courseId);
+      try {
+        await api.deleteCourse(courseId);
+        toast.show(t("import.deleted", { title: course?.title ?? courseId }), { duration: 3000 });
+        refreshAll();
+      } catch (e) {
+        setErrorFromThrow(e);
+      }
+    },
+    [courses, refreshAll, setErrorFromThrow, toast, t],
+  );
+
   // 统一的"发送一条消息"流程:首次发送自动建 thread,之后直接发。
   // ChatComposer 的 onSend 和 handleStartLearning 都走这条,避免重复逻辑和"忘了建 thread"的坑。
   const sendMessage = useCallback(
@@ -610,6 +634,7 @@ export default function App() {
           }}
           onOpenReview={() => setShowReviewDrawer(true)}
           onSelectCourse={(id) => guardedNav(() => { setSelectedCourseId(id); refreshAll(); })}
+          onDeleteCourse={(id) => guardedNav(() => { void handleDeleteCourse(id); })}
           onCoursesChanged={() => { refreshAll(); }}
           availableLanguages={availableLanguages}
           currentLocale={currentLocale}
@@ -652,7 +677,16 @@ export default function App() {
               style={rightPaneVisible ? { width: "clamp(480px, 40vw, 720px)" } : { flex: 1 }}
               data-testid="chat-panel"
             >
-              {selectedNode?.type === "exam" ? (
+              {!selectedCourseId ? (
+                /* 未选课程(启动初始态 / 删除已选课程后):中栏显示选课引导,不渲染对话 UI */
+                <div className="flex-1 flex items-center justify-center px-6" data-testid="chat-no-course">
+                  <div className="text-center max-w-sm">
+                    <div className="text-5xl mb-4 opacity-30">📚</div>
+                    <div className="text-title font-bold text-ink mb-2">{t("course.empty.title")}</div>
+                    <div className="text-body text-ink-muted leading-relaxed">{t("course.empty.desc")}</div>
+                  </div>
+                </div>
+              ) : selectedNode?.type === "exam" ? (
                 /* 考试节点:渲染 ExamView 替代 chat(关底 boss,独立 UI) */
                 <ExamView
                   examNode={selectedNode}

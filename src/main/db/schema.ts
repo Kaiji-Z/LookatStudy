@@ -73,6 +73,8 @@ export const exercises = sqliteTable("exercises", {
   /** MCQ 的选项 JSON 数组 */
   optionsJson: text("options_json"),
   aiGenerated: integer("ai_generated", { mode: "boolean" }).notNull().default(true),
+  /** 章节考试题考察的知识点标题(考试出题时标注;课时练习题/老考试题为 NULL) */
+  kcTitle: text("kc_title"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),
@@ -110,6 +112,30 @@ export const knowledgeComponentMastery = sqliteTable("knowledge_component_master
 }, (t) => [
   uniqueIndex("idx_kcm_node_kc").on(t.nodeId, t.kcIndex),
 ]);
+
+/* ---------- 章节考试 attempt 档案（第 20 张表） ---------- */
+
+export const examAttempts = sqliteTable("exam_attempts", {
+  id: text("id").primaryKey(),
+  examNodeId: text("exam_node_id")
+    .notNull()
+    .references(() => contentNodes.id, { onDelete: "cascade" }),
+  startedAt: text("started_at").notNull(),
+  /** NULL = 进行中(悬挂:app 崩溃/强关时遗留) */
+  finishedAt: text("finished_at"),
+  /** 1 = 中途离开被终止(未答题按答错计分) */
+  terminated: integer("terminated", { mode: "boolean" }).notNull().default(false),
+  correctCount: integer("correct_count").notNull().default(0),
+  totalCount: integer("total_count").notNull().default(0),
+  stars: integer("stars").notNull().default(0),
+  /** {exerciseId: userAnswer} 逐题累计(崩溃安全的增量持久化) */
+  answersJson: text("answers_json").notNull().default("{}"),
+  /** 结算快照:逐题对错/正确答案/解析(判分后写) */
+  perQuestionJson: text("per_question_json"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
 
 /* ---------- SRS 复习项（SM-2 字段） ---------- */
 

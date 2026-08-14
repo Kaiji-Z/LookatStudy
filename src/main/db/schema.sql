@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS exercises (
   explanation TEXT,
   options_json TEXT,
   ai_generated INTEGER NOT NULL DEFAULT 1,
+  kc_title TEXT,  -- 章节考试题考察的知识点标题(考试出题时标注;课时练习题/老考试题为 NULL)
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 CREATE INDEX IF NOT EXISTS idx_exercises_node ON exercises(node_id);
@@ -77,6 +78,23 @@ CREATE TABLE IF NOT EXISTS knowledge_component_mastery (
   UNIQUE(node_id, kc_index)
 );
 CREATE INDEX IF NOT EXISTS idx_kcm_node ON knowledge_component_mastery(node_id);
+
+-- 章节考试 attempt 档案:每次考试一行,结算后持久保留(切回考试节点可见历史结果)。
+-- answers_json 逐题增量持久化 → 崩溃/强关后悬挂 attempt 可按"未答=错"自动判死。
+CREATE TABLE IF NOT EXISTS exam_attempts (
+  id TEXT PRIMARY KEY,
+  exam_node_id TEXT NOT NULL REFERENCES content_nodes(id) ON DELETE CASCADE,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,                  -- NULL = 进行中(悬挂:app 崩溃/强关时遗留)
+  terminated INTEGER NOT NULL DEFAULT 0,  -- 1 = 中途离开被终止(未答题按答错计分)
+  correct_count INTEGER NOT NULL DEFAULT 0,
+  total_count INTEGER NOT NULL DEFAULT 0,
+  stars INTEGER NOT NULL DEFAULT 0,
+  answers_json TEXT NOT NULL DEFAULT '{}',  -- {exerciseId: userAnswer} 逐题累计
+  per_question_json TEXT,           -- 结算快照:逐题对错/正确答案/解析(判分后写)
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+CREATE INDEX IF NOT EXISTS idx_exam_attempts_node ON exam_attempts(exam_node_id);
 
 CREATE TABLE IF NOT EXISTS srs_items (
   id TEXT PRIMARY KEY,

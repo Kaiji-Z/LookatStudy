@@ -71,11 +71,22 @@ const api = {
   submitExerciseAnswer: ((exerciseId: string, userAnswer: string) =>
     ipcRenderer.invoke("exercise:submit", exerciseId, userAnswer)) as ApiExpose["submitExerciseAnswer"],
 
-  /* 章节考试（关底 boss） */
-  examStart: ((examNodeId: string) =>
-    ipcRenderer.invoke("exam:start", examNodeId)) as ApiExpose["examStart"],
-  examSubmit: ((examNodeId: string, answers: Record<string, string>) =>
-    ipcRenderer.invoke("exam:submit", examNodeId, answers)) as ApiExpose["examSubmit"],
+  /* 章节考试 v2（后台生成 + KC 出题 + attempt 档案） */
+  examPrepare: ((examNodeId: string) =>
+    ipcRenderer.invoke("exam:prepare", examNodeId)) as ApiExpose["examPrepare"],
+  examGetStatus: ((examNodeId: string) =>
+    ipcRenderer.invoke("exam:getStatus", examNodeId)) as ApiExpose["examGetStatus"],
+  examStartAttempt: ((examNodeId: string) =>
+    ipcRenderer.invoke("exam:startAttempt", examNodeId)) as ApiExpose["examStartAttempt"],
+  examRecordAnswer: ((examNodeId: string, attemptId: string, exerciseId: string, answer: string) =>
+    ipcRenderer.invoke("exam:recordAnswer", examNodeId, attemptId, exerciseId, answer)) as ApiExpose["examRecordAnswer"],
+  examSubmitAttempt: ((
+    examNodeId: string,
+    attemptId: string,
+    answers: Record<string, string>,
+    opts?: { terminated?: boolean },
+  ) =>
+    ipcRenderer.invoke("exam:submitAttempt", examNodeId, attemptId, answers, opts)) as ApiExpose["examSubmitAttempt"],
 
   /* SRS */
   getDueReviews: (() => ipcRenderer.invoke("srs:getDue")) as ApiExpose["getDueReviews"],

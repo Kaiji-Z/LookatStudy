@@ -508,6 +508,18 @@ Entry conventions for contributors:
     available=0.1 / locked=0 的全课平均),点课(available→in_progress)立刻推进总进度条
     (之前纯 mastery 平均,点课无反馈)。
 
+### Changed
+- **导入改为后台任务（可继续浏览其他课程 + 可取消）** —— 导入是分钟级重管线，此前
+  renderer 全程 await、完成后强制跳转到新课程，且中途切课会看到半成品课程。现改
+  job 化：`import:localFolder` / 新增 `import:github`（analyze+import 合一）选完即返
+  jobId，管线在 main 后台跑（进度 `import:progress`、结束 `import:done`）；完成只
+  刷新课程列表 + Toast，不再强制跳转（用户自己决定何时查看）；进度屏新增"取消导入"
+  按钮（`import:cancel`，拉取阶段生效，写库前零残留）+ "后台进行可继续浏览"提示。
+  配套把 `executeImport` 重构为两阶段——拉取（可取消、零写库）+ 落库（无 await 的
+  同步段一次性写完课程+全部节点，消除半成品可见窗口；中途意外失败自动清理残留行）。
+  新增 verify-import-cancel（3 断言，闭环已证）。Markdown 生成路径是同步短任务，
+  维持原行为。
+
 ### Fixed
 - **双语课程导入：翻译检测 + 配对全链路修复（本地 + GitHub）** —— 成对双语文件夹
   （xxx.en.txt / xxx.zh-CN.txt）此前导入后 🌐 切换器无数据、英文原稿被吞。三层缺陷：

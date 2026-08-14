@@ -58,6 +58,13 @@ export interface Course {
   createdAt: string;
 }
 
+/* ---------- 后台导入任务（import:localFolder / import:github 即返的句柄） ---------- */
+
+/** 后台导入任务句柄：管线在 main 后台跑，进度走 import:progress，结束走 import:done */
+export interface ImportJobHandle {
+  jobId: string;
+}
+
 /* ---------- 仓库分析（新智能导入管线 Step 1+2 结果） ---------- */
 
 export interface RepoAnalysis {
@@ -314,8 +321,14 @@ export interface ApiExpose {
   setCourseLanguage(courseId: string, locale: string | null): Promise<void>;
   /** 获取课程当前显示语言（null = 原文） */
   getCourseLanguage(courseId: string): Promise<string | null>;
-  /** 从本地文件夹导入:Electron 选目录 → 递归扫描 txt/md/html/pdf → 落库 → 自动结构化。push import:progress。用户取消返回 null */
-  importLocalFolder(): Promise<Course | null>;
+  /** 从本地文件夹导入（后台任务）:Electron 选目录 → 立即返回 jobId，管线后台跑。
+   * push import:progress（进度）+ import:done（完成/失败/取消）。用户取消对话框返回 null */
+  importLocalFolder(): Promise<ImportJobHandle | null>;
+  /** 从 GitHub 仓库导入（后台任务）:analyzeRepo + importAnalyzed 合一，立即返回 jobId。
+   * push import:progress + import:done。URL 无效时立即抛错 */
+  importGithub(repoUrl: string): Promise<ImportJobHandle>;
+  /** 请求取消进行中的后台导入（拉取阶段生效，写库前零残留）。返回是否有任务在跑 */
+  importCancel(): Promise<boolean>;
   /** M4: 从 markdown 字符串生成课程（无网络依赖） */
   generateCourseFromMarkdown(
     md: string,
@@ -667,6 +680,8 @@ export interface IpcEvents {
   /** 提议创建事件（结构化，供聊天栏渲染应用/拒绝卡） */
   "chat:proposal": (proposalId: string, summary: string, status: string) => void;
   "import:progress": (message: string) => void;
+  /** 后台导入任务结束（完成/失败/取消）。cancelled=true 表示用户主动取消 */
+  "import:done": (result: { ok: true; courseId: string; title: string } | { ok: false; error: string; cancelled?: boolean }) => void;
   /**
    * v0.2 parts-based 流式协议：把 fullStream 的 part 透传给渲染层。
    * 与 chat:token 并存（兼容期），渲染层可二选一。M2 起优先用 chat:part。

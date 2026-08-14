@@ -11,7 +11,7 @@
  *   5d. 完整性验证
  */
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
 import { contentNodes, courses, progress as progressTable, contentNodeTranslations } from "../db/schema.js";
@@ -56,6 +56,8 @@ export async function executeImport(
     translationPairs?: Map<string, string> | null;
     sourceLang: string;
     translationLayout?: "microsoft" | "parallel" | "suffix" | "none";
+    /** 后台导入的取消信号：返回 true 时在拉取阶段抛"导入已取消"（写库前，零残留） */
+    shouldAbort?: () => boolean;
     markDirty: () => void;
   },
   onProgress?: (msg: string) => void,
@@ -78,19 +80,10 @@ export async function executeImport(
   // 空标题回退到仓库名/文件夹名（designCourseStructure 在空结构时返回 ""）
   const resolvedTitle = structure.courseTitle?.trim() || opts.repoName;
 
-  // ── 创建课程行 ──
-  db.insert(courses).values({
-    id: courseId,
-    repoUrl: opts.repoUrl,
-    repoName: opts.repoName,
-    title: resolvedTitle,
-    description: `从 ${opts.repoName} 导入`,
-    version: 1,
-    labType: "doc",
-    sourceLang: opts.sourceLang,
-  }).run();
-
-  // ── 5a+5b: 拉正文 + 图片内联 ──
+  // ── 5a+5b: 拉正文 + 图片内联（阶段一：可取消，零写库）──
+  // 后台导入要求：取消/失败不能留半成品课程。因此课程行与全部节点在阶段二
+  // （无 await 的同步段）一次性写入——事件循环不可插入观察半成品；本阶段任何
+  // 取消都发生在写库之前，零残留。
   send(`拉取 ${allLessons.length} 个文件的正文…`);
 
   // 缓存已拉取的文件正文（同一文件可能被多个 lesson 引用）
@@ -109,103 +102,138 @@ export async function executeImport(
     const sp = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;
     if (!fileFirstLesson.has(lesson.file)) fileFirstLesson.set(lesson.file, sp);
   }
+  // 每个 lesson 拉取+内联后的正文（key = sourcePath，与 lessonImages 同键）
+  const lessonContents = new Map<string, string | null>();
 
-  let sectionOrder = 0;
   let totalLessons = 0;
-  let firstStudyLessonId: string | null = null;
+  for (const lesson of allLessons) {
+    if (opts.shouldAbort?.()) throw new Error("导入已取消");
+    // 5a: 拉正文（标题序号截取：含文件头部 + H3 子段 + 供翻译对齐的 meta）
+    const content = await getLessonContent(
+      lesson, opts.source, contentCache, headingsCache, fileFirstLesson, lessonMeta,
+      allLessons.length, totalLessons, send,
+    );
 
-  for (const sec of structure.sections) {
-    const sectionId = randomUUID();
-    db.insert(contentNodes).values({
-      id: sectionId,
-      courseId,
-      parentId: null,
-      type: "section",
-      title: sec.title,
-      sourcePath: null,
-      orderIdx: sectionOrder++,
-      summary: sec.summary ?? null,
-      world: sec.world,
-    }).run();
+    // 5b: 图片 base64 内联
+    let inlinedContent = content ? await inlineImages(
+      content, lesson.file, opts.source, imageCache, send,
+    ) : null;
 
-    let lessonOrder = 0;
-    for (const lesson of sec.lessons) {
-      // 5a: 拉正文（标题序号截取：含文件头部 + H3 子段 + 供翻译对齐的 meta）
-      const content = await getLessonContent(
-        lesson, opts.source, contentCache, headingsCache, fileFirstLesson, lessonMeta,
-        allLessons.length, totalLessons, send,
-      );
-
-      // 5b: 图片 base64 内联
-      let inlinedContent = content ? await inlineImages(
-        content, lesson.file, opts.source, imageCache, send,
-      ) : null;
-
-      // 5b-2: 独立图片 attachImages（LLM 关联的孤儿图，追加到正文末尾）
-      if (inlinedContent && lesson.attachImages && lesson.attachImages.length > 0) {
-        for (const imgPath of lesson.attachImages) {
-          if (!imageCache.has(imgPath)) {
-            const dataUrl = await opts.source.getImageDataUrl(imgPath);
-            imageCache.set(imgPath, dataUrl ?? opts.source.getImageFallbackUrl(imgPath));
-          }
-          const resolved = imageCache.get(imgPath);
-          if (resolved) {
-            inlinedContent += `\n\n![](${resolved})`;
-          }
+    // 5b-2: 独立图片 attachImages（LLM 关联的孤儿图，追加到正文末尾）
+    if (inlinedContent && lesson.attachImages && lesson.attachImages.length > 0) {
+      for (const imgPath of lesson.attachImages) {
+        if (!imageCache.has(imgPath)) {
+          const dataUrl = await opts.source.getImageDataUrl(imgPath);
+          imageCache.set(imgPath, dataUrl ?? opts.source.getImageFallbackUrl(imgPath));
+        }
+        const resolved = imageCache.get(imgPath);
+        if (resolved) {
+          inlinedContent += `\n\n![](${resolved})`;
         }
       }
-
-      // 记录原文图片 src 数组（翻译按位置映射用）
-      const srcPath = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;
-      lessonImages.set(srcPath, extractImageSrcs(inlinedContent ?? ""));
-
-      const lessonId = randomUUID();
-      const isPractice = lesson.world === "practice";
-      const isStudy = !isPractice;
-
-      db.insert(contentNodes).values({
-        id: lessonId,
-        courseId,
-        parentId: sectionId,
-        type: "lesson",
-        title: lesson.title,
-        sourcePath: lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file,
-        orderIdx: lessonOrder++,
-        content: inlinedContent,
-        world: lesson.world,
-      }).run();
-
-      // progress: practice 全 available, study 第一个 available
-      const status = isPractice ? "available" : (firstStudyLessonId === null ? "available" : "locked");
-      db.insert(progressTable).values({
-        nodeId: lessonId,
-        status,
-        crownLevel: 0,
-      }).run();
-
-      if (isStudy && firstStudyLessonId === null) firstStudyLessonId = lessonId;
-      totalLessons++;
     }
 
-    // study section 有 ≥2 lesson 时加 exam
-    if (sec.world === "study" && sec.lessons.filter((l) => l.world === "study").length >= 2) {
-      const examId = randomUUID();
+    // 记录原文图片 src 数组（翻译按位置映射用）+ 正文
+    const srcPath = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;
+    lessonImages.set(srcPath, extractImageSrcs(inlinedContent ?? ""));
+    lessonContents.set(srcPath, inlinedContent);
+    totalLessons++;
+  }
+
+  // ── 5c: 落库（阶段二：同步段写完课程+全部节点，无半成品窗口）──
+  let sectionOrder = 0;
+  let firstStudyLessonId: string | null = null;
+  // 已写入的节点 id（写库中途意外失败时清理用）
+  const writtenNodeIds: string[] = [];
+
+  try {
+    db.insert(courses).values({
+      id: courseId,
+      repoUrl: opts.repoUrl,
+      repoName: opts.repoName,
+      title: resolvedTitle,
+      description: `从 ${opts.repoName} 导入`,
+      version: 1,
+      labType: "doc",
+      sourceLang: opts.sourceLang,
+    }).run();
+
+    for (const sec of structure.sections) {
+      const sectionId = randomUUID();
+      writtenNodeIds.push(sectionId);
       db.insert(contentNodes).values({
-        id: examId,
+        id: sectionId,
         courseId,
-        parentId: sectionId,
-        type: "exam",
-        title: `${sec.title} · 章节测验`,
+        parentId: null,
+        type: "section",
+        title: sec.title,
         sourcePath: null,
-        orderIdx: lessonOrder,
-        world: "study",
+        orderIdx: sectionOrder++,
+        summary: sec.summary ?? null,
+        world: sec.world,
       }).run();
-      db.insert(progressTable).values({
-        nodeId: examId,
-        status: "available",
-        crownLevel: 0,
-      }).run();
+
+      let lessonOrder = 0;
+      for (const lesson of sec.lessons) {
+        const srcPath = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;
+        const inlinedContent = lessonContents.get(srcPath) ?? null;
+        const lessonId = randomUUID();
+        const isPractice = lesson.world === "practice";
+        const isStudy = !isPractice;
+
+        writtenNodeIds.push(lessonId);
+        db.insert(contentNodes).values({
+          id: lessonId,
+          courseId,
+          parentId: sectionId,
+          type: "lesson",
+          title: lesson.title,
+          sourcePath: srcPath,
+          orderIdx: lessonOrder++,
+          content: inlinedContent,
+          world: lesson.world,
+        }).run();
+
+        // progress: practice 全 available, study 第一个 available
+        const status = isPractice ? "available" : (firstStudyLessonId === null ? "available" : "locked");
+        db.insert(progressTable).values({
+          nodeId: lessonId,
+          status,
+          crownLevel: 0,
+        }).run();
+
+        if (isStudy && firstStudyLessonId === null) firstStudyLessonId = lessonId;
+      }
+
+      // study section 有 ≥2 lesson 时加 exam
+      if (sec.world === "study" && sec.lessons.filter((l) => l.world === "study").length >= 2) {
+        const examId = randomUUID();
+        writtenNodeIds.push(examId);
+        db.insert(contentNodes).values({
+          id: examId,
+          courseId,
+          parentId: sectionId,
+          type: "exam",
+          title: `${sec.title} · 章节测验`,
+          sourcePath: null,
+          orderIdx: lessonOrder,
+          world: "study",
+        }).run();
+        db.insert(progressTable).values({
+          nodeId: examId,
+          status: "available",
+          crownLevel: 0,
+        }).run();
+      }
     }
+  } catch (e) {
+    // 写库中途意外失败（约束冲突等）→ 清理本课程的全部残留，不留学生看不懂的半成品
+    if (writtenNodeIds.length > 0) {
+      db.delete(progressTable).where(inArray(progressTable.nodeId, writtenNodeIds)).run();
+    }
+    db.delete(contentNodes).where(eq(contentNodes.courseId, courseId)).run();
+    db.delete(courses).where(eq(courses.id, courseId)).run();
+    throw e;
   }
 
   // ── 翻译落库 ──

@@ -93,6 +93,9 @@ const translations: Record<Lang, Record<string, string>> = {
     "import.progress.elapsed": "已 {s}s",
     "import.progress.title": "正在导入课程…",
     "import.progress.starting": "正在启动…",
+    "import.progress.note": "导入在后台进行，可继续浏览其他课程",
+    "import.progress.cancel": "取消导入",
+    "import.cancelled": "已取消导入",
 
     // —— Toast ——
     "toast.threadCreateFailed": "创建失败了,再试一次",
@@ -531,6 +534,9 @@ const translations: Record<Lang, Record<string, string>> = {
     "import.progress.elapsed": "{s}s elapsed",
     "import.progress.title": "Importing course…",
     "import.progress.starting": "Starting…",
+    "import.progress.note": "Import runs in the background — keep browsing other courses",
+    "import.progress.cancel": "Cancel import",
+    "import.cancelled": "Import cancelled",
 
     // —— Toast ——
     "toast.threadCreateFailed": "Couldn't create — try again",

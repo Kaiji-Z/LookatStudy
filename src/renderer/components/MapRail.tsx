@@ -8,8 +8,9 @@
 import type { ContentNode, Progress, Course } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { useState, useEffect, useRef, type CSSProperties } from "react";
-import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench } from "lucide-react";
+import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
+import { CourseSearchPanel } from "./CourseSearchPanel.js";
 import {
   computeBalloonLayout,
   balloonSegmentToPath,
@@ -70,8 +71,30 @@ export function MapRail(props: MapRailProps) {
   useEffect(() => { setSkyKey(pickPreset(props.courseId)); }, [props.courseId]);
   const skyPreset: SkyPreset | null = skyKey ? PRESETS[skyKey] ?? null : null;
 
+  /** 课程搜索面板(全栏 overlay):开启时覆盖左栏,点行跳转后自动关闭。 */
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // 选中节点可能在滚动视口外(搜索跳转/跨世界跳转):气球不可见时平滑滚到中央。
+  // 正常点地图球时球本来就可见,不会触发滚动。
+  useEffect(() => {
+    if (!props.selectedNodeId) return;
+    const container = mapPathRef.current;
+    if (!container) return;
+    const el = container.querySelector(
+      `[data-node-id="${CSS.escape(props.selectedNodeId)}"]`,
+    );
+    if (!el) return;
+    const cRect = container.getBoundingClientRect();
+    const eRect = el.getBoundingClientRect();
+    if (eRect.top < cRect.top + 60 || eRect.bottom > cRect.bottom - 60) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [props.selectedNodeId]);
+
   const prevCourseId = useRef<string | null>(null);
   useEffect(() => {
+    // 切课/删课时收起搜索面板(面板内容绑定当前课的树)。
+    setSearchOpen(false);
     // 有课程时切到 map 面板:首次加载(prevCourseId=null)有课也切,不只限课程切换。
     // 无课程(courseId 空)时留在 import 面板(引导导入)。
     if (props.courseId && (prevCourseId.current === null || prevCourseId.current !== props.courseId)) {
@@ -164,7 +187,12 @@ export function MapRail(props: MapRailProps) {
               </div>
               <span className="text-label font-extrabold tabular-nums text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">{masteryPct}%</span>
             </div>
-            <div className="flex items-center justify-end mt-1.5 text-caption">
+            <div className="flex items-center justify-end gap-1.5 mt-1.5 text-caption">
+              {/* 课程搜索入口:打开全栏搜索面板(树状导航 + 标题/全文过滤)。 */}
+              <button onClick={() => setSearchOpen(true)} data-testid="map-search-btn" className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10 transition-colors">
+                <Search className="w-3 h-3 text-white/50" />
+                <span className="font-bold text-white/60">{t("map.search.label")}</span>
+              </button>
               {/* 复习入口:文字常驻(只给图标用户不知道是什么),有待复习时高亮 + 数字 */}
               <button onClick={props.onOpenReview} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full transition-colors ${props.dueCount > 0 ? "bg-review/20 ring-1 ring-review/30 hover:bg-review/30" : "bg-white/5 ring-1 ring-white/10 hover:bg-white/10"}`} data-testid="map-review-badge">
                 <BookOpen className={`w-3 h-3 ${props.dueCount > 0 ? "text-review" : "text-white/50"}`} />
@@ -245,6 +273,24 @@ export function MapRail(props: MapRailProps) {
           </div>
         </div>
       </div>
+
+      {/* 课程搜索面板(全栏 overlay,z-50 盖住 tab/标题/地图)。
+          跳转先切到目标节点的 world(实操课自动切实操页),再走 onJumpNode
+          (带流式锁/考试离开守卫),面板收起后滚动定位到对应球。 */}
+      {searchOpen && props.courseId && (
+        <CourseSearchPanel
+          sections={props.sections}
+          tree={props.tree}
+          progressMap={props.progressMap}
+          selectedNodeId={props.selectedNodeId}
+          onJump={(node) => {
+            setWorld(node.world ?? "study");
+            setSearchOpen(false);
+            props.onJumpNode(node.id);
+          }}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
 
       {/* 删除课程确认(导入面板课程行 + 地图头当前课删除按钮共用,替代 native confirm) */}
       {confirmDelete && (
@@ -657,6 +703,7 @@ function MapSection({
           return (
             <div
               key={lesson.id}
+              data-node-id={lesson.id}
               className="absolute balloon-bob hover:z-30"
               style={{
                 left: node.x - NODE_W / 2,

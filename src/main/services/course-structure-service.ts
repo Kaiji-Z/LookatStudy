@@ -21,18 +21,62 @@ type Db = SQLJsDatabase<typeof schema>;
  * 用于用户首次点节点时(getNodeSummary IPC 检测到 summary 为空时调)。
  * 已有 summary 的节点不会调本函数(幂等)。
  */
-export async function generateLessonSummary(db: Db, nodeId: string): Promise<string | null> {
+/**
+ * 解析"摘要+KC"单次 LLM 调用的返回（generateLessonSummary 用）。
+ *
+ * 容错规则：
+ * - 合法 JSON {summary, knowledgePoints} → 双产出（KC 校验：title 非空、≥2 个、上限 7）
+ * - 纯文本（旧式输出）→ 只当摘要，KC 留空（下次点击可重试补齐）
+ * - 以 { 开头但解析失败 → null（不缓存垃圾，下次点击重试）
+ * 与批量版 generateLessonSummaries 的批次解析规则对齐。
+ */
+export function parseLessonSummaryKc(
+  raw: string,
+): { summary: string; knowledgePoints?: { title: string; description: string }[] } | null {
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  if (!cleaned) return null;
+  // 纯文本容错（旧式 LLM 输出）：当摘要用，KC 留待下次重试
+  if (!cleaned.startsWith("{")) return { summary: cleaned };
+  let obj: unknown;
+  try {
+    obj = JSON.parse(cleaned);
+  } catch {
+    return null; // 坏 JSON：不缓存垃圾
+  }
+  if (!obj || typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+  if (typeof o.summary !== "string" || !o.summary.trim()) return null;
+  const result: { summary: string; knowledgePoints?: { title: string; description: string }[] } = {
+    summary: o.summary.trim(),
+  };
+  if (Array.isArray(o.knowledgePoints)) {
+    const validKps = (o.knowledgePoints as Array<Record<string, unknown>>)
+      .filter((kp) => typeof kp.title === "string" && kp.title.trim())
+      .slice(0, 7)
+      .map((kp) => ({
+        title: (kp.title as string).trim(),
+        description: typeof kp.description === "string" ? kp.description.trim() : "",
+      }));
+    if (validKps.length >= 2) result.knowledgePoints = validKps;
+  }
+  return result;
+}
+
+export async function generateLessonSummary(db: Db, nodeId: string, markDirty?: () => void): Promise<string | null> {
   const node = db.select().from(contentNodes).where(eq(contentNodes.id, nodeId)).get();
   if (!node || node.type !== "lesson") return null;
-  // 已有摘要不重复生成
-  if (node.summary) return node.summary;
+  // 摘要+KC 双字段齐备才命中（历史遗留"只有摘要没 KC"的节点下次点击补齐 KC）
+  if (node.summary && node.knowledgePoints) return node.summary;
 
   const llm = resolveLlm(db);
   const course = db.select().from(courses).where(eq(courses.id, node.courseId)).get();
   const content = node.content ?? "";
   if (content.trim().length < 20) return null; // 内容太短不生成
 
-  const prompt = `你是课程设计专家。为以下课时生成 1-2 句中文摘要:这课学什么 + 核心要点,让学习者快速判断要不要学、学完能掌握什么。30-60 字。
+  // 一次调用同时产出摘要 + KC（KC 搭摘要的车,零额外调用; KC 供 per-KC BKT 归因）
+  const prompt = `你是课程设计专家。为以下课时生成:
+1. 1-2 句中文摘要:这课学什么 + 核心要点,让学习者快速判断要不要学(30-60 字)
+2. 3-7 个知识组件(Knowledge Component)——这课可以拆成哪些可独立出题考察的知识点
 
 课程: ${course?.title ?? "(未知)"}
 课时: ${node.title}
@@ -40,18 +84,29 @@ export async function generateLessonSummary(db: Db, nodeId: string): Promise<str
 课时内容(前 800 字):
 ${content.slice(0, 800)}
 
-直接返回摘要文字,不要加 JSON、不要加 markdown 代码块标记、不要加"摘要:"前缀。`;
+知识组件要求:
+- 每个 KC 是一个可独立出题考察的知识点(不是章节标题的拆分)
+- title 简短(10字以内),description 说明"理解这个 KC 意味着什么"
+- 覆盖这课的核心概念,数量 3-7 个(内容少的课 3 个,多的 5-7 个)
+
+严格返回 JSON 对象,不要加 markdown 代码块标记:
+{ "summary": "1-2 句中文摘要", "knowledgePoints": [{"title": "知识组件名", "description": "理解这意味着什么"}] }`;
 
   const result = await generateText({ model: llm.languageModel, prompt });
-  const summary = result.text.replace(/^```.*\n?/i, "").replace(/\s*```$/i, "").trim();
-  if (!summary) return null;
+  const parsed = parseLessonSummaryKc(result.text);
+  if (!parsed?.summary) return null;
 
-  // 缓存到 DB
+  // 摘要 + KC 一起落库（立即 markDirty 落盘, 不是内存缓存; 齐备后读取永不再调 LLM）
+  const updateSet: { summary: string; knowledgePoints?: string } = { summary: parsed.summary };
+  if (parsed.knowledgePoints && parsed.knowledgePoints.length >= 2) {
+    updateSet.knowledgePoints = JSON.stringify(parsed.knowledgePoints);
+  }
   db.update(contentNodes)
-    .set({ summary })
+    .set(updateSet)
     .where(eq(contentNodes.id, nodeId))
     .run();
-  return summary;
+  markDirty?.();
+  return parsed.summary;
 }
 
 /**

@@ -141,7 +141,27 @@ try {
   assert.ok(transRows.length >= 1, `翻译表应有 zh-CN 行, 实际 ${transRows.length}`);
   assert.equal(transRows[0].values[0][0], "zh-CN", "locale=zh-CN");
   assert.equal(transRows[0].values[0][1], ZH, "翻译内容 = 中文文件全文");
-  console.log(`\n✅✅✅ 双语本地导入端到端成功：${dbLessons} 课（无重复）+ zh-CN 翻译落库 ✅✅✅`);
+
+  // ── 首次点击预热：一次 LLM 调用同时落 summary + knowledge_points ──
+  console.log("\n=== 首次点击预热: generateLessonSummary（真实 LLM, 摘要+KC 一次产出）===");
+  const { generateLessonSummary } = await import("../../src/main/services/course-structure-service.ts");
+  const firstLessonId = sqljs.exec("SELECT id FROM content_nodes WHERE type='lesson' LIMIT 1")[0].values[0][0];
+  const summary = await generateLessonSummary(db, firstLessonId, () => {});
+  assert.ok(summary && summary.length >= 8, `应生成摘要, got ${JSON.stringify(summary)}`);
+  const rowAfter = sqljs.exec(`SELECT summary, knowledge_points FROM content_nodes WHERE id = '${firstLessonId}'`)[0].values[0];
+  assert.equal(rowAfter[0], summary, "summary 已落库（非内存缓存）");
+  assert.ok(rowAfter[1], "knowledge_points 已落库");
+  const kps = JSON.parse(rowAfter[1]);
+  assert.ok(Array.isArray(kps) && kps.length >= 2 && kps.length <= 7, `KC 应 2-7 个, 实际 ${kps?.length}`);
+  assert.ok(kps.every((k) => typeof k.title === "string" && k.title.trim() && typeof k.description === "string"), "KC title/description 格式");
+  // 二次调用：摘要+KC 双字段齐备 → 纯 DB 命中，不再调 LLM（省 token）
+  const again = await generateLessonSummary(db, firstLessonId, () => {});
+  assert.equal(again, summary, "二次调用纯命中（幂等）");
+  console.log(`  摘要: ${summary.slice(0, 50)}`);
+  console.log(`  KC(${kps.length}): ${kps.map((k) => k.title).join(" / ")}`);
+  console.log("  ★ 摘要+KC 一次调用双落库 + 二次命中 ✅");
+
+  console.log(`\n✅✅✅ 双语本地导入端到端成功：${dbLessons} 课（无重复）+ zh-CN 翻译落库 + 首点 KC 预热 ✅✅✅`);
 
   console.log("\n=== live-test-local-import 通过 ✅ ===");
 } finally {

@@ -69,7 +69,7 @@ npm run dev               # vite only (renderer debugging, HMR)
 npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
-npm run verify:core       # 61 pure-Node/tsx logic test suites
+npm run verify:core       # 62 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
 npm run ui-test           # real-GUI verification (headless Electron, 29 DOM assertions incl. a11y + reactive i18n + cold-start gating + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
 npm run lint              # oxlint
@@ -118,7 +118,7 @@ npm run verify:core && npx vite build && npm run self-test
 | Highlight | `lib/highlightText.ts` | 画线定位:getTextModel + 文本搜索(applyPersistentMarksByText)+ 跨节点包裹(wrapRangeWithMark)+ 闪烁(flashMark)。**不依赖 DOM offset**(ReactMarkdown 重渲染不稳定),用 indexOf 在纯文本上定位 |
 | Custom providers | `services/custom-provider-service.ts` | BYO user-defined provider rows; bypass preset settings, resolved by `custom-` prefix |
 | Course generator | `services/course-generator.ts` | `generateCourseFromMarkdown` + `generateCourseFromRepoFiles` |
-| Course structure | `services/course-structure-service.ts` | LLM-based course restructuring (two-phase: classify uncertain → group sections) + `generateLessonSummaries` |
+| Course structure | `services/course-structure-service.ts` | LLM-based course restructuring (two-phase: classify uncertain → group sections) + `generateLessonSummaries`(批量) + `generateLessonSummary`(单课懒生成:首点节点球一次调用同时落 summary+knowledge_points——新管线课程的 KC 唯一自动来源,双字段齐备前可重试补齐) |
 | Repo fetcher | `services/pure/repo-fetcher.ts` | CDN fetch + `detectRepoPattern` (course/well-organized/single-file/docs-rich/unsupported + awesome-list 检测) + `fetchRepoInventory` (Step1: 多入口 README + 多分支 + tree + file list) + `fetchFileOutlines` (Step3: H1/H2/H3 + chars) + `extractOutlineWithCharCounts` |
 | Import pipeline | `services/import-pipeline.ts` | `executeImport` (Step5): **两阶段**——拉正文+图片内联(可取消 `shouldAbort`,零写库) → 落库(无 await 同步段一次写完,无半成品窗口,意外失败清理残留) → 翻译落库(显式配对优先,多布局 pathResolver 兜底) → 验证。后台 job 模型: `import:localFolder`/`import:github` 即返 jobId, `import:done`/`import:cancel` 事件。通过 `ContentSource` 抽象不关心来源 |
 | Import LLM | `services/import-llm-service.ts` | `classifyFileRoles` (Step2: LLM 文件角色 original/practice/**translation**(lang+translates 显式配对) + sourceLang + 翻译布局检测 + `excludeSuffixTranslations` 规则分流) + `designCourseStructure` (Step4: section/lesson/world + 长文件拆分 + attachImages 关联) |
@@ -163,7 +163,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (61 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (62 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

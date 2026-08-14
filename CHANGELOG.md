@@ -521,6 +521,19 @@ Entry conventions for contributors:
   维持原行为。
 
 ### Fixed
+- **KC（知识组件）提取断链接通：首次点击节点球时摘要+KC 一次调用双落库** —— KC
+  此前在新管线（GitHub/本地导入）课程上是彻底断链的：导入不写 knowledge_points，
+  唯一写入方 generateLessonSummaries 的 IPC 在 UI 上零调用方，唯一的自动路径挂在
+  已不用的旧版 importFromRepo 里——新导入课程的 per-KC BKT 静默失效。修：把首次
+  点击节点球即懒生成的 `generateLessonSummary`（原只产摘要）升级为**一次 LLM 调用
+  同时产出 1-2 句摘要 + 3-7 个 KC**（KC 搭摘要的车，调用次数零增加），两字段
+  （summary + knowledge_points）立即落库 + markDirty（顺带修掉原实现写库不
+  markDirty、只靠 before-quit 兜底落盘的 bug）；读取守卫改为"双字段齐备才命中"，
+  历史遗留只有摘要的节点下次点击自动补齐 KC，齐备后永不再调 LLM（省 token）。
+  前提成立性：考试节点在课程球未学完前不解锁，KC 只在课内答题归因时需要——
+  首点懒生成正好覆盖。新增 `parseLessonSummaryKc` 纯函数（容错：纯文本当摘要/
+  坏 JSON 返 null 重试/KC <2 丢弃/上限 7）+ verify-lesson-summary-kc（7 断言闭环）；
+  live-test-local-import 扩展首点预热验证（真实 LLM 双落库 + 二次纯命中）。
 - **双语课程导入：翻译检测 + 配对全链路修复（本地 + GitHub）** —— 成对双语文件夹
   （xxx.en.txt / xxx.zh-CN.txt）此前导入后 🌐 切换器无数据、英文原稿被吞。三层缺陷：
   (1) 扫描器 `dedupByLang` 是翻译系统前的"中文优先"hack——同 key 只留中文，英文原稿

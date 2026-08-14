@@ -792,9 +792,9 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     if (node.summary) return node.summary;
     // section 节点:结构化时已带 summary,没有就不生成(避免空 section 调 LLM)
     if (node.type !== "lesson") return null;
-    // lesson 节点:懒生成(基于 content 正文,1-2 句中文摘要)
+    // lesson 节点:懒生成(一次 LLM 调用同时产出摘要+KC,双落库+markDirty)
     try {
-      const summary = await generateLessonSummary(db, nodeId);
+      const summary = await generateLessonSummary(db, nodeId, markDirty);
       return summary;
     } catch {
       return null; // 生成失败不阻塞,中栏显示"暂无摘要"

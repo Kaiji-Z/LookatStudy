@@ -46,6 +46,8 @@ interface MapRailProps {
   onLocaleChange: (locale: string | null) => void;
   onOpenReview: () => void;
   onSelectCourse: (id: string) => void;
+  /** 删除课程(ConfirmCard 确认后由 App 执行:当前课删除后自动回未选课初始态) */
+  onDeleteCourse: (courseId: string) => void;
   onCoursesChanged: () => void;
 }
 
@@ -76,8 +78,16 @@ export function MapRail(props: MapRailProps) {
       setPanel("map");
       setWorld("study"); // 切课时重置世界:新课可能没有实操世界,practice 残留会导致空画面卡死
     }
+    // 已选课程被删除(非null → null)→ 回到"未选课"初始面板(选课/导入)。
+    if (!props.courseId && prevCourseId.current !== null) {
+      setPanel("import");
+      setWorld("study");
+    }
     prevCourseId.current = props.courseId;
   }, [props.courseId]);
+
+  /** 删除课程确认浮层(导入面板课程行 + 地图头当前课删除按钮共用,Portal 到 body) */
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string; rect: DOMRect } | null>(null);
 
   // Phase 2: 检测节点从 locked→available 的解锁瞬间,触发 celebrate("unlock") 粒子(完成 7 触点闭环)。
   // 比较 progressMap 前后状态;首次加载(prev 为空)不触发,防误报。
@@ -131,6 +141,21 @@ export function MapRail(props: MapRailProps) {
                   current={props.currentLocale}
                   onChange={props.onLocaleChange}
                 />
+              )}
+              {/* 删除当前课程:就地弹 ConfirmCard 确认,不跳导入面板。删除后自动回未选课初始态。 */}
+              {props.courseId && (
+                <button
+                  onClick={(e) => {
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setConfirmDelete({ id: props.courseId!, title: props.courseTitle ?? "", rect });
+                  }}
+                  data-testid="course-delete-btn"
+                  aria-label={t("import.delete.current")}
+                  data-tooltip={t("import.delete.current")}
+                  className="shrink-0 flex items-center justify-center w-5 h-5 rounded-md text-white/40 hover:text-warning hover:bg-white/10 transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
               )}
             </div>
             <div className="mt-1.5 flex items-center gap-2">
@@ -216,16 +241,29 @@ export function MapRail(props: MapRailProps) {
           </div>
           {/* 导入面板(透明,共享天空背景)。pt-48 避开悬浮 tab 区域(与地图面板一致) */}
           <div className="w-1/2 h-full overflow-y-auto px-3 pt-48 pb-3 space-y-2.5">
-            <ImportPanel courses={props.courses} selectedCourseId={props.courseId} onSelectCourse={(id) => { props.onSelectCourse(id); setPanel("map"); }} onCoursesChanged={props.onCoursesChanged} />
+            <ImportPanel courses={props.courses} selectedCourseId={props.courseId} onSelectCourse={(id) => { props.onSelectCourse(id); setPanel("map"); }} onDeleteCourse={(id, title, rect) => setConfirmDelete({ id, title, rect })} onCoursesChanged={props.onCoursesChanged} />
           </div>
         </div>
       </div>
+
+      {/* 删除课程确认(导入面板课程行 + 地图头当前课删除按钮共用,替代 native confirm) */}
+      {confirmDelete && (
+        <ConfirmCard
+          anchorRect={confirmDelete.rect}
+          message={`${confirmDelete.title} — ${t("import.delete.confirm")}`}
+          danger
+          confirmLabel={t("import.delete")}
+          testid="course-delete-confirm"
+          onConfirm={() => { props.onDeleteCourse(confirmDelete.id); setConfirmDelete(null); }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </nav>
   );
 }
 
 /* ---------- 导入面板(原 CourseDrawer 内容,内联) ---------- */
-function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChanged }: { courses: Course[]; selectedCourseId: string | null; onSelectCourse: (id: string) => void; onCoursesChanged: () => void; }) {
+function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse, onCoursesChanged }: { courses: Course[]; selectedCourseId: string | null; onSelectCourse: (id: string) => void; onDeleteCourse: (id: string, title: string, rect: DOMRect) => void; onCoursesChanged: () => void; }) {
   const t = useLang();
   const [tab, setTab] = useState<"url" | "markdown" | "folder">("url");
   const [showImport, setShowImport] = useState(false);
@@ -239,7 +277,6 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   const [progressSteps, setProgressSteps] = useState<{ msg: string; status: "working" | "done"; ts: number }[]>([]);
   /** 每秒 tick 让 working 步骤的"已工作 Xs"实时更新 */
   const [, setTick] = useState(0);
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string; rect: DOMRect } | null>(null);
   /** 进度屏滚动容器:新步骤进来自动滚到底,最新进度始终可见。 */
   const progressScrollRef = useRef<HTMLDivElement>(null);
 
@@ -318,9 +355,6 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
     if (!job) return; // 用户取消了文件夹选择对话框
     setBusy(true);
   };
-  const handleDelete = async (courseId: string, title: string) => {
-    try { await api.deleteCourse(courseId); setSuccess(t("import.deleted", { title })); onCoursesChanged(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-  };
 
   return (
     <>
@@ -334,20 +368,26 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
           {courses.map((c) => {
             const isCurrent = c.id === selectedCourseId;
             return (
-              <button key={c.id} onClick={() => onSelectCourse(c.id)} className={`w-full text-left p-3 rounded-xl transition-all duration-150 group ${isCurrent ? "bg-brand/12 ring-1 ring-brand/40" : "bg-white/5 hover:bg-white/10 hover:-translate-y-0.5"}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-body font-bold truncate ${isCurrent ? "text-brand" : "text-white/90"}`}>{c.title}</div>
-                    <div className="text-caption text-white/40 truncate mt-0.5">{c.repoName}</div>
+              /* 行容器 div + 选择/删除两个兄弟按钮(不能嵌套 button:内层点击会冒泡触发选课+跳地图) */
+              <div key={c.id} data-testid="course-row" className={`relative rounded-xl transition-all duration-150 group ${isCurrent ? "bg-brand/12 ring-1 ring-brand/40" : "bg-white/5 hover:bg-white/10 hover:-translate-y-0.5"}`}>
+                <button onClick={() => onSelectCourse(c.id)} className="w-full text-left p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-body font-bold truncate ${isCurrent ? "text-brand" : "text-white/90"}`}>{c.title}</div>
+                      <div className="text-caption text-white/40 truncate mt-0.5">{c.repoName}</div>
+                    </div>
+                    {isCurrent && <span className="shrink-0 w-5 h-5 rounded-full bg-brand flex items-center justify-center"><Check className="w-3 h-3 text-white" /></span>}
                   </div>
-                  {isCurrent && <span className="shrink-0 w-5 h-5 rounded-full bg-brand flex items-center justify-center"><Check className="w-3 h-3 text-white" /></span>}
-                </div>
-                {!isCurrent && (
-                  <button onClick={(e) => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setConfirmDelete({ id: c.id, title: c.title, rect }); }} className="mt-2 text-caption text-white/40 hover:text-warning flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Trash2 className="w-2.5 h-2.5" /> {t("import.delete")}
-                  </button>
-                )}
-              </button>
+                </button>
+                {/* 删除:悬浮浮现(当前课也可删,删除后由 App 清空选中态回初始空态) */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); onDeleteCourse(c.id, c.title, rect); }}
+                  data-testid="course-row-delete"
+                  className="absolute bottom-1.5 right-2 text-caption text-white/40 hover:text-warning flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                >
+                  <Trash2 className="w-2.5 h-2.5" /> {t("import.delete")}
+                </button>
+              </div>
             );
           })}
         </div>
@@ -428,19 +468,6 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
           </div>
         )}
       </div>
-
-      {/* 删除课程的内联确认(替代 native confirm) */}
-      {confirmDelete && (
-        <ConfirmCard
-          anchorRect={confirmDelete.rect}
-          message={`${confirmDelete.title} — ${t("import.delete.confirm")}`}
-          danger
-          confirmLabel={t("import.delete")}
-          testid="course-delete-confirm"
-          onConfirm={() => { handleDelete(confirmDelete.id, confirmDelete.title); setConfirmDelete(null); }}
-          onCancel={() => setConfirmDelete(null)}
-        />
-      )}
     </>
   );
 }

@@ -16,6 +16,10 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+（空——刚发布 0.9.0）
+
+## [0.9.0] — 2026-08-15
+
 ### Added
 - **按钮消息只展示动作,不展示提示词(`chat_messages.display_text` 新列)** —— 此前点「🚀 开始学习」/巩固选择/命令面板,发给 LLM 的整段提示词会作为用户消息裸奔在聊天窗(用户像在自己 prompt 自己,而不是被 AI 开场接待)。现在按钮触发的消息分两轨:**`content` 存完整提示词**(LLM 上下文照旧只见它)、**`display_text` 存短动作标签**(气泡只显示它,如「开始学习「人工智能简介」」);只有输入框手打的字才原样展示(`display_text=null`)。全链路透传:useChatStream.send 第三参 → `agent:chatThread` IPC → `appendMessage` → 落库 → 重载读回(ChatMessageRow/V2 带 displayText);会话 tab 标题同样用短标签(不再是整段提示词)。接入的按钮:开始学习 / 4 个巩固选择(深入·举个例子·考考我·我没太懂,标签=按钮文字)/ 命令面板 6 命令(标签=命令名)。verify-threads +T9 往返断言(闭环已证:弄坏 schema 列→5 红);ui-test +T8e(点开始学习→气泡=「开始学习「X」」+提示词不出现在 DOM,34 断言)。旧消息无 display_text → 原样展示,零迁移语义变化。
 - **课程搜索(左栏搜索药丸 → 全栏搜索面板)** —— 大课程(100+ 课时)此前找课只能滚地图。MapRail 标题卡新增「搜索」入口(与「复习」并排),打开覆盖左栏的搜索面板:**空查询 = 树状导航**(全部章节→课时,编号路牌与地图同视觉,锁定行与地图球同规则 disabled,兼作课程大纲);**关键词 = 双路检索**——标题多词 AND 过滤(章节命中→整章保留,命中片段 brand 色高亮)+ 全文内容匹配(唤醒休眠的 `search:content` IPC,LIKE 兜底,只留本课节点、与标题命中去重,防抖 250ms)。点行跳转 = 自动切到目标世界(实操课切实操页)+ 走 onJumpNode(继承流式锁/考试离开守卫)+ 面板收起 + 地图平滑滚动到对应球(不可见时)。Enter 跳第一个可点结果,Esc/×/切课收起。过滤/锁定/高亮计算抽纯函数 `lib/course-tree-filter.ts`(`verify-course-search.mjs` 9 断言,闭环已证);ui-test 加 T22(开面板→24 行全树→"欢迎"过滤到 1→点行跳转选中环),共 33 断言。

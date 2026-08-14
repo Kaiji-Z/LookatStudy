@@ -360,19 +360,23 @@ export async function scanFolder(
   return { docs: dedupedDocs, images };
 }
 
-/** 按语言优先级去重(zh > en > other)。同 dedupKey 只保留最高优先级那份。 */
+/**
+ * 同语言类别内部去重（保留双语配对）。
+ *
+ * 历史：旧版是跨语言的"中文优先"（同 dedupKey 只留 zh）——那是翻译管线诞生前的
+ * hack，xxx.en.txt / xxx.zh-CN.txt 成对时英文原稿被直接丢掉，双语信息在扫描层
+ * 就没了，翻译管线永远拿不到配对。现在分类层（excludeSuffixTranslations 规则
+ * 分流 + LLM translation 角色）负责把成对双语分流为 原文+翻译，所以扫描器必须
+ * 把配对双方都保留，只合并同一语言类别内部的真重复（如 08.en.txt vs 08.en.md）。
+ */
 export function dedupByLang(docs: ScannedDoc[]): ScannedDoc[] {
-  const priority = { zh: 0, en: 1, other: 2 };
   const byKey = new Map<string, ScannedDoc>();
   for (const d of docs) {
-    const key = dedupKey(d.path);
-    const existing = byKey.get(key);
-    if (!existing || priority[d.lang] < priority[existing.lang]) {
-      byKey.set(key, d);
-    }
+    const key = `${dedupKey(d.path)}|${d.lang}`;
+    if (!byKey.has(key)) byKey.set(key, d); // 同语言同 key 保留首个（docs 已按自然序排好）
   }
   // 保持原顺序
-  return docs.filter((d) => byKey.get(dedupKey(d.path)) === d);
+  return docs.filter((d) => byKey.get(`${dedupKey(d.path)}|${d.lang}`) === d);
 }
 
 /* ============================================================

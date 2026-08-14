@@ -359,6 +359,11 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       for (const [code, paths] of roles.translations) {
         translationFiles[code] = paths;
       }
+      // 显式翻译配对（规则/LLM 判出的原文→翻译精确对）
+      const translationPairs: Record<string, string> = {};
+      for (const [orig, trans] of roles.translationPairs) {
+        translationPairs[orig] = trans;
+      }
 
       return {
         repoUrl,
@@ -372,6 +377,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
         practiceFiles: roles.practice,
         skipFiles: roles.skip,
         translationFiles,
+        translationPairs,
         translationLayout: roles.translationLayout,
       };
     },
@@ -413,6 +419,9 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       const translationFilesMap = langCode && analysis.translationFiles[langCode]
         ? new Map([[langCode, analysis.translationFiles[langCode]!]])
         : null;
+      const translationPairsMap = analysis.translationPairs
+        ? new Map(Object.entries(analysis.translationPairs))
+        : null;
 
       const result = await executeImport(
         getDb(), structure,
@@ -421,6 +430,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
           repoUrl, repoName: cleanRepo,
           langCode,
           translationFiles: translationFilesMap,
+          translationPairs: translationPairsMap,
           sourceLang: analysis.sourceLang,
           translationLayout: analysis.translationLayout,
           markDirty,
@@ -534,10 +544,12 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     const roles = await classifyFileRoles(getDb(), inventory.readmeMd, fileList, inventory.fullTree, send);
     send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
 
-    // 语言决策（用本地 translations/ 检测到的语言，比 README 链接更可靠）
+    // 语言决策（本地 translations/ 目录 + 布局/LLM 检出的翻译语言合并，比单一来源可靠）
     const { getPrefLang, resolveImportLang } = await import("../services/lang-pref.js");
     const pref = getPrefLang(getDb()) ?? "en";
-    const localLangs = inventory.translationLangs.map((code) => ({ code, name: code }));
+    const localLangsMap = new Map(inventory.translationLangs.map((code) => [code, code]));
+    for (const l of roles.languages) localLangsMap.set(l.code, l.name);
+    const localLangs = Array.from(localLangsMap, ([code, name]) => ({ code, name }));
     const { langCode: selectedLang, reason } = resolveImportLang(pref, roles.sourceLang, localLangs);
     send(`语言决策:${reason}`);
 
@@ -565,8 +577,8 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     const { executeImport } = await import("../services/import-pipeline.js");
     const { LocalContentSource } = await import("../services/content-source.js");
 
-    const translationFilesMap = selectedLang && roles.languages.some((l) => l.code === selectedLang)
-      ? new Map([[selectedLang, []]])
+    const translationFilesMap = selectedLang
+      ? new Map([[selectedLang, roles.translations.get(selectedLang) ?? []]])
       : null;
 
     const result2 = await executeImport(
@@ -576,6 +588,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
         repoUrl: null, repoName: folderName,
         langCode: selectedLang,
         translationFiles: translationFilesMap,
+        translationPairs: roles.translationPairs,
         sourceLang: roles.sourceLang,
         translationLayout: roles.translationLayout,
         markDirty,

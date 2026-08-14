@@ -18,6 +18,7 @@ import { contentNodes, courses, progress as progressTable, contentNodeTranslatio
 import type { ContentSource } from "./content-source.js";
 import type { CourseStructure, DesignedLesson } from "./import-llm-service.js";
 import { verifyCourseIntegrity, type VerificationResult } from "./pure/course-verifier.js";
+import { resolveSuffixTranslationPath } from "./pure/translation-layout.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -51,6 +52,8 @@ export async function executeImport(
     repoName: string;
     langCode: string | null;
     translationFiles: Map<string, string[]> | null;
+    /** 显式翻译配对: 原文路径 → 翻译文件路径（规则/LLM 判出的精确对，落库优先于布局猜路径） */
+    translationPairs?: Map<string, string> | null;
     sourceLang: string;
     translationLayout?: "microsoft" | "parallel" | "suffix" | "none";
     markDirty: () => void;
@@ -211,6 +214,7 @@ export async function executeImport(
     await fetchAndPersistTranslations(
       db, courseId, opts.langCode, structure, opts.source, opts.markDirty, contentCache, lessonImages, lessonMeta, send,
       opts.translationLayout ?? "microsoft",
+      opts.translationPairs ?? null,
     );
   }
 
@@ -440,6 +444,7 @@ async function fetchAndPersistTranslations(
   lessonMeta: Map<string, { titleIndex: number; isFirstOfFile: boolean }>,
   send: (msg: string) => void,
   layout: "microsoft" | "parallel" | "suffix" | "none" = "microsoft",
+  translationPairs: Map<string, string> | null = null,
 ): Promise<void> {
   const allLessons = structure.sections.flatMap((s) => s.lessons);
   // 翻译文件的标题列表缓存（按原 file 路径 key）
@@ -456,11 +461,8 @@ async function fetchAndPersistTranslations(
         return `translations/${lang}/${originalPath}`;
       case "parallel":
         return `docs/${lang}/${originalPath}`;
-      case "suffix": {
-        const ext = originalPath.match(/\.(md|markdown|ipynb|rst)$/i)?.[0] ?? ".md";
-        const base = originalPath.slice(0, -ext.length);
-        return `${base}.${lang}${ext}`;
-      }
+      case "suffix":
+        return resolveSuffixTranslationPath(lang, originalPath);
       default:
         return `translations/${lang}/${originalPath}`;
     }
@@ -469,7 +471,8 @@ async function fetchAndPersistTranslations(
   for (let idx = 0; idx < allLessons.length; idx++) {
     const lesson = allLessons[idx]!;
     const sourcePath = lesson.anchor ? `${lesson.file}#${lesson.anchor}` : lesson.file;
-    let transPath = resolveTransPath(langCode, lesson.file);
+    // 显式配对（规则/LLM 判出的精确对）优先；没有才按布局约定猜路径
+    let transPath = translationPairs?.get(lesson.file) ?? resolveTransPath(langCode, lesson.file);
 
     // 从缓存或拉取翻译文件
     if (!contentCache.has(transPath)) {

@@ -509,6 +509,22 @@ Entry conventions for contributors:
     (之前纯 mastery 平均,点课无反馈)。
 
 ### Fixed
+- **双语课程导入：翻译检测 + 配对全链路修复（本地 + GitHub）** —— 成对双语文件夹
+  （xxx.en.txt / xxx.zh-CN.txt）此前导入后 🌐 切换器无数据、英文原稿被吞。三层缺陷：
+  (1) 扫描器 `dedupByLang` 是翻译系统前的"中文优先"hack——同 key 只留中文，英文原稿
+  在扫描层就被丢弃，配对信息永远到不了翻译管线；(2) suffix 布局检测只认 .md 系扩展、
+  且不剥原文自带的语言后缀——.txt 双语对检测不到，xxx.en.txt 的翻译路径会错算成
+  xxx.en.zh-CN.md；(3) `executeImport` 的 translationFiles 参数是死的（从不传给落库
+  函数），LLM 的 translation 角色类型定义了但解析/分类从不用。修：dedupByLang 改为
+  同语言内部去重（双语配对保留，分流交分类层）；suffix 认 txt/html +
+  `resolveSuffixTranslationPath` 剥原文语言后缀（单一实现）；classifyFileRoles 规则
+  分流（LLM 前）+ LLM translation 角色（lang+translates 显式配对，全量集合防幻觉）；
+  落库显式配对优先于布局猜路径；本地 handler 语言决策合并 translations/ 目录 + 布局/
+  LLM 检出语言；GitHub analyzeRepo/importAnalyzed 透传配对。效果：原文成课 + 现成
+  翻译零 LLM 成本落 content_node_translations + 🌐 可切换 + 无重复课。新增
+  verify-translation-roles / verify-translation-import，verify-translation-layout 扩
+  4 例，verify-local-scanner T6/T7 改锁新语义（均闭环先红后绿）；
+  live-test-local-import 升级双语场景真实 LLM 验证通过（en 原文 3 课 + zh-CN 翻译落库）。
 - **本地导入纯 .txt/.html/.pdf 文件夹生成"空课程"** —— `import:localFolder` 把扫描器已解析
   的 docs 又过了一遍面向 GitHub 的 `pathsToDiscoveredFiles`，后者只保留 .md/.ipynb/代码，对
   .txt/.html/.htm/.pdf/.pptx 走 `else continue` 静默丢弃，100% 内容被滤掉 → 分类空 → 结构空 →

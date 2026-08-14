@@ -58,19 +58,30 @@ assert.strictEqual(dedupKey("06_motivation.en.txt"), dedupKey("06_motivation.zh-
 assert.strictEqual(dedupKey("06_motivation.en.txt"), "06_motivation");
 console.log("✓ T5 dedupKey: 去语言后缀+扩展名");
 
-// === T6: dedupByLang 中文优先 ===
+// === T6: dedupByLang 保留双语配对，只做同语言内部去重 ===
+// 语义变更（v2）: 旧版跨语言"中文优先"会把 xxx.en.txt / xxx.zh-CN.txt 的英文原稿
+// 直接丢掉——双语信息在扫描层就没了，翻译管线永远拿不到配对。现在成对双方都保留
+// （分类层负责分流 原文+翻译），只合并同语言类别的真重复（08.en.txt vs 08.en.md）。
 {
   const docs = [
     { path: "06.en.txt", title: "A", content: "english", lang: "en", kind: "txt" },
     { path: "06.zh-CN.txt", title: "A", content: "中文", lang: "zh", kind: "txt" },
     { path: "07.txt", title: "B", content: "x", lang: "other", kind: "txt" },
+    { path: "08.en.txt", title: "C", content: "en-dup-1", lang: "en", kind: "txt" },
+    { path: "08.en.md", title: "C", content: "en-dup-2", lang: "en", kind: "md" },
+    { path: "09.zh-CN.txt", title: "D", content: "zh-dup-1", lang: "zh", kind: "txt" },
+    { path: "09.zh.txt", title: "D", content: "zh-dup-2", lang: "zh", kind: "txt" },
   ];
   const deduped = dedupByLang(docs);
-  assert.strictEqual(deduped.length, 2, "T6: 去重后 2 个(06 合并)");
-  const doc06 = deduped.find((d) => dedupKey(d.path) === "06");
-  assert.strictEqual(doc06?.lang, "zh", "T6: 06 保留中文版");
-  assert.strictEqual(doc06?.content, "中文", "T6: 内容是中文");
-  console.log("✓ T6 dedupByLang: 同 key 中文优先于英文");
+  assert.strictEqual(deduped.length, 5, `T6: 去重后 5 个(08/09 同语言合并,06 双语都留), 实际 ${deduped.length}`);
+  // 06 的 en 和 zh 都活着（配对保留）
+  assert.ok(deduped.some((d) => d.path === "06.en.txt"), "T6: 06 英文版保留");
+  assert.ok(deduped.some((d) => d.path === "06.zh-CN.txt"), "T6: 06 中文版保留");
+  // 同语言同 key 只留首个
+  assert.ok(deduped.some((d) => d.path === "08.en.txt" && d.content === "en-dup-1"), "T6: 08 同语言合并留首个");
+  assert.ok(!deduped.some((d) => d.path === "08.en.md"), "T6: 08.en.md 被合并");
+  assert.ok(!deduped.some((d) => d.path === "09.zh.txt"), "T6: 09 同语言合并");
+  console.log("✓ T6 dedupByLang: 双语配对保留 + 同语言内部去重");
 }
 
 // === T7: scanFolder 递归扫描 + 排除 node_modules ===
@@ -87,17 +98,16 @@ console.log("✓ T5 dedupKey: 去语言后缀+扩展名");
     writeFileSync(join(tmp, "node_modules", "junk.txt"), "should be excluded");
 
     const docs = await scanFolder(tmp);
-    assert.strictEqual(docs.length, 3, `T7: 扫到 3 个(node_modules 被排除,中英去重),实际 ${docs.length}`);
+    assert.strictEqual(docs.length, 4, `T7: 扫到 4 个(node_modules 被排除,中英配对都保留),实际 ${docs.length}`);
     // node_modules 被排除
     assert.ok(!docs.some((d) => d.path.includes("node_modules")), "T7: node_modules 排除");
-    // 中文优先:01_intro 保留 zh-CN
-    const intro = docs.find((d) => d.path.includes("01_intro"));
-    assert.strictEqual(intro?.lang, "zh", "T7: intro 保留中文");
-    assert.ok(intro?.content.includes("中文导论"), "T7: 内容是中文");
+    // 双语配对都保留（分流交给分类层）
+    assert.ok(docs.some((d) => d.path.includes("01_intro.en.txt")), "T7: intro 英文版保留");
+    assert.ok(docs.some((d) => d.path.includes("01_intro.zh-CN.txt")), "T7: intro 中文版保留");
     // html 被转纯文本
     const htmlDoc = docs.find((d) => d.path.includes("reading.html"));
     assert.ok(htmlDoc && htmlDoc.content.includes("阅读材料正文") && !htmlDoc.content.includes("<"), "T7: html 转纯文本");
-    console.log(`✓ T7 scanFolder: 递归+排除 node_modules+中文优先+html 转文本(${docs.length} 个)`);
+    console.log(`✓ T7 scanFolder: 递归+排除 node_modules+双语配对保留+html 转文本(${docs.length} 个)`);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

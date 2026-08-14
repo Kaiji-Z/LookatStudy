@@ -1,10 +1,12 @@
 /**
- * 本地导入管线端到端 live test（隔离验证 Layer A 修复）。
+ * 本地导入管线端到端 live test（隔离验证 Layer A 修复 + 双语翻译管线）。
  *
- * 目的：证明 import:localFolder 整条链路（扫描→docsToDiscoveredFiles→LLM 分类→
- * LLM 结构设计→executeImport）对一个纯 .txt/.html/.pdf 的文件夹**真的能产出非空课程**。
- * 这正是用户的 Bug（D:\...\mathematics-for-machine-learning-and-data-science_files，
- * 438 .txt + 91 .html + 11 .pdf → 空课程）。修复前 fileList 被滤空 → sections=[] → 空课程。
+ * 场景镜像用户 Bug：xxx.en.txt / xxx.zh-CN.txt 成对的双语文件夹。
+ * 断言：
+ *   1. txt/html/pdf 全部进入 fileList（修复前被 pathsToDiscoveredFiles 滤光）
+ *   2. zh-CN 翻译文件被分流（不重复成课）+ 显式配对
+ *   3. 落库后 content_node_translations 有 zh-CN 行（修复前翻译表全空）
+ *   4. 课程非空
  *
  * 用法: npx tsx scripts/live-test/live-test-local-import.mjs
  * 需要: Z_AI_API_KEY（缺则 graceful skip, exit 0）
@@ -24,6 +26,7 @@ import { docsToDiscoveredFiles, extractOutlineWithCharCounts } from "../../src/m
 import { classifyFileRoles, designCourseStructure } from "../../src/main/services/import-llm-service.ts";
 import { executeImport } from "../../src/main/services/import-pipeline.ts";
 import { LocalContentSource } from "../../src/main/services/content-source.ts";
+import { resolveImportLang } from "../../src/main/services/lang-pref.ts";
 
 const API_KEY = readApiKey();
 if (!API_KEY) {
@@ -47,45 +50,54 @@ sqljs.run("INSERT INTO settings (key, value) VALUES ('active_provider', 'custom-
 sqljs.run("INSERT INTO settings (key, value) VALUES ('active_model', 'glm-5.2')");
 const db = drizzle(sqljs, { schema });
 
-// ── 构造一个纯 .txt/.html/.pdf 的测试文件夹（镜像用户 Bug 场景的格式组合）──
+// ── 构造双语测试文件夹（en.txt/zh-CN.txt 成对 + html + pdf，镜像用户场景）──
 const folder = join(tmpdir(), `lookatstudy-local-import-test-${Date.now()}`);
 mkdirSync(folder, { recursive: true });
+const EN_TXT = "01-derivatives.en.txt";
+const ZH_TXT = "01-derivatives.zh-CN.txt";
+const EN = "# Derivatives\n\nA derivative measures the rate of change of a function. For f(x)=x^2, the derivative is f'(x)=2x.";
+const ZH = "# 导数\n\n导数衡量函数在某一点的瞬时变化率。例如 f(x)=x^2 的导数是 f'(x)=2x。";
 try {
-  writeFileSync(join(folder, "01-derivatives.txt"),
-    "# 导数\n\n导数衡量函数在某一点的瞬时变化率。几何上它等于切线的斜率。\n\n例如 f(x)=x^2 的导数是 f'(x)=2x。导数是微积分的核心概念之一。\n");
+  writeFileSync(join(folder, EN_TXT), EN);
+  writeFileSync(join(folder, ZH_TXT), ZH);
   writeFileSync(join(folder, "02-integrals.html"),
-    "<!DOCTYPE html><html><head><title>积分</title></head><body><h1>积分</h1><p>定积分计算函数曲线下的面积。它是求导的逆运算。例如 x 从 0 到 1 的积分等于 1/2。</p></body></html>");
+    "<!DOCTYPE html><html><head><title>Integrals</title></head><body><h1>Integrals</h1><p>A definite integral computes the area under a curve.</p></body></html>");
   writeFileSync(join(folder, "03-matrices.pdf"), makeMinimalPdf("Matrices and vectors are the core of linear algebra."));
 
-  console.log(`=== 测试文件夹: ${folder}（含 .txt/.html/.pdf 各 1）===\n`);
+  console.log(`=== 测试文件夹: ${folder}（en.txt/zh-CN.txt 成对 + html + pdf）===\n`);
 
   // Step 1: 扫描
   console.log("=== Step 1: buildLocalInventory 扫描 ===");
   const inventory = await buildLocalInventory(folder);
-  console.log(`  docs: ${inventory.docs.length} 个 → 扩展名: ${inventory.docs.map((d) => d.path.split(".").pop()).join(", ")}`);
-  assert.equal(inventory.docs.length, 3, "扫描器应识别 3 个文档（txt/html/pdf）");
+  console.log(`  docs: ${inventory.docs.length} 个`);
+  assert.equal(inventory.docs.length, 4, "扫描器应识别 4 个文档（en.txt/zh-CN.txt/html/pdf）");
 
-  // Step 2: docsToDiscoveredFiles（本修复的核心）—— 修复前 pathsToDiscoveredFiles 会丢光
+  // Step 2: docsToDiscoveredFiles（本修复的核心）
   console.log("\n=== Step 2: docsToDiscoveredFiles（Layer A 修复点）===");
   const fileList = docsToDiscoveredFiles(inventory.docs);
-  console.log(`  fileList: ${fileList.length} 个 → ${fileList.map((f) => f.path.split("/").pop()).join(", ")}`);
-  assert.equal(fileList.length, 3, "docsToDiscoveredFiles 必须保留全部 3 个（含 txt/html/pdf）");
-  const exts = fileList.map((f) => f.path.split(".").pop()).sort();
-  assert.deepEqual(exts, ["html", "pdf", "txt"], "txt/html/pdf 三种格式都在");
+  assert.equal(fileList.length, 4, "必须保留全部 4 个（含 txt/html/pdf）");
+  console.log(`  fileList: ${fileList.length} 个 ✅`);
 
-  // Step 3: LLM 分类
-  console.log("\n=== Step 3: classifyFileRoles（LLM）===");
+  // Step 3: LLM 分类（含双语分流断言）
+  console.log("\n=== Step 3: classifyFileRoles（LLM + 规则分流）===");
   const roles = await classifyFileRoles(db, inventory.readmeMd, fileList, inventory.fullTree,
     (m) => process.stdout.write(`\r  ${m.slice(0, 70).padEnd(70)}`));
   console.log(`\n  original: ${roles.original.length} · practice: ${roles.practice.length} · skip: ${roles.skip.length}`);
-  const candidateCount = roles.original.length + roles.practice.length;
-  assert.ok(candidateCount > 0, `LLM 应至少把 1 个文档判为 original/practice（不能全 skip），实际 candidate=${candidateCount}`);
+  console.log(`  翻译语言: ${roles.languages.map((l) => l.code).join(", ")} · layout: ${roles.translationLayout} · sourceLang: ${roles.sourceLang}`);
+  const candidates = [...roles.original, ...roles.practice];
+  assert.ok(candidates.length > 0, "应有原文候选");
+  // ★ 双语分流: zh-CN 文件不进原文候选（修复前会混进去重复成课）
+  assert.ok(!candidates.includes(ZH_TXT), `zh-CN 翻译文件必须被分流出原文候选, 实际: ${candidates.join(",")}`);
+  // ★ 翻译表 + 显式配对
+  assert.ok(roles.translations.get("zh-CN")?.includes(ZH_TXT), "zh-CN 文件应进 translations 表");
+  assert.equal(roles.translationPairs.get(EN_TXT), ZH_TXT, "应有 en→zh-CN 显式配对");
+  assert.ok(roles.languages.some((l) => l.code === "zh-CN"), "语言列表应含 zh-CN");
+  console.log("  ★ 双语分流 + 配对 + 语言列表 全部正确 ✅");
 
   // Step 4: 大纲
   console.log("\n=== Step 4: extractOutlineWithCharCounts ===");
-  const allFiles = [...roles.original, ...roles.practice];
   const outlines = new Map();
-  for (const p of allFiles) {
+  for (const p of candidates) {
     const c = inventory.docs.find((d) => d.path === p)?.content;
     if (c) outlines.set(p, extractOutlineWithCharCounts(c, p));
   }
@@ -93,40 +105,46 @@ try {
 
   // Step 5: LLM 结构设计
   console.log("\n=== Step 5: designCourseStructure（LLM）===");
-  const standaloneImgList = inventory.standaloneImages.map((i) => ({ path: i.path, alt: i.altText }));
   const structure = await designCourseStructure(db, inventory.readmeMd, outlines,
-    roles.original, roles.practice, (m) => process.stdout.write(`\r  ${m.slice(0, 70).padEnd(70)}`), standaloneImgList);
+    roles.original, roles.practice, (m) => process.stdout.write(`\r  ${m.slice(0, 70).padEnd(70)}`), []);
   const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
-  console.log(`\n  课程标题: ${structure.courseTitle || "(空)"} · sections: ${structure.sections.length} · lessons: ${lessonCount}`);
+  console.log(`\n  课程: ${structure.sections.length} 章 · ${lessonCount} 课`);
 
-  // Step 6: executeImport 落库
-  console.log("\n=== Step 6: executeImport 落库 ===");
+  // Step 6: executeImport 落库（语言决策复刻 handler: pref=zh-CN）
+  console.log("\n=== Step 6: executeImport 落库（含翻译）===");
+  const { langCode: selectedLang, reason } = resolveImportLang("zh-CN", roles.sourceLang, roles.languages);
+  console.log(`  语言决策: ${reason} → langCode=${selectedLang ?? "(原文)"}`);
   const docsMap = new Map();
   for (const d of inventory.docs) docsMap.set(d.path, d.content);
   const result = await executeImport(db, structure, {
     source: new LocalContentSource(folder, docsMap),
     repoUrl: null,
-    repoName: "local-test-course",
-    langCode: null,
-    translationFiles: null,
+    repoName: "local-bilingual-test",
+    langCode: selectedLang,
+    translationFiles: selectedLang ? new Map([[selectedLang, roles.translations.get(selectedLang) ?? []]]) : null,
+    translationPairs: roles.translationPairs,
     sourceLang: roles.sourceLang,
+    translationLayout: roles.translationLayout,
     markDirty: () => {},
   }, (m) => process.stdout.write(`\r  ${m.slice(0, 70).padEnd(70)}`));
 
-  console.log(`\n  courseId: ${result.courseId}`);
-  console.log(`  验证: ${result.verification.ok ? "✅ 通过" : "❌ 有问题"}`);
-  console.log(`  stats: ${JSON.stringify(result.verification.stats)}`);
+  console.log(`\n  验证: ${result.verification.ok ? "✅ 通过" : "❌ 有问题"} · stats: ${JSON.stringify(result.verification.stats)}`);
 
-  // ── 核心断言：非空课程（修复前这里是 0 lessons 的空课程）──
-  assert.ok(result.verification.stats.lessons > 0,
-    `【关键】本地管线必须产出非空课程！lessons=${result.verification.stats.lessons}（修复前为 0）`);
-  const dbLessonCount = sqljs.exec("SELECT COUNT(*) FROM content_nodes WHERE type='lesson'")[0].values[0][0];
-  assert.equal(dbLessonCount, result.verification.stats.lessons, "DB lesson 数应与验证统计一致");
-  console.log(`\n✅✅✅ 本地管线端到端成功：产出 ${dbLessonCount} 个 lesson 的课程（修复前=空课程）✅✅✅`);
+  // ── 核心断言 ──
+  const dbLessons = sqljs.exec("SELECT COUNT(*) FROM content_nodes WHERE type='lesson'")[0].values[0][0];
+  assert.ok(dbLessons > 0, `课程非空, lessons=${dbLessons}`);
+  // zh-CN 文件绝不成为 lesson（无重复课）
+  const zhAsLesson = sqljs.exec(`SELECT COUNT(*) FROM content_nodes WHERE source_path = '${ZH_TXT}'`)[0].values[0][0];
+  assert.equal(zhAsLesson, 0, "zh-CN 翻译文件不应成为 lesson（不重复成课）");
+  // 翻译表有 zh-CN 行且内容正确
+  const transRows = sqljs.exec("SELECT locale, content FROM content_node_translations");
+  assert.ok(transRows.length >= 1, `翻译表应有 zh-CN 行, 实际 ${transRows.length}`);
+  assert.equal(transRows[0].values[0][0], "zh-CN", "locale=zh-CN");
+  assert.equal(transRows[0].values[0][1], ZH, "翻译内容 = 中文文件全文");
+  console.log(`\n✅✅✅ 双语本地导入端到端成功：${dbLessons} 课（无重复）+ zh-CN 翻译落库 ✅✅✅`);
 
   console.log("\n=== live-test-local-import 通过 ✅ ===");
 } finally {
-  // 清理临时文件夹
   try { rmSync(folder, { recursive: true, force: true }); } catch {}
 }
 

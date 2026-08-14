@@ -2,16 +2,15 @@
 
 # LookatStudy
 
-**把任意仓库,变成一门你真的能学完的课程。**
+把任意仓库变成一门你能学完的课程
 
-多邻国式技能地图 + 追踪你真实掌握度的 AI 导师 ——
-用你自己的学习材料构建,100% 本地运行,LLM Key 自己带。
+我 star 过很多教程,真正学完的没几个,这个工具是我给自己写的解法。仓库进来变成一节节解锁的课,AI 导师盯着你到底懂没懂。全部跑在你自己电脑上,大模型 key 也用你自己的。
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-58cc02.svg)](LICENSE)
+[![License MIT](https://img.shields.io/badge/license-MIT-58cc02.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Kaiji-Z/LookatStudy?color=1cb0f6&label=release)](https://github.com/Kaiji-Z/LookatStudy/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-ffc800)](#快速开始)
 
-<img src="docs/screenshots/01-overview.png" alt="LookatStudy —— 技能地图、AI 导师对话、康奈尔笔记,一窗三栏" width="880">
+<img src="docs/screenshots/01-overview.png" alt="LookatStudy 界面,左侧技能地图,中间导师对话,右侧笔记" width="880">
 
 [English](README.md) | **简体中文**
 
@@ -19,56 +18,57 @@
 
 ---
 
-## 你收藏了 47 篇教程,一篇都没学完
+## 我为什么写这个
 
-这不是自律问题。**文档从来就不是课程。**
+我隔几周就会 star 一个新的 roadmap,克隆一个教程仓库,读完开头,然后就没有然后了。这事反复发生,自责解决不了。文档本来就缺几样课程才有的东西。
 
-| 课程给你 | 一堆文档给你 |
-| --- | --- |
-| 一条路径 —— 今天该学什么 | 300 个文件,没有顺序 |
-| 反馈 —— 我到底懂没懂 | 沉默 |
-| 记忆 —— 趁忘掉之前复习 | 读一遍,周五就忘光 |
-| 明天再来的理由 | 又一个再也不会打开的标签页 |
+拿起一门课,你知道今天该学哪一节。三百个文件躺在仓库里,这个问题没有答案。读完一节,课后题会告诉你到底懂没懂。读完一篇文档,只能自己猜。课程会赶在你忘掉之前把旧内容塞回来,文档读一遍就翻篇了。第二天为什么还要再打开它,课程有理由,标签页没有。
 
-LookatStudy 把缺失的四样补在你已有的材料上 —— GitHub 仓库、本地文件夹、粘贴的 Markdown —— 把它变成一门有门控、会自适应、粘得住的课程。
+多邻国把这四件事解决得很彻底,可惜只对它自己的内容有效。我就想把同样的机制装到自己选的材料上。给 LookatStudy 一个 GitHub 仓库、一个本地文件夹,或者直接贴一段 markdown,它生成一门有门控、有考试、有复习计划的课。
 
-## 🧠 知道你哪个知识点薄弱的 AI 导师
+## 仓库会变成一张技能地图
 
-<img src="docs/screenshots/02-ai-tutor.png" alt="AI 导师以「先猜后讲」的钩子开场" width="880">
+章节和课时变成路上的节点,学完一个,下一个解锁。每章末尾有一场 Boss 考试,题目在后台按知识点生成,答题限时。一节课要算学完,标准比读过一遍高不少。每节课拆成若干知识点,课的掌握度取其中最低的那个,有一项含糊,皇冠就拿不到。
 
-不是"文档阅读器外挂聊天窗"。每道题的作答都会更新**逐知识点的 BKT(贝叶斯知识追踪)模型** —— 导师知道你递归很稳但闭包发虚,于是只练缺口,不陪你重刷整章。章节 Boss 考试在后台生成限时题,覆盖该章全部知识点。
+## AI 导师知道你具体哪里弱
 
-AI 从不直接改你的学习档案:掌握度更新以**提议卡**的形式出现,由你批准(Propose → Apply)。三种可切换的教学人设 —— 精讲 / 引导 / 实战 —— 改变的是教法,不是所学内容。
+<img src="docs/screenshots/02-ai-tutor.png" alt="AI 导师用一道猜测题开场" width="880">
 
-## 🗺️ 真门控的技能树 + 秒跳全课的搜索
+这是我最在意的一块。每答一道题,答案都会更新对应知识点的 BKT 掌握模型。导师能看到比第三章 70% 细得多的东西。递归你很稳,闭包还发虚,它就专挑闭包问。你在聊天里点过"我没太懂",这些卡点会被记下来,后面的讲解会绕开你已经烦的地方,多讲你实际摔跟头的地方。
 
-<img src="docs/screenshots/03-course-search.png" alt="课程搜索:全课大纲树 + 跳转导航" width="880">
+有两个设计是我一开始就定下的,到现在也没后悔。
 
-章节解锁章节,Boss 考试守关。一节课不算"完成",直到你**掌握其中的每一个知识点**(取各概念的最小值 —— 不是打个勾就算)。搜索同时匹配标题与全文,大纲树一键跳到任何一课;未解锁的节点照样锁着,不剧透。
+AI 想改你的学习档案,唯一的途径是发一张提议卡,你点批准才生效,它自己动不了。
 
-## 📥 (几乎)什么都能导入
+教学风格随时换。输入框旁边有个人设药丸,精讲、引导、实战三种,今天想被直接告知就选精讲,想被追问就选引导。
 
-- **GitHub URL** —— 自动发现 README + 爬取文件树;LLM 判定每个文件的角色并设计课程结构
-- **本地文件夹** —— 同一套管线跑在磁盘上(下载的课程包、克隆的仓库、自己的笔记)
-- **粘贴 Markdown** —— 私有仓库、随手记录都行
-- **10 种文档格式** —— `.md` `.ipynb` `.rst` `.Rmd` `.org` `.adoc` `.pdf` `.pptx` `.html` `.txt`
-- **30+ 种代码文件** —— `.py` `.ts` `.go` `.rs` `.java` `.c` `.cpp` `.rb` `.sh` …… 代码也是教材,docstring 提取成正文
-- **图片随内容一起迁移** —— notebook 输出图、PDF 内嵌图、`<img>` 标签;可选 AI 视觉理解
-- **双语仓库** —— 自动识别翻译约定(`translations/{lang}/`、平行目录、`file.zh.md` 后缀配对)并自动配对
+## 搜索能当大纲用
 
-## 🔁 记忆保持工程
+<img src="docs/screenshots/03-course-search.png" alt="课程搜索面板,带整门课的目录树" width="880">
 
-答一道题 → **SM-2** 在你即将遗忘前重新排期。每日 XP、可冻结的连续学习、带交错复习的复习抽屉。每天把你拉回多邻国的是同一套机制 —— 只不过这里,它挂在你*自己选*的内容上。
+导入的课可以很大,我测试用的一个仓库导出来 124 节课。课多了地图滚起来很累,左栏的搜索面板就是为这个做的。它搜标题也搜全文,不输入关键词时显示整门课的目录树,点哪行跳哪课。没解锁的课在列表里照样锁着,不会剧透。
 
-## 🔒 本地优先 · 自带 Key · 零遥测
+## 能导入什么
 
-SQLite 就在你的磁盘上。无账号、无云同步、无埋点。LLM Key 自己带 —— **19 个预设服务商**(GLM、DeepSeek、Kimi、Qwen、SiliconCloud、OpenRouter、OpenAI、Anthropic、Google、Groq、Mistral、xAI ……)或任意 OpenAI 兼容自定义端点。Key 只存在于主进程,渲染层连看都看不到。
+- 三种入口。GitHub 链接、本地文件夹、直接粘贴的 markdown。
+- 十种文档格式。`.md` `.ipynb` `.rst` `.Rmd` `.org` `.adoc` `.pdf` `.pptx` `.html` `.txt`。
+- 三十多种代码文件。`.py` `.ts` `.go` `.rs` `.java` `.c` `.cpp` `.sh` 都算教材,docstring 会被抽出来当正文讲。
+- 图片跟着内容一起进来,notebook 的输出图、PDF 的内嵌图都在。如果你的模型带视觉,你问图表的时候它真的在看图。
+- 双语仓库自动配对。`translations/{lang}/` 目录、平行文件夹、`file.zh.md` 后缀这三种常见摆法都能认出来。
+
+## 让人回来的那套东西
+
+答对一道题,SM-2 会赶在你快忘的时候把它排进复习。每天的经验值在顶栏攒成一根能量条,连续学习可以冻结,断一天不至于清零。复习抽屉把不同章节的旧内容混着出,比按章刷更抗忘。我知道这套东西在一个正经项目页里听起来像哄小孩。我自己一开始也怀疑,真用起来发现确实管用,差别在于这里挂的是你自己选的内容。
+
+## 数据都在你自己机器上
+
+整个应用就是磁盘上的一个 SQLite 文件。不用注册账号,也没有云同步,你产生的数据没有一份会离开这块硬盘。大模型 key 用你自己的,预置了十九家服务商,GLM、DeepSeek、Kimi、Qwen、OpenAI、Anthropic、Google 都在,也可以填任何 OpenAI 兼容的端点。key 只存在主进程里,渲染进程想读也读不到。
 
 ## 快速开始
 
-**Windows** —— 到 [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) 下载安装包(v0.9.0+)。
+Windows 直接去 [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) 页下安装包。
 
-**任意平台,源码运行**(Node.js ≥ 20):
+源码跑,任何平台,Node 20 以上。
 
 ```bash
 git clone https://github.com/Kaiji-Z/LookatStudy.git
@@ -77,26 +77,30 @@ npm install
 npm run dev:electron
 ```
 
-应用内置一门离线引导课程(6 章 / 18 课 / 6 场章节考试),没有 API Key 也能逛完整闭环。唤醒 AI 导师:打开**设置**(齿轮图标)→ 选服务商 → 粘贴 Key → **测试连接** → 保存。
+应用内置了一门引导课程,六章十八课带六场考试,不配 key 也能把整个流程点一遍。想用上 AI,打开设置,选服务商,粘贴 key,点测试连接,保存。
 
-## 技术底座
+## 目前做不到的事
 
-Electron 33(CJS 主进程)· React 19 + Vite 6 + Tailwind v3 · **sql.js**(SQLite → WASM,零原生编译)+ Drizzle · Vercel AI SDK v5 + zod v3。
+- 打包安装包暂时只有 Windows。项目里没有任何原生模块,macOS 和 Linux 理论上能构建,我还没打包发布。
+- PDF 提取不了数学公式。这是文本层解析的天然局限,公式密集的数学 PDF 导进来会乱。计划里的解法是把页面渲染成图,喂给视觉模型。
+- 智能导入,判文件角色、设计课程结构那部分,要调 LLM。没有 key 时本地导入退回纯规则,能用,结构会糙一些。
 
-渲染层永远碰不到数据库、文件系统、API Key —— 一切经 `shared/types.ts` 里定义一次的类型化 IPC 桥。**63 个确定性测试套件**(`npm run verify:core`)+ 无头真 GUI 断言(`npm run ui-test`)守护。
+## 技术上
+
+Electron 33,React 19。数据库用 sql.js,就是把 SQLite 编译成 WASM,没有任何要编译的原生模块,Windows 上装依赖不会翻车。渲染进程碰不到数据库、文件系统和 key,所有跨进程调用走一套类型化的 IPC 桥。63 个确定性测试套件加一个无头真 GUI 测试看着它,`npm run verify:core` 一条命令全跑。
 
 ## 状态
 
-v0.9.0 —— 核心学习闭环完整:导入(10 种文档格式 + 30+ 种代码)→ 门控技能地图 → 逐 KC BKT 的 AI 导师 + 提议制 → 间隔重复、连续学习、章节考试 → 带溯源画线的康奈尔笔记。完整历史见 [CHANGELOG.md](CHANGELOG.md)(英文)。
+v0.9.0。导入、跟导师学、复习、考试这条主干已经完整,我自己每天在用。完整历史看 [CHANGELOG.md](CHANGELOG.md)(英文)。
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 Kaiji-Z
+MIT,全文见 [LICENSE](LICENSE)。
 
 ---
 
 <div align="center">
 
-如果 LookatStudy 帮你学完了一件一直拖着的事 —— 欢迎 ⭐ 支持。
+如果它帮你学完了一件一直拖着的事,给我一个 star,我会很开心。
 
 </div>

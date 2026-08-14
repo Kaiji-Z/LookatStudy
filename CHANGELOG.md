@@ -20,7 +20,7 @@ Entry conventions for contributors:
 - **`npm run shots` —— README 截图自动采集模式(`--shots`)** —— 无头窗口 + 临时 DB(`lookatstudy-shots.db`)+ .env 真 provider + 预置"学过一阵"状态(皇冠/进度环/锁定球/待复习徽章/XP 能量条),驱动真实 UI(点开始学习 → 真 LLM 二选一猜测卡 → 揭晓;打开课程搜索树)并 capturePage 截 3 张 PNG 进 `docs/screenshots/`(概览/AI 导师/课程搜索)。本模式独享例外:GPU 加速保持开启(capturePage 需要合成,生产路径仍 disableHardwareAcceleration)。
 
 ### Changed
-- **README 双语重写为 showcase 格式 + MIT LICENSE 文件** —— 英文主版 + 简体中文镜像(README.zh-CN.md,互链切换):痛点开场(「你收藏了 47 篇教程,一篇都没学完」+ 课程 vs 文档对照表)、徽章行(MIT/Release/Platform)、三张内嵌截图、特性分区(逐 KC BKT 导师/门控技能树+搜索/什么都能导入/记忆保持/本地优先 BYOK)、快速开始(Release 安装包 + 源码三行)。新增 MIT LICENSE 全文(此前只口头声明);`docs/` 目录启用存截图。
+- **README 双语重写(showcase 骨架 + 维护者第一人称行文)+ MIT LICENSE 文件** —— 英文主版 + 简体中文镜像(README.zh-CN.md,互链切换)。骨架保留 GitHub 流行式(徽章行/居中头部/三张内嵌截图/快速开始),文字按 human-writing 技能全部重写为作者自述体(为什么写这个/两个没后悔的设计/目前做不到的事),中文版过 check_prose.py 全绿(翻案句 0/破折号 0/提示性冒号 0/黑话 0)。新增 MIT LICENSE 全文(此前只口头声明);`docs/` 目录启用存截图。
 
 ## [0.9.0] — 2026-08-15
 

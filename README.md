@@ -2,16 +2,15 @@
 
 # LookatStudy
 
-**Turn any repo into a course you'll actually finish.**
+Turn any repo into a course you actually finish
 
-A Duolingo-style skill tree and an AI tutor that tracks what you *really* master —
-built from your own learning material, running 100% locally with your own LLM key.
+I star a lot of tutorials and finish almost none of them, so I built this for myself. A repo comes in, a gated course comes out, and an AI tutor keeps track of what you've really learned. Everything runs on your machine, with your own API key.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-58cc02.svg)](LICENSE)
+[![License MIT](https://img.shields.io/badge/license-MIT-58cc02.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Kaiji-Z/LookatStudy?color=1cb0f6&label=release)](https://github.com/Kaiji-Z/LookatStudy/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-ffc800)](#quick-start)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-ffc800)](#getting-started)
 
-<img src="docs/screenshots/01-overview.png" alt="LookatStudy — skill map, AI tutor chat, and Cornell notebook in one window" width="880">
+<img src="docs/screenshots/01-overview.png" alt="LookatStudy with the skill map on the left, tutor chat in the middle, notebook on the right" width="880">
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -19,56 +18,57 @@ built from your own learning material, running 100% locally with your own LLM ke
 
 ---
 
-## You've starred 47 tutorials. You've finished none.
+## Why I built this
 
-It's not a discipline problem. **Docs were never a course.**
+Every few weeks I'd star another roadmap, clone a tutorial repo, read the intro, and quietly never come back. This kept happening, and blaming willpower never fixed it. A pile of docs is missing things every course has.
 
-| A course gives you | A repo of docs gives you |
-| --- | --- |
-| A path — what to do *today* | 300 files, no order |
-| Feedback — am I getting this right? | Silence |
-| Retention — review before you forget | Read once, gone by Friday |
-| A reason to come back tomorrow | Another tab you'll never reopen |
+Pick up a course and you know what to study today. Three hundred files in a repo give you no such answer. Finish a lesson and a quiz tells you whether it landed. Finish a doc and you're left guessing. A course brings material back before you forget it, and it gives you a reason to open it again tomorrow. A browser tab does neither.
 
-LookatStudy bolts the missing four onto material you already have — a GitHub repo, a local folder, or pasted markdown — and turns it into a gated, adaptive, sticky course.
+Duolingo solved these problems thoroughly, but only for its own content. I wanted the same mechanics on material I chose. Give LookatStudy a GitHub repo, a local folder, or pasted markdown, and it builds a gated course with exams and a review schedule.
 
-## 🧠 An AI tutor that knows which concept you're weak on
+## The repo becomes a skill map
 
-<img src="docs/screenshots/02-ai-tutor.png" alt="AI tutor opening a lesson with a guess-first hook" width="880">
+Sections and lessons turn into nodes on a path. Finish one and the next unlocks. Every chapter ends with a boss exam, generated in the background with timed questions. Finishing a lesson takes more than reading it. Each lesson breaks into knowledge points, and your mastery of the lesson is the lowest of them. Leave one point vague and the crown stays locked.
 
-Not a chatbot bolted onto a document reader. Every quiz answer updates a **per-knowledge-component BKT (Bayesian Knowledge Tracing)** model — the tutor knows you nail recursion but fumble closures, so it drills the gap instead of re-teaching the chapter. Chapter boss exams generate timed questions in the background, covering every knowledge point in the section.
+## The AI tutor knows which concept you're weak on
 
-The AI never edits your learning record directly: mastery updates arrive as **proposals you approve** (Propose → Apply). Three swappable teaching personas — 精讲 *direct*, 引导 *socratic*, 实战 *hands-on* — change how it teaches, not what you learn.
+<img src="docs/screenshots/02-ai-tutor.png" alt="The tutor opening a lesson with a guess-first question" width="880">
 
-## 🗺️ A skill tree with real gating — plus search that jumps
+This is the part I care most about. Every answer you give updates a BKT mastery model on the specific knowledge point behind the question. The tutor sees far more than "chapter 3, 70 percent". You're solid on recursion and shaky on closures, so it keeps asking about closures. When you click "I don't get this" in a chat, the stumble gets logged, and later explanations spend more time where you actually fell and less where you're already bored.
 
-<img src="docs/screenshots/03-course-search.png" alt="Course search: full outline tree with jump navigation" width="880">
+Two design decisions I made on day one and haven't regretted.
 
-Sections unlock sections. Boss exams gate chapters. A lesson isn't "done" until you've mastered **every knowledge point inside it** (minimum across concepts — not a completion checkbox). Search matches titles and full lesson content, and the outline tree jumps anywhere; locked nodes stay locked, so no spoilers.
+The AI cannot touch your learning record on its own. It drafts a proposal card, and nothing changes until you approve it.
 
-## 📥 Import (almost) anything
+Teaching style is a pill next to the input box, switchable anytime. Explain it to me straight, ask me guiding questions, or make me do it myself.
 
-- **GitHub URL** — README discovery + file-tree crawl; an LLM classifies every file's role and designs the course tree
-- **Local folder** — the same pipeline on disk (downloaded course packages, cloned repos, your own notes)
-- **Pasted markdown** — for private repos and quick captures
-- **10 document formats** — `.md` `.ipynb` `.rst` `.Rmd` `.org` `.adoc` `.pdf` `.pptx` `.html` `.txt`
-- **30+ code file types** — `.py` `.ts` `.go` `.rs` `.java` `.c` `.cpp` `.rb` `.sh` … code is teaching material too; docstrings become prose
-- **Images travel with the content** — notebook outputs, PDF embeds, `<img>` tags; optional AI vision over them
-- **Bilingual repos** — translation layouts (`translations/{lang}/`, parallel folders, `file.zh.md` suffix pairs) are detected and paired automatically
+## Search doubles as an outline
 
-## 🔁 Retention engineering
+<img src="docs/screenshots/03-course-search.png" alt="The course search panel with a tree of the whole course" width="880">
 
-Answer a quiz → **SM-2** reschedules it right before you'd forget. Daily XP, streaks with freezes, a review drawer with interleaved practice. The same loop that brings you back to Duolingo every day — except here it's attached to content *you* chose.
+Imports get big. One repo I test with comes out at 124 lessons, and scrolling a map that long gets old. That's what the search panel in the left rail is for. It searches titles and full text, shows the whole course as a clickable tree when the query is empty, and jumps to whatever row you click. Locked lessons stay locked in the list, so no spoilers.
 
-## 🔒 Local-first. BYOK. No telemetry.
+## What you can import
 
-SQLite on your disk. No account, no cloud sync, no analytics. Bring your own LLM key — **19 preset providers** (GLM, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google, Groq, Mistral, xAI, …) or any custom OpenAI-compatible endpoint. Keys live in the main process only; the renderer can't even see them.
+- Three ways in. A GitHub URL, a local folder, or markdown you paste in.
+- Ten document formats. `.md` `.ipynb` `.rst` `.Rmd` `.org` `.adoc` `.pdf` `.pptx` `.html` `.txt`.
+- Thirty-odd code file types. `.py` `.ts` `.go` `.rs` `.java` `.c` `.cpp` `.sh` all count as teaching material, and docstrings become the prose.
+- Images ride along with the content, notebook outputs and PDF embeds included. With a vision model, the tutor actually looks at the figure when you ask about it.
+- Bilingual repos pair up automatically. A `translations/{lang}/` folder, parallel folders, or `file.zh.md` suffixes all get recognized.
 
-## Quick start
+## The part that makes you come back
 
-**Windows** — grab the installer from [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) (v0.9.0+).
+Answer a quiz and SM-2 schedules a review right before you'd forget it. Daily XP fills a bar in the header. Streaks can be frozen, so one broken day doesn't zero you out. The review drawer mixes chapters instead of drilling one. I know how this sounds on a project page. I was skeptical too, but it genuinely works, and the difference is that here it hangs on content you picked yourself.
 
-**Any platform, from source** (Node.js ≥ 20):
+## Your data stays on your machine
+
+The whole app is one SQLite file on your disk. No account, no cloud sync, and nothing you do here ever leaves that drive. The LLM key is your own, with nineteen preset providers (GLM, DeepSeek, Kimi, Qwen, OpenAI, Anthropic, Google, and more) plus any OpenAI-compatible endpoint. The key lives in the main process. The renderer can't read it even if it wanted to.
+
+## Getting started
+
+On Windows, grab the installer from the [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) page.
+
+From source, any platform, Node 20 or newer.
 
 ```bash
 git clone https://github.com/Kaiji-Z/LookatStudy.git
@@ -77,26 +77,30 @@ npm install
 npm run dev:electron
 ```
 
-The app boots with a built-in offline guide course (6 chapters / 18 lessons / 6 chapter exams) — you can explore the whole loop without an API key. To wake the AI tutor: open **Settings** (gear icon) → pick a provider → paste your key → **Test Connection** → save.
+A guide course ships built in, six chapters, eighteen lessons, six exams, so you can click through the whole loop without a key. To bring the AI in, open Settings, pick a provider, paste your key, hit Test Connection, save.
+
+## What it can't do yet
+
+- Only Windows has a packaged installer. The project has zero native modules, so macOS and Linux should build fine. I just haven't shipped those packages yet.
+- PDF text extraction can't decode math formulas. That's a hard limit of reading the text layer, and a formula-heavy math PDF comes through mangled. The planned fix is rendering pages to images and letting a vision model read them.
+- The smart part of importing, classifying files and designing the course tree, calls the LLM. Without a key, local imports fall back to pure rules. It works, just blunter.
 
 ## Under the hood
 
-Electron 33 (CJS main) · React 19 + Vite 6 + Tailwind v3 · **sql.js** (SQLite → WASM, zero native builds) + Drizzle · Vercel AI SDK v5 + zod v3.
-
-The renderer never touches the DB, filesystem, or API keys — everything crosses a typed IPC bridge defined once in `shared/types.ts`. Guarded by **63 deterministic test suites** (`npm run verify:core`) plus headless real-GUI assertions (`npm run ui-test`).
+Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there's nothing native to build and `npm install` doesn't blow up on Windows. The renderer can't reach the database, the filesystem, or your key. Every cross-process call goes through one typed IPC bridge. Sixty-three deterministic test suites and a headless real-GUI test watch the whole thing, all runnable with `npm run verify:core`.
 
 ## Status
 
-v0.9.0 — the core learning loop is complete: import (10 doc formats + 30+ code types) → gated skill map → AI tutor with per-KC BKT + Propose→Apply → spaced repetition, streaks and chapter exams → Cornell notebook with source-traced highlights. Full history in [CHANGELOG.md](CHANGELOG.md).
+v0.9.0. The main loop, importing, learning with the tutor, reviewing, taking exams, is complete, and I use it daily. Full history in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-[MIT](LICENSE) © 2026 Kaiji-Z
+MIT. See [LICENSE](LICENSE).
 
 ---
 
 <div align="center">
 
-If LookatStudy helps you finish something you've been putting off — a ⭐ is appreciated.
+If LookatStudy helps you finish something you've been putting off, a star would make my day.
 
 </div>

@@ -280,9 +280,9 @@ export type ExamGenStatus = "idle" | "generating" | "ready" | "failed";
 export interface ExamStatus {
   nodeId: string;
   status: ExamGenStatus;
-  /** 已完成的生成批数(KC 分批出题,真实进度 = done/total) */
+  /** 已覆盖的知识点数(内部按 ≤3 KC/批 LLM 出题,每完成一批累加该批 KC 数;进度 = done/total) */
   done: number;
-  /** 总批数 */
+  /** 本章知识点总数 */
   total: number;
   /** failed 时的失败原因(供 UI 展示) */
   error: string | null;

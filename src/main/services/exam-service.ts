@@ -239,7 +239,9 @@ async function generateExamBank(db: Db, examNodeId: string): Promise<void> {
 
     const quotas = planExamQuota(kcs.map((k) => k.title));
     const batches = batchKcs(kcs, quotas);
-    setGenerating(examNodeId, batches.length);
+    // 进度以"知识点覆盖"计(用户可懂),不以 LLM 批次计:total = 本章 KC 总数,
+    // 每完成一批(含跳过的失败批)累加该批覆盖的 KC 数。
+    setGenerating(examNodeId, kcs.length);
 
     const llm = resolveLlm(db);
     const collected: Array<ParsedExamQuestion & { kcTitle: string }> = [];
@@ -266,7 +268,7 @@ async function generateExamBank(db: Db, examNodeId: string): Promise<void> {
           lastError = e instanceof Error ? e.message : String(e);
         }
       }
-      done++;
+      done += batch.kcs.length;
       setProgress(examNodeId, done);
     }
 

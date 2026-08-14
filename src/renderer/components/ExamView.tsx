@@ -317,7 +317,7 @@ export function ExamView({ examNode, onExamCompleted, onSessionChange, paused }:
           />
         </div>
         <div className="text-label text-ink-muted tabular-nums mb-6">
-          {total > 0 ? t("exam.generating.batch", { done, total }) : t("exam.generating.preparing")}
+          {total > 0 ? t("exam.generating.kcProgress", { done, total }) : t("exam.generating.preparing")}
         </div>
         <div className="text-caption text-ink-muted max-w-xs text-center">{t("exam.generating.canLeave")}</div>
       </div>

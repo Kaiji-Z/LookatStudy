@@ -414,8 +414,8 @@ const translations: Record<Lang, Record<string, string>> = {
 
     // —— Exam v2(后台生成 + KC 出题 + 限时考试 + attempt 档案)——
     "exam.generating.title": "正在生成章节考试题…",
-    "exam.generating.stage": "按知识点分批出题,每批完成后进度 +1",
-    "exam.generating.batch": "{done} / {total} 批",
+    "exam.generating.stage": "AI 正在按本章知识点逐批出题",
+    "exam.generating.kcProgress": "已覆盖 {done} / {total} 个知识点",
     "exam.generating.preparing": "准备中…",
     "exam.generating.canLeave": "可以离开本页,生成会在后台继续;完成后会通知你。",
     "exam.failed.retry": "重新生成",
@@ -897,8 +897,8 @@ const translations: Record<Lang, Record<string, string>> = {
 
     // —— Exam v2(background generation + KC-based + timed + attempt archive)——
     "exam.generating.title": "Generating chapter exam…",
-    "exam.generating.stage": "Writing questions in batches by knowledge point",
-    "exam.generating.batch": "{done} / {total} batches",
+    "exam.generating.stage": "AI is writing questions knowledge point by knowledge point",
+    "exam.generating.kcProgress": "{done} / {total} knowledge points covered",
     "exam.generating.preparing": "Preparing…",
     "exam.generating.canLeave": "You can leave this page — generation continues in the background and you'll be notified.",
     "exam.failed.retry": "Regenerate",

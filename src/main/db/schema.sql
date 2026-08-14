@@ -272,8 +272,9 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   id TEXT PRIMARY KEY,               -- uuid
   thread_id TEXT NOT NULL,           -- 关联 thread
   role TEXT NOT NULL,                -- user / assistant
-  content TEXT NOT NULL,             -- 文本内容
+  content TEXT NOT NULL,             -- 文本内容(发给 LLM 的完整提示词/原文)
   parts_json TEXT,                   -- v0.2 parts 产物/tool/reasoning(JSON,可空)
+  display_text TEXT,                 -- 气泡展示文本(按钮触发的消息存短动作标签;手打输入为 NULL=原样展示 content)
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON chat_messages(thread_id, created_at);

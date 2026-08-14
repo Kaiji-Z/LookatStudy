@@ -504,7 +504,7 @@ export interface ApiExpose {
   /** 清空某节点的聊天历史 */
   clearChatHistory(nodeId: string): Promise<void>;
   /** v0.4: Thread 模式发消息(传 threadId,从 thread 装配上下文) */
-  agentChatThread(threadId: string, userMessage: string): Promise<string>;
+  agentChatThread(threadId: string, userMessage: string, displayText?: string | null): Promise<string>;
   /** v0.4: 中断某 thread 的 agent 回复 */
   abortAgentChatThread(threadId: string): Promise<void>;
 
@@ -659,6 +659,8 @@ export interface ChatMessageRow {
   role: "user" | "assistant";
   content: string;
   partsJson: string | null;
+  /** 气泡展示文本(按钮触发的消息=短动作标签);null = 原样展示 content(手打输入) */
+  displayText: string | null;
   createdAt: string;
 }
 

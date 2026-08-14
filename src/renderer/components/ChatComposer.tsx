@@ -43,7 +43,7 @@ interface ChatComposerProps {
   activeSoul: string | null;
   starterPrompts: StarterPrompt[];
   onPickSoul: (name: string) => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, displayText?: string) => void;
   onStop: () => void;
   /** "我没太懂"等带 frictionCategory 的选择会额外记一条 friction(原 ? 卡点的归宿)。 */
   onLogFriction?: (category: HumanFrictionCategory, summary: string | null) => void;
@@ -85,7 +85,7 @@ export function ChatComposer({
   // starter 选择:发消息;带 frictionCategory 的("我没太懂")额外记一条 friction。
   const handleStarterPick = (p: StarterPrompt) => {
     if (streaming) return;
-    onSend(p.message);
+    onSend(p.message, p.label); // 气泡只显示按钮文字,不显示完整提示词
     if (p.frictionCategory) onLogFriction?.(p.frictionCategory, null);
   };
 

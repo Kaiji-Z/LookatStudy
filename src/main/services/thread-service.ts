@@ -198,6 +198,8 @@ export function appendMessage(
   role: "user" | "assistant",
   content: string,
   partsJson?: string | null,
+  /** 按钮触发的消息:气泡展示的短动作标签;null = 原样展示 content */
+  displayText?: string | null,
 ): ChatMessageRow {
   const db = getDb();
   const id = randomUUID();
@@ -208,6 +210,7 @@ export function appendMessage(
     role,
     content,
     partsJson: partsJson ?? null,
+    displayText: displayText ?? null,
     createdAt: now,
   };
   db.insert(chatMessages).values(row).run();

@@ -431,8 +431,9 @@ function MessageRowV2({
     return (
       <div className="msg-enter flex justify-end" data-testid="msg-user" data-msg-id={msg.id}>
         <div className="max-w-[85%] bg-ink/[0.04] rounded-2xl rounded-br-md px-4 py-2.5">
+          {/* 按钮触发的消息(msg.displayText)只展示短动作标签;手打输入无 displayText,原样展示 */}
           <div className="font-medium text-ink-strong whitespace-pre-wrap select-text text-body">
-            {msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
+            {msg.displayText ?? msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
           </div>
         </div>
       </div>

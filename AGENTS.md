@@ -74,7 +74,7 @@ npm run verify:core       # 63 pure-Node/tsx logic test suites
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 33 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
+npm run ui-test           # real-GUI verification (headless Electron, 34 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
 npm run lint              # oxlint
 npx tsc --noEmit                       # typecheck renderer
 npx tsc -p tsconfig.electron.json --noEmit  # typecheck main/preload
@@ -117,7 +117,7 @@ npm run verify:core && npx vite build && npm run self-test
 | Soul (教学人设) | `services/souls/soul-service.ts` + `prompt-builder.ts` | 教学人设/persona CRUD + 激活;`buildSystemPrompt(db, BASE)` 把激活 soul 的 body 拼到 base prompt 后面注入 `streamText({system})`。3 内置 soul:精讲(direct)/引导(guide)/实战(practice)。**注:soul=persona,非过程性 playbook**;真 skill(多步任务固化)是未来独立模块。`active_soul=null` 时返回 base(等价关闭,无 flag 门控) |
 | LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection`, `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels` |
 | LLM presets | `services/agent/llm-presets.ts` | 19 provider presets (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google, Groq, Together, Mistral, xAI, Volcano, Baidu, MiniMax, Baichuan, StepFun) |
-| Threads | `services/thread-service.ts` | CRUD for `threads` + `chat_messages`; `findRecentThreadByNode`; thread is node-bound (`focus_node_id`) |
+| Threads | `services/thread-service.ts` | CRUD for `threads` + `chat_messages`; `findRecentThreadByNode`; thread is node-bound (`focus_node_id`)。`chat_messages.display_text`:按钮触发的消息气泡只显示短动作标签(完整提示词在 `content`,只给 LLM;手打输入 `display_text=null` 原样展示) |
 | Canvas | `services/canvas-service.ts` | 康奈尔笔记本:AI 产物 + user_note 画线 + quiz 答题记录 (`canvas_items`);byZone 三区筛选(understand/note/practice);溯源字段(source_type/source_anchor) |
 | Highlight | `lib/highlightText.ts` | 画线定位:getTextModel + 文本搜索(applyPersistentMarksByText)+ 跨节点包裹(wrapRangeWithMark)+ 闪烁(flashMark)。**不依赖 DOM offset**(ReactMarkdown 重渲染不稳定),用 indexOf 在纯文本上定位 |
 | Course search | `components/CourseSearchPanel.tsx` + `lib/course-tree-filter.ts` | 课程搜索面板(MapRail 全栏 overlay):空查询=章节→课时树状导航(锁定行与地图球同规则 disabled),关键词=标题多词 AND 过滤 + 全文内容匹配(`search:content` 只留本课节点,防抖 250ms)。跳转=切 world + onJumpNode + 滚动定位到球。过滤/锁定计算是纯函数(verify-course-search.mjs) |

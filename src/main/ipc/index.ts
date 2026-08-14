@@ -1025,8 +1025,8 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   // v0.4: Thread 模式 agent 对话(传 threadId,从 thread 装配上下文)
   ipcMain.handle(
     "agent:chatThread",
-    async (_e, threadId: string, userMessage: string) => {
-      return handleAgentChatThread(mainWindow, threadId, userMessage);
+    async (_e, threadId: string, userMessage: string, displayText?: string | null) => {
+      return handleAgentChatThread(mainWindow, threadId, userMessage, displayText);
     },
   );
   ipcMain.handle("agent:abortThread", async (_e, threadId: string) => {

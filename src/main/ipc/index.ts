@@ -17,6 +17,7 @@ import {
   proposals,
 } from "../db/schema.js";
 import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import type {
   ApiExpose,
   Course,
@@ -28,6 +29,7 @@ import type {
   ExerciseType,
   CustomProviderInput,
   RepoAnalysis,
+  ImportJobHandle,
 } from "@shared/types";
 import {
   getDueReviewNodeIds,
@@ -362,6 +364,11 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       for (const [code, paths] of roles.translations) {
         translationFiles[code] = paths;
       }
+      // 显式翻译配对（规则/LLM 判出的原文→翻译精确对）
+      const translationPairs: Record<string, string> = {};
+      for (const [orig, trans] of roles.translationPairs) {
+        translationPairs[orig] = trans;
+      }
 
       return {
         repoUrl,
@@ -375,6 +382,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
         practiceFiles: roles.practice,
         skipFiles: roles.skip,
         translationFiles,
+        translationPairs,
         translationLayout: roles.translationLayout,
       };
     },
@@ -416,6 +424,9 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       const translationFilesMap = langCode && analysis.translationFiles[langCode]
         ? new Map([[langCode, analysis.translationFiles[langCode]!]])
         : null;
+      const translationPairsMap = analysis.translationPairs
+        ? new Map(Object.entries(analysis.translationPairs))
+        : null;
 
       const result = await executeImport(
         getDb(), structure,
@@ -424,6 +435,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
           repoUrl, repoName: cleanRepo,
           langCode,
           translationFiles: translationFilesMap,
+          translationPairs: translationPairsMap,
           sourceLang: analysis.sourceLang,
           translationLayout: analysis.translationLayout,
           markDirty,
@@ -497,10 +509,33 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     },
   );
 
-  // 导入本地文件夹 —— 走新 5 步管线(和 GitHub 对齐)
+  // ── 后台导入任务（单飞 + 可取消）──
+  // 导入是分钟级重管线（扫描→LLM 分类→LLM 结构设计→拉正文→落库）。job 化后
+  // renderer 拿到 jobId 立即返回，用户可继续浏览其他课程；进度走 import:progress，
+  // 结束走 import:done。取消只拦"写库前"的拉取阶段（executeImport 两阶段保证零残留）。
+  let importCancelRequested = false;
+  let importRunning = false;
+
+  /** 后台跑一个导入管线，结束统一发 import:done。 */
+  const runImportJob = (jobId: string, work: () => Promise<{ courseId: string; title: string }>) => {
+    void (async () => {
+      try {
+        const result = await work();
+        mainWindow?.webContents.send("import:done", { ok: true, ...result });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[import] 后台导入失败(job ${jobId.slice(0, 8)}): ${msg}`);
+        mainWindow?.webContents.send("import:done", { ok: false, error: msg, cancelled: importCancelRequested });
+      } finally {
+        importRunning = false;
+      }
+    })();
+  };
+
+  // 导入本地文件夹 —— 走新 5 步管线(和 GitHub 对齐)，后台 job
   // Step1 buildLocalInventory → Step2 classifyFileRoles → Step3 extractOutlines
   // → Step4 designCourseStructure → Step5 executeImport
-  ipcMain.handle("import:localFolder", async (): Promise<Course | null> => {
+  ipcMain.handle("import:localFolder", async (): Promise<ImportJobHandle | null> => {
     const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
     // 1. Electron 文件选择对话框(选文件夹)
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -511,84 +546,185 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     const folderPath = result.filePaths[0];
     const folderName = folderPath.split(/[\\/]/).pop() ?? "local-course";
 
-    // Step 1: 扫描 → 文档 + 图片 + 翻译 + README + 目录树 + 独立图片
-    send("正在扫描文件夹…");
-    const { buildLocalInventory } = await import("../services/pure/local-folder-scanner.js");
-    const inventory = await buildLocalInventory(folderPath, (n) => {
-      if (n % 20 === 0) send(`已扫描 ${n} 个文件…`);
+    if (importRunning) throw new Error("已有导入任务在进行中，请等它结束或先取消");
+    const jobId = randomUUID();
+    importRunning = true;
+    importCancelRequested = false;
+    const shouldAbort = () => importCancelRequested;
+
+    runImportJob(jobId, async () => {
+      // Step 1: 扫描 → 文档 + 图片 + 翻译 + README + 目录树 + 独立图片
+      send("正在扫描文件夹…");
+      const { buildLocalInventory } = await import("../services/pure/local-folder-scanner.js");
+      const inventory = await buildLocalInventory(folderPath, (n) => {
+        if (n % 20 === 0) send(`已扫描 ${n} 个文件…`);
+      });
+
+      if (inventory.docs.length === 0) {
+        throw new Error("文件夹里没有找到可识别的文本内容(.txt/.md/.html/.pdf)");
+      }
+      send(`✓ 扫描完成:${inventory.docs.length} 文档 · ${inventory.images.length} 图 · ${inventory.translations.length} 翻译文件`);
+
+      // 构建 docsMap（原文 + 翻译）→ LocalContentSource
+      const docsMap = new Map<string, string>();
+      for (const doc of inventory.docs) docsMap.set(doc.path, doc.content);
+      for (const tr of inventory.translations) docsMap.set(tr.path, tr.content);
+
+      // Step 2: LLM 判文件角色 + sourceLang
+      const { classifyFileRoles } = await import("../services/import-llm-service.js");
+      // 本地路径直接用扫描器已解析的 docs 建 fileList，不再过 pathsToDiscoveredFiles
+      // （后者只留 .md/.ipynb/代码，会静默丢弃 .txt/.html/.pdf → 历史空课程 Bug）。
+      const { docsToDiscoveredFiles } = await import("../services/pure/repo-fetcher.js");
+      const fileList = docsToDiscoveredFiles(inventory.docs);
+      const roles = await classifyFileRoles(getDb(), inventory.readmeMd, fileList, inventory.fullTree, send);
+      send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
+
+      // 语言决策（本地 translations/ 目录 + 布局/LLM 检出的翻译语言合并，比单一来源可靠）
+      const { getPrefLang, resolveImportLang } = await import("../services/lang-pref.js");
+      const pref = getPrefLang(getDb()) ?? "en";
+      const localLangsMap = new Map(inventory.translationLangs.map((code) => [code, code]));
+      for (const l of roles.languages) localLangsMap.set(l.code, l.name);
+      const localLangs = Array.from(localLangsMap, ([code, name]) => ({ code, name }));
+      const { langCode: selectedLang, reason } = resolveImportLang(pref, roles.sourceLang, localLangs);
+      send(`语言决策:${reason}`);
+      if (shouldAbort()) throw new Error("导入已取消");
+
+      // Step 3: 提取标题大纲（纯函数，不经网络，直接从 docsMap 读）
+      const { extractOutlineWithCharCounts } = await import("../services/pure/repo-fetcher.js");
+      const allFiles = [...roles.original, ...roles.practice];
+      const outlines = new Map<string, ReturnType<typeof extractOutlineWithCharCounts>>();
+      for (const path of allFiles) {
+        const content = docsMap.get(path);
+        if (content) outlines.set(path, extractOutlineWithCharCounts(content, path));
+      }
+      send(`✓ 提取 ${outlines.size} 个文件大纲`);
+
+      // Step 4: LLM 设计课程结构（含独立图片关联）
+      const { designCourseStructure } = await import("../services/import-llm-service.js");
+      const standaloneImgList = inventory.standaloneImages.map((img) => ({ path: img.path, alt: img.altText }));
+      const structure = await designCourseStructure(
+        getDb(), inventory.readmeMd, outlines,
+        roles.original, roles.practice, send, standaloneImgList,
+      );
+      const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
+      send(`✓ 课程结构:${structure.sections.length} 章 · ${lessonCount} 课`);
+      if (shouldAbort()) throw new Error("导入已取消");
+
+      // Step 5: 拉正文 + 图片内联 + 翻译 + 落库
+      const { executeImport } = await import("../services/import-pipeline.js");
+      const { LocalContentSource } = await import("../services/content-source.js");
+
+      const translationFilesMap = selectedLang
+        ? new Map([[selectedLang, roles.translations.get(selectedLang) ?? []]])
+        : null;
+
+      const result2 = await executeImport(
+        getDb(), structure,
+        {
+          source: new LocalContentSource(folderPath, docsMap),
+          repoUrl: null, repoName: folderName,
+          langCode: selectedLang,
+          translationFiles: translationFilesMap,
+          translationPairs: roles.translationPairs,
+          sourceLang: roles.sourceLang,
+          translationLayout: roles.translationLayout,
+          shouldAbort,
+          markDirty,
+        },
+        send,
+      );
+
+      markDirty();
+      send(`✓ 导入完成`);
+      return { courseId: result2.courseId, title: result2.title };
     });
 
-    if (inventory.docs.length === 0) {
-      throw new Error("文件夹里没有找到可识别的文本内容(.txt/.md/.html/.pdf)");
-    }
-    send(`✓ 扫描完成:${inventory.docs.length} 文档 · ${inventory.images.length} 图 · ${inventory.translations.length} 翻译文件`);
+    return { jobId };
+  });
 
-    // 构建 docsMap（原文 + 翻译）→ LocalContentSource
-    const docsMap = new Map<string, string>();
-    for (const doc of inventory.docs) docsMap.set(doc.path, doc.content);
-    for (const tr of inventory.translations) docsMap.set(tr.path, tr.content);
+  // 从 GitHub 仓库导入（后台 job）：analyzeRepo + importAnalyzed 合一，
+  // renderer 立即返回，全部步骤的进度连续推 import:progress，结束推 import:done。
+  ipcMain.handle("import:github", async (_e, repoUrl: string): Promise<ImportJobHandle> => {
+    const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+    if (!m) throw new Error("无效的 GitHub URL");
+    const [, owner, repoRaw] = m;
+    const cleanRepo = repoRaw.replace(/\.git$/, "");
 
-    // Step 2: LLM 判文件角色 + sourceLang
-    const { classifyFileRoles } = await import("../services/import-llm-service.js");
-    const { pathsToDiscoveredFiles } = await import("../services/pure/repo-fetcher.js");
-    const fileList = pathsToDiscoveredFiles(inventory.docs.map((d) => d.path));
-    const roles = await classifyFileRoles(getDb(), inventory.readmeMd, fileList, inventory.fullTree, send);
-    send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
+    if (importRunning) throw new Error("已有导入任务在进行中，请等它结束或先取消");
+    const jobId = randomUUID();
+    importRunning = true;
+    importCancelRequested = false;
+    const shouldAbort = () => importCancelRequested;
+    const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
 
-    // 语言决策（用本地 translations/ 检测到的语言，比 README 链接更可靠）
-    const { getPrefLang, resolveImportLang } = await import("../services/lang-pref.js");
-    const pref = getPrefLang(getDb()) ?? "en";
-    const localLangs = inventory.translationLangs.map((code) => ({ code, name: code }));
-    const { langCode: selectedLang, reason } = resolveImportLang(pref, roles.sourceLang, localLangs);
-    send(`语言决策:${reason}`);
+    runImportJob(jobId, async () => {
+      // Step 1+2: 拉清单 + LLM 判角色 + 语言决策
+      send("拉取仓库 README + 完整目录结构");
+      const { fetchRepoInventory } = await import("../services/pure/repo-fetcher.js");
+      const inventory = await fetchRepoInventory(owner, cleanRepo, "main", fetch, send);
+      send(`✓ README ${inventory.readmeMd.length} 字 · ${inventory.fileList.length} 个课程文件`);
+      const { classifyFileRoles } = await import("../services/import-llm-service.js");
+      const roles = await classifyFileRoles(getDb(), inventory.readmeMd, inventory.fileList, inventory.fullTree, send);
+      send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
+      const { getPrefLang, resolveImportLang } = await import("../services/lang-pref.js");
+      const pref = getPrefLang(getDb()) ?? "en";
+      const { langCode: selectedLang, reason } = resolveImportLang(pref, roles.sourceLang, roles.languages);
+      send(`语言决策:${reason}`);
+      if (shouldAbort()) throw new Error("导入已取消");
 
-    // Step 3: 提取标题大纲（纯函数，不经网络，直接从 docsMap 读）
-    const { extractOutlineWithCharCounts } = await import("../services/pure/repo-fetcher.js");
-    const allFiles = [...roles.original, ...roles.practice];
-    const outlines = new Map<string, ReturnType<typeof extractOutlineWithCharCounts>>();
-    for (const path of allFiles) {
-      const content = docsMap.get(path);
-      if (content) outlines.set(path, extractOutlineWithCharCounts(content, path));
-    }
-    send(`✓ 提取 ${outlines.size} 个文件大纲`);
+      // Step 3: 提取标题大纲
+      const allFiles = [...roles.original, ...roles.practice];
+      send(`提取 ${allFiles.length} 个文件的标题大纲 + 字数`);
+      const { fetchFileOutlines } = await import("../services/pure/repo-fetcher.js");
+      const outlines = await fetchFileOutlines(
+        allFiles, owner, cleanRepo, inventory.branch, fetch,
+        (done, total) => send(`提取大纲 ${done}/${total}`),
+      );
+      if (shouldAbort()) throw new Error("导入已取消");
 
-    // Step 4: LLM 设计课程结构（含独立图片关联）
-    const { designCourseStructure } = await import("../services/import-llm-service.js");
-    const standaloneImgList = inventory.standaloneImages.map((img) => ({ path: img.path, alt: img.altText }));
-    const structure = await designCourseStructure(
-      getDb(), inventory.readmeMd, outlines,
-      roles.original, roles.practice, send, standaloneImgList,
-    );
-    const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
-    send(`✓ 课程结构:${structure.sections.length} 章 · ${lessonCount} 课`);
+      // Step 4: LLM 结构设计
+      const { designCourseStructure } = await import("../services/import-llm-service.js");
+      const structure = await designCourseStructure(
+        getDb(), inventory.readmeMd, outlines, roles.original, roles.practice, send,
+      );
+      const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
+      send(`✓ 课程结构: ${structure.sections.length} 章 · ${lessonCount} 课`);
 
-    // Step 5: 拉正文 + 图片内联 + 翻译 + 落库
-    const { executeImport } = await import("../services/import-pipeline.js");
-    const { LocalContentSource } = await import("../services/content-source.js");
+      // Step 5: 落库
+      const { executeImport } = await import("../services/import-pipeline.js");
+      const { GithubContentSource } = await import("../services/content-source.js");
+      const translationFilesMap = selectedLang
+        ? new Map([[selectedLang, roles.translations.get(selectedLang) ?? []]])
+        : null;
+      const result = await executeImport(
+        getDb(), structure,
+        {
+          source: new GithubContentSource(owner, cleanRepo, inventory.branch, fetch),
+          repoUrl, repoName: cleanRepo,
+          langCode: selectedLang,
+          translationFiles: translationFilesMap,
+          translationPairs: roles.translationPairs,
+          sourceLang: roles.sourceLang,
+          translationLayout: roles.translationLayout,
+          shouldAbort,
+          markDirty,
+        },
+        send,
+      );
+      markDirty();
+      send(`✓ 导入完成`);
+      return { courseId: result.courseId, title: result.title };
+    });
 
-    const translationFilesMap = selectedLang && roles.languages.some((l) => l.code === selectedLang)
-      ? new Map([[selectedLang, []]])
-      : null;
+    return { jobId };
+  });
 
-    const result2 = await executeImport(
-      getDb(), structure,
-      {
-        source: new LocalContentSource(folderPath, docsMap),
-        repoUrl: null, repoName: folderName,
-        langCode: selectedLang,
-        translationFiles: translationFilesMap,
-        sourceLang: roles.sourceLang,
-        translationLayout: roles.translationLayout,
-        markDirty,
-      },
-      send,
-    );
-
-    markDirty();
-    send(`✓ 导入完成`);
-
-    const course = getDb().select().from(courses).where(eq(courses.id, result2.courseId)).get();
-    return course as unknown as Course;
+  // 请求取消进行中的后台导入（拉取阶段生效，写库前零残留）
+  ipcMain.handle("import:cancel", async (): Promise<boolean> => {
+    if (!importRunning) return false;
+    importCancelRequested = true;
+    mainWindow?.webContents.send("import:progress", "正在取消导入…");
+    return true;
   });
 
   // 删除课程 + 其下全部节点/进度/练习/聊天（级联清理由 services 负责）
@@ -659,9 +795,9 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     if (node.summary) return node.summary;
     // section 节点:结构化时已带 summary,没有就不生成(避免空 section 调 LLM)
     if (node.type !== "lesson") return null;
-    // lesson 节点:懒生成(基于 content 正文,1-2 句中文摘要)
+    // lesson 节点:懒生成(一次 LLM 调用同时产出摘要+KC,双落库+markDirty)
     try {
-      const summary = await generateLessonSummary(db, nodeId);
+      const summary = await generateLessonSummary(db, nodeId, markDirty);
       return summary;
     } catch {
       return null; // 生成失败不阻塞,中栏显示"暂无摘要"

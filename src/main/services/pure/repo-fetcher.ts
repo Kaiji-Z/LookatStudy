@@ -527,6 +527,33 @@ export function pathsToDiscoveredFiles(paths: string[]): DiscoveredFile[] {
 }
 
 /**
+ * 从本地扫描器（buildLocalInventory）已解析的 docs 直接构造 DiscoveredFile[]。
+ *
+ * 为什么本地路径不走 pathsToDiscoveredFiles：后者是面向 GitHub 文件树的过滤器，
+ * 只保留 .md/.ipynb/.rst/.rmd/.org/.adoc + 代码扩展名，会 `else continue` 静默丢弃
+ * .txt/.html/.htm/.pdf/.pptx。而本地扫描器按 EXT_KIND 接受并解析好这些格式了
+ * （html→htmlToText / pdf→parsePdfText / pptx→parsePptx / txt→原文），
+ * 再过一遍 pathsToDiscoveredFiles 等于把已解析的内容全扔掉 → 分类空 → 空课程
+ * （见 scripts/verify-local-filelist.mjs 锁定的回归）。
+ *
+ * DiscoveredFile.kind 在下游分类 / 结构设计链路（classifyFileRoles、parseRoleResult、
+ * parseStructureDesignResult、fallbackStructure）均不读取（只读 path），故统一填 "other"。
+ */
+export function docsToDiscoveredFiles(docs: { path: string; title?: string }[]): DiscoveredFile[] {
+  const seen = new Set<string>();
+  const files: DiscoveredFile[] = [];
+  for (const d of docs) {
+    if (!d.path || seen.has(d.path)) continue;
+    seen.add(d.path);
+    const parts = d.path.split("/").filter(Boolean);
+    const last = parts[parts.length - 1] ?? d.path;
+    const title = d.title?.trim() || last.replace(/\.[^.]+$/, "") || d.path;
+    files.push({ path: d.path, title, kind: "other" });
+  }
+  return files;
+}
+
+/**
  * 主方式:GitHub Tree API 一次拿全仓文件树。
  * https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1
  * 返回 { tree: [{ path, type }] }。筛 blob + .md/.ipynb。

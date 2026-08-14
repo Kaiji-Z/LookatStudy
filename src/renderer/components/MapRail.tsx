@@ -240,8 +240,6 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   /** 每秒 tick 让 working 步骤的"已工作 Xs"实时更新 */
   const [, setTick] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string; rect: DOMRect } | null>(null);
-  // 新智能管线: analyzeRepo 的结果暂存(供 importAnalyzed 用)
-  const [repoAnalysis, setRepoAnalysis] = useState<import("@shared/types").RepoAnalysis | null>(null);
   /** 进度屏滚动容器:新步骤进来自动滚到底,最新进度始终可见。 */
   const progressScrollRef = useRef<HTMLDivElement>(null);
 
@@ -266,6 +264,25 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
     return () => { off(); clearInterval(timer); };
   }, []);
 
+  // 后台导入结束（完成/失败/取消）：事件驱动，不阻塞用户浏览其他课程。
+  // 完成只刷新列表 + Toast —— 不再强制跳到新课程（用户自己决定何时查看）。
+  useEffect(() => {
+    const off = api.on("import:done", (r: { ok: boolean; title?: string; error?: string; cancelled?: boolean }) => {
+      setBusy(false);
+      if (r.ok) {
+        setSuccess(`${t("import.success.folder")}: ${r.title ?? ""}`);
+        onCoursesChanged();
+      } else if (r.cancelled) {
+        setProgressSteps([]);
+        setError(null);
+        setSuccess(t("import.cancelled"));
+      } else {
+        setError(r.error ?? "导入失败");
+      }
+    });
+    return off;
+  }, [onCoursesChanged, t]);
+
   // 进度屏自动滚到底:新步骤进来时把滚动容器拉到底,最新进度可见。
   useEffect(() => {
     const el = progressScrollRef.current;
@@ -274,33 +291,15 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
 
   const handleImportUrl = async () => {
     if (!repoUrl.trim() || busy) return;
-    setBusy(true); setError(null); setSuccess(null); setProgressSteps([]);
-    setRepoAnalysis(null);
+    setError(null); setSuccess(null); setProgressSteps([]);
     try {
-      // 新管线 Step 1+2: 分析仓库(LLM 判文件角色 + sourceLang + 自动按 pref_lang 选翻译)
-      const analysis = await api.analyzeRepo(repoUrl.trim());
-      setRepoAnalysis(analysis);
-      // selectedLang 已由 pref_lang + sourceLang 自动决定，直接导入（不再弹语言选择）
-      await doImport(analysis);
+      // 后台 job：main 跑 analyze + import 全管线，进度推 import:progress，
+      // 结束推 import:done（下面的监听收尾）。期间可继续浏览其他课程。
+      await api.importGithub(repoUrl.trim());
+      setBusy(true);
     } catch (e) {
       setError(e instanceof Error ? `${e.message}${t("import.error.network")}` : String(e));
-      setBusy(false);
     }
-  };
-
-  const doImport = async (analysisOverride?: import("@shared/types").RepoAnalysis | null) => {
-    const analysis = analysisOverride ?? repoAnalysis;
-    if (!analysis) return;
-    // 不清空 progressSteps —— 让 analyze(阶段1)→ import(阶段2)的进度连续累加,
-    // 避免用户看到"分析进度爬完→瞬间清空→导入进度从0重开"的两屏断裂感。
-    setBusy(true); setError(null); setSuccess(null);
-    try {
-      // 新管线 Step 3+4+5: 提取大纲 → LLM 设计结构 → 拉正文+图片 → 落库
-      const course = await api.importAnalyzed(repoUrl.trim(), analysis);
-      setSuccess(`${t("import.success.folder")}: ${course.title}`);
-      setRepoAnalysis(null);
-      setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);
-    } catch (e) { setError(e instanceof Error ? `${e.message}${t("import.error.network")}` : String(e)); } finally { setBusy(false); }
   };
   const handleImportMd = async () => {
     if (!mdText.trim() || !repoName.trim() || busy) return;
@@ -313,13 +312,11 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
   };
   const handleImportFolder = async () => {
     if (busy) return;
-    setBusy(true); setError(null); setSuccess(null); setProgressSteps([]);
-    try {
-      const course = await api.importLocalFolder();
-      if (!course) { setBusy(false); return; }
-      setSuccess(`${t("import.success.folder")}: ${course.title}`);
-      setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+    setError(null); setSuccess(null); setProgressSteps([]);
+    // 后台 job：选完文件夹立即返回，管线后台跑（完成走 import:done 监听）
+    const job = await api.importLocalFolder();
+    if (!job) return; // 用户取消了文件夹选择对话框
+    setBusy(true);
   };
   const handleDelete = async (courseId: string, title: string) => {
     try { await api.deleteCourse(courseId); setSuccess(t("import.deleted", { title })); onCoursesChanged(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -368,7 +365,11 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onCoursesChang
                 <div className="flex items-center gap-2 mb-2.5">
                   <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0" />
                   <span className="text-body font-bold text-white/90">{t("import.progress.title")}</span>
+                  <button onClick={() => { void api.importCancel(); }} data-testid="import-cancel-btn" className="ml-auto text-caption text-white/50 hover:text-warning transition-colors">
+                    {t("import.progress.cancel")}
+                  </button>
                 </div>
+                <div className="text-caption text-white/40 mb-2.5">{t("import.progress.note")}</div>
                 {(tab === "url" ? repoUrl.trim() : tab === "markdown" ? repoName.trim() : "") ? (
                   <div className="text-caption text-white/40 font-mono truncate mb-2.5">
                     {tab === "url" ? repoUrl.trim() : repoName.trim()}

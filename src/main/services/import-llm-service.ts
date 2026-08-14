@@ -45,6 +45,8 @@ export interface FileClassificationResult {
   original: string[];
   /** 翻译文件: 语言代码 → 文件路径列表 */
   translations: Map<string, string[]>;
+  /** 显式翻译配对: 原文路径 → 翻译文件路径（规则配对 + LLM 配对；落库优先于布局猜路径） */
+  translationPairs: Map<string, string>;
   /** 实操文件路径 */
   practice: string[];
   /** 噪声文件路径（跳过） */
@@ -79,7 +81,7 @@ export async function classifyFileRoles(
 
   // ── 规则预处理: 翻译布局检测 ──
   // 从文件树检测翻译约定（microsoft/parallel/suffix），替代仅靠 README 正则。
-  const { detectTranslationLayout } = await import("./pure/translation-layout.js");
+  const { detectTranslationLayout, excludeSuffixTranslations, LANG_NAMES } = await import("./pure/translation-layout.js");
   const { extractLanguagesFromReadme } = await import("./pure/repo-fetcher.js");
   const layoutResult = detectTranslationLayout(fullTree);
   // README 正则检测作为补充（有些仓库 README 有翻译链接但文件树结构不同）
@@ -98,10 +100,28 @@ export async function classifyFileRoles(
     translations.set(lang.code, []);
   }
 
+  // ── 规则预处理: suffix 布局成对翻译分流（高置信度规则，LLM 之前）──
+  // 成对双语（xxx.en.txt ↔ xxx.zh-CN.txt）若不分流，两种语言都会被判 original
+  // → 中英重复成课 + 翻译表空（历史 Bug）。配不上的孤儿保守留原文。
+  const translationPairs = new Map<string, string>();
+  let candidates = allPaths;
+  if (layoutResult.layout === "suffix") {
+    const ruleSourceLang = detectSourceLangByRule(readmeMd);
+    const split = excludeSuffixTranslations(allPaths, layoutResult.langs, ruleSourceLang);
+    for (const [lang, files] of split.translations) {
+      if (!translations.has(lang)) translations.set(lang, []);
+      translations.set(lang, [...translations.get(lang)!, ...files]);
+    }
+    for (const [orig, trans] of split.pairs) translationPairs.set(orig, trans);
+    const splitCount = [...split.translations.values()].reduce((n, arr) => n + arr.length, 0);
+    if (splitCount > 0) send(`规则分流: ${splitCount} 个翻译文件不进原文候选(${[...split.translations.keys()].join("/")})`);
+    candidates = split.originals;
+  }
+
   const remaining: string[] = [];
   const skip: string[] = [];
 
-  for (const p of allPaths) {
+  for (const p of candidates) {
     // 元数据文件
     const stem = p.split("/").pop()?.replace(/\.[^.]+$/, "").toLowerCase() ?? "";
     if (["license", "licence", "contributing", "code_of_conduct", "security", "changelog", "authors", "maintainers", "pull_request_template", "issue_template", "support", "faq", "citation", "codeowners"].includes(stem)) {
@@ -120,6 +140,7 @@ export async function classifyFileRoles(
     return {
       original: remaining,
       translations,
+      translationPairs,
       practice: [],
       skip,
       languages: validLangs,
@@ -135,6 +156,8 @@ export async function classifyFileRoles(
   const CHUNK_SIZE = 200;
   const original: string[] = [];
   const practice: string[] = [];
+  const allPathSet = new Set(allPaths);
+  const llmLangs = new Set<string>();
   let sourceLang = "";
 
   for (let i = 0; i < remaining.length; i += CHUNK_SIZE) {
@@ -152,8 +175,19 @@ export async function classifyFileRoles(
     // sourceLang 取第一块的（整个仓库一致）
     if (!sourceLang && parsed.sourceLang) sourceLang = parsed.sourceLang;
 
-    for (const { path, role } of parsed.files) {
-      if (role === "practice") practice.push(path);
+    for (const { path, role, lang, translates } of parsed.files) {
+      if (role === "translation") {
+        // 防幻觉: lang/translates 必填且 translates 指向真实文件
+        // （跨批配对用全量集合校验，不用本 chunk 列表）
+        if (lang && translates && allPathSet.has(translates)) {
+          if (!translations.has(lang)) translations.set(lang, []);
+          translations.get(lang)!.push(path);
+          translationPairs.set(translates, path);
+          llmLangs.add(lang);
+        } else {
+          original.push(path); // 校验不过 → 保守当原文（不丢内容）
+        }
+      } else if (role === "practice") practice.push(path);
       else if (role === "skip") skip.push(path);
       else original.push(path);
     }
@@ -161,7 +195,14 @@ export async function classifyFileRoles(
 
   if (!sourceLang) sourceLang = detectSourceLangByRule(readmeMd);
 
-  return { original, translations, practice, skip, languages: validLangs, sourceLang, translationLayout: layoutResult.layout };
+  // LLM 判出的翻译语言并入语言列表（供 resolveImportLang 决策 + 用户选择）
+  for (const code of llmLangs) {
+    if (!validLangs.some((l) => l.code === code)) {
+      validLangs.push({ code, name: LANG_NAMES[code] ?? code });
+    }
+  }
+
+  return { original, translations, translationPairs, practice, skip, languages: validLangs, sourceLang, translationLayout: layoutResult.layout };
 }
 
 /**
@@ -272,6 +313,9 @@ function buildRolePrompt(readmeMd: string, filePaths: string[], fullTree: string
 2. 判断每个文件的角色:
    - **original**: 原文课程讲解（README.md 教程、概念讲解）
    - **practice**: 实操资源（notebook .ipynb、lab 练习、示例代码）
+   - **translation**: 是另一个文件的翻译版本（文件名/目录常带语言码，如 xxx.zh-CN.txt、
+     xxx.en.md、zh-CN/guide.md）。必须同时给 "lang"(BCP-47 语言码，如 "zh-CN"/"en")
+     和 "translates"(它翻译的原文文件路径，必须是文件列表或目录树里真实存在的文件)
    - **skip**: 噪声（纯配置、空文件、非学习内容）
 
 ${readmeSection}
@@ -291,6 +335,7 @@ ${fileList}
 - .ipynb 文件大概率是 practice（除非是 notebook 风格的主课程如 fast.ai/d2l）
 - 路径含 /lab/ /exercise/ → 大概率 practice
 - 代码文件(.py/.js/.go 等): 教程型(带大量注释/docstring, 如 nanoGPT) → original; 实操/练习型 → practice; 配置脚本(setup.py/config.js) → skip
+- 同名不同语言码的成对文件（如 intro.en.txt 与 intro.zh-CN.txt）: 原文语言侧 → original，其余语言侧 → translation
 
 严格返回 JSON 对象，不要 markdown 代码块标记:
 {
@@ -298,12 +343,16 @@ ${fileList}
   "files": [
     { "path": "lessons/1-Intro/README.md", "role": "original" },
     { "path": "lessons/2-Symbolic/Animals.ipynb", "role": "practice" },
-    { "path": "src/nanoGPT.py", "role": "original" }
+    { "path": "src/nanoGPT.py", "role": "original" },
+    { "path": "lessons/1-Intro/README.zh-CN.md", "role": "translation", "lang": "zh-CN", "translates": "lessons/1-Intro/README.md" }
   ]
 }`;
 }
 
-function parseRoleResult(raw: string, validPaths: string[]): { sourceLang: string; files: { path: string; role: FileRole }[] } {
+export function parseRoleResult(raw: string, validPaths: string[]): {
+  sourceLang: string;
+  files: { path: string; role: FileRole; lang?: string; translates?: string }[];
+} {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   let obj: unknown;
   try {
@@ -329,7 +378,10 @@ function parseRoleResult(raw: string, validPaths: string[]): { sourceLang: strin
     .filter((item) => typeof item.path === "string" && validSet.has(item.path as string))
     .map((item) => ({
       path: item.path as string,
-      role: (item.role === "practice" || item.role === "skip" ? item.role : "original") as FileRole,
+      role: (item.role === "practice" || item.role === "skip" || item.role === "translation" ? item.role : "original") as FileRole,
+      // translation 角色的配对信息透传（translates 指向的原文可能跨批，校验在 classifyFileRoles 用全量集合做）
+      lang: typeof item.lang === "string" ? item.lang : undefined,
+      translates: typeof item.translates === "string" ? item.translates : undefined,
     }));
   return { sourceLang, files };
 }

@@ -28,6 +28,10 @@ const api = {
     ipcRenderer.invoke("course:importAnalyzed", repoUrl, analysis)) as ApiExpose["importAnalyzed"],
   importLocalFolder: (() =>
     ipcRenderer.invoke("import:localFolder")) as ApiExpose["importLocalFolder"],
+  importGithub: ((repoUrl: string) =>
+    ipcRenderer.invoke("import:github", repoUrl)) as ApiExpose["importGithub"],
+  importCancel: (() =>
+    ipcRenderer.invoke("import:cancel")) as ApiExpose["importCancel"],
   generateCourseFromMarkdown: ((md: string, repoName: string, repoUrl?: string) =>
     ipcRenderer.invoke("course:generateFromMarkdown", md, repoName, repoUrl)) as ApiExpose["generateCourseFromMarkdown"],
   deleteCourse: ((courseId: string) =>

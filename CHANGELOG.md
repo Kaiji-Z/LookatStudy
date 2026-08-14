@@ -513,7 +513,55 @@ Entry conventions for contributors:
     available=0.1 / locked=0 的全课平均),点课(available→in_progress)立刻推进总进度条
     (之前纯 mastery 平均,点课无反馈)。
 
+### Changed
+- **导入改为后台任务（可继续浏览其他课程 + 可取消）** —— 导入是分钟级重管线，此前
+  renderer 全程 await、完成后强制跳转到新课程，且中途切课会看到半成品课程。现改
+  job 化：`import:localFolder` / 新增 `import:github`（analyze+import 合一）选完即返
+  jobId，管线在 main 后台跑（进度 `import:progress`、结束 `import:done`）；完成只
+  刷新课程列表 + Toast，不再强制跳转（用户自己决定何时查看）；进度屏新增"取消导入"
+  按钮（`import:cancel`，拉取阶段生效，写库前零残留）+ "后台进行可继续浏览"提示。
+  配套把 `executeImport` 重构为两阶段——拉取（可取消、零写库）+ 落库（无 await 的
+  同步段一次性写完课程+全部节点，消除半成品可见窗口；中途意外失败自动清理残留行）。
+  新增 verify-import-cancel（3 断言，闭环已证）。Markdown 生成路径是同步短任务，
+  维持原行为。
+
 ### Fixed
+- **KC（知识组件）提取断链接通：首次点击节点球时摘要+KC 一次调用双落库** —— KC
+  此前在新管线（GitHub/本地导入）课程上是彻底断链的：导入不写 knowledge_points，
+  唯一写入方 generateLessonSummaries 的 IPC 在 UI 上零调用方，唯一的自动路径挂在
+  已不用的旧版 importFromRepo 里——新导入课程的 per-KC BKT 静默失效。修：把首次
+  点击节点球即懒生成的 `generateLessonSummary`（原只产摘要）升级为**一次 LLM 调用
+  同时产出 1-2 句摘要 + 3-7 个 KC**（KC 搭摘要的车，调用次数零增加），两字段
+  （summary + knowledge_points）立即落库 + markDirty（顺带修掉原实现写库不
+  markDirty、只靠 before-quit 兜底落盘的 bug）；读取守卫改为"双字段齐备才命中"，
+  历史遗留只有摘要的节点下次点击自动补齐 KC，齐备后永不再调 LLM（省 token）。
+  前提成立性：考试节点在课程球未学完前不解锁，KC 只在课内答题归因时需要——
+  首点懒生成正好覆盖。新增 `parseLessonSummaryKc` 纯函数（容错：纯文本当摘要/
+  坏 JSON 返 null 重试/KC <2 丢弃/上限 7）+ verify-lesson-summary-kc（7 断言闭环）；
+  live-test-local-import 扩展首点预热验证（真实 LLM 双落库 + 二次纯命中）。
+- **双语课程导入：翻译检测 + 配对全链路修复（本地 + GitHub）** —— 成对双语文件夹
+  （xxx.en.txt / xxx.zh-CN.txt）此前导入后 🌐 切换器无数据、英文原稿被吞。三层缺陷：
+  (1) 扫描器 `dedupByLang` 是翻译系统前的"中文优先"hack——同 key 只留中文，英文原稿
+  在扫描层就被丢弃，配对信息永远到不了翻译管线；(2) suffix 布局检测只认 .md 系扩展、
+  且不剥原文自带的语言后缀——.txt 双语对检测不到，xxx.en.txt 的翻译路径会错算成
+  xxx.en.zh-CN.md；(3) `executeImport` 的 translationFiles 参数是死的（从不传给落库
+  函数），LLM 的 translation 角色类型定义了但解析/分类从不用。修：dedupByLang 改为
+  同语言内部去重（双语配对保留，分流交分类层）；suffix 认 txt/html +
+  `resolveSuffixTranslationPath` 剥原文语言后缀（单一实现）；classifyFileRoles 规则
+  分流（LLM 前）+ LLM translation 角色（lang+translates 显式配对，全量集合防幻觉）；
+  落库显式配对优先于布局猜路径；本地 handler 语言决策合并 translations/ 目录 + 布局/
+  LLM 检出语言；GitHub analyzeRepo/importAnalyzed 透传配对。效果：原文成课 + 现成
+  翻译零 LLM 成本落 content_node_translations + 🌐 可切换 + 无重复课。新增
+  verify-translation-roles / verify-translation-import，verify-translation-layout 扩
+  4 例，verify-local-scanner T6/T7 改锁新语义（均闭环先红后绿）；
+  live-test-local-import 升级双语场景真实 LLM 验证通过（en 原文 3 课 + zh-CN 翻译落库）。
+- **本地导入纯 .txt/.html/.pdf 文件夹生成"空课程"** —— `import:localFolder` 把扫描器已解析
+  的 docs 又过了一遍面向 GitHub 的 `pathsToDiscoveredFiles`，后者只保留 .md/.ipynb/代码，对
+  .txt/.html/.htm/.pdf/.pptx 走 `else continue` 静默丢弃，100% 内容被滤掉 → 分类空 → 结构空 →
+  落库一条只有课程行、零课时的"空课程"（验证器只打印不抛错）。修：(1) 本地路径改用新增的
+  `docsToDiscoveredFiles`，直接用扫描器结果不再二次过滤；(2) `executeImport` 加空结构守卫——
+  零课时时在任何写库前抛错，不再留空课程残行（保护两个导入 handler）。新增
+  `verify-import-empty-guard.mjs` + `verify-local-filelist.mjs`（均闭环已证）。
 - `in_progress` 节点中心的 `📘` emoji(蓝色书)和蓝色球体背景撞色,看起来像凹陷的
   矩形坑。改用白色 lucide `BookOpen` 图标 + drop-shadow,对比清晰。
 

@@ -76,6 +76,7 @@ npm run verify:core       # 63 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
 npm run ui-test           # real-GUI verification (headless Electron, 34 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
 npm run lint              # oxlint
+npm run shots             # capture README screenshots → docs/screenshots/ (headless window, temp DB, real .env LLM; GPU stays ON for capturePage)
 npx tsc --noEmit                       # typecheck renderer
 npx tsc -p tsconfig.electron.json --noEmit  # typecheck main/preload
 npx tsx scripts/live-test/live-test-teaching.mjs    # LLM teaching behavior test (needs API key)
@@ -226,7 +227,7 @@ them as load-bearing, not optional.
 
 ```
 /                       user-facing docs only: README, AGENTS, PRODUCT, CHANGELOG, VERIFICATION
-/docs/                  (reserved for future user-facing docs — currently empty)
+/docs/                  user-facing assets (screenshots/ embedded by the READMEs; regenerate via npm run shots)
 /dev-docs/              ★ gitignored ★ dev-process docs: ARCHITECTURE, BUILD-NOTES, ROADMAP,
                         DESIGN-PLAN-*.md — kept locally, NOT committed
 /scripts/verify-*.mjs   deterministic test suites (tsx + node:assert)

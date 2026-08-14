@@ -24,6 +24,8 @@ import type { Exercise } from "@shared/types";
 import { generateText } from "ai";
 import { resolveLlm } from "./agent/llm-client.js";
 import { gradeAnswer } from "./exercise-service.js";
+import { addXp } from "./xp-service.js";
+import { emitStateChange } from "../lib/state-emitter.js";
 import { randomUUID } from "node:crypto";
 
 type Db = SQLJsDatabase<typeof schema>;
@@ -279,6 +281,11 @@ export function submitExam(
       })
       .run();
   }
+
+  // Phase A: 考试给 XP（每答对一题 +10）。addXp 内部 emitStateChange("xp") → 能量条刷新。
+  if (correctCount > 0) addXp(db, correctCount * 10);
+  // 刷新地图（考试节点星数变化需要重渲染）
+  emitStateChange("mastery");
 
   return { correctCount, totalCount, accuracy, stars, bestStars, perQuestion };
 }

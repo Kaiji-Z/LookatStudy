@@ -20,6 +20,8 @@ export type World = "study" | "practice";
 export const UNLOCK_MASTERY_THRESHOLD = 0.5;
 /** 自动毕业:mastery ≥ 此值 → status 转 mastered。 */
 export const MASTERED_MASTERY_THRESHOLD = 0.9;
+/** 接近毕业:mastery ≥ 此值但 < MASTERED 时,可提议提前毕业(mark_mastered)。 */
+export const NEAR_MASTERED_THRESHOLD = 0.85;
 
 /** 知识组件定义（per-KC BKT 的基础），LLM 从课程内容提取 */
 export interface KnowledgePoint {

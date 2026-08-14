@@ -8,6 +8,7 @@
  * 纯函数(只返 id + advancesMastery 标志),零 React/CSS 依赖,verify 脚本可直接 import。
  * UI 层(QuizArtifact)把 id 映射成图标(lucide)+ i18n 文案 + 要发送的消息。
  */
+import { MASTERED_MASTERY_THRESHOLD, NEAR_MASTERED_THRESHOLD } from "@shared/types";
 export type PostQuizActionId =
   | "explain-wrong" // 讲讲我答错的
   | "retry" // 再来一组
@@ -40,8 +41,8 @@ export function getPostQuizActions(
   const hasWrong = total > 0 && correct < total;
   // Per-KC BKT: mastery = min(各 KC)。0.9 = 已自动毕业(BKT auto-mastered);
   // 0.85+ = 接近毕业,可以给"标记掌握"让用户选择提前毕业;低于 0.85 = 不够熟。
-  const alreadyMastered = mastery != null && mastery >= 0.9;
-  const nearMastered = mastery != null && mastery >= 0.85;
+  const alreadyMastered = mastery != null && mastery >= MASTERED_MASTERY_THRESHOLD;
+  const nearMastered = mastery != null && mastery >= NEAR_MASTERED_THRESHOLD;
 
   // 有错题:先补漏洞,再巩固
   if (hasWrong) {

@@ -6,6 +6,7 @@
  */
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import { eq, lte } from "drizzle-orm";
+import { MASTERED_MASTERY_THRESHOLD } from "@shared/types";
 import * as schema from "../db/schema.js";
 import {
   contentNodes,
@@ -91,7 +92,7 @@ export function getDashboard(
       masteries.length > 0
         ? masteries.reduce((a, b) => a + b, 0) / masteries.length
         : 0;
-    const mastered = masteries.filter((m) => m >= 0.7).length;
+    const mastered = masteries.filter((m) => m >= MASTERED_MASTERY_THRESHOLD).length;
     return {
       sectionId: sec.id,
       sectionTitle: sec.title,

@@ -22,7 +22,9 @@ import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
 import { contentNodes, exercises } from "../db/schema.js";
 import { resolveLlm } from "./agent/llm-client.js";
-import { createProposal, type LearningOperation } from "./proposal-service.js";
+import { createProposal, applyProposal, type LearningOperation } from "./proposal-service.js";
+import { recordReviewDb } from "./pure/srs-db.js";
+import type { ReviewQuality } from "@shared/types";
 import { addXpCorrect, addXpWrong } from "./xp-service.js";
 import type { Exercise, ExerciseType } from "@shared/types";
 
@@ -94,14 +96,14 @@ export function listExercises(db: Db, nodeId: string): Exercise[] {
 }
 
 /**
- * 提交答案 + 判分。
- * @returns correct / explanation / proposalId（更新掌握度的提议，等人确认）
+ * 提交答案 + 判分。自动 apply mastery（与 quiz/record_answer 对齐：判分确定性，不需人确认）。
+ * @returns correct / explanation
  */
 export function submitExerciseAnswer(
   db: Db,
   exerciseId: string,
   userAnswer: string,
-): { correct: boolean; explanation: string | null; proposalId?: string; xpGained?: number; totalXp?: number } {
+): { correct: boolean; explanation: string | null; xpGained?: number; totalXp?: number } {
   const ex = db.select().from(exercises).where(eq(exercises.id, exerciseId)).get();
   if (!ex) throw new Error(`题目不存在: ${exerciseId}`);
 
@@ -110,7 +112,7 @@ export function submitExerciseAnswer(
   // 累加 XP（答对+10，答错+1）
   const xpGained = correct ? addXpCorrect(db) : addXpWrong(db);
 
-  // 生成 update_mastery Proposal（correct 传给 BKT）
+  // 自动 create + apply update_mastery（不再留 pending 等人确认）
   const ops: LearningOperation[] = [
     { type: "update_mastery", nodeId: ex.nodeId, correct },
   ];
@@ -119,11 +121,14 @@ export function submitExerciseAnswer(
     operations: ops,
     rationale: `练习题作答（${ex.type}，${correct ? "答对" : "答错"}）`,
   });
+  applyProposal(db, proposal.id);
+  // BKT↔SRS 闭环：答题同时更新 SRS 复习计划（与 quiz:recordAnswer 对齐）
+  // 用 pure/srs-db 避免 import srs.ts → db/index.ts → schema.sql?raw 链（tsx 无法解析 ?raw）
+  recordReviewDb(db, ex.nodeId, (correct ? 5 : 2) as ReviewQuality);
 
   return {
     correct,
     explanation: ex.explanation,
-    proposalId: proposal.id,
     xpGained: correct ? 10 : 1,
     totalXp: xpGained,
   };

@@ -767,16 +767,11 @@ export function registerSrsHandlers(): void {
     "srs:record",
     async (_e, nodeId: string, quality: ReviewQuality) => {
       recordReview(nodeId, quality);
-      // P2 闭环反向:自评复习结果回写 BKT(quality≤2 降掌握度→近期重练;≥4 升→推迟)。
-      // 走 service 直接 apply,不触发 proposal:apply 的 SRS 钩子,避免双写。quality==3 边界不动。
-      if (quality <= 2 || quality >= 4) {
-        const prop = createProposalService(getDb(), {
-          nodeId,
-          operations: [{ type: "update_mastery", nodeId, correct: quality >= 4 }],
-          rationale: `复习自评(quality=${quality})`,
-        });
-        applyProposalService(getDb(), prop.id);
-      }
+      // Phase A: 复习自评也给 XP（复习也是学习，应该有能量反馈）
+      if (quality >= 4) addXpCorrect(getDb());
+      else if (quality <= 2) addXpWrong(getDb());
+      // Phase D: 自评只影响 SRS 排期，不影响 BKT mastery。
+      // 自评是主观的，不应直接影响 BKT 概率。mastery 只由客观答题驱动（quiz/exercise/record_answer）。
     },
   );
 }

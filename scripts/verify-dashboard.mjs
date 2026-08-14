@@ -41,7 +41,7 @@ sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VAL
 // mastery
 sqljs.run(`INSERT INTO progress (node_id, status, crown_level, mastery) VALUES ('l1','mastered',5,0.9)`);
 sqljs.run(`INSERT INTO progress (node_id, status, crown_level, mastery) VALUES ('l2','in_progress',2,0.4)`);
-sqljs.run(`INSERT INTO progress (node_id, status, crown_level, mastery) VALUES ('l3','mastered',5,0.8)`);
+sqljs.run(`INSERT INTO progress (node_id, status, crown_level, mastery) VALUES ('l3','mastered',5,0.9)`);
 sqljs.run(`INSERT INTO progress (node_id, status, crown_level) VALUES ('l4','locked',0)`); // mastery NULL
 
 // === T1: 2 个 section ===
@@ -54,13 +54,13 @@ const s1 = dash.sections.find((s) => s.sectionTitle === "S1");
 assert.ok(s1, "T2: S1 存在");
 assert.ok(Math.abs(s1.avgMastery - 0.65) < 0.001, `T2: S1 avg 应 0.65, 实际 ${s1.avgMastery}`);
 assert.strictEqual(s1.lessonCount, 2);
-assert.strictEqual(s1.masteredCount, 1, "T2: S1 mastered 应 1（l1=0.9>=0.7）");
+assert.strictEqual(s1.masteredCount, 1, "T2: S1 mastered 应 1（l1=0.9>=0.9）");
 console.log(`✓ T2 S1: avg=${s1.avgMastery.toFixed(2)}, lessons=2, mastered=1`);
 
-// === T3: S2 mastery NULL 算 0，mastered=1（l3=0.8）===
+// === T3: S2 mastery NULL 算 0，mastered=1（l3=0.9>=0.9）===
 const s2 = dash.sections.find((s) => s.sectionTitle === "S2");
 assert.ok(s2, "T3: S2 存在");
-assert.ok(Math.abs(s2.avgMastery - 0.4) < 0.001, `T3: S2 avg 应 0.4 ((0.8+0)/2), 实际 ${s2.avgMastery}`);
+assert.ok(Math.abs(s2.avgMastery - 0.45) < 0.001, `T3: S2 avg 应 0.45 ((0.9+0)/2), 实际 ${s2.avgMastery}`);
 assert.strictEqual(s2.masteredCount, 1, "T3: S2 mastered 应 1");
 console.log(`✓ T3 S2: avg=${s2.avgMastery.toFixed(2)}（NULL 算 0）, mastered=1`);
 

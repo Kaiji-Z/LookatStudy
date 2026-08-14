@@ -1075,6 +1075,78 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: keyless,
   });
 
+  // T22 (课程搜索): 搜索药丸 → 全栏面板(树状导航,锁定行 disabled)→ 标题过滤
+  // → 点行跳转(面板收起 + 地图球选中环)。种子课 guide-les-1-1「欢迎使用
+  // LookatStudy」含"欢迎"且必定可点(首课初始 available)。
+  let courseSearch: { btn?: boolean; panel?: boolean; allRows?: number; lockedRow?: boolean; filteredRows?: number; jumped?: boolean; ring?: boolean; closed?: boolean; error?: string } = {};
+  try {
+    courseSearch = await win.webContents.executeJavaScript(`
+      (async function() {
+        try {
+          var btn = document.querySelector('[data-testid="map-search-btn"]');
+          if (!btn) return { btn: false };
+          btn.click();
+          var panel = null;
+          for (var i = 0; i < 20; i++) {
+            await new Promise(function(r){ setTimeout(r, 100); });
+            panel = document.querySelector('[data-testid="course-search-panel"]');
+            if (panel) break;
+          }
+          if (!panel) return { btn: true, panel: false };
+          var input = document.querySelector('[data-testid="course-search-input"]');
+          if (!input) return { btn: true, panel: true, error: "input-missing" };
+          var allRows = document.querySelectorAll('[data-testid^="search-row-"]').length;
+          var lockedRow = Array.prototype.some.call(
+            document.querySelectorAll('[data-testid^="search-row-"]'),
+            function(el) { return el.disabled; }
+          );
+          // 过滤:"欢迎" 应只剩 guide-les-1-1 一行
+          var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+          setter.call(input, "欢迎");
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          var filtered = null;
+          for (var j = 0; j < 30; j++) {
+            await new Promise(function(r){ setTimeout(r, 100); });
+            filtered = document.querySelectorAll('[data-testid^="search-row-"]').length;
+            if (filtered < allRows) break;
+          }
+          if (!filtered) return { btn: true, panel: true, allRows: allRows, lockedRow: lockedRow, error: "filter-timeout" };
+          var row = document.querySelector('[data-testid^="search-row-"]');
+          if (!row || row.disabled) return { btn: true, panel: true, allRows: allRows, filteredRows: filtered, error: "row-unavailable" };
+          row.click();
+          var jumped = false;
+          for (var k = 0; k < 20; k++) {
+            await new Promise(function(r){ setTimeout(r, 100); });
+            if (!document.querySelector('[data-testid="course-search-panel"]')) { jumped = true; break; }
+          }
+          // 选中环:guide-les-1-1 的地图球应带 ring-accent(选中态)
+          var bubble = document.querySelector('[data-testid^="map-node-"][class*="ring-accent"]');
+          return {
+            btn: true,
+            panel: true,
+            allRows: allRows,
+            lockedRow: lockedRow,
+            filteredRows: filtered,
+            jumped: jumped,
+            ring: !!bubble,
+          };
+        } catch (e) { return { error: String(e) }; }
+      })()
+    `);
+  } catch (e) {
+    courseSearch = { error: String(e) };
+  }
+  results.push({
+    name: "course search: pill → panel tree (locked rows disabled) → title filter → row click jumps & selects",
+    ok: courseSearch?.btn === true && courseSearch?.panel === true
+      && typeof courseSearch?.allRows === "number" && courseSearch.allRows > 1
+      && courseSearch?.lockedRow === true
+      && courseSearch?.filteredRows === 1
+      && courseSearch?.jumped === true
+      && courseSearch?.ring === true,
+    detail: courseSearch,
+  });
+
   // T21 (课程删除闭环): 地图头"删除当前课程"按钮 → ConfirmCard 确认 → 课程删除,
   // 中栏回到未选课空态 + 课程列表少一门。ui-test 用临时 DB,删种子课不影响下次运行。
   let courseDelete: { trash?: boolean; card?: boolean; noCourse?: boolean; before?: number; after?: number; importPanel?: boolean; error?: string } = {};

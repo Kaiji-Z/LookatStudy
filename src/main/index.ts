@@ -21,7 +21,7 @@ import { seedBuiltinSouls } from "./services/souls/soul-service.js";
 import { createProposal } from "./services/proposal-service.js";
 import { setStateEmitter } from "./lib/state-emitter.js";
 import { setExamStatusSender } from "./services/exam-generation-store.js";
-import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems, progress as progressTable } from "./db/schema.js";
+import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems, progress as progressTable, chatMessages, threads as threadsTable } from "./db/schema.js";
 import { eq } from "drizzle-orm";
 
 // 主进程以 CJS 打包（见 vite.config.ts），__dirname 天然可用。
@@ -757,6 +757,51 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: startState?.hasEmpty === true && startState?.hasStartBtn === true,
     detail: startState,
   });
+
+  // T8e (按钮消息展示): 点「开始学习」→ 乐观 user 气泡立刻出现且只显示短动作标签,
+  // 发给 LLM 的完整开场提示词不出现在 DOM(防"按钮 prompt 裸奔"回归)。
+  // 断言完立即停流(chat-stop),避免 LLM 流式阻塞后续测试的节点切换。
+  const actionDisplay = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        var btn = document.querySelector('[data-testid="start-learning-btn"]');
+        if (!btn) return { btn: false };
+        btn.click();
+        var userMsg = null;
+        for (var i = 0; i < 20; i++) {
+          await new Promise(function(r){ setTimeout(r, 100); });
+          userMsg = document.querySelector('[data-testid="msg-user"]');
+          if (userMsg) break;
+        }
+        if (!userMsg) return { btn: true, error: "no-user-bubble" };
+        var txt = userMsg.textContent || "";
+        var hasLabel = txt.indexOf("开始学习") !== -1 && txt.length < 60;
+        var leakedPrompt = document.body.textContent.indexOf("把我勾住是唯一目标") !== -1;
+        var stop = document.querySelector('[data-testid="chat-stop"]');
+        if (stop) stop.click();
+        for (var j = 0; j < 30; j++) {
+          await new Promise(function(r){ setTimeout(r, 200); });
+          if (!document.querySelector('[data-testid="chat-stop"]')) break;
+        }
+        return { btn: true, bubbleText: txt.slice(0, 40), hasLabel: hasLabel, leakedPrompt: leakedPrompt, stopped: !document.querySelector('[data-testid="chat-stop"]') };
+      } catch (e) { return { error: String(e) }; }
+    })()
+  `);
+  results.push({
+    name: "start-learning click: bubble shows short action label, full prompt never rendered",
+    ok: actionDisplay?.btn === true && actionDisplay?.hasLabel === true && actionDisplay?.leakedPrompt === false,
+    detail: actionDisplay,
+  });
+
+  // T8e 留下了带消息的 thread,而后段 T20(keyless 冷启动)依赖"空会话空态"才能见
+  // keyless-card。清掉全部 threads + messages 还原现场(临时测试库,无真数据风险)。
+  try {
+    const db = getDb();
+    db.delete(chatMessages).run();
+    db.delete(threadsTable).run();
+  } catch {
+    /* 尽力而为:清理失败不阻塞后续测试 */
+  }
 
   // 原 🤔 卡点 toggle+表单已撤(friction 折进"我没太懂"巩固选择)。
   // 巩固选择的"内容"由 verify-starter-prompts 覆盖;"语境前不出现"由 App 的 prop 门控(tsc 保证)。

@@ -68,10 +68,10 @@ async function loadThreadService(db) {
   };
   const getThreadMessages = (threadId) =>
     db.select().from(chatMessages).where(eq(chatMessages.threadId, threadId)).orderBy(asc(chatMessages.createdAt)).all();
-  const appendMessage = (threadId, role, content, partsJson) => {
+  const appendMessage = (threadId, role, content, partsJson, displayText) => {
     const id = randomUUID();
     const now = new Date().toISOString();
-    const row = { id, threadId, role, content, partsJson: partsJson ?? null, createdAt: now };
+    const row = { id, threadId, role, content, partsJson: partsJson ?? null, displayText: displayText ?? null, createdAt: now };
     db.insert(chatMessages).values(row).run();
     const thread = db.select().from(threads).where(eq(threads.id, threadId)).get();
     if (thread) {
@@ -181,6 +181,19 @@ test("T8 appendMessage partsJson 可空", () => {
   assert.strictEqual(m.partsJson, null);
   const m2 = svc.appendMessage(t.id, "assistant", "带产物", JSON.stringify({ artifactType: "quiz" }));
   assert.ok(m2.partsJson.includes("quiz"));
+});
+
+// T9: display_text —— 按钮触发的消息存短动作标签,手打输入默认 null(原样展示 content)。
+// 走真 schema.ts 列定义(displayText→display_text),验证列真的存在且往返不丢。
+test("T9 appendMessage displayText 持久化往返 + 默认 null", () => {
+  const t = svc.createThread({ courseId: "c9", title: "T9" });
+  const btnMsg = svc.appendMessage(t.id, "user", "我想开始学「X」。但我现在没什么劲——别直接讲概念……(完整开场提示词)", null, "开始学习「X」");
+  const typed = svc.appendMessage(t.id, "user", "用户手打的原文");
+  const msgs = svc.getThreadMessages(t.id);
+  assert.strictEqual(msgs[0].displayText, "开始学习「X」", "按钮消息读回短标签");
+  assert.strictEqual(msgs[0].content.includes("别直接讲概念"), true, "完整提示词仍在 content(LLM 可见)");
+  assert.strictEqual(msgs[1].displayText, null, "手打输入 displayText=null → 原样展示 content");
+  assert.strictEqual(btnMsg.displayText, "开始学习「X」");
 });
 
 let passed = 0, failed = 0;

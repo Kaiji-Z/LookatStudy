@@ -25,6 +25,8 @@ export interface ChatMessageV2 {
   id: string;
   role: "user" | "assistant";
   parts: ChatMessagePart[];
+  /** 气泡展示覆盖:user 消息为按钮触发时存短动作标签,渲染层优先于 parts 文本。 */
+  displayText?: string;
 }
 
 /**

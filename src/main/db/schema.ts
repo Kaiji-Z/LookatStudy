@@ -358,6 +358,8 @@ export const chatMessages = sqliteTable("chat_messages", {
   content: text("content").notNull(),
   /** v0.2 parts 产物/tool/reasoning(JSON,可空——纯文本消息没有) */
   partsJson: text("parts_json"),
+  /** 气泡展示文本:按钮触发的消息存短动作标签;NULL(手打输入)= 原样展示 content */
+  displayText: text("display_text"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

@@ -123,8 +123,8 @@ const api = {
     ipcRenderer.invoke("agent:getHistory", nodeId)) as ApiExpose["getChatHistory"],
   clearChatHistory: ((nodeId: string) =>
     ipcRenderer.invoke("agent:clearHistory", nodeId)) as ApiExpose["clearChatHistory"],
-  agentChatThread: ((threadId: string, msg: string) =>
-    ipcRenderer.invoke("agent:chatThread", threadId, msg)) as ApiExpose["agentChatThread"],
+  agentChatThread: ((threadId: string, msg: string, displayText?: string | null) =>
+    ipcRenderer.invoke("agent:chatThread", threadId, msg, displayText ?? null)) as ApiExpose["agentChatThread"],
   abortAgentChatThread: ((threadId: string) =>
     ipcRenderer.invoke("agent:abortThread", threadId)) as ApiExpose["abortAgentChatThread"],
   isAgentReady: (() =>

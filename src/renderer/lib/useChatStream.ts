@@ -11,6 +11,7 @@
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "./api.js";
+import { translate } from "./i18n.js";
 import type { ChatStreamPart } from "@shared/types";
 import { accumulatePart, type ChatMessageV2, type ChatMessagePart } from "@shared/part-accumulator";
 
@@ -48,7 +49,7 @@ export function textHistoryToV2(
 interface UseChatStreamResult {
   messages: ChatMessageV2[];
   streaming: boolean;
-  send: (text: string, overrideThreadId?: string) => Promise<void>;
+  send: (text: string, overrideThreadId?: string, displayText?: string) => Promise<void>;
   stop: () => Promise<void>;
   clear: () => void;
   /** 把 proposal 消息内的 tool-call 标记为已应用/拒绝 */
@@ -86,6 +87,8 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
               id: m.id,
               role: m.role,
               parts: restored ?? [{ type: "text" as const, text: m.content }],
+              // 按钮触发的消息:气泡只展示短动作标签(完整提示词在 parts/content,仅供 LLM)
+              ...(m.displayText ? { displayText: m.displayText } : {}),
             };
           }),
         );
@@ -177,7 +180,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
   }, []);
 
   const send = useCallback(
-    async (text: string, overrideThreadId?: string) => {
+    async (text: string, overrideThreadId?: string, displayText?: string) => {
       // 优先用 overrideThreadId(首次建 thread 后立刻发,不等 prop 更新)
       const tid = overrideThreadId ?? threadId;
       if (!tid || streaming || !text.trim()) return;
@@ -186,12 +189,14 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         id: nextMsgId(),
         role: "user",
         parts: [{ type: "text", text: trimmed }],
+        // 按钮触发时气泡只显示短动作标签,不显示发给 LLM 的完整提示词
+        ...(displayText ? { displayText } : {}),
       };
       setMessages((prev) => [...prev, userMsg]);
       setStreaming(true);
       streamingMsgIdRef.current = null;
       try {
-        await api.agentChatThread(tid, trimmed);
+        await api.agentChatThread(tid, trimmed, displayText);
       } catch (e) {
         setStreaming(false);
         setMessages((prev) => [
@@ -229,17 +234,17 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
     const handler = (e: Event) => {
       const action = (e as CustomEvent<string>).detail;
       if (typeof action !== "string") return;
-      // 把命令映射成发给 AI 的自然语言指令
-      const COMMAND_MESSAGES: Record<string, string> = {
-        explain_simple: "用大白话给我讲讲这一节的核心概念",
-        quiz_3: "出 3 道练习题考考我",
-        compare_prev: "把这一节和上一节做个对比表",
-        concept_map: "画个概念图帮我理清这一节的知识结构",
-        socratic: "切换到苏格拉底模式,用提问引导我思考",
-        exam_mode: "切换到考试冲刺模式,出有难度的题",
+      // 把命令映射成发给 AI 的自然语言指令 + 气泡展示的短标签(不显示完整提示词)
+      const COMMAND_MESSAGES: Record<string, { msg: string; labelKey: string }> = {
+        explain_simple: { msg: "用大白话给我讲讲这一节的核心概念", labelKey: "command.explain_simple" },
+        quiz_3: { msg: "出 3 道练习题考考我", labelKey: "command.quiz_3" },
+        compare_prev: { msg: "把这一节和上一节做个对比表", labelKey: "command.compare_prev" },
+        concept_map: { msg: "画个概念图帮我理清这一节的知识结构", labelKey: "command.concept_map" },
+        socratic: { msg: "切换到苏格拉底模式,用提问引导我思考", labelKey: "command.socratic" },
+        exam_mode: { msg: "切换到考试冲刺模式,出有难度的题", labelKey: "command.exam_mode" },
       };
-      const msg = COMMAND_MESSAGES[action];
-      if (msg) send(msg);
+      const cmd = COMMAND_MESSAGES[action];
+      if (cmd) send(cmd.msg, undefined, translate(cmd.labelKey));
     };
     window.addEventListener("lookatstudy-command", handler);
     return () => window.removeEventListener("lookatstudy-command", handler);

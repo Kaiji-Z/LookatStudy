@@ -790,6 +790,8 @@ export async function handleAgentChatThread(
   win: BrowserWindow | null,
   threadId: string,
   userMessage: string,
+  /** 按钮触发的消息:气泡展示的短动作标签(完整提示词仍是 userMessage,LLM 只见后者) */
+  displayText?: string | null,
 ): Promise<string> {
   const db = getDb();
 
@@ -799,7 +801,7 @@ export async function handleAgentChatThread(
   history.push({ role: "user", content: userMessage });
 
   // 先把 user 消息持久化(乐观:用户消息立刻入库)
-  const savedUserMsg = appendMessage(threadId, "user", userMessage);
+  const savedUserMsg = appendMessage(threadId, "user", userMessage, null, displayText ?? null);
 
   // 找焦点节点(从 thread.focusNodeId,通过 threads 表查)
   // 注意:thread-service 没暴露 getThread,这里直接查表

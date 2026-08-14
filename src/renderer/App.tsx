@@ -163,17 +163,19 @@ export default function App() {
   // 在意志力最低的瞬间堆两次摩擦(吸收讲座 + 被评估)。改成 hook(好奇心缺口 = 内驱)+
   // 二选一猜测(玩,不是考试)——零失败风险,先把人勾进来,动量起来再讲、再测。
   // 实际的 sendMessage 定义在 toast 声明之后(下面),通过 ref 桥接避免 TDZ。
-  const sendRef = useRef<((t: string) => Promise<void>) | null>(null);
+  const sendRef = useRef<((t: string, displayText?: string) => Promise<void>) | null>(null);
   const handleStartLearning = useCallback(() => {
     if (!selectedNode) return;
+    // 气泡只显示「🚀 开始学习「X」」这个动作;完整开场指令是发给 LLM 的提示词,不在聊天窗展示。
     void sendRef.current?.(
       `我想开始学「${selectedNode.title}」。但我现在没什么劲——别直接讲概念,也别出计分题考我。请这样开场:\n` +
         `1. 先用一两句散文抛个钩子(反直觉的、或跟我日常有关的,让我产生好奇);\n` +
         `2. 然后调用 pose_guess 工具,给我一个二选一的小猜测(就是玩,不是考试);\n` +
         `3. 我会点选项猜,你【下一回合】再揭晓,顺带把这课最核心的一点讲清楚。\n` +
         `铁律:起手不要讲座、不要用 generate_quiz 出计分题、不要计分。把我勾住是唯一目标。`,
+      t("chat.action.startLearning", { title: selectedNode.title }),
     );
-  }, [selectedNode]);
+  }, [selectedNode, t]);
 
   const refreshAll = useCallback(async () => {
     try {
@@ -535,13 +537,14 @@ export default function App() {
 
   // 统一的"发送一条消息"流程:首次发送自动建 thread,之后直接发。
   // ChatComposer 的 onSend 和 handleStartLearning 都走这条,避免重复逻辑和"忘了建 thread"的坑。
+  // displayText:按钮触发的消息传短动作标签(气泡只显示它);手打输入不传=原样展示。
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, displayText?: string) => {
       if (!text.trim() || chat.streaming) return;
       if (!thread.activeId) {
-        const newId = await thread.ensureThreadForSend(text);
+        const newId = await thread.ensureThreadForSend(text, displayText);
         if (newId) {
-          chat.send(text, newId);
+          chat.send(text, newId, displayText);
           return;
         }
         toast.show(t("toast.threadCreateFailed"));
@@ -549,11 +552,12 @@ export default function App() {
       }
       // 当前 thread 标题为空(如"+ 新建会话"建的空 thread)→ 用首条消息截断自动命名,
       // 与 ensureThreadForSend 的命名逻辑一致:标题=首条完整输入(不截断)。
+      // 按钮触发的消息标题用短动作标签——tab 里不该出现整段提示词。
       const cur = thread.activeThread;
       if (cur && !cur.title) {
-        thread.update(cur.id, { title: text.trim() });
+        thread.update(cur.id, { title: (displayText ?? text).trim() });
       }
-      chat.send(text);
+      chat.send(text, undefined, displayText);
     },
     [chat, thread, toast, t],
   );

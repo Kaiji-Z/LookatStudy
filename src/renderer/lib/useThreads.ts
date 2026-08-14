@@ -131,11 +131,12 @@ export function useThreads(courseId: string | null, nodeId: string | null) {
    * 返回 threadId 供 useChatStream 发消息用。
    */
   const ensureThreadForSend = useCallback(
-    async (userMessage: string): Promise<string | null> => {
+    async (userMessage: string, displayText?: string): Promise<string | null> => {
       if (!courseId || !nodeId) return null;
       if (activeId) return activeId;
       // 标题=用户首条完整输入(不截断)。tab 用 CSS max-w truncate 显示,hover tooltip 看全名。
-      const t = await create({ title: userMessage.trim() });
+      // 按钮触发的首条消息(displayText 存在)标题用短动作标签——tab 里不该出现整段提示词。
+      const t = await create({ title: (displayText ?? userMessage).trim() });
       return t?.id ?? null;
     },
     [courseId, nodeId, activeId, create],

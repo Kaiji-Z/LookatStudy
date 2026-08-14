@@ -38,15 +38,23 @@ export function getPostQuizActions(
   const { correct, total } = score;
   const allCorrect = total > 0 && correct === total;
   const hasWrong = total > 0 && correct < total;
-  const highMastery = mastery != null && mastery >= 0.7;
+  // Per-KC BKT: mastery = min(各 KC)。0.9 = 已自动毕业(BKT auto-mastered);
+  // 0.85+ = 接近毕业,可以给"标记掌握"让用户选择提前毕业;低于 0.85 = 不够熟。
+  const alreadyMastered = mastery != null && mastery >= 0.9;
+  const nearMastered = mastery != null && mastery >= 0.85;
 
   // 有错题:先补漏洞,再巩固
   if (hasWrong) {
     return [{ id: "explain-wrong" }, { id: "retry" }];
   }
 
-  // 全对 + 高掌握:可以毕业前进
-  if (allCorrect && highMastery) {
+  // 全对 + 已毕业(≥0.9):BKT 已自动戴皇冠,"标记掌握"多余,直接前进
+  if (allCorrect && alreadyMastered) {
+    return [{ id: "next-topic" }, { id: "go-deeper" }];
+  }
+
+  // 全对 + 接近毕业(0.85-0.89):可以选"标记掌握"提前毕业,也可以继续深入
+  if (allCorrect && nearMastered) {
     return [
       { id: "mark-mastered", advancesMastery: true },
       { id: "next-topic" },
@@ -54,7 +62,8 @@ export function getPostQuizActions(
     ];
   }
 
-  // 全对但掌握度还不够 / 未评估:深入 + 再练,不冒险标记掌握
+  // 全对但掌握度还不够(含 per-KC BKT:最薄弱 KC 低于 0.85)/ 未评估:
+  // 深入 + 再练,不冒险标记掌握(避免假毕业)
   // (也兜底 total===0 的边界:落到这里,给 2 个安全动作)
   return [{ id: "go-deeper" }, { id: "retry" }];
 }

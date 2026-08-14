@@ -518,7 +518,7 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: dueBadge,
   });
 
-  // T4c (P2.4 交错复习): 打开复习抽屉 → 混合练习(随机起点)按钮在;然后关掉抽屉不影响后续。
+  // T4c (P2.4 交错复习): 打开复习抽屉 → 交错复习按钮在;然后关掉抽屉不影响后续。
   const interleave = await win.webContents.executeJavaScript(`
     (async function() {
       var badge = document.querySelector('[data-testid="map-review-badge"]');
@@ -526,16 +526,15 @@ async function runUiTest(screenshot = false): Promise<void> {
       badge.click();
       await new Promise(function(r){ setTimeout(r, 400); });
       var panel = document.querySelector('[data-testid="review-panel"]');
-      var shuffle = document.querySelector('[data-testid="review-shuffle"]');
-      var mini = document.querySelector('[data-testid="dashboard-mini"]');
+      var interleaveBtn = document.querySelector('[data-testid="review-interleave"]');
       var close = document.querySelector('[data-testid="review-close"]');
       if (close) close.click();
       await new Promise(function(r){ setTimeout(r, 150); });
-      return { ok: !!panel && !!shuffle && !!mini, panel: !!panel, shuffle: !!shuffle, mini: !!mini };
+      return { ok: !!panel && !!interleaveBtn, panel: !!panel, interleave: !!interleaveBtn };
     })()
   `);
   results.push({
-    name: "interleaved review: drawer opens + shuffle entry present (P2.4)",
+    name: "interleaved review: drawer opens + interleave entry present (P2.4)",
     ok: interleave?.ok === true,
     detail: interleave,
   });

@@ -1,26 +1,24 @@
 /**
- * ReviewPanel —— v0.2 四象限复习面板(M3)。
+ * ReviewPanel —— 章节式复习面板。
  *
- * 调研结论(olgaskuja SRS 平台案例):
- *   - 首页按 overdue / 短期 / 长期 / inactive 四组分组,overdue 显著突出
- *   - 颜色语义:overdue 用橙红(警告),其他用中性
- *   - 单次 session 封顶 10 题,防积压劝退
+ * 布局:
+ *   - 交错复习按钮(随机抽逾期节点,打乱检索顺序巩固记忆)
+ *   - 章节选择(有逾期项的章节 chips)
+ *   - 选中章节的逾期课时列表,每行带"复习该课"按钮
  *
- * 复习流程:点节点 → 跳到 tree 视图 + 选中该节点 + 切到内容标签。
- * 用户在内容标签看完后,用右下角的自评按钮(recordReview)打分。
+ * 复习流程:点"复习该课" → 跳到讲解 tab → 底部自评(SelfRatingCard) → SRS 更新。
  */
 import { useState, useEffect, useMemo } from "react";
-import { Circle, Shuffle } from "lucide-react";
+import { Shuffle } from "lucide-react";
 import { api } from "../lib/api.js";
 import { celebrate } from "../lib/celebration.js";
-import type { ContentNode, ReviewQuality } from "@shared/types";
+import type { ContentNode, Progress, ReviewQuality } from "@shared/types";
 import { useLang } from "../lib/i18n.js";
-
-const MAX_SESSION = 10; // 单次复习封顶(防积压劝退)
 
 interface ReviewPanelProps {
   tree: ContentNode[];
   onReviewNode: (nodeId: string) => void;
+  progressMap: Record<string, Progress>;
 }
 
 interface SrsDetail {
@@ -31,12 +29,11 @@ interface SrsDetail {
   overdue: boolean;
 }
 
-type Accent = "orange" | "gold" | "brand" | "neutral";
-
-export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
+export function ReviewPanel({ tree, onReviewNode, progressMap }: ReviewPanelProps) {
   const t = useLang();
   const [items, setItems] = useState<SrsDetail[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedSection, setSelectedSection] = useState<string | null>(null);
 
   useEffect(() => {
     api.getAllSrsItems()
@@ -45,20 +42,44 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
       .finally(() => setLoading(false));
   }, []);
 
-  // 四象限分组
-  const groups = useMemo(() => {
-    const nodeMap = new Map(tree.map((n) => [n.id, n]));
-    const valid = items.filter((it) => nodeMap.has(it.nodeId));
-    return {
-      overdue: valid.filter((i) => i.overdue),
-      shortTerm: valid.filter((i) => !i.overdue && i.intervalDays > 0 && i.intervalDays <= 7),
-      longTerm: valid.filter((i) => !i.overdue && i.intervalDays > 7),
-      inactive: valid.filter((i) => i.repetitions === 0 && !i.overdue),
-    };
-  }, [items, tree]);
+  const nodeMap = useMemo(() => new Map(tree.map((n) => [n.id, n])), [tree]);
+  const overdueSet = useMemo(() => new Set(items.filter((i) => i.overdue).map((i) => i.nodeId)), [items]);
 
-  const totalDue = groups.overdue.length;
-  const sessionCount = Math.min(totalDue, MAX_SESSION);
+  // 所有已开始的课(in_progress / mastered)按章节分组——不限逾期,用户可自主选任何已学课复习
+  const sectionsWithLessons = useMemo(() => {
+    const started = tree.filter(
+      (n) => {
+        const status = progressMap[n.id]?.status;
+        return (n.type === "lesson") && (status === "in_progress" || status === "mastered");
+      },
+    );
+    const bySection = new Map<string, ContentNode[]>();
+    for (const node of started) {
+      const sectionId = node.parentId ?? "(root)";
+      if (!bySection.has(sectionId)) bySection.set(sectionId, []);
+      bySection.get(sectionId)!.push(node);
+    }
+    return bySection;
+  }, [tree, progressMap]);
+
+  const totalDue = useMemo(
+    () => Array.from(sectionsWithLessons.values()).flat().filter((n) => overdueSet.has(n.id)).length,
+    [sectionsWithLessons, overdueSet],
+  );
+
+  // 所有已开始的课时(交错复习用)
+  const allStartedNodes = useMemo(
+    () => Array.from(sectionsWithLessons.values()).flat(),
+    [sectionsWithLessons],
+  );
+
+  // 自动选第一个有课的章节
+  useEffect(() => {
+    if (sectionsWithLessons.size > 0 && (!selectedSection || !sectionsWithLessons.has(selectedSection))) {
+      const first = sectionsWithLessons.keys().next().value;
+      if (first) setSelectedSection(first);
+    }
+  }, [sectionsWithLessons, selectedSection]);
 
   if (loading) {
     return (
@@ -69,7 +90,7 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
     );
   }
 
-  if (items.length === 0) {
+  if (allStartedNodes.length === 0) {
     return (
       <div className="text-center py-16" data-testid="review-empty">
         <div className="text-4xl mb-3 opacity-30">📖</div>
@@ -78,6 +99,9 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
       </div>
     );
   }
+
+  // 章节标题查找
+  const sectionTitle = (sid: string) => nodeMap.get(sid)?.title ?? sid;
 
   return (
     <div className="p-5 max-w-2xl mx-auto" data-testid="review-panel">
@@ -90,134 +114,63 @@ export function ReviewPanel({ tree, onReviewNode }: ReviewPanelProps) {
         )}
       </div>
 
-      {/* 开始复习按钮 */}
-      {totalDue > 0 && (
-        <button
-          onClick={() => groups.overdue[0] && onReviewNode(groups.overdue[0].nodeId)}
-          data-testid="review-start"
-          className="btn-3d-brand w-full py-2.5 text-body mb-5"
-        >
-          {t("review.start")}({sessionCount}/{MAX_SESSION}) →
-        </button>
-      )}
+      {/* 交错复习:随机抽一个已开始的课(打乱检索顺序 = desirable difficulty) */}
+      <button
+        onClick={() => {
+          const pick = allStartedNodes[Math.floor(Math.random() * allStartedNodes.length)];
+          if (pick) onReviewNode(pick.id);
+        }}
+        data-testid="review-interleave"
+        className="btn-3d-neutral w-full py-2.5 text-body mb-5 flex items-center justify-center gap-1.5"
+      >
+        <Shuffle className="w-4 h-4" />
+        {t("review.interleave")}
+      </button>
 
-      {/* 混合练习(交错复习):随机抽一个待复习节点——随机化检索顺序是 desirable difficulty,
-          区别于默认顺序复习。(完整自动推进 session 留作后续增强。) */}
-      {totalDue > 0 && (
-        <button
-          onClick={() => {
-            const pool = groups.overdue;
-            const pick = pool[Math.floor(Math.random() * pool.length)];
-            if (pick) onReviewNode(pick.nodeId);
-          }}
-          data-testid="review-shuffle"
-          className="btn-3d-neutral w-full py-2 text-label mb-5 flex items-center justify-center gap-1.5"
-        >
-          <Shuffle className="w-3.5 h-3.5" />
-          {t("review.shuffle")}
-        </button>
-      )}
-
-      {/* 四象限网格 */}
-      <div className="grid grid-cols-2 gap-3">
-        <Quadrant
-          title={t("review.quadrant.overdue")}
-          accent="orange"
-          count={groups.overdue.length}
-          nodes={groups.overdue.map((i) => tree.find((n) => n.id === i.nodeId)!).filter(Boolean)}
-          onItemClick={onReviewNode}
-          testid="quadrant-overdue"
-        />
-        <Quadrant
-          title={t("review.quadrant.short")}
-          accent="gold"
-          count={groups.shortTerm.length}
-          nodes={groups.shortTerm.map((i) => tree.find((n) => n.id === i.nodeId)!).filter(Boolean)}
-          onItemClick={onReviewNode}
-          testid="quadrant-short"
-        />
-        <Quadrant
-          title={t("review.quadrant.long")}
-          accent="brand"
-          count={groups.longTerm.length}
-          nodes={groups.longTerm.map((i) => tree.find((n) => n.id === i.nodeId)!).filter(Boolean)}
-          onItemClick={onReviewNode}
-          testid="quadrant-long"
-        />
-        <Quadrant
-          title={t("review.quadrant.inactive")}
-          accent="neutral"
-          count={groups.inactive.length}
-          nodes={groups.inactive.map((i) => tree.find((n) => n.id === i.nodeId)!).filter(Boolean)}
-          onItemClick={onReviewNode}
-          testid="quadrant-inactive"
-        />
+      {/* 章节选择 */}
+      <div className="text-label font-bold text-ink-muted mb-2">{t("review.selectSection")}</div>
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {Array.from(sectionsWithLessons.entries()).map(([sid, nodes]) => (
+          <button
+            key={sid}
+            onClick={() => setSelectedSection(sid)}
+            className={`px-2.5 py-1 rounded-full text-label font-bold transition-colors ${
+              selectedSection === sid
+                ? "bg-brand/15 text-brand ring-1 ring-brand/30"
+                : "bg-surface-3 text-ink-muted hover:text-ink-strong"
+            }`}
+          >
+            {sectionTitle(sid)}
+            <span className="ml-1 opacity-60">({nodes.length})</span>
+          </button>
+        ))}
       </div>
 
-      <div className="mt-5 text-label text-ink-faint leading-relaxed">
-        {t("review.tip", { n: MAX_SESSION })}
-      </div>
-    </div>
-  );
-}
-
-const ACCENT_BORDER: Record<Accent, string> = {
-  orange: "border-review/30 bg-review/5",
-  gold: "border-gold/30 bg-gold/5",
-  brand: "border-brand/30 bg-brand/5",
-  neutral: "border-[var(--border-faint)]",
-};
-const ACCENT_DOT: Record<Accent, string> = {
-  orange: "text-review",
-  gold: "text-gold",
-  brand: "text-brand",
-  neutral: "text-ink-muted",
-};
-
-function Quadrant({
-  title,
-  accent,
-  count,
-  nodes,
-  onItemClick,
-  testid,
-}: {
-  title: string;
-  accent: Accent;
-  count: number;
-  nodes: ContentNode[];
-  onItemClick: (id: string) => void;
-  testid: string;
-}) {
-  return (
-    <div className={`rounded-xl border p-3 ${ACCENT_BORDER[accent]}`} data-testid={testid}>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-label font-bold text-ink-muted flex items-center gap-1">
-          <Circle className={`w-2.5 h-2.5 ${ACCENT_DOT[accent]}`} fill="currentColor" aria-hidden="true" />
-          <span>{title}</span>
-        </span>
-        <span className="text-label font-extrabold text-ink-muted tabular-nums">{count}</span>
-      </div>
-      {count === 0 ? (
-        <div className="text-label text-ink-faint py-2 text-center">—</div>
-      ) : (
-        <ul className="space-y-1 max-h-32 overflow-y-auto">
-          {nodes.slice(0, 8).map((node) => (
-            <li key={node.id}>
+      {/* 选中章节的已开始课时(逾期的高亮标记) */}
+      {selectedSection && sectionsWithLessons.has(selectedSection) && (
+        <div className="space-y-1.5" data-testid="review-lesson-list">
+          {sectionsWithLessons.get(selectedSection)!.map((node) => {
+            const isOverdue = overdueSet.has(node.id);
+            return (
+            <div
+              key={node.id}
+              className={`flex items-center justify-between gap-2 p-2.5 rounded-lg transition-colors ${isOverdue ? "bg-review/8 ring-1 ring-review/20" : "bg-surface-3 hover:bg-surface-3/80"}`}
+            >
+              <div className="flex items-center gap-1.5 truncate flex-1">
+                {isOverdue && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-review" />}
+                <span className="text-body text-ink-strong truncate">{node.title}</span>
+              </div>
               <button
-                onClick={() => onItemClick(node.id)}
-                data-testid={`review-node-${node.id.slice(0, 8)}`}
-                className="w-full text-left text-label px-2 py-1 rounded text-ink-muted hover:bg-surface-3 hover:text-ink-strong truncate transition-colors"
-                title={node.title}
+                onClick={() => onReviewNode(node.id)}
+                data-testid={`review-lesson-${node.id.slice(0, 8)}`}
+                className="shrink-0 px-3 py-1 rounded-lg bg-brand/15 text-brand text-label font-bold hover:bg-brand/25 transition-colors"
               >
-                {node.title}
+                {t("review.reviewLesson")}
               </button>
-            </li>
-          ))}
-          {count > 8 && (
-            <li className="text-caption text-ink-faint px-2">+{count - 8}</li>
-          )}
-        </ul>
+            </div>
+          );
+          })}
+        </div>
       )}
     </div>
   );
@@ -272,25 +225,28 @@ export function SelfRatingCard({
           onClick={() => rate(1)}
           disabled={busy}
           data-testid="rate-again"
-          className="text-label py-2 rounded-lg border border-warning/40 text-warning hover:bg-warning/10 transition-colors disabled:opacity-40"
+          className="py-2 rounded-lg border border-warning/40 text-warning hover:bg-warning/10 transition-colors disabled:opacity-40 flex flex-col items-center gap-0.5"
         >
-          {t("review.selfrate.again")}
+          <span className="text-body font-bold">{t("review.selfrate.again")}</span>
+          <span className="text-caption opacity-70">{t("review.selfrate.again.hint")}</span>
         </button>
         <button
           onClick={() => rate(4)}
           disabled={busy}
           data-testid="rate-remembered"
-          className="text-label py-2 rounded-lg border border-accent/40 text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
+          className="py-2 rounded-lg border border-accent/40 text-accent hover:bg-accent/10 transition-colors disabled:opacity-40 flex flex-col items-center gap-0.5"
         >
-          {t("review.selfrate.remembered")}
+          <span className="text-body font-bold">{t("review.selfrate.remembered")}</span>
+          <span className="text-caption opacity-70">{t("review.selfrate.remembered.hint")}</span>
         </button>
         <button
           onClick={() => rate(5)}
           disabled={busy}
           data-testid="rate-mastered"
-          className="text-label py-2 rounded-lg border border-brand/40 text-brand hover:bg-brand/10 transition-colors disabled:opacity-40"
+          className="py-2 rounded-lg border border-brand/40 text-brand hover:bg-brand/10 transition-colors disabled:opacity-40 flex flex-col items-center gap-0.5"
         >
-          {t("review.selfrate.mastered")}
+          <span className="text-body font-bold">{t("review.selfrate.mastered")}</span>
+          <span className="text-caption opacity-70">{t("review.selfrate.mastered.hint")}</span>
         </button>
       </div>
     </div>

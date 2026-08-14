@@ -18,6 +18,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
+import { SelfRatingCard } from "./ReviewPanel.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
@@ -57,6 +58,10 @@ interface NotebookPanelProps {
   items: CanvasItem[];
   loading: boolean;
   forceTab?: NotebookTab | null;
+  /** 用户从复习抽屉选了课 → 讲解底部显示自评卡 */
+  isReviewing?: boolean;
+  /** 自评完成或退出复习模式 */
+  onReviewDone?: () => void;
   onUserTabChange: () => void;
   onRemove: (id: string) => void;
   onTogglePin: (id: string) => void;
@@ -79,6 +84,8 @@ export function NotebookPanel({
   items,
   loading,
   forceTab,
+  isReviewing,
+  onReviewDone,
   onUserTabChange,
   onRemove,
   onTogglePin,
@@ -149,6 +156,8 @@ export function NotebookPanel({
             onQuoteToChat={onQuoteToChat}
             onSaveContentNote={onSaveContentNote}
             locale={locale}
+            isReviewing={isReviewing}
+            onReviewDone={onReviewDone}
           />
         ) : (
           <NotesTab
@@ -174,6 +183,8 @@ function ContentTab({
   onQuoteToChat,
   onSaveContentNote,
   locale,
+  isReviewing,
+  onReviewDone,
 }: {
   selectedNode: ContentNode | null;
   /** 该节点的 user_note(用于持久画线渲染) */
@@ -181,6 +192,9 @@ function ContentTab({
   onQuoteToChat?: (text: string) => void;
   onSaveContentNote: (text: string, anchor: NoteSourceAnchor) => void;
   locale?: string | null;
+  /** 从复习抽屉进入 → 底部显示自评卡 */
+  isReviewing?: boolean;
+  onReviewDone?: () => void;
 }) {
   const t = useLang();
   const [content, setContent] = useState<string | null>(null);
@@ -456,6 +470,10 @@ function ContentTab({
         <Lightbulb className="w-3.5 h-3.5 shrink-0 mt-0.5 text-accent" />
         <span>{t("notebook.quote.hint")}</span>
       </div>
+      {/* 复习自评卡:仅从复习抽屉选课时显示。自评完 → SRS 重排 + BKT 更新 + 退出复习模式 */}
+      {isReviewing && selectedNode && (
+        <SelfRatingCard nodeId={selectedNode.id} onRated={onReviewDone} />
+      )}
     </div>
   );
 }

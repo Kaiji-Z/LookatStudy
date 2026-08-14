@@ -140,13 +140,15 @@ export function MapRail(props: MapRailProps) {
               <span className="text-label font-extrabold tabular-nums text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">{masteryPct}%</span>
             </div>
             <div className="flex items-center justify-end mt-1.5 text-caption">
-              {props.dueCount > 0 && (
-                <button onClick={props.onOpenReview} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-review/20 ring-1 ring-review/30 hover:bg-review/30 transition-colors" data-testid="map-review-badge">
-                  <BookOpen className="w-3 h-3 text-review" />
-                  <span className="font-extrabold text-review">{props.dueCount}</span>
-                  <span className="text-review/80">{t("map.review.due")}</span>
-                </button>
-              )}
+              <button onClick={props.onOpenReview} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full transition-colors ${props.dueCount > 0 ? "bg-review/20 ring-1 ring-review/30 hover:bg-review/30" : "bg-white/5 ring-1 ring-white/10 hover:bg-white/10"}`} data-testid="map-review-badge">
+                <BookOpen className={`w-3 h-3 ${props.dueCount > 0 ? "text-review" : "text-white/50"}`} />
+                {props.dueCount > 0 && (
+                  <>
+                    <span className="font-extrabold text-review">{props.dueCount}</span>
+                    <span className="text-review/80">{t("map.review.due")}</span>
+                  </>
+                )}
+              </button>
             </div>
             {/* 两个世界切换器: 学习 / 实操(只在有实操世界时显示) */}
             {hasPracticeWorld && (

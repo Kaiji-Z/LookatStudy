@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield } from "lucide-react";
+import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -21,7 +21,7 @@ import { ChatStream, extractArtifacts } from "./components/ChatStream.js";
 import { ChatComposer } from "./components/ChatComposer.js";
 import { ExamView } from "./components/ExamView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
-import { ReviewPanel } from "./components/ReviewPanel.js";
+// ReviewPanel component no longer used — SelfRatingCard is imported by NotebookPanel directly
 import { SettingsView } from "./components/SettingsView.js";
 import { useChatStream } from "./lib/useChatStream.js";
 import { useThreads } from "./lib/useThreads.js";
@@ -369,6 +369,7 @@ export default function App() {
       setStreak(newStreak);
       setSelectedNodeId(node.id);
       setForceArtifactTab("content");
+      setIsReviewing(false); // 正常切节点 → 退出复习自评模式
       // v0.5: 点节点 → selectedNodeId 变化 → useThreads(selectedCourseId, selectedNodeId) 自动 reload 该节点的 thread
     } catch (e) {
       setErrorFromThrow(e);
@@ -509,6 +510,8 @@ export default function App() {
 
   // 复习抽屉(v0.3:复习作为 overlay,不占右栏标签)
   const [showReviewDrawer, setShowReviewDrawer] = useState(false);
+  /** 用户从复习抽屉选了课 → true,讲解底部显示自评卡。正常切节点 → false */
+  const [isReviewing, setIsReviewing] = useState(false);
 
   return (
     <div className="h-screen flex bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
@@ -727,6 +730,8 @@ export default function App() {
                 onJumpToSource={handleJumpToSource}
                 onQuoteToChat={handleQuoteToChat}
                 locale={currentLocale}
+                isReviewing={isReviewing}
+                onReviewDone={() => setIsReviewing(false)}
               />
             </main>
             )}
@@ -747,10 +752,12 @@ export default function App() {
           onClose={() => setShowReviewDrawer(false)}
           tree={tree}
           dashboard={dashboard}
+          progressMap={progressMap}
           onPickNode={(id) => {
             setSelectedNodeId(id);
             setForceArtifactTab("content");
             setShowReviewDrawer(false);
+            setIsReviewing(true);
           }}
         />
       )}
@@ -944,21 +951,91 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
 }
 
 
-/* ---------- 复习抽屉(v0.3) ---------- */
+/* ---------- 复习抽屉 ---------- */
 function ReviewDrawer({
   onClose,
   tree,
   onPickNode,
   dashboard,
+  progressMap,
 }: {
   onClose: () => void;
   tree: ContentNode[];
   onPickNode: (id: string) => void;
   dashboard: DashboardData | null;
+  progressMap: Record<string, Progress>;
 }) {
   const t = useLang();
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, true);
+
+  // SRS 数据(象限分类用)
+  const [srsItems, setSrsItems] = useState<{ nodeId: string; intervalDays: number; repetitions: number; overdue: boolean }[]>([]);
+  useEffect(() => {
+    api.getAllSrsItems().then((data) => setSrsItems(data as typeof srsItems)).catch(() => setSrsItems([]));
+  }, []);
+  const srsMap = useMemo(() => new Map(srsItems.map((i) => [i.nodeId, i])), [srsItems]);
+
+  // 象限分类
+  const quadrants = useMemo(() => {
+    const nodeMap = new Map(tree.map((n) => [n.id, n]));
+    const valid = srsItems.filter((it) => nodeMap.has(it.nodeId));
+    return {
+      overdue: valid.filter((i) => i.overdue),
+      short: valid.filter((i) => !i.overdue && i.intervalDays > 0 && i.intervalDays <= 7),
+      long: valid.filter((i) => !i.overdue && i.intervalDays > 7),
+      inactive: valid.filter((i) => i.repetitions === 0 && !i.overdue),
+    };
+  }, [srsItems, tree]);
+
+  // 学习世界的章节 + 课时（过滤 practice）
+  const studySections = useMemo(() => {
+    const sections = tree.filter((n) => n.type === "section" && (n.world ?? "study") === "study")
+      .sort((a, b) => a.orderIdx - b.orderIdx);
+    return sections.map((sec) => ({
+      section: sec,
+      lessons: tree
+        .filter((n) => n.parentId === sec.id && n.type === "lesson")
+        .sort((a, b) => a.orderIdx - b.orderIdx),
+    }));
+  }, [tree]);
+
+  // 章节掌握度（从 dashboard 查）
+  const sectionMastery = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of dashboard?.sections ?? []) m.set(s.sectionId, s.avgMastery);
+    return m;
+  }, [dashboard]);
+
+  // 已开始的课（用于交错复习）
+  const startedLessons = useMemo(
+    () => tree.filter((n) => {
+      const s = progressMap[n.id]?.status;
+      return n.type === "lesson" && (n.world ?? "study") === "study" && (s === "in_progress" || s === "mastered");
+    }),
+    [tree, progressMap],
+  );
+
+  // 手风琴展开状态
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  // SRS 状态指示色
+  const srsDot = (nodeId: string) => {
+    const s = srsMap.get(nodeId);
+    if (!s) return null;
+    if (s.overdue) return { color: "bg-review", title: t("review.quadrant.overdue") };
+    if (s.intervalDays > 0 && s.intervalDays <= 7) return { color: "bg-gold", title: t("review.quadrant.short") };
+    if (s.intervalDays > 7) return { color: "bg-brand", title: t("review.quadrant.long") };
+    return null;
+  };
+
+  const hasOverdue = quadrants.overdue.length > 0;
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="review-drawer">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
@@ -969,6 +1046,7 @@ function ReviewDrawer({
         aria-label={t("review.title")}
         className="relative w-full max-w-md h-full bg-surface-0 border-l border-[var(--border)] shadow-elevated flex flex-col"
       >
+        {/* 头 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] shrink-0">
           <h2 className="text-body font-bold flex items-center gap-1.5">
             <BookOpen className="w-4 h-4" aria-hidden="true" /> {t("review.title")}
@@ -982,38 +1060,160 @@ function ReviewDrawer({
             ✕
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {/* P3.4/P4.5 章节掌握度热力图 + 薄弱点(消费此前被丢弃的 dashboard.sections + 新增 frictionByNode) */}
-          {dashboard && (dashboard.sections.length > 0 || dashboard.frictionByNode.length > 0) && (
-            <div className="p-4 border-b border-[var(--border)] space-y-3" data-testid="dashboard-mini">
-              {dashboard.sections.length > 0 && (
-                <div>
-                  <div className="text-caption font-bold text-ink-muted uppercase tracking-wider mb-1.5">{t("dashboard.mini.sections")}</div>
-                  {dashboard.sections.map((s) => (
-                    <div key={s.sectionId} className="flex items-center gap-2 py-0.5">
-                      <span className="text-label text-ink-strong truncate flex-1">{s.sectionTitle}</span>
-                      <div className="w-20 h-1.5 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-brand rounded-full" style={{ width: `${Math.round(s.avgMastery * 100)}%` }} />
-                      </div>
-                      <span className="text-label tabular-nums text-ink-muted w-9 text-right">{Math.round(s.avgMastery * 100)}%</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {dashboard.frictionByNode.length > 0 && (
-                <div>
-                  <div className="text-caption font-bold text-review uppercase tracking-wider mb-1.5">{t("dashboard.mini.struggle")}</div>
-                  {dashboard.frictionByNode.map((f) => (
-                    <button key={f.nodeId} onClick={() => onPickNode(f.nodeId)} className="flex items-center gap-2 py-0.5 w-full text-left hover:bg-surface-3 rounded px-1">
-                      <span className="text-label text-review font-bold tabular-nums">{f.count}×</span>
-                      <span className="text-label text-ink-strong truncate flex-1">{f.title}</span>
-                    </button>
-                  ))}
-                </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-5" data-testid="review-panel">
+          {/* 交错复习 */}
+          {startedLessons.length > 0 && (
+            <button
+              onClick={() => {
+                const pick = startedLessons[Math.floor(Math.random() * startedLessons.length)];
+                if (pick) onPickNode(pick.id);
+              }}
+              data-testid="review-interleave"
+              className="btn-3d-neutral w-full py-2.5 text-body flex items-center justify-center gap-1.5"
+            >
+              <Shuffle className="w-4 h-4" />
+              {t("review.interleave")}
+            </button>
+          )}
+
+          {/* SM-2 复习提醒（象限） */}
+          {srsItems.length > 0 && (
+            <div>
+              <div className="text-caption font-bold text-ink-muted uppercase tracking-wider mb-2">{t("review.srsHint")}</div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {([
+                  { items: quadrants.overdue, label: t("review.quadrant.overdue"), dot: "bg-review" },
+                  { items: quadrants.short, label: t("review.quadrant.short"), dot: "bg-gold" },
+                  { items: quadrants.long, label: t("review.quadrant.long"), dot: "bg-brand" },
+                  { items: quadrants.inactive, label: t("review.quadrant.inactive"), dot: "bg-ink-faint" },
+                ] as const).filter((q) => q.items.length > 0).map((q) => (
+                  <div key={q.label} className="flex items-center gap-1 px-2 py-1 rounded-full bg-surface-3">
+                    <span className={`w-2 h-2 rounded-full ${q.dot}`} />
+                    <span className="text-label text-ink-muted">{q.label}</span>
+                    <span className="text-label font-extrabold text-ink-strong tabular-nums">{q.items.length}</span>
+                  </div>
+                ))}
+              </div>
+              {/* 逾期项快捷按钮 */}
+              {hasOverdue && (
+                <>
+                  <div className="text-label text-ink-faint mb-1.5">{t("review.overdueQuickHint")}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {quadrants.overdue.slice(0, 8).map((item) => {
+                      const node = tree.find((n) => n.id === item.nodeId);
+                      if (!node) return null;
+                      return (
+                        <button
+                          key={item.nodeId}
+                          onClick={() => onPickNode(item.nodeId)}
+                          data-testid={`review-overdue-${item.nodeId.slice(0, 8)}`}
+                          className="px-2 py-1 rounded-full bg-review/10 ring-1 ring-review/20 text-label text-review font-bold hover:bg-review/20 transition-colors truncate max-w-[140px]"
+                        >
+                          {node.title}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
           )}
-          <ReviewPanel tree={tree} onReviewNode={onPickNode} />
+
+          {/* 我的课程进度（可展开手风琴） */}
+          {studySections.length > 0 && (
+            <div>
+              <div className="text-caption font-bold text-ink-muted uppercase tracking-wider mb-2">{t("review.myProgress")}</div>
+              <div className="space-y-1">
+                {studySections.map(({ section, lessons }) => {
+                  const pct = Math.round((sectionMastery.get(section.id) ?? 0) * 100);
+                  const isOpen = expanded.has(section.id);
+                  const startedInSec = lessons.filter((l) => {
+                    const s = progressMap[l.id]?.status;
+                    return s === "in_progress" || s === "mastered";
+                  });
+                  return (
+                    <div key={section.id}>
+                      {/* 章节行（可点击展开） */}
+                      <button
+                        onClick={() => toggle(section.id)}
+                        className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-surface-3 transition-colors"
+                      >
+                        {isOpen
+                          ? <ChevronDown className="w-3.5 h-3.5 text-ink-muted shrink-0" />
+                          : <ChevronRight className="w-3.5 h-3.5 text-ink-muted shrink-0" />}
+                        <span className="text-body text-ink-strong font-bold truncate flex-1 text-left">{section.title}</span>
+                        {startedInSec.length > 0 && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="w-16 h-1.5 bg-surface-3 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${pct >= 100 ? "bg-gold" : "bg-brand"}`} style={{ width: `${Math.max(3, pct)}%` }} />
+                            </div>
+                            <span className="text-label tabular-nums text-ink-muted w-8 text-right">{pct}%</span>
+                          </div>
+                        )}
+                      </button>
+                      {/* 展开后的课时列表 */}
+                      {isOpen && (
+                        <div className="ml-5 mt-0.5 mb-1 space-y-0.5" data-testid="review-lesson-list">
+                          {lessons.length === 0 ? (
+                            <div className="text-label text-ink-faint py-1.5 pl-1">—</div>
+                          ) : lessons.map((lesson) => {
+                            const lp = progressMap[lesson.id];
+                            const lmastery = lp ? Math.round((lp.mastery ?? 0) * 100) : null;
+                            const dot = srsDot(lesson.id);
+                            const isStarted = lp?.status === "in_progress" || lp?.status === "mastered";
+                            return (
+                              <div
+                                key={lesson.id}
+                                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${dot?.color === "bg-review" ? "bg-review/8" : "hover:bg-surface-3"}`}
+                              >
+                                {dot ? <span className={`w-1.5 h-1.5 rounded-full ${dot.color} shrink-0`} title={dot.title} /> : <span className="w-1.5 h-1.5 shrink-0" />}
+                                <span className={`text-label truncate flex-1 ${isStarted ? "text-ink-strong" : "text-ink-faint"}`}>{lesson.title}</span>
+                                {lmastery !== null && (
+                                  <span className="text-label tabular-nums text-ink-muted shrink-0 w-8 text-right">{lmastery}%</span>
+                                )}
+                                {isStarted && (
+                                  <button
+                                    onClick={() => onPickNode(lesson.id)}
+                                    data-testid={`review-lesson-${lesson.id.slice(0, 8)}`}
+                                    className="shrink-0 px-2 py-0.5 rounded-md bg-brand/15 text-brand text-caption font-bold hover:bg-brand/25 transition-colors"
+                                  >
+                                    {t("review.reviewLesson")}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 卡点提示（friction） */}
+          {dashboard && dashboard.frictionByNode.length > 0 && (
+            <div>
+              <div className="text-caption font-bold text-review uppercase tracking-wider mb-1.5">{t("dashboard.mini.struggle")}</div>
+              {dashboard.frictionByNode.map((f) => (
+                <button key={f.nodeId} onClick={() => onPickNode(f.nodeId)} className="flex items-center gap-2 py-0.5 w-full text-left hover:bg-surface-3 rounded px-1">
+                  <span className="text-label text-review font-bold tabular-nums">{f.count}×</span>
+                  <span className="text-label text-ink-strong truncate flex-1">{f.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* 空状态 */}
+          {startedLessons.length === 0 && srsItems.length === 0 && studySections.length === 0 && (
+            <div className="text-center py-16" data-testid="review-empty">
+              <div className="text-4xl mb-3 opacity-30">📖</div>
+              <div className="text-body text-ink-muted">{t("review.empty.title")}</div>
+              <div className="text-label text-ink-faint mt-1">{t("review.empty.desc")}</div>
+            </div>
+          )}
         </div>
       </div>
     </div>

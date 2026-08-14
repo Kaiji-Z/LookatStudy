@@ -28,13 +28,19 @@ assert.ok(idsOf(b1).includes("retry"), `B1: 应含 retry, 实际 ${idsOf(b1)}`);
 assert.ok(!idsOf(b1).includes("mark-mastered"), `B1: 有错题不应 mark-mastered, 实际 ${idsOf(b1)}`);
 console.log(`✓ B1 有错题 → [explain-wrong, retry, …](无 mark-mastered)`);
 
-// === B2: 全对 + 高掌握度(0.8)→ 含 mark-mastered(advancesMastery:true) + next-topic ===
-const b2 = getPostQuizActions({ correct: 3, total: 3 }, 0.8);
-assert.ok(idsOf(b2).includes("mark-mastered"), `B2: 全对+高掌握应含 mark-mastered, 实际 ${idsOf(b2)}`);
+// === B2: 全对 + 接近毕业(0.87)→ 含 mark-mastered(advancesMastery:true) + next-topic ===
+const b2 = getPostQuizActions({ correct: 3, total: 3 }, 0.87);
+assert.ok(idsOf(b2).includes("mark-mastered"), `B2: 全对+接近毕业应含 mark-mastered, 实际 ${idsOf(b2)}`);
 const masteredAct = b2.find((a) => a.id === "mark-mastered");
 assert.ok(masteredAct?.advancesMastery === true, "B2: mark-mastered 必须 advancesMastery:true");
 assert.ok(idsOf(b2).includes("next-topic"), `B2: 应含 next-topic, 实际 ${idsOf(b2)}`);
-console.log(`✓ B2 全对 + mastery 0.8 → [mark-mastered✓, next-topic, …]`);
+console.log(`✓ B2 全对 + mastery 0.87 → [mark-mastered✓, next-topic, …]`);
+
+// === B2b: 全对 + 已毕业(≥0.9,BKT 自动戴皇冠)→ 不含 mark-mastered(多余),含 next-topic ===
+const b2b = getPostQuizActions({ correct: 3, total: 3 }, 0.92);
+assert.ok(!idsOf(b2b).includes("mark-mastered"), `B2b: 已毕业不应 mark-mastered, 实际 ${idsOf(b2b)}`);
+assert.ok(idsOf(b2b).includes("next-topic"), `B2b: 应含 next-topic, 实际 ${idsOf(b2b)}`);
+console.log(`✓ B2b 全对 + mastery 0.92(已毕业) → [next-topic, go-deeper](无 mark-mastered)`);
 
 // === B3: 全对 + 低掌握度(0.3)→ go-deeper + retry,不含 mark-mastered ===
 const b3 = getPostQuizActions({ correct: 3, total: 3 }, 0.3);

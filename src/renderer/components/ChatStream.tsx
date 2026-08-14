@@ -93,14 +93,21 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       return;
     }
     let cancelled = false;
-    api
-      .getProgress(selectedNodeId)
-      .then((p: { mastery?: number | null } | null) => {
-        if (!cancelled) setQuizMastery(p?.mastery ?? null);
-      })
-      .catch(() => {});
+    const fetchMastery = () =>
+      api
+        .getProgress(selectedNodeId)
+        .then((p: { mastery?: number | null } | null) => {
+          if (!cancelled) setQuizMastery(p?.mastery ?? null);
+        })
+        .catch(() => {});
+    fetchMastery();
+    // 答题/SRS 复习触发 mastery 变化 → 重拉,确保 post-quiz 动作用最新掌握度决策。
+    const off = api.on("state:changed", (kind: string) => {
+      if (kind === "mastery") fetchMastery();
+    });
     return () => {
       cancelled = true;
+      off();
     };
   }, [selectedNodeId]);
 

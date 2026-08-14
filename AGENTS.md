@@ -69,7 +69,7 @@ npm run dev               # vite only (renderer debugging, HMR)
 npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
-npm run verify:core       # 52 pure-Node/tsx logic test suites
+npm run verify:core       # 55 pure-Node/tsx logic test suites
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
 npm run ui-test           # real-GUI verification (headless Electron, 29 DOM assertions incl. a11y + reactive i18n + cold-start gating + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
 npm run lint              # oxlint
@@ -100,10 +100,11 @@ npm run verify:core && npx vite build && npm run self-test
 4. Run `npm run verify:core` to confirm consistency.
 5. When you add a table, **bump this list** below (don't make agents recount).
 
-19 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
+20 tables: `courses`, `content_nodes`, `exercises`, `progress`, `srs_items`,
 `streaks`, `chat_sessions`, `settings`, `souls`, `proposals`, `friction_log`,
 `memory`, `custom_providers`, `canvas_items`, `threads`, `chat_messages`,
-`node_assets`, `content_node_translations`, `knowledge_component_mastery`.
+`node_assets`, `content_node_translations`, `knowledge_component_mastery`,
+`exam_attempts`.
 
 ## Key services
 
@@ -128,6 +129,7 @@ npm run verify:core && npx vite build && npm run self-test
 | Local scanner | `services/pure/local-folder-scanner.ts` | `scanFolder` (递归扫 9 种文档格式 + 30+ 代码格式) + `buildLocalInventory` (本地清点: docs + images + translations + README + fullTree + standaloneImages) |
 | File classifier | `services/pure/file-classifier.ts` | Rule-based `classifyFile` — high-confidence noise filter (translations/notebook/lab/example/section-intro/meta) + uncertain flag for LLM |
 | Exercise | `services/exercise-service.ts` | AI exercise generation (mcq/fill_blank/true_false) + grading |
+| Exam | `services/exam-service.ts` + `exam-generation-store.ts` | 章节考试 v2:KC 分批后台出题(真实进度,`exam:status` 事件)+ attempt 档案(`exam_attempts`,逐题增量持久化/悬挂自动判死/terminated 未答=错);`shared/exam-logic.ts` 纯函数(题量 clamp(ceil(KC×1.5),5,15)/每题限时 60/90s/attemptId 种子重排题序+选项序);不回写 BKT |
 | Dashboard | `services/dashboard-service.ts` | `getDashboard` — section mastery, metrics |
 | Progress | `services/progress-service.ts` | DB-injected progress read/write (headless-testable) |
 | Per-KC BKT | `services/kc-service.ts` | Per-Knowledge-Component BKT: `getKnowledgePoints`/`ensureKcRows`/`updateKcMastery`/`computeAggregateMastery`(min)/`floorAllKcMastery`。课级 mastery=min(各 KC)；防假毕业 |
@@ -163,7 +165,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (42 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (55 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

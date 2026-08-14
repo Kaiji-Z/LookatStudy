@@ -157,6 +157,8 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("content_nodes", "world", "TEXT NOT NULL DEFAULT 'study'");
   // Per-KC BKT: 知识组件定义(JSON array of {title, description})
   addColumnIfMissing("content_nodes", "knowledge_points", "TEXT");
+  // 章节考试:题目挂 KC 标签(结算页按知识点分组分解)
+  addColumnIfMissing("exercises", "kc_title", "TEXT");
   // 仓库原文语言 (LLM Step 2 判断)
   addColumnIfMissing("courses", "source_lang", "TEXT");
   // 学习者记忆:friction_pattern 课程隔离(方案2);NULL=跨课程(如 global 风格)

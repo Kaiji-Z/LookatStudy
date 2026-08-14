@@ -1,13 +1,16 @@
 /**
- * 章节考试(关底 boss)验证 —— 测真实 exam-service.ts。
+ * 章节考试 v2 验证 —— 真实 exam-service.ts + shared/exam-logic.ts。
  *
- * 不调 LLM(startExam 需要 API key);直接造 exercises 行测 submitExam 逻辑。
+ * 不调 LLM(生成走 live-test);直接造 exercises 行测 attempt 全生命周期。
  *
  * 不变量:
  *   - accuracyToStars: ≥95%→3, ≥80%→2, ≥60%→1, <60%→0
- *   - submitExam: 判分正确 + 星数正确 + crownLevel 取最高(重考不降)
- *   - ensureExamNodesForExistingCourses: 给没 exam 的 section 补 exam 节点(幂等)
- *   - 考试节点不出现在 dashboard mastery(被 type==='lesson' guard 排除)
+ *   - planExamQuota: clamp(ceil(KC×1.5), 5, 15) round-robin
+ *   - questionTimeLimitSec: 60 默认 / 90 长题干或含代码
+ *   - buildAttemptShuffle: 种子确定 + 排列合法 + 显示位→原始下标映射判分正确(闭环目标)
+ *   - attempt 流:判分 + 星数 + crownLevel 取最高 + 未答=错 + terminated + 防重复提交
+ *   - 悬挂 attempt:getStatusView 自动按"未答=错"判死
+ *   - ensureExamNodesForExistingCourses 幂等;考试节点不污染 dashboard
  */
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
@@ -16,7 +19,25 @@ import { fileURLToPath } from "node:url";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
-import { submitExam, accuracyToStars, listExamExercises } from "../src/main/services/exam-service.ts";
+import {
+  accuracyToStars,
+  getExamStatusView,
+  prepareExam,
+  startExamAttempt,
+  recordExamAnswer,
+  submitExamAttempt,
+  listExamQuestions,
+} from "../src/main/services/exam-service.ts";
+import { resetStoreForTest } from "../src/main/services/exam-generation-store.ts";
+import {
+  planExamQuota,
+  questionTimeLimitSec,
+  buildAttemptShuffle,
+  displayAnswerToOriginal,
+  EXAM_MIN_QUESTIONS,
+  EXAM_MAX_QUESTIONS,
+} from "../shared/exam-logic.ts";
+import { gradeAnswer } from "../src/main/services/exercise-service.ts";
 import { ensureExamNodesForExistingCourses } from "../src/main/services/course-generator.ts";
 import { getDashboard } from "../src/main/services/dashboard-service.ts";
 
@@ -32,6 +53,19 @@ async function makeDb() {
   return { sqljs, db: drizzle(sqljs, { schema }) };
 }
 
+/** 造一门课:1 section + 1 exam 节点 + N 道 mcq(答案 "0")。 */
+function seedExam(sqljs, n = 3, withKc = false) {
+  sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('c1','r','T')`);
+  sqljs.run(`INSERT INTO content_nodes (id, course_id, type, title) VALUES ('s1','c1','section','S1')`);
+  sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VALUES ('e1','c1','s1','exam','S1 测验')`);
+  for (let i = 0; i < n; i++) {
+    const kc = withKc ? `KC${i % 2}` : null;
+    sqljs.run(
+      `INSERT INTO exercises (id, node_id, type, prompt, answer, options_json, ai_generated${kc ? ", kc_title" : ""}) VALUES ('ex${i}','e1','mcq','Q${i}','0','["正确","错1","错2","错3"]',1${kc ? `,'${kc}'` : ""})`,
+    );
+  }
+}
+
 // === T1: accuracyToStars 纯函数分档 ===
 assert.strictEqual(accuracyToStars(0.95), 3, "95% → 3 星");
 assert.strictEqual(accuracyToStars(1.0), 3, "100% → 3 星");
@@ -43,122 +77,249 @@ assert.strictEqual(accuracyToStars(0.59), 0, "59% → 0 星");
 assert.strictEqual(accuracyToStars(0.0), 0, "0% → 0 星");
 console.log("✓ T1 accuracyToStars 分档(95/80/60 阈值)正确");
 
-// === T2: submitExam 判分 + 星数(全对 → 3 星)===
+// === T2: planExamQuota 题量规则 ===
 {
-  const { sqljs, db } = await makeDb();
-  sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('c1','r','T')`);
-  sqljs.run(`INSERT INTO content_nodes (id, course_id, type, title) VALUES ('s1','c1','section','S1')`);
-  sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VALUES ('l1','c1','s1','lesson','L1')`);
-  sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VALUES ('e1','c1','s1','exam','S1 测验')`);
-  sqljs.run(`INSERT INTO progress (node_id, status, crown_level) VALUES ('e1','available',0)`);
-  // 3 道 mcq,正确答案分别是 "0"/"1"/"2"
-  for (let i = 0; i < 3; i++) {
-    sqljs.run(`INSERT INTO exercises (id, node_id, type, prompt, answer, options_json, ai_generated) VALUES ('ex${i}','e1','mcq','Q${i}','${i}','["A","B","C","D"]',1)`);
-  }
-  // 全对
-  const result = submitExam(db, "e1", { ex0: "0", ex1: "1", ex2: "2" });
-  assert.strictEqual(result.correctCount, 3, "T2: 全对应 3 对");
-  assert.strictEqual(result.totalCount, 3, "T2: 总数 3");
-  assert.strictEqual(result.stars, 3, "T2: 100% → 3 星");
-  assert.strictEqual(result.bestStars, 3, "T2: 首考 bestStars = 3");
-  console.log("✓ T2 submitExam 全对 → 3 星");
+  const q4 = planExamQuota(["a", "b", "c", "d"]);
+  assert.strictEqual(q4.reduce((a, b) => a + b, 0), 6, "T2: 4 KC → 6 题");
+  const q8 = planExamQuota(Array.from({ length: 8 }, (_, i) => `k${i}`));
+  assert.strictEqual(q8.reduce((a, b) => a + b, 0), 12, "T2: 8 KC → 12 题");
+  const q1 = planExamQuota(["only"]);
+  assert.strictEqual(q1.reduce((a, b) => a + b, 0), EXAM_MIN_QUESTIONS, "T2: 1 KC → 下限 5 题");
+  const q20 = planExamQuota(Array.from({ length: 20 }, (_, i) => `k${i}`));
+  assert.strictEqual(q20.reduce((a, b) => a + b, 0), EXAM_MAX_QUESTIONS, "T2: 20 KC → 上限 15 题");
+  assert.ok(q20.every((q) => q <= 2), "T2: round-robin 无 KC 超过 2 题(均匀)");
+  assert.deepStrictEqual(planExamQuota([]), [], "T2: 0 KC → 空配额");
+  console.log("✓ T2 planExamQuota clamp(ceil(KC×1.5),5,15) + round-robin");
 }
 
-// === T3: submitExam 部分对(1/3 = 33% → 0 星)===
+// === T3: questionTimeLimitSec 限时规则 ===
+assert.strictEqual(questionTimeLimitSec("短题干"), 60, "T3: 默认 60s");
+assert.strictEqual(questionTimeLimitSec("长".repeat(200)), 90, "T3: ≥200 字 → 90s");
+assert.strictEqual(questionTimeLimitSec("看代码:\n```js\nlet a=1\n```\n输出?"), 90, "T3: 含代码块 → 90s");
+assert.strictEqual(questionTimeLimitSec("x".repeat(199)), 60, "T3: 199 字仍 60s");
+console.log("✓ T3 questionTimeLimitSec 60/90 规则");
+
+// === T4: buildAttemptShuffle 种子确定 + 排列合法 + 映射判分正确(闭环核心) ===
 {
-  const { sqljs, db } = await makeDb();
-  sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('c1','r','T')`);
-  sqljs.run(`INSERT INTO content_nodes (id, course_id, type, title) VALUES ('s1','c1','section','S1')`);
-  sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VALUES ('e1','c1','s1','exam','测验')`);
-  for (let i = 0; i < 3; i++) {
-    sqljs.run(`INSERT INTO exercises (id, node_id, type, prompt, answer, options_json, ai_generated) VALUES ('ex${i}','e1','mcq','Q${i}','${i}','["A","B","C","D"]',1)`);
+  const items = [
+    { id: "q1", optionCount: 4 },
+    { id: "q2", optionCount: 4 },
+    { id: "q3", optionCount: 2 },
+  ];
+  const s1 = buildAttemptShuffle(items, "attempt-A");
+  const s1b = buildAttemptShuffle(items, "attempt-A");
+  assert.deepStrictEqual(s1, s1b, "T4: 同种子结果确定(可复现)");
+  const s2 = buildAttemptShuffle(items, "attempt-B");
+  // 不同种子应产生不同的重排(多样本断言,防小排列空间偶发碰撞的 flake)
+  const seedPool = ["attempt-B", "attempt-C", "attempt-D", "attempt-E", "attempt-F", "attempt-G", "attempt-H", "attempt-I"];
+  const distinctOrders = new Set(
+    seedPool.map((sd) => JSON.stringify(buildAttemptShuffle(items, sd).questionOrder)),
+  );
+  assert.ok(distinctOrders.size > 1, `T4: 多种子题序应有差异(实际 ${distinctOrders.size} 种)`);
+  const distinctPerms = new Set(
+    seedPool.map((sd) => JSON.stringify(buildAttemptShuffle(items, sd).optionPerms["q1"])),
+  );
+  assert.ok(distinctPerms.size > 1, `T4: 多种子选项排列应有差异(实际 ${distinctPerms.size} 种)`);
+
+  // 排列合法性:每个下标恰好出现一次
+  for (const order of [s1.questionOrder, s2.questionOrder]) {
+    assert.deepStrictEqual([...order].sort((a, b) => a - b), [0, 1, 2], "T4: 题序是合法排列");
   }
-  // 只对 1 题(33% < 60% → 0 星)
-  const result = submitExam(db, "e1", { ex0: "0", ex1: "0", ex2: "0" });
-  assert.strictEqual(result.correctCount, 1, "T3: 1 对");
-  assert.strictEqual(result.stars, 0, "T3: 33% → 0 星");
-  console.log("✓ T3 submitExam 33% → 0 星(未达 60%)");
+  for (const id of ["q1", "q2"]) {
+    const perm = s1.optionPerms[id];
+    assert.deepStrictEqual([...perm].sort((a, b) => a - b), [0, 1, 2, 3], `T4: ${id} 选项排列合法`);
+  }
+
+  // 映射判分正确:选项重排后,用户在显示位 j 点中"正确选项" → 原始下标判对
+  const options = ["正确", "错1", "错2", "错3"]; // 原始 answer = "0"
+  const correctAnswer = "0";
+  for (const [id, perm] of Object.entries(s1.optionPerms)) {
+    if (options.length !== perm.length) continue; // q3 只有 2 选项,跳过
+    // 显示位上"正确"选项出现的位置 = perm.indexOf(0)
+    const displayPos = perm.indexOf(0);
+    const original = displayAnswerToOriginal(perm, displayPos);
+    assert.strictEqual(
+      gradeAnswer("mcq", correctAnswer, original, JSON.stringify(options)),
+      true,
+      `T4: ${id} 显示位 ${displayPos} 映射回原始 ${original} 判对`,
+    );
+    // 点错显示位 → 判错
+    const wrongPos = (displayPos + 1) % perm.length;
+    const wrongOriginal = displayAnswerToOriginal(perm, wrongPos);
+    if (wrongOriginal !== correctAnswer) {
+      assert.strictEqual(
+        gradeAnswer("mcq", correctAnswer, wrongOriginal, JSON.stringify(options)),
+        false,
+        `T4: ${id} 点错显示位判错`,
+      );
+    }
+  }
+  console.log("✓ T4 buildAttemptShuffle 确定性 + 合法排列 + 显示位映射判分正确");
 }
 
-// === T4: 重考不降星(bestStars 取最高)===
+// === T5: attempt 全流程:判分 + 星数 + crownLevel 取最高 ===
 {
+  resetStoreForTest();
   const { sqljs, db } = await makeDb();
-  sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('c1','r','T')`);
-  sqljs.run(`INSERT INTO content_nodes (id, course_id, type, title) VALUES ('s1','c1','section','S1')`);
-  sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VALUES ('e1','c1','s1','exam','测验')`);
+  seedExam(sqljs, 3); // ex0-ex2, 答案全 "0"
+  const { attemptId, exercises } = startExamAttempt(db, "e1");
+  assert.strictEqual(exercises.length, 3, "T5: 返回 3 题");
+  // 全对 → 3 星
+  const r = submitExamAttempt(db, "e1", attemptId, { ex0: "0", ex1: "0", ex2: "0" });
+  assert.strictEqual(r.correctCount, 3, "T5: 全对 3 题");
+  assert.strictEqual(r.stars, 3, "T5: 100% → 3 星");
+  assert.strictEqual(r.bestStars, 3, "T5: 首考 bestStars=3");
+  assert.strictEqual(r.terminated, false, "T5: 正常提交非 terminated");
+  // 重复提交拒绝
+  assert.throws(() => submitExamAttempt(db, "e1", attemptId, {}), /已提交/, "T5: 防重复提交");
+  console.log("✓ T5 startAttempt→submitAttempt 全对 3 星 + 防重复提交");
+}
+
+// === T6: 未答 = 错(terminated:只答 1/3,其余按错计分)===
+{
+  resetStoreForTest();
+  const { sqljs, db } = await makeDb();
+  seedExam(sqljs, 3);
+  const { attemptId } = startExamAttempt(db, "e1");
+  const r = submitExamAttempt(db, "e1", attemptId, { ex0: "0" }, { terminated: true });
+  assert.strictEqual(r.correctCount, 1, "T6: 只对 1 题");
+  assert.strictEqual(r.totalCount, 3, "T6: 总数 3(未答计入)");
+  assert.strictEqual(r.stars, 0, "T6: 33% → 0 星");
+  assert.strictEqual(r.terminated, true, "T6: terminated 标记");
+  // perQuestion:未答题 answered=false
+  const un = r.perQuestion.find((p) => p.exerciseId === "ex1");
+  assert.ok(un, "T6: ex1 在结算里");
+  assert.strictEqual(un.answered, false, "T6: 未答标记 answered=false");
+  assert.strictEqual(un.correct, false, "T6: 未答 = 错");
+  console.log("✓ T6 terminated 未答=错计分");
+}
+
+// === T7: 重考不降星(bestStars 取最高)===
+{
+  resetStoreForTest();
+  const { sqljs, db } = await makeDb();
+  seedExam(sqljs, 5);
   sqljs.run(`INSERT INTO progress (node_id, status, crown_level) VALUES ('e1','available',2)`); // 历史最高 2 星
-  for (let i = 0; i < 5; i++) {
-    sqljs.run(`INSERT INTO exercises (id, node_id, type, prompt, answer, options_json, ai_generated) VALUES ('ex${i}','e1','mcq','Q${i}','0','["A","B","C","D"]',1)`);
-  }
-  // 这次全错(0% → 0 星),但 bestStars 应保持 2
-  const result = submitExam(db, "e1", { ex0: "1", ex1: "1", ex2: "1", ex3: "1", ex4: "1" });
-  assert.strictEqual(result.stars, 0, "T4: 本次 0 星");
-  assert.strictEqual(result.bestStars, 2, "T4: bestStars 保持历史最高 2(不降)");
-  console.log("✓ T4 重考不降星(bestStars 取最高)");
+  const { attemptId } = startExamAttempt(db, "e1");
+  const r = submitExamAttempt(db, "e1", attemptId, { ex0: "1", ex1: "1", ex2: "1", ex3: "1", ex4: "1" }); // 全错
+  assert.strictEqual(r.stars, 0, "T7: 本次 0 星");
+  assert.strictEqual(r.bestStars, 2, "T7: bestStars 保持 2(不降)");
+  console.log("✓ T7 重考不降星");
 }
 
-// === T5: ensureExamNodesForExistingCourses 补 exam 节点(幂等)===
+// === T8: 悬挂 attempt 自动判死(模拟崩溃:有 attempt 无提交)===
+{
+  resetStoreForTest();
+  const { sqljs, db } = await makeDb();
+  seedExam(sqljs, 3);
+  const { attemptId } = startExamAttempt(db, "e1");
+  recordExamAnswer(db, "e1", attemptId, "ex0", "0"); // 崩溃前答了 1 题(对)
+  recordExamAnswer(db, "e1", attemptId, "ex1", "1"); // 答错 1 题
+  // 不提交 → getExamStatusView 应自动判死
+  const sv = getExamStatusView(db, "e1");
+  assert.strictEqual(sv.status, "ready", "T8: 题库在 → ready");
+  const la = sv.latestAttempt;
+  assert.ok(la && la.finishedAt, "T8: 悬挂 attempt 已被判定(finished)");
+  assert.strictEqual(la.terminated, true, "T8: 判定为 terminated");
+  assert.strictEqual(la.correctCount, 1, "T8: 只算对 1 题(ex2 未答=错)");
+  assert.strictEqual(la.totalCount, 3, "T8: 总数 3");
+  assert.strictEqual(sv.attemptCount, 1, "T8: 1 次 attempt");
+  console.log("✓ T8 悬挂 attempt 在 getStatus 自动按未答=错判死");
+}
+
+// === T9: 逐题增量持久化 + 已结束 attempt 忽略后续记录 ===
+{
+  resetStoreForTest();
+  const { sqljs, db } = await makeDb();
+  seedExam(sqljs, 2);
+  const { attemptId } = startExamAttempt(db, "e1");
+  recordExamAnswer(db, "e1", attemptId, "ex0", "0");
+  // 直接提交空 answers:应合并存量(ex0 已持久化的 "0" 保留)
+  const r = submitExamAttempt(db, "e1", attemptId, {});
+  assert.strictEqual(r.correctCount, 1, "T9: 提交空 answers 合并增量存量(ex0=对)");
+  // 已结束 → 再记录被忽略
+  recordExamAnswer(db, "e1", attemptId, "ex1", "0"); // no-op
+  const sv = getExamStatusView(db, "e1");
+  assert.strictEqual(sv.latestAttempt.correctCount, 1, "T9: 结束后 recordAnswer 不复活不改分");
+  console.log("✓ T9 增量持久化合并 + 结束后忽略");
+}
+
+// === T10: getExamStatusView 元信息(kcCount / bestStars / 老题库兼容)===
+{
+  resetStoreForTest();
+  const { sqljs, db } = await makeDb();
+  seedExam(sqljs, 4, true); // 4 题,kc_title 交替 KC0/KC1 → 2 个 KC
+  const sv = getExamStatusView(db, "e1");
+  assert.strictEqual(sv.status, "ready", "T10: 有题 → ready");
+  assert.strictEqual(sv.questionCount, 4, "T10: 4 题");
+  assert.strictEqual(sv.kcCount, 2, "T10: 覆盖 2 个 KC");
+  assert.strictEqual(sv.exercises.length, 4, "T10: exercises 带回");
+  assert.ok(sv.exercises.every((q) => typeof q.kcTitle === "string"), "T10: 题目带 kcTitle");
+  assert.strictEqual(sv.bestStars, 0, "T10: 无考试记录 bestStars=0");
+  assert.strictEqual(sv.latestAttempt, null, "T10: 无 attempt");
+  // 老题库(无 kc_title)→ kcCount=0(UI 隐藏 KC 分解)
+  const { sqljs: s2, db: db2 } = await makeDb();
+  seedExam(s2, 3, false);
+  const sv2 = getExamStatusView(db2, "e1");
+  assert.strictEqual(sv2.kcCount, 0, "T10: 老题库 kcCount=0");
+  console.log("✓ T10 getStatusView 元信息 + 老题库兼容");
+}
+
+// === T11: prepareExam 幂等(DB 有题 → ready,不触 LLM)===
+{
+  resetStoreForTest();
+  const { sqljs, db } = await makeDb();
+  seedExam(sqljs, 3);
+  const st = prepareExam(db, "e1");
+  assert.strictEqual(st.status, "ready", "T11: 已有题 → ready(不生成)");
+  // 节点不存在 → 抛
+  assert.throws(() => prepareExam(db, "nope"), /不存在/, "T11: 不存在的节点抛错");
+  console.log("✓ T11 prepareExam 幂等");
+}
+
+// === T12: ensureExamNodesForExistingCourses 补 exam 节点(幂等)===
 {
   const { sqljs, db } = await makeDb();
   sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('c1','r','T')`);
   sqljs.run(`INSERT INTO content_nodes (id, course_id, type, title) VALUES ('s1','c1','section','S1')`);
   sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VALUES ('l1','c1','s1','lesson','L1')`);
-  // 第一次补丁:应加 1 个 exam
   const r1 = ensureExamNodesForExistingCourses(db);
-  assert.strictEqual(r1.patched, 1, "T5: 第一次补 1 个 exam");
-  // 第二次补丁:幂等,不应再加
+  assert.strictEqual(r1.patched, 1, "T12: 第一次补 1 个 exam");
   const r2 = ensureExamNodesForExistingCourses(db);
-  assert.strictEqual(r2.patched, 0, "T5: 第二次幂等(0 个)");
-  // 确认 exam 节点存在
-  const examNodes = db.select().from(schema.contentNodes).all().filter((n) => n.type === "exam");
-  assert.strictEqual(examNodes.length, 1, "T5: 恰好 1 个 exam 节点");
-  console.log("✓ T5 ensureExamNodesForExistingCourses 补丁幂等");
+  assert.strictEqual(r2.patched, 0, "T12: 第二次幂等(0 个)");
+  console.log("✓ T12 ensureExamNodesForExistingCourses 幂等");
 }
 
-// === T6: 空 section(无 lesson)不加 exam ===
-{
-  const { sqljs, db } = await makeDb();
-  sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('c1','r','T')`);
-  sqljs.run(`INSERT INTO content_nodes (id, course_id, type, title) VALUES ('s1','c1','section','S1')`);
-  // 没有 lesson
-  const r = ensureExamNodesForExistingCourses(db);
-  assert.strictEqual(r.patched, 0, "T6: 无 lesson 的 section 不加 exam");
-  console.log("✓ T6 空 section(无 lesson)不加 exam");
-}
-
-// === T7: 考试节点不污染 dashboard mastery ===
+// === T13: 考试节点不污染 dashboard mastery ===
 {
   const { sqljs, db } = await makeDb();
   sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('c1','r','T')`);
   sqljs.run(`INSERT INTO content_nodes (id, course_id, type, title) VALUES ('s1','c1','section','S1')`);
   sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VALUES ('l1','c1','s1','lesson','L1')`);
   sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VALUES ('e1','c1','s1','exam','测验')`);
-  // l1: mastered(0.9), e1: mastery=0.95(但不该算进 dashboard,因为 type=exam)
   sqljs.run(`INSERT INTO progress (node_id, status, crown_level, mastery) VALUES ('l1','mastered',5,0.9)`);
   sqljs.run(`INSERT INTO progress (node_id, status, crown_level, mastery) VALUES ('e1','available',3,0.95)`);
   const dash = getDashboard(db, "c1");
-  // S1 只有 1 个 lesson(l1),exam 不算 → avgMastery = 0.9(不是 (0.9+0.95)/2)
-  assert.strictEqual(dash.sections.length, 1, "T7: 1 section");
-  assert.ok(Math.abs(dash.sections[0].avgMastery - 0.9) < 0.001, `T7: avgMastery 应 0.9(exam 不污染), 实际 ${dash.sections[0].avgMastery}`);
-  assert.strictEqual(dash.sections[0].lessonCount, 1, "T7: lessonCount=1(exam 不算 lesson)");
-  console.log("✓ T7 考试节点不污染 dashboard mastery(type guard 排除)");
+  assert.ok(Math.abs(dash.sections[0].avgMastery - 0.9) < 0.001, "T13: exam 不污染 dashboard(exam mastery 0.95 被排除)");
+  assert.strictEqual(dash.sections[0].lessonCount, 1, "T13: exam 不算 lesson");
+  console.log("✓ T13 考试节点不污染 dashboard");
 }
 
-// === T8: listExamExercises 按节点过滤 ===
+// === T14: listExamQuestions 按节点隔离 + kcTitle 透传 ===
 {
+  resetStoreForTest();
   const { sqljs, db } = await makeDb();
   sqljs.run(`INSERT INTO courses (id, repo_name, title) VALUES ('c1','r','T')`);
   sqljs.run(`INSERT INTO content_nodes (id, course_id, type, title) VALUES ('s1','c1','section','S1')`);
   sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VALUES ('e1','c1','s1','exam','测验')`);
   sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title) VALUES ('e2','c1','s1','exam','测验2')`);
-  sqljs.run(`INSERT INTO exercises (id, node_id, type, prompt, answer, options_json, ai_generated) VALUES ('ex1','e1','mcq','Q1','0','["A","B"]',1)`);
-  sqljs.run(`INSERT INTO exercises (id, node_id, type, prompt, answer, options_json, ai_generated) VALUES ('ex2','e1','mcq','Q2','1','["A","B"]',1)`);
-  sqljs.run(`INSERT INTO exercises (id, node_id, type, prompt, answer, options_json, ai_generated) VALUES ('ex3','e2','mcq','Q3','0','["A","B"]',1)`);
-  const e1Qs = listExamExercises(db, "e1");
-  assert.strictEqual(e1Qs.length, 2, "T8: e1 有 2 题");
-  const e2Qs = listExamExercises(db, "e2");
-  assert.strictEqual(e2Qs.length, 1, "T8: e2 有 1 题");
-  console.log("✓ T8 listExamExercises 按节点隔离");
+  sqljs.run(`INSERT INTO exercises (id, node_id, type, prompt, answer, options_json, ai_generated, kc_title) VALUES ('ex1','e1','mcq','Q1','0','["A","B"]',1,'梯度下降')`);
+  sqljs.run(`INSERT INTO exercises (id, node_id, type, prompt, answer, options_json, ai_generated) VALUES ('ex2','e2','mcq','Q2','0','["A","B"]',1)`);
+  const e1Qs = listExamQuestions(db, "e1");
+  assert.strictEqual(e1Qs.length, 1, "T14: e1 有 1 题");
+  assert.strictEqual(e1Qs[0].kcTitle, "梯度下降", "T14: kcTitle 透传");
+  assert.strictEqual(listExamQuestions(db, "e2")[0].kcTitle, null, "T14: 无标注 → null");
+  console.log("✓ T14 listExamQuestions 按节点隔离 + kcTitle");
 }
 
 console.log("\n=== ALL EXAM SERVICE TESTS PASSED ✅ ===");

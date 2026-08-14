@@ -262,6 +262,86 @@ export interface Exercise {
   createdAt: string;
 }
 
+/* —— 章节考试 v2(后台生成 + KC 出题 + attempt 档案) —— */
+
+/** 考试节点生成状态机:idle(未生成) → generating → ready / failed */
+export type ExamGenStatus = "idle" | "generating" | "ready" | "failed";
+
+/** 生成进度(main → renderer 的 exam:status 事件载荷,也是 prepare/getStatus 的返回) */
+export interface ExamStatus {
+  nodeId: string;
+  status: ExamGenStatus;
+  /** 已完成的生成批数(KC 分批出题,真实进度 = done/total) */
+  done: number;
+  /** 总批数 */
+  total: number;
+  /** failed 时的失败原因(供 UI 展示) */
+  error: string | null;
+}
+
+/** 考试题目视图:Exercise + KC 标签 */
+export interface ExamQuestionView extends Exercise {
+  /** 考察的知识点标题(老考试题/兜底出题时为 null) */
+  kcTitle: string | null;
+}
+
+/** 一场考试的结算快照(attempt 档案,切回节点可见) */
+export interface ExamAttemptView {
+  id: string;
+  examNodeId: string;
+  startedAt: string;
+  finishedAt: string | null;
+  /** true = 中途离开被终止(未答题按答错计分) */
+  terminated: boolean;
+  correctCount: number;
+  totalCount: number;
+  stars: number;
+  /** 逐题结算(判分后才有;进行中为 null) */
+  perQuestion: ExamPerQuestionResult[] | null;
+}
+
+export interface ExamPerQuestionResult {
+  exerciseId: string;
+  kcTitle: string | null;
+  correct: boolean;
+  /** 用户答案(MCQ 为原始选项下标字符串;空串 = 未答) */
+  userAnswer: string;
+  correctAnswer: string;
+  explanation: string | null;
+  /** false = 未答(超时/终止跳过),结算页区分"未答"与"答错" */
+  answered: boolean;
+}
+
+/** getStatus 返回:生成状态 + 就绪元信息 + 最新 attempt */
+export interface ExamStatusView extends ExamStatus {
+  /** 就绪题目数(0 = 未就绪) */
+  questionCount: number;
+  /** 题库覆盖的知识点数(0 = 老考试题无标注,UI 隐藏 KC 分解) */
+  kcCount: number;
+  /** 就绪题目(未就绪为空数组;结算页逐题回顾 + 就绪页元信息用) */
+  exercises: ExamQuestionView[];
+  /** 历史最好星数(progress.crownLevel) */
+  bestStars: number;
+  /** 最新一次 attempt(含历史结果;悬挂的已被自动判死) */
+  latestAttempt: ExamAttemptView | null;
+  /** 历史考试次数 */
+  attemptCount: number;
+}
+
+/** 提交考试返回(结算数据) */
+export interface ExamSubmitResult {
+  attemptId: string;
+  correctCount: number;
+  totalCount: number;
+  accuracy: number;
+  stars: number;
+  /** 历史最高星数(含本次;写 progress.crownLevel) */
+  bestStars: number;
+  /** true = 中途离开被终止 */
+  terminated: boolean;
+  perQuestion: ExamPerQuestionResult[];
+}
+
 /** 多模态资源:导入课程时收集的图片/PDF 页面渲染图元数据 */
 export type AssetSourceKind = "image_file" | "markdown_ref" | "pdf_page";
 
@@ -365,27 +445,30 @@ export interface ApiExpose {
     userAnswer: string,
   ): Promise<{ correct: boolean; explanation: string | null; proposalId?: string }>;
 
-  /* 章节考试（关底 boss，可选支线，正确率分档给 1-3 星） */
-  /** 开始/继续考试：已生成过题目则直接返回，否则调 LLM 生成整章综合题 */
-  examStart(examNodeId: string): Promise<{ exercises: Exercise[] }>;
-  /** 提交考试：逐题判分，算正确率，给星数（取最高），写 progress.crownLevel */
-  examSubmit(
-    examNodeId: string,
-    answers: Record<string, string>,
-  ): Promise<{
-    correctCount: number;
-    totalCount: number;
-    accuracy: number;
-    stars: number;
-    bestStars: number;
-    perQuestion: Array<{
-      exerciseId: string;
-      correct: boolean;
-      userAnswer: string;
-      correctAnswer: string;
-      explanation: string | null;
-    }>;
+  /* 章节考试 v2（后台生成 + KC 出题 + attempt 档案 + 限时考试） */
+  /** 幂等启动题目生成(已就绪/生成中则无副作用),立即返回当前状态。生成在 main 后台继续。 */
+  examPrepare(examNodeId: string): Promise<ExamStatus>;
+  /** 查状态 + 就绪元信息 + 最新 attempt。悬挂 attempt(崩溃遗留)在此调用内自动按"未答=错"判死。 */
+  examGetStatus(examNodeId: string): Promise<ExamStatusView>;
+  /** 开始/重新考试:建 attempt 行,返回 attemptId + 就绪题目(含 KC 标签)。 */
+  examStartAttempt(examNodeId: string): Promise<{
+    attemptId: string;
+    exercises: ExamQuestionView[];
   }>;
+  /** 逐题增量持久化答案(崩溃安全:强关后悬挂 attempt 仍有已答记录)。 */
+  examRecordAnswer(
+    examNodeId: string,
+    attemptId: string,
+    exerciseId: string,
+    answer: string,
+  ): Promise<void>;
+  /** 提交考试(terminated=中途离开被终止,未答题按答错计分,同样计星计分)。 */
+  examSubmitAttempt(
+    examNodeId: string,
+    attemptId: string,
+    answers: Record<string, string>,
+    opts?: { terminated?: boolean },
+  ): Promise<ExamSubmitResult>;
 
   /* SRS */
   getDueReviews(): Promise<string[]>;
@@ -670,6 +753,8 @@ export interface IpcEvents {
    * 与 chat:token 并存（兼容期），渲染层可二选一。M2 起优先用 chat:part。
    */
   "chat:part": (part: ChatStreamPart) => void;
+  /** 考试题目生成进度推送(后台生成实时进度;完成/失败也走这里)。 */
+  "exam:status": (status: ExamStatus) => void;
   /** main→renderer 状态变化推送(xp/streak/mastery 变化)。renderer 重拉 + 触发庆祝。 */
   "state:changed": (kind: "xp" | "streak" | "mastery") => void;
 }

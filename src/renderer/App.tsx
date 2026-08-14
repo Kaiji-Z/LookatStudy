@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight } from "lucide-react";
+import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -78,6 +78,11 @@ export default function App() {
 
   // 选中节点(联动三栏)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // 章节考试会话(ExamView 上报;active 时导航需先弹离开警告——未答=错计分)
+  const examSessionRef = useRef<{ active: boolean; terminate: (() => Promise<void>) | null }>({ active: false, terminate: null });
+  // 离开考试警告模态:pendingAction = 确认终止后要执行的导航
+  const [examLeave, setExamLeave] = useState<{ open: boolean; pendingAction: (() => void) | null }>({ open: false, pendingAction: null });
+  const examLeaveModalRef = useRef<HTMLDivElement>(null);
   // 右栏强制 tab(如导航复习入口 → review)
   const [forceArtifactTab, setForceArtifactTab] = useState<NotebookTab | null>(null);
   // 设置弹窗(M1:设置从 tab 改为 modal/抽屉)
@@ -320,9 +325,10 @@ export default function App() {
         e.preventDefault();
         setLeftPaneVisible((v) => !v);
       }
-      // Ctrl+Tab → 切换 thread(下一个)
+      // Ctrl+Tab → 切换 thread(下一个)。考试进行中拦截(离开需走警告确认)。
       if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
         e.preventDefault();
+        if (examSessionRef.current.active) return;
         const list = thread.threads;
         if (list.length > 1) {
           const curIdx = list.findIndex((t) => t.id === thread.activeId);
@@ -346,8 +352,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [selectedNodeId]);
 
-  // 点 lesson:解锁下一课 + 设选中(联动三栏)
-  const handleLessonClick = useCallback(async (node: ContentNode) => {
+  // 点 lesson 的实际执行(解锁下一课 + 设选中,联动三栏)
+  const proceedLessonClick = useCallback(async (node: ContentNode) => {
     try {
       // 考试节点:只选中,不走 markNodeAttempted(考试不走 BKT/解锁),中栏渲染 ExamView
       if (node.type === "exam") {
@@ -375,6 +381,61 @@ export default function App() {
       setErrorFromThrow(e);
     }
   }, [progressMap, reloadCourseProgress, setErrorFromThrow]);
+
+  /** 导航守卫:考试进行中 → 弹离开警告(未答=错计分);否则直接执行 */
+  const guardedNav = useCallback((action: () => void) => {
+    if (examSessionRef.current.active) {
+      setExamLeave({ open: true, pendingAction: action });
+      return;
+    }
+    action();
+  }, []);
+
+  // 点 lesson:套考试离开守卫后执行
+  const handleLessonClick = useCallback(
+    (node: ContentNode) => {
+      if (examSessionRef.current.active && node.id !== selectedNodeId) {
+        setExamLeave({ open: true, pendingAction: () => void proceedLessonClick(node) });
+        return;
+      }
+      void proceedLessonClick(node);
+    },
+    [proceedLessonClick, selectedNodeId],
+  );
+
+  // ExamView 上报考试会话(active 时导航被 guardedNav 拦截)
+  const handleExamSessionChange = useCallback(
+    (s: { active: boolean; terminate: (() => Promise<void>) | null }) => {
+      examSessionRef.current = s;
+    },
+    [],
+  );
+
+  // 离开警告确认:先终止考试(未答=错),再执行被拦截的导航
+  const confirmExamLeave = useCallback(async () => {
+    const action = examLeave.pendingAction;
+    setExamLeave({ open: false, pendingAction: null });
+    const s = examSessionRef.current;
+    if (s.active && s.terminate) {
+      try {
+        await s.terminate();
+      } catch {
+        /* 尽力而为:导航不因提交失败阻塞 */
+      }
+    }
+    action?.();
+  }, [examLeave.pendingAction]);
+
+  // 离开警告模态:焦点圈禁 + Esc 取消
+  useFocusTrap(examLeaveModalRef, examLeave.open);
+  useEffect(() => {
+    if (!examLeave.open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExamLeave({ open: false, pendingAction: null });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [examLeave.open]);
 
   const handleSoulPick = async (name: string) => {
     try {
@@ -437,6 +498,16 @@ export default function App() {
   const canvas = useCanvas(selectedCourseId);
   const font = useFontSize();
   const toast = useToast();
+
+  // 章节考试:后台生成完成 → 人在别的节点时 toast 通知(在考试节点上 ExamView 自己会切就绪态)
+  useEffect(() => {
+    const off = api.on("exam:status", (st) => {
+      if (st.status !== "ready" || st.nodeId === selectedNodeId) return;
+      const node = tree.find((n) => n.id === st.nodeId);
+      if (node) toast.show(t("exam.ready.toast", { title: node.title }), { duration: 4000 });
+    });
+    return off;
+  }, [selectedNodeId, tree, toast, t]);
 
   // 统一的"发送一条消息"流程:首次发送自动建 thread,之后直接发。
   // ChatComposer 的 onSend 和 handleStartLearning 都走这条,避免重复逻辑和"忘了建 thread"的坑。
@@ -538,7 +609,7 @@ export default function App() {
             if (node) handleLessonClick(node);
           }}
           onOpenReview={() => setShowReviewDrawer(true)}
-          onSelectCourse={(id) => { setSelectedCourseId(id); refreshAll(); }}
+          onSelectCourse={(id) => guardedNav(() => { setSelectedCourseId(id); refreshAll(); })}
           onCoursesChanged={() => { refreshAll(); }}
           availableLanguages={availableLanguages}
           currentLocale={currentLocale}
@@ -585,6 +656,8 @@ export default function App() {
                 /* 考试节点:渲染 ExamView 替代 chat(关底 boss,独立 UI) */
                 <ExamView
                   examNode={selectedNode}
+                  onSessionChange={handleExamSessionChange}
+                  paused={examLeave.open}
                   onExamCompleted={() => {
                     // 考试完成 → 刷新该考试节点的 progress(更新地图星数)
                     api.getProgress(selectedNode.id).then((p) => {
@@ -754,12 +827,53 @@ export default function App() {
           dashboard={dashboard}
           progressMap={progressMap}
           onPickNode={(id) => {
-            setSelectedNodeId(id);
-            setForceArtifactTab("content");
-            setShowReviewDrawer(false);
-            setIsReviewing(true);
+            guardedNav(() => {
+              setSelectedNodeId(id);
+              setForceArtifactTab("content");
+              setShowReviewDrawer(false);
+              setIsReviewing(true);
+            });
           }}
         />
+      )}
+
+      {/* 章节考试:离开警告模态(考试进行中切换节点/课程时弹出;确认 = 终止考试并导航) */}
+      {examLeave.open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          data-testid="exam-leave-modal"
+        >
+          <div
+            ref={examLeaveModalRef}
+            className="w-[min(400px,90vw)] rounded-2xl bg-surface-0 p-6 shadow-elevated border-l-2 border-l-warning"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("exam.leave.title")}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
+              <span className="text-title font-bold text-ink">{t("exam.leave.title")}</span>
+            </div>
+            <div className="text-body text-ink-muted mb-5 leading-relaxed">{t("exam.leave.message")}</div>
+            <div className="flex justify-end gap-2">
+              <button
+                className="btn-3d-neutral px-4 py-1.5 text-body"
+                onClick={() => setExamLeave({ open: false, pendingAction: null })}
+                data-testid="exam-leave-cancel"
+              >
+                {t("exam.leave.cancel")}
+              </button>
+              <button
+                className="btn-3d-brand px-4 py-1.5 text-body"
+                style={{ background: "var(--warning)", boxShadow: "0 3px 0 0 var(--warning-dark)" }}
+                onClick={() => void confirmExamLeave()}
+                data-testid="exam-leave-confirm"
+              >
+                {t("exam.leave.confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Cmd+K 命令面板(M2) */}

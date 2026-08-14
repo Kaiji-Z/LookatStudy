@@ -1,180 +1,284 @@
 /**
- * Exam Service —— 章节考试(关底 boss)。
+ * Exam Service v2 —— 章节考试(关底 boss):后台生成 + KC 出题 + attempt 档案。
  *
  * 每个考试节点(type=exam, parentId=sectionId)代表一章的综合测验。
- * 题目复用 exercises 表(node_id = 考试节点 id),题型固定 mcq(四选一)。
+ * 题目复用 exercises 表(node_id = 考试节点 id),题型固定 mcq(四选一),带 kc_title 标签。
+ *
+ * 生命周期:
+ *   idle → generating(main 后台,分批出题真实进度) → ready ⇄ answering → result
+ *                └→ failed(保留原因,可重试)
  *
  * 与 exercise-service 的区别:
  *   - exercise-service:单课单题,走 BKT mastery Proposal
- *   - exam-service:整章 N 题,正确率分档给 1-3 星(progress.crownLevel),
- *     不走 BKT、不解锁下一章(考试完全独立,可选支线)
+ *   - exam-service:整章按知识点出题,正确率分档给 1-3 星(progress.crownLevel),
+ *     不走 BKT、不解锁下一章(考试完全独立,可选支线;KC 分解纯展示不回写)
  *
- * 设计决策(见 plan):
- *   - 自动生成:course-generator 给每个 section 末尾插 exam 节点
- *   - 不限时
- *   - 完全独立:不影响章节解锁
- *   - 星数:正确率 ≥60% → 1星, ≥80% → 2星, ≥95% → 3星
- *   - 可重考:星数取最高
+ * attempt 档案(exam_attempts 表,第 20 张表):
+ *   - 点"开始考试"建行;每答一题增量持久化 answers_json(崩溃安全)
+ *   - 提交(正常/超时/中途离开 terminated)判分落库,切回节点可见历史结果
+ *   - 悬挂 attempt(finished_at IS NULL,app 崩溃/强关遗留)在 getStatus 时
+ *     自动按"未答=错"判死——与"离开即终止"规则一致
+ *
+ * 生成互斥:单窗口单 main 进程,exam-generation-store 的内存 Map + 共享 promise
+ * 即互斥(旧版把锁写进 content_nodes.content 列的 hack 已删)。
  */
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import { eq } from "drizzle-orm";
 import * as schema from "../db/schema.js";
-import { contentNodes, exercises as exercisesTable, progress as progressTable } from "../db/schema.js";
-import type { Exercise } from "@shared/types";
+import {
+  contentNodes,
+  exercises as exercisesTable,
+  progress as progressTable,
+  examAttempts,
+} from "../db/schema.js";
+import type {
+  ExamGenStatus,
+  ExamStatus,
+  ExamStatusView,
+  ExamQuestionView,
+  ExamAttemptView,
+  ExamPerQuestionResult,
+  ExamSubmitResult,
+} from "@shared/types";
+import { planExamQuota } from "@shared/exam-logic";
 import { generateText } from "ai";
 import { resolveLlm } from "./agent/llm-client.js";
 import { gradeAnswer } from "./exercise-service.js";
 import { addXp } from "./xp-service.js";
 import { emitStateChange } from "../lib/state-emitter.js";
+import { getKnowledgePoints } from "./kc-service.js";
+import {
+  setGenerating,
+  setProgress,
+  setReady,
+  setFailed,
+  peek,
+  getPromise,
+  setPromise,
+} from "./exam-generation-store.js";
 import { randomUUID } from "node:crypto";
 
 type Db = SQLJsDatabase<typeof schema>;
 
-/** 每场考试的题目数 */
-const EXAM_QUESTION_COUNT = 8;
 /** 星数分档阈值(正确率) */
 const ONE_STAR_THRESHOLD = 0.6;
 const TWO_STAR_THRESHOLD = 0.8;
 const THREE_STAR_THRESHOLD = 0.95;
+/** KC 分批出题:每批最多 KC 数(一批一次 LLM 调用,进度 = 完成批数/总批数) */
+const KCS_PER_BATCH = 3;
+/** 批失败重试次数 */
+const BATCH_RETRY = 1;
 
-/** 生成锁:写入 examNode.content 字段防 StrictMode 双调用双重生题。
- *  格式 `__exam_generating:<ISO>__`,2 分钟过期(防进程崩溃留死锁)。 */
-const LOCK_PREFIX = "__exam_generating:";
-const LOCK_TTL_MS = 2 * 60 * 1000;
-const LOCK_POLL_MS = 400;
-const LOCK_WAIT_MAX_MS = 40 * 1000;
+/* ============================================================
+ * 生成状态查询/启动
+ * ============================================================ */
 
-/** 读 examNode.content 判断锁状态:返回 null(无锁/已生题) 或 锁的 ISO 时间。 */
-function readLock(content: string | null): string | null {
-  if (!content || !content.startsWith(LOCK_PREFIX)) return null;
-  return content.slice(LOCK_PREFIX.length, -2); // 去掉结尾 __
-}
+/**
+ * 幂等启动题目生成:已就绪(DB 有题)→ ready;生成中 → 返回进行中状态;
+ * 否则后台启动(不阻塞,进度走 exam:status 事件),立即返回 generating。
+ */
+export function prepareExam(db: Db, examNodeId: string): ExamStatus {
+  const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
+  if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
 
-/** 写锁(覆盖 content 字段)。sql.js 同步写,StrictMode 第二次调用立即可见。 */
-function writeLock(db: Db, examNodeId: string): void {
-  const lockValue = `${LOCK_PREFIX}${new Date().toISOString()}__`;
-  db.update(contentNodes)
-    .set({ content: lockValue })
-    .where(eq(contentNodes.id, examNodeId))
-    .run();
-}
-
-/** 清锁(还原 content 为 null)。题目已插入或生成失败都清,防死锁。 */
-function clearLock(db: Db, examNodeId: string): void {
-  db.update(contentNodes)
-    .set({ content: null })
-    .where(eq(contentNodes.id, examNodeId))
-    .run();
-}
-
-/** 等待别人的锁释放(轮询)。锁 stale(>TTL)则抢锁返回 false(调用方继续生成)。
- *  返回 true = 等到了(题目应该已由对方生成,调用方应直接读);false = 抢到锁,该自己生成。 */
-async function waitForLockOrTake(db: Db, examNodeId: string): Promise<boolean> {
-  const deadline = Date.now() + LOCK_WAIT_MAX_MS;
-  while (Date.now() < deadline) {
-    const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
-    const lockIso = readLock(node?.content ?? null);
-    if (!lockIso) return false; // 无锁,该自己生成
-    const lockAge = Date.now() - new Date(lockIso).getTime();
-    if (lockAge > LOCK_TTL_MS) {
-      // 锁 stale,抢锁
-      writeLock(db, examNodeId);
-      return false;
-    }
-    // 别人在生成,等。期间题目可能已被对方插入 → 检查一下
-    if (listExamExercises(db, examNodeId).length > 0) {
-      return true; // 对方已完成,题目已就绪
-    }
-    await sleep(LOCK_POLL_MS);
+  // 幂等:题库已生成(含旧版 8 题考试)→ ready
+  if (listExamQuestions(db, examNodeId).length > 0) {
+    return { nodeId: examNodeId, status: "ready", done: 1, total: 1, error: null };
   }
-  throw new Error("考试题目生成等待超时(另一并发请求卡住)");
-}
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
+  // 去重:生成中,共享同一次后台生成
+  const inFlight = getPromise(examNodeId);
+  if (inFlight) {
+    const p = peek(examNodeId);
+    return p
+      ? { nodeId: examNodeId, ...p }
+      : { nodeId: examNodeId, status: "generating", done: 0, total: 0, error: null };
+  }
 
-export interface ExamStartResult {
-  exercises: Exercise[];
-}
-
-export interface ExamSubmitResult {
-  correctCount: number;
-  totalCount: number;
-  accuracy: number;
-  stars: number; // 0-3(0=未达 60%,1/2/3 星)
-  bestStars: number; // 历史最高星数(含本次)
-  perQuestion: {
-    exerciseId: string;
-    correct: boolean;
-    userAnswer: string;
-    correctAnswer: string;
-    explanation: string | null;
-  }[];
+  // 启动后台生成。generateExamBank 的同步前缀(节点检查+KC 收集+setGenerating)
+  // 在本函数返回前执行完,因此这里 peek 一定拿到 generating 态。
+  const p = generateExamBank(db, examNodeId);
+  setPromise(examNodeId, p);
+  const state = peek(examNodeId);
+  return state
+    ? { nodeId: examNodeId, ...state }
+    : { nodeId: examNodeId, status: "generating", done: 0, total: 0, error: null };
 }
 
 /**
- * 开始/继续考试:已生成过题目则直接返回(支持刷新/重进),否则调 LLM 生成。
- * 上下文 = 同章节所有 lesson 的 title + content 摘要(整章范围,非单课)。
+ * 查状态 + 就绪元信息 + 最新 attempt。
+ * 悬挂 attempt(崩溃遗留)在此自动按"未答=错"判死。
  */
-export async function startExam(db: Db, examNodeId: string): Promise<ExamStartResult> {
-  const examNode = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
-  if (!examNode) throw new Error(`考试节点不存在: ${examNodeId}`);
+export function getExamStatusView(db: Db, examNodeId: string): ExamStatusView {
+  const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
+  if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
 
-  // 幂等:已生成过题目则直接返回(刷新/重进不重新出题)
-  const existing = listExamExercises(db, examNodeId);
-  if (existing.length > 0) return { exercises: existing };
-
-  // 生成锁:防 StrictMode 双调用并发双重生题(两次都在对方插入前读到 0 题)。
-  // waitForLockOrTake:有锁等对方完成 → 返回 true(题目已就绪);无锁/锁 stale → 抢锁返回 false。
-  const waitedForOther = await waitForLockOrTake(db, examNodeId);
-  if (waitedForOther) {
-    // 对方已生成,直接读
-    const ready = listExamExercises(db, examNodeId);
-    if (ready.length > 0) return { exercises: ready };
-    // 罕见:对方清了锁但没插入(出错?)→ 自己重新走生成流程
-  } else {
-    // 抢到锁,再查一次(防 race:等待期间对方已完成)
-    const ready = listExamExercises(db, examNodeId);
-    if (ready.length > 0) {
-      clearLock(db, examNodeId);
-      return { exercises: ready };
-    }
-    writeLock(db, examNodeId);
+  // 悬挂 attempt 解析:自动判死(未答=错,terminated)
+  const dangling = latestUnfinishedAttempt(db, examNodeId);
+  if (dangling) {
+    gradeAndFinalize(db, examNodeId, dangling, safeParseRecord(dangling.answersJson), true);
   }
 
-  // 拼合同章节所有 lesson 作为出题上下文
-  const sectionId = examNode.parentId;
-  const siblingLessons = sectionId
-    ? db.select().from(contentNodes).all().filter(
-        (n) => n.parentId === sectionId && n.type === "lesson",
-      )
+  const questions = listExamQuestions(db, examNodeId);
+  const storeState = peek(examNodeId);
+
+  // 状态裁决:进行中的生成 > DB 就绪 > 内存失败态 > idle
+  let status: ExamGenStatus;
+  if (storeState?.status === "generating") status = "generating";
+  else if (questions.length > 0) status = "ready";
+  else if (storeState?.status === "failed") status = "failed";
+  else status = "idle";
+
+  const kcCount = new Set(
+    questions.map((q) => q.kcTitle).filter((t): t is string => !!t),
+  ).size;
+
+  const latestRow = latestAttemptRow(db, examNodeId);
+  const attemptRows = db
+    .select({ id: examAttempts.id })
+    .from(examAttempts)
+    .where(eq(examAttempts.examNodeId, examNodeId))
+    .all();
+  const progressRow = db
+    .select()
+    .from(progressTable)
+    .where(eq(progressTable.nodeId, examNodeId))
+    .get();
+
+  return {
+    nodeId: examNodeId,
+    status,
+    done: status === "generating" ? (storeState?.done ?? 0) : status === "ready" ? 1 : 0,
+    total: status === "generating" ? (storeState?.total ?? 0) : 1,
+    error: status === "failed" ? (storeState?.error ?? "生成失败") : null,
+    questionCount: questions.length,
+    kcCount,
+    exercises: questions,
+    bestStars: progressRow?.crownLevel ?? 0,
+    latestAttempt: latestRow ? toAttemptView(latestRow) : null,
+    attemptCount: attemptRows.length,
+  };
+}
+
+/* ============================================================
+ * 后台生成:KC 收集 → 分批配额 → LLM 出题 → 落库
+ * ============================================================ */
+
+/** 章节 KC(带来源课时,出题上下文用) */
+interface ChapterKc {
+  title: string;
+  description: string;
+  lessonId: string;
+  lessonTitle: string;
+}
+
+/**
+ * 收集章节 KC:同 section 所有 lesson 的 knowledge_points 按课时序去重合并。
+ * 无 KC 的课时(老课程/提取失败)用课时标题做伪 KC 兜底——考试照常能出。
+ */
+function collectChapterKcs(db: Db, examNodeId: string): ChapterKc[] {
+  const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
+  const sectionId = node?.parentId;
+  const lessons = sectionId
+    ? db
+        .select()
+        .from(contentNodes)
+        .all()
+        .filter((n) => n.parentId === sectionId && n.type === "lesson")
+        .sort((a, b) => a.orderIdx - b.orderIdx)
     : [];
-  if (siblingLessons.length === 0) {
-    clearLock(db, examNodeId); // 清锁防死锁
-    throw new Error("本章没有课时,无法生成考试题");
+  if (lessons.length === 0) return [];
+
+  const seen = new Set<string>();
+  const kcs: ChapterKc[] = [];
+  for (const l of lessons) {
+    const kps = getKnowledgePoints(db, l.id);
+    if (kps.length > 0) {
+      for (const kp of kps) {
+        if (seen.has(kp.title)) continue;
+        seen.add(kp.title);
+        kcs.push({
+          title: kp.title,
+          description: kp.description ?? "",
+          lessonId: l.id,
+          lessonTitle: l.title,
+        });
+      }
+    } else if (!seen.has(l.title)) {
+      // 伪 KC:课时本身
+      seen.add(l.title);
+      kcs.push({ title: l.title, description: "", lessonId: l.id, lessonTitle: l.title });
+    }
   }
+  return kcs;
+}
 
-  const chapterContext = siblingLessons
-    .map((l, i) => `### ${i + 1}. ${l.title}\n${(l.content ?? "").slice(0, 800)}`)
-    .join("\n\n");
+/** KC 按 ≤3 个/批分组,批配额 = 成员配额和。 */
+function batchKcs(kcs: ChapterKc[], quotas: number[]): Array<{ kcs: ChapterKc[]; quota: number }> {
+  const batches: Array<{ kcs: ChapterKc[]; quota: number }> = [];
+  for (let i = 0; i < kcs.length; i += KCS_PER_BATCH) {
+    const group = kcs.slice(i, i + KCS_PER_BATCH);
+    const quota = quotas.slice(i, i + KCS_PER_BATCH).reduce((a, b) => a + b, 0);
+    batches.push({ kcs: group, quota: Math.max(1, quota) });
+  }
+  return batches;
+}
 
-  const llm = resolveLlm(db);
-  const prompt = buildExamPrompt(examNode.title, chapterContext, EXAM_QUESTION_COUNT);
-
-  let created: Exercise[] = [];
+/**
+ * 后台生成题库。永不 reject(失败写进 store 的 failed 态 + 原因)。
+ * 全批完成后一次性落库:要么完整题库要么没有(崩溃恢复语义干净,不会半截题库)。
+ * 批失败重试一次仍失败 → 跳过该批继续(累计 <3 题才算整体失败)。
+ */
+async function generateExamBank(db: Db, examNodeId: string): Promise<void> {
   try {
-    const result = await generateText({ model: llm.languageModel, prompt });
-    const raw = result.text.trim();
-    const parsed = parseExamJson(raw, EXAM_QUESTION_COUNT);
-    if (!parsed.ok) throw new Error(`考试出题格式错误: ${parsed.error}`);
+    const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
+    if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
 
-    // 存 exercises 表(node_id = 考试节点 id)
-    for (const q of parsed.questions) {
-      const id = randomUUID();
+    const kcs = collectChapterKcs(db, examNodeId);
+    if (kcs.length === 0) throw new Error("本章没有课时,无法生成考试题");
+
+    const quotas = planExamQuota(kcs.map((k) => k.title));
+    const batches = batchKcs(kcs, quotas);
+    setGenerating(examNodeId, batches.length);
+
+    const llm = resolveLlm(db);
+    const collected: Array<ParsedExamQuestion & { kcTitle: string }> = [];
+    let lastError: string | null = null;
+    let done = 0;
+
+    for (const batch of batches) {
+      const allowedKcs = batch.kcs.map((k) => k.title);
+      // 批内 KC 涉及的课时内容(去重,每课截 800 字)
+      const lessonIds = [...new Set(batch.kcs.map((k) => k.lessonId))];
+      const lessonContents = lessonIds
+        .map((id) => db.select().from(contentNodes).where(eq(contentNodes.id, id)).get())
+        .filter((l): l is NonNullable<typeof l> => !!l)
+        .map((l) => ({ title: l.title, content: (l.content ?? "").slice(0, 800) }));
+      for (let attempt = 0; attempt <= BATCH_RETRY; attempt++) {
+        try {
+          const prompt = buildKcBatchPrompt(node.title, batch, lessonContents);
+          const result = await generateText({ model: llm.languageModel, prompt });
+          const parsed = parseExamJson(result.text.trim(), batch.quota, allowedKcs);
+          if (!parsed.ok) throw new Error(`出题格式错误: ${parsed.error}`);
+          collected.push(...parsed.questions);
+          break; // 本批成功
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
+        }
+      }
+      done++;
+      setProgress(examNodeId, done);
+    }
+
+    if (collected.length < 3) {
+      throw new Error(lastError ?? `题目数不足(仅生成 ${collected.length} 题)`);
+    }
+
+    // 全部批完成后一次性落库
+    for (const q of collected) {
       db.insert(exercisesTable)
         .values({
-          id,
+          id: randomUUID(),
           nodeId: examNodeId,
           type: "mcq",
           prompt: q.prompt,
@@ -182,90 +286,142 @@ export async function startExam(db: Db, examNodeId: string): Promise<ExamStartRe
           explanation: q.explanation ?? null,
           optionsJson: JSON.stringify(q.options),
           aiGenerated: true,
+          kcTitle: q.kcTitle,
         })
         .run();
-      created.push({
-        id,
-        nodeId: examNodeId,
-        type: "mcq",
-        prompt: q.prompt,
-        options: q.options,
-        answer: q.answer,
-        explanation: q.explanation ?? null,
-        aiGenerated: true,
-        createdAt: new Date().toISOString(),
-      });
     }
+    setReady(examNodeId);
   } catch (e) {
-    clearLock(db, examNodeId); // 出错清锁,防下次卡死
-    throw e;
-  } finally {
-    clearLock(db, examNodeId);
+    setFailed(examNodeId, e instanceof Error ? e.message : String(e));
   }
-
-  return { exercises: created };
 }
 
-/** 列出某考试节点的所有题目(按创建顺序)。 */
-export function listExamExercises(db: Db, examNodeId: string): Exercise[] {
-  const rows = db
-    .select()
-    .from(exercisesTable)
-    .where(eq(exercisesTable.nodeId, examNodeId))
-    .all();
-  return rows.map((row) => ({
-    id: row.id,
-    nodeId: row.nodeId,
-    type: row.type as Exercise["type"],
-    prompt: row.prompt,
-    options: row.optionsJson ? (JSON.parse(row.optionsJson) as string[]) : null,
-    answer: row.answer,
-    explanation: row.explanation,
-    aiGenerated: row.aiGenerated,
-    createdAt: row.createdAt,
-  }));
+/* ============================================================
+ * attempt 档案:开始 / 逐题记录 / 提交判分
+ * ============================================================ */
+
+/** 开始/重新考试:建 attempt 行,返回 attemptId + 就绪题目。 */
+export function startExamAttempt(
+  db: Db,
+  examNodeId: string,
+): { attemptId: string; exercises: ExamQuestionView[] } {
+  const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
+  if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
+  const questions = listExamQuestions(db, examNodeId);
+  if (questions.length === 0) throw new Error("考试题目尚未生成");
+
+  // 防御:上一场悬挂(正常流程 getStatus 已判死,这里兜底)
+  const dangling = latestUnfinishedAttempt(db, examNodeId);
+  if (dangling) {
+    gradeAndFinalize(db, examNodeId, dangling, safeParseRecord(dangling.answersJson), true);
+  }
+
+  const id = randomUUID();
+  db.insert(examAttempts)
+    .values({
+      id,
+      examNodeId,
+      startedAt: new Date().toISOString(),
+      answersJson: "{}",
+    })
+    .run();
+  return { attemptId: id, exercises: questions };
+}
+
+/** 逐题增量持久化(崩溃安全:强关后悬挂 attempt 仍有已答记录)。已结束的 attempt 忽略。 */
+export function recordExamAnswer(
+  db: Db,
+  examNodeId: string,
+  attemptId: string,
+  exerciseId: string,
+  answer: string,
+): void {
+  const row = db.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).get();
+  if (!row || row.examNodeId !== examNodeId || row.finishedAt) return;
+  const stored = safeParseRecord(row.answersJson);
+  stored[exerciseId] = answer;
+  db.update(examAttempts)
+    .set({ answersJson: JSON.stringify(stored) })
+    .where(eq(examAttempts.id, attemptId))
+    .run();
 }
 
 /**
- * 提交考试:逐题判分,算正确率,给星数(取最高),写 progress.crownLevel。
- * 不走 BKT、不解锁下一章(考试完全独立)。
+ * 提交考试:逐题判分(未答 = 错),写 attempt 结算 + progress.crownLevel(取最高)+ XP。
+ * terminated = 中途离开被终止,同样计星计分(按"未答=错算总分"规则)。
  */
-export function submitExam(
+export function submitExamAttempt(
   db: Db,
   examNodeId: string,
+  attemptId: string,
   answers: Record<string, string>,
+  opts?: { terminated?: boolean },
 ): ExamSubmitResult {
-  const examExercises = listExamExercises(db, examNodeId);
-  if (examExercises.length === 0) {
-    throw new Error("考试题目尚未生成");
-  }
+  const row = db.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).get();
+  if (!row) throw new Error(`考试 attempt 不存在: ${attemptId}`);
+  if (row.examNodeId !== examNodeId) throw new Error("attempt 与考试节点不匹配");
+  if (row.finishedAt) throw new Error("该场考试已提交,不能重复提交");
+
+  // 渲染端提交的 answers 覆盖增量持久化的存量(崩溃恢复场景只有存量)
+  const merged = { ...safeParseRecord(row.answersJson), ...answers };
+  return gradeAndFinalize(db, examNodeId, row, merged, opts?.terminated ?? false);
+}
+
+/* ============================================================
+ * 内部:判分落库(正常提交与悬挂判死共用)
+ * ============================================================ */
+
+type AttemptRow = typeof examAttempts.$inferSelect;
+
+function gradeAndFinalize(
+  db: Db,
+  examNodeId: string,
+  attemptRow: AttemptRow,
+  answers: Record<string, string>,
+  terminated: boolean,
+): ExamSubmitResult {
+  const questions = listExamQuestions(db, examNodeId);
+  if (questions.length === 0) throw new Error("考试题目尚未生成");
 
   let correctCount = 0;
-  const perQuestion: ExamSubmitResult["perQuestion"] = [];
-
-  for (const ex of examExercises) {
-    const userAnswer = answers[ex.id] ?? "";
-    const optionsJson = ex.options ? JSON.stringify(ex.options) : null;
-    const correct = gradeAnswer(ex.type, ex.answer, userAnswer, optionsJson);
+  const perQuestion: ExamPerQuestionResult[] = [];
+  for (const q of questions) {
+    const userAnswer = answers[q.id] ?? "";
+    const optionsJson = q.options ? JSON.stringify(q.options) : null;
+    const correct = gradeAnswer(q.type, q.answer, userAnswer, optionsJson);
     if (correct) correctCount++;
     perQuestion.push({
-      exerciseId: ex.id,
+      exerciseId: q.id,
+      kcTitle: q.kcTitle,
       correct,
       userAnswer,
-      correctAnswer: ex.answer,
-      explanation: ex.explanation,
+      correctAnswer: q.answer,
+      explanation: q.explanation,
+      answered: userAnswer !== "",
     });
   }
 
-  const totalCount = examExercises.length;
+  const totalCount = questions.length;
   const accuracy = correctCount / totalCount;
   const stars = accuracyToStars(accuracy);
+
+  db.update(examAttempts)
+    .set({
+      finishedAt: new Date().toISOString(),
+      terminated,
+      correctCount,
+      totalCount,
+      stars,
+      answersJson: JSON.stringify(answers),
+      perQuestionJson: JSON.stringify(perQuestion),
+    })
+    .where(eq(examAttempts.id, attemptRow.id))
+    .run();
 
   // 写 progress.crownLevel(星数取最高:重考不降星)
   const existing = db.select().from(progressTable).where(eq(progressTable.nodeId, examNodeId)).get();
   const prevStars = existing?.crownLevel ?? 0;
   const bestStars = Math.max(prevStars, stars);
-
   if (existing) {
     db.update(progressTable)
       .set({ crownLevel: bestStars, lastAttemptAt: new Date().toISOString() })
@@ -282,12 +438,101 @@ export function submitExam(
       .run();
   }
 
-  // Phase A: 考试给 XP（每答对一题 +10）。addXp 内部 emitStateChange("xp") → 能量条刷新。
+  // XP(每答对一题 +10;terminated 也计——按"算总分"规则)。addXp 内部 emitStateChange("xp")。
   if (correctCount > 0) addXp(db, correctCount * 10);
-  // 刷新地图（考试节点星数变化需要重渲染）
+  // 刷新地图(考试节点星数变化需要重渲染)
   emitStateChange("mastery");
 
-  return { correctCount, totalCount, accuracy, stars, bestStars, perQuestion };
+  return {
+    attemptId: attemptRow.id,
+    correctCount,
+    totalCount,
+    accuracy,
+    stars,
+    bestStars,
+    terminated,
+    perQuestion,
+  };
+}
+
+function latestUnfinishedAttempt(db: Db, examNodeId: string): AttemptRow | null {
+  const rows = db
+    .select()
+    .from(examAttempts)
+    .where(eq(examAttempts.examNodeId, examNodeId))
+    .all()
+    .filter((r) => !r.finishedAt);
+  return rows.length > 0 ? rows[rows.length - 1]! : null;
+}
+
+function latestAttemptRow(db: Db, examNodeId: string): AttemptRow | null {
+  const rows = db
+    .select()
+    .from(examAttempts)
+    .where(eq(examAttempts.examNodeId, examNodeId))
+    .all();
+  return rows.length > 0 ? rows[rows.length - 1]! : null;
+}
+
+function toAttemptView(row: AttemptRow): ExamAttemptView {
+  let perQuestion: ExamPerQuestionResult[] | null = null;
+  if (row.perQuestionJson) {
+    try {
+      const parsed = JSON.parse(row.perQuestionJson);
+      if (Array.isArray(parsed)) perQuestion = parsed as ExamPerQuestionResult[];
+    } catch {
+      perQuestion = null;
+    }
+  }
+  return {
+    id: row.id,
+    examNodeId: row.examNodeId,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+    terminated: !!row.terminated,
+    correctCount: row.correctCount,
+    totalCount: row.totalCount,
+    stars: row.stars,
+    perQuestion,
+  };
+}
+
+function safeParseRecord(json: string | null): Record<string, string> {
+  if (!json) return {};
+  try {
+    const parsed = JSON.parse(json);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, string>;
+    }
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+/* ============================================================
+ * 查询与纯工具
+ * ============================================================ */
+
+/** 列出某考试节点的所有题目(自然插入序),带 KC 标签。 */
+export function listExamQuestions(db: Db, examNodeId: string): ExamQuestionView[] {
+  const rows = db
+    .select()
+    .from(exercisesTable)
+    .where(eq(exercisesTable.nodeId, examNodeId))
+    .all();
+  return rows.map((row) => ({
+    id: row.id,
+    nodeId: row.nodeId,
+    type: row.type as ExamQuestionView["type"],
+    prompt: row.prompt,
+    options: row.optionsJson ? (JSON.parse(row.optionsJson) as string[]) : null,
+    answer: row.answer,
+    explanation: row.explanation,
+    aiGenerated: row.aiGenerated,
+    createdAt: row.createdAt,
+    kcTitle: row.kcTitle ?? null,
+  }));
 }
 
 /** 正确率 → 星数(1-3)。低于 60% 得 0 星(但会记录尝试)。 */
@@ -298,22 +543,39 @@ export function accuracyToStars(accuracy: number): number {
   return 0;
 }
 
-/* ---------- 出题 prompt + 解析(整章范围 N 题) ---------- */
+/* ============================================================
+ * 出题 prompt + 解析(按 KC 批次)
+ * ============================================================ */
 
-function buildExamPrompt(examTitle: string, chapterContext: string, count: number): string {
+function buildKcBatchPrompt(
+  examTitle: string,
+  batch: { kcs: ChapterKc[]; quota: number },
+  lessonContents: Array<{ title: string; content: string }>,
+): string {
+  const kcList = batch.kcs
+    .map((k) => `- ${k.title}:${k.description || "(见下方课时内容)"}(来自课时《${k.lessonTitle}》)`)
+    .join("\n");
+
+  const contentParts = lessonContents.map(
+    (l, i) => `### ${i + 1}. ${l.title}\n${l.content || "(课时无正文)"}`,
+  );
+
   return [
-    `你是 LookatStudy 的章节考试出题官。基于下面整章的学习内容,出 ${count} 道四选一选择题,作为本章的关底考试。`,
+    `你是 LookatStudy 的章节考试出题官。基于下面的知识点与课程内容,出 ${batch.quota} 道四选一选择题。`,
     ``,
     `考试标题:${examTitle}`,
     ``,
-    `本章内容:`,
-    chapterContext.slice(0, 6000),
+    `本批要覆盖的知识点(每题必须考察其中之一):`,
+    kcList,
+    ``,
+    `课程内容:`,
+    contentParts.join("\n\n"),
     ``,
     `出题要求:`,
-    `- 覆盖本章的多个知识点(不要集中在某一课),考察整章的理解`,
+    `- 每题明确考察上面列出的某一个知识点,kc 字段填写该知识点标题(必须与列表完全一致)`,
     `- 题干考"理解"和"应用",不要出死记硬背的定义题`,
     `- 干扰项 plausible 但 definitely wrong(基于学习者常犯的真实误解)`,
-    `- 答案必须在提供的学习内容中有依据`,
+    `- 答案必须在提供的课程内容中有依据`,
     `- 题干和选项用中文,清晰无歧义`,
     ``,
     `严格按以下 JSON 格式返回,不要加 markdown 代码块标记、不要解释:`,
@@ -323,7 +585,8 @@ function buildExamPrompt(examTitle: string, chapterContext: string, count: numbe
     `      "prompt": "题干(不含选项)",`,
     `      "options": ["选项A", "选项B", "选项C", "选项D"],`,
     `      "answer": "0",`,
-    `      "explanation": "为什么是这个答案 + 其他选项为什么错(2-3句)"`,
+    `      "explanation": "为什么是这个答案 + 其他选项为什么错(2-3句)",`,
+    `      "kc": "考察的知识点标题"`,
     `    }`,
     `  ]`,
     `}`,
@@ -335,11 +598,18 @@ interface ParsedExamQuestion {
   options: string[];
   answer: string;
   explanation?: string;
+  kcTitle: string;
 }
 
+/**
+ * 解析一批 LLM 出题结果。
+ * - 每题必须有 prompt/options(≥2)/answer;kc 缺失或不在此批 KC 列表 → 轮转兜底映射
+ * - 有效题数 ≥1 即可(整体 <3 题的失败在 generateExamBank 末尾裁决)
+ */
 function parseExamJson(
   raw: string,
   expectedCount: number,
+  allowedKcs: string[],
 ): { ok: true; questions: ParsedExamQuestion[] } | { ok: false; error: string } {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   let obj: Record<string, unknown>;
@@ -359,12 +629,15 @@ function parseExamJson(
     const answer = typeof q.answer === "string" ? q.answer : "";
     const options = Array.isArray(q.options) ? (q.options as string[]) : null;
     const explanation = typeof q.explanation === "string" ? q.explanation : undefined;
+    const kcRaw = typeof q.kc === "string" ? q.kc : "";
     if (!prompt || !answer || !options || options.length < 2) {
       return { ok: false, error: `第 ${i + 1} 题格式不完整(需 prompt/options/answer)` };
     }
-    questions.push({ prompt, options, answer, explanation });
+    // kc 兜底:缺失/不在批内列表 → 轮转映射到本批 KC(保证 quota 大致对齐)
+    const kcTitle = allowedKcs.includes(kcRaw) ? kcRaw : allowedKcs[i % allowedKcs.length]!;
+    questions.push({ prompt, options, answer, explanation, kcTitle });
   }
-  if (questions.length < Math.min(3, expectedCount)) {
+  if (questions.length < 1) {
     return { ok: false, error: `题目数不足(解析出 ${questions.length} 题)` };
   }
   return { ok: true, questions };

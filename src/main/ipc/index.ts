@@ -136,10 +136,13 @@ import {
   listExercises as listExercisesService,
   submitExerciseAnswer as submitExerciseAnswerService,
 } from "../services/exercise-service.js";
-// 章节考试服务(关底 boss)
+// 章节考试服务 v2(后台生成 + KC 出题 + attempt 档案)
 import {
-  startExam,
-  submitExam,
+  prepareExam,
+  getExamStatusView,
+  startExamAttempt,
+  recordExamAnswer,
+  submitExamAttempt,
 } from "../services/exam-service.js";
 
 /* ---------- 课程 ---------- */
@@ -1288,18 +1291,43 @@ export function registerExerciseHandlers(): void {
 
 /** 章节考试(关底 boss)IPC handlers */
 export function registerExamHandlers(): void {
-  // 开始/继续考试:生成或读取题目
-  ipcMain.handle("exam:start", async (_e, examNodeId: string) => {
-    const result = await startExam(getDb(), examNodeId);
+  // 幂等启动题目生成(后台进行,进度走 exam:status 事件)
+  ipcMain.handle("exam:prepare", (_e, examNodeId: string) => {
+    return prepareExam(getDb(), examNodeId);
+  });
+
+  // 查状态 + 就绪元信息 + 最新 attempt(悬挂 attempt 在此自动判死)
+  ipcMain.handle("exam:getStatus", (_e, examNodeId: string) => {
+    return getExamStatusView(getDb(), examNodeId);
+  });
+
+  // 开始/重新考试:建 attempt 行
+  ipcMain.handle("exam:startAttempt", (_e, examNodeId: string) => {
+    const result = startExamAttempt(getDb(), examNodeId);
     markDirty();
     return result;
   });
 
-  // 提交考试:判分 + 算星数 + 写 progress.crownLevel
+  // 逐题增量持久化答案(崩溃安全)
   ipcMain.handle(
-    "exam:submit",
-    async (_e, examNodeId: string, answers: Record<string, string>) => {
-      const result = submitExam(getDb(), examNodeId, answers);
+    "exam:recordAnswer",
+    (_e, examNodeId: string, attemptId: string, exerciseId: string, answer: string) => {
+      recordExamAnswer(getDb(), examNodeId, attemptId, exerciseId, answer);
+      markDirty();
+    },
+  );
+
+  // 提交考试:判分 + 算星数 + 写 attempt 结算 + progress.crownLevel
+  ipcMain.handle(
+    "exam:submitAttempt",
+    (
+      _e,
+      examNodeId: string,
+      attemptId: string,
+      answers: Record<string, string>,
+      opts?: { terminated?: boolean },
+    ) => {
+      const result = submitExamAttempt(getDb(), examNodeId, attemptId, answers, opts);
       markDirty();
       return result;
     },

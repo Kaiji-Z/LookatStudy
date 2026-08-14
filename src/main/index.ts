@@ -20,7 +20,8 @@ import { loadEnv, getZaiConfig } from "./services/env.js";
 import { seedBuiltinSouls } from "./services/souls/soul-service.js";
 import { createProposal } from "./services/proposal-service.js";
 import { setStateEmitter } from "./lib/state-emitter.js";
-import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems } from "./db/schema.js";
+import { setExamStatusSender } from "./services/exam-generation-store.js";
+import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems, progress as progressTable } from "./db/schema.js";
 import { eq } from "drizzle-orm";
 
 // 主进程以 CJS 打包（见 vite.config.ts），__dirname 天然可用。
@@ -219,6 +220,8 @@ app.whenReady().then(async () => {
   }
   // Phase 0: 注入状态变化 emitter。service 内 emitStateChange → 推 "state:changed" 给 renderer。
   setStateEmitter((kind) => mainWindow?.webContents.send("state:changed", kind));
+  // 考试生成进度:exam-generation-store → 推 "exam:status" 给 renderer(实时进度/完成/失败)。
+  setExamStatusSender((payload) => mainWindow?.webContents.send("exam:status", payload));
   console.error("[lookatstudy] window created, IPC registered");
 
   app.on("activate", () => {
@@ -380,6 +383,26 @@ async function runUiTest(screenshot = false): Promise<void> {
       .run();
   } catch (e) {
     console.error("[lookatstudy] ui-test srs seed failed:", e);
+  }
+
+  // P2.4 前置:首课标 in_progress → 复习抽屉"交错复习"按钮(startedLessons>0 才渲染)。
+  // 幂等 onConflictDoUpdate;不改 mastery(不动解锁状态,不影响 enabledCount 断言)。
+  try {
+    getDb()
+      .insert(progressTable)
+      .values({
+        nodeId: "guide-les-1-1",
+        status: "in_progress",
+        crownLevel: 0,
+        lastAttemptAt: new Date().toISOString(),
+      })
+      .onConflictDoUpdate({
+        target: progressTable.nodeId,
+        set: { status: "in_progress" },
+      })
+      .run();
+  } catch (e) {
+    console.error("[lookatstudy] ui-test progress seed failed:", e);
   }
 
   // 笔记三区:为种子首课播一条 canvas_item。否则 notes tab 命中 total===0 空态、三区不渲染

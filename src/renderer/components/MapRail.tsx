@@ -239,8 +239,9 @@ export function MapRail(props: MapRailProps) {
               </div>
             </div>
           </div>
-          {/* 导入面板(透明,共享天空背景)。pt-48 避开悬浮 tab 区域(与地图面板一致) */}
-          <div className="w-1/2 h-full overflow-y-auto px-3 pt-48 pb-3 space-y-2.5">
+          {/* 导入面板(透明,共享天空背景)。pt-20 避开悬浮 tab(约56px)+呼吸间距——
+              导入面板头上没有地图面板那张悬浮标题卡,不需要 pt-48 的大留白 */}
+          <div className="w-1/2 h-full overflow-y-auto px-3 pt-20 pb-3 space-y-2.5">
             <ImportPanel courses={props.courses} selectedCourseId={props.courseId} onSelectCourse={(id) => { props.onSelectCourse(id); setPanel("map"); }} onDeleteCourse={(id, title, rect) => setConfirmDelete({ id, title, rect })} onCoursesChanged={props.onCoursesChanged} />
           </div>
         </div>

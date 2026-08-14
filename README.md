@@ -1,5 +1,7 @@
 # LookatStudy
 
+**English | [简体中文](README.zh-CN.md)**
+
 > Open-source, local-first, AI-driven desktop learning platform. Turn any learning repository into a Duolingo-style course you can actually finish.
 
 LookatStudy takes any documentation/roadmap/course repository and turns it into a structured, gated learning path: a skill tree you unlock node by node, an AI tutor that adapts to what you've mastered, spaced repetition so knowledge sticks, and streaks so you keep coming back. Everything runs locally — your data never leaves your machine, and you bring your own LLM API key.
@@ -23,7 +25,7 @@ Most "read the docs" learning fails because docs aren't a course: no structure, 
   - `guide` 引导 — asks guiding questions and lets you take the next step yourself
   - `practice` 实战 — hands-on, learn by doing around real problems
 - **AI-generated exercises** — the tutor generates MCQ / fill-blank / true-false quizzes in chat ("考考我") that land in the notebook's practice zone with your answer history; chapter exam nodes generate timed, knowledge-point-based exams in the background. Answers are graded automatically and feed back into per-concept BKT mastery and SM-2 scheduling.
-- **Three-pane workspace** — left: Duolingo-style skill map (gated lesson nodes); middle: AI tutor chat (streaming, tool calls, Generative UI artifacts, thread sessions); right: Cornell-style notebook (lesson content with inline images, user highlights with source tracing, AI-generated concept maps/quizzes/diagrams).
+- **Three-pane workspace** — left: Duolingo-style skill map (gated lesson nodes + searchable course outline); middle: AI tutor chat (streaming, tool calls, Generative UI artifacts, thread sessions); right: Cornell-style notebook (lesson content with inline images, user highlights with source tracing, AI-generated concept maps/quizzes/diagrams).
 - **Review drawer + mastery dashboard** — today's due reviews (SM-2), per-section mastery heatmap with weak-spot hints, and mixed (interleaved) review; streak and daily XP show in the header.
 - **Lightweight RAG + memory** — the tutor searches across all lesson content to answer "where was this covered", and keeps a rolling summary so it remembers your past sessions.
 - **BYOK with custom providers** — 19 preset providers (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google, Groq, Together, Mistral, xAI, Volcano Engine, Baidu ERNIE, MiniMax, Baichuan, StepFun) plus unlimited user-defined custom providers. Optional vision model override for multimodal AI. Settings page with provider/model picker, test-connection button, and appearance/language options. Keys stay in the main process.
@@ -99,7 +101,7 @@ lookatstudy/
 │       ├── lib/api.ts             # typed window.api wrapper
 │       └── index.html / index.css # CSP-locked, Tailwind base
 ├── shared/types.ts                # ★ IPC contract (ApiExpose interface)
-├── scripts/verify-*.mjs           # 62 logic test scripts (run via tsx)
+├── scripts/verify-*.mjs           # 63 logic test scripts (run via tsx)
 ├── dev-docs/                      # dev-process docs (ARCHITECTURE / ROADMAP / BUILD-NOTES — gitignored, local only)
 ├── electron-builder.yml           # packaging config
 ├── vite.config.ts / tsconfig*.json / tailwind.config.ts
@@ -151,9 +153,9 @@ Pasted markdown is structured deterministically (H2 → section, H3 → lesson, 
 LookatStudy uses a test-first discipline. Logic tests run under `tsx` against **real source** (never inline copies), and every milestone ships closed-loop proof (break the source → the test fails → restore → green).
 
 ```bash
-npm run verify:core       # 62 suites / 200+ assertions — pure logic (DB/SRS/streak/BKT/KC-BKT/proposals/RAG/souls/dashboard/course-gen/exercises/llm-presets/import/notebook/rst/rmd/org/adoc/pdf/pptx/exam/memory)
+npm run verify:core       # 63 suites / 200+ assertions — pure logic (DB/SRS/streak/BKT/KC-BKT/proposals/RAG/souls/dashboard/course-gen/exercises/llm-presets/import/notebook/rst/rmd/org/adoc/pdf/pptx/exam/memory)
 npm run self-test         # headless Electron DB-layer check → .self-test-result.json
-npm run ui-test           # headless real-GUI check (32 DOM assertions: three-pane layout, course gating, skill map, settings, import, review drawer, a11y + reactive i18n) → .ui-test-result.json
+npm run ui-test           # headless real-GUI check (34 DOM assertions: three-pane layout, course gating, skill map, settings, import, review drawer, course search, a11y + reactive i18n) → .ui-test-result.json
 ```
 
 Standard triad after any change:
@@ -176,7 +178,7 @@ npm run verify:core && npx vite build && npm run self-test
 
 ## Status
 
-The core learning loop is complete and verified: **course generation (10 doc formats + 30+ code types) → skill map UI → AI agent with BKT + Propose/Apply → RAG + memory + dashboard**. Current features include a three-pane layout (skill map · chat · notebook), thread sessions, Generative UI (concept maps / quizzes / Mermaid diagrams / compare tables / code walkthroughs), Duolingo-style map art, a Cornell-style notebook (understand / notes / practice zones with highlight-and-source-trace), multimodal image import + AI vision, native right-click copy/save, light/dark theme, and custom provider support. See `CHANGELOG.md` for the full version history.
+The core learning loop is complete and verified: **course generation (10 doc formats + 30+ code types) → skill map UI → AI agent with BKT + Propose/Apply → RAG + memory + dashboard**. Current features include a three-pane layout (skill map · chat · notebook), thread sessions, Generative UI (concept maps / quizzes / Mermaid diagrams / compare tables / code walkthroughs), Duolingo-style map art, a Cornell-style notebook (understand / notes / practice zones with highlight-and-source-trace), multimodal image import + AI vision, native right-click copy/save, light/dark theme, and custom provider support. See `CHANGELOG.md` for the full version history (Chinese).
 
 ## License
 

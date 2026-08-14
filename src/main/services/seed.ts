@@ -103,7 +103,7 @@ const SEED_DATA: SeedData = loadSeedData();
 const COURSE_ID = SEED_DATA.courseId;
 // 种子版本号:bump 触发重建(删旧课程 + 重新灌入)。
 // 改这里的同时应重新跑 build-guide-seed.mjs 更新 JSON 内容。
-const SEED_VERSION = 9;
+const SEED_VERSION = 10;
 
 /**
  * 幂等灌入内置种子课程。同步、离线、瞬时。

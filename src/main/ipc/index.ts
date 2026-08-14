@@ -51,7 +51,7 @@ import {
   createThread,
   updateThread,
   deleteThread,
-  getThreadMessages,
+  getThreadMessagesForDisplay,
   findRecentThreadByNode,
 } from "../services/thread-service.js";
 import { getStreak, touchStreakToday } from "../services/streak.js";
@@ -1209,7 +1209,7 @@ export function registerThreadHandlers(): void {
     deleteThread(id);
   });
   ipcMain.handle("thread:getMessages", async (_e, threadId: string) => {
-    return getThreadMessages(threadId);
+    return getThreadMessagesForDisplay(threadId);
   });
   ipcMain.handle(
     "thread:findRecentByNode",

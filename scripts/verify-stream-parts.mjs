@@ -14,6 +14,7 @@
  *   4. 新事件 chat:part 与 chat:token 可并存
  */
 import assert from "node:assert";
+import { accumulatePart } from "../shared/part-accumulator.ts";
 
 const TESTS = [];
 const test = (name, fn) => TESTS.push({ name, fn });
@@ -232,6 +233,48 @@ test("T8 onPart 不替代 onTextDelta（兼容期并存）", () => {
   assert.deepStrictEqual(tokenEvents, ["你", "好"], "chat:token 事件不丢");
   assert.strictEqual(partEvents.length, 2, "chat:part 也收到");
   assert.strictEqual(partEvents[0].type, "text");
+});
+
+// ---------- T9: 真·accumulatePart(shared) 一致性 + 纯函数 + 持久化往返 ----------
+// accumulatePart 已搬到 shared/part-accumulator.ts(main 持久化 + renderer 累积共用)。
+// 本测试直接 import 真·生产函数,守三个不变量:
+//   1) 与本文件 spec reducer(accumulateParts)结果一致
+//   2) 纯函数(StrictMode 双调用不重复 + 不 mutate 入参)——口吃 bug 回归保护
+//   3) JSON 序列化往返形状合法(parts_json 持久化契约,deserializeParts 依赖)
+test("T9 shared accumulatePart 一致+纯函数+JSON往返", () => {
+  const stream = [
+    { type: "reasoning", text: "先查" },
+    { type: "reasoning", text: "节点" },
+    { type: "tool-start", toolName: "get_node_info" },
+    { type: "tool-result", toolName: "get_node_info", output: { title: "X", mastery: 0.5 } },
+    { type: "text", text: "你好" },
+    { type: "text", text: "世界" },
+  ];
+  // 真·函数 fold 累积
+  let real = [];
+  for (const sp of stream) real = accumulatePart(real, sp);
+  // 本地 spec reducer
+  const local = accumulateParts(stream);
+  // 1) 一致性
+  assert.deepStrictEqual(real, local, "shared accumulatePart 应与本地 reducer 一致");
+
+  // 2) 纯函数:同 prev 两次调用结果相等,且原数组未被 mutate
+  const a = accumulatePart(real, { type: "text", text: "!" });
+  const b = accumulatePart(real, { type: "text", text: "!" });
+  assert.deepStrictEqual(a, b, "纯函数:两次调用结果一致");
+  assert.strictEqual(real[real.length - 1].text, "你好世界", "原数组未被 mutate(纯函数铁律)");
+  assert.strictEqual(a[a.length - 1].text, "你好世界!", "fold 出新值,原数组不动");
+
+  // 3) 持久化往返:JSON.stringify → parse 后形状仍合法(deserializeParts 校验契约)
+  const persisted = JSON.parse(JSON.stringify(real));
+  assert.ok(Array.isArray(persisted), "序列化后仍是数组");
+  assert.ok(
+    persisted.every((p) => typeof p?.type === "string"),
+    "每项有 type 字段(deserializeParts 校验通过)",
+  );
+  // 往返后继续 fold 一个 part 仍正常(模拟重载后继续累积)
+  const afterReload = accumulatePart(persisted, { type: "text", text: "续" });
+  assert.strictEqual(afterReload[afterReload.length - 1].text, "你好世界续", "重载后可继续累积");
 });
 
 // ---------- 跑测 ----------

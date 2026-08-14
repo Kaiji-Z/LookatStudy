@@ -16,7 +16,7 @@
  * 不读写旧 chat_sessions 表(向后兼容)。
  */
 import { getDb, markDirty } from "../db/index.js";
-import { threads, chatMessages, type ThreadStatus } from "../db/schema.js";
+import { threads, chatMessages, proposals, type ThreadStatus } from "../db/schema.js";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
@@ -112,6 +112,84 @@ export function getThreadMessages(threadId: string): ChatMessageRow[] {
     .where(eq(chatMessages.threadId, threadId))
     .orderBy(asc(chatMessages.createdAt))
     .all() as ChatMessageRow[];
+}
+
+/**
+ * 给渲染层用的消息视图:在 getThreadMessages 基础上,把 parts_json 里引用的
+ * proposal 状态 patch 成 proposals 表的真值。
+ *
+ * 为什么需要:mark_mastered 落库时 output.status="pending",但用户可能已 apply/reject
+ * (状态只更新了 proposals 表,没回写 parts_json)。不 patch 的话,重载后已决议的提议卡
+ * 会重新显示"采纳"按钮,点击还会触发 applyProposal 的 "not pending" 报错。
+ *
+ * agent-engine 不用本函数(它只读 role/content 组装历史,不碰 parts)。
+ */
+export function getThreadMessagesForDisplay(threadId: string): ChatMessageRow[] {
+  const db = getDb();
+  const rows = getThreadMessages(threadId);
+
+  // 1) 扫所有 parts_json,收集引用到的 proposalId
+  const proposalIds = new Set<string>();
+  for (const row of rows) {
+    if (!row.partsJson) continue;
+    let parts: unknown;
+    try {
+      parts = JSON.parse(row.partsJson);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(parts)) continue;
+    for (const p of parts) {
+      if (
+        p && typeof p === "object" && (p as { type?: string }).type === "tool-call" &&
+        ((p as { toolName?: string }).toolName === "mark_mastered" ||
+          (p as { toolName?: string }).toolName === "record_answer")
+      ) {
+        const pid = (p as { output?: { proposalId?: unknown } }).output?.proposalId;
+        if (typeof pid === "string") proposalIds.add(pid);
+      }
+    }
+  }
+  if (proposalIds.size === 0) return rows; // 无提议 → 原样返回,跳过序列化开销
+
+  // 2) 批量查真值 status
+  const statusMap = new Map<string, string>();
+  for (const pid of proposalIds) {
+    const r = db.select({ status: proposals.status }).from(proposals).where(eq(proposals.id, pid)).get();
+    if (r) statusMap.set(pid, r.status);
+  }
+  if (statusMap.size === 0) return rows;
+
+  // 3) patch 每个 row 的 parts_json(output.status ← 真值),重新序列化
+  return rows.map((row) => {
+    if (!row.partsJson) return row;
+    let parts: unknown;
+    try {
+      parts = JSON.parse(row.partsJson);
+    } catch {
+      return row;
+    }
+    if (!Array.isArray(parts)) return row;
+    let changed = false;
+    for (const p of parts) {
+      if (
+        p && typeof p === "object" && (p as { type?: string }).type === "tool-call" &&
+        ((p as { toolName?: string }).toolName === "mark_mastered" ||
+          (p as { toolName?: string }).toolName === "record_answer")
+      ) {
+        const out = (p as { output?: { proposalId?: unknown; status?: unknown } }).output;
+        const pid = out?.proposalId;
+        if (typeof pid === "string" && statusMap.has(pid)) {
+          const live = statusMap.get(pid)!;
+          if (out?.status !== live) {
+            (p as { output: Record<string, unknown> }).output = { ...(out ?? {}), status: live };
+            changed = true;
+          }
+        }
+      }
+    }
+    return changed ? { ...row, partsJson: JSON.stringify(parts) } : row;
+  });
 }
 
 /** 追加一条消息,同步更新 thread 的 message_count + updated_at。 */

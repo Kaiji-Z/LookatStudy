@@ -266,6 +266,8 @@ Entry conventions for contributors:
   不硬依赖 README。无 LLM key 时纯规则降级(按目录分 section + 路径前缀图片关联)。
 
 ### Fixed
+- **提议卡/产物卡切走即消失(parts 持久化)** —— `chat_messages.parts_json` 列一直在,但 main 从不写入(只存纯文本 `content`),重载时 `useChatStream` 把每条还原成纯文本(注释"parts_json 暂不复原")。后果:AI 提议已掌握的卡、quiz 产物、概念图、流程图——一切非文本 part 切节点再回来全消失。根因修法:`accumulatePart`+`ChatMessagePart`+`ChatMessageV2` 从渲染层搬到 **`shared/part-accumulator.ts`**(main/renderer 单一真源);`runAgentTurn` 本地累积 parts 返回,`handleAgentChatThread` 落库 `JSON.stringify(parts)` 作 partsJson;渲染层重载时 `deserializeParts` 复原(解析失败回退纯文本兜底)。附带修两个次生 bug:① 同会话点完采纳/拒绝按钮仍显示(渲染层从不读 `output.status`);② 跨会话重载已 apply 的卡重现按钮、点击触发 `applyProposal` 的 "not pending" 报错——新增 `getThreadMessagesForDisplay`(扫 parts_json 的 proposalId,批量查 proposals 表真值 status patch 回 output.status,IPC `thread:getMessages` 改调它;agent-engine 仍用原 `getThreadMessages` 不受影响)。
+- **提议卡可读性重设计(三态)** —— 旧卡:小号 muted "AI 提议" + 灰字正文 + "应用/拒绝" 抽象按钮,mark_mastered 与 record_answer 长得一样、正文落到泛化 fallback。重设计(mark_mastered 是实际唯一的待决卡):待决态=brand 图标徽章(GraduationCap)+ "AI 建议你已掌握这节课" 标题 + rationale 正文(AI 掌握理由)+ 后果提示("采纳后本课解锁皇冠、进入复习排期")+ "确认掌握/再练练" 直白按钮;mark_mastered 工具输出加 `message: rationale` 让卡自包含。已采纳=金色 CheckCircle 徽章(gold=mastery);已忽略=muted CircleSlash。遵守 impeccable(lucide 非 emoji、surface 深度、btn-3d 词汇、6 级字号)。新增 6 个 i18n key(zh+en)。新增 `verify-stream-parts.mjs` T9(直接 import 真·shared accumulatePart,守一致性+纯函数+JSON 往返持久化契约,闭环已证)。
 - **ui-test SRS 种子幂等 + 清死代码**(feat/adaptive-tutor 顺带修的预存债):
   - `--ui-test` 播的到期 SRS 项此前用裸 `insert`,持久 DB 下重复运行触发
     `UNIQUE constraint failed: srs_items.id` → 种子静默失败 → "待复习"徽章断言红。

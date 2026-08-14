@@ -12,82 +12,26 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "./api.js";
 import type { ChatStreamPart } from "@shared/types";
-import type { ChatMessageV2, ChatMessagePart } from "../components/ChatStream.js";
+import { accumulatePart, type ChatMessageV2, type ChatMessagePart } from "@shared/part-accumulator";
 
 let msgIdCounter = 0;
 const nextMsgId = () => `msg-v2-${++msgIdCounter}`;
 
-/** 把流式 ChatStreamPart[] 累积成渲染层 message.parts[]。
- * 纯函数:不修改入参,返回全新数组+全新对象(React 严格模式安全)。
- */
-function accumulatePart(
-  currentParts: ChatMessagePart[],
-  streamPart: ChatStreamPart,
-): ChatMessagePart[] {
-  if (streamPart.type === "text") {
-    const last = currentParts[currentParts.length - 1];
-    if (last && last.type === "text") {
-      // 合并到上一条:返回新数组,最后一条用新对象
-      return [
-        ...currentParts.slice(0, -1),
-        { type: "text" as const, text: last.text + streamPart.text },
-      ];
-    }
-    return [...currentParts, { type: "text" as const, text: streamPart.text }];
-  }
-  if (streamPart.type === "reasoning") {
-    const last = currentParts[currentParts.length - 1];
-    if (last && last.type === "reasoning") {
-      return [
-        ...currentParts.slice(0, -1),
-        { type: "reasoning" as const, text: last.text + streamPart.text },
-      ];
-    }
-    return [...currentParts, { type: "reasoning" as const, text: streamPart.text }];
-  }
-  if (streamPart.type === "tool-start") {
-    return [
-      ...currentParts,
-      { type: "tool-call" as const, toolName: streamPart.toolName, state: "input-available" as const },
-    ];
-  }
-  if (streamPart.type === "tool-result") {
-    let realIdx = -1;
-    for (let i = currentParts.length - 1; i >= 0; i--) {
-      const p = currentParts[i];
-      if (
-        p.type === "tool-call" && p.toolName === streamPart.toolName && p.state === "input-available"
-      ) {
-        realIdx = i;
-        break;
-      }
-    }
-    if (realIdx < 0) return currentParts;
-    return currentParts.map((p, i) =>
-      i === realIdx
-        ? { ...p, state: "output-available" as const, output: streamPart.output }
-        : p,
+/** 把持久化的 parts(JSON)安全还原成 ChatMessagePart[]。解析失败/形状不对 → null(回退纯文本)。 */
+function deserializeParts(partsJson: string | null): ChatMessagePart[] | null {
+  if (!partsJson) return null;
+  try {
+    const parsed = JSON.parse(partsJson);
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    // 轻量校验:每项必须有 type 字段。不全合法则整体回退(保守,避免渲染崩)。
+    const ok = parsed.every(
+      (p: unknown) =>
+        typeof p === "object" && p !== null && typeof (p as { type?: unknown }).type === "string",
     );
+    return ok ? (parsed as ChatMessagePart[]) : null;
+  } catch {
+    return null;
   }
-  if (streamPart.type === "tool-error") {
-    let realIdx = -1;
-    for (let i = currentParts.length - 1; i >= 0; i--) {
-      const p = currentParts[i];
-      if (
-        p.type === "tool-call" && p.toolName === streamPart.toolName && p.state === "input-available"
-      ) {
-        realIdx = i;
-        break;
-      }
-    }
-    if (realIdx < 0) return currentParts;
-    return currentParts.map((p, i) =>
-      i === realIdx
-        ? { ...p, state: "output-error" as const, error: streamPart.error }
-        : p,
-    );
-  }
-  return currentParts;
 }
 
 /** 把旧式纯文本历史消息转成 v2 parts 格式。 */
@@ -133,13 +77,17 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       try {
         const history = await api.threadGetMessages(threadId);
         if (cancelled) return;
-        // chat_messages 行 → ChatMessageV2(纯文本;parts_json 暂不复原,只显示 content)
+        // chat_messages 行 → ChatMessageV2。优先复原 parts_json(产物/提议卡/思考过程),
+        // 无 parts_json 或解析失败则回退纯文本 content(旧消息兼容)。
         setMessages(
-          history.map((m) => ({
-            id: m.id,
-            role: m.role,
-            parts: [{ type: "text" as const, text: m.content }],
-          })),
+          history.map((m) => {
+            const restored = deserializeParts(m.partsJson);
+            return {
+              id: m.id,
+              role: m.role,
+              parts: restored ?? [{ type: "text" as const, text: m.content }],
+            };
+          }),
         );
       } catch {
         if (!cancelled) setMessages([]);

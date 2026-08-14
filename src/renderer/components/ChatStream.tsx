@@ -15,34 +15,19 @@
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { CanvasItem } from "@shared/types";
+import type { ChatMessageV2, ChatMessagePart } from "@shared/part-accumulator";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
-import { Check, X, ChevronDown, Pencil, XCircle, Wrench, Rocket, ClipboardList, Copy, Settings } from "lucide-react";
+import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Copy, Settings, GraduationCap, CheckCircle2, CircleSlash } from "lucide-react";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { useLang } from "../lib/i18n.js";
-/** 一条消息 = role + parts 数组(v0.2 parts-based)。 */
-export interface ChatMessageV2 {
-  id: string;
-  role: "user" | "assistant";
-  parts: ChatMessagePart[];
-}
-
-/** 渲染层累积后的 part 类型(text/reasoning 合并,tool 配对)。 */
-export type ChatMessagePart =
-  | { type: "text"; text: string }
-  | { type: "reasoning"; text: string }
-  | {
-      type: "tool-call";
-      toolName: string;
-      state: "input-available" | "output-available" | "output-error";
-      output?: unknown;
-      error?: string;
-    };
+/** 一条消息 = role + parts 数组(v0.2 parts-based)。
+ * ChatMessageV2 / ChatMessagePart 定义已移至 @shared/part-accumulator(main 与 renderer 共用)。 */
 
 interface ChatStreamProps {
   messages: ChatMessageV2[];
@@ -593,37 +578,64 @@ function ToolCallBlock({
   onPickAction?: (message: string) => void;
 }) {
   const t = useLang();
-  // proposal 类工具(record_answer/mark_mastered):output 里有 proposalId + summary
+  // proposal 类工具(record_answer/mark_mastered):output 里有 proposalId + summary。
+  // record_answer 已自动 apply(无 proposalId,不会进这里);实际只有 mark_mastered 会显示待决卡。
   const isProposal = toolName === "record_answer" || toolName === "mark_mastered";
   const proposalData = isProposal && state === "output-available" && typeof output === "object" && output !== null
     ? (output as { proposalId?: string; message?: string; status?: string })
     : null;
 
   if (proposalData?.proposalId) {
+    const status = proposalData.status;
+    // —— 已采纳:金色对勾徽章(gold=mastery),无按钮 ——
+    if (status === "applied") {
+      return (
+        <div className="proposal-card rounded-xl border border-gold/30 bg-gold/5 p-3 flex items-center gap-2" data-testid="part-proposal">
+          <CheckCircle2 className="w-4 h-4 text-gold shrink-0" />
+          <span className="text-body font-bold text-ink">{t("chat.proposal.applied")}</span>
+        </div>
+      );
+    }
+    // —— 已忽略:muted 徽章,无按钮 ——
+    if (status === "rejected") {
+      return (
+        <div className="proposal-card rounded-xl border border-white/10 bg-white/5 p-3 flex items-center gap-2" data-testid="part-proposal">
+          <CircleSlash className="w-4 h-4 text-ink-muted shrink-0" />
+          <span className="text-body text-ink-muted">{t("chat.proposal.rejected")}</span>
+        </div>
+      );
+    }
+    // —— 待决:mark_mastered 卡片(标题 + rationale + 后果提示 + 两按钮)——
     return (
-      <div className="proposal-card rounded-xl p-3 border border-brand/30 bg-brand/5" data-testid="part-proposal">
-        <div className="text-ink-muted text-body mb-2 flex items-center gap-1.5">
-          <ClipboardList className="w-3.5 h-3.5" />
-          <span className="font-bold">{t("chat.proposal.title")}</span>
-        </div>
-        <div className="text-ink-muted text-body mb-3">
-          {proposalData.message ?? t("chat.proposal.fallback", { tool: toolName })}
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => onApplyProposal?.(proposalData.proposalId!, msgId, toolCallIdx)}
-            data-testid="proposal-apply"
-            className="btn-3d-brand px-4 py-1.5 text-body"
-          >
-            <Check className="w-3 h-3 inline" />{t("chat.proposal.apply")}
-          </button>
-          <button
-            onClick={() => onRejectProposal?.(proposalData.proposalId!, msgId, toolCallIdx)}
-            data-testid="proposal-reject"
-            className="btn-3d-neutral px-4 py-1.5 text-body"
-          >
-            <X className="w-3 h-3 inline" />{t("chat.proposal.reject")}
-          </button>
+      <div className="proposal-card relative rounded-xl border border-brand/30 bg-brand/5 overflow-hidden" data-testid="part-proposal">
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand" />
+        <div className="pl-4 pr-3 py-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-brand/15 text-brand shrink-0">
+              <GraduationCap className="w-4 h-4" />
+            </span>
+            <span className="text-lead font-bold text-ink">{t("chat.proposal.mastered.title")}</span>
+          </div>
+          {proposalData.message && (
+            <div className="text-body text-ink mb-2 leading-relaxed">{proposalData.message}</div>
+          )}
+          <div className="text-caption text-ink-muted mb-3">{t("chat.proposal.mastered.hint")}</div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onApplyProposal?.(proposalData.proposalId!, msgId, toolCallIdx)}
+              data-testid="proposal-apply"
+              className="btn-3d-brand px-4 py-1.5 text-body"
+            >
+              <Check className="w-3.5 h-3.5 inline" />{t("chat.proposal.confirm")}
+            </button>
+            <button
+              onClick={() => onRejectProposal?.(proposalData.proposalId!, msgId, toolCallIdx)}
+              data-testid="proposal-reject"
+              className="btn-3d-neutral px-4 py-1.5 text-body"
+            >
+              {t("chat.proposal.later")}
+            </button>
+          </div>
         </div>
       </div>
     );

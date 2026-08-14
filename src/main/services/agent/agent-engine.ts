@@ -32,6 +32,7 @@ import { isFlagOn } from "../flags.js";
 import { listAssetsByNode, getAssetDataUrl } from "../asset-service.js";
 import { chatSessions } from "../../db/schema.js";
 import type { ChatStreamPart } from "@shared/types";
+import { accumulatePart, type ChatMessagePart } from "@shared/part-accumulator";
 import {
   getThreadMessages,
   appendMessage,
@@ -156,7 +157,7 @@ export async function runAgentTurn(
   messages: ChatTurn[],
   events: AgentEvents = {},
   abortSignal?: AbortSignal,
-): Promise<string> {
+): Promise<{ text: string; parts: ChatMessagePart[] }> {
   const llm = resolveLlm(db);
   const system = buildSystemPrompt(db, BASE_AGENT_PROMPT);
 
@@ -341,7 +342,7 @@ export async function runAgentTurn(
           proposal.id,
           `提议标记为已掌握：${rationale}`,
         );
-        return { proposalId: proposal.id, status: "pending" };
+        return { proposalId: proposal.id, status: "pending", message: rationale };
       },
     }),
     // ===== v0.2 展示型 tool(Generative UI)=====
@@ -605,27 +606,33 @@ export async function runAgentTurn(
 
     let full = "";
     let sawError = false;
+    // 本地累积 parts(main 的持久化用)。与渲染层用同一个纯 accumulatePart,保证形状一致。
+    let accParts: ChatMessagePart[] = [];
+    const emit = (sp: ChatStreamPart) => {
+      events.onPart?.(sp);
+      accParts = accumulatePart(accParts, sp);
+    };
     for await (const part of result.fullStream) {
       if (part.type === "text-delta") {
         full += part.text;
         events.onTextDelta?.(part.text);
         // v0.2 parts 协议：文本增量同时走 onPart（兼容期内 onTextDelta 也保留）
-        events.onPart?.({ type: "text", text: part.text });
+        emit({ type: "text", text: part.text });
       } else if (part.type === "reasoning-delta") {
         // 思考过程增量（extended thinking / reasoning models）
-        events.onPart?.({ type: "reasoning", text: part.text });
+        emit({ type: "reasoning", text: part.text });
       } else if (part.type === "tool-input-start") {
         // 工具开始：渲染层可显示 loading 态
-        events.onPart?.({ type: "tool-start", toolName: part.toolName });
+        emit({ type: "tool-start", toolName: part.toolName });
       } else if (part.type === "tool-result") {
         // 工具返回数据 → Generative UI 产物（M2 的 concept_map/quiz 等从这里来）
-        events.onPart?.({
+        emit({
           type: "tool-result",
           toolName: part.toolName,
           output: part.output,
         });
       } else if (part.type === "tool-error") {
-        events.onPart?.({
+        emit({
           type: "tool-error",
           toolName: part.toolName,
           error: String(part.error ?? "工具执行失败"),
@@ -638,7 +645,7 @@ export async function runAgentTurn(
     }
     // 被中断：不报错，返回已收到的部分
     if (abortSignal?.aborted) {
-      return full || "(已停止)";
+      return { text: full || "(已停止)", parts: accParts };
     }
     // 空响应检测：既没文本也没报错 → 可能是 key 失效或被风控
     if (!full && !sawError) {
@@ -646,15 +653,15 @@ export async function runAgentTurn(
         "AI 未返回任何内容（空响应）。可能 key 失效、额度用完，或被内容风控拦截。请到设置页测试连接。",
       );
     }
-    return full;
+    return { text: full, parts: accParts };
   } catch (e) {
     // AbortError 是正常的停止，不报错
     if (e instanceof Error && (e.name === "AbortError" || abortSignal?.aborted)) {
-      return "(已停止)";
+      return { text: "(已停止)", parts: [] };
     }
     const classified = classifyLlmError(e);
     events.onError?.(classified.detail);
-    return `(Agent 出错：${classified.detail})`;
+    return { text: `(Agent 出错：${classified.detail})`, parts: [] };
   }
 }
 
@@ -694,7 +701,7 @@ export async function handleAgentChat(
       onPart: (part) => win?.webContents.send("chat:part", part),
     },
     controller.signal,
-  );
+  ).then((r) => r.text);
 
   abortControllers.delete(nodeId);
 
@@ -807,7 +814,7 @@ export async function handleAgentChatThread(
   const controller = new AbortController();
   abortControllers.set(`thread:${threadId}`, controller);
 
-  const reply = await runAgentTurn(
+  const { text: reply, parts } = await runAgentTurn(
     db,
     focusNodeId,
     history,
@@ -826,8 +833,14 @@ export async function handleAgentChatThread(
 
   abortControllers.delete(`thread:${threadId}`);
 
-  // assistant 回复入库
-  const savedAssistantMsg = appendMessage(threadId, "assistant", reply);
+  // assistant 回复入库 —— 同时持久化 parts_json(产物/提议卡/思考过程),
+  // 让切走再回来的消息能复原全部 part,不再只剩纯文本。
+  const savedAssistantMsg = appendMessage(
+    threadId,
+    "assistant",
+    reply,
+    parts.length > 0 ? JSON.stringify(parts) : null,
+  );
   markDirty();
   // chat:done 带上两条消息的真实 DB id(前端用它替换流式时的临时 msg-v2-N id,
   // 让"对话画线笔记"的溯源 msgId 跨重载稳定匹配)

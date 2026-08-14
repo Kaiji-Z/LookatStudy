@@ -509,6 +509,13 @@ Entry conventions for contributors:
     (之前纯 mastery 平均,点课无反馈)。
 
 ### Fixed
+- **本地导入纯 .txt/.html/.pdf 文件夹生成"空课程"** —— `import:localFolder` 把扫描器已解析
+  的 docs 又过了一遍面向 GitHub 的 `pathsToDiscoveredFiles`，后者只保留 .md/.ipynb/代码，对
+  .txt/.html/.htm/.pdf/.pptx 走 `else continue` 静默丢弃，100% 内容被滤掉 → 分类空 → 结构空 →
+  落库一条只有课程行、零课时的"空课程"（验证器只打印不抛错）。修：(1) 本地路径改用新增的
+  `docsToDiscoveredFiles`，直接用扫描器结果不再二次过滤；(2) `executeImport` 加空结构守卫——
+  零课时时在任何写库前抛错，不再留空课程残行（保护两个导入 handler）。新增
+  `verify-import-empty-guard.mjs` + `verify-local-filelist.mjs`（均闭环已证）。
 - `in_progress` 节点中心的 `📘` emoji(蓝色书)和蓝色球体背景撞色,看起来像凹陷的
   矩形坑。改用白色 lucide `BookOpen` 图标 + drop-shadow,对比清晰。
 

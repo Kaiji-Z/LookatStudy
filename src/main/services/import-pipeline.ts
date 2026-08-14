@@ -58,14 +58,29 @@ export async function executeImport(
   onProgress?: (msg: string) => void,
 ): Promise<ImportPipelineResult> {
   const send = (msg: string) => onProgress?.(msg);
+
+  // ── 守卫：空结构（零课时）直接报错，绝不落库"空课程" ──
+  // 防御历史 Bug：文件分类 / AI 结构设计可能因格式不被支持、LLM 幻觉等返回
+  // sections=[] 。此前 executeImport 会先插一条 courses 行再循环空 sections，
+  // 结果只剩一条只有课程行、零 content_nodes 的"空课程"（验证器只打印不抛错）。
+  // 这里在任何写库之前拦截。
+  const allLessons = structure.sections.flatMap((s) => s.lessons);
+  if (allLessons.length === 0) {
+    throw new Error(
+      "导入失败：未生成任何课时。可能是文件夹内的文件格式不被支持，或 AI 课程结构设计失败。",
+    );
+  }
+
   const courseId = randomUUID();
+  // 空标题回退到仓库名/文件夹名（designCourseStructure 在空结构时返回 ""）
+  const resolvedTitle = structure.courseTitle?.trim() || opts.repoName;
 
   // ── 创建课程行 ──
   db.insert(courses).values({
     id: courseId,
     repoUrl: opts.repoUrl,
     repoName: opts.repoName,
-    title: structure.courseTitle,
+    title: resolvedTitle,
     description: `从 ${opts.repoName} 导入`,
     version: 1,
     labType: "doc",
@@ -73,7 +88,6 @@ export async function executeImport(
   }).run();
 
   // ── 5a+5b: 拉正文 + 图片内联 ──
-  const allLessons = structure.sections.flatMap((s) => s.lessons);
   send(`拉取 ${allLessons.length} 个文件的正文…`);
 
   // 缓存已拉取的文件正文（同一文件可能被多个 lesson 引用）
@@ -214,7 +228,7 @@ export async function executeImport(
     }
   }
 
-  return { courseId, title: structure.courseTitle, verification };
+  return { courseId, title: resolvedTitle, verification };
 }
 
 /** 标题信息：行号 + 级别（2=H2, 3=H3）+ 标题文字 */

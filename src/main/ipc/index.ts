@@ -527,8 +527,10 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
 
     // Step 2: LLM 判文件角色 + sourceLang
     const { classifyFileRoles } = await import("../services/import-llm-service.js");
-    const { pathsToDiscoveredFiles } = await import("../services/pure/repo-fetcher.js");
-    const fileList = pathsToDiscoveredFiles(inventory.docs.map((d) => d.path));
+    // 本地路径直接用扫描器已解析的 docs 建 fileList，不再过 pathsToDiscoveredFiles
+    // （后者只留 .md/.ipynb/代码，会静默丢弃 .txt/.html/.pdf → 历史空课程 Bug）。
+    const { docsToDiscoveredFiles } = await import("../services/pure/repo-fetcher.js");
+    const fileList = docsToDiscoveredFiles(inventory.docs);
     const roles = await classifyFileRoles(getDb(), inventory.readmeMd, fileList, inventory.fullTree, send);
     send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
 

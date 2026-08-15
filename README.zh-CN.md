@@ -66,7 +66,7 @@ AI 想改你的学习档案,唯一的途径是发一张提议卡,你点批准才
 
 ## 快速开始
 
-Windows 直接去 [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) 页下安装包。
+三个平台的安装包都在 [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) 页。Windows 是 NSIS 安装器,macOS 是 arm64 的 dmg,Linux 有 AppImage 和 deb 两种。
 
 源码跑,任何平台,Node 22 以上。
 
@@ -81,7 +81,7 @@ npm run dev:electron
 
 ## 目前做不到的事
 
-- 打包安装包暂时只有 Windows。项目里没有任何原生模块,macOS 和 Linux 理论上能构建,我还没打包发布。
+- macOS 的包没有签名,只出 Apple Silicon 架构。首次打开要右键选打开,Intel Mac 的包还没出。Windows 的 exe 同样没签名,第一次运行 SmartScreen 会拦一下。
 - PDF 提取不了数学公式。这是文本层解析的天然局限,公式密集的数学 PDF 导进来会乱。计划里的解法是把页面渲染成图,喂给视觉模型。
 - 智能导入,判文件角色、设计课程结构那部分,要调 LLM。没有 key 时本地导入退回纯规则,能用,结构会糙一些。
 

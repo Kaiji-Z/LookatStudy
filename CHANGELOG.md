@@ -18,7 +18,7 @@ Entry conventions for contributors:
 
 ### Added
 - **GitHub Actions CI(`.github/workflows/ci.yml`)** —— push(main)/PR/手动触发,ubuntu 跑 oxlint + 双 tsc typecheck + 63 个 verify 套件 + vite build,外部坏 PR 在 CI 就被挡住。运行器与 engines 底线定为 **Node 22**(tsx 4 在 Node 20 上经 data: URL 解析相对导入会挂,63 套件在 20 跑不起来;本机开发环境是 Node 24)。
-- **多平台打包 workflow(`.github/workflows/package.yml`)** —— workflow_dispatch(任意分支可试跑)或推 `v*` 标签触发,windows/macos/ubuntu 矩阵各跑 `npm run dist`,产物(NSIS exe / dmg / AppImage / deb)传 workflow artifacts;标签构建末尾自动挂到对应 GitHub Release(`gh release upload --clobber`)。mac 加 `identity: null` 免签名(CI 无 Apple 证书,未签名 dmg 首开需右键打开)。v0.9.0 release 据此补挂了 dmg/AppImage/deb。
+- **多平台打包 workflow(`.github/workflows/package.yml`)** —— workflow_dispatch(任意分支可试跑,可带 `release_tag` 输入让 CI 云端直挂安装包到既有 release,免本机中转)或推 `v*` 标签触发,windows/macos/ubuntu 矩阵各跑构建,产物(NSIS exe / arm64 dmg / AppImage / deb)传 workflow artifacts;attach 任务用 `gh release upload --clobber` 挂到对应 GitHub Release。三个实测才修对的配置:mac `identity: null` 免签名(CI 无 Apple 证书,未签名 dmg 首开需右键打开)、`electron-builder --publish never`(GH Actions 里检测到 CI 会默认自动 publish,找不到 GH_TOKEN 而死)、workflow 声明 `permissions: contents: write`(默认 GITHUB_TOKEN 只读,gh release upload 403);deb 元数据还要求 package.json 的 author 带 email(已补)。v0.9.0 release 据此挂齐四平台安装包,exe 换成 CI 可复现构建。
 - **CONTRIBUTING.md** —— 人类贡献者指引(环境/验证清单/最容易踩的铁律/commit 与 changelog 约定),与 AGENTS.md 互为补充。
 - **`npm run shots` —— README 截图自动采集模式(`--shots`)** —— 无头窗口 + 临时 DB(`lookatstudy-shots.db`)+ .env 真 provider + 预置"学过一阵"状态(皇冠/进度环/锁定球/待复习徽章/XP 能量条),驱动真实 UI(点开始学习 → 真 LLM 二选一猜测卡 → 揭晓;打开课程搜索树)并 capturePage 截 3 张 PNG 进 `docs/screenshots/`(概览/AI 导师/课程搜索)。本模式独享例外:GPU 加速保持开启(capturePage 需要合成,生产路径仍 disableHardwareAcceleration)。
 

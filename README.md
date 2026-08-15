@@ -66,7 +66,7 @@ The whole app is one SQLite file on your disk. No account, no cloud sync, and no
 
 ## Getting started
 
-On Windows, grab the installer from the [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) page.
+Installers for all three platforms are on the [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) page. Windows gets an NSIS installer, macOS an arm64 dmg, Linux an AppImage plus a deb.
 
 From source, any platform, Node 22 or newer.
 
@@ -81,7 +81,7 @@ A guide course ships built in, six chapters, eighteen lessons, six exams, so you
 
 ## What it can't do yet
 
-- Only Windows has a packaged installer. The project has zero native modules, so macOS and Linux should build fine. I just haven't shipped those packages yet.
+- The macOS build is unsigned and Apple Silicon only. First launch needs a right-click and Open, and there's no Intel package yet. The Windows exe is unsigned too, so SmartScreen will grumble the first time.
 - PDF text extraction can't decode math formulas. That's a hard limit of reading the text layer, and a formula-heavy math PDF comes through mangled. The planned fix is rendering pages to images and letting a vision model read them.
 - The smart part of importing, classifying files and designing the course tree, calls the LLM. Without a key, local imports fall back to pure rules. It works, just blunter.
 

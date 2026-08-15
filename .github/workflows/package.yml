@@ -12,6 +12,11 @@ on:
   push:
     tags: ["v*"]
 
+# attach-to-release 用 GITHUB_TOKEN 调 gh release upload,需要 release(=contents)写权限。
+# 仓库默认 token 只读,不声明这行会 403 Resource not accessible by integration。
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:

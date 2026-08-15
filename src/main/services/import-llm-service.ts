@@ -4,34 +4,55 @@
  * 核心理念: LLM 看到足够上下文 (README 全文 + 目录结构 + 标题大纲) 才做判断。
  * 不靠 preview 猜分类。
  */
-import { generateText } from "ai";
+import { streamText } from "ai";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
 import { resolveLlm, isLlmReady } from "./agent/llm-client.js";
 import type { DiscoveredFile, FileOutline } from "./pure/repo-fetcher.js";
+import { createStreamWatchdog } from "./pure/stream-watchdog.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
-/** LLM 调用超时(ms)。超时后抛错让上层降级。
- *  Step 2(文件分类+sourceLang) 和 Step 4(课程结构设计) prompt 较大，
- *  GLM 等模型响应可能需 2-4 分钟，给 5 分钟余量。 */
-const LLM_TIMEOUT = 300_000; // 5 分钟
+/** 流式活性阈值:无输出超过此时长判死(连接挂起/端点无响应)。 */
+const LLM_INACTIVE_TIMEOUT = 120_000;
+/** 硬上限:单次调用绝对安全网,防无限生成。 */
+const LLM_HARD_CAP = 20 * 60_000;
 
 /**
- * 带 timeout 的 generateText wrapper。
- * 防止 LLM 端点不通时永久挂起（electron UI 卡死）。
+ * 带活性看门狗的流式 generateText。
+ *
+ * 旧版是 300s 墙钟 Promise.race,两个问题:
+ *   1. 慢模型(glm-5.2)生成大课程结构批本来就可能超 5 分钟但流是活的,墙钟误杀,
+ *      整个导入 job 报废(实测 181 文件仓库 Step 4 首批即超时);
+ *   2. race 输了以后底层请求没取消,还在后台烧 token。
+ * 现在流式消费,每收到 chunk 续命;只有"无输出 120s"或"总时长 20min"才 abort,
+ * 且 abort 通过 signal 真正取消请求。
  */
 async function generateTextWithTimeout(
-  model: Parameters<typeof generateText>[0]["model"],
+  model: Parameters<typeof streamText>[0]["model"],
   prompt: string,
 ): Promise<string> {
-  const result = await Promise.race([
-    generateText({ model, prompt }),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`LLM 调用超时（${LLM_TIMEOUT / 1000}s）`)), LLM_TIMEOUT),
-    ),
-  ]);
-  return result.text;
+  const wd = createStreamWatchdog(LLM_INACTIVE_TIMEOUT, LLM_HARD_CAP);
+  try {
+    const { textStream } = streamText({ model, prompt, abortSignal: wd.signal });
+    let text = "";
+    for await (const delta of textStream) {
+      text += delta;
+      wd.touch();
+    }
+    return text;
+  } catch (e) {
+    if (wd.signal.aborted) {
+      throw new Error(
+        wd.reason() === "hard-cap"
+          ? `LLM 调用超过硬上限（${LLM_HARD_CAP / 60_000} 分钟），已中止——请重试或换更快的模型`
+          : `LLM 调用无输出超过 ${LLM_INACTIVE_TIMEOUT / 1_000}s（连接疑似挂起），已中止——请检查网络/API 端点`,
+      );
+    }
+    throw e;
+  } finally {
+    wd.dispose();
+  }
 }
 
 /* ============================================================

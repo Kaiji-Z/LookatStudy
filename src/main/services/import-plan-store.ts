@@ -19,6 +19,8 @@ export interface PlanStore {
   save(plan: ImportPlan): void;
   load(planId: string): ImportPlan | null;
   list(): ImportPlan[];
+  /** store 落盘目录(诊断日志用——排查"plan 为什么没写成"先看写到哪了) */
+  dir(): string;
   /** 同一导入源最新的 plan(github owner/repo 或 folder absPath),无则 null */
   findByIdentity(identity: PlanIdentity): ImportPlan | null;
   findByCourse(courseId: string): ImportPlan | null;
@@ -63,6 +65,9 @@ export function createPlanStore(dir: string): PlanStore {
       } catch {
         return [];
       }
+    },
+    dir() {
+      return dir;
     },
     findByIdentity(identity) {
       const key = planIdentityKey(identity);

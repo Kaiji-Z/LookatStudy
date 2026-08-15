@@ -58,6 +58,9 @@ export interface RunImportDeps {
   onProgress: (msg: string) => void;
   shouldAbort: () => boolean;
   fetchFn?: typeof fetch;
+  /** 测试注入桩(生产不传走真 LLM 服务) */
+  classify?: typeof classifyFileRoles;
+  design?: typeof designCourseStructure;
 }
 
 export interface SmartImportResult {
@@ -211,6 +214,9 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     if (folderPath) plan!.folder = { absPath: folderPath };
     plan!.updatedAt = now();
     store.save(plan!);
+    // 落盘审计:console.error 已被主进程重定向进 lookatstudy-import.log,
+    // 快照没写成时日志里直接可见(不用再猜"plan 为什么没了")。
+    console.error(`[import-plan] saved id=${plan!.planId.slice(0, 8)} step=${plan!.reachedStep} dir=${store.dir()}`);
   };
 
   if (!plan) {
@@ -259,81 +265,82 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     if (!reused) savePlan();
   }
 
-  // ───────────────────────── Step 2: 文件分类(LLM) ─────────────────────────
-  let roles: FileClassificationResult;
-  if (plan.classification) {
-    roles = planToRoles(plan.classification);
-    send(`✓ 文件分类:复用快照(${roles.original.length} 原文 · ${roles.practice.length} 实操 · 原文语言 ${roles.sourceLang})`);
-  } else {
-    roles = await classifyFileRoles(db, readmeMd, fileList, fullTree, send);
-    send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
-    plan.classification = rolesToPlan(roles);
-    plan.reachedStep = 2;
-    savePlan();
-  }
-
-  // 语言决策(运行时重算:pref 可能已变,不进快照)
-  const pref = getPrefLang(db) ?? "en";
-  const languages = localTranslationLangs
-    ? Array.from(new Map([...localTranslationLangs, ...roles.languages].map((l) => [l.code, l])).values())
-    : roles.languages;
-  const { langCode: selectedLang, reason } = resolveImportLang(pref, roles.sourceLang, languages);
-  send(`语言决策:${reason}`);
-  if (shouldAbort()) throw new Error("导入已取消");
-
-  // ───────────────────────── Step 3: 标题大纲 ─────────────────────────
-  let outlines: Map<string, FileOutline>;
-  if (plan.outlines && Object.keys(plan.outlines).length > 0) {
-    outlines = new Map(Object.entries(plan.outlines));
-    send(`✓ 提取大纲:复用快照(${outlines.size} 文件)`);
-  } else {
-    const allFiles = [...roles.original, ...roles.practice];
-    if (gh) {
-      send(`提取 ${allFiles.length} 个文件的标题大纲 + 字数`);
-      outlines = await fetchFileOutlines(
-        allFiles, gh.owner, gh.repo, branch, fetchFn,
-        (done, total) => send(`提取大纲 ${done}/${total}`),
-      );
-    } else {
-      outlines = new Map<string, FileOutline>();
-      for (const path of allFiles) {
-        const content = docsMap!.get(path);
-        if (content) outlines.set(path, extractOutlineWithCharCounts(content, path));
-      }
-    }
-    plan.outlines = Object.fromEntries(outlines);
-    plan.reachedStep = 3;
-    savePlan();
-  }
-  if (shouldAbort()) throw new Error("导入已取消");
-
-  // ───────────────────────── Step 4: 结构设计(LLM) ─────────────────────────
-  let structure: CourseStructure;
-  if (plan.structure) {
-    structure = plan.structure;
-    const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
-    send(`✓ 课程结构:复用快照(${structure.sections.length} 章 · ${lessonCount} 课)`);
-    reused = true;
-  } else {
-    structure = await designCourseStructure(db, readmeMd, outlines, roles.original, roles.practice, send, standaloneImages);
-    const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
-    send(`✓ 课程结构:${structure.sections.length} 章 · ${lessonCount} 课`);
-    plan.structure = structure;
-    plan.reachedStep = 4;
-    savePlan();
-  }
-  if (shouldAbort()) throw new Error("导入已取消");
-
-  // ───────────────────────── Step 5: 拉正文 + 落库(原两阶段管线) ─────────────────────────
-  const source = gh
-    ? new GithubContentSource(gh.owner, gh.repo, branch, fetchFn)
-    : new LocalContentSource(folderPath!, docsMap!);
-  const translationFilesMap = selectedLang
-    ? new Map([[selectedLang, roles.translations.get(selectedLang) ?? []]])
-    : null;
-
+  // ── Steps 2-5:planId 标注包住全部步骤 —— 任何一步失败,"从断点重试"都能用 ──
   const planId = plan.planId;
   try {
+    // ───────────────────────── Step 2: 文件分类(LLM) ─────────────────────────
+    let roles: FileClassificationResult;
+    if (plan.classification) {
+      roles = planToRoles(plan.classification);
+      send(`✓ 文件分类:复用快照(${roles.original.length} 原文 · ${roles.practice.length} 实操 · 原文语言 ${roles.sourceLang})`);
+    } else {
+      roles = await (deps.classify ?? classifyFileRoles)(db, readmeMd, fileList, fullTree, send);
+      send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
+      plan.classification = rolesToPlan(roles);
+      plan.reachedStep = 2;
+      savePlan();
+    }
+
+    // 语言决策(运行时重算:pref 可能已变,不进快照)
+    const pref = getPrefLang(db) ?? "en";
+    const languages = localTranslationLangs
+      ? Array.from(new Map([...localTranslationLangs, ...roles.languages].map((l) => [l.code, l])).values())
+      : roles.languages;
+    const { langCode: selectedLang, reason } = resolveImportLang(pref, roles.sourceLang, languages);
+    send(`语言决策:${reason}`);
+    if (shouldAbort()) throw new Error("导入已取消");
+
+    // ───────────────────────── Step 3: 标题大纲 ─────────────────────────
+    let outlines: Map<string, FileOutline>;
+    if (plan.outlines && Object.keys(plan.outlines).length > 0) {
+      outlines = new Map(Object.entries(plan.outlines));
+      send(`✓ 提取大纲:复用快照(${outlines.size} 文件)`);
+    } else {
+      const allFiles = [...roles.original, ...roles.practice];
+      if (gh) {
+        send(`提取 ${allFiles.length} 个文件的标题大纲 + 字数`);
+        outlines = await fetchFileOutlines(
+          allFiles, gh.owner, gh.repo, branch, fetchFn,
+          (done, total) => send(`提取大纲 ${done}/${total}`),
+        );
+      } else {
+        outlines = new Map<string, FileOutline>();
+        for (const path of allFiles) {
+          const content = docsMap!.get(path);
+          if (content) outlines.set(path, extractOutlineWithCharCounts(content, path));
+        }
+      }
+      plan.outlines = Object.fromEntries(outlines);
+      plan.reachedStep = 3;
+      savePlan();
+    }
+    if (shouldAbort()) throw new Error("导入已取消");
+
+    // ───────────────────────── Step 4: 结构设计(LLM) ─────────────────────────
+    let structure: CourseStructure;
+    if (plan.structure) {
+      structure = plan.structure;
+      const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
+      send(`✓ 课程结构:复用快照(${structure.sections.length} 章 · ${lessonCount} 课)`);
+      reused = true;
+    } else {
+      structure = await (deps.design ?? designCourseStructure)(db, readmeMd, outlines, roles.original, roles.practice, send, standaloneImages);
+      const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
+      send(`✓ 课程结构:${structure.sections.length} 章 · ${lessonCount} 课`);
+      plan.structure = structure;
+      plan.reachedStep = 4;
+      savePlan();
+    }
+    if (shouldAbort()) throw new Error("导入已取消");
+
+    // ───────────────────────── Step 5: 拉正文 + 落库(原两阶段管线) ─────────────────────────
+    const source = gh
+      ? new GithubContentSource(gh.owner, gh.repo, branch, fetchFn)
+      : new LocalContentSource(folderPath!, docsMap!);
+    const translationFilesMap = selectedLang
+      ? new Map([[selectedLang, roles.translations.get(selectedLang) ?? []]])
+      : null;
+
     const result = await executeImport(
       db,
       structure,
@@ -355,6 +362,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     plan.courseTitle = result.title;
     plan.updatedAt = now();
     store.save(plan);
+    console.error(`[import-plan] course stamped id=${planId.slice(0, 8)} course=${result.courseId}`);
     markDirty();
     send(reused ? "✓ 导入完成(复用方案,零 AI 调用)" : "✓ 导入完成");
     return { courseId: result.courseId, title: result.title, planId, reused };

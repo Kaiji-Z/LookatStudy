@@ -4,7 +4,7 @@ Thanks for considering a contribution. The project is small but has a few hard r
 
 ## Dev setup
 
-Node.js 20 or newer, then:
+Node.js 22 or newer, then:
 
 ```bash
 git clone https://github.com/Kaiji-Z/LookatStudy.git

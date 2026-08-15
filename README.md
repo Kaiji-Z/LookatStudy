@@ -68,7 +68,7 @@ The whole app is one SQLite file on your disk. No account, no cloud sync, and no
 
 On Windows, grab the installer from the [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) page.
 
-From source, any platform, Node 20 or newer.
+From source, any platform, Node 22 or newer.
 
 ```bash
 git clone https://github.com/Kaiji-Z/LookatStudy.git

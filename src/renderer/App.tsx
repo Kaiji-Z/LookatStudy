@@ -151,9 +151,10 @@ export default function App() {
   useEffect(() => {
     if (!selectedNodeId) { setNodeSummary(null); return; }
     let cancelled = false;
-    api.getNodeSummary(selectedNodeId).then((s) => { if (!cancelled) setNodeSummary(s); }).catch(() => { if (!cancelled) setNodeSummary(null); });
+    // 摘要随界面语言取版本(en 优先英文摘要,历史节点主进程自动补齐)
+    api.getNodeSummary(selectedNodeId, uiLang).then((s) => { if (!cancelled) setNodeSummary(s); }).catch(() => { if (!cancelled) setNodeSummary(null); });
     return () => { cancelled = true; };
-  }, [selectedNodeId]);
+  }, [selectedNodeId, uiLang]);
 
   const selectedNode = useMemo(
     () => tree.find((n) => n.id === selectedNodeId) ?? null,

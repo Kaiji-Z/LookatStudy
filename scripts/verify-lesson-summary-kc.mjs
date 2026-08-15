@@ -11,6 +11,7 @@
  * 跑法: npx tsx scripts/verify-lesson-summary-kc.mjs (也被 verify:core 调用)
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { parseLessonSummaryKc } from "../src/main/services/course-structure-service.ts";
 
 // ── T1: 合法 JSON（摘要 + KC）→ 双产出 ──
@@ -90,6 +91,50 @@ import { parseLessonSummaryKc } from "../src/main/services/course-structure-serv
   assert.equal(parseLessonSummaryKc(""), null, "T7: 空串");
   assert.equal(parseLessonSummaryKc("```json\n```"), null, "T7: 空围栏");
   console.log("✓ T7 空输出: null");
+}
+
+
+// ── T8: 双语摘要——summaryEn 存在且非空 → 解析保留(去空白) ──
+{
+  const raw = JSON.stringify({
+    summary: "本课介绍 BKT 掌握度模型。",
+    summaryEn: "  This lesson introduces the BKT mastery model.  ",
+    knowledgePoints: [
+      { title: "BKT", description: "理解贝叶斯知识追踪" },
+      { title: "掌握度", description: "理解估计与更新的关系" },
+    ],
+  });
+  const parsed = parseLessonSummaryKc(raw);
+  assert.equal(parsed?.summaryEn, "This lesson introduces the BKT mastery model.", "T8: summaryEn trim");
+  console.log("✓ T8 双语摘要: summaryEn 保留并去空白");
+}
+
+// ── T9: 双语摘要——summaryEn 缺失/空串 → undefined(旧输出向后兼容,不落空值) ──
+{
+  const a = parseLessonSummaryKc(JSON.stringify({ summary: "旧式输出。" }));
+  assert.equal(a?.summaryEn, undefined, "T9a: 无 summaryEn 字段");
+  const b = parseLessonSummaryKc(JSON.stringify({ summary: "空英文。", summaryEn: "   " }));
+  assert.equal(b?.summaryEn, undefined, "T9b: 空白 summaryEn");
+  console.log("✓ T9 向后兼容: 缺失/空白 summaryEn → undefined");
+}
+
+// ── T10: 生成提示词要求双语(静态断言,防漂移) + 补齐函数存在 ──
+{
+  const src = readFileSync(new URL("../src/main/services/course-structure-service.ts", import.meta.url), "utf8");
+  assert.ok(src.includes('"summary": "1-2 句中文摘要", "summaryEn": "1-2 sentence English summary"'), "T10: 单课 prompt 要求双语");
+  assert.ok(src.includes("export async function generateLessonSummaryEn"), "T10: 历史节点英文补齐函数存在");
+  assert.ok(src.includes("updateSet.summaryEn = parsed.summaryEn"), "T10: 单课写库带 summaryEn");
+  console.log("✓ T10 提示词双语 + 补齐函数(静态扫描)");
+}
+
+// ── T11: 种子课程英文摘要齐备(6章+18课,防再生成时遗漏) ──
+{
+  const seed = JSON.parse(readFileSync(new URL("../src/main/assets/seed-course.json", import.meta.url), "utf8"));
+  const need = seed.nodes.filter((n) => n.type === "section" || n.type === "lesson");
+  assert.ok(need.length === 24, `T11: 应 24 个节点(6章+18课), 实际 ${need.length}`);
+  const missing = need.filter((n) => !n.summaryEn || !String(n.summaryEn).trim());
+  assert.equal(missing.length, 0, `T11: 缺 summaryEn 的节点: ${JSON.stringify(missing.map((n) => n.id))}`);
+  console.log("✓ T11 种子英文摘要: 24/24 齐备");
 }
 
 console.log("\n=== ALL LESSON SUMMARY KC TESTS PASSED ✅ ===");

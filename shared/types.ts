@@ -435,7 +435,8 @@ export interface ApiExpose {
   /** 获取某节点的完整内容（课程导入 UI / 详情页用） */
   getNodeContent(nodeId: string, locale?: string): Promise<string | null>;
   /** 取节点摘要(导入时生成,空会话时中栏显示) */
-  getNodeSummary(nodeId: string): Promise<string | null>;
+  /** locale = 界面语言(zh-CN/en);摘要随界面语言选版本,en 缺失时历史节点自动补齐 */
+  getNodeSummary(nodeId: string, locale?: string | null): Promise<string | null>;
   /** 两个世界:查某学习课对应的实操节点(同 source_path 目录) */
   getPracticeForLesson(nodeId: string): Promise<ContentNode[]>;
   /** 两个世界:查某实操节点对应的学习课(反向跳转) */

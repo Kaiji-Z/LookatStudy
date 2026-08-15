@@ -160,6 +160,7 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("progress", "mastery", "REAL");
   // 课节摘要(LLM 生成,导入时批量填)
   addColumnIfMissing("content_nodes", "summary", "TEXT");
+  addColumnIfMissing("content_nodes", "summary_en", "TEXT");
   // 两个世界: study(学习主线) / practice(实操练习)
   addColumnIfMissing("content_nodes", "world", "TEXT NOT NULL DEFAULT 'study'");
   // Per-KC BKT: 知识组件定义(JSON array of {title, description})

@@ -32,7 +32,7 @@ type Db = SQLJsDatabase<typeof schema>;
  */
 export function parseLessonSummaryKc(
   raw: string,
-): { summary: string; knowledgePoints?: { title: string; description: string }[] } | null {
+): { summary: string; summaryEn?: string; knowledgePoints?: { title: string; description: string }[] } | null {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   if (!cleaned) return null;
   // 纯文本容错（旧式 LLM 输出）：当摘要用，KC 留待下次重试
@@ -46,9 +46,10 @@ export function parseLessonSummaryKc(
   if (!obj || typeof obj !== "object") return null;
   const o = obj as Record<string, unknown>;
   if (typeof o.summary !== "string" || !o.summary.trim()) return null;
-  const result: { summary: string; knowledgePoints?: { title: string; description: string }[] } = {
+  const result: { summary: string; summaryEn?: string; knowledgePoints?: { title: string; description: string }[] } = {
     summary: o.summary.trim(),
   };
+  if (typeof o.summaryEn === "string" && o.summaryEn.trim()) result.summaryEn = o.summaryEn.trim();
   if (Array.isArray(o.knowledgePoints)) {
     const validKps = (o.knowledgePoints as Array<Record<string, unknown>>)
       .filter((kp) => typeof kp.title === "string" && kp.title.trim())
@@ -76,7 +77,8 @@ export async function generateLessonSummary(db: Db, nodeId: string, markDirty?: 
   // 一次调用同时产出摘要 + KC（KC 搭摘要的车,零额外调用; KC 供 per-KC BKT 归因）
   const prompt = `你是课程设计专家。为以下课时生成:
 1. 1-2 句中文摘要:这课学什么 + 核心要点,让学习者快速判断要不要学(30-60 字)
-2. 3-7 个知识组件(Knowledge Component)——这课可以拆成哪些可独立出题考察的知识点
+2. 1-2 句英文摘要:同一摘要的英文版(English summary of the same lesson, 1-2 sentences, plain English)
+3. 3-7 个知识组件(Knowledge Component)——这课可以拆成哪些可独立出题考察的知识点
 
 课程: ${course?.title ?? "(未知)"}
 课时: ${node.title}
@@ -90,14 +92,15 @@ ${content.slice(0, 800)}
 - 覆盖这课的核心概念,数量 3-7 个(内容少的课 3 个,多的 5-7 个)
 
 严格返回 JSON 对象,不要加 markdown 代码块标记:
-{ "summary": "1-2 句中文摘要", "knowledgePoints": [{"title": "知识组件名", "description": "理解这意味着什么"}] }`;
+{ "summary": "1-2 句中文摘要", "summaryEn": "1-2 sentence English summary", "knowledgePoints": [{"title": "知识组件名", "description": "理解这意味着什么"}] }`;
 
   const result = await generateText({ model: llm.languageModel, prompt });
   const parsed = parseLessonSummaryKc(result.text);
   if (!parsed?.summary) return null;
 
-  // 摘要 + KC 一起落库（立即 markDirty 落盘, 不是内存缓存; 齐备后读取永不再调 LLM）
-  const updateSet: { summary: string; knowledgePoints?: string } = { summary: parsed.summary };
+  // 摘要(中+英) + KC 一起落库（立即 markDirty 落盘, 不是内存缓存; 齐备后读取永不再调 LLM）
+  const updateSet: { summary: string; summaryEn?: string; knowledgePoints?: string } = { summary: parsed.summary };
+  if (parsed.summaryEn) updateSet.summaryEn = parsed.summaryEn;
   if (parsed.knowledgePoints && parsed.knowledgePoints.length >= 2) {
     updateSet.knowledgePoints = JSON.stringify(parsed.knowledgePoints);
   }
@@ -107,6 +110,42 @@ ${content.slice(0, 800)}
     .run();
   markDirty?.();
   return parsed.summary;
+}
+
+/**
+ * 英文摘要补齐:面向"已有中文摘要(+KC)但缺 summaryEn"的历史节点。
+ * 单独一次小调用,只写 summary_en,绝不动已有 summary/KC(避免重写 KC 弄散已有掌握度归因)。
+ * 失败返回 null 不落库(下次英文界面再进这课可重试)。
+ */
+export async function generateLessonSummaryEn(
+  db: Db,
+  nodeId: string,
+  markDirty?: () => void,
+): Promise<string | null> {
+  const node = db.select().from(contentNodes).where(eq(contentNodes.id, nodeId)).get();
+  if (!node || node.type !== "lesson" || !node.summary || node.summaryEn) return null;
+  const content = node.content ?? "";
+  if (content.trim().length < 20 && node.summary.trim().length < 10) return null;
+
+  const llm = resolveLlm(db);
+  const prompt = `把下面的课程摘要翻成地道的英文学习摘要。保持 1-2 句、信息量一致,直接给英文文本,不要解释、不要引号。
+
+课程摘要(中文):
+${node.summary}
+
+课时内容参考(前 400 字):
+${content.slice(0, 400)}`;
+
+  try {
+    const result = await generateText({ model: llm.languageModel, prompt });
+    const en = result.text.replace(/^[\s"“]+|[\s"”]+$/g, "").trim();
+    if (!en || en.length < 8) return null;
+    db.update(contentNodes).set({ summaryEn: en }).where(eq(contentNodes.id, nodeId)).run();
+    markDirty?.();
+    return en;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -201,19 +240,22 @@ ${lessonInputs}
 
 严格返回 JSON 数组,不要加 markdown 代码块标记,每项 id 必须和上面一致:
 [
-  { "id": "${batch[0]!.id}", "summary": "1-2 句中文摘要", "knowledgePoints": [{"title": "知识组件名", "description": "理解这意味着什么"}] }
+  { "id": "${batch[0]!.id}", "summary": "1-2 句中文摘要", "summaryEn": "1-2 sentence English summary", "knowledgePoints": [{"title": "知识组件名", "description": "理解这意味着什么"}] }
 ]`;
 
       try {
         const result = await generateText({ model: llm.languageModel, prompt: lessonPrompt });
         const cleaned = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-        const arr = JSON.parse(cleaned) as Array<{ id: string; summary: string; knowledgePoints?: Array<{ title: string; description: string }> }>;
+        const arr = JSON.parse(cleaned) as Array<{ id: string; summary: string; summaryEn?: string; knowledgePoints?: Array<{ title: string; description: string }> }>;
         for (const item of arr) {
           if (typeof item.id === "string" && typeof item.summary === "string" && item.summary.trim()) {
             if (batch.some((b) => b.id === item.id)) {
-              const updateSet: { summary: string; knowledgePoints?: string } = {
+              const updateSet: { summary: string; summaryEn?: string; knowledgePoints?: string } = {
                 summary: item.summary.trim(),
               };
+              if (typeof item.summaryEn === "string" && item.summaryEn.trim()) {
+                updateSet.summaryEn = item.summaryEn.trim();
+              }
               // 知识组件提取：验证格式后写入 knowledge_points JSON 列
               if (Array.isArray(item.knowledgePoints) && item.knowledgePoints.length >= 2) {
                 const validKps = item.knowledgePoints

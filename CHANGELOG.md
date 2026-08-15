@@ -17,6 +17,9 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **GitHub Actions CI(`.github/workflows/ci.yml`)** —— push(main)/PR/手动触发,ubuntu 跑 oxlint + 双 tsc typecheck + 63 个 verify 套件 + vite build,外部坏 PR 在 CI 就被挡住。
+- **多平台打包 workflow(`.github/workflows/package.yml`)** —— workflow_dispatch(任意分支可试跑)或推 `v*` 标签触发,windows/macos/ubuntu 矩阵各跑 `npm run dist`,产物(NSIS exe / dmg / AppImage / deb)传 workflow artifacts;标签构建末尾自动挂到对应 GitHub Release(`gh release upload --clobber`)。mac 加 `identity: null` 免签名(CI 无 Apple 证书,未签名 dmg 首开需右键打开)。v0.9.0 release 据此补挂了 dmg/AppImage/deb。
+- **CONTRIBUTING.md** —— 人类贡献者指引(环境/验证清单/最容易踩的铁律/commit 与 changelog 约定),与 AGENTS.md 互为补充。
 - **`npm run shots` —— README 截图自动采集模式(`--shots`)** —— 无头窗口 + 临时 DB(`lookatstudy-shots.db`)+ .env 真 provider + 预置"学过一阵"状态(皇冠/进度环/锁定球/待复习徽章/XP 能量条),驱动真实 UI(点开始学习 → 真 LLM 二选一猜测卡 → 揭晓;打开课程搜索树)并 capturePage 截 3 张 PNG 进 `docs/screenshots/`(概览/AI 导师/课程搜索)。本模式独享例外:GPU 加速保持开启(capturePage 需要合成,生产路径仍 disableHardwareAcceleration)。
 
 ### Changed

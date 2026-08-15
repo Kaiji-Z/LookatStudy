@@ -16,7 +16,11 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **左栏物理地图(v1)** —— MapRail 技能地图从 CSS 漂浮气球升级为真物理引擎(Matter.js 0.19,纯 JS 无原生编译):球体可**自由拖动摆布、互相碰撞、近中性浮力永续漂浮**(确定性风场搅动,不结死块);**课程顺序由绳链表达**——每章节路牌垂下一个金色绳结,绳结→球1→球2→…→紫球(考试 boss 球)一线贯穿,顺绳走即读序,无弹簧回位;球间连线是**弹力带**(距离约束:绷紧变直/松弛下垂,拖一球全链晃动);section 框 = 上下墙、栏宽 = 左右墙(球出不了章节盒);碰撞触发 **squash 压扁形变 + 脉冲环 + 天气耦合**(雨天碰撞溅水花/雪天震落雪顶);视口外的章节物理岛自动冻结(大课程不烧 CPU)。工程约束全守住:球保持 DOM(无障碍/键盘/四态样式/ui-test 断言零改)、物理只写 transform(每帧直写 DOM 不过 React state)、reduced-motion 完全回退现有静态布局(a11y 双轨)、拖拽与点击用位移阈值区分(拖完不误开课)、AI 流式期间照常可拖(不切上下文)。新 `mapPhysics.ts`(岛工厂+纯函数)+ `verify-map-physics.mjs` 13 断言(指针分类/绳路径/squash/墙约束/碰撞脉冲/软拖拽/无回位弹簧的结构+行为证明,闭环已证:废掉分类+引擎步进→4 红)。
+
 ### Fixed
+- **MapSection 的 `return ro.disconnect`(裸方法引用)在删课卸载时炸掉整棵 React 树** —— React effect cleanup 直接引用 ResizeObserver.disconnect 方法,调用时 `this` 丢失 → `TypeError: Illegal invocation`,物理地图的额外 effect 改变了错误暴露路径后此潜伏 bug 显形(删课程后白屏、不回空态)。绑成闭包修复;ui-test 36 断言全绿复验。
 - **大仓库导入 Step4 结构设计被输出截断炸掉整个 job(实测 181 文件仓库)** —— 40 文件/批的结构设计 JSON 撞 provider 输出上限,流正常结束但 JSON 只写了一半("Unexpected end of JSON input"),此前的 300s 墙钟超时把它掩蔽成超时错误,换成活性看门狗后真因浮出。现在每批走 `designSectionsResilient` 自愈:解析失败(截断/缺 sections)→ 批拆半重试,输出体量随批指数缩小;二分到单文件仍失败 → 按 h1/文件名兜底一课,绝不抛;网络/看门狗等基础设施错误不无谓重试原样上抛。同时修 planId 标注缺口:此前只包住 Step5,Step2-4 失败的错误不带 planId → "从断点重试"按钮不出现;现在 Steps 2-5 全部标注。另给每次方案快照落盘加审计日志(`[import-plan] saved ...` 进 lookatstudy-import.log)——排查"快照为什么没写成"不用再猜。新增 `verify-structure-resilience.mjs` 9 断言(二分/兜底/基础设施错误直通/planId 两步注入集成,闭环已证)。
 
 ### Added

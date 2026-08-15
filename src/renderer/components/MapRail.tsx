@@ -16,10 +16,24 @@ import {
   balloonSegmentToPath,
   hashStr,
 } from "../lib/mapLayout.js";
+import {
+  ANCHOR_KNOT_Y,
+  anchorRestLength,
+  classifyPointer,
+  createSectionIsland,
+  decaySquash,
+  linkRestLength,
+  ropePathD,
+  squashTransform,
+  type ImpactEvent,
+  type PointerTrack,
+  type SectionIsland,
+} from "../lib/mapPhysics.js";
 import { attachSky, attachOrbWeather, pickPreset, PRESETS, type SkyPreset, type OrbPos } from "../lib/skyCanvas.js";
 import { api } from "../lib/api.js";
 import { useLang } from "../lib/i18n.js";
 import { celebrate } from "../lib/celebration.js";
+import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion.js";
 
 export type MapView = "map" | "import";
 
@@ -60,6 +74,16 @@ export function MapRail(props: MapRailProps) {
   const navRef = useRef<HTMLElement>(null);
   const mapPathRef = useRef<HTMLDivElement>(null);
   const masteryPct = Math.round(props.overallMastery * 100);
+
+  // 物理地图(v1):reduced-motion 完全回退静态布局(a11y 双轨)。
+  // 碰撞事件队列(nav 坐标):MapSection 物理岛 push,天气层每帧 drain 消费。
+  const reducedMotion = usePrefersReducedMotion();
+  const physicsOn = !reducedMotion;
+  const impactQueueRef = useRef<ImpactEvent[]>([]);
+  const pushImpacts = useRef((list: ImpactEvent[]) => {
+    impactQueueRef.current.push(...list);
+    if (impactQueueRef.current.length > 64) impactQueueRef.current.splice(0, impactQueueRef.current.length - 64);
+  }).current;
 
   // 按 world 过滤 section(practice 节点不受学习门控,自由探索)
   const visibleSections = props.sections.filter(
@@ -135,7 +159,7 @@ export function MapRail(props: MapRailProps) {
       {skyPreset && (
         <>
           <MapSkyCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} />
-          <MapOrbWeatherCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} />
+          <MapOrbWeatherCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} getImpacts={() => impactQueueRef.current.splice(0)} />
         </>
       )}
 
@@ -259,7 +283,7 @@ export function MapRail(props: MapRailProps) {
                 ) : (
                   <div className="space-y-6 pt-2">
                     {visibleSections.map((section, sIdx) => (
-                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} />
+                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} physics={physicsOn} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} />
                     ))}
                   </div>
                 )}
@@ -599,15 +623,18 @@ function MapSkyCanvas({
 
 /* ---------- 球天气装饰层(canvas,nav 子元素,z-20 盖在球 DOM 上)----------
    与天空 canvas 同层(nav 的 absolute 子元素),但 z-20。
-   getOrbs 坐标相对 nav;球滚入 header 区域时不画(防天气效果穿透 header)。 */
+   getOrbs 坐标相对 nav;球滚入 header 区域时不画(防天气效果穿透 header)。
+   getImpacts:物理碰撞事件(nav 坐标)→ 雨天溅水花 / 雪天震落雪顶。 */
 function MapOrbWeatherCanvas({
   scrollRef,
   navRef,
   preset,
+  getImpacts,
 }: {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   navRef: React.RefObject<HTMLElement | null>;
   preset: SkyPreset;
+  getImpacts?: () => ImpactEvent[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -642,15 +669,15 @@ function MapOrbWeatherCanvas({
       }
       return out;
     };
-    const detach = attachOrbWeather(canvas, nav, preset, getOrbs);
+    const detach = attachOrbWeather(canvas, nav, preset, getOrbs, getImpacts);
     return () => { detach(); mo.disconnect(); window.removeEventListener("resize", invalidate); };
-  }, [scrollRef, navRef, preset]);
+  }, [scrollRef, navRef, preset, getImpacts]);
   return (
     <canvas ref={canvasRef} className="map-orb-weather-canvas" aria-hidden="true" />
   );
 }
 
-/* ---------- 章节单元(含气球路径) ---------- */
+/* ---------- 章节单元(含气球路径 + 物理岛) ---------- */
 function MapSection({
   section,
   sectionIndex,
@@ -659,6 +686,10 @@ function MapSection({
   selectedNodeId,
   dueNodeIds,
   onJumpNode,
+  physics,
+  scrollRef,
+  navRef,
+  onImpacts,
 }: {
   section: ContentNode;
   sectionIndex: number;
@@ -667,6 +698,12 @@ function MapSection({
   selectedNodeId: string | null;
   dueNodeIds: Set<string>;
   onJumpNode: (nodeId: string) => void;
+  /** 物理地图开(reduced-motion 时 false,渲染静态布局)。 */
+  physics: boolean;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  navRef: React.RefObject<HTMLElement | null>;
+  /** 碰撞事件(nav 坐标)→ 天气层(溅水花/震雪)。 */
+  onImpacts: (list: ImpactEvent[]) => void;
 }) {
   const lessons = tree
     .filter((n) => n.parentId === section.id)
@@ -690,14 +727,185 @@ function MapSection({
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(pathRef.current);
+    // cleanup 必须是闭包:裸方法引用(ro.disconnect)被 React 调用时 this 丢失
+    // → "Illegal invocation",删课卸载时足以炸掉整棵 React 树。
     return () => ro.disconnect();
   }, []);
 
   // v0.6:气球布局(种子确定性抖动)+ v0.8 贪心防重叠。同 section id 每次渲染位置稳定。
+  // 物理地图:布局坐标 = 球的确定性出生位 + 弹力带静止长度(生成即平衡,风慢慢搅动)。
   const layout = computeBalloonLayout(lessons.length, containerW, section.id);
   const pathHeight = layout.height;
   const NODE_W = 110; // MapNode 卡片宽(球+名字)
   const NODE_H = 76;  // 球 56 + 名字行 20
+
+  /* ── 物理岛生命周期 ──
+     无弹簧回位:球自由摆布,顺序由绳链表达(路牌绳结 → 球1 → … → 紫球)。
+     每 section 一个独立 Engine,视口外(±200px)不步进。 */
+  const islandRef = useRef<SectionIsland | null>(null);
+  const pointerRef = useRef<{ track: PointerTrack; id: number; dragging: boolean; nodeId: string } | null>(null);
+  /** 拖拽后的抬手在短窗内抑制 click(真点击/合成 click 不受影响)。 */
+  const suppressClickUntilRef = useRef(0);
+  const lessonSig = lessons.map((l) => l.id).join(",");
+
+  useEffect(() => {
+    if (!physics || lessons.length === 0 || containerW <= 0) return;
+    const container = pathRef.current;
+    const scroller = scrollRef.current;
+    if (!container || !scroller) return;
+
+    const island = createSectionIsland({
+      nodes: layout.nodes.map((n, i) => ({ id: lessons[i]!.id, x: n.x, y: n.y })),
+      width: containerW,
+      height: layout.height,
+    });
+    islandRef.current = island;
+
+    const wrappers = new Map<string, HTMLDivElement>();
+    for (const el of container.querySelectorAll<HTMLDivElement>("[data-node-id]")) {
+      if (el.dataset.nodeId) wrappers.set(el.dataset.nodeId, el);
+    }
+    const ropeEls = Array.from(container.querySelectorAll<SVGPathElement>("[data-rope]"));
+    const pulseEls = Array.from(container.querySelectorAll<SVGCircleElement>("[data-pulse]"));
+
+    // 视口门控:岛滚出视口 ±200px 冻结(球停在原位,大课程不烧 CPU)
+    let inView = true;
+    const io = new IntersectionObserver(
+      (entries) => { for (const en of entries) inView = en.isIntersecting; },
+      { root: scroller, rootMargin: "200px 0px 200px 0px" },
+    );
+    io.observe(container);
+
+    const PULSE_MS = 520;
+    const pulses: { x: number; y: number; t0: number; s: number }[] = [];
+
+    let raf = 0;
+    let last = performance.now();
+    const frame = (now: number) => {
+      raf = requestAnimationFrame(frame);
+      const dt = Math.min(50, now - last);
+      last = now;
+      if (!inView) return;
+
+      island.step(dt);
+
+      // 球:transform = 物理位 - 布局位(+碰撞 squash 形变),直写 DOM 不过 React
+      for (const b of island.balls) {
+        const el = wrappers.get(b.nodeId);
+        if (el) {
+          el.style.transform = squashTransform(
+            b.body.position.x - b.layoutX,
+            b.body.position.y - b.layoutY,
+            b.squash,
+            b.squashAngle,
+          );
+        }
+        b.squash = decaySquash(b.squash, dt);
+      }
+
+      // 绳:绷紧变直/松弛下垂,每帧重画 path d
+      const posOf = (id: string): { x: number; y: number } => {
+        const b = island.ball(id);
+        if (b) return { x: b.body.position.x, y: b.body.position.y };
+        const i = lessons.findIndex((l) => l.id === id);
+        const n = i >= 0 ? layout.nodes[i] : undefined;
+        return n ? { x: n.x, y: n.y } : { x: 0, y: 0 };
+      };
+      for (let i = 0; i < island.links.length && i < ropeEls.length; i++) {
+        const link = island.links[i]!;
+        const from = link.from === "__anchor" ? island.anchor : posOf(link.from);
+        const to = posOf(link.to);
+        ropeEls[i]!.setAttribute("d", ropePathD(from, to, link.restLen));
+      }
+
+      // 碰撞脉冲(SVG 圆环池) + 喂天气层(nav 坐标)
+      const impacts = island.drainImpacts();
+      for (const im of impacts) pulses.push({ x: im.x, y: im.y, t0: now, s: Math.min(1, im.speed / 14) });
+      for (let i = pulses.length - 1; i >= 0; i--) if (now - pulses[i]!.t0 > PULSE_MS) pulses.splice(i, 1);
+      for (let i = 0; i < pulseEls.length; i++) {
+        const p = pulses[i];
+        const el = pulseEls[i]!;
+        if (!p) { el.setAttribute("opacity", "0"); continue; }
+        const k = (now - p.t0) / PULSE_MS;
+        el.setAttribute("cx", String(p.x));
+        el.setAttribute("cy", String(p.y));
+        el.setAttribute("r", String(6 + k * (14 + p.s * 14)));
+        el.setAttribute("opacity", String(0.55 * (1 - k)));
+        el.setAttribute("stroke-width", String(2 + p.s * 1.5));
+      }
+
+      if (impacts.length > 0 && navRef.current) {
+        const cr = container.getBoundingClientRect();
+        const nr = navRef.current.getBoundingClientRect();
+        onImpacts(impacts.map((im) => ({ x: im.x + cr.left - nr.left, y: im.y + cr.top - nr.top, speed: im.speed })));
+      }
+    };
+    raf = requestAnimationFrame(frame);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      io.disconnect();
+      island.dispose();
+      islandRef.current = null;
+      // 清残留 transform:球回布局原位(React 渲染的 left/top 本来就在那)
+      for (const el of wrappers.values()) el.style.transform = "";
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [physics, containerW, lessonSig, section.id]);
+
+  /* ── 指针:软拖拽 + 位移阈值区分点击 ── */
+  const onBallPointerDown = (e: React.PointerEvent<HTMLDivElement>, nodeId: string) => {
+    const island = islandRef.current;
+    if (!island || e.button !== 0) return;
+    const container = pathRef.current;
+    if (!container) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    suppressClickUntilRef.current = 0;
+    pointerRef.current = { track: { startX: e.clientX, startY: e.clientY }, id: e.pointerId, dragging: false, nodeId };
+    const cr = container.getBoundingClientRect();
+    island.beginDrag(nodeId, e.clientX - cr.left, e.clientY - cr.top);
+  };
+  const onBallPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const p = pointerRef.current;
+    const island = islandRef.current;
+    if (!p || !island || e.pointerId !== p.id) return;
+    const container = pathRef.current;
+    if (!container) return;
+    if (!p.dragging && classifyPointer(p.track, e.clientX, e.clientY) === "drag") {
+      p.dragging = true;
+      e.currentTarget.style.zIndex = "40";
+    }
+    const cr = container.getBoundingClientRect();
+    island.moveDrag(e.clientX - cr.left, e.clientY - cr.top);
+  };
+  const onBallPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const p = pointerRef.current;
+    if (!p || e.pointerId !== p.id) return;
+    islandRef.current?.endDrag();
+    e.currentTarget.style.zIndex = "";
+    if (classifyPointer(p.track, e.clientX, e.clientY) === "drag") {
+      suppressClickUntilRef.current = Date.now() + 300;
+    }
+    pointerRef.current = null;
+  };
+
+  // 绳子段样式:前置节点已通过 → 走过的路(brand 实线);否则未走过(灰虚线)
+  const ropeStyle = (fromIdx: number): React.CSSProperties => {
+    const fromLesson = lessons[fromIdx];
+    const fromProgress = fromLesson ? progressMap[fromLesson.id] : undefined;
+    const isPassed =
+      fromProgress?.status === "mastered" ||
+      fromProgress?.status === "in_progress" ||
+      fromProgress?.status === "available";
+    return {
+      stroke: isPassed ? "var(--brand)" : "var(--ink-faint)",
+      strokeWidth: isPassed ? 4 : 2.5,
+      strokeOpacity: isPassed ? 0.6 : 0.5,
+      strokeDasharray: isPassed ? "none" : "3 7",
+    } as React.CSSProperties;
+  };
+
+  const anchor = layout.nodes[0] ? { x: layout.nodes[0].x, y: ANCHOR_KNOT_Y } : { x: containerW / 2, y: ANCHOR_KNOT_Y };
 
   return (
     <section
@@ -714,42 +922,68 @@ function MapSection({
         </span>
       </div>
 
-      {/* 绳子 + 气球:绝对定位,统一像素坐标系 */}
+      {/* 绳子 + 气球:绝对定位,统一像素坐标系(物理模式 overflow visible 让锚绳越过容器上缘) */}
       <div ref={pathRef} className="relative" style={{ minHeight: pathHeight }}>
         <svg
           className="absolute inset-0 w-full h-full pointer-events-none"
           aria-hidden="true"
-          style={{ height: pathHeight }}
+          style={{ height: pathHeight, overflow: "visible" }}
         >
-          {layout.segments.map((seg) => {
-            // 绳子颜色:前置节点已通过 → 走过的路(brand 实线);否则未走过(灰虚线)
-            const fromLesson = lessons[seg.index];
-            const fromProgress = fromLesson ? progressMap[fromLesson.id] : undefined;
-            const isPassed =
-              fromProgress?.status === "mastered" ||
-              fromProgress?.status === "in_progress" ||
-              fromProgress?.status === "available";
-            return (
-              <path
-                key={seg.index}
-                d={balloonSegmentToPath(seg)}
-                stroke={isPassed ? "var(--brand)" : "var(--ink-faint)"}
-                strokeWidth={isPassed ? 4 : 2.5}
-                strokeOpacity={isPassed ? 0.6 : 0.5}
-                fill="none"
-                strokeLinecap="round"
-                strokeDasharray={isPassed ? "none" : "3 7"}
-                style={
-                  isPassed
-                    ? ({ pathLength: 1, animation: "path-draw 600ms var(--ease-out-expo)" } as CSSProperties)
-                    : undefined
-                }
-              />
-            );
-          })}
+          {physics ? (
+            <>
+              {/* 路牌绳结(读序起点:从此顺绳走到紫球) + 锚绳 + 弹力带 + 碰撞脉冲池 */}
+              {layout.nodes[0] && (
+                <circle cx={anchor.x} cy={anchor.y} r={3.5} fill="#ffc800" opacity={0.9} />
+              )}
+              {layout.nodes[0] && (
+                <path
+                  data-rope={0}
+                  d={ropePathD(anchor, layout.nodes[0], anchorRestLength(anchor, layout.nodes[0]))}
+                  fill="none"
+                  strokeLinecap="round"
+                  style={ropeStyle(0)}
+                />
+              )}
+              {layout.segments.map((seg, i) => (
+                <path
+                  key={seg.index}
+                  data-rope={i + 1}
+                  d={ropePathD(seg.from, seg.to, linkRestLength(seg.from, seg.to))}
+                  fill="none"
+                  strokeLinecap="round"
+                  style={ropeStyle(seg.index)}
+                />
+              ))}
+              {Array.from({ length: 8 }, (_, i) => (
+                <circle key={i} data-pulse={i} cx={0} cy={0} r={0} fill="none" stroke="white" opacity={0} />
+              ))}
+            </>
+          ) : (
+            layout.segments.map((seg) => {
+              const passed = ropeStyleIsPassed(lessons[seg.index], progressMap);
+              return (
+                <path
+                  key={seg.index}
+                  d={balloonSegmentToPath(seg)}
+                  stroke={passed ? "var(--brand)" : "var(--ink-faint)"}
+                  strokeWidth={passed ? 4 : 2.5}
+                  strokeOpacity={passed ? 0.6 : 0.5}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeDasharray={passed ? "none" : "3 7"}
+                  style={
+                    passed
+                      ? ({ pathLength: 1, animation: "path-draw 600ms var(--ease-out-expo)" } as CSSProperties)
+                      : undefined
+                  }
+                />
+              );
+            })
+          )}
         </svg>
 
-        {/* 气球节点:绝对定位居中于 layout.x/layout.y,加漂浮动画(每节点相位/周期错峰) */}
+        {/* 气球节点:绝对定位居中于 layout.x/layout.y。
+            静态模式:balloon-bob CSS 漂浮;物理模式:transform 由物理岛每帧直写。 */}
         {lessons.map((lesson, i) => {
           const node = layout.nodes[i];
           if (!node) return null;
@@ -760,15 +994,22 @@ function MapSection({
             <div
               key={lesson.id}
               data-node-id={lesson.id}
-              className="absolute balloon-bob hover:z-30"
+              className={physics
+                ? "absolute hover:z-30 cursor-grab active:cursor-grabbing will-change-transform"
+                : "absolute balloon-bob hover:z-30"}
               style={{
                 left: node.x - NODE_W / 2,
                 top: node.y - NODE_H / 2 + 12,
                 width: NODE_W,
-                // @ts-expect-error CSS custom props
-                "--bob-delay": bobDelay,
-                "--bob-duration": bobDuration,
+                ...(physics ? { touchAction: "none" as const } : {
+                  "--bob-delay": bobDelay,
+                  "--bob-duration": bobDuration,
+                } as CSSProperties),
               }}
+              onPointerDown={physics ? (e) => onBallPointerDown(e, lesson.id) : undefined}
+              onPointerMove={physics ? onBallPointerMove : undefined}
+              onPointerUp={physics ? onBallPointerUp : undefined}
+              onPointerCancel={physics ? onBallPointerUp : undefined}
             >
               <MapNode
                 lesson={lesson}
@@ -776,13 +1017,26 @@ function MapSection({
                 isSelected={lesson.id === selectedNodeId}
                 isDue={dueNodeIds.has(lesson.id)}
                 chapterLessonsMastered={chapterLessonsMastered}
-                onClick={() => onJumpNode(lesson.id)}
+                onClick={() => {
+                  if (Date.now() < suppressClickUntilRef.current) return;
+                  onJumpNode(lesson.id);
+                }}
               />
             </div>
           );
         })}
       </div>
     </section>
+  );
+}
+
+/** 静态绳的"已走过"判定(原内联逻辑,物理/静态两路径共用判定口径)。 */
+function ropeStyleIsPassed(fromLesson: ContentNode | undefined, progressMap: Record<string, Progress>): boolean {
+  const fromProgress = fromLesson ? progressMap[fromLesson.id] : undefined;
+  return (
+    fromProgress?.status === "mastered" ||
+    fromProgress?.status === "in_progress" ||
+    fromProgress?.status === "available"
   );
 }
 

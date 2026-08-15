@@ -70,7 +70,7 @@ npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
 
-npm run verify:core       # 72 pure-Node/tsx logic test suites
+npm run verify:core       # 73 pure-Node/tsx logic test suites
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -175,6 +175,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + reactive `useLang()` (useSyncExternalStore, no reload on switch) + `translate()` for non-component contexts |
 | Celebration bus | `src/renderer/lib/celebration.ts` + `components/CelebrationLayer.tsx` | `celebrate(kind)` event bus + 根级 canvas 粒子层;7 高光时刻统一渲染(correct/wrong/unlock/mastery/streak/energy-full/exam-pass);reduced-motion a11y 双轨(默认粒子爆发,reduced 静态图标淡入) |
 | State emitter | `src/main/lib/state-emitter.ts` | main→renderer `state:changed` 推送(xp/streak/mastery 变化);修能量条运行时不动 bug;service 内 fire-and-forget,测试时 noop(同 markDirty 模式) |
+| Map physics | `src/renderer/lib/mapPhysics.ts` | 左栏物理地图(Matter.js 0.19):每 section 独立物理岛(墙=栏宽/section 边界),无弹簧回位——球自由摆布,顺序由绳链表达(路牌绳结→球1→…→紫球考试球);近中性浮力+确定性风场永续漂浮;弹力带=相邻球距离约束(松弛下垂/绷紧变直);软拖拽(指针弹簧约束)+位移阈值区分点击;碰撞→squash 形变+SVG 脉冲环+喂天气层(溅水花/震雪);视口外岛冻结(IntersectionObserver);reduced-motion 完全回退静态布局 |
 | Motion infra | `src/renderer/lib/motion-presets.ts` + `usePrefersReducedMotion.ts` | `motion` 弹簧/stagger/enter-exit 预设 + a11y reduced-motion 响应式 hook(useSyncExternalStore on matchMedia) |
 
 Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),
@@ -185,7 +186,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (71 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (72 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

@@ -366,6 +366,8 @@ let orbStreakTimer: number[] = [];
 interface Splash { x: number; y: number; vx: number; vy: number; life: number; }
 const orbSplashes: Splash[][] = [];   // [球索引][] 每球的溅起水珠
 let orbSplashTimer: number[] = [];    // 下次溅起的倒计时
+/** 物理碰撞溅起(雨天水珠/雪天白屑),位置相对 sizeEl。 */
+const impactBursts: Splash[] = [];
 
 /* 雪堆状态:每颗球的积雪厚度(0..1),随雪花堆积增长。 */
 let orbCaps: number[] = [];
@@ -763,6 +765,7 @@ export function attachOrbWeather(
   sizeEl: HTMLElement,
   preset: SkyPreset,
   getOrbs: () => OrbPos[],
+  getImpacts?: () => { x: number; y: number; speed: number }[],
 ): () => void {
   // 切换 preset 时总是清空上一个天气的残留状态 + 清 canvas(修 bug:
   // rain→clear 时旧水流痕残留;晴/多云早返回但不清状态导致画面卡住)
@@ -772,6 +775,7 @@ export function attachOrbWeather(
     orbStreakTimer.length = 0;
     orbSplashes.length = 0;
     orbSplashTimer.length = 0;
+    impactBursts.length = 0;
     const c = canvas.getContext("2d");
     if (c) c.clearRect(0, 0, canvas.width, canvas.height);
   };
@@ -811,6 +815,33 @@ export function attachOrbWeather(
     ctx.clearRect(0, 0, W, H); // 透明 canvas,每帧清空重画
     const orbs = getOrbs();
     drawOrbWeather(ctx, orbs, preset, now);
+    // 物理碰撞 → 天气反馈(坐标同 getOrbs,相对 sizeEl):
+    //   雨:命中点溅起水珠(速度越大越多);雪:震落命中球附近雪顶(掉厚度 + 白屑)
+    if (getImpacts) {
+      for (const im of getImpacts()) {
+        const n = 3 + Math.min(5, Math.floor(im.speed / 3));
+        for (let k = 0; k < n; k++) {
+          impactBursts.push({
+            x: im.x,
+            y: im.y,
+            vx: (Math.random() - 0.5) * 3.2,
+            vy: -(1.5 + Math.random() * 2.5),
+            life: 16 + Math.floor(Math.random() * 12),
+          });
+        }
+        if (preset.particles === "snow") {
+          // 震落:命中球(最近 orb,容差 r+10)雪顶掉 60%,再慢慢积回来
+          for (let i = 0; i < orbs.length; i++) {
+            const o = orbs[i]!;
+            if (Math.hypot(o.x - im.x, o.y - im.y) <= o.r + 10) {
+              orbCaps[i] = (orbCaps[i] ?? 0.3) * 0.4;
+              break;
+            }
+          }
+        }
+      }
+      if (impactBursts.length > 0) drawSplashes(ctx, impactBursts);
+    }
     rafId = requestAnimationFrame(frame);
   }
 

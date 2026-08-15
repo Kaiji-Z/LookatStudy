@@ -18,24 +18,9 @@ import { eq } from "drizzle-orm";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
 import { contentNodes } from "../db/schema.js";
-import type { HumanFrictionCategory } from "@shared/types";
+import type { StarterPrompt } from "@shared/types";
 
 type Db = SQLJsDatabase<typeof schema>;
-
-export interface StarterPrompt {
-  /** 按钮显示文字 */
-  label: string;
-  /** 点击后发送的完整消息 */
-  message: string;
-  /** 图标 emoji */
-  icon: string;
-  /** 可见 hint(默认就显示,不靠 hover;说明这个按钮干嘛) */
-  hint: string;
-  /** 标记:点这个能涨掌握度(AI 会出题/判定 → record_answer proposal)。 */
-  advancesMastery?: boolean;
-  /** 标记:点这个除了发消息,还额外记一条 friction(原 ? 卡点的归宿)。 */
-  frictionCategory?: HumanFrictionCategory;
-}
 
 /**
  * 生成 4 个巩固选择(深入 / 举个例子 / 考考我 / 我没太懂)。
@@ -55,18 +40,21 @@ export function getStarterPrompts(db: Db, nodeId: string): StarterPrompt[] {
 
   return [
     {
+      key: "go-deeper",
       icon: "🔬",
       label: "深入这点",
       message: `帮我深入讲讲「${title}」刚才那个核心点——展开它的结构、细节和容易忽略的边界。`,
       hint: "把刚揭晓的概念讲深一层",
     },
     {
+      key: "give-example",
       icon: "💡",
       label: "举个例子",
       message: `给我一个「${title}」的实际例子或用法,让我更具体地理解。`,
       hint: "用真实例子帮你看懂",
     },
     {
+      key: "quiz-me",
       icon: "📝",
       label: "考考我",
       message: `出一道关于「${title}」的应用题考考我,看我是否真懂了——我答完请判断对错。`,
@@ -74,6 +62,7 @@ export function getStarterPrompts(db: Db, nodeId: string): StarterPrompt[] {
       advancesMastery: true,
     },
     {
+      key: "confused",
       icon: "🤔",
       label: "我没太懂",
       message: `关于「${title}」,我有地方不太懂,帮我理一理——先问我是哪里不清楚。`,

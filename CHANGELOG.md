@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Fixed
+- **大仓库导入 Step4 结构设计被输出截断炸掉整个 job(实测 181 文件仓库)** —— 40 文件/批的结构设计 JSON 撞 provider 输出上限,流正常结束但 JSON 只写了一半("Unexpected end of JSON input"),此前的 300s 墙钟超时把它掩蔽成超时错误,换成活性看门狗后真因浮出。现在每批走 `designSectionsResilient` 自愈:解析失败(截断/缺 sections)→ 批拆半重试,输出体量随批指数缩小;二分到单文件仍失败 → 按 h1/文件名兜底一课,绝不抛;网络/看门狗等基础设施错误不无谓重试原样上抛。同时修 planId 标注缺口:此前只包住 Step5,Step2-4 失败的错误不带 planId → "从断点重试"按钮不出现;现在 Steps 2-5 全部标注。另给每次方案快照落盘加审计日志(`[import-plan] saved ...` 进 lookatstudy-import.log)——排查"快照为什么没写成"不用再猜。新增 `verify-structure-resilience.mjs` 9 断言(二分/兜底/基础设施错误直通/planId 两步注入集成,闭环已证)。
+
 ### Added
 - **导入管线"确定性"改造:ImportPlan 断点续跑 + 课程包** —— 导入每个步骤边界把产物快照落盘(`userData/import-plans/*.json`,原子写):失败/中断后"从断点重试"跳过已完成的 AI 步骤(此前 Step4 结构设计超时一次,前面 3 分钟的分类全部白跑);同一仓库再导入自动复用快照(零 AI 调用);GitHub 来源的方案可**导出课程包**分享——对方导入同一仓库秒过分类+结构设计(正文仍从 CDN 现拉,包里不含内容)。实现:`pure/import-plan.ts`(格式+treeHash 漂移检测+bestEffortStructure 尽力保留)+ `import-plan-store.ts`(文件存取)+ `import-job-service.ts`(编排器,把两处内联的 5 步收成单一路径,github/folder/plan 三种 spec 共用);内容漂移时结构丢弃引用消失文件的课、翻译路径过滤,全灭则退回正常 AI 流程;语言决策运行时重算不进快照。新 IPC:`import:resume` / `import:importPack`(第四个 tab)/ `import:exportPack`(成功面板按钮,仅 github;folder 含私有路径不导出),`import:done` 失败带 `planId`;课程删除顺带清快照。新增 `verify-import-plan.mjs` 11 断言(纯函数 6 + 无 LLM 集成 5:首导落库落盘/再导复用/漂移 bestEffort/plan spec 续跑/按课清理,闭环已证)。
 - **GitHub Actions CI(`.github/workflows/ci.yml`)** —— push(main)/PR/手动触发,ubuntu 跑 oxlint + 双 tsc typecheck + 65 个 verify 套件 + vite build,外部坏 PR 在 CI 就被挡住。运行器与 engines 底线定为 **Node 22**(tsx 4 在 Node 20 上经 data: URL 解析相对导入会挂,verify 套件在 20 跑不起来;本机开发环境是 Node 24)。

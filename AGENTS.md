@@ -70,7 +70,7 @@ npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
 
-npm run verify:core       # 65 pure-Node/tsx logic test suites
+npm run verify:core       # 68 pure-Node/tsx logic test suites
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -136,9 +136,9 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | Course generator | `services/course-generator.ts` | `generateCourseFromMarkdown` + `generateCourseFromRepoFiles` |
 | Course structure | `services/course-structure-service.ts` | LLM-based course restructuring (two-phase: classify uncertain → group sections) + `generateLessonSummaries`(批量) + `generateLessonSummary`(单课懒生成:首点节点球一次调用同时落 summary+summary_en+knowledge_points——双语摘要+KC,新管线课程的 KC 唯一自动来源,字段齐备前可重试补齐) + `generateLessonSummaryEn`(历史节点英文摘要补齐,不动已有 KC) |
 | Repo fetcher | `services/pure/repo-fetcher.ts` | CDN fetch + `detectRepoPattern` (course/well-organized/single-file/docs-rich/unsupported + awesome-list 检测) + `fetchRepoInventory` (Step1: 多入口 README + 多分支 + tree + file list) + `fetchFileOutlines` (Step3: H1/H2/H3 + chars) + `extractOutlineWithCharCounts` |
-| Import plan | `services/import-job-service.ts` + `pure/import-plan.ts` + `import-plan-store.ts` | 导入编排器(github/folder/plan 三 spec 共用一条 5 步路径):每步产物快照落盘断点续跑、同源再导自动复用(零 LLM)、treeHash 漂移检测 + bestEffortStructure 尽力保留;课程包=github 快照文件直接分享(`import:resume`/`import:importPack`/`import:exportPack`) |
+| Import plan | `services/import-job-service.ts` + `pure/import-plan.ts` + `import-plan-store.ts` | 导入编排器(github/folder/plan 三 spec 共用一条 5 步路径):每步产物快照落盘断点续跑、同源再导自动复用(零 LLM)、treeHash 漂移检测 + bestEffortStructure 尽力保留;课程包=github 快照文件直接分享(`import:resume`/`import:importPack`/`import:exportPack`);planId 标注包住 Steps 2-5——任何一步失败渲染层都能给"从断点重试";savePlan 落盘审计日志(写 lookatstudy-import.log) |
 | Import pipeline | `services/import-pipeline.ts` | `executeImport` (Step5): **两阶段**——拉正文+图片内联(可取消 `shouldAbort`,零写库) → 落库(无 await 同步段一次写完,无半成品窗口,意外失败清理残留) → 翻译落库(显式配对优先,多布局 pathResolver 兜底) → 验证。后台 job 模型: `import:localFolder`/`import:github` 即返 jobId, `import:done`/`import:cancel` 事件。通过 `ContentSource` 抽象不关心来源 |
-| Import LLM | `services/import-llm-service.ts` | `classifyFileRoles` (Step2: LLM 文件角色 original/practice/**translation**(lang+translates 显式配对) + sourceLang + 翻译布局检测 + `excludeSuffixTranslations` 规则分流) + `generateTextWithTimeout`(streamText 活性看门狗:无输出 120s 判死/硬上限 20min,流在动不杀,abort 真取消请求;`pure/stream-watchdog.ts`) + `designCourseStructure` (Step4: section/lesson/world + 长文件拆分 + attachImages 关联) |
+| Import LLM | `services/import-llm-service.ts` | `classifyFileRoles` (Step2: LLM 文件角色 original/practice/**translation**(lang+translates 显式配对) + sourceLang + 翻译布局检测 + `excludeSuffixTranslations` 规则分流) + `generateTextWithTimeout`(streamText 活性看门狗:无输出 120s 判死/硬上限 20min,流在动不杀,abort 真取消请求;`pure/stream-watchdog.ts`) + `designCourseStructure` (Step4: section/lesson/world + 长文件拆分 + attachImages 关联;`designSectionsResilient` 截断二分自愈——输出撞 provider 上限被截半个 JSON 时批拆半重试,单文件仍败按 h1/文件名兜底一课,一批失败不炸整个 job;网络/看门狗错误不重试原样上抛) |
 | Content source | `services/content-source.ts` | `ContentSource` 接口 + `GithubContentSource` (CDN) + `LocalContentSource` (磁盘) — 统一 executeImport 的文件/图片获取 |
 | Code parser | `services/pure/code-parser.ts` | 代码文件(.py/.js/.go 等 30+ 语言) → markdown: docstring/注释块提取为正文 + 代码体围栏包裹。纯函数 |
 | Translation layout | `services/pure/translation-layout.ts` | `detectTranslationLayout`(tree) — 自动检测翻译约定: microsoft(translations/{lang}/) / parallel({lang}/) / suffix({file}.{lang}.md|.txt|.html)。返回 pathResolver；`excludeSuffixTranslations`(规则分流成对双语,孤儿保守留原文) + `resolveSuffixTranslationPath`(剥原文自带语言后缀,与落库共用单一实现) |
@@ -181,7 +181,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (62 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (68 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

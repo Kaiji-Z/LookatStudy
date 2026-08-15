@@ -484,31 +484,87 @@ export async function designCourseStructure(
     };
   });
 
-  // 分块
+  // 分块:每批(≤40 文件)走 designSectionsResilient —— 截断/解析失败批内二分自愈,
+  // 单文件仍失败规则兜底一课。一批失败不再炸整个导入 job。
   const CHUNK_SIZE = 40;
-  if (fileInfos.length <= CHUNK_SIZE) {
-    const prompt = buildStructureDesignPrompt(readmeMd, fileInfos, standaloneImages);
-    const text = await generateTextWithTimeout(llm.languageModel, prompt);
-    return parseStructureDesignResult(text, allFiles, practiceFiles, standaloneImages);
-  }
-
-  // 大课程: 分块设计，每块独立分 section
-  send(`课程较大（${fileInfos.length} 文件），分 ${Math.ceil(fileInfos.length / CHUNK_SIZE)} 批设计…`);
   const allSections: DesignedSection[] = [];
-  for (let i = 0; i < fileInfos.length; i += CHUNK_SIZE) {
-    const chunk = fileInfos.slice(i, i + CHUNK_SIZE);
-    const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
-    const totalChunks = Math.ceil(fileInfos.length / CHUNK_SIZE);
-    send(`AI 设计中（第 ${chunkNum}/${totalChunks} 批）…`);
-    const prompt = buildStructureDesignPrompt(readmeMd, chunk, standaloneImages);
-    const text = await generateTextWithTimeout(llm.languageModel, prompt);
-    const structure = parseStructureDesignResult(text, chunk.map((f) => f.file), practiceFiles, standaloneImages);
-    allSections.push(...structure.sections);
+  if (fileInfos.length <= CHUNK_SIZE) {
+    allSections.push(
+      ...await designSectionsResilient(readmeMd, fileInfos, practiceFiles, standaloneImages, {
+        call: (prompt) => generateTextWithTimeout(llm.languageModel, prompt),
+        onProgress: send,
+      }),
+    );
+  } else {
+    // 大课程: 分块设计，每块独立分 section
+    send(`课程较大（${fileInfos.length} 文件），分 ${Math.ceil(fileInfos.length / CHUNK_SIZE)} 批设计…`);
+    for (let i = 0; i < fileInfos.length; i += CHUNK_SIZE) {
+      const chunk = fileInfos.slice(i, i + CHUNK_SIZE);
+      const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+      const totalChunks = Math.ceil(fileInfos.length / CHUNK_SIZE);
+      send(`AI 设计中（第 ${chunkNum}/${totalChunks} 批）…`);
+      allSections.push(
+        ...await designSectionsResilient(readmeMd, chunk, practiceFiles, standaloneImages, {
+          call: (prompt) => generateTextWithTimeout(llm.languageModel, prompt),
+          onProgress: send,
+        }),
+      );
+    }
   }
 
   // 课程标题从 README H1
   const h1Match = readmeMd.match(/^#\s+(.+)$/m);
   return { courseTitle: h1Match ? h1Match[1]!.trim() : "Imported Course", sections: allSections };
+}
+
+export interface StructureFileInfo {
+  file: string;
+  role: string;
+  h1: string;
+  totalChars: number;
+  headings: { level: number; title: string; chars: number }[];
+}
+
+/**
+ * 单批结构设计,失败自愈(导出供 verify 注入 call 桩测试):
+ * - StructureParseError(输出截断/形状不对)→ 批拆半各调 —— 输出体量随批指数缩小,
+ *   截断概率同步下降;实测 40 文件批在部分 provider 撞输出上限被截成半个 JSON。
+ * - 二分到单文件仍失败 → h1/文件名规则兜底一课(与 fallbackStructure 同构),绝不抛。
+ * - 网络/看门狗错误不是 StructureParseError → 原样上抛(重试无意义,断点续跑兜住)。
+ */
+export async function designSectionsResilient(
+  readmeMd: string,
+  fileInfos: StructureFileInfo[],
+  practiceFiles: string[],
+  standaloneImages: { path: string; alt: string }[],
+  deps: { call: (prompt: string) => Promise<string>; onProgress?: (msg: string) => void },
+): Promise<DesignedSection[]> {
+  const attempt = async (files: StructureFileInfo[]): Promise<DesignedSection[]> => {
+    const prompt = buildStructureDesignPrompt(readmeMd, files, standaloneImages);
+    const text = await deps.call(prompt);
+    return parseStructureDesignResult(text, files.map((f) => f.file), practiceFiles, standaloneImages).sections;
+  };
+  const recurse = async (files: StructureFileInfo[]): Promise<DesignedSection[]> => {
+    try {
+      return await attempt(files);
+    } catch (e) {
+      if (!(e instanceof StructureParseError)) throw e;
+      const why = e.message.slice(0, 80);
+      if (files.length === 1) {
+        const f = files[0]!;
+        const title = f.h1 || (f.file.split("/").pop() ?? f.file).replace(/\.[^.]+$/, "");
+        const world = f.role === "practice" ? ("practice" as const) : ("study" as const);
+        deps.onProgress?.(`⚠ 结构设计输出不完整,已按文件标题兜底一课: ${title}(${why})`);
+        return [{ title, world, lessons: [{ title, file: f.file, world }] }];
+      }
+      deps.onProgress?.(`⚠ 结构设计输出不完整(${files.length} 文件),拆半重试: ${why}`);
+      const mid = Math.floor(files.length / 2);
+      const left = await recurse(files.slice(0, mid));
+      const right = await recurse(files.slice(mid));
+      return [...left, ...right];
+    }
+  };
+  return recurse(fileInfos);
 }
 
 function buildStructureDesignPrompt(
@@ -597,6 +653,13 @@ ${imagesSection}
 }`;
 }
 
+/**
+ * 结构设计输出的"可自愈"错误:JSON 截断 / 缺 sections 数组。
+ * 这类错误随批变小概率指数下降 → designSectionsResilient 据此二分重试。
+ * 网络/看门狗等基础设施错误不是它的子类 —— 那些 propagate,不重试。
+ */
+export class StructureParseError extends Error {}
+
 function parseStructureDesignResult(
   raw: string,
   validFiles: string[],
@@ -608,10 +671,10 @@ function parseStructureDesignResult(
   try {
     obj = JSON.parse(cleaned);
   } catch (e) {
-    throw new Error(`LLM 结构设计 JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`);
+    throw new StructureParseError(`LLM 结构设计 JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`);
   }
   if (!Array.isArray(obj.sections)) {
-    throw new Error("LLM 结构设计缺少 sections 数组");
+    throw new StructureParseError("LLM 结构设计缺少 sections 数组");
   }
   const validSet = new Set(validFiles);
   const validImgPaths = new Set(standaloneImages.map((i) => i.path));

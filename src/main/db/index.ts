@@ -86,8 +86,15 @@ export async function initDb(): Promise<void> {
   // --ui-test 模式:独立全新 temp DB。避免持久化 userData DB 的累积状态(threads/provider/
   // SRS)污染 ui-test 断言(empty-state/keyless/due 等)。每次先删 → 全新 → ensureSeedCourse
   // + ui-test 自带 seed 重新灌,断言确定性。
-  if (process.argv.includes("--ui-test") || process.argv.includes("--shots")) {
-    _dbPath = join(tmpdir(), process.argv.includes("--shots") ? "lookatstudy-shots.db" : "lookatstudy-uitest.db");
+  if (process.argv.includes("--ui-test") || process.argv.includes("--shots") || process.argv.includes("--shots-en")) {
+    _dbPath = join(
+      tmpdir(),
+      process.argv.includes("--shots-en")
+        ? "lookatstudy-shots-en.db"
+        : process.argv.includes("--shots")
+          ? "lookatstudy-shots.db"
+          : "lookatstudy-uitest.db",
+    );
     if (existsSync(_dbPath)) {
       try {
         rmSync(_dbPath);

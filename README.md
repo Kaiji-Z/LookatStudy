@@ -10,7 +10,7 @@ I star a lot of tutorials and finish almost none of them, so I built this for my
 [![Release](https://img.shields.io/github/v/release/Kaiji-Z/LookatStudy?color=1cb0f6&label=release)](https://github.com/Kaiji-Z/LookatStudy/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-ffc800)](#getting-started)
 
-<img src="docs/screenshots/01-overview.png" alt="LookatStudy with the skill map on the left, tutor chat in the middle, notebook on the right" width="880">
+<img src="docs/screenshots/en/01-overview.png" alt="LookatStudy with the skill map on the left, tutor chat in the middle, notebook on the right" width="880">
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -32,9 +32,7 @@ Sections and lessons turn into nodes on a path. Finish one and the next unlocks.
 
 ## The AI tutor knows which concept you're weak on
 
-<img src="docs/screenshots/02-ai-tutor.png" alt="The tutor in English mode, opening a lesson with a guess-first question" width="880">
-
-Same app as the screenshot above, switched to English: interface labels, the built-in course through its 🌐 translation toggle, and the tutor's replies all follow the interface language.
+<img src="docs/screenshots/en/02-ai-tutor.png" alt="The tutor opening a lesson with a guess-first question" width="880">
 
 This is the part I care most about. Every answer you give updates a BKT mastery model on the specific knowledge point behind the question. The tutor sees far more than "chapter 3, 70 percent". You're solid on recursion and shaky on closures, so it keeps asking about closures. When you click "I don't get this" in a chat, the stumble gets logged, and later explanations spend more time where you actually fell and less where you're already bored.
 
@@ -46,7 +44,7 @@ Teaching style is a pill next to the input box, switchable anytime. Explain it t
 
 ## Chapter exams are boss fights
 
-<img src="docs/screenshots/03-exam-boss.png" alt="A timed chapter exam question with one option selected" width="880">
+<img src="docs/screenshots/en/03-exam-boss.png" alt="A timed chapter exam question with one option selected" width="880">
 
 Each chapter ends with an exam guarding the gate. The questions are generated in the background from that chapter's knowledge points, in batches, while you keep studying elsewhere, and a toast tells you when the boss is ready. Every question runs on a countdown, 60 seconds normally, 90 for the ones with long text or code. Walk away mid-exam and the attempt terminates, with unanswered questions counted wrong, so the star score stays honest. The result page breaks your score down by knowledge point, which tells you what to review next. One rule I hold to, exams never write back into the mastery model. They measure. The tutor teaches.
 

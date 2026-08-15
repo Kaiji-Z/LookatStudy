@@ -21,7 +21,7 @@
     "self-test": "vite build && electron . --self-test",
     "ui-test": "vite build && electron . --ui-test --no-sandbox",
     "test:highlight": "electron . --test-highlight --no-sandbox",
-    "shots": "vite build && electron . --shots --no-sandbox",
+    "shots": "vite build && electron . --shots --no-sandbox && electron . --shots-en --no-sandbox",
     "preview": "vite preview",
     "lint": "oxlint .",
     "test": "vitest",

@@ -464,5 +464,186 @@
       "crownLevel": 0
     }
   ],
-  "translations": []
+  "translations": [
+    {
+      "nodeId": "guide-sec-1",
+      "locale": "en",
+      "title": "Quick Start",
+      "content": null
+    },
+    {
+      "nodeId": "guide-les-1-1",
+      "locale": "en",
+      "title": "Welcome to LookatStudy",
+      "content": "# Welcome to LookatStudy\n\n**LookatStudy** is a local-first, AI-driven desktop learning platform. It turns any GitHub learning repo or local folder into a Duolingo-style interactive course — complete with a skill map, an AI tutor, spaced repetition, and playful incentives.\n\n## What it can do for you\n\n- 📚 **Turn any repo into a course**: paste a GitHub URL or pick a local folder; 10 document formats (Markdown / Jupyter / RST / PDF / PPTX / HTML and more) plus 30+ code languages are parsed into a structured course, images included\n- 🗺️ **Skill map navigation**: a Duolingo-style balloon map whose sky drifts from morning to night as you scroll; lessons unlock one by one and visualize your progress\n- 🤖 **A personal AI tutor**: every knowledge point carries its own mastery estimate (BKT); the AI adapts its teaching to your understanding and can see where you recently struggled\n- 📝 **A Cornell notebook**: three zones (understand / notes / practice); the AI generates concept maps, compare tables and flow diagrams while you highlight and annotate\n- 🔁 **Spaced repetition**: SM-2 schedules your reviews; streaks + XP + crowns keep you coming back\n\n## Design philosophy\n\n- **Local first**: all data lives in a local SQLite file — your learning record stays in your hands\n- **BYO Key**: bring your own LLM API key; your conversations never pass through a middleman server\n- **AI drafts, you decide**: the AI never edits your learning record directly — every state change goes through the Propose → Apply protocol and takes effect only after you approve\n\n## Where to start\n\nLookatStudy always opens in the “no course selected” state: pick an imported course in the “Import courses” panel on the left, or import something new. Open the next lesson, “Import Your First Course”, for all the ways in!"
+    },
+    {
+      "nodeId": "guide-les-1-2",
+      "locale": "en",
+      "title": "Import Your First Course",
+      "content": "# Import Your First Course\n\nLookatStudy supports three import paths that cover nearly every source of learning material.\n\n## Path 1: GitHub URL\n\nPaste a GitHub repo address into the “Import courses” panel on the left. The smart pipeline automatically fetches the README to find the course outline, scans the full file tree (documents + code + translations), has AI classify each file's role, has AI design the chapter structure, and inlines images.\n\n## Path 2: Local folder\n\nClick the local-folder button and pick a folder of learning material. Subdirectories are scanned recursively; documents, code, images and translations are recognized automatically.\n\nGood for: downloaded course bundles, locally cloned repos, or a folder of notes you curated yourself.\n\n## Path 3: Pasted Markdown\n\nPaste Markdown text directly. Good for: private repos, network-restricted environments, or quickly turning a block of notes into a course.\n\n## Imports run in the background\n\nClick import and the job goes to the background immediately: a progress window shows each step and how long it took, you can switch away and keep browsing other courses, and a notification pops when the import finishes — no forced jump. You can cancel at any point.\n\n## Managing courses\n\nHovering a course row in the course list shows a delete button (inline confirm card, no screen change); the course you are studying can be deleted too — the button sits next to the course name on the map title card, and deleting returns you to the “no course selected” state. Deleting wipes every learning record of that course and cannot be undone."
+    },
+    {
+      "nodeId": "guide-les-1-3",
+      "locale": "en",
+      "title": "Tour of the Three-Pane Layout",
+      "content": "# Tour of the Three-Pane Layout\n\nLookatStudy uses a three-pane layout; each pane covers a different part of studying. Light / dark / follow-system themes are all supported.\n\n## Left pane: course map and import\n\nThe top of the left pane has two tabs: “Import courses” and “Course map”. The map is a Duolingo-style balloon map — each balloon is a lesson, and as you work your way down, the sky in the background shifts from morning to night.\n\nThe map title card shows the course name, overall mastery percentage, a due-for-review badge, the 🌐 language switch (multilingual courses toggle between original and translated text here), and the delete-course button.\n\n## Middle pane: AI chat\n\nWhere you talk to the AI tutor: thread tabs on top (each lesson can hold several conversation threads), the chat stream in the middle (AI replies stream in; proposal cards and concept maps persist), and the input area at the bottom (with the teaching-persona pill, the A-/A+ font size controls, and four consolidation buttons).\n\nCtrl+K opens the command palette, Ctrl+Tab cycles threads, Ctrl+B collapses the left pane.\n\n## Right pane: the Cornell notebook\n\nA notebook in three zones: the Lesson tab renders the lesson body (Markdown), and you can select text to highlight and annotate. The Notes tab holds the three zones — Understand (AI artifacts), Notes (your highlights), Practice (quizzes + answer history).\n\n## Focus lock\n\nWhile the AI is replying, switching lessons or threads is temporarily locked — so you never lose context mid-answer."
+    },
+    {
+      "nodeId": "guide-exam-1",
+      "locale": "en",
+      "title": "Quick Start · Chapter Quiz",
+      "content": null
+    },
+    {
+      "nodeId": "guide-sec-2",
+      "locale": "en",
+      "title": "The Skill Map",
+      "content": null
+    },
+    {
+      "nodeId": "guide-les-2-1",
+      "locale": "en",
+      "title": "Balloon Nodes and Unlocks",
+      "content": "# Balloon Nodes and Unlocks\n\nEvery balloon on the skill map is a lesson in one of four states:\n\n| State | Look | Meaning |\n|------|------|------|\n| 🔒 locked | gray, translucent | not unlocked yet |\n| 🟢 available | colored, clickable | unlocked, ready to study |\n| 🔵 in_progress | colored + progress ring | currently studying |\n| ⭐ mastered | golden glow | mastered (weakest knowledge point cleared the bar) |\n\n## Unlock logic\n\nLookatStudy uses a two-track strategy so you never get fully stuck on one lesson: click any lesson in the current chapter and both the next lesson of the same chapter and the first lesson of the next chapter unlock. Practice lessons are learnable by default and never block the main line.\n\n## Mastery follows your weakest point\n\nEvery lesson breaks into knowledge points (KCs), each with its own mastery probability. Lesson mastery is the **lowest** value across its KCs — if any single knowledge point lags, the lesson does not count as mastered (no “fake graduation”). The progress ring on a balloon shows exactly that weakest value.\n\nSee chapter 3, “Per-Knowledge-Point BKT”, for details."
+    },
+    {
+      "nodeId": "guide-les-2-2",
+      "locale": "en",
+      "title": "The Two-Track Unlock Strategy",
+      "content": "# The Two-Track Unlock Strategy\n\nLinear courses have one painful failure mode: get stuck on a single lesson and everything stops. LookatStudy solves this with two-track unlocking.\n\n## What two-track means\n\nWhen you click any lesson of the current chapter to start studying, the system unlocks both the next lesson of the same chapter (keeping a steady sense of progress) and the first lesson of the next chapter (so there is always something new to explore).\n\n## Why it is designed this way\n\n- **No dead ends**: one lesson too hard? Hop to the next chapter for a change of scenery and come back later\n- **Stays coherent**: within a chapter the order is still linear, no jumping around\n- **Your call**: finish a chapter before moving on, or explore broadly first and deepen later\n\n## Practice worlds never block\n\nIf a course has practice content, it lives in the “Practice” tab of the map and is fully learnable by default. You can get your hands dirty anytime without finishing the theory first — learn and build in parallel.\n\n## Chapter exams\n\nEvery chapter with at least 2 teaching lessons gets an exam node (the chapter boss). The exam unlocks once the whole chapter's lessons clear the mastery bar — see the next lesson."
+    },
+    {
+      "nodeId": "guide-les-2-3",
+      "locale": "en",
+      "title": "Chapter Exams: Generation, Timers, and Results",
+      "content": "# Chapter Exams\n\nThe chapter exam is the boss at the end of each chapter: a 🎯 node that shows 1-3 stars once passed. It unlocks when every lesson in the chapter clears the mastery bar.\n\n## The question bank generates in the background\n\nOpen the exam node and the AI writes questions in batches by knowledge point, with progress shown as “X / Y knowledge points covered”. While it generates you can go study something else — the job keeps running in the background and notifies you when it is done. Coming back, you see the ready page: N questions, M knowledge points covered, estimated duration; the exam itself only starts when you click “Start exam”.\n\n## A timer on every question\n\nEach question runs its own countdown: 60 seconds for normal questions, 90 for long stems or questions with code. When time runs out, the current choice is recorded and the exam moves on.\n\n## Leaving terminates the attempt\n\nSwitching lessons or courses mid-exam pops a warning: confirm leaving and the attempt terminates, with unanswered questions scored as wrong.\n\n## The results page\n\nAfter submitting you see: stars, accuracy, **a per-knowledge-point breakdown** (weak points are flagged for review), and a question-by-question review (your answer vs the correct one, plus explanations). Returning to the exam node later shows your latest result by default, along with your best star count and total attempts.\n\n## Retakes\n\nRetake as many times as you like. Retakes reuse the same bank, but question order and option order are reshuffled each time — it tests understanding, not memory.\n\n## Exams never touch the learning model\n\nExams are an independent check: results only update stars and XP and **never write back** into knowledge-point mastery. Your BKT record is driven by everyday answers and self-ratings, never shaken by a single exam."
+    },
+    {
+      "nodeId": "guide-exam-2",
+      "locale": "en",
+      "title": "The Skill Map · Chapter Quiz",
+      "content": null
+    },
+    {
+      "nodeId": "guide-sec-3",
+      "locale": "en",
+      "title": "The AI Tutor",
+      "content": null
+    },
+    {
+      "nodeId": "guide-les-3-1",
+      "locale": "en",
+      "title": "Teaching Personas and Chat",
+      "content": "# Teaching Personas and Chat\n\nThe AI tutor's stance is set by its **teaching persona (soul)**, switchable in the persona pill inside the input box.\n\n## Three built-in personas\n\n| Persona | Style | Good for |\n|------|------|---------|\n| 🎯 Direct | worked examples + Feynman-style straight answers | beginners, low-energy days |\n| 🧭 Guided | struggle is where growth happens; questions lead you there | once you have the basics |\n| 🔧 Hands-on | project-style learning around real problems | when you want to apply things |\n\nThe persona changes how things are taught, not the knowledge itself — for the same concept, Direct unpacks it thoroughly, Guided keeps asking “are you sure?”, Hands-on pulls in a real scenario for you to try.\n\n## Start Learning\n\nInside a lesson, the middle pane has a “🚀 Start Learning” button. It opens with a curiosity hook, then a two-option mini guess — just for fun, not scored. Hook the learner first; momentum before formality.\n\n## Four consolidation buttons\n\nOnce the conversation starts, four buttons stay above the input: **Go deeper** (elaboration), **Give me an example** (concretize), **Quiz me** (retrieval practice), **I didn't get that** (voice the confusion; the stumble gets logged too). When you don't know what to ask, click one."
+    },
+    {
+      "nodeId": "guide-les-3-2",
+      "locale": "en",
+      "title": "Per-Knowledge-Point BKT Mastery",
+      "content": "# Per-Knowledge-Point BKT Mastery\n\nLookatStudy does not measure you with a plain accuracy rate — it runs BKT (Bayesian Knowledge Tracing), down to **each individual knowledge point**.\n\n## What BKT is\n\nBKT is a classic mastery model from educational data mining. It maintains a probability between 0 and 1 that you have truly mastered the knowledge point.\n\nEvery time you answer, BKT adjusts that probability with a Bayesian update: a correct answer raises it (but not to 100% — you might have guessed), a wrong one lowers it (but not to 0% — you might have slipped).\n\n## Knowledge-point (KC) granularity\n\nEach lesson breaks into knowledge points, each running its own BKT. Lesson mastery = the **lowest** value among its KCs — the weakest link decides. If any knowledge point lags, the lesson is not marked mastered. That blocks the “mostly got it, move on” fake graduation.\n\n## Two thresholds\n\n- Mastery ≥ 0.5: following lessons unlock (you can move on)\n- Mastery ≥ 0.9: the lesson graduates (golden crown)\n\n## What updates BKT\n\nAnswering in chat, practice-zone quizzes, and review self-ratings all update the relevant knowledge points. **Chapter exams are the exception** — they are an independent check and never write back.\n\n## How the AI uses mastery\n\nThe tutor sees your mastery probability per knowledge point plus your recent stumbles: low mastery gets detailed explanations and analogies, high mastery gets harder challenges, the middle gets comprehension checks to expose misconceptions."
+    },
+    {
+      "nodeId": "guide-les-3-3",
+      "locale": "en",
+      "title": "The Propose → Apply Protocol",
+      "content": "# The Propose → Apply Protocol\n\nOne of LookatStudy's core design principles: the AI never directly modifies your learning record.\n\n## Why the protocol exists\n\nAI makes mistakes (hallucinations, misjudgments). If the AI could directly change your mastery, mark things mastered, or push your progress, a single error would pollute your learning data.\n\n## How it flows\n\n1. The AI decides a change is needed and drafts a proposal\n2. You see a proposal card in the chat — for example “the AI suggests you've mastered this lesson” — with its reasoning and the consequences of applying it\n3. Click “Confirm mastered” to apply, or “Keep practicing” to reject\n\nProposal cards have three states: pending (a green card waiting for your call), accepted (golden check), dismissed (grayed out with strikethrough). Cards persist — switch away and come back, they are still there, state intact.\n\n## You always hold the final say\n\nMost learning apps silently mutate your progress data in the background. LookatStudy makes the process transparent — you see what the AI wants to change and why, and you decide."
+    },
+    {
+      "nodeId": "guide-exam-3",
+      "locale": "en",
+      "title": "The AI Tutor · Chapter Quiz",
+      "content": null
+    },
+    {
+      "nodeId": "guide-sec-4",
+      "locale": "en",
+      "title": "The Cornell Notebook",
+      "content": null
+    },
+    {
+      "nodeId": "guide-les-4-1",
+      "locale": "en",
+      "title": "Three Zones: Understand / Notes / Practice",
+      "content": "# Three Zones: Understand / Notes / Practice\n\nThe right-pane notebook is built on the Cornell Notes method, in three zones.\n\n## 🗺️ Understand (AI artifacts)\n\nAI-generated visual study aids: concept maps (how ideas relate), compare tables (similar concepts side by side), flow diagrams (steps made visible), code walkthroughs (line-by-line annotation). The AI generates them as you learn.\n\n## ✏️ Notes (your highlights)\n\nEvery highlight you made by selecting text on the lesson page: each entry keeps the original wording, can carry an annotation, and clicking one jumps back to the exact spot in the source.\n\n## 📝 Practice (quizzes + history)\n\nThe lesson's exercises and your answer history: AI-generated quiz questions, every attempt kept, wrong answers scheduled for review by the spaced-repetition system.\n\n## Two tabs\n\nThe top of the right pane has two tabs: the Lesson tab shows the lesson body (rendered Markdown); the Notes tab shows the three zones above. Keeping lesson and notes separate lets you read without clutter."
+    },
+    {
+      "nodeId": "guide-les-4-2",
+      "locale": "en",
+      "title": "Highlights, Notes, and Source Jumps",
+      "content": "# Highlights, Notes, and Source Jumps\n\n## How to highlight\n\nSelect a span of text in the right-pane Lesson tab; a note button appears next to the selection; click it and the text gets marked and can carry an annotation. Highlights persist. AI replies in the chat can be highlighted the same way.\n\n## Source jumps\n\nEvery highlight carries a source link. Click one in the Notes zone and you jump back to the Lesson tab (or the thread it came from), scrolled to the highlighted passage and flashing for attention.\n\n## How it works\n\nHighlight anchoring does not depend on DOM offsets (ReactMarkdown re-renders shift the DOM, and offsets go stale). LookatStudy uses plain-text search instead: it records the selected wording and re-locates it after each re-render. That keeps highlights accurate across React re-renders.\n\n## Symmetric by design\n\nHighlights from the lesson page and from chat are symmetric — whatever the source, all highlights are managed together in the Notes zone."
+    },
+    {
+      "nodeId": "guide-les-4-3",
+      "locale": "en",
+      "title": "Generative UI: Concept Maps / Compare Tables / Flow Diagrams",
+      "content": "# Generative UI\n\nThe AI tutor does not only output text — it emits interactive visual components.\n\n## Six generative components\n\n| Component | Use |\n|------|------|\n| 🗺️ Concept map | shows how ideas relate |\n| 📊 Compare table | contrasts several concepts |\n| 📐 Flow diagram | visualizes steps or pipelines |\n| 💻 Code walkthrough | explains code line by line |\n| 📝 Quiz | generates practice on the spot |\n| 🤔 Two-option guess | risk-free opener guess (unscored) |\n\n## What triggers them\n\nThe AI generates them on its own (when a concept suits visualization), on your request (“draw a concept map”), or from the consolidation buttons (Quiz me / Give me an example).\n\n## Where they live\n\nGenerated components appear in the middle-pane chat stream and in the Understand zone of the Notes tab (persisted). An AI concept map does not vanish when the chat ends — it stays in your notebook for review."
+    },
+    {
+      "nodeId": "guide-exam-4",
+      "locale": "en",
+      "title": "The Cornell Notebook · Chapter Quiz",
+      "content": null
+    },
+    {
+      "nodeId": "guide-sec-5",
+      "locale": "en",
+      "title": "The Memory System",
+      "content": null
+    },
+    {
+      "nodeId": "guide-les-5-1",
+      "locale": "en",
+      "title": "SM-2 Spaced Repetition and the Review Drawer",
+      "content": "# SM-2 Spaced Repetition and the Review Drawer\n\nWhat you learned fades — that is human hardware. LookatStudy schedules reviews with the SM-2 algorithm.\n\n## What SM-2 is\n\nSM-2 (SuperMemo 2) is the classic spaced-repetition algorithm, the core of Anki and most memory apps. Every correct review pushes the next interval out (1 day → 6 days → longer...); a wrong answer resets the interval to 1 day and schedules a near-term re-practice.\n\n## BKT and SM-2, wired both ways\n\nOne answer observation drives two models at once: mastery (BKT) judges whether you understand it now; scheduling (SM-2) judges when you will forget. Correct answers push reviews out, wrong ones pull them in; review self-ratings calibrate mastery back.\n\n## The review drawer\n\nThe due badge on the map title card opens the review drawer: the SM-2 quadrants (overdue / short interval / long interval / inactive), a per-chapter mastery accordion, and the lessons you keep stumbling on. The “Interleave” button picks a random learned lesson — change gears while keeping retrieval practice.\n\n## Review self-rating\n\nReviewing from the drawer shows a self-rating card under the lesson: **Forgot / Remembered / Solid**. Honest ratings drive the next interval — saying “forgot” costs nothing and gets the system to patch that spot sooner."
+    },
+    {
+      "nodeId": "guide-les-5-2",
+      "locale": "en",
+      "title": "Streaks and Freezes",
+      "content": "# Streaks and Freezes\n\n## Streaks\n\nComplete at least one learning activity every day and your streak count goes up, shown on the flame badge in the header. Streaks are one of the strongest motivators Duolingo ever validated: watching the number grow makes you not want to break the chain, so you keep showing up. Streak growth gets its own particle celebration.\n\n## Freezes\n\nLife happens; some days studying is impossible. Freezes protect the chain: with a freeze in stock, a missed day does not break the streak — the freeze burns instead. The streak stays motivating without turning into anxiety.\n\n## Reading the state\n\nThe header shows the current streak days (flame icon) and the available freezes. Keeping a streak alive does not require studying a lot every day — one question is enough. The habit is the point."
+    },
+    {
+      "nodeId": "guide-les-5-3",
+      "locale": "en",
+      "title": "XP, Levels, and Crowns",
+      "content": "# XP, Levels, and Crowns\n\nLookatStudy quantifies progress with XP (experience points) and crowns.\n\n## XP and daily energy\n\n| Action | XP |\n|------|---------|\n| Correct answer | +10 XP |\n| Wrong answer | +1 XP |\n| Mastering a lesson | +50 XP |\n\nThe lightning energy bar in the header shows today's XP (soft target of 100; the bolt lights up when full), with the level badge next to it (Lv grows with total XP).\n\n## Crowns\n\nCrowns stand for mastery: a mastered lesson shows a golden glow 👑 on its node, and exam stars sit on the exam nodes. Crown count = lessons you have truly mastered.\n\nXP can be farmed with a large volume of low-quality answers. Crowns require genuinely clearing your weakest knowledge point — no grinding your way there, only understanding. XP rewards the process; crowns certify the result.\n\n## Highlight moments\n\nCorrect answers, unlocks, mastery, streak growth, full energy, exam passed — each of these moments has its own particle celebration (users with system reduced-motion enabled get a static cue instead)."
+    },
+    {
+      "nodeId": "guide-exam-5",
+      "locale": "en",
+      "title": "The Memory System · Chapter Quiz",
+      "content": null
+    },
+    {
+      "nodeId": "guide-sec-6",
+      "locale": "en",
+      "title": "Going Further",
+      "content": null
+    },
+    {
+      "nodeId": "guide-les-6-1",
+      "locale": "en",
+      "title": "LLM Provider Setup",
+      "content": "# LLM Provider Setup\n\nLookatStudy is BYO Key (Bring Your Own Key) — you use your own API key, and conversations never pass through a middleman server.\n\n## Built-in presets\n\n**19** presets in total: Zhipu GLM (standard API / CodingPlan subscription), DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google, Groq, Together, Mistral, xAI, Volcengine Ark, Baidu, MiniMax, Baichuan, StepFun.\n\nEach preset card shows its API endpoint directly and offers several model tiers (free / balanced / flagship).\n\n## Custom providers\n\nIf the presets do not fit, add a custom provider: open Settings and fill in API Base URL, API Key, and Model Name. Any OpenAI-compatible endpoint works (several endpoints from the same vendor are fine too).\n\nCustom provider keys live in the local DB; when the active provider id starts with custom-, it takes precedence.\n\n## Test connection\n\nAfter configuring, hit Test Connection to verify the key: a short test request checks connectivity and model availability."
+    },
+    {
+      "nodeId": "guide-les-6-2",
+      "locale": "en",
+      "title": "Multilingual Translation Support",
+      "content": "# Multilingual Translation Support\n\nLookatStudy recognizes a repo's translation structure automatically, so you can study in the language you prefer.\n\n## Language preference\n\nSet your preferred language in Settings; the default is detected from the system language on first launch.\n\n## The automatic language decision\n\nOn import, the system detects the repo's original language and which translations exist, then combines your preference with the source language to pick what to import. Strict fallback: if the repo has no translation you prefer, the original text is used.\n\n## The in-course language switch\n\nMultilingual courses get a 🌐 switch on the map title card; toggle anytime between the original and the imported translations — titles and lesson bodies follow along.\n\n## Supported layouts\n\nThree conventions are auto-detected: translations/{locale}/ (Microsoft style), {locale}/ parallel folders (Vue / Docusaurus style), and filename.{locale}.md suffixes (blog style).\n\n## Translated images\n\nImages inside translated bodies are not re-fetched (machine-translated images look bad); instead, each image is taken from the original at the matching position. Result: translated body = translated text + original images.\n\nFun fact: this very guide is bilingual — the 🌐 switch you just read about is live on its map title card. Try it."
+    },
+    {
+      "nodeId": "guide-les-6-3",
+      "locale": "en",
+      "title": "Exporting Your Learning Report",
+      "content": "# Exporting Your Learning Report\n\nYour data lives locally — and you can take it out anytime.\n\n## JSON\n\nStructured data: the course list with completion, per-lesson mastery (BKT probabilities), answer history, streak records, XP history, and the spaced-repetition queue state. For analysis, backup, or migration.\n\n## Markdown\n\nA human-readable report: a study summary (total lessons / mastered / streak days / total XP), per-chapter mastery, and selected highlights. For sharing progress or wrapping up a review.\n\n## How to export\n\nClick the export option in the course menu, pick a format (JSON or Markdown), and choose where to save.\n\n## Data ownership\n\nExport is the local-first idea made concrete: your record is not locked in any cloud — no account, no subscription — and you can take your data and leave anytime. It is your data; you hold full control."
+    },
+    {
+      "nodeId": "guide-exam-6",
+      "locale": "en",
+      "title": "Going Further · Chapter Quiz",
+      "content": null
+    }
+  ]
 }

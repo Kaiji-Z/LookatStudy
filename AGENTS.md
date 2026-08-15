@@ -70,11 +70,11 @@ npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
 
-npm run verify:core       # 63 pure-Node/tsx logic test suites
+npm run verify:core       # 64 pure-Node/tsx logic test suites
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 34 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
+npm run ui-test           # real-GUI verification (headless Electron, 35 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + seed bilingual 🌐 switcher + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
 npm run lint              # oxlint
 npm run shots             # capture README screenshots → docs/screenshots/ (headless window, temp DB, real .env LLM; GPU stays ON for capturePage)
 npx tsc --noEmit                       # typecheck renderer
@@ -212,7 +212,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 8. **No native module compilation.** If a dep fails to build, switch to pure-JS.
 9. **Electron stderr unreliable in headless.** Use `--self-test` / `--ui-test` and read JSON result files.
 10. **HMR**: renderer changes (CSS/TSX) auto-reload. Main/preload changes need full restart.
-11. **Seed versioning**: `SEED_VERSION` in `seed.ts` — bump to trigger seed course rebuild. 种子课程是 **LookatStudy 使用指南**(6 章 18 课，内置为静态 `src/main/assets/seed-course.json`，离线、无网络、无 LLM，启动瞬时加载)。内容源码在 `scripts/build-guide-seed.mjs`(课程定义内联在脚本里)。要刷新:跑 `npx tsx scripts/build-guide-seed.mjs` 再 bump `SEED_VERSION`。Never delete the DB to re-seed; it wipes custom providers.
+11. **Seed versioning**: `SEED_VERSION` in `seed.ts` — bump to trigger seed course rebuild. 种子课程是 **LookatStudy 使用指南**(6 章 18 课，**中英双语**——原文 zh-CN + 内置 30 条 en 翻译，🌐 切换器开箱即可演示；内置为静态 `src/main/assets/seed-course.json`，离线、无网络、无 LLM，启动瞬时加载)。内容源码在 `scripts/build-guide-seed.mjs`(课程定义内联在脚本里)。要刷新:跑 `npx tsx scripts/build-guide-seed.mjs` 再 bump `SEED_VERSION`。灌入核心在 `seed-apply.ts`(db 注入式，verify-seed-bilingual.mjs 直测——seed.ts 引 db/index 的 `?raw` 链 tsx 进不去)。Never delete the DB to re-seed; it wipes custom providers.
 
 ## Docs to read before sensitive changes
 

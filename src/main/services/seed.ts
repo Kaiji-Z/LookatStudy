@@ -1,62 +1,24 @@
 /**
- * 种子课程加载器 —— 从内置静态 JSON 加载 microsoft/AI-For-Beginners。
+ * 种子课程加载器 —— 从内置静态 JSON 加载 LookatStudy 使用指南(中英双语)。
  *
- * 不联网、不调 LLM、不跑翻译管线 —— 这些都在构建前由
- * `scripts/build-seed-json.mjs` 一次性完成,产物固化为 `src/main/assets/seed-course.json`。
- * 启动时直接 insert,瞬时完成,离线可用。
+ * 不联网、不调 LLM、不跑翻译管线 —— 课程定义内联在 `scripts/build-guide-seed.mjs`,
+ * 构建期导出为 `src/main/assets/seed-course.json`,启动时直接 insert,瞬时完成,离线可用。
+ * v11 起双语:原文 zh-CN + 内置 en 翻译(→ 地图标题卡 🌐 切换器开箱即可演示)。
  *
- * 数据来源(运行 `npx tsx scripts/build-seed-json.mjs` 重新生成):
- *   importRepoToParsedCourse → generateCourseFromRepoFiles →
- *   fetchTranslatedContent → persistTranslations → 导出 course/nodes/progress/translations
+ * 灌入逻辑在 seed-apply.ts(db 注入式,verify 可直测);本文件只负责定位 JSON + 委托。
  *
  * 幂等:已存在且版本号匹配 → 跳过。版本号 bump 触发重建(删旧 + 重灌)。
  *
- * 为什么用 readFileSync 而非 ?raw:JSON 文件较大(~1MB),且 vite-plugin-electron
+ * 为什么用 readFileSync 而非 ?raw:JSON 文件较大,且 vite-plugin-electron
  * 的 rollup 子构建对 .json?raw 解析不稳定(schema.sql?raw 能解析是因为 sql 后缀
  * 被当 unknown asset,而 .json 被 json 插件拦截)。运行时读文件最稳,dev 和打包
  * 后路径都可靠(主进程 CJS 的 __dirname 在两种场景都指向 dist-electron/main/)。
  */
 import { getDb, markDirty } from "../db/index.js";
-import { courses, contentNodes, contentNodeTranslations, progress } from "../db/schema.js";
-import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-
-/** JSON 顶层结构(与 build-seed-json.mjs 导出格式对齐) */
-interface SeedData {
-  version: number;
-  courseId: string;
-  course: {
-    id: string;
-    repoUrl: string | null;
-    repoName: string;
-    title: string;
-    description: string | null;
-    labType: "doc" | "code" | "notebook";
-  };
-  locale: string;
-  nodes: Array<{
-    id: string;
-    parentId: string | null;
-    type: "section" | "lesson" | "exam";
-    title: string;
-    sourcePath: string | null;
-    orderIdx: number;
-    content: string | null;
-    summary: string | null;
-  }>;
-  progress: Array<{
-    nodeId: string;
-    status: "locked" | "available" | "in_progress" | "mastered";
-    crownLevel: number;
-  }>;
-  translations: Array<{
-    nodeId: string;
-    title: string;
-    content: string | null;
-  }>;
-}
+import { applySeedData, type SeedData } from "./seed-apply.js";
 
 /**
  * 解析内置 JSON 路径。
@@ -95,113 +57,21 @@ function loadSeedData(): SeedData {
     // fallthrough
   }
   throw new Error(
-    `seed-course.json 未找到,试过: ${candidates.join(", ")} — 请运行 npx tsx scripts/build-seed-json.mjs 重新生成。lastErr=${String(lastErr)}`,
+    `seed-course.json 未找到,试过: ${candidates.join(", ")} — 请运行 npx tsx scripts/build-guide-seed.mjs 重新生成。lastErr=${String(lastErr)}`,
   );
 }
 
 const SEED_DATA: SeedData = loadSeedData();
-const COURSE_ID = SEED_DATA.courseId;
 // 种子版本号:bump 触发重建(删旧课程 + 重新灌入)。
 // 改这里的同时应重新跑 build-guide-seed.mjs 更新 JSON 内容。
-const SEED_VERSION = 10;
+// v11:课程双语化(原文 zh-CN + 内置 en 翻译,🌐 切换器随之出现)。
+const SEED_VERSION = 11;
 
 /**
  * 幂等灌入内置种子课程。同步、离线、瞬时。
  * 已存在且 version 匹配 → 跳过。
  */
 export function ensureSeedCourse(): void {
-  const db = getDb();
-
-  const existing = db.select().from(courses).where(eq(courses.id, COURSE_ID)).get();
-
-  // 幂等:已存在且版本号匹配 → 跳过
-  if (existing && (existing.version ?? 1) >= SEED_VERSION) return;
-
-  // 版本号旧或不存在 → 删除旧种子课程(含 content_nodes 由 FK CASCADE,
-  // 但 sql.js 的 FK 有时不稳,显式删更安全)
-  // 兼容清理:旧版种子 id
-  const LEGACY_SEED_IDS = ["seed-fde-roadmap", "seed-ai-for-beginners"];
-  for (const oldId of LEGACY_SEED_IDS) {
-    const oldRow = db.select().from(courses).where(eq(courses.id, oldId)).get();
-    if (oldRow) {
-      db.delete(contentNodes).where(eq(contentNodes.courseId, oldId)).run();
-      db.delete(courses).where(eq(courses.id, oldId)).run();
-      console.error(`[lookatstudy] 清理旧种子课程: ${oldId}`);
-    }
-  }
-  if (existing) {
-    db.delete(contentNodes).where(eq(contentNodes.courseId, COURSE_ID)).run();
-    db.delete(courses).where(eq(courses.id, COURSE_ID)).run();
-  }
-
-  // ── 灌入 course 行 ──
-  // COURSE_ID 来自顶层 courseId 字段,作单一权威;course.id 应与之一致(JSON 校验)。
-  const c = SEED_DATA.course;
-  if (c.id !== COURSE_ID) {
-    throw new Error(
-      `seed-course.json 数据不一致:courseId="${COURSE_ID}" vs course.id="${c.id}"`,
-    );
-  }
-  db.insert(courses)
-    .values({
-      id: COURSE_ID,
-      repoUrl: c.repoUrl,
-      repoName: c.repoName,
-      title: c.title,
-      description: c.description,
-      version: SEED_VERSION,
-      labType: c.labType,
-    })
-    .run();
-
-  // ── 灌入 content_nodes ──
-  for (const n of SEED_DATA.nodes) {
-    db.insert(contentNodes)
-      .values({
-        id: n.id,
-        courseId: COURSE_ID,
-        parentId: n.parentId,
-        type: n.type,
-        title: n.title,
-        sourcePath: n.sourcePath,
-        orderIdx: n.orderIdx,
-        content: n.content,
-        summary: n.summary,
-      })
-      .run();
-  }
-
-  // ── 灌入 初始 progress ──
-  for (const p of SEED_DATA.progress) {
-    db.insert(progress)
-      .values({
-        nodeId: p.nodeId,
-        status: p.status,
-        crownLevel: p.crownLevel,
-      })
-      .run();
-  }
-
-  // ── 灌入 zh-CN 翻译 ──
-  for (const t of SEED_DATA.translations) {
-    const transId = `${t.nodeId}-${SEED_DATA.locale}`;
-    db.insert(contentNodeTranslations)
-      .values({
-        id: transId,
-        nodeId: t.nodeId,
-        courseId: COURSE_ID,
-        locale: SEED_DATA.locale,
-        title: t.title,
-        content: t.content,
-      })
-      .run();
-  }
-
-  markDirty();
-
-  const sectionCount = SEED_DATA.nodes.filter((n) => n.type === "section").length;
-  const lessonCount = SEED_DATA.nodes.filter((n) => n.type === "lesson").length;
-  console.error(
-    `[lookatstudy] 种子课程就绪(内置): ${sectionCount} 章 / ${lessonCount} 课 / ${SEED_DATA.translations.length} 课中文翻译`,
-  );
+  const result = applySeedData(getDb(), SEED_DATA, SEED_VERSION);
+  if (!result.skipped) markDirty();
 }

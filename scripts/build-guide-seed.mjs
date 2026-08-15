@@ -17,10 +17,12 @@ const m = (...lines) => lines.join("\n");
 const sections = [
   {
     title: "快速上手",
+    titleEn: "Quick Start",
     summary: "认识 LookatStudy、导入第一个课程、三栏布局导览",
     lessons: [
       {
         title: "欢迎使用 LookatStudy",
+        titleEn: "Welcome to LookatStudy",
         summary: "了解 LookatStudy 是什么、它能帮你做什么",
         content: m(
 "# 欢迎使用 LookatStudy",
@@ -45,9 +47,33 @@ const sections = [
 "",
 "每次启动 LookatStudy 都从「未选课程」状态开始：在左侧「导入课程」面板里选择一门已导入的课程开始学习，或者导入新课程。点开下一课「导入你的第一个课程」了解全部导入方式！",
         ),
+        contentEn: m(
+"# Welcome to LookatStudy",
+"",
+"**LookatStudy** is a local-first, AI-driven desktop learning platform. It turns any GitHub learning repo or local folder into a Duolingo-style interactive course — complete with a skill map, an AI tutor, spaced repetition, and playful incentives.",
+"",
+"## What it can do for you",
+"",
+"- 📚 **Turn any repo into a course**: paste a GitHub URL or pick a local folder; 10 document formats (Markdown / Jupyter / RST / PDF / PPTX / HTML and more) plus 30+ code languages are parsed into a structured course, images included",
+"- 🗺️ **Skill map navigation**: a Duolingo-style balloon map whose sky drifts from morning to night as you scroll; lessons unlock one by one and visualize your progress",
+"- 🤖 **A personal AI tutor**: every knowledge point carries its own mastery estimate (BKT); the AI adapts its teaching to your understanding and can see where you recently struggled",
+"- 📝 **A Cornell notebook**: three zones (understand / notes / practice); the AI generates concept maps, compare tables and flow diagrams while you highlight and annotate",
+"- 🔁 **Spaced repetition**: SM-2 schedules your reviews; streaks + XP + crowns keep you coming back",
+"",
+"## Design philosophy",
+"",
+"- **Local first**: all data lives in a local SQLite file — your learning record stays in your hands",
+"- **BYO Key**: bring your own LLM API key; your conversations never pass through a middleman server",
+"- **AI drafts, you decide**: the AI never edits your learning record directly — every state change goes through the Propose → Apply protocol and takes effect only after you approve",
+"",
+"## Where to start",
+"",
+"LookatStudy always opens in the “no course selected” state: pick an imported course in the “Import courses” panel on the left, or import something new. Open the next lesson, “Import Your First Course”, for all the ways in!",
+        ),
       },
       {
         title: "导入你的第一个课程",
+        titleEn: "Import Your First Course",
         summary: "三种导入方式、后台导入任务、课程删除",
         content: m(
 "# 导入你的第一个课程",
@@ -76,9 +102,37 @@ const sections = [
 "",
 "课程列表里悬浮课程行可以删除（就地弹确认卡片，不会跳界面）；正在学习的课程也可以直接删——地图头课程名旁有删除按钮，删除后回到「未选课程」初始状态。删除会清掉该课程的全部学习记录，不可撤销。",
         ),
+        contentEn: m(
+"# Import Your First Course",
+"",
+"LookatStudy supports three import paths that cover nearly every source of learning material.",
+"",
+"## Path 1: GitHub URL",
+"",
+"Paste a GitHub repo address into the “Import courses” panel on the left. The smart pipeline automatically fetches the README to find the course outline, scans the full file tree (documents + code + translations), has AI classify each file's role, has AI design the chapter structure, and inlines images.",
+"",
+"## Path 2: Local folder",
+"",
+"Click the local-folder button and pick a folder of learning material. Subdirectories are scanned recursively; documents, code, images and translations are recognized automatically.",
+"",
+"Good for: downloaded course bundles, locally cloned repos, or a folder of notes you curated yourself.",
+"",
+"## Path 3: Pasted Markdown",
+"",
+"Paste Markdown text directly. Good for: private repos, network-restricted environments, or quickly turning a block of notes into a course.",
+"",
+"## Imports run in the background",
+"",
+"Click import and the job goes to the background immediately: a progress window shows each step and how long it took, you can switch away and keep browsing other courses, and a notification pops when the import finishes — no forced jump. You can cancel at any point.",
+"",
+"## Managing courses",
+"",
+"Hovering a course row in the course list shows a delete button (inline confirm card, no screen change); the course you are studying can be deleted too — the button sits next to the course name on the map title card, and deleting returns you to the “no course selected” state. Deleting wipes every learning record of that course and cannot be undone.",
+        ),
       },
       {
         title: "三栏布局导览",
+        titleEn: "Tour of the Three-Pane Layout",
         summary: "技能地图 · AI 对话 · 康奈尔笔记本",
         content: m(
 "# 三栏布局导览",
@@ -105,15 +159,42 @@ const sections = [
 "",
 "当 AI 正在回复时，切换课时和会话会被临时锁定——确保你不会在 AI 输出到一半时丢失上下文。",
         ),
+        contentEn: m(
+"# Tour of the Three-Pane Layout",
+"",
+"LookatStudy uses a three-pane layout; each pane covers a different part of studying. Light / dark / follow-system themes are all supported.",
+"",
+"## Left pane: course map and import",
+"",
+"The top of the left pane has two tabs: “Import courses” and “Course map”. The map is a Duolingo-style balloon map — each balloon is a lesson, and as you work your way down, the sky in the background shifts from morning to night.",
+"",
+"The map title card shows the course name, overall mastery percentage, a due-for-review badge, the 🌐 language switch (multilingual courses toggle between original and translated text here), and the delete-course button.",
+"",
+"## Middle pane: AI chat",
+"",
+"Where you talk to the AI tutor: thread tabs on top (each lesson can hold several conversation threads), the chat stream in the middle (AI replies stream in; proposal cards and concept maps persist), and the input area at the bottom (with the teaching-persona pill, the A-/A+ font size controls, and four consolidation buttons).",
+"",
+"Ctrl+K opens the command palette, Ctrl+Tab cycles threads, Ctrl+B collapses the left pane.",
+"",
+"## Right pane: the Cornell notebook",
+"",
+"A notebook in three zones: the Lesson tab renders the lesson body (Markdown), and you can select text to highlight and annotate. The Notes tab holds the three zones — Understand (AI artifacts), Notes (your highlights), Practice (quizzes + answer history).",
+"",
+"## Focus lock",
+"",
+"While the AI is replying, switching lessons or threads is temporarily locked — so you never lose context mid-answer.",
+        ),
       },
     ],
   },
   {
     title: "技能地图",
+    titleEn: "The Skill Map",
     summary: "节点状态、双线推进、知识点级掌握度、章节考试",
     lessons: [
       {
         title: "气球节点与解锁机制",
+        titleEn: "Balloon Nodes and Unlocks",
         summary: "locked → available → in_progress → mastered",
         content: m(
 "# 气球节点与解锁机制",
@@ -137,9 +218,32 @@ const sections = [
 "",
 "详见第三章「知识点级 BKT」。",
         ),
+        contentEn: m(
+"# Balloon Nodes and Unlocks",
+"",
+"Every balloon on the skill map is a lesson in one of four states:",
+"",
+"| State | Look | Meaning |",
+"|------|------|------|",
+"| 🔒 locked | gray, translucent | not unlocked yet |",
+"| 🟢 available | colored, clickable | unlocked, ready to study |",
+"| 🔵 in_progress | colored + progress ring | currently studying |",
+"| ⭐ mastered | golden glow | mastered (weakest knowledge point cleared the bar) |",
+"",
+"## Unlock logic",
+"",
+"LookatStudy uses a two-track strategy so you never get fully stuck on one lesson: click any lesson in the current chapter and both the next lesson of the same chapter and the first lesson of the next chapter unlock. Practice lessons are learnable by default and never block the main line.",
+"",
+"## Mastery follows your weakest point",
+"",
+"Every lesson breaks into knowledge points (KCs), each with its own mastery probability. Lesson mastery is the **lowest** value across its KCs — if any single knowledge point lags, the lesson does not count as mastered (no “fake graduation”). The progress ring on a balloon shows exactly that weakest value.",
+"",
+"See chapter 3, “Per-Knowledge-Point BKT”, for details.",
+        ),
       },
       {
         title: "双线推进策略",
+        titleEn: "The Two-Track Unlock Strategy",
         summary: "同章下一课 + 下一章首课同时解锁",
         content: m(
 "# 双线推进策略",
@@ -164,9 +268,33 @@ const sections = [
 "",
 "每个有至少 2 个讲解课时的章节会自动添加一个章节考试节点（关底 boss）。整章课时掌握度都达标后考试解锁——详见下一课。",
         ),
+        contentEn: m(
+"# The Two-Track Unlock Strategy",
+"",
+"Linear courses have one painful failure mode: get stuck on a single lesson and everything stops. LookatStudy solves this with two-track unlocking.",
+"",
+"## What two-track means",
+"",
+"When you click any lesson of the current chapter to start studying, the system unlocks both the next lesson of the same chapter (keeping a steady sense of progress) and the first lesson of the next chapter (so there is always something new to explore).",
+"",
+"## Why it is designed this way",
+"",
+"- **No dead ends**: one lesson too hard? Hop to the next chapter for a change of scenery and come back later",
+"- **Stays coherent**: within a chapter the order is still linear, no jumping around",
+"- **Your call**: finish a chapter before moving on, or explore broadly first and deepen later",
+"",
+"## Practice worlds never block",
+"",
+"If a course has practice content, it lives in the “Practice” tab of the map and is fully learnable by default. You can get your hands dirty anytime without finishing the theory first — learn and build in parallel.",
+"",
+"## Chapter exams",
+"",
+"Every chapter with at least 2 teaching lessons gets an exam node (the chapter boss). The exam unlocks once the whole chapter's lessons clear the mastery bar — see the next lesson.",
+        ),
       },
       {
         title: "章节考试：生成、限时与结算",
+        titleEn: "Chapter Exams: Generation, Timers, and Results",
         summary: "后台按知识点出题、每题限时、星级结算与重考",
         content: m(
 "# 章节考试",
@@ -197,15 +325,46 @@ const sections = [
 "",
 "考试是独立检验：结果只更新星数和 XP，**不回写**知识点掌握度。你的 BKT 学习记录只由日常答题和自评驱动，不会被一次考试搅动。",
         ),
+        contentEn: m(
+"# Chapter Exams",
+"",
+"The chapter exam is the boss at the end of each chapter: a 🎯 node that shows 1-3 stars once passed. It unlocks when every lesson in the chapter clears the mastery bar.",
+"",
+"## The question bank generates in the background",
+"",
+"Open the exam node and the AI writes questions in batches by knowledge point, with progress shown as “X / Y knowledge points covered”. While it generates you can go study something else — the job keeps running in the background and notifies you when it is done. Coming back, you see the ready page: N questions, M knowledge points covered, estimated duration; the exam itself only starts when you click “Start exam”.",
+"",
+"## A timer on every question",
+"",
+"Each question runs its own countdown: 60 seconds for normal questions, 90 for long stems or questions with code. When time runs out, the current choice is recorded and the exam moves on.",
+"",
+"## Leaving terminates the attempt",
+"",
+"Switching lessons or courses mid-exam pops a warning: confirm leaving and the attempt terminates, with unanswered questions scored as wrong.",
+"",
+"## The results page",
+"",
+"After submitting you see: stars, accuracy, **a per-knowledge-point breakdown** (weak points are flagged for review), and a question-by-question review (your answer vs the correct one, plus explanations). Returning to the exam node later shows your latest result by default, along with your best star count and total attempts.",
+"",
+"## Retakes",
+"",
+"Retake as many times as you like. Retakes reuse the same bank, but question order and option order are reshuffled each time — it tests understanding, not memory.",
+"",
+"## Exams never touch the learning model",
+"",
+"Exams are an independent check: results only update stars and XP and **never write back** into knowledge-point mastery. Your BKT record is driven by everyday answers and self-ratings, never shaken by a single exam.",
+        ),
       },
     ],
   },
   {
     title: "AI 导师",
+    titleEn: "The AI Tutor",
     summary: "教学人设、知识点级 BKT、Propose→Apply 协议",
     lessons: [
       {
         title: "教学人设与对话",
+        titleEn: "Teaching Personas and Chat",
         summary: "精讲 / 引导 / 实战三种人设，开始学习与巩固选择",
         content: m(
 "# 教学人设与对话",
@@ -230,9 +389,33 @@ const sections = [
 "",
 "开始对话后，输入框上方常驻四个按钮：**深入这点**（精加工）、**举个例子**（具体化）、**考考我**（检索练习）、**我没太懂**（说出困惑，会顺手记下卡点）。不知道问什么时，点一个试试。",
         ),
+        contentEn: m(
+"# Teaching Personas and Chat",
+"",
+"The AI tutor's stance is set by its **teaching persona (soul)**, switchable in the persona pill inside the input box.",
+"",
+"## Three built-in personas",
+"",
+"| Persona | Style | Good for |",
+"|------|------|---------|",
+"| 🎯 Direct | worked examples + Feynman-style straight answers | beginners, low-energy days |",
+"| 🧭 Guided | struggle is where growth happens; questions lead you there | once you have the basics |",
+"| 🔧 Hands-on | project-style learning around real problems | when you want to apply things |",
+"",
+"The persona changes how things are taught, not the knowledge itself — for the same concept, Direct unpacks it thoroughly, Guided keeps asking “are you sure?”, Hands-on pulls in a real scenario for you to try.",
+"",
+"## Start Learning",
+"",
+"Inside a lesson, the middle pane has a “🚀 Start Learning” button. It opens with a curiosity hook, then a two-option mini guess — just for fun, not scored. Hook the learner first; momentum before formality.",
+"",
+"## Four consolidation buttons",
+"",
+"Once the conversation starts, four buttons stay above the input: **Go deeper** (elaboration), **Give me an example** (concretize), **Quiz me** (retrieval practice), **I didn't get that** (voice the confusion; the stumble gets logged too). When you don't know what to ask, click one.",
+        ),
       },
       {
         title: "知识点级 BKT 掌握度",
+        titleEn: "Per-Knowledge-Point BKT Mastery",
         summary: "每个知识点独立追踪，课时掌握度看短板",
         content: m(
 "# 知识点级 BKT 掌握度",
@@ -262,9 +445,38 @@ const sections = [
 "",
 "AI 导师能看到你对每个知识点的掌握概率和最近的卡点：低掌握度时更详细讲解多用类比，高掌握度时给出更高级的挑战，中等时检查理解确认没有误解。",
         ),
+        contentEn: m(
+"# Per-Knowledge-Point BKT Mastery",
+"",
+"LookatStudy does not measure you with a plain accuracy rate — it runs BKT (Bayesian Knowledge Tracing), down to **each individual knowledge point**.",
+"",
+"## What BKT is",
+"",
+"BKT is a classic mastery model from educational data mining. It maintains a probability between 0 and 1 that you have truly mastered the knowledge point.",
+"",
+"Every time you answer, BKT adjusts that probability with a Bayesian update: a correct answer raises it (but not to 100% — you might have guessed), a wrong one lowers it (but not to 0% — you might have slipped).",
+"",
+"## Knowledge-point (KC) granularity",
+"",
+"Each lesson breaks into knowledge points, each running its own BKT. Lesson mastery = the **lowest** value among its KCs — the weakest link decides. If any knowledge point lags, the lesson is not marked mastered. That blocks the “mostly got it, move on” fake graduation.",
+"",
+"## Two thresholds",
+"",
+"- Mastery ≥ 0.5: following lessons unlock (you can move on)",
+"- Mastery ≥ 0.9: the lesson graduates (golden crown)",
+"",
+"## What updates BKT",
+"",
+"Answering in chat, practice-zone quizzes, and review self-ratings all update the relevant knowledge points. **Chapter exams are the exception** — they are an independent check and never write back.",
+"",
+"## How the AI uses mastery",
+"",
+"The tutor sees your mastery probability per knowledge point plus your recent stumbles: low mastery gets detailed explanations and analogies, high mastery gets harder challenges, the middle gets comprehension checks to expose misconceptions.",
+        ),
       },
       {
         title: "Propose → Apply 协议",
+        titleEn: "The Propose → Apply Protocol",
         summary: "AI 起草状态变更，你确认后才生效",
         content: m(
 "# Propose → Apply 协议",
@@ -287,15 +499,38 @@ const sections = [
 "",
 "大多数学习 App 在后台静默修改你的进度数据。LookatStudy 把这个过程透明化——你能看到 AI 想改什么、为什么改，然后自己决定。",
         ),
+        contentEn: m(
+"# The Propose → Apply Protocol",
+"",
+"One of LookatStudy's core design principles: the AI never directly modifies your learning record.",
+"",
+"## Why the protocol exists",
+"",
+"AI makes mistakes (hallucinations, misjudgments). If the AI could directly change your mastery, mark things mastered, or push your progress, a single error would pollute your learning data.",
+"",
+"## How it flows",
+"",
+"1. The AI decides a change is needed and drafts a proposal",
+"2. You see a proposal card in the chat — for example “the AI suggests you've mastered this lesson” — with its reasoning and the consequences of applying it",
+"3. Click “Confirm mastered” to apply, or “Keep practicing” to reject",
+"",
+"Proposal cards have three states: pending (a green card waiting for your call), accepted (golden check), dismissed (grayed out with strikethrough). Cards persist — switch away and come back, they are still there, state intact.",
+"",
+"## You always hold the final say",
+"",
+"Most learning apps silently mutate your progress data in the background. LookatStudy makes the process transparent — you see what the AI wants to change and why, and you decide.",
+        ),
       },
     ],
   },
   {
     title: "康奈尔笔记本",
+    titleEn: "The Cornell Notebook",
     summary: "三区设计、画线溯源、生成式 UI",
     lessons: [
       {
         title: "三区设计：理解 / 笔记 / 练习",
+        titleEn: "Three Zones: Understand / Notes / Practice",
         summary: "康奈尔笔记法在 LookatStudy 的实现",
         content: m(
 "# 三区设计：理解 / 笔记 / 练习",
@@ -318,9 +553,31 @@ const sections = [
 "",
 "右栏顶部有两个 Tab：讲解 Tab 显示课时正文（Markdown 渲染），笔记 Tab 展示上述三区。讲解和笔记分开，让你在阅读正文时不被笔记干扰。",
         ),
+        contentEn: m(
+"# Three Zones: Understand / Notes / Practice",
+"",
+"The right-pane notebook is built on the Cornell Notes method, in three zones.",
+"",
+"## 🗺️ Understand (AI artifacts)",
+"",
+"AI-generated visual study aids: concept maps (how ideas relate), compare tables (similar concepts side by side), flow diagrams (steps made visible), code walkthroughs (line-by-line annotation). The AI generates them as you learn.",
+"",
+"## ✏️ Notes (your highlights)",
+"",
+"Every highlight you made by selecting text on the lesson page: each entry keeps the original wording, can carry an annotation, and clicking one jumps back to the exact spot in the source.",
+"",
+"## 📝 Practice (quizzes + history)",
+"",
+"The lesson's exercises and your answer history: AI-generated quiz questions, every attempt kept, wrong answers scheduled for review by the spaced-repetition system.",
+"",
+"## Two tabs",
+"",
+"The top of the right pane has two tabs: the Lesson tab shows the lesson body (rendered Markdown); the Notes tab shows the three zones above. Keeping lesson and notes separate lets you read without clutter.",
+        ),
       },
       {
         title: "画线加笔记与溯源跳转",
+        titleEn: "Highlights, Notes, and Source Jumps",
         summary: "选中文本画线，带溯源链接跳回原文",
         content: m(
 "# 画线加笔记与溯源跳转",
@@ -341,9 +598,29 @@ const sections = [
 "",
 "讲解页面的画线和对话中的画线是对称的——不论来自讲解还是对话，所有画线统一管理在笔记区。",
         ),
+        contentEn: m(
+"# Highlights, Notes, and Source Jumps",
+"",
+"## How to highlight",
+"",
+"Select a span of text in the right-pane Lesson tab; a note button appears next to the selection; click it and the text gets marked and can carry an annotation. Highlights persist. AI replies in the chat can be highlighted the same way.",
+"",
+"## Source jumps",
+"",
+"Every highlight carries a source link. Click one in the Notes zone and you jump back to the Lesson tab (or the thread it came from), scrolled to the highlighted passage and flashing for attention.",
+"",
+"## How it works",
+"",
+"Highlight anchoring does not depend on DOM offsets (ReactMarkdown re-renders shift the DOM, and offsets go stale). LookatStudy uses plain-text search instead: it records the selected wording and re-locates it after each re-render. That keeps highlights accurate across React re-renders.",
+"",
+"## Symmetric by design",
+"",
+"Highlights from the lesson page and from chat are symmetric — whatever the source, all highlights are managed together in the Notes zone.",
+        ),
       },
       {
         title: "生成式 UI：概念图 / 对比表 / 流程图",
+        titleEn: "Generative UI: Concept Maps / Compare Tables / Flow Diagrams",
         summary: "AI 动态生成的可视化学习工具",
         content: m(
 "# 生成式 UI",
@@ -369,15 +646,41 @@ const sections = [
 "",
 "所有 AI 生成的组件出现在中栏对话流和右栏笔记 Tab 的理解区（持久保存）。AI 生成的概念图不是聊完就消失——它们留在你的笔记本里随时回顾。",
         ),
+        contentEn: m(
+"# Generative UI",
+"",
+"The AI tutor does not only output text — it emits interactive visual components.",
+"",
+"## Six generative components",
+"",
+"| Component | Use |",
+"|------|------|",
+"| 🗺️ Concept map | shows how ideas relate |",
+"| 📊 Compare table | contrasts several concepts |",
+"| 📐 Flow diagram | visualizes steps or pipelines |",
+"| 💻 Code walkthrough | explains code line by line |",
+"| 📝 Quiz | generates practice on the spot |",
+"| 🤔 Two-option guess | risk-free opener guess (unscored) |",
+"",
+"## What triggers them",
+"",
+"The AI generates them on its own (when a concept suits visualization), on your request (“draw a concept map”), or from the consolidation buttons (Quiz me / Give me an example).",
+"",
+"## Where they live",
+"",
+"Generated components appear in the middle-pane chat stream and in the Understand zone of the Notes tab (persisted). An AI concept map does not vanish when the chat ends — it stays in your notebook for review.",
+        ),
       },
     ],
   },
   {
     title: "记忆系统",
+    titleEn: "The Memory System",
     summary: "间隔重复与复习抽屉、连续打卡、XP 与皇冠",
     lessons: [
       {
         title: "SM-2 间隔重复与复习抽屉",
+        titleEn: "SM-2 Spaced Repetition and the Review Drawer",
         summary: "科学算法安排复习，复习抽屉统一入口",
         content: m(
 "# SM-2 间隔重复与复习抽屉",
@@ -400,9 +703,31 @@ const sections = [
 "",
 "从复习抽屉选课复习时，讲解底部出现自评卡：**忘了 / 记得 / 很熟**。诚实的自评决定下次间隔——说忘了不丢人，它让系统更快把这块补上。",
         ),
+        contentEn: m(
+"# SM-2 Spaced Repetition and the Review Drawer",
+"",
+"What you learned fades — that is human hardware. LookatStudy schedules reviews with the SM-2 algorithm.",
+"",
+"## What SM-2 is",
+"",
+"SM-2 (SuperMemo 2) is the classic spaced-repetition algorithm, the core of Anki and most memory apps. Every correct review pushes the next interval out (1 day → 6 days → longer...); a wrong answer resets the interval to 1 day and schedules a near-term re-practice.",
+"",
+"## BKT and SM-2, wired both ways",
+"",
+"One answer observation drives two models at once: mastery (BKT) judges whether you understand it now; scheduling (SM-2) judges when you will forget. Correct answers push reviews out, wrong ones pull them in; review self-ratings calibrate mastery back.",
+"",
+"## The review drawer",
+"",
+"The due badge on the map title card opens the review drawer: the SM-2 quadrants (overdue / short interval / long interval / inactive), a per-chapter mastery accordion, and the lessons you keep stumbling on. The “Interleave” button picks a random learned lesson — change gears while keeping retrieval practice.",
+"",
+"## Review self-rating",
+"",
+"Reviewing from the drawer shows a self-rating card under the lesson: **Forgot / Remembered / Solid**. Honest ratings drive the next interval — saying “forgot” costs nothing and gets the system to patch that spot sooner.",
+        ),
       },
       {
         title: "连续打卡与冻结",
+        titleEn: "Streaks and Freezes",
         summary: "Streak 机制，冻结保护不断链",
         content: m(
 "# 连续打卡与冻结",
@@ -419,9 +744,25 @@ const sections = [
 "",
 "顶栏显示当前连续天数（火焰图标）和可用冻结数。保持连续打卡不需要每天学很多——哪怕做一道题就够了。关键是保持习惯。",
         ),
+        contentEn: m(
+"# Streaks and Freezes",
+"",
+"## Streaks",
+"",
+"Complete at least one learning activity every day and your streak count goes up, shown on the flame badge in the header. Streaks are one of the strongest motivators Duolingo ever validated: watching the number grow makes you not want to break the chain, so you keep showing up. Streak growth gets its own particle celebration.",
+"",
+"## Freezes",
+"",
+"Life happens; some days studying is impossible. Freezes protect the chain: with a freeze in stock, a missed day does not break the streak — the freeze burns instead. The streak stays motivating without turning into anxiety.",
+"",
+"## Reading the state",
+"",
+"The header shows the current streak days (flame icon) and the available freezes. Keeping a streak alive does not require studying a lot every day — one question is enough. The habit is the point.",
+        ),
       },
       {
         title: "XP、等级与皇冠",
+        titleEn: "XP, Levels, and Crowns",
         summary: "经验值、今日能量与掌握度皇冠",
         content: m(
 "# XP、等级与皇冠",
@@ -448,15 +789,42 @@ const sections = [
 "",
 "答对、解锁、掌握、连击增长、能量充满、考试通过——这些时刻都有对应的粒子庆祝动效（尊重系统减少动效设置的用户会自动换成静态提示）。",
         ),
+        contentEn: m(
+"# XP, Levels, and Crowns",
+"",
+"LookatStudy quantifies progress with XP (experience points) and crowns.",
+"",
+"## XP and daily energy",
+"",
+"| Action | XP |",
+"|------|---------|",
+"| Correct answer | +10 XP |",
+"| Wrong answer | +1 XP |",
+"| Mastering a lesson | +50 XP |",
+"",
+"The lightning energy bar in the header shows today's XP (soft target of 100; the bolt lights up when full), with the level badge next to it (Lv grows with total XP).",
+"",
+"## Crowns",
+"",
+"Crowns stand for mastery: a mastered lesson shows a golden glow 👑 on its node, and exam stars sit on the exam nodes. Crown count = lessons you have truly mastered.",
+"",
+"XP can be farmed with a large volume of low-quality answers. Crowns require genuinely clearing your weakest knowledge point — no grinding your way there, only understanding. XP rewards the process; crowns certify the result.",
+"",
+"## Highlight moments",
+"",
+"Correct answers, unlocks, mastery, streak growth, full energy, exam passed — each of these moments has its own particle celebration (users with system reduced-motion enabled get a static cue instead).",
+        ),
       },
     ],
   },
   {
     title: "进阶功能",
+    titleEn: "Going Further",
     summary: "Provider 配置、多语言翻译、导出报告",
     lessons: [
       {
         title: "LLM Provider 配置",
+        titleEn: "LLM Provider Setup",
         summary: "19 个内置预设 + 自定义 Provider，BYO API Key",
         content: m(
 "# LLM Provider 配置",
@@ -479,9 +847,31 @@ const sections = [
 "",
 "配置完成后点击测试连接按钮验证 Key 是否有效。系统会发送一个简短的测试请求，检查连通性和模型可用性。",
         ),
+        contentEn: m(
+"# LLM Provider Setup",
+"",
+"LookatStudy is BYO Key (Bring Your Own Key) — you use your own API key, and conversations never pass through a middleman server.",
+"",
+"## Built-in presets",
+"",
+"**19** presets in total: Zhipu GLM (standard API / CodingPlan subscription), DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google, Groq, Together, Mistral, xAI, Volcengine Ark, Baidu, MiniMax, Baichuan, StepFun.",
+"",
+"Each preset card shows its API endpoint directly and offers several model tiers (free / balanced / flagship).",
+"",
+"## Custom providers",
+"",
+"If the presets do not fit, add a custom provider: open Settings and fill in API Base URL, API Key, and Model Name. Any OpenAI-compatible endpoint works (several endpoints from the same vendor are fine too).",
+"",
+"Custom provider keys live in the local DB; when the active provider id starts with custom-, it takes precedence.",
+"",
+"## Test connection",
+"",
+"After configuring, hit Test Connection to verify the key: a short test request checks connectivity and model availability.",
+        ),
       },
       {
         title: "多语言翻译支持",
+        titleEn: "Multilingual Translation Support",
         summary: "自动检测翻译约定，按偏好语言导入与切换",
         content: m(
 "# 多语言翻译支持",
@@ -508,9 +898,37 @@ const sections = [
 "",
 "翻译版正文里的图片不另外下载（机翻图片质量差），而是按出现位置替换成原文对应位置的图片。结果：翻译正文 = 翻译文字 + 原文图片。",
         ),
+        contentEn: m(
+"# Multilingual Translation Support",
+"",
+"LookatStudy recognizes a repo's translation structure automatically, so you can study in the language you prefer.",
+"",
+"## Language preference",
+"",
+"Set your preferred language in Settings; the default is detected from the system language on first launch.",
+"",
+"## The automatic language decision",
+"",
+"On import, the system detects the repo's original language and which translations exist, then combines your preference with the source language to pick what to import. Strict fallback: if the repo has no translation you prefer, the original text is used.",
+"",
+"## The in-course language switch",
+"",
+"Multilingual courses get a 🌐 switch on the map title card; toggle anytime between the original and the imported translations — titles and lesson bodies follow along.",
+"",
+"## Supported layouts",
+"",
+"Three conventions are auto-detected: translations/{locale}/ (Microsoft style), {locale}/ parallel folders (Vue / Docusaurus style), and filename.{locale}.md suffixes (blog style).",
+"",
+"## Translated images",
+"",
+"Images inside translated bodies are not re-fetched (machine-translated images look bad); instead, each image is taken from the original at the matching position. Result: translated body = translated text + original images.",
+"",
+"Fun fact: this very guide is bilingual — the 🌐 switch you just read about is live on its map title card. Try it.",
+        ),
       },
       {
         title: "导出学习报告",
+        titleEn: "Exporting Your Learning Report",
         summary: "JSON / Markdown 格式导出全部学习数据",
         content: m(
 "# 导出学习报告",
@@ -533,6 +951,27 @@ const sections = [
 "",
 "导出功能是本地优先理念的直接体现：你的学习记录不锁定在任何云端，不需要账号不需要订阅，随时可以带着你的数据离开。这是你的数据，你拥有完全的控制权。",
         ),
+        contentEn: m(
+"# Exporting Your Learning Report",
+"",
+"Your data lives locally — and you can take it out anytime.",
+"",
+"## JSON",
+"",
+"Structured data: the course list with completion, per-lesson mastery (BKT probabilities), answer history, streak records, XP history, and the spaced-repetition queue state. For analysis, backup, or migration.",
+"",
+"## Markdown",
+"",
+"A human-readable report: a study summary (total lessons / mastered / streak days / total XP), per-chapter mastery, and selected highlights. For sharing progress or wrapping up a review.",
+"",
+"## How to export",
+"",
+"Click the export option in the course menu, pick a format (JSON or Markdown), and choose where to save.",
+"",
+"## Data ownership",
+"",
+"Export is the local-first idea made concrete: your record is not locked in any cloud — no account, no subscription — and you can take your data and leave anytime. It is your data; you hold full control.",
+        ),
       },
     ],
   },
@@ -542,9 +981,13 @@ const sections = [
 // 生成 SeedData JSON
 // ============================================================
 
+// 翻译语言:原文 zh-CN,内置英文翻译——种子课程开箱即可演示 🌐 原文/翻译切换
+const EN = "en";
+
 function generateSeedData() {
   const nodes = [];
   const progress = [];
+  const translations = [];
 
   sections.forEach((sec, secIdx) => {
     const secId = "guide-sec-" + (secIdx + 1);
@@ -553,6 +996,7 @@ function generateSeedData() {
       title: sec.title, sourcePath: "ch" + (secIdx + 1),
       orderIdx: secIdx, content: null, summary: sec.summary || null,
     });
+    translations.push({ nodeId: secId, locale: EN, title: sec.titleEn, content: null });
     progress.push({ nodeId: secId, status: secIdx === 0 ? "available" : "locked", crownLevel: 0 });
 
     sec.lessons.forEach((lesson, lesIdx) => {
@@ -563,6 +1007,7 @@ function generateSeedData() {
         sourcePath: "ch" + (secIdx + 1) + "/lesson-" + (lesIdx + 1) + ".md",
         orderIdx: lesIdx, content: lesson.content, summary: lesson.summary || null,
       });
+      translations.push({ nodeId: lesId, locale: EN, title: lesson.titleEn, content: lesson.contentEn });
       const isFirst = secIdx === 0 && lesIdx === 0;
       const isSecondChapterFirst = secIdx === 1 && lesIdx === 0;
       progress.push({
@@ -579,6 +1024,7 @@ function generateSeedData() {
         title: sec.title + " · 章节测验", sourcePath: null,
         orderIdx: sec.lessons.length, content: null, summary: null,
       });
+      translations.push({ nodeId: examId, locale: EN, title: sec.titleEn + " · Chapter Quiz", content: null });
       progress.push({ nodeId: examId, status: "available", crownLevel: 0 });
     }
   });
@@ -592,19 +1038,37 @@ function generateSeedData() {
       description: "学习如何使用 LookatStudy 的全部功能——从导入课程到 AI 导师到间隔重复",
       labType: "doc",
     },
-    locale: "zh-CN",
-    nodes, progress,
-    translations: [],
+    locale: "zh-CN", // 原文语言(灌入时写 courses.source_lang);内置翻译语言见 translations[].locale
+    nodes, progress, translations,
   };
 }
 
 const data = generateSeedData();
+
+// 双语完整性自检:每节/课/考试必须有英文翻译,课的翻译正文非空,引用的 nodeId 必须存在
+{
+  const ids = new Set(data.nodes.map((n) => n.id));
+  const seen = new Set();
+  for (const t of data.translations) {
+    if (!ids.has(t.nodeId)) throw new Error("翻译引用不存在的 nodeId: " + t.nodeId);
+    const key = t.nodeId + "|" + t.locale;
+    if (seen.has(key)) throw new Error("翻译重复: " + key);
+    seen.add(key);
+    if (!t.title || !t.title.trim()) throw new Error("翻译缺标题: " + t.nodeId);
+  }
+  for (const n of data.nodes.filter((x) => x.type === "lesson")) {
+    const t = data.translations.find((x) => x.nodeId === n.id && x.locale === EN);
+    if (!t || !t.content || !t.content.trim()) throw new Error("课时缺英文翻译正文: " + n.id);
+  }
+}
+
 const lessons = data.nodes.filter((n) => n.type === "lesson");
 const exams = data.nodes.filter((n) => n.type === "exam");
 const secs = data.nodes.filter((n) => n.type === "section");
 console.log("课程: " + data.course.title);
 console.log("  " + secs.length + " 章 / " + lessons.length + " 课 / " + exams.length + " 测验");
 console.log("  " + data.nodes.length + " 总节点 / " + data.progress.length + " 进度记录");
+console.log("  " + data.translations.length + " 条英文翻译(原文 zh-CN,🌐 切换可演示)");
 
 const nodeIds = new Set(data.nodes.map((n) => n.id));
 for (const p of data.progress) {

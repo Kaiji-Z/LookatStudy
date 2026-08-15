@@ -23,8 +23,12 @@ type Db = SQLJsDatabase<typeof schema>;
 
 /**
  * 构造 system prompt。basePrompt 是 agent 的基础人设/约束。
+ *
+ * langReminder(可选,非 zh 时由调用方传):追加在 soul body 之后的语言提醒——
+ * soul body 是中文写的,提醒 LLM 人设只管行为不管语言,输出语言跟随基座指令。
+ * 无 active soul 时提醒也丢弃(语言指令已在 basePrompt 里,不依赖本参数)。
  */
-export function buildSystemPrompt(db: Db, basePrompt: string): string {
+export function buildSystemPrompt(db: Db, basePrompt: string, langReminder?: string): string {
   // 1. 读 active soul 名(无则 base)
   const activeName = getActiveSoul(db);
   if (!activeName) return basePrompt;
@@ -45,7 +49,9 @@ export function buildSystemPrompt(db: Db, basePrompt: string): string {
   const soulBody = parsed.body.trim();
   if (!soulBody) return basePrompt;
 
-  return `${basePrompt}\n\n${soulBody}`;
+  return langReminder
+    ? `${basePrompt}\n\n${soulBody}\n\n${langReminder}`
+    : `${basePrompt}\n\n${soulBody}`;
 }
 
 /* ---------- 内部 ---------- */

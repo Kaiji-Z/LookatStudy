@@ -1056,3 +1056,8 @@ export function useLang(): (key: string, vars?: Record<string, string | number>)
     [lang],
   );
 }
+
+/** 订阅式取原始界面语言值("zh-CN" | "en")——需要把语言本身传出去时用(AI 输出语言等)。 */
+export function useLangValue(): Lang {
+  return useSyncExternalStore(subscribe, getLang, getLang);
+}

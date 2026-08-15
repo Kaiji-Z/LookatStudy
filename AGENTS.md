@@ -70,7 +70,7 @@ npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
 
-npm run verify:core       # 64 pure-Node/tsx logic test suites
+npm run verify:core       # 65 pure-Node/tsx logic test suites
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -124,7 +124,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 
 | Service | File | What it does |
 |---------|------|-------------|
-| Agent engine | `services/agent/agent-engine.ts` | `handleAgentChatThread` — thread-based context assembly, 6 display tools (`show_concept_map` / `generate_quiz` / `compare_table` / `draw_diagram` / `show_code_walkthrough` / `pose_guess`), `chat:part` emission, mastery-based teaching strategy; 注入近期 friction 卡点(`pure/friction-context.ts` buildFrictionContext)让 AI 看见学习者挣扎点 |
+| Agent engine | `services/agent/agent-engine.ts` | `handleAgentChatThread` — thread-based context assembly, 6 display tools (`show_concept_map` / `generate_quiz` / `compare_table` / `draw_diagram` / `show_code_walkthrough` / `pose_guess`), `chat:part` emission, mastery-based teaching strategy; 注入近期 friction 卡点(`pure/friction-context.ts` buildFrictionContext)让 AI 看见学习者挣扎点;**AI 输出语言 = 界面语言**(i18n,非课程 🌐):渲染层穿 locale → `resolveOutputLang`(`@shared/locales`,纯函数)→ `agent/base-prompt.ts` 组装提示词(zh 默认逐字节不变,非 zh 英文指令点名工具参数也跟随);exercise/exam 出题同一链 |
 | Soul (教学人设) | `services/souls/soul-service.ts` + `prompt-builder.ts` | 教学人设/persona CRUD + 激活;`buildSystemPrompt(db, BASE)` 把激活 soul 的 body 拼到 base prompt 后面注入 `streamText({system})`。3 内置 soul:精讲(direct)/引导(guide)/实战(practice)。**注:soul=persona,非过程性 playbook**;真 skill(多步任务固化)是未来独立模块。`active_soul=null` 时返回 base(等价关闭,无 flag 门控) |
 | LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection`, `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels` |
 | LLM presets | `services/agent/llm-presets.ts` | 19 provider presets (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google, Groq, Together, Mistral, xAI, Volcano, Baidu, MiniMax, Baichuan, StepFun) |

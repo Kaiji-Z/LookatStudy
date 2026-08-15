@@ -27,7 +27,7 @@ import { useChatStream } from "./lib/useChatStream.js";
 import { useThreads } from "./lib/useThreads.js";
 import { useToast } from "./components/Toast.js";
 import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
-import { useLang } from "./lib/i18n.js";
+import { useLang, useLangValue } from "./lib/i18n.js";
 import { useFocusTrap } from "./lib/useFocusTrap.js";
 import { CelebrationLayer } from "./components/CelebrationLayer.js";
 import { celebrate } from "./lib/celebration.js";
@@ -100,7 +100,9 @@ export default function App() {
 
   // v0.4: thread 模型—— useThreads 管 thread 列表, useChatStream 管当前 thread 消息
   const thread = useThreads(selectedCourseId, selectedNodeId);
-  const chat = useChatStream(thread.activeId);
+  // AI 输出语言 = 界面语言(用户偏好什么界面就偏好什么输出),不是课程 🌐 显示语言
+  const uiLang = useLangValue();
+  const chat = useChatStream(thread.activeId, uiLang);
 
   // 哪里不会点哪里:右栏选中文字 → 注入聊天框。用自增 key 触发 ChatComposer 的 effect(同一段话连点两次也要触发)。
   const [quoteText, setQuoteText] = useState<string>("");
@@ -694,6 +696,7 @@ export default function App() {
                 /* 考试节点:渲染 ExamView 替代 chat(关底 boss,独立 UI) */
                 <ExamView
                   examNode={selectedNode}
+                  locale={uiLang}
                   onSessionChange={handleExamSessionChange}
                   paused={examLeave.open}
                   onExamCompleted={() => {

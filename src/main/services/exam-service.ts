@@ -43,6 +43,8 @@ import type {
 import { planExamQuota } from "@shared/exam-logic";
 import { generateText } from "ai";
 import { resolveLlm } from "./agent/llm-client.js";
+import { questionLanguageLine } from "@shared/locales";
+import { resolveOutputLang } from "@shared/locales";
 import { gradeAnswer } from "./exercise-service.js";
 import { addXp } from "./xp-service.js";
 import { emitStateChange } from "../lib/state-emitter.js";
@@ -77,7 +79,8 @@ const BATCH_RETRY = 1;
  * 幂等启动题目生成:已就绪(DB 有题)→ ready;生成中 → 返回进行中状态;
  * 否则后台启动(不阻塞,进度走 exam:status 事件),立即返回 generating。
  */
-export function prepareExam(db: Db, examNodeId: string): ExamStatus {
+/** locale: 界面语言(i18n)——用户偏好什么界面就偏好什么输出;null/缺省 = zh-CN。题库一次性生成,语言在生成时定格。 */
+export function prepareExam(db: Db, examNodeId: string, locale?: string | null): ExamStatus {
   const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
   if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
 
@@ -97,7 +100,7 @@ export function prepareExam(db: Db, examNodeId: string): ExamStatus {
 
   // 启动后台生成。generateExamBank 的同步前缀(节点检查+KC 收集+setGenerating)
   // 在本函数返回前执行完,因此这里 peek 一定拿到 generating 态。
-  const p = generateExamBank(db, examNodeId);
+  const p = generateExamBank(db, examNodeId, locale);
   setPromise(examNodeId, p);
   const state = peek(examNodeId);
   return state
@@ -229,7 +232,7 @@ function batchKcs(kcs: ChapterKc[], quotas: number[]): Array<{ kcs: ChapterKc[];
  * 全批完成后一次性落库:要么完整题库要么没有(崩溃恢复语义干净,不会半截题库)。
  * 批失败重试一次仍失败 → 跳过该批继续(累计 <3 题才算整体失败)。
  */
-async function generateExamBank(db: Db, examNodeId: string): Promise<void> {
+async function generateExamBank(db: Db, examNodeId: string, locale?: string | null): Promise<void> {
   try {
     const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
     if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
@@ -244,6 +247,8 @@ async function generateExamBank(db: Db, examNodeId: string): Promise<void> {
     setGenerating(examNodeId, kcs.length);
 
     const llm = resolveLlm(db);
+    // 题库语言在生成时定格:界面语言(未传 → zh-CN)
+    const outLang = resolveOutputLang(locale);
     const collected: Array<ParsedExamQuestion & { kcTitle: string }> = [];
     let lastError: string | null = null;
     let done = 0;
@@ -258,7 +263,7 @@ async function generateExamBank(db: Db, examNodeId: string): Promise<void> {
         .map((l) => ({ title: l.title, content: (l.content ?? "").slice(0, 800) }));
       for (let attempt = 0; attempt <= BATCH_RETRY; attempt++) {
         try {
-          const prompt = buildKcBatchPrompt(node.title, batch, lessonContents);
+          const prompt = buildKcBatchPrompt(node.title, batch, lessonContents, outLang);
           const result = await generateText({ model: llm.languageModel, prompt });
           const parsed = parseExamJson(result.text.trim(), batch.quota, allowedKcs);
           if (!parsed.ok) throw new Error(`出题格式错误: ${parsed.error}`);
@@ -553,6 +558,7 @@ function buildKcBatchPrompt(
   examTitle: string,
   batch: { kcs: ChapterKc[]; quota: number },
   lessonContents: Array<{ title: string; content: string }>,
+  outLang: string,
 ): string {
   const kcList = batch.kcs
     .map((k) => `- ${k.title}:${k.description || "(见下方课时内容)"}(来自课时《${k.lessonTitle}》)`)
@@ -578,7 +584,7 @@ function buildKcBatchPrompt(
     `- 题干考"理解"和"应用",不要出死记硬背的定义题`,
     `- 干扰项 plausible 但 definitely wrong(基于学习者常犯的真实误解)`,
     `- 答案必须在提供的课程内容中有依据`,
-    `- 题干和选项用中文,清晰无歧义`,
+    questionLanguageLine(outLang),
     ``,
     `严格按以下 JSON 格式返回,不要加 markdown 代码块标记、不要解释:`,
     `{`,

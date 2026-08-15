@@ -56,7 +56,7 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 ```
 
 - **Left (MapRail)**: Duolingo-style skill map. A node is a *session group*: clicking it filters the middle pane's threads by `focus_node_id`. Node states: locked / available / in_progress / mastered. Collapsible (`Ctrl+B`).
-- **Middle (chat)**: `ThreadSwitcher` (Chrome-style horizontal tabs, one thread per tab) + `ChatStream` (parts rendering) + `ChatComposer` (input + font size + 教学人设 soul 药丸 + starter prompts). `Ctrl+K` opens the command palette; `Ctrl+Tab` cycles threads.
+- **Middle (chat)**: `ThreadSwitcher` (Chrome-style horizontal tabs, one thread per tab) + `ChatStream` (parts rendering) + `ChatComposer` (input + 教学人设 soul 药丸 + starter prompts + 附件📎/粘贴/拖拽 + 底部工具栏:思考强度 · 上下文用量表 · 模型切换). `Ctrl+K` opens the command palette; `Ctrl+Tab` cycles threads.
 - **Right (NotebookPanel)**: 康奈尔笔记法三区(讲解/笔记)。讲解 tab 显示节点 markdown + 支持选区画线(`✏️ 加笔记`)。笔记 tab 三区:🗺️理解区(AI 产物:概念图/对比表/流程图/代码讲解)、✏️笔记区(用户画线 user_note,带溯源跳转)、📝练习区(quiz + last_result 答题记录)。画线用 `highlightText.ts` 的文本搜索方案(不依赖 DOM offset 稳定性)。
 - **Focus lock**: while the AI is streaming, node/thread switching is blocked so the learner stays in one context. Do not remove this without an explicit off switch the user controls.
 - **HMR rule**: renderer-only changes (CSS/TSX) auto-hot-reload via Vite — no restart needed. Main process or preload changes require `taskkill electron + npm run dev:electron`.
@@ -70,7 +70,7 @@ npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
 
-npm run verify:core       # 68 pure-Node/tsx logic test suites
+npm run verify:core       # 71 pure-Node/tsx logic test suites
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -97,7 +97,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z`. `.github/workflows/package.yml` then builds the 3-OS matrix (NSIS exe / arm64 dmg / AppImage + deb) and attaches everything to that tag's GitHub Release automatically.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 63 verify suites + vite build on every PR and push to main — never merge a red PR.
+5. `ci.yml` runs oxlint + both typechecks + 66 verify suites + vite build on every PR and push to main — never merge a red PR.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -133,6 +133,9 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | Highlight | `lib/highlightText.ts` | 画线定位:getTextModel + 文本搜索(applyPersistentMarksByText)+ 跨节点包裹(wrapRangeWithMark)+ 闪烁(flashMark)。**不依赖 DOM offset**(ReactMarkdown 重渲染不稳定),用 indexOf 在纯文本上定位 |
 | Course search | `components/CourseSearchPanel.tsx` + `lib/course-tree-filter.ts` | 课程搜索面板(MapRail 全栏 overlay):空查询=章节→课时树状导航(锁定行与地图球同规则 disabled),关键词=标题多词 AND 过滤 + 全文内容匹配(`search:content` 只留本课节点,防抖 250ms)。跳转=切 world + onJumpNode + 滚动定位到球。过滤/锁定计算是纯函数(verify-course-search.mjs) |
 | Custom providers | `services/custom-provider-service.ts` | BYO user-defined provider rows; bypass preset settings, resolved by `custom-` prefix |
+| Context usage | `services/agent/context-usage.ts` + `shared/token-estimate.ts` | 输入框上下文表(v0.10):`agent:getContextUsage` 返回固定开销(系统提示/课文/学习者快照的启发式 token 估算)——装配抽 `agent-engine.assembleContextBlocks` 与实发同源不漂移;渲染层本地叠加对话历史+草稿(`estimateTokens` CJK 感知纯函数,窗口取 preset contextWindow) |
+| Chat attachments | `services/attachment-store.ts` + `pure/attachment-files.ts` + `shared/attachment-intake.ts` | 聊天附件(v0.10):image(≤5MB,≤4/条)落盘 `userData/attachments/` + 本轮 vision file-part 注入(engine 不受 multimodal flag/关键词门控);text(≤256KB)正文内联进 content(持久化+LLM 历史天然可见);文件名 uuid 守卫防穿越;thread 删除顺带清盘。渲染层 📎/粘贴/拖拽三入口,消息 parts 用 `attachment` part 渲染缩略图+灯箱 |
+| Reasoning effort | `shared/reasoning-effort.ts` | 思考强度方言表(v0.10,存 `settings.reasoning_effort`:""自动/fast/deep):GLM→body.thinking.type、Qwen/SiliconCloud→enable_thinking(经 `llm-client.buildLanguageModel` 的 fetch 覆盖注入)、OpenAI→reasoningEffort、Anthropic/Google→providerOptions;不支持的家族(如 DeepSeek)芯片禁用+引擎降级 none,宁可不生效不瞎发参数 |
 | Course generator | `services/course-generator.ts` | `generateCourseFromMarkdown` + `generateCourseFromRepoFiles` |
 | Course structure | `services/course-structure-service.ts` | LLM-based course restructuring (two-phase: classify uncertain → group sections) + `generateLessonSummaries`(批量) + `generateLessonSummary`(单课懒生成:首点节点球一次调用同时落 summary+summary_en+knowledge_points——双语摘要+KC,新管线课程的 KC 唯一自动来源,字段齐备前可重试补齐) + `generateLessonSummaryEn`(历史节点英文摘要补齐,不动已有 KC) |
 | Repo fetcher | `services/pure/repo-fetcher.ts` | CDN fetch + `detectRepoPattern` (course/well-organized/single-file/docs-rich/unsupported + awesome-list 检测) + `fetchRepoInventory` (Step1: 多入口 README + 多分支 + tree + file list) + `fetchFileOutlines` (Step3: H1/H2/H3 + chars) + `extractOutlineWithCharCounts` |
@@ -181,7 +184,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (68 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (71 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

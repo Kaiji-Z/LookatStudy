@@ -7,7 +7,7 @@
  *
  * 纯函数:不修改入参,返回全新数组+全新对象(React 19 严格模式双调用安全,见 verify-stream-parts T1b)。
  */
-import type { ChatStreamPart } from "./types";
+import type { ChatStreamPart, ChatAttachmentRef } from "./types";
 
 /** 渲染层累积后的 part 类型(text/reasoning 合并,tool 配对)。 */
 export type ChatMessagePart =
@@ -19,7 +19,9 @@ export type ChatMessagePart =
       state: "input-available" | "output-available" | "output-error";
       output?: unknown;
       error?: string;
-    };
+    }
+  /** v0.10: 用户消息的附件 chip(仅持久化/乐观显示;流式协议从不产生,accumulatePart 不处理)。 */
+  | { type: "attachment"; attachment: ChatAttachmentRef };
 
 export interface ChatMessageV2 {
   id: string;

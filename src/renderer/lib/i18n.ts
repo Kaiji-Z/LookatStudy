@@ -256,6 +256,46 @@ const translations: Record<Lang, Record<string, string>> = {
     "chat.soul.label": "风格:",
     "chat.no_key.short": "未配置 AI 模型",
     "chat.no_key.cta": "去配置 →",
+
+    // —— v0.10 输入框:附件 ——
+    "chat.attach.add": "添加图片或文件(可粘贴 / 拖拽)",
+    "chat.attach.remove": "移除 {name}",
+    "chat.attach.tooMany": "一条消息最多 {n} 个附件",
+    "chat.attach.tooLargeImage": "图片超过 5MB:{name}",
+    "chat.attach.tooLargeText": "文本文件超过 256KB:{name}",
+    "chat.attach.unsupported": "暂不支持该类型:{name}(支持图片与常见文本 / 代码文件)",
+    "chat.attach.visionUnsupported": "当前模型不支持看图,请先用右侧模型切换器选一个带眼睛图标的模型",
+    "chat.attach.preview": "查看 {name}",
+    "chat.attach.textChip": "文本附件,内容已随消息发给 AI",
+    "chat.attach.imageOnlyText": "请看这张图片。",
+
+    // —— v0.10 输入框:上下文用量表 ——
+    "context.label": "上下文",
+    "context.aria": "上下文已用 {p}",
+    "context.approx": "约",
+    "context.system": "系统提示",
+    "context.node": "课文",
+    "context.learner": "学习者状态",
+    "context.history": "对话历史",
+    "context.draft": "草稿",
+    "context.unknownWindow": "模型窗口未知",
+
+    // —— v0.10 输入框:模型切换 ——
+    "model.picker.label": "模型",
+    "model.picker.manage": "管理模型与密钥…",
+    "model.picker.vision": "支持看图",
+    "model.picker.noneConfigured": "还没有配置任何 provider 密钥",
+
+    // —— v0.10 输入框:思考强度 ——
+    "effort.label": "思考强度",
+    "effort.auto.label": "自动",
+    "effort.auto.desc": "模型默认行为,不干预",
+    "effort.fast.label": "快速",
+    "effort.fast.desc": "尽量关思考,答得快、省 token",
+    "effort.deep.label": "深度",
+    "effort.deep.desc": "尽量开思考,难题多想几步",
+    "effort.unsupported": "当前 provider 暂不支持思考强度切换",
+
     "soul.direct": "精讲",
     "soul.guide": "引导",
     "soul.practice": "实战",
@@ -766,6 +806,46 @@ const translations: Record<Lang, Record<string, string>> = {
     "chat.soul.label": "Style:",
     "chat.no_key.short": "AI model not configured",
     "chat.no_key.cta": "Configure →",
+
+    // —— v0.10 composer: attachments ——
+    "chat.attach.add": "Add image or file (paste / drag also works)",
+    "chat.attach.remove": "Remove {name}",
+    "chat.attach.tooMany": "Up to {n} attachments per message",
+    "chat.attach.tooLargeImage": "Image over 5MB: {name}",
+    "chat.attach.tooLargeText": "Text file over 256KB: {name}",
+    "chat.attach.unsupported": "Unsupported type: {name} (images and common text / code files)",
+    "chat.attach.visionUnsupported": "Current model can't see images — pick one with the eye icon in the model switcher",
+    "chat.attach.preview": "View {name}",
+    "chat.attach.textChip": "Text attachment, content sent with the message",
+    "chat.attach.imageOnlyText": "Please look at this image.",
+
+    // —— v0.10 composer: context meter ——
+    "context.label": "Context",
+    "context.aria": "{p} of context used",
+    "context.approx": "~",
+    "context.system": "System prompt",
+    "context.node": "Lesson",
+    "context.learner": "Learner state",
+    "context.history": "History",
+    "context.draft": "Draft",
+    "context.unknownWindow": "model window unknown",
+
+    // —— v0.10 composer: model switcher ——
+    "model.picker.label": "Model",
+    "model.picker.manage": "Manage models & keys…",
+    "model.picker.vision": "Vision capable",
+    "model.picker.noneConfigured": "No provider key configured yet",
+
+    // —— v0.10 composer: reasoning effort ——
+    "effort.label": "Thinking effort",
+    "effort.auto.label": "Auto",
+    "effort.auto.desc": "Model default, no override",
+    "effort.fast.label": "Fast",
+    "effort.fast.desc": "Thinking off when possible — quicker, fewer tokens",
+    "effort.deep.label": "Deep",
+    "effort.deep.desc": "Thinking on when possible — extra steps for hard problems",
+    "effort.unsupported": "Current provider doesn't support effort switching",
+
     "soul.direct": "Direct",
     "soul.guide": "Guide",
     "soul.practice": "Practice",

@@ -11,7 +11,9 @@ import type {
   StarterPrompt,
   NoteSourceAnchor,
   XpStatus,
+  ChatAttachmentInput,
 } from "@shared/types";
+import { estimateTokens } from "@shared/token-estimate";
 import { MapRail, type MapView } from "./components/MapRail.js";
 import { GlobalTooltip } from "./components/GlobalTooltip.js";
 import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
@@ -550,13 +552,14 @@ export default function App() {
   // 统一的"发送一条消息"流程:首次发送自动建 thread,之后直接发。
   // ChatComposer 的 onSend 和 handleStartLearning 都走这条,避免重复逻辑和"忘了建 thread"的坑。
   // displayText:按钮触发的消息传短动作标签(气泡只显示它);手打输入不传=原样展示。
+  // attachments(v0.10):随消息上传的图片/文本附件,透传给 useChatStream → main。
   const sendMessage = useCallback(
-    async (text: string, displayText?: string) => {
+    async (text: string, displayText?: string, attachments?: ChatAttachmentInput[]) => {
       if (!text.trim() || chat.streaming) return;
       if (!thread.activeId) {
         const newId = await thread.ensureThreadForSend(text, displayText);
         if (newId) {
-          chat.send(text, newId, displayText);
+          chat.send(text, newId, displayText, attachments);
           return;
         }
         toast.show(t("toast.threadCreateFailed"));
@@ -569,12 +572,23 @@ export default function App() {
       if (cur && !cur.title) {
         thread.update(cur.id, { title: (displayText ?? text).trim() });
       }
-      chat.send(text, undefined, displayText);
+      chat.send(text, undefined, displayText, attachments);
     },
     [chat, thread, toast, t],
   );
   // ref 桥接:让 handleStartLearning(定义在 toast 之前)能调用 sendMessage(定义在 toast 之后)
   sendRef.current = sendMessage;
+
+  // v0.10 上下文表的"历史段":当前 thread 全部消息文本(text parts)的估算 token。
+  // LLM 历史重放只带 content(文本),reasoning/tool 产物不进上下文,这里只算 text。
+  const historyTokens = useMemo(
+    () =>
+      chat.messages.reduce(
+        (sum, m) => sum + m.parts.reduce((s, p) => (p.type === "text" ? s + estimateTokens(p.text) : s), 0),
+        0,
+      ),
+    [chat.messages],
+  );
 
   // P2.3: session 开始若有待复习,弹一次 nudge(每进程生命周期最多一次,避免刷屏)。
   // 持久 surface 是 MapRail 的 map-review-badge;这里是"拉你回来练"的主动提示。
@@ -812,6 +826,7 @@ export default function App() {
                 }
                 onGotoSettings={() => setShowSettings(true)}
                 insertText={quoteText}
+                historyTokens={historyTokens}
               />
                 </>
               )}

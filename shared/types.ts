@@ -235,6 +235,52 @@ export interface CustomProviderInput {
   models?: ProviderModelInfo[];
 }
 
+/* ---------- v0.10 Composer:附件 / 上下文表 / 思考强度 ---------- */
+
+/** 渲染层 → main:用户随消息上传的附件。image=纯 base64(无 data: 前缀);text=文件文本内容。 */
+export interface ChatAttachmentInput {
+  kind: "image" | "text";
+  name: string;
+  mime: string;
+  size: number;
+  /** image:纯 base64;text:UTF-8 文本正文 */
+  data: string;
+  /** 渲染层瞬态:乐观消息的本地预览 objectURL;main 侧忽略,不持久化。 */
+  previewUrl?: string;
+}
+
+/** 附件在消息 parts 里的持久化载荷(不存 blob;image 落盘引用,text 正文已内联 content)。 */
+export interface ChatAttachmentRef {
+  kind: "image" | "text";
+  name: string;
+  mime: string;
+  size: number;
+  /** image:userData/attachments 下的文件名(经 attachment:getDataUrl 取回);text 无。 */
+  file?: string;
+  /** 渲染层瞬态:乐观消息的本地预览 objectURL,不持久化。 */
+  previewUrl?: string;
+}
+
+/** agent:getContextUsage 的返回:渲染层算不清的"固定开销"(system/课文/学习者快照) + 模型窗口。
+ * 渲染层再本地叠加对话历史与草稿的估算,合成完整上下文表。 */
+export interface ContextUsageInfo {
+  /** base prompt + soul + 语言提醒 */
+  systemTokens: number;
+  /** 课程结构 + 节点正文 + KC 清单 */
+  nodeTokens: number;
+  /** 学习者快照(掌握度+friction+memory) */
+  learnerTokens: number;
+  /** 活动模型的上下文窗口(未知 → null,只显示用量不显示占比) */
+  contextWindow: number | null;
+  provider: string;
+  model: string;
+  /** 当前模型是否支持看图(附件门控;未收录模型宽松为 true) */
+  visionCapable: boolean;
+}
+
+/** 思考强度(应用级偏好,存 settings.reasoning_effort)。"" = 自动(不干预,模型默认)。 */
+export type ReasoningEffortSetting = "" | "fast" | "deep";
+
 /* ---------- Starter Prompts（引导按钮） ---------- */
 
 /** 巩固选择的稳定标识:渲染层据此查 i18n 字典覆盖 label/hint/message(界面语言)。 */
@@ -522,9 +568,16 @@ export interface ApiExpose {
     displayText?: string | null,
     /** 界面语言(i18n);null/缺省不传 = zh-CN */
     locale?: string | null,
+    /** v0.10: 随消息上传的附件(image=vision 注入 + 落盘;text=正文内联进 content) */
+    attachments?: ChatAttachmentInput[],
   ): Promise<string>;
   /** v0.4: 中断某 thread 的 agent 回复 */
   abortAgentChatThread(threadId: string): Promise<void>;
+  /** v0.10: 当前节点+模型的一次性上下文开销(系统提示/课文/学习者快照的估算 token + 模型窗口)。
+   * 给输入框上下文表;渲染层再本地叠加对话历史与草稿的估算。nodeId 不存在 → null。 */
+  getContextUsage(nodeId: string, locale?: string | null): Promise<ContextUsageInfo | null>;
+  /** v0.10: 取聊天图片附件的 data-url(渲染层恢复历史消息缩略图;file 须是 attachments 目录内的安全文件名) */
+  getAttachmentDataUrl(file: string): Promise<string | null>;
 
   /* Soul 系统（教学人设/persona） */
   listSouls(): Promise<Soul[]>;
@@ -757,6 +810,8 @@ export type SettingKey =
   // 多模态:可选的 vision 模型覆盖(不配则复用主模型)
   | "vision_provider_override"
   | "vision_model_override"
+  // v0.10: 思考强度(空串=自动;"fast"=尽量关思考;"deep"=尽量开思考)
+  | "reasoning_effort"
   // 语言偏好:导入时自动按此偏好选翻译 (en / zh-CN / zh-TW)
   | "pref_lang";
 

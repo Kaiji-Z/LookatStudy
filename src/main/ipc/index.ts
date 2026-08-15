@@ -33,6 +33,7 @@ import type {
   CustomProviderInput,
   RepoAnalysis,
   ImportJobHandle,
+  ChatAttachmentInput,
 } from "@shared/types";
 import {
   getDueReviewNodeIds,
@@ -81,6 +82,8 @@ import {
 } from "../services/souls/soul-service.js";
 // Agent 引擎 + Proposal（M2）
 import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory, handleAgentChatThread, abortAgentChatThread } from "../services/agent/agent-engine.js";
+import { getContextUsage } from "../services/agent/context-usage.js";
+import { readAttachmentDataUrl } from "../services/attachment-store.js";
 import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels, resolveLlm } from "../services/agent/llm-client.js";
 import { gatherConsolidationWindow, consolidate, defaultLlmConsolidate, getConsolidationWatermark, setConsolidationWatermark } from "../services/memory-service.js";
 import { PROVIDER_PRESETS } from "../services/agent/llm-presets.js";
@@ -997,12 +1000,28 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   // v0.4: Thread 模式 agent 对话(传 threadId,从 thread 装配上下文)
   ipcMain.handle(
     "agent:chatThread",
-    async (_e, threadId: string, userMessage: string, displayText?: string | null, locale?: string | null) => {
-      return handleAgentChatThread(mainWindow, threadId, userMessage, displayText, locale);
+    async (
+      _e,
+      threadId: string,
+      userMessage: string,
+      displayText?: string | null,
+      locale?: string | null,
+      attachments?: ChatAttachmentInput[],
+    ) => {
+      return handleAgentChatThread(mainWindow, threadId, userMessage, displayText, locale, attachments);
     },
   );
   ipcMain.handle("agent:abortThread", async (_e, threadId: string) => {
     abortAgentChatThread(threadId);
+  });
+
+  // v0.10: 输入框上下文表的"固定开销"(system/课文/学习者) + 模型窗口/看图能力
+  ipcMain.handle("agent:getContextUsage", async (_e, nodeId: string, locale?: string | null) => {
+    return getContextUsage(getDb(), nodeId, locale);
+  });
+  // v0.10: 聊天图片附件的 data-url(渲染层历史缩略图;文件名守卫在 store 内)
+  ipcMain.handle("attachment:getDataUrl", async (_e, file: string) => {
+    return readAttachmentDataUrl(file);
   });
 
   // 取某节点聊天历史（持久化在 chat_sessions 表）

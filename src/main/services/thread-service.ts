@@ -19,6 +19,8 @@ import { getDb, markDirty } from "../db/index.js";
 import { threads, chatMessages, proposals, type ThreadStatus } from "../db/schema.js";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { collectAttachmentFilesFromParts } from "./pure/attachment-files.js";
+import { deleteAttachmentFiles } from "./attachment-store.js";
 
 export interface Thread {
   id: string;
@@ -95,12 +97,15 @@ export function updateThread(
   return { ...existing, ...next } as Thread;
 }
 
-/** 删除 thread + 连带删除它的所有 chat_messages(硬删)。 */
+/** 删除 thread + 连带删除它的所有 chat_messages(硬删) + 附件图片清盘(尽力而为)。 */
 export function deleteThread(id: string): void {
   const db = getDb();
+  // v0.10: 先收集消息 parts 里的附件文件名(行删了就找不到了),删行后异步清盘
+  const files = getThreadMessages(id).flatMap((m) => collectAttachmentFilesFromParts(m.partsJson));
   db.delete(chatMessages).where(eq(chatMessages.threadId, id)).run();
   db.delete(threads).where(eq(threads.id, id)).run();
   markDirty();
+  if (files.length > 0) void deleteAttachmentFiles(files);
 }
 
 /** 获取某 thread 的全部消息(按时间正序)。 */

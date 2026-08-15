@@ -160,6 +160,19 @@ export default function App() {
     [tree, selectedNodeId],
   );
 
+  // starter prompts 按界面语言本地化:服务端返回的 label/hint/message 是中文默认值,
+  // 这里用 starter.{key}.* 字典覆盖(标题取当前课程语言下的节点标题,和界面显示一致)。
+  const localizedStarterPrompts = useMemo(
+    () =>
+      starterPrompts.map((p) => ({
+        ...p,
+        label: t(`starter.${p.key}.label`),
+        hint: t(`starter.${p.key}.hint`),
+        message: t(`starter.${p.key}.message`, { title: selectedNode?.title ?? "" }),
+      })),
+    [starterPrompts, selectedNode, t],
+  );
+
   // "开始学习"→ hook + 无风险猜测,不是讲义+计分题。
   // 动机层:用户点进来时往往"提不起劲"(streak 断了 / 冷启动)。"讲概念+出题"是作业形状,
   // 在意志力最低的瞬间堆两次摩擦(吸收讲座 + 被评估)。改成 hook(好奇心缺口 = 内驱)+
@@ -788,7 +801,7 @@ export default function App() {
                 streaming={chat.streaming}
                 souls={orderedSouls}
                 activeSoul={activeSoul}
-                starterPrompts={chat.messages.length > 0 ? starterPrompts : []}
+                starterPrompts={chat.messages.length > 0 ? localizedStarterPrompts : []}
                 onPickSoul={handleSoulPick}
                 onSend={sendMessage}
                 onStop={chat.stop}

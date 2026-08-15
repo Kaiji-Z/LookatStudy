@@ -78,4 +78,28 @@ console.log(`✓ T6 prompts 引用节点标题(个性化)`);
 assert.strictEqual(getStarterPrompts(db, "nonexistent").length, 0, "T7: 不存在节点应返回 []");
 console.log(`✓ T7 不存在节点 → []`);
 
+// === T8: 每个带稳定 key(渲染层 i18n 覆盖的锚点),且 4 个互不相同 ===
+const keys = prompts.map((p) => p.key);
+for (const expected of ["go-deeper", "give-example", "quiz-me", "confused"]) {
+  assert.ok(keys.includes(expected), `T8: 应含 key "${expected}", 实际 ${JSON.stringify(keys)}`);
+}
+assert.strictEqual(new Set(keys).size, 4, "T8: key 应互不相同");
+console.log(`✓ T8 4 个稳定 key: ${keys.join(" / ")}`);
+
+// === T9: 渲染层 i18n 字典双语言齐全(16 键 × zh + en;静态扫描防漂移) ===
+const i18nSrc = readFileSync(new URL("../src/renderer/lib/i18n.ts", import.meta.url), "utf8");
+for (const key of keys) {
+  for (const field of ["label", "hint", "message"]) {
+    const full = `starter.${key}.${field}`;
+    const count = i18nSrc.split(`"${full}"`).length - 1;
+    assert.ok(count >= 2, `T9: i18n 字典应有 "${full}" 的 zh + en 两条, 实际 ${count}`);
+  }
+}
+// en 的 message 模板必须带 {title} 占位(丢占位会让发送的消息没有课名)
+for (const key of keys) {
+  const re = new RegExp(`"starter\\.${key}\\.message": "[^"]*\\{title\\}[^"]*"`, "g");
+  assert.strictEqual(i18nSrc.match(re)?.length, 2, `T9: starter.${key}.message 两语言都应含 {title}`);
+}
+console.log(`✓ T9 i18n 字典 16 键双语言齐全且 message 带 {title}`);
+
 console.log("\n=== ALL STARTER PROMPTS TESTS PASSED ✅ ===");

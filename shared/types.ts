@@ -237,14 +237,19 @@ export interface CustomProviderInput {
 
 /* ---------- Starter Prompts（引导按钮） ---------- */
 
+/** 巩固选择的稳定标识:渲染层据此查 i18n 字典覆盖 label/hint/message(界面语言)。 */
+export type StarterPromptKey = "go-deeper" | "give-example" | "quiz-me" | "confused";
+
 export interface StarterPrompt {
-  /** 按钮显示文字 */
+  /** 稳定标识(i18n 键);服务端返回的 label/message/hint 是中文默认值,渲染层按界面语言覆盖 */
+  key: StarterPromptKey;
+  /** 按钮显示文字(中文默认;渲染层用 starter.{key}.label 覆盖) */
   label: string;
-  /** 点击后发送的完整消息 */
+  /** 点击后发送的完整消息(中文默认,已内插标题;渲染层用 starter.{key}.message + {title} 覆盖) */
   message: string;
   /** 图标 emoji */
   icon: string;
-  /** 可见提示(说明这个按钮做什么;默认显示,不靠 hover) */
+  /** 可见提示(说明这个按钮做什么;默认显示,不靠 hover;渲染层用 starter.{key}.hint 覆盖) */
   hint?: string;
   /** 标记:点这个按钮能涨掌握度(渲染层加视觉提示) */
   advancesMastery?: boolean;

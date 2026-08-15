@@ -27,6 +27,9 @@ Entry conventions for contributors:
 ### Changed
 - **README 双语重写(showcase 骨架 + 维护者第一人称行文)+ MIT LICENSE 文件** —— 英文主版 + 简体中文镜像(README.zh-CN.md,互链切换)。骨架保留 GitHub 流行式(徽章行/居中头部/三张内嵌截图/快速开始),文字按 human-writing 技能全部重写为作者自述体(为什么写这个/两个没后悔的设计/目前做不到的事),中文版过 check_prose.py 全绿(翻案句 0/破折号 0/提示性冒号 0/黑话 0)。新增 MIT LICENSE 全文(此前只口头声明);`docs/` 目录启用存截图。
 
+### Fixed
+- **巩固选择按钮跟随界面语言** —— 4 个 starter prompts(深入这点/举个例子/考考我/我没太懂)的 label/hint/发送消息原先硬编码中文，英文界面下是唯一一处整排中文(截图里显眼)。服务端返回加稳定 `key`(go-deeper/give-example/quiz-me/confused)，渲染层(App)按界面语言查 `starter.{key}.*` 字典覆盖 label/hint/message，消息里的课名取当前课程语言下的节点标题(与界面显示一致);中文路径输出与原字符串逐字一致。verify-starter-prompts 扩 T8/T9(key 唯一性 + 16 键双语言静态扫描防漂移，闭环已证)。
+
 ## [0.9.0] — 2026-08-15
 
 ### Added

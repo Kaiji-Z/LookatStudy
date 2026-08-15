@@ -32,7 +32,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build + package (electron-builder, current OS target)
       - name: Build renderer + package (electron-builder, current OS target)
         # --publish never: electron-builder 在 GH Actions 检测到 CI 会默认自动 publish(找 GH_TOKEN),
         # 上传交给本文件末尾的 attach-to-release 任务用 gh 控制。

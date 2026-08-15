@@ -125,6 +125,7 @@ import {
   applyCourseStructure,
   generateLessonSummaries,
   generateLessonSummary,
+  generateLessonSummaryEn,
 } from "../services/course-structure-service.js";
 // Starter prompts
 import { getStarterPrompts } from "../services/starter-prompts-service.js";
@@ -782,8 +783,10 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     return node?.content ?? null;
   });
 
-  // 取节点摘要(懒生成:DB 没有则实时生成 lesson 摘要并缓存;section 用结构化时的摘要)
-  ipcMain.handle("course:getNodeSummary", async (_e, nodeId: string) => {
+  // 取节点摘要(懒生成:DB 没有则实时生成 lesson 摘要并缓存;section 用结构化时的摘要)。
+  // locale = 界面语言(zh-CN/en):摘要随界面语言切换——en 优先 summary_en,
+  // 历史节点没有英文摘要时单独补一次(不动已有 KC),全部缺失时回退中文 summary。
+  ipcMain.handle("course:getNodeSummary", async (_e, nodeId: string, locale?: string | null) => {
     const db = getDb();
     const node = db
       .select()
@@ -791,13 +794,31 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       .where(eq(contentNodes.id, nodeId))
       .get();
     if (!node) return null;
-    // 已有摘要直接返回
-    if (node.summary) return node.summary;
+    const wantEn = locale === "en";
+    // 已有摘要:按界面语言选版本
+    if (node.summary) {
+      if (wantEn) {
+        if (node.summaryEn) return node.summaryEn;
+        // 历史 lesson(只有中文摘要):补齐英文版,不重写已有 summary/KC
+        if (node.type === "lesson") {
+          try {
+            const en = await generateLessonSummaryEn(db, nodeId, markDirty);
+            if (en) return en;
+          } catch { /* 补齐失败回退中文 */ }
+        }
+      }
+      return node.summary;
+    }
     // section 节点:结构化时已带 summary,没有就不生成(避免空 section 调 LLM)
     if (node.type !== "lesson") return null;
-    // lesson 节点:懒生成(一次 LLM 调用同时产出摘要+KC,双落库+markDirty)
+    // lesson 节点:懒生成(一次 LLM 调用同时产出中+英摘要+KC,落库+markDirty)
     try {
       const summary = await generateLessonSummary(db, nodeId, markDirty);
+      if (!summary) return null;
+      if (wantEn) {
+        const fresh = db.select().from(contentNodes).where(eq(contentNodes.id, nodeId)).get();
+        if (fresh?.summaryEn) return fresh.summaryEn;
+      }
       return summary;
     } catch {
       return null; // 生成失败不阻塞,中栏显示"暂无摘要"

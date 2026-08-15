@@ -38,6 +38,7 @@ export interface SeedData {
     orderIdx: number;
     content: string | null;
     summary: string | null;
+    summaryEn: string | null;
   }>;
   progress: Array<{
     nodeId: string;
@@ -119,6 +120,7 @@ export function applySeedData(db: Db, SEED_DATA: SeedData, SEED_VERSION: number)
         orderIdx: n.orderIdx,
         content: n.content,
         summary: n.summary,
+        summaryEn: n.summaryEn ?? null,
       })
       .run();
   }

@@ -19,11 +19,13 @@ const sections = [
     title: "快速上手",
     titleEn: "Quick Start",
     summary: "认识 LookatStudy、导入第一个课程、三栏布局导览",
+    summaryEn: "Meet LookatStudy, import your first course, and tour the three-pane layout",
     lessons: [
       {
         title: "欢迎使用 LookatStudy",
         titleEn: "Welcome to LookatStudy",
         summary: "了解 LookatStudy 是什么、它能帮你做什么",
+        summaryEn: "What LookatStudy is and what it can do for you",
         content: m(
 "# 欢迎使用 LookatStudy",
 "",
@@ -75,6 +77,7 @@ const sections = [
         title: "导入你的第一个课程",
         titleEn: "Import Your First Course",
         summary: "三种导入方式、后台导入任务、课程删除",
+        summaryEn: "Three import routes, background import jobs, and course removal",
         content: m(
 "# 导入你的第一个课程",
 "",
@@ -134,6 +137,7 @@ const sections = [
         title: "三栏布局导览",
         titleEn: "Tour of the Three-Pane Layout",
         summary: "技能地图 · AI 对话 · 康奈尔笔记本",
+        summaryEn: "Skill map, AI chat, and the Cornell notebook",
         content: m(
 "# 三栏布局导览",
 "",
@@ -191,11 +195,13 @@ const sections = [
     title: "技能地图",
     titleEn: "The Skill Map",
     summary: "节点状态、双线推进、知识点级掌握度、章节考试",
+    summaryEn: "Node states, dual-track progression, per-knowledge-point mastery, and chapter exams",
     lessons: [
       {
         title: "气球节点与解锁机制",
         titleEn: "Balloon Nodes and Unlocks",
         summary: "locked → available → in_progress → mastered",
+        summaryEn: "Locked → available → in progress → mastered",
         content: m(
 "# 气球节点与解锁机制",
 "",
@@ -245,6 +251,7 @@ const sections = [
         title: "双线推进策略",
         titleEn: "The Two-Track Unlock Strategy",
         summary: "同章下一课 + 下一章首课同时解锁",
+        summaryEn: "The next lesson in this chapter and the first lesson of the next chapter unlock together",
         content: m(
 "# 双线推进策略",
 "",
@@ -296,6 +303,7 @@ const sections = [
         title: "章节考试：生成、限时与结算",
         titleEn: "Chapter Exams: Generation, Timers, and Results",
         summary: "后台按知识点出题、每题限时、星级结算与重考",
+        summaryEn: "Questions generated per knowledge point in the background, a timer per question, star scoring and retakes",
         content: m(
 "# 章节考试",
 "",
@@ -361,11 +369,13 @@ const sections = [
     title: "AI 导师",
     titleEn: "The AI Tutor",
     summary: "教学人设、知识点级 BKT、Propose→Apply 协议",
+    summaryEn: "Teaching personas, per-knowledge-point BKT, and the Propose→Apply protocol",
     lessons: [
       {
         title: "教学人设与对话",
         titleEn: "Teaching Personas and Chat",
         summary: "精讲 / 引导 / 实战三种人设，开始学习与巩固选择",
+        summaryEn: "Three personas — direct, guided, hands-on — plus start-learning and consolidation picks",
         content: m(
 "# 教学人设与对话",
 "",
@@ -417,6 +427,7 @@ const sections = [
         title: "知识点级 BKT 掌握度",
         titleEn: "Per-Knowledge-Point BKT Mastery",
         summary: "每个知识点独立追踪，课时掌握度看短板",
+        summaryEn: "Each knowledge point tracked on its own; lesson mastery follows your weakest one",
         content: m(
 "# 知识点级 BKT 掌握度",
 "",
@@ -478,6 +489,7 @@ const sections = [
         title: "Propose → Apply 协议",
         titleEn: "The Propose → Apply Protocol",
         summary: "AI 起草状态变更，你确认后才生效",
+        summaryEn: "The AI drafts state changes; they only take effect once you approve",
         content: m(
 "# Propose → Apply 协议",
 "",
@@ -527,11 +539,13 @@ const sections = [
     title: "康奈尔笔记本",
     titleEn: "The Cornell Notebook",
     summary: "三区设计、画线溯源、生成式 UI",
+    summaryEn: "Three-zone design, highlights with source links, and generative UI artifacts",
     lessons: [
       {
         title: "三区设计：理解 / 笔记 / 练习",
         titleEn: "Three Zones: Understand / Notes / Practice",
         summary: "康奈尔笔记法在 LookatStudy 的实现",
+        summaryEn: "How the Cornell note-taking method is realized in LookatStudy",
         content: m(
 "# 三区设计：理解 / 笔记 / 练习",
 "",
@@ -579,6 +593,7 @@ const sections = [
         title: "画线加笔记与溯源跳转",
         titleEn: "Highlights, Notes, and Source Jumps",
         summary: "选中文本画线，带溯源链接跳回原文",
+        summaryEn: "Highlight selected text, with source links that jump back to the original",
         content: m(
 "# 画线加笔记与溯源跳转",
 "",
@@ -622,6 +637,7 @@ const sections = [
         title: "生成式 UI：概念图 / 对比表 / 流程图",
         titleEn: "Generative UI: Concept Maps / Compare Tables / Flow Diagrams",
         summary: "AI 动态生成的可视化学习工具",
+        summaryEn: "Visual learning tools the AI generates on the fly",
         content: m(
 "# 生成式 UI",
 "",
@@ -677,11 +693,13 @@ const sections = [
     title: "记忆系统",
     titleEn: "The Memory System",
     summary: "间隔重复与复习抽屉、连续打卡、XP 与皇冠",
+    summaryEn: "Spaced repetition and the review drawer, streaks, XP, and crowns",
     lessons: [
       {
         title: "SM-2 间隔重复与复习抽屉",
         titleEn: "SM-2 Spaced Repetition and the Review Drawer",
         summary: "科学算法安排复习，复习抽屉统一入口",
+        summaryEn: "An algorithm schedules your reviews; the review drawer is the single entry point",
         content: m(
 "# SM-2 间隔重复与复习抽屉",
 "",
@@ -729,6 +747,7 @@ const sections = [
         title: "连续打卡与冻结",
         titleEn: "Streaks and Freezes",
         summary: "Streak 机制，冻结保护不断链",
+        summaryEn: "How streaks work, and freeze protection that keeps the chain alive",
         content: m(
 "# 连续打卡与冻结",
 "",
@@ -764,6 +783,7 @@ const sections = [
         title: "XP、等级与皇冠",
         titleEn: "XP, Levels, and Crowns",
         summary: "经验值、今日能量与掌握度皇冠",
+        summaryEn: "Experience points, today's energy bar, and mastery crowns",
         content: m(
 "# XP、等级与皇冠",
 "",
@@ -821,11 +841,13 @@ const sections = [
     title: "进阶功能",
     titleEn: "Going Further",
     summary: "Provider 配置、多语言翻译、导出报告",
+    summaryEn: "Provider setup, multilingual translations, and report export",
     lessons: [
       {
         title: "LLM Provider 配置",
         titleEn: "LLM Provider Setup",
         summary: "19 个内置预设 + 自定义 Provider，BYO API Key",
+        summaryEn: "19 built-in presets plus custom providers — bring your own API key",
         content: m(
 "# LLM Provider 配置",
 "",
@@ -873,6 +895,7 @@ const sections = [
         title: "多语言翻译支持",
         titleEn: "Multilingual Translation Support",
         summary: "自动检测翻译约定，按偏好语言导入与切换",
+        summaryEn: "Translation conventions auto-detected; import and switch by preferred language",
         content: m(
 "# 多语言翻译支持",
 "",
@@ -930,6 +953,7 @@ const sections = [
         title: "导出学习报告",
         titleEn: "Exporting Your Learning Report",
         summary: "JSON / Markdown 格式导出全部学习数据",
+        summaryEn: "Export all your learning data as JSON or Markdown",
         content: m(
 "# 导出学习报告",
 "",
@@ -994,7 +1018,7 @@ function generateSeedData() {
     nodes.push({
       id: secId, parentId: null, type: "section",
       title: sec.title, sourcePath: "ch" + (secIdx + 1),
-      orderIdx: secIdx, content: null, summary: sec.summary || null,
+      orderIdx: secIdx, content: null, summary: sec.summary || null, summaryEn: sec.summaryEn || null,
     });
     translations.push({ nodeId: secId, locale: EN, title: sec.titleEn, content: null });
     progress.push({ nodeId: secId, status: secIdx === 0 ? "available" : "locked", crownLevel: 0 });
@@ -1005,7 +1029,7 @@ function generateSeedData() {
         id: lesId, parentId: secId, type: "lesson",
         title: lesson.title,
         sourcePath: "ch" + (secIdx + 1) + "/lesson-" + (lesIdx + 1) + ".md",
-        orderIdx: lesIdx, content: lesson.content, summary: lesson.summary || null,
+        orderIdx: lesIdx, content: lesson.content, summary: lesson.summary || null, summaryEn: lesson.summaryEn || null,
       });
       translations.push({ nodeId: lesId, locale: EN, title: lesson.titleEn, content: lesson.contentEn });
       const isFirst = secIdx === 0 && lesIdx === 0;
@@ -1022,7 +1046,7 @@ function generateSeedData() {
       nodes.push({
         id: examId, parentId: secId, type: "exam",
         title: sec.title + " · 章节测验", sourcePath: null,
-        orderIdx: sec.lessons.length, content: null, summary: null,
+        orderIdx: sec.lessons.length, content: null, summary: null, summaryEn: null,
       });
       translations.push({ nodeId: examId, locale: EN, title: sec.titleEn + " · Chapter Quiz", content: null });
       progress.push({ nodeId: examId, status: "available", crownLevel: 0 });

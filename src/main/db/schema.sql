@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS content_nodes (
   order_idx INTEGER NOT NULL DEFAULT 0,
   content TEXT,
   summary TEXT,
+  summary_en TEXT,                 -- 英文摘要(界面语言 en 时展示;中文摘要在 summary)
   world TEXT NOT NULL DEFAULT 'study' CHECK (world IN ('study', 'practice')),
   knowledge_points TEXT  -- JSON array of {title, description}，LLM 提取的知识组件定义
 );

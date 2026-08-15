@@ -49,6 +49,8 @@ export const contentNodes = sqliteTable("content_nodes", {
   content: text("content"),
   /** LLM 生成的课节摘要(1-2 句,空会话时中栏显示;导入时批量生成) */
   summary: text("summary"),
+  /** 英文摘要(界面语言 en 时展示;中文摘要在 summary) */
+  summaryEn: text("summary_en"),
   /** 两个世界: study(学习主线讲解) / practice(实操练习 notebook/lab/exercise) */
   world: text("world", { enum: ["study", "practice"] }).notNull().default("study"),
   /** JSON array of {title, description} — LLM 提取的知识组件(KC)定义，per-KC BKT 的基础 */

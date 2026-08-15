@@ -44,8 +44,8 @@ const api = {
     ipcRenderer.invoke("course:getStarterPrompts", nodeId)) as ApiExpose["getStarterPrompts"],
   getNodeContent: ((nodeId: string, locale?: string) =>
     ipcRenderer.invoke("course:getNodeContent", nodeId, locale)) as ApiExpose["getNodeContent"],
-  getNodeSummary: ((nodeId: string) =>
-    ipcRenderer.invoke("course:getNodeSummary", nodeId)) as ApiExpose["getNodeSummary"],
+  getNodeSummary: ((nodeId: string, locale?: string | null) =>
+    ipcRenderer.invoke("course:getNodeSummary", nodeId, locale ?? null)) as ApiExpose["getNodeSummary"],
   getPracticeForLesson: ((nodeId: string) =>
     ipcRenderer.invoke("course:getPracticeForLesson", nodeId)) as ApiExpose["getPracticeForLesson"],
   getLessonForPractice: ((nodeId: string) =>

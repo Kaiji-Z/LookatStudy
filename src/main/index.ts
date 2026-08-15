@@ -10,7 +10,7 @@
  */
 import { app, BrowserWindow, shell } from "electron";
 import { join, resolve } from "node:path";
-import { writeFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, appendFileSync, mkdirSync, existsSync, statSync } from "node:fs";
 import { initDb, getDb, markDirty } from "./db/index.js";
 import { registerAllHandlers } from "./ipc/index.js";
 import { setupContextMenu } from "./context-menu.js";
@@ -209,7 +209,13 @@ app.whenReady().then(async () => {
 
   // 截图模式:npm run shots → docs/screenshots/*.png(README 素材维护)。
   if (process.argv.includes("--shots")) {
-    await runShots();
+    // runShots 内部任何未捕获异常都不能悬挂进程(UI 自动化偶发),保证退出
+    try {
+      await runShots();
+    } catch (e) {
+      console.error("SHOTS_CRASH=" + (e instanceof Error ? e.message : String(e)));
+      console.error("SHOTS_RESULT=" + JSON.stringify({ ok: false, saved: [] }));
+    }
     app.quit();
     return;
   }
@@ -303,14 +309,17 @@ async function runSelfTest(): Promise<void> {
  *
  * 独立临时 DB + .env 真 provider（LLM 开场是真实对话）;进度/待复习/XP/streak
  * seed 出"学过一阵"的地图观感(皇冠/进度环/锁/复习角标/能量条)。
- * 序列:选课 → 点首课球(选中+讲解) → 01-overview;开始学习 → 猜一轮等揭晓 →
- * 02-ai-tutor;搜索面板(全课程树) → 03-course-search。
+ * 序列:选课 → 点首课球(选中+讲解) → 01-overview(中文);第一章 Boss 考试
+ * (后台分批生成 → 开考计时答一题) → 03-exam-boss(中文);切英文模式(界面语言 en
+ * + 种子课程 🌐 en 翻译) → 开始学习 → 猜一轮等揭晓 → 02-ai-tutor(全英文,
+ * 展示双语课程 + AI 输出跟随界面语言)。
  * GPU 合成保持开启(whenReady 前的 disable 对 --shots 跳过),capturePage 才有真实帧。
  */
 async function runShots(): Promise<void> {
   const outDir = join(PROJECT_ROOT, "docs", "screenshots");
   mkdirSync(outDir, { recursive: true });
   const saved: string[] = [];
+  const failed: string[] = [];
 
   // provider:同 ui-test——.env 真 key → 真实 LLM 开场;无 key 用占位(只截界面)
   try {
@@ -381,14 +390,42 @@ async function runShots(): Promise<void> {
 
   const js = (code: string): Promise<unknown> =>
     win.webContents.executeJavaScript(code).catch(() => null);
+  const sizes: Record<string, number> = {};
+  const capture = async (): Promise<Buffer> => {
+    try {
+      return (await win.webContents.capturePage()).toPNG();
+    } catch {
+      return Buffer.alloc(0);
+    }
+  };
   const shot = async (name: string): Promise<void> => {
     await new Promise((r) => setTimeout(r, 800)); // 等入场动画/合成稳定
-    const img = await win.webContents.capturePage();
-    const png = img.toPNG();
+    let png = await capture();
+    for (let i = 0; i < 5 && png.length === 0; i++) {
+      // 偶发 0 字节(合成/显示表面丢失,长 LLM 等待后窗口闲置相关):唤起窗口再试
+      try {
+        win.show();
+        win.focus();
+      } catch {}
+      await new Promise((r) => setTimeout(r, 2500));
+      png = await capture();
+    }
+    const prev = join(outDir, name);
+    if (png.length === 0 && existsSync(prev) && statSync(prev).size > 0) {
+      // 宁可保留旧图也不用 0 字节覆盖好图;本次标记失败,结果里如实报告
+      failed.push(name);
+      console.error(`[lookatstudy] shot FAILED (0 bytes, kept old file): ${name}`);
+      return;
+    }
     writeFileSync(join(outDir, name), png);
     saved.push(name);
+    sizes[name] = png.length;
     console.error(`[lookatstudy] shot saved: ${name} (${png.length} bytes)`);
   };
+  // localStorage 在共享 userData 里(只有 DB 是临时的),英文模式写进去后必须还原,
+  // 否则正常启动的 app 会残留英文界面语言
+  const restoreLang = (): Promise<unknown> =>
+    js(`(function(){ try { localStorage.removeItem("lookatstudy-lang"); } catch (e) {} return true; })()`);
 
   // 渲染层挂载
   await js(`(async function(){
@@ -422,6 +459,105 @@ async function runShots(): Promise<void> {
     return false;
   })()`);
   await shot("01-overview.png");
+
+  // 第一章 Boss 考试:点考试球(map testid 用 id 前 8 位,六个考试球同为 guide-ex,取第一个可点的)
+  // → 后台按知识点分批生成(种子课无 KC,走课时标题伪 KC,5 题一批)→ 就绪 → 开考 → 截答题界面。
+  await js(`(async function(){
+    var nodes = document.querySelectorAll('[data-testid="exam-node-guide-ex"]');
+    for (const n of nodes) { if (!n.disabled) { n.click(); break; } }
+    for (var i = 0; i < 960; i++) { // 最多 240s 等生成分批出题
+      await new Promise(function(r){ setTimeout(r, 250); });
+      var ready = document.querySelector('[data-testid="exam-start-btn"]');
+      var failed = document.querySelector('[data-testid="exam-error"]');
+      if (ready || failed) return true;
+    }
+    return false;
+  })()`);
+  await js(`(async function(){
+    var btn = document.querySelector('[data-testid="exam-start-btn"]');
+    if (!btn) return false;
+    btn.click();
+    for (var i = 0; i < 80; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      if (document.querySelector('[data-testid="exam-answering"]') && document.querySelector('[data-testid="exam-timer"]')) return true;
+    }
+    return false;
+  })()`);
+  await js(`(async function(){
+    var opt = document.querySelector('[data-testid="exam-option-0"]');
+    if (opt) opt.click();
+    // 选完停 8 秒:倒计时环走掉一段(看得出是限时),选中态也稳了
+    await new Promise(function(r){ setTimeout(r, 8000); });
+    return true;
+  })()`);
+  await shot("03-exam-boss.png");
+
+  // ── 02 英文模式:界面语言 → en + 课程 🌐 → en 翻译,reload 重进 ──
+  // 一张图演示三件事:双语种子课程(🌐 英文翻译)、英文界面、导师英文回复(AI 输出语言跟随界面语言)。
+  await js(`(async function(){
+    localStorage.setItem("lookatstudy-lang", "en");
+    await window.api.setCourseLanguage("seed-lookatstudy-guide", "en");
+    return true;
+  })()`);
+  // reload() 在部分环境会以 "display surface not available" reject 后悬挂;
+  // loadFile 与启动加载同路径,更稳
+  await win.webContents
+    .loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"))
+    .catch((e) => console.error("[lookatstudy] shots loadFile failed:", e instanceof Error ? e.message : e));
+  await js(`(async function(){
+    for (var i = 0; i < 60; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      if (document.querySelector('[data-testid="course-list"]')) return true;
+    }
+    return false;
+  })()`);
+  await js(`(async function(){
+    var row = document.querySelector('[data-testid="course-list"] button');
+    if (!row) return false;
+    row.click();
+    for (var i = 0; i < 40; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      if (document.querySelectorAll('[data-testid^="map-node-"]').length >= 1) return true;
+    }
+    return false;
+  })()`);
+  await js(`(async function(){
+    var btns = document.querySelectorAll('[data-testid^="map-node-"]');
+    for (const b of btns) { if (!b.disabled) { b.click(); break; } }
+    for (var i = 0; i < 40; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      if (document.querySelector('[data-testid="notebook-panel"]')) return true;
+    }
+    return false;
+  })()`);
+
+  // 切换校验:开始学习按钮必须是英文文案。宁可失败退出也不存一张中文的 02
+  // (之前 js() 吞错导致静默切失败,存出中文图)。
+  const diag = await js(`(function(){
+    var btn = document.querySelector('[data-testid="start-learning-btn"]');
+    return JSON.stringify({
+      href: location.href,
+      lang: localStorage.getItem("lookatstudy-lang"),
+      btn: btn ? String(btn.textContent || "").slice(0, 60) : null
+    });
+  })()`);
+  console.error("SHOTS_EN_DIAG=" + String(diag));
+  const enOk = await js(`(async function(){
+    // 按钮实际渲染 "Start Learning"(大小写不定),用小写比较
+    for (var i = 0; i < 40; i++) {
+      var btn = document.querySelector('[data-testid="start-learning-btn"]');
+      var t = btn ? String(btn.textContent || "").toLowerCase() : "";
+      if (t.indexOf("start learning") !== -1) return true;
+      await new Promise(function(r){ setTimeout(r, 250); });
+    }
+    return false;
+  })()`);
+  if (enOk !== true) {
+    console.error("SHOTS_EN_SWITCH_FAILED=1 (界面未切到英文,放弃 02)");
+    await restoreLang();
+    console.error("SHOTS_RESULT=" + JSON.stringify({ ok: false, saved }));
+    return;
+  }
 
   // 开始学习 → 等 LLM 第一轮(hook + 二选一卡) → 点一个选项 → 等第二轮揭晓
   const WAIT_REPLY = `(async function(){
@@ -462,40 +598,10 @@ async function runShots(): Promise<void> {
     if (picked === true) await js(WAIT_REPLY);
   }
   await shot("02-ai-tutor.png");
+  await restoreLang();
 
-  // 第一章 Boss 考试:点考试球(map testid 用 id 前 8 位,六个考试球同为 guide-ex,取第一个可点的)
-  // → 后台按知识点分批生成(种子课无 KC,走课时标题伪 KC,5 题一批)→ 就绪 → 开考 → 截答题界面。
-  await js(`(async function(){
-    var nodes = document.querySelectorAll('[data-testid="exam-node-guide-ex"]');
-    for (const n of nodes) { if (!n.disabled) { n.click(); break; } }
-    for (var i = 0; i < 960; i++) { // 最多 240s 等生成分批出题
-      await new Promise(function(r){ setTimeout(r, 250); });
-      var ready = document.querySelector('[data-testid="exam-start-btn"]');
-      var failed = document.querySelector('[data-testid="exam-error"]');
-      if (ready || failed) return true;
-    }
-    return false;
-  })()`);
-  await js(`(async function(){
-    var btn = document.querySelector('[data-testid="exam-start-btn"]');
-    if (!btn) return false;
-    btn.click();
-    for (var i = 0; i < 80; i++) {
-      await new Promise(function(r){ setTimeout(r, 250); });
-      if (document.querySelector('[data-testid="exam-answering"]') && document.querySelector('[data-testid="exam-timer"]')) return true;
-    }
-    return false;
-  })()`);
-  await js(`(async function(){
-    var opt = document.querySelector('[data-testid="exam-option-0"]');
-    if (opt) opt.click();
-    // 选完停 8 秒:倒计时环走掉一段(看得出是限时),选中态也稳了
-    await new Promise(function(r){ setTimeout(r, 8000); });
-    return true;
-  })()`);
-  await shot("03-exam-boss.png");
-
-  console.error("SHOTS_RESULT=" + JSON.stringify({ ok: saved.length === 3, saved }));
+  const ok = saved.length === 3 && failed.length === 0 && saved.every((s) => (sizes[s] ?? 0) > 0);
+  console.error("SHOTS_RESULT=" + JSON.stringify({ ok, saved, failed, sizes }));
 }
 
 app.on("window-all-closed", () => {

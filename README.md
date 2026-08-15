@@ -32,7 +32,9 @@ Sections and lessons turn into nodes on a path. Finish one and the next unlocks.
 
 ## The AI tutor knows which concept you're weak on
 
-<img src="docs/screenshots/02-ai-tutor.png" alt="The tutor opening a lesson with a guess-first question" width="880">
+<img src="docs/screenshots/02-ai-tutor.png" alt="The tutor in English mode, opening a lesson with a guess-first question" width="880">
+
+Same app as the screenshot above, switched to English: interface labels, the built-in course through its 🌐 translation toggle, and the tutor's replies all follow the interface language.
 
 This is the part I care most about. Every answer you give updates a BKT mastery model on the specific knowledge point behind the question. The tutor sees far more than "chapter 3, 70 percent". You're solid on recursion and shaky on closures, so it keeps asking about closures. When you click "I don't get this" in a chat, the stumble gets logged, and later explanations spend more time where you actually fell and less where you're already bored.
 

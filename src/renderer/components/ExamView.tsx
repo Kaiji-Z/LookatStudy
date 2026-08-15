@@ -37,6 +37,8 @@ import { Target, Star, RotateCcw, Check, X, ArrowRight, AlertCircle, Timer, Ligh
 
 interface ExamViewProps {
   examNode: ContentNode;
+  /** 界面语言(i18n)。题库生成时定格语言 */
+  locale?: string | null;
   /** 考试完成后回调,通知 App 刷新 progressMap(更新地图上的星数) */
   onExamCompleted?: () => void;
   /** 向 App 上报考试会话(answering/submitting 时 active;terminate 供离开警告确认后调用) */
@@ -70,7 +72,7 @@ function StarRow({ stars }: { stars: number }) {
   );
 }
 
-export function ExamView({ examNode, onExamCompleted, onSessionChange, paused }: ExamViewProps) {
+export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, paused }: ExamViewProps) {
   const t = useLang();
   const [phase, setPhase] = useState<Phase>("loading");
   const [statusView, setStatusView] = useState<ExamStatusView | null>(null);
@@ -128,7 +130,7 @@ export function ExamView({ examNode, onExamCompleted, onSessionChange, paused }:
         } else {
           // idle → 自动触发后台生成
           setPhase("generating");
-          api.examPrepare(examNode.id).catch(() => {});
+          api.examPrepare(examNode.id, locale ?? null).catch(() => {});
         }
       } catch (e) {
         if (!cancelled) {
@@ -335,7 +337,7 @@ export function ExamView({ examNode, onExamCompleted, onSessionChange, paused }:
           className="btn-3d-brand px-4 py-1.5 text-body"
           onClick={() => {
             setPhase("generating");
-            api.examPrepare(examNode.id).catch(() => {});
+            api.examPrepare(examNode.id, locale ?? null).catch(() => {});
           }}
         >
           <RotateCcw className="w-3.5 h-3.5 inline" />

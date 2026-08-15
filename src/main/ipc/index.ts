@@ -1012,8 +1012,8 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   // agent 对话：流式 token 通过 chat:token 事件推（mainWindow 注入到 handleAgentChat）
   ipcMain.handle(
     "agent:chat",
-    async (_e, nodeId: string, userMessage: string) => {
-      return handleAgentChat(mainWindow, nodeId, userMessage);
+    async (_e, nodeId: string, userMessage: string, locale?: string | null) => {
+      return handleAgentChat(mainWindow, nodeId, userMessage, locale);
     },
   );
 
@@ -1025,8 +1025,8 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   // v0.4: Thread 模式 agent 对话(传 threadId,从 thread 装配上下文)
   ipcMain.handle(
     "agent:chatThread",
-    async (_e, threadId: string, userMessage: string, displayText?: string | null) => {
-      return handleAgentChatThread(mainWindow, threadId, userMessage, displayText);
+    async (_e, threadId: string, userMessage: string, displayText?: string | null, locale?: string | null) => {
+      return handleAgentChatThread(mainWindow, threadId, userMessage, displayText, locale);
     },
   );
   ipcMain.handle("agent:abortThread", async (_e, threadId: string) => {
@@ -1402,8 +1402,8 @@ export function registerExerciseHandlers(): void {
   // AI 生题（缓存到 exercises 表）
   ipcMain.handle(
     "exercise:generate",
-    async (_e, nodeId: string, type?: ExerciseType) => {
-      const result = await generateExerciseService(getDb(), nodeId, type);
+    async (_e, nodeId: string, type?: ExerciseType, locale?: string | null) => {
+      const result = await generateExerciseService(getDb(), nodeId, type, locale);
       markDirty();
       return result;
     },
@@ -1428,8 +1428,8 @@ export function registerExerciseHandlers(): void {
 /** 章节考试(关底 boss)IPC handlers */
 export function registerExamHandlers(): void {
   // 幂等启动题目生成(后台进行,进度走 exam:status 事件)
-  ipcMain.handle("exam:prepare", (_e, examNodeId: string) => {
-    return prepareExam(getDb(), examNodeId);
+  ipcMain.handle("exam:prepare", (_e, examNodeId: string, locale?: string | null) => {
+    return prepareExam(getDb(), examNodeId, locale);
   });
 
   // 查状态 + 就绪元信息 + 最新 attempt(悬挂 attempt 在此自动判死)

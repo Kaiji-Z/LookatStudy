@@ -22,6 +22,8 @@ import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
 import { contentNodes, exercises } from "../db/schema.js";
 import { resolveLlm } from "./agent/llm-client.js";
+import { questionLanguageLine } from "@shared/locales";
+import { resolveOutputLang } from "@shared/locales";
 import { createProposal, applyProposal, type LearningOperation } from "./proposal-service.js";
 import { recordReviewDb } from "./pure/srs-db.js";
 import type { ReviewQuality } from "@shared/types";
@@ -38,6 +40,8 @@ export async function generateExercise(
   db: Db,
   nodeId: string,
   type?: ExerciseType,
+  /** 界面语言(i18n);null/缺省 = zh-CN */
+  locale?: string | null,
 ): Promise<Exercise> {
   const node = db.select().from(contentNodes).where(eq(contentNodes.id, nodeId)).get();
   if (!node) throw new Error(`节点不存在: ${nodeId}`);
@@ -47,7 +51,8 @@ export async function generateExercise(
   const exerciseType: ExerciseType = !type || type === "fill_blank" ? "mcq" : type;
   const llm = resolveLlm(db);
 
-  const prompt = buildGenerationPrompt(node.title, node.content ?? "(无内容，基于标题出题)", exerciseType);
+  const outLang = resolveOutputLang(locale);
+  const prompt = buildGenerationPrompt(node.title, node.content ?? "(无内容，基于标题出题)", exerciseType, outLang);
 
   const result = await generateText({
     model: llm.languageModel,
@@ -150,7 +155,7 @@ function rowToExercise(row: typeof exercises.$inferSelect): Exercise {
   };
 }
 
-function buildGenerationPrompt(title: string, content: string, type: ExerciseType): string {
+function buildGenerationPrompt(title: string, content: string, type: ExerciseType, outLang: string): string {
   const typeSpec = {
     mcq: `出一道四选一选择题。options 是 4 个选项的数组，answer 是正确选项的下标（"0"/"1"/"2"/"3"）。
 干扰项设计要求：基于学习者常犯的真实误解（不是明显错误的凑数选项），让认真学过的人能排除，没学懂的人会选错。
@@ -171,7 +176,7 @@ function buildGenerationPrompt(title: string, content: string, type: ExerciseTyp
     ``,
     `出题红线:`,
     `- 答案必须在提供的学习内容中有依据，不可编造内容里没有的知识`,
-    `- 题干用中文，清晰无歧义`,
+    questionLanguageLine(outLang),
     `- 干扰项 plausible 但 definitely wrong（不能有争议）`,
     ``,
     `严格按以下 JSON 格式返回，不要加任何 markdown 代码块标记、不要解释：`,

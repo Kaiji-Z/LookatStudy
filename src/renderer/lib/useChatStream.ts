@@ -57,7 +57,8 @@ interface UseChatStreamResult {
   setMessagesForNode: (messages: ChatMessageV2[]) => void;
 }
 
-export function useChatStream(threadId: string | null): UseChatStreamResult {
+/** locale: 界面语言(i18n)。用户偏好什么界面,AI 就用什么语言回复。 */
+export function useChatStream(threadId: string | null, locale?: string | null): UseChatStreamResult {
   const [messages, setMessages] = useState<ChatMessageV2[]>([]);
   const [streaming, setStreaming] = useState(false);
   // 当前正在流式追加的 assistant 消息 id。
@@ -196,7 +197,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
       setStreaming(true);
       streamingMsgIdRef.current = null;
       try {
-        await api.agentChatThread(tid, trimmed, displayText);
+        await api.agentChatThread(tid, trimmed, displayText, locale ?? null);
       } catch (e) {
         setStreaming(false);
         setMessages((prev) => [
@@ -209,7 +210,7 @@ export function useChatStream(threadId: string | null): UseChatStreamResult {
         ]);
       }
     },
-    [threadId, streaming],
+    [threadId, streaming, locale],
   );
 
   const stop = useCallback(async () => {

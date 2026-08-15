@@ -68,16 +68,16 @@ const api = {
     ipcRenderer.invoke("progress:markAttempted", nodeId)) as ApiExpose["markNodeAttempted"],
 
   /* 练习题 */
-  generateExercise: ((nodeId: string, type?: ExerciseType) =>
-    ipcRenderer.invoke("exercise:generate", nodeId, type)) as ApiExpose["generateExercise"],
+  generateExercise: ((nodeId: string, type?: ExerciseType, locale?: string | null) =>
+    ipcRenderer.invoke("exercise:generate", nodeId, type, locale ?? null)) as ApiExpose["generateExercise"],
   listExercises: ((nodeId: string) =>
     ipcRenderer.invoke("exercise:list", nodeId)) as ApiExpose["listExercises"],
   submitExerciseAnswer: ((exerciseId: string, userAnswer: string) =>
     ipcRenderer.invoke("exercise:submit", exerciseId, userAnswer)) as ApiExpose["submitExerciseAnswer"],
 
   /* 章节考试 v2（后台生成 + KC 出题 + attempt 档案） */
-  examPrepare: ((examNodeId: string) =>
-    ipcRenderer.invoke("exam:prepare", examNodeId)) as ApiExpose["examPrepare"],
+  examPrepare: ((examNodeId: string, locale?: string | null) =>
+    ipcRenderer.invoke("exam:prepare", examNodeId, locale ?? null)) as ApiExpose["examPrepare"],
   examGetStatus: ((examNodeId: string) =>
     ipcRenderer.invoke("exam:getStatus", examNodeId)) as ApiExpose["examGetStatus"],
   examStartAttempt: ((examNodeId: string) =>
@@ -115,16 +115,16 @@ const api = {
     ipcRenderer.invoke("soul:getActive")) as ApiExpose["getActiveSoul"],
 
   /* Agent 引擎 + Proposal（M2） */
-  agentChat: ((nodeId: string, msg: string) =>
-    ipcRenderer.invoke("agent:chat", nodeId, msg)) as ApiExpose["agentChat"],
+  agentChat: ((nodeId: string, msg: string, locale?: string | null) =>
+    ipcRenderer.invoke("agent:chat", nodeId, msg, locale ?? null)) as ApiExpose["agentChat"],
   abortAgentChat: ((nodeId: string) =>
     ipcRenderer.invoke("agent:abort", nodeId)) as ApiExpose["abortAgentChat"],
   getChatHistory: ((nodeId: string) =>
     ipcRenderer.invoke("agent:getHistory", nodeId)) as ApiExpose["getChatHistory"],
   clearChatHistory: ((nodeId: string) =>
     ipcRenderer.invoke("agent:clearHistory", nodeId)) as ApiExpose["clearChatHistory"],
-  agentChatThread: ((threadId: string, msg: string, displayText?: string | null) =>
-    ipcRenderer.invoke("agent:chatThread", threadId, msg, displayText ?? null)) as ApiExpose["agentChatThread"],
+  agentChatThread: ((threadId: string, msg: string, displayText?: string | null, locale?: string | null) =>
+    ipcRenderer.invoke("agent:chatThread", threadId, msg, displayText ?? null, locale ?? null)) as ApiExpose["agentChatThread"],
   abortAgentChatThread: ((threadId: string) =>
     ipcRenderer.invoke("agent:abortThread", threadId)) as ApiExpose["abortAgentChatThread"],
   isAgentReady: (() =>

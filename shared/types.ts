@@ -451,7 +451,7 @@ export interface ApiExpose {
 
   /* 练习题 */
   /** 让 AI 给某节点生成一道练习题（缓存到 exercises 表） */
-  generateExercise(nodeId: string, type?: ExerciseType): Promise<Exercise>;
+  generateExercise(nodeId: string, type?: ExerciseType, locale?: string | null): Promise<Exercise>;
   /** 取某节点缓存的练习题（不生成新的；没有返回空数组） */
   listExercises(nodeId: string): Promise<Exercise[]>;
   /** 提交答案，返回是否正确 + 解释。同时触发 BKT 掌握度更新 Proposal */
@@ -462,7 +462,7 @@ export interface ApiExpose {
 
   /* 章节考试 v2（后台生成 + KC 出题 + attempt 档案 + 限时考试） */
   /** 幂等启动题目生成(已就绪/生成中则无副作用),立即返回当前状态。生成在 main 后台继续。 */
-  examPrepare(examNodeId: string): Promise<ExamStatus>;
+  examPrepare(examNodeId: string, locale?: string | null): Promise<ExamStatus>;
   /** 查状态 + 就绪元信息 + 最新 attempt。悬挂 attempt(崩溃遗留)在此调用内自动按"未答=错"判死。 */
   examGetStatus(examNodeId: string): Promise<ExamStatusView>;
   /** 开始/重新考试:建 attempt 行,返回 attemptId + 就绪题目(含 KC 标签)。 */
@@ -496,7 +496,7 @@ export interface ApiExpose {
   touchStreakToday(): Promise<Streak>;
 
   /* Agent 引擎（M2：取代原 v2 占位。agentChat 自带流式推送 via chat:token 事件） */
-  agentChat(nodeId: string, userMessage: string): Promise<string>;
+  agentChat(nodeId: string, userMessage: string, locale?: string | null): Promise<string>;
   /** 中断当前正在流的 agent 回复（Stop 按钮） */
   abortAgentChat(nodeId: string): Promise<void>;
   /** 取某节点的聊天历史（持久化在 chat_sessions 表） */
@@ -504,7 +504,13 @@ export interface ApiExpose {
   /** 清空某节点的聊天历史 */
   clearChatHistory(nodeId: string): Promise<void>;
   /** v0.4: Thread 模式发消息(传 threadId,从 thread 装配上下文) */
-  agentChatThread(threadId: string, userMessage: string, displayText?: string | null): Promise<string>;
+  agentChatThread(
+    threadId: string,
+    userMessage: string,
+    displayText?: string | null,
+    /** 界面语言(i18n);null/缺省不传 = zh-CN */
+    locale?: string | null,
+  ): Promise<string>;
   /** v0.4: 中断某 thread 的 agent 回复 */
   abortAgentChatThread(threadId: string): Promise<void>;
 

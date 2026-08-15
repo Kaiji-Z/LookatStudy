@@ -337,7 +337,8 @@ async function runShots(): Promise<void> {
     const seeds: Array<{ nodeId: string; status: "mastered" | "in_progress" | "available"; mastery: number; crownLevel: number }> = [
       { nodeId: "guide-les-1-1", status: "mastered", mastery: 0.95, crownLevel: 1 },
       { nodeId: "guide-les-1-2", status: "in_progress", mastery: 0.6, crownLevel: 0 },
-      { nodeId: "guide-les-1-3", status: "available", mastery: 0, crownLevel: 0 },
+      // 第一章三课全部 ≥0.5,让 exam-node 解锁(Boss 考试可进,第 3 张截图用)
+      { nodeId: "guide-les-1-3", status: "in_progress", mastery: 0.55, crownLevel: 0 },
     ];
     for (const p of seeds) {
       getDb()
@@ -462,18 +463,37 @@ async function runShots(): Promise<void> {
   }
   await shot("02-ai-tutor.png");
 
-  // 课程搜索面板:全课程树大纲
+  // 第一章 Boss 考试:点考试球(map testid 用 id 前 8 位,六个考试球同为 guide-ex,取第一个可点的)
+  // → 后台按知识点分批生成(种子课无 KC,走课时标题伪 KC,5 题一批)→ 就绪 → 开考 → 截答题界面。
   await js(`(async function(){
-    var btn = document.querySelector('[data-testid="map-search-btn"]');
-    if (!btn) return false;
-    btn.click();
-    for (var i = 0; i < 20; i++) {
-      await new Promise(function(r){ setTimeout(r, 100); });
-      if (document.querySelector('[data-testid="course-search-panel"]')) return true;
+    var nodes = document.querySelectorAll('[data-testid="exam-node-guide-ex"]');
+    for (const n of nodes) { if (!n.disabled) { n.click(); break; } }
+    for (var i = 0; i < 960; i++) { // 最多 240s 等生成分批出题
+      await new Promise(function(r){ setTimeout(r, 250); });
+      var ready = document.querySelector('[data-testid="exam-start-btn"]');
+      var failed = document.querySelector('[data-testid="exam-error"]');
+      if (ready || failed) return true;
     }
     return false;
   })()`);
-  await shot("03-course-search.png");
+  await js(`(async function(){
+    var btn = document.querySelector('[data-testid="exam-start-btn"]');
+    if (!btn) return false;
+    btn.click();
+    for (var i = 0; i < 80; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      if (document.querySelector('[data-testid="exam-answering"]') && document.querySelector('[data-testid="exam-timer"]')) return true;
+    }
+    return false;
+  })()`);
+  await js(`(async function(){
+    var opt = document.querySelector('[data-testid="exam-option-0"]');
+    if (opt) opt.click();
+    // 选完停 8 秒:倒计时环走掉一段(看得出是限时),选中态也稳了
+    await new Promise(function(r){ setTimeout(r, 8000); });
+    return true;
+  })()`);
+  await shot("03-exam-boss.png");
 
   console.error("SHOTS_RESULT=" + JSON.stringify({ ok: saved.length === 3, saved }));
 }

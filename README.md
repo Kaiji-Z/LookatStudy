@@ -28,7 +28,7 @@ Duolingo solved these problems thoroughly, but only for its own content. I wante
 
 ## The repo becomes a skill map
 
-Sections and lessons turn into nodes on a path. Finish one and the next unlocks. Every chapter ends with a boss exam, generated in the background with timed questions. Finishing a lesson takes more than reading it. Each lesson breaks into knowledge points, and your mastery of the lesson is the lowest of them. Leave one point vague and the crown stays locked.
+Sections and lessons turn into nodes on a path. Finish one and the next unlocks. Finishing a lesson takes more than reading it. Each lesson breaks into knowledge points, and your mastery of the lesson is the lowest of them. Leave one point vague and the crown stays locked. Imports get big, one repo I test with lands at 124 lessons, and the search pill in the left rail doubles as a clickable outline for exactly that case, searching titles and full text, keeping locked lessons unspoiled.
 
 ## The AI tutor knows which concept you're weak on
 
@@ -42,11 +42,11 @@ The AI cannot touch your learning record on its own. It drafts a proposal card, 
 
 Teaching style is a pill next to the input box, switchable anytime. Explain it to me straight, ask me guiding questions, or make me do it myself.
 
-## Search doubles as an outline
+## Chapter exams are boss fights
 
-<img src="docs/screenshots/03-course-search.png" alt="The course search panel with a tree of the whole course" width="880">
+<img src="docs/screenshots/03-exam-boss.png" alt="A timed chapter exam question with one option selected" width="880">
 
-Imports get big. One repo I test with comes out at 124 lessons, and scrolling a map that long gets old. That's what the search panel in the left rail is for. It searches titles and full text, shows the whole course as a clickable tree when the query is empty, and jumps to whatever row you click. Locked lessons stay locked in the list, so no spoilers.
+Each chapter ends with an exam guarding the gate. The questions are generated in the background from that chapter's knowledge points, in batches, while you keep studying elsewhere, and a toast tells you when the boss is ready. Every question runs on a countdown, 60 seconds normally, 90 for the ones with long text or code. Walk away mid-exam and the attempt terminates, with unanswered questions counted wrong, so the star score stays honest. The result page breaks your score down by knowledge point, which tells you what to review next. One rule I hold to, exams never write back into the mastery model. They measure. The tutor teaches.
 
 ## What you can import
 

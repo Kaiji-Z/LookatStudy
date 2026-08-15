@@ -183,11 +183,7 @@ export default function App() {
     if (!selectedNode) return;
     // 气泡只显示「🚀 开始学习「X」」这个动作;完整开场指令是发给 LLM 的提示词,不在聊天窗展示。
     void sendRef.current?.(
-      `我想开始学「${selectedNode.title}」。但我现在没什么劲——别直接讲概念,也别出计分题考我。请这样开场:\n` +
-        `1. 先用一两句散文抛个钩子(反直觉的、或跟我日常有关的,让我产生好奇);\n` +
-        `2. 然后调用 pose_guess 工具,给我一个二选一的小猜测(就是玩,不是考试);\n` +
-        `3. 我会点选项猜,你【下一回合】再揭晓,顺带把这课最核心的一点讲清楚。\n` +
-        `铁律:起手不要讲座、不要用 generate_quiz 出计分题、不要计分。把我勾住是唯一目标。`,
+      t("chat.action.startLearningPrompt", { title: selectedNode.title }),
       t("chat.action.startLearning", { title: selectedNode.title }),
     );
   }, [selectedNode, t]);

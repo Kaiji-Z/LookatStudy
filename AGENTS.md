@@ -91,6 +91,16 @@ Standard verification triad after code changes:
 npm run verify:core && npx vite build && npm run self-test
 ```
 
+## Release process
+
+1. Fold `[Unreleased]` in `CHANGELOG.md` into a versioned section and bump `version` in `package.json` (one commit, `chore(release): vX.Y.Z`).
+2. Push tag `vX.Y.Z`. `.github/workflows/package.yml` then builds the 3-OS matrix (NSIS exe / arm64 dmg / AppImage + deb) and attaches everything to that tag's GitHub Release automatically.
+3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
+4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
+5. `ci.yml` runs oxlint + both typechecks + 63 verify suites + vite build on every PR and push to main — never merge a red PR.
+
+Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
+
 ## Path aliases
 
 - `@shared/*` → `shared/*` (IPC types shared between main + renderer)

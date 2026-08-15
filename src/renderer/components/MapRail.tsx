@@ -8,7 +8,7 @@
 import type { ContentNode, Progress, Course } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { useState, useEffect, useRef, type CSSProperties } from "react";
-import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search } from "lucide-react";
+import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { CourseSearchPanel } from "./CourseSearchPanel.js";
 import {
@@ -311,7 +311,7 @@ export function MapRail(props: MapRailProps) {
 /* ---------- 导入面板(原 CourseDrawer 内容,内联) ---------- */
 function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse, onCoursesChanged }: { courses: Course[]; selectedCourseId: string | null; onSelectCourse: (id: string) => void; onDeleteCourse: (id: string, title: string, rect: DOMRect) => void; onCoursesChanged: () => void; }) {
   const t = useLang();
-  const [tab, setTab] = useState<"url" | "markdown" | "folder">("url");
+  const [tab, setTab] = useState<"url" | "markdown" | "folder" | "pack">("url");
   const [showImport, setShowImport] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
   const [mdText, setMdText] = useState("");
@@ -319,6 +319,9 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  /** 失败时带回的可续跑方案(断点重试按钮用);成功时记住课程(导出课程包按钮用) */
+  const [failPlanId, setFailPlanId] = useState<string | null>(null);
+  const [lastCourse, setLastCourse] = useState<{ courseId: string; packable: boolean } | null>(null);
   /** 导入进度步骤列表（安装式滚动窗口）：新步骤进来时上一条自动打勾 */
   const [progressSteps, setProgressSteps] = useState<{ msg: string; status: "working" | "done"; ts: number }[]>([]);
   /** 每秒 tick 让 working 步骤的"已工作 Xs"实时更新 */
@@ -350,10 +353,15 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
   // 后台导入结束（完成/失败/取消）：事件驱动，不阻塞用户浏览其他课程。
   // 完成只刷新列表 + Toast —— 不再强制跳到新课程（用户自己决定何时查看）。
   useEffect(() => {
-    const off = api.on("import:done", (r: { ok: boolean; title?: string; error?: string; cancelled?: boolean }) => {
+    const off = api.on("import:done", (r: {
+      ok: boolean; title?: string; error?: string; cancelled?: boolean;
+      planId?: string; reused?: boolean; packable?: boolean; courseId?: string;
+    }) => {
       setBusy(false);
+      setFailPlanId(r.ok ? null : (r.planId ?? null));
       if (r.ok) {
-        setSuccess(`${t("import.success.folder")}: ${r.title ?? ""}`);
+        setSuccess(`${t("import.success.folder")}: ${r.title ?? ""}${r.reused ? `（${t("import.success.reused")}）` : ""}`);
+        setLastCourse(r.courseId ? { courseId: r.courseId, packable: r.packable ?? false } : null);
         onCoursesChanged();
       } else if (r.cancelled) {
         setProgressSteps([]);
@@ -400,6 +408,31 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
     const job = await api.importLocalFolder();
     if (!job) return; // 用户取消了文件夹选择对话框
     setBusy(true);
+  };
+  const handleImportPack = async () => {
+    if (busy) return;
+    setError(null); setSuccess(null); setProgressSteps([]);
+    const job = await api.importPack().catch((e) => { setError(e instanceof Error ? e.message : String(e)); return null; });
+    if (!job) return; // 用户取消了文件选择对话框(或格式错误已显示)
+    setBusy(true);
+  };
+  const handleResume = async (planId: string) => {
+    if (busy) return;
+    setError(null); setProgressSteps([]);
+    try {
+      await api.importResume(planId);
+      setBusy(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const handleExportPack = async (courseId: string) => {
+    try {
+      const path = await api.exportPack(courseId);
+      if (path) setSuccess(t("import.pack.exported", { path }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   return (
@@ -484,7 +517,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
             ) : (
               <>
                 <div className="flex gap-1 p-1 bg-white/5 rounded-lg">
-                  {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }]).map(({ k, label, icon: Icon }) => (
+                  {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }, { k: "pack" as const, label: t("import.tab.pack"), icon: Package }]).map(({ k, label, icon: Icon }) => (
                     <button key={k} onClick={() => setTab(k)} className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
                       <Icon className="w-3 h-3" /> {label}
                     </button>
@@ -501,16 +534,39 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
                     <textarea value={mdText} onChange={(e) => setMdText(e.target.value)} placeholder={t("import.placeholder.md")} data-testid="md-text-input" rows={4} className="w-full bg-black/25 text-white placeholder:text-white/35 text-body rounded-lg px-3 py-2 border border-white/15 focus:border-brand focus:outline-none transition-colors resize-none" />
                     <button onClick={handleImportMd} disabled={!mdText.trim() || !repoName.trim() || busy} data-testid="import-md-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.md")}</button>
                   </section>
-                ) : (
+                ) : tab === "folder" ? (
                   <section className="space-y-2" data-testid="import-folder-section">
                     <p className="text-caption text-white/50 leading-relaxed">{t("import.folder.desc")}</p>
                     <button onClick={handleImportFolder} disabled={busy} data-testid="import-folder-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.folder")}</button>
                   </section>
+                ) : (
+                  <section className="space-y-2" data-testid="import-pack-section">
+                    <p className="text-caption text-white/50 leading-relaxed">{t("import.pack.desc")}</p>
+                    <button onClick={handleImportPack} disabled={busy} data-testid="import-pack-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.pack")}</button>
+                  </section>
                 )}
               </>
             )}
-            {error && <div className="border border-warning/40 text-warning-light text-label rounded-lg p-2 whitespace-pre-wrap" data-testid="import-error">{error}</div>}
-            {success && <div className="border border-brand/30 text-brand text-label rounded-lg p-2" data-testid="import-success"><Check className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" />{success}</div>}
+            {error && (
+              <div className="border border-warning/40 text-warning-light text-label rounded-lg p-2 whitespace-pre-wrap" data-testid="import-error">
+                {error}
+                {failPlanId && (
+                  <button onClick={() => void handleResume(failPlanId)} disabled={busy} data-testid="import-resume-btn" className="block mt-1.5 text-label font-bold text-warning-light hover:text-warning underline underline-offset-2 disabled:opacity-40">
+                    {t("import.error.resume")}
+                  </button>
+                )}
+              </div>
+            )}
+            {success && (
+              <div className="border border-brand/30 text-brand text-label rounded-lg p-2" data-testid="import-success">
+                <Check className="inline-block w-3.5 h-3.5 mr-1 align-[-3px]" />{success}
+                {lastCourse?.packable && (
+                  <button onClick={() => void handleExportPack(lastCourse.courseId)} disabled={busy} data-testid="import-export-pack-btn" className="block mt-1.5 text-label font-bold hover:underline underline-offset-2 disabled:opacity-40">
+                    {t("import.pack.export")}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

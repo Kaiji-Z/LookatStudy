@@ -32,6 +32,12 @@ const api = {
     ipcRenderer.invoke("import:github", repoUrl)) as ApiExpose["importGithub"],
   importCancel: (() =>
     ipcRenderer.invoke("import:cancel")) as ApiExpose["importCancel"],
+  importResume: ((planId: string) =>
+    ipcRenderer.invoke("import:resume", planId)) as ApiExpose["importResume"],
+  importPack: (() =>
+    ipcRenderer.invoke("import:importPack")) as ApiExpose["importPack"],
+  exportPack: ((courseId: string) =>
+    ipcRenderer.invoke("import:exportPack", courseId)) as ApiExpose["exportPack"],
   generateCourseFromMarkdown: ((md: string, repoName: string, repoUrl?: string) =>
     ipcRenderer.invoke("course:generateFromMarkdown", md, repoName, repoUrl)) as ApiExpose["generateCourseFromMarkdown"],
   deleteCourse: ((courseId: string) =>

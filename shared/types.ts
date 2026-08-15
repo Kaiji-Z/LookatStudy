@@ -414,6 +414,12 @@ export interface ApiExpose {
   importGithub(repoUrl: string): Promise<ImportJobHandle>;
   /** 请求取消进行中的后台导入（拉取阶段生效，写库前零残留）。返回是否有任务在跑 */
   importCancel(): Promise<boolean>;
+  /** 从断点重试:带上次落盘的导入方案快照续跑(已完成步骤零重烧)。快照不存在时抛错 */
+  importResume(planId: string): Promise<ImportJobHandle>;
+  /** 导入课程包:Electron 选 .lookatstudy-pack.json → 后台跑(命中则零 AI 调用)。取消对话框返回 null */
+  importPack(): Promise<ImportJobHandle | null>;
+  /** 导出课程包(仅 GitHub 来源课程):Electron 另存对话框,返回写入路径;取消返回 null */
+  exportPack(courseId: string): Promise<string | null>;
   /** M4: 从 markdown 字符串生成课程（无网络依赖） */
   generateCourseFromMarkdown(
     md: string,
@@ -777,8 +783,12 @@ export interface IpcEvents {
   /** 提议创建事件（结构化，供聊天栏渲染应用/拒绝卡） */
   "chat:proposal": (proposalId: string, summary: string, status: string) => void;
   "import:progress": (message: string) => void;
-  /** 后台导入任务结束（完成/失败/取消）。cancelled=true 表示用户主动取消 */
-  "import:done": (result: { ok: true; courseId: string; title: string } | { ok: false; error: string; cancelled?: boolean }) => void;
+  /** 后台导入任务结束（完成/失败/取消）。cancelled=true 表示用户主动取消。
+   * 成功:planId=方案快照(课程包源),packable=可导出课程包(仅 github 来源);
+   * 失败:planId=可从断点重试的快照(Step1 都没完成时无此字段)。 */
+  "import:done": (result:
+    | { ok: true; courseId: string; title: string; planId: string; reused: boolean; packable: boolean }
+    | { ok: false; error: string; cancelled?: boolean; planId?: string }) => void;
   /**
    * v0.2 parts-based 流式协议：把 fullStream 的 part 透传给渲染层。
    * 与 chat:token 并存（兼容期），渲染层可二选一。M2 起优先用 chat:part。

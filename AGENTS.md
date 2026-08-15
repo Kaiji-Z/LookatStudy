@@ -226,7 +226,7 @@ them as load-bearing, not optional.
 ### Directory layout
 
 ```
-/                       user-facing docs only: README, AGENTS, PRODUCT, CHANGELOG, VERIFICATION
+/                       user-facing docs only: README, AGENTS, PRODUCT, CHANGELOG, VERIFICATION, LICENSE
 /docs/                  user-facing assets (screenshots/ embedded by the READMEs; regenerate via npm run shots)
 /dev-docs/              ★ gitignored ★ dev-process docs: ARCHITECTURE, BUILD-NOTES, ROADMAP,
                         DESIGN-PLAN-*.md — kept locally, NOT committed
@@ -304,7 +304,7 @@ you in a public release notes draft, it belongs in `dev-docs/`.
   - **Dev-process (gitignored, `dev-docs/`):** architecture decisions, build
     pitfalls, milestone roadmaps, historical design plans. Local only.
 - **Root stays small.** Only README, AGENTS, PRODUCT, CHANGELOG, VERIFICATION,
-  and build-config files live at root. Dev-process material goes in `dev-docs/`.
+  LICENSE, and build-config files live at root. Dev-process material goes in `dev-docs/`.
 - **Historical plans stay historical.** When a design plan stops describing
   current code, leave it as-is in `dev-docs/` — don't quietly update it to match,
   that erases the decision trail.

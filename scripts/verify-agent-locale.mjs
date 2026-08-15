@@ -116,6 +116,26 @@ await test("resolve: null/缺省/空白 → zh-CN 兜底", () => {
   assert.strictEqual(resolveOutputLang("   "), "zh-CN");
 });
 
+/* ── 4. 「开始学习」开场提示词模板(App.handleStartLearning 现走 i18n)── */
+await test("startLearningPrompt: zh 模板与旧硬编码逐字节一致(默认行为零变化)", async () => {
+  const { translate } = await import("../src/renderer/lib/i18n.ts");
+  const zhOld = `我想开始学「测试课」。但我现在没什么劲——别直接讲概念,也别出计分题考我。请这样开场:
+1. 先用一两句散文抛个钩子(反直觉的、或跟我日常有关的,让我产生好奇);
+2. 然后调用 pose_guess 工具,给我一个二选一的小猜测(就是玩,不是考试);
+3. 我会点选项猜,你【下一回合】再揭晓,顺带把这课最核心的一点讲清楚。
+铁律:起手不要讲座、不要用 generate_quiz 出计分题、不要计分。把我勾住是唯一目标。`;
+  const zhGot = translate("chat.action.startLearningPrompt", "zh-CN", { title: "测试课" });
+  assert.strictEqual(zhGot, zhOld);
+});
+
+await test("startLearningPrompt: en 模板完整、{title} 插值、无中文残留", async () => {
+  const { translate } = await import("../src/renderer/lib/i18n.ts");
+  const enGot = translate("chat.action.startLearningPrompt", "en", { title: "Demo Lesson" });
+  assert.ok(enGot.includes("Demo Lesson"), "en 模板应完成 {title} 插值");
+  assert.ok(enGot.includes("pose_guess"), "en 模板保留 pose_guess 工具名");
+  assert.ok(!/[一-鿿]/.test(enGot), "en 模板不应含中文");
+});
+
 /* ── 汇总 ── */
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

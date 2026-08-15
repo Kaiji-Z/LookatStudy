@@ -27,11 +27,14 @@ import {
 } from "../../db/schema.js";
 import type { BrowserWindow } from "electron";
 import { getDb, markDirty } from "../../db/index.js";
-import { resolveLlm, classifyLlmError } from "./llm-client.js";
+import { resolveLlm, classifyLlmError, readSettingsMap, buildLanguageModel } from "./llm-client.js";
 import { isFlagOn } from "../flags.js";
 import { listAssetsByNode, getAssetDataUrl } from "../asset-service.js";
+import { saveChatImage } from "../attachment-store.js";
+import { buildContentWithTextAttachments } from "@shared/attachment-intake";
+import { reasoningPlanFor, withBodyPatch, type ReasoningJsonValue } from "@shared/reasoning-effort";
 import { chatSessions } from "../../db/schema.js";
-import type { ChatStreamPart } from "@shared/types";
+import type { ChatStreamPart, ChatAttachmentInput, ReasoningEffortSetting } from "@shared/types";
 import { accumulatePart, type ChatMessagePart } from "@shared/part-accumulator";
 import {
   getThreadMessages,
@@ -113,23 +116,22 @@ function extractInlineDataImages(content: string): string[] {
 }
 
 /**
- * 运行一轮 agent loop。
+ * 装配一轮对话的静态上下文(system + 课文块 + 学习者快照)。
  *
- * @param nodeId       当前在学的 content node id（提供上下文）
- * @param messages     对话历史
- * @param events       流式回调
- * @param locale       界面语言(i18n,渲染层传入);null/缺省 = zh-CN
- * @returns            assistant 的完整文本回复
+ * runAgentTurn(实发)与 agent:getContextUsage(表显)共用本函数 —— 上下文表
+ * 显示的 token 构成就是实发给 LLM 的构成,不会两套逻辑漂移。
  */
-export async function runAgentTurn(
+export function assembleContextBlocks(
   db: Db,
   nodeId: string,
-  messages: ChatTurn[],
-  events: AgentEvents = {},
-  abortSignal?: AbortSignal,
   locale?: string | null,
-): Promise<{ text: string; parts: ChatMessagePart[] }> {
-  const llm = resolveLlm(db);
+): {
+  system: string;
+  nodeContext: string;
+  learnerSnapshot: string | null;
+  node: typeof contentNodes.$inferSelect | undefined;
+  nodeProgress: typeof progressTable.$inferSelect | undefined;
+} {
   // AI 输出语言 = 界面语言(用户偏好什么界面就偏好什么输出);未传 → zh-CN
   const outLang = resolveOutputLang(locale);
   const system = buildSystemPrompt(db, buildBaseAgentPrompt(outLang), buildSoulLangReminder(outLang));
@@ -199,6 +201,31 @@ export async function runAgentTurn(
     includeMemory: isFlagOn("memory_system"),
     courseId: node?.courseId,
   });
+
+  return { system, nodeContext, learnerSnapshot, node, nodeProgress };
+}
+
+/**
+ * 运行一轮 agent loop。
+ *
+ * @param nodeId       当前在学的 content node id（提供上下文）
+ * @param messages     对话历史
+ * @param events       流式回调
+ * @param locale       界面语言(i18n,渲染层传入);null/缺省 = zh-CN
+ * @param attachments  v0.10:用户随最后一条 user 消息上传的图片(纯 base64),注入为本轮 vision 输入
+ * @returns            assistant 的完整文本回复
+ */
+export async function runAgentTurn(
+  db: Db,
+  nodeId: string,
+  messages: ChatTurn[],
+  events: AgentEvents = {},
+  abortSignal?: AbortSignal,
+  locale?: string | null,
+  attachments?: Array<{ mediaType: string; base64: string }>,
+): Promise<{ text: string; parts: ChatMessagePart[] }> {
+  const llm = resolveLlm(db);
+  const { system, nodeContext, learnerSnapshot, node, nodeProgress } = assembleContextBlocks(db, nodeId, locale);
 
   // 工具集：只读直接返回，写操作走 proposal
   const tools: ToolSet = {
@@ -527,6 +554,30 @@ export async function runAgentTurn(
       content: m.content,
     }));
 
+    // v0.10:用户显式上传的图片附件 → 本轮 vision 输入。
+    // 不受上面 flag+关键词双门控(那是对"节点配图按需喂"的省 token 门控);用户特意贴的图必须看得见。
+    if (attachments && attachments.length > 0) {
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+      if (lastUserMsg) {
+        preparedMessages = preparedMessages.map((m) =>
+          m.role === "user" && m.content === lastUserMsg.content
+            ? {
+                role: "user" as const,
+                content: [
+                  { type: "text" as const, text: lastUserMsg.content },
+                  { type: "text" as const, text: `\n(用户随消息上传了图片,请结合图片内容回答:)` },
+                  ...attachments.map((a) => ({
+                    type: "file" as const,
+                    mediaType: a.mediaType,
+                    data: a.base64,
+                  })),
+                ],
+              }
+            : m,
+        );
+      }
+    }
+
     if (isFlagOn("multimodal_import")) {
       const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
       if (lastUserMsg && isImageRelatedQuery(lastUserMsg.content)) {
@@ -566,8 +617,28 @@ export async function runAgentTurn(
       }
     }
 
+    // v0.10 思考强度:fast/deep 按各 provider 方言落地(pure/reasoning-effort 是方言表)。
+    // 自动(空串)= 零干预;不支持的家族降级 none —— 宁可不生效,不瞎发参数吃 400。
+    const effort = (readSettingsMap(db).reasoning_effort ?? "") as ReasoningEffortSetting;
+    const effortPlan = reasoningPlanFor(llm.provider.id, llm.provider.protocol, effort);
+    let chatModel = llm.languageModel;
+    let providerOptions: Record<string, Record<string, ReasoningJsonValue>> | undefined;
+    if (effortPlan.kind === "providerOptions") {
+      providerOptions = effortPlan.options;
+    } else if (effortPlan.kind === "bodyPatch") {
+      // openai-compatible 第三方端点没有原生 option:包一层 fetch 给请求体打补丁
+      chatModel = buildLanguageModel(
+        llm.provider.protocol,
+        llm.provider.baseUrl,
+        llm.apiKey,
+        llm.model,
+        withBodyPatch(globalThis.fetch.bind(globalThis), effortPlan.patch),
+      );
+    }
+
     const result = streamText({
-      model: llm.languageModel,
+      model: chatModel,
+      ...(providerOptions ? { providerOptions } : {}),
       system: `${system}\n\n${nodeContext}${
         learnerSnapshot ? `\n\n${learnerSnapshot}` : ""
       }`,
@@ -770,16 +841,64 @@ export async function handleAgentChatThread(
   displayText?: string | null,
   /** 界面语言(i18n);null/缺省 = zh-CN */
   locale?: string | null,
+  /** v0.10:随消息上传的附件(image=vision 注入+落盘;text=正文内联进 content) */
+  attachments?: ChatAttachmentInput[],
 ): Promise<string> {
   const db = getDb();
+
+  // v0.10 附件分家:
+  //   text  → 正文内联进 content(持久化 + 后续轮次的 LLM 历史天然可见)
+  //   image → 落盘 userData/attachments(parts 存文件名引用),本轮作为 vision file-part 喂给 LLM
+  const textAtts = (attachments ?? []).filter((a) => a.kind === "text");
+  const imageAtts = (attachments ?? []).filter((a) => a.kind === "image");
+  const content = buildContentWithTextAttachments(
+    userMessage,
+    textAtts.map((a) => ({ name: a.name, text: a.data })),
+  );
+  const savedImages: Array<{ name: string; mime: string; size: number; file: string }> = [];
+  for (const img of imageAtts) {
+    try {
+      const saved = await saveChatImage(img.data, img.mime);
+      savedImages.push({ name: img.name, mime: img.mime, size: img.size, file: saved.file });
+    } catch {
+      /* 单张落盘失败:跳过(LLM 仍能看到图;刷新后历史缩略图缺一张而已) */
+    }
+  }
+  // 展示用 parts:附件 chip(图=文件引用/文本=名字) + 原文文本。
+  // 正文(含内联文本附件)在 content,气泡只渲染 parts —— 长代码文件不会撑爆对话流。
+  // 无附件时保持 partsJson=null(与旧消息形态逐字节一致,不给所有消息平白加 parts)。
+  const userParts: ChatMessagePart[] | null =
+    attachments && attachments.length > 0
+      ? [
+          ...textAtts.map(
+            (a): ChatMessagePart => ({
+              type: "attachment",
+              attachment: { kind: "text", name: a.name, mime: a.mime, size: a.size },
+            }),
+          ),
+          ...savedImages.map(
+            (s): ChatMessagePart => ({
+              type: "attachment",
+              attachment: { kind: "image", name: s.name, mime: s.mime, size: s.size, file: s.file },
+            }),
+          ),
+          ...(userMessage ? [{ type: "text" as const, text: userMessage }] : []),
+        ]
+      : null;
 
   // 从 thread 拉历史 + 焦点节点
   const rawMsgs = getThreadMessages(threadId);
   const history: ChatTurn[] = rawMsgs.map((m) => ({ role: m.role, content: m.content }));
-  history.push({ role: "user", content: userMessage });
+  history.push({ role: "user", content });
 
   // 先把 user 消息持久化(乐观:用户消息立刻入库)
-  const savedUserMsg = appendMessage(threadId, "user", userMessage, null, displayText ?? null);
+  const savedUserMsg = appendMessage(
+    threadId,
+    "user",
+    content,
+    userParts ? JSON.stringify(userParts) : null,
+    displayText ?? null,
+  );
 
   // 找焦点节点(从 thread.focusNodeId,通过 threads 表查)
   // 注意:thread-service 没暴露 getThread,这里直接查表
@@ -810,6 +929,7 @@ export async function handleAgentChatThread(
     },
     controller.signal,
     locale,
+    imageAtts.map((a) => ({ mediaType: a.mime, base64: a.data })),
   );
 
   abortControllers.delete(`thread:${threadId}`);

@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "./api.js";
 import { translate } from "./i18n.js";
-import type { ChatStreamPart } from "@shared/types";
+import type { ChatStreamPart, ChatAttachmentInput } from "@shared/types";
 import { accumulatePart, type ChatMessageV2, type ChatMessagePart } from "@shared/part-accumulator";
 
 let msgIdCounter = 0;
@@ -49,7 +49,7 @@ export function textHistoryToV2(
 interface UseChatStreamResult {
   messages: ChatMessageV2[];
   streaming: boolean;
-  send: (text: string, overrideThreadId?: string, displayText?: string) => Promise<void>;
+  send: (text: string, overrideThreadId?: string, displayText?: string, attachments?: ChatAttachmentInput[]) => Promise<void>;
   stop: () => Promise<void>;
   clear: () => void;
   /** 把 proposal 消息内的 tool-call 标记为已应用/拒绝 */
@@ -181,7 +181,7 @@ export function useChatStream(threadId: string | null, locale?: string | null): 
   }, []);
 
   const send = useCallback(
-    async (text: string, overrideThreadId?: string, displayText?: string) => {
+    async (text: string, overrideThreadId?: string, displayText?: string, attachments?: ChatAttachmentInput[]) => {
       // 优先用 overrideThreadId(首次建 thread 后立刻发,不等 prop 更新)
       const tid = overrideThreadId ?? threadId;
       if (!tid || streaming || !text.trim()) return;
@@ -189,7 +189,22 @@ export function useChatStream(threadId: string | null, locale?: string | null): 
       const userMsg: ChatMessageV2 = {
         id: nextMsgId(),
         role: "user",
-        parts: [{ type: "text", text: trimmed }],
+        // 附件 chip(乐观:image 用 Composer 移交的本地 objectURL 预览)+ 原文文本
+        parts: [
+          ...(attachments ?? []).map(
+            (a): ChatMessagePart => ({
+              type: "attachment",
+              attachment: {
+                kind: a.kind,
+                name: a.name,
+                mime: a.mime,
+                size: a.size,
+                ...(a.previewUrl ? { previewUrl: a.previewUrl } : {}),
+              },
+            }),
+          ),
+          { type: "text", text: trimmed },
+        ],
         // 按钮触发时气泡只显示短动作标签,不显示发给 LLM 的完整提示词
         ...(displayText ? { displayText } : {}),
       };
@@ -197,7 +212,7 @@ export function useChatStream(threadId: string | null, locale?: string | null): 
       setStreaming(true);
       streamingMsgIdRef.current = null;
       try {
-        await api.agentChatThread(tid, trimmed, displayText, locale ?? null);
+        await api.agentChatThread(tid, trimmed, displayText, locale ?? null, attachments);
       } catch (e) {
         setStreaming(false);
         setMessages((prev) => [

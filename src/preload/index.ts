@@ -5,7 +5,7 @@
  * 渲染层通过 window.api.* 调用，无法直接访问 Node API。
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey, ExerciseType, CustomProviderInput, CanvasZone, NoteSourceAnchor, HumanFrictionCategory } from "@shared/types";
+import type { ApiExpose, IpcEvents, ReviewQuality, SettingKey, ExerciseType, CustomProviderInput, CanvasZone, NoteSourceAnchor, HumanFrictionCategory, ChatAttachmentInput } from "@shared/types";
 
 const api = {
   /* 课程 */
@@ -129,10 +129,14 @@ const api = {
     ipcRenderer.invoke("agent:getHistory", nodeId)) as ApiExpose["getChatHistory"],
   clearChatHistory: ((nodeId: string) =>
     ipcRenderer.invoke("agent:clearHistory", nodeId)) as ApiExpose["clearChatHistory"],
-  agentChatThread: ((threadId: string, msg: string, displayText?: string | null, locale?: string | null) =>
-    ipcRenderer.invoke("agent:chatThread", threadId, msg, displayText ?? null, locale ?? null)) as ApiExpose["agentChatThread"],
+  agentChatThread: ((threadId: string, msg: string, displayText?: string | null, locale?: string | null, attachments?: ChatAttachmentInput[]) =>
+    ipcRenderer.invoke("agent:chatThread", threadId, msg, displayText ?? null, locale ?? null, attachments ?? undefined)) as ApiExpose["agentChatThread"],
   abortAgentChatThread: ((threadId: string) =>
     ipcRenderer.invoke("agent:abortThread", threadId)) as ApiExpose["abortAgentChatThread"],
+  getContextUsage: ((nodeId: string, locale?: string | null) =>
+    ipcRenderer.invoke("agent:getContextUsage", nodeId, locale ?? null)) as ApiExpose["getContextUsage"],
+  getAttachmentDataUrl: ((file: string) =>
+    ipcRenderer.invoke("attachment:getDataUrl", file)) as ApiExpose["getAttachmentDataUrl"],
   isAgentReady: (() =>
     ipcRenderer.invoke("agent:isReady")) as ApiExpose["isAgentReady"],
   getProviderPresets: (() =>

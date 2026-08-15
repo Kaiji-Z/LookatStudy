@@ -23,6 +23,7 @@ import rehypeSanitize from "rehype-sanitize";
 import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
 import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Copy, Settings, GraduationCap, CheckCircle2, CircleSlash } from "lucide-react";
 import { ArtifactRenderer } from "./artifacts/index.js";
+import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { useLang } from "../lib/i18n.js";
@@ -431,6 +432,8 @@ function MessageRowV2({
     return (
       <div className="msg-enter flex justify-end" data-testid="msg-user" data-msg-id={msg.id}>
         <div className="max-w-[85%] bg-ink/[0.04] rounded-2xl rounded-br-md px-4 py-2.5">
+          {/* 附件区(v0.10):图片缩略图 + 文本 chip,在正文之上 */}
+          <UserAttachments parts={msg.parts} />
           {/* 按钮触发的消息(msg.displayText)只展示短动作标签;手打输入无 displayText,原样展示 */}
           <div className="font-medium text-ink-strong whitespace-pre-wrap select-text text-body">
             {msg.displayText ?? msg.parts.map((p, i) => (p.type === "text" ? <span key={i}>{p.text}</span> : null))}
@@ -508,7 +511,8 @@ function PartRenderer({
     return <ReasoningBlock text={part.text} />;
   }
 
-  // tool-call 三态
+  // tool-call 三态(attachment part 只出现在 user 消息,这里不会遇到;防御性跳过)
+  if (part.type !== "tool-call") return null;
   const { toolName, state, output, error } = part;
   return (
     <ToolCallBlock

@@ -45,31 +45,35 @@ export interface ResolvedLlm {
  * 按 protocol 构造 LanguageModel。
  * 抽出来便于 testConnection 复用（验证时不走 streamText，用 generateText 发一条最小请求）。
  * 支持 openai-compatible（自定义 baseUrl）/ anthropic / google 三类协议。
+ * fetchFn:可选 fetch 覆盖(v0.10 思考强度对 openai-compatible 第三方端点做请求体补丁用)。
  */
-function buildLanguageModel(
+export function buildLanguageModel(
   protocol: ProviderProtocol,
   baseUrl: string | undefined,
   apiKey: string,
   model: string,
+  fetchFn?: typeof fetch,
 ): LanguageModel {
   switch (protocol) {
     case "openai-compatible": {
       if (!baseUrl) {
         throw new Error(`openai-compatible 协议需要 baseUrl`);
       }
-      const openai = createOpenAI({ baseURL: baseUrl, apiKey });
+      const openai = createOpenAI({ baseURL: baseUrl, apiKey, ...(fetchFn ? { fetch: fetchFn } : {}) });
       return openai.chat(model);
     }
     case "anthropic": {
       // Anthropic 允许自定义 baseURL（覆盖官方端点，如代理）
-      const opts: { apiKey: string; baseURL?: string } = { apiKey };
+      const opts: { apiKey: string; baseURL?: string; fetch?: typeof fetch } = { apiKey };
       if (baseUrl) opts.baseURL = baseUrl;
+      if (fetchFn) opts.fetch = fetchFn;
       const anthropic = createAnthropic(opts);
       return anthropic(model);
     }
     case "google": {
-      const opts: { apiKey: string; baseURL?: string } = { apiKey };
+      const opts: { apiKey: string; baseURL?: string; fetch?: typeof fetch } = { apiKey };
       if (baseUrl) opts.baseURL = baseUrl;
+      if (fetchFn) opts.fetch = fetchFn;
       const google = createGoogleGenerativeAI(opts);
       return google(model);
     }

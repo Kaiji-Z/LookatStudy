@@ -18,6 +18,8 @@ asarUnpack:
 mac:
   category: public.app-category.education
   target: dmg
+  # CI 与本地都没有 Apple 开发者证书,跳过签名(未签名 dmg 首次打开需右键→打开)
+  identity: null
 win:
   target: nsis
 linux:

@@ -68,7 +68,7 @@ AI 想改你的学习档案,唯一的途径是发一张提议卡,你点批准才
 
 Windows 直接去 [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) 页下安装包。
 
-源码跑,任何平台,Node 20 以上。
+源码跑,任何平台,Node 22 以上。
 
 ```bash
 git clone https://github.com/Kaiji-Z/LookatStudy.git

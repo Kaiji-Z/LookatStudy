@@ -879,7 +879,7 @@ function LanguageSwitcher({ available, current, onChange }: { available: string[
   const [open, setOpen] = useState(false);
   // BCP-47 → 显示名（简化版，常见语言）
   const LOCALE_NAMES: Record<string, string> = {
-    "zh-CN": "中文", "zh-TW": "繁體", "ja": "日本語", "ko": "한국어", "fr": "Français",
+    "en": "English", "zh-CN": "中文", "zh-TW": "繁體", "ja": "日本語", "ko": "한국어", "fr": "Français",
     "de": "Deutsch", "es": "Español", "pt-BR": "Português", "ru": "Русский", "it": "Italiano",
     "ar": "العربية", "hi": "हिन्दी", "tr": "Türkçe", "pl": "Polski", "nl": "Nederlands",
     "id": "Indonesia", "vi": "Tiếng Việt", "th": "ไทย", "sv": "Svenska", "fi": "Suomi",
@@ -900,6 +900,7 @@ function LanguageSwitcher({ available, current, onChange }: { available: string[
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute top-full right-0 mt-1 z-50 bg-surface-0 rounded-lg shadow-elevated p-1 min-w-[100px] max-h-48 overflow-y-auto">
             <button
+              data-testid="lang-option-original"
               onClick={() => { onChange(null); setOpen(false); }}
               className={`w-full text-left px-2 py-1 rounded-md text-caption font-bold transition-colors ${current === null ? "bg-brand/15 text-brand" : "text-ink-muted hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
             >
@@ -908,6 +909,7 @@ function LanguageSwitcher({ available, current, onChange }: { available: string[
             {available.map((code) => (
               <button
                 key={code}
+                data-testid={`lang-option-${code}`}
                 onClick={() => { onChange(code); setOpen(false); }}
                 className={`w-full text-left px-2 py-1 rounded-md text-caption font-bold transition-colors ${current === code ? "bg-brand/15 text-brand" : "text-ink-muted hover:bg-neutral-100 dark:hover:bg-neutral-800"}`}
               >

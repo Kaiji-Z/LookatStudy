@@ -1065,6 +1065,37 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: dashboardOk,
   });
 
+  // T9b (种子双语): 种子课程自带 en 翻译 → 🌐 切换器可见,切到 English 后按钮标签跟随。
+  // 翻译内容的正确性由 verify-seed-bilingual.mjs 在 DB 层断言,这里测渲染链路(IPC→状态→DOM)。
+  const langSwitch = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        const btn = document.querySelector('[data-testid="lang-switcher-btn"]');
+        if (!btn) return { ok: false, reason: "lang-switcher-btn not found (seed bilingual broken?)" };
+        btn.click();
+        await new Promise(r => setTimeout(r, 250));
+        const enOpt = document.querySelector('[data-testid="lang-option-en"]');
+        if (!enOpt) return { ok: false, reason: "lang-option-en not found" };
+        enOpt.click();
+        await new Promise(r => setTimeout(r, 500));
+        const labelAfter = (btn.textContent || "").trim();
+        // 切回原文,不污染后续断言
+        btn.click();
+        await new Promise(r => setTimeout(r, 250));
+        const origOpt = document.querySelector('[data-testid="lang-option-original"]');
+        if (origOpt) { origOpt.click(); await new Promise(r => setTimeout(r, 400)); }
+        return { ok: labelAfter.indexOf("English") !== -1, labelAfter };
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    })()
+  `);
+  results.push({
+    name: "seed bilingual: 🌐 switcher offers English, label follows selection",
+    ok: langSwitch?.ok === true,
+    detail: langSwitch,
+  });
+
   // T10 (release): getProviderPresets IPC 返回 ≥5 个 provider
   const presetsCheck = await win.webContents.executeJavaScript(
     `window.api.getProviderPresets().then(p => ({count: p.length})).catch(e => ({count: 0, error: String(e)}))`,

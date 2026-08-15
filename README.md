@@ -77,7 +77,7 @@ npm install
 npm run dev:electron
 ```
 
-A guide course ships built in, six chapters, eighteen lessons, six exams, so you can click through the whole loop without a key. To bring the AI in, open Settings, pick a provider, paste your key, hit Test Connection, save.
+A guide course ships built in, six chapters, eighteen lessons, six exams, so you can click through the whole loop without a key. It is bilingual too, Chinese original with a full English translation, so the globe switch on the map title card works from minute one. To bring the AI in, open Settings, pick a provider, paste your key, hit Test Connection, save.
 
 ## What it can't do yet
 

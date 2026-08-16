@@ -169,7 +169,7 @@ export function MapRail(props: MapRailProps) {
       {skyPreset && (
         <>
           <MapSkyCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} />
-          <MapOrbWeatherCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} getImpacts={() => impactQueueRef.current.splice(0)} getFlakes={() => flakeQueueRef.current.splice(0)} />
+          <MapOrbWeatherCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} getImpacts={() => impactQueueRef.current.splice(0)} getFlakes={() => flakeQueueRef.current.splice(0)} orbSnowRef={orbSnowRef} />
         </>
       )}
 
@@ -648,7 +648,8 @@ function MapOrbWeatherCanvas({
   preset: SkyPreset;
   getImpacts?: () => ImpactEvent[];
   getFlakes?: () => FlakeEvent[];
-  orbSnowRef?: React.RefObject<Map<string, number>>;
+  /** 必传(必传才漏不掉:雪盖从动物理的通道,漏传=雪盖退回自累积,曾实测踩过)。 */
+  orbSnowRef: React.RefObject<Map<string, number>>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {

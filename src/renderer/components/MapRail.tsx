@@ -23,6 +23,8 @@ import {
   classifyPointer,
   createSectionIsland,
   decaySquash,
+  knotX,
+  remapSpawnX,
   ropeChainPathD,
   squashTransform,
   type FlakeEvent,
@@ -68,7 +70,7 @@ interface MapRailProps {
   onCoursesChanged: () => void;
 }
 
-export function MapRail(props: MapRailProps) {
+export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
   const t = useLang();
   const [panel, setPanel] = useState<"map" | "import">("import");
   /** 当前显示的世界: study(学习) / practice(实操)。默认 study。 */
@@ -163,7 +165,7 @@ export function MapRail(props: MapRailProps) {
   }, [props.tree, props.progressMap]);
 
   return (
-    <nav ref={navRef} className="map-rail-scope relative h-full flex flex-col bg-surface-rail w-[300px] shrink-0 overflow-hidden" data-testid="map-rail">
+    <nav ref={navRef} className={`map-rail-scope relative h-full flex flex-col bg-surface-rail shrink-0 overflow-hidden ${props.fullWidth ? "w-full" : "w-[300px]"}`} data-testid="map-rail">
       {/* 天空 canvas:nav 层铺满全高(含 tab 区),两个面板共享同一背景。
           tab 和面板都透明,让 canvas 从顶到底透出来。 */}
       {skyPreset && (
@@ -264,7 +266,7 @@ export function MapRail(props: MapRailProps) {
         <div className="flex h-full transition-transform duration-300" style={{ transform: panel === "map" ? "translateX(0)" : "translateX(-50%)", width: "200%" }}>
           {/* 地图面板(透明)。map-path 全高滚动(pt-48 留出 tab+标题+XP条+世界切换悬浮空间)。 */}
           <div className="w-1/2 h-full relative">
-            <div ref={mapPathRef} className="map-path h-full overflow-y-auto px-2 pt-48 pb-4" data-testid="map-path">
+            <div ref={mapPathRef} className="map-path h-full overflow-y-auto overflow-x-hidden px-2 pt-48 pb-4" data-testid="map-path">
               <div className={`map-sky-content ${skyPreset ? `env-${skyPreset.season} env-${skyPreset.weather}` : ""}`}>
                 {props.streaming && (
                   <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-label text-brand font-medium backdrop-blur-sm" data-testid="streaming-notice">
@@ -773,6 +775,8 @@ function MapSection({
   /** 岛重建(解锁/解锁链变化)时续接:球的最后位置+速度 → 新岛 spawn。
    *  没有它,点开一课解锁新球的瞬间全章球闪回布局原位(v3 实测体验割裂)。 */
   const liveStateRef = useRef<Map<string, { x: number; y: number; vx: number; vy: number }>>(new Map());
+  /** 续接快照采集时的容器宽:栏宽变了(跨档/拖拽窗口)把续接 x 按比例重映射 —— 球随栏宽自适应排布。 */
+  const liveWidthRef = useRef(0);
   const pointerRef = useRef<{ track: PointerTrack; id: number; dragging: boolean; nodeId: string } | null>(null);
   /** 拖拽后的抬手在短窗内抑制 click(真点击/合成 click 不受影响)。 */
   const suppressClickUntilRef = useRef(0);
@@ -786,6 +790,19 @@ function MapSection({
     const scroller = scrollRef.current;
     if (!container || !scroller) return;
 
+    // 考试球绳挂点:下一段路牌上缘。渲染期先按 24px(两个 py-3)估位,
+    // 这里量实测 DOM 校准;末段没有下一段路牌 → 不系考试绳。
+    let nextKnot: Vec2 | undefined;
+    const lastLesson = lessons[lessons.length - 1];
+    if (lastLesson?.type === "exam") {
+      const nextSign = container.closest("section")?.nextElementSibling?.querySelector(".map-signpost");
+      if (nextSign) {
+        nextKnot = {
+          x: knotX(`${section.id}:next`, containerW),
+          y: nextSign.getBoundingClientRect().top - container.getBoundingClientRect().top,
+        };
+      }
+    }
     const island = createSectionIsland({
       nodes: layout.nodes.map((n, i) => {
         const lesson = lessons[i]!;
@@ -793,14 +810,31 @@ function MapSection({
           id: lesson.id, x: n.x, y: n.y,
           isExam: lesson.type === "exam",
           locked: lessonLocked(lesson),
-          spawn: liveStateRef.current.get(lesson.id),
+          spawn: (() => {
+            const sp = liveStateRef.current.get(lesson.id);
+            return sp ? remapSpawnX(sp, liveWidthRef.current, containerW) : undefined;
+          })(),
         };
       }),
       width: containerW,
       height: layout.height + 40, // 绳链垂坠余量(绳有重量,链比布局间距长 8%)
       weather: physicsWeather,
+      anchorKnotX: knotX(`${section.id}:knot`, containerW),
+      nextKnot,
     });
     islandRef.current = island;
+    // 考试绳结圆点:校准到实测位(末段无下一段路牌则连圆点带绳一起隐藏)
+    const nextKnotEl = container.querySelector<SVGCircleElement>("[data-next-knot]");
+    if (nextKnotEl) {
+      if (island.nextKnot) {
+        nextKnotEl.setAttribute("cx", String(island.nextKnot.x));
+        nextKnotEl.setAttribute("cy", String(island.nextKnot.y));
+      } else {
+        nextKnotEl.setAttribute("opacity", "0");
+      }
+    }
+    const examRopeEl = container.querySelector<SVGPathElement>("[data-exam-rope]");
+    if (examRopeEl && !island.nextKnot) examRopeEl.setAttribute("opacity", "0");
 
     const wrappers = new Map<string, HTMLDivElement>();
     for (const el of container.querySelectorAll<HTMLDivElement>("[data-node-id]")) {
@@ -849,6 +883,7 @@ function MapSection({
       // 绳:折线穿 [起点悬挂位 → 绳粒… → 终点悬挂位],垂坠/绷直是物理结果
       const attachOf = (id: string): Vec2 => {
         if (id === "__anchor") return island.anchor;
+        if (id === "__next") return island.nextKnot ?? island.anchor;
         const b = island.ball(id);
         if (b) return { x: b.body.position.x, y: b.body.position.y + BALL_RADIUS * ROPE_ATTACH };
         const i = lessons.findIndex((l) => l.id === id);
@@ -918,6 +953,7 @@ function MapSection({
           vx: b.body.velocity.x, vy: b.body.velocity.y,
         });
       }
+      liveWidthRef.current = containerW;
       island.dispose();
       islandRef.current = null;
       // 清残留 transform:球回布局原位(React 渲染的 left/top 本来就在那;
@@ -1002,7 +1038,17 @@ function MapSection({
     } as React.CSSProperties;
   };
 
-  const anchor = layout.nodes[0] ? { x: layout.nodes[0].x, y: ANCHOR_KNOT_Y } : { x: containerW / 2, y: ANCHOR_KNOT_Y };
+  // 挂点随机化:每段路牌的下缘绳结 x 各不相同(确定性哈希,重渲染稳定)。
+  // 考试绳初值按 24px 估位(两个 py-3 = 下段路牌上缘),effect 里实测校准。
+  const anchor = layout.nodes[0]
+    ? { x: knotX(`${section.id}:knot`, containerW), y: ANCHOR_KNOT_Y }
+    : { x: containerW / 2, y: ANCHOR_KNOT_Y };
+  const lastLesson = lessons[lessons.length - 1];
+  const lastIsExam = lastLesson?.type === "exam";
+  const lastLayout = layout.nodes[layout.nodes.length - 1];
+  const nextKnotInit = lastIsExam && lastLayout
+    ? { x: knotX(`${section.id}:next`, containerW), y: pathHeight + 24 }
+    : undefined;
 
   return (
     <section
@@ -1053,6 +1099,21 @@ function MapSection({
                   style={ropeStyle(seg.index)}
                 />
               ))}
+              {/* 考试球绳:末球 → 下一段路牌上缘(随机挂点;末段隐藏)。整张地图串成一条链 */}
+              {nextKnotInit && lastLayout && (
+                <>
+                  <path
+                    data-rope={layout.segments.length + 1}
+                    data-exam-rope
+                    d={`M ${nextKnotInit.x} ${nextKnotInit.y} L ${lastLayout.x} ${lastLayout.y + BALL_RADIUS * ROPE_ATTACH}`}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={ropeStyle(lessons.length - 1)}
+                  />
+                  <circle data-next-knot cx={nextKnotInit.x} cy={nextKnotInit.y} r={3.5} fill="#ffc800" opacity={0.9} />
+                </>
+              )}
               {Array.from({ length: 8 }, (_, i) => (
                 <circle key={i} data-pulse={i} cx={0} cy={0} r={0} fill="none" stroke="white" opacity={0} />
               ))}

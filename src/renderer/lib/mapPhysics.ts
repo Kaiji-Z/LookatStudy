@@ -197,6 +197,9 @@ export interface SectionIsland {
   readonly links: RopeLink[];
   /** 路牌绳结锚点(岛坐标,容器上缘上方)。 */
   readonly anchor: Vec2;
+  /** 下一段路牌上缘绳结(岛坐标,容器下缘下方;仅末球为考试球且给了挂点时存在)。
+   *  考试球绳系到这里 → 整张地图串成一条链:牌底→球1→…→考试球→下一段牌顶。 */
+  readonly nextKnot?: Vec2;
   ball(nodeId: string): IslandBall | undefined;
   step(dtMs: number): void;
   beginDrag(nodeId: string, px: number, py: number): void;
@@ -234,8 +237,8 @@ const ROPE_STIFF_ATTACH = 0.7;
 const DRAG_STIFFNESS = 0.09;
 /** 产生 squash/脉冲的最低相对速度(px/step)。 */
 const IMPACT_MIN_SPEED = 2.2;
-/** 雪载对球的重力增幅上限(35% 自重 —— 足以压过多数球的浮力盈余)。 */
-const SNOW_WEIGHT = 0.35;
+/* 雪载不增重(实测反馈):整串球被积雪压着集体下沉,彩旗串沉底。
+ * 雪只做视觉(堆积/甩落/撞掉),球的浮沉始终只由浮力校准决定。 */
 /** 触发甩雪的最低球速(px/step ≈ 120px/s):普通拖动即掉雪(慢于它不掉),
  * 快速甩/被撞掉得更猛。原 3.5(≈210px/s)太高——拖动根本触发不了(实测反馈)。 */
 const FLAKE_MIN_SPEED = 2.0;
@@ -260,6 +263,10 @@ export function createSectionIsland(opts: {
   ballRadius?: number;
   /** 天气(默认 clear)——环境物理参数在创建时定格。 */
   weather?: string;
+  /** 路牌下缘绳结 x(随机挂点,渲染层用 knotX() 算);缺省 = 首球布局 x(旧行为)。 */
+  anchorKnotX?: number;
+  /** 下一段路牌上缘绳结(岛坐标,渲染层量 DOM 算)。给了且末球是考试球 → 系考试绳。 */
+  nextKnot?: Vec2;
 }): SectionIsland {
   const r = opts.ballRadius ?? BALL_RADIUS;
   const env = weatherPhysFor(opts.weather ?? "clear");
@@ -368,9 +375,11 @@ export function createSectionIsland(opts: {
     links.push({ from: fromId, to: ballB.nodeId, restLen: dist * ROPE_SLACK, particles });
   }
 
-  // 路牌绳结:锚在容器上缘上方(视觉落在路牌区),绳系住第一个球的底部。
+  // 路牌绳结:锚在容器上缘上方(视觉落在路牌下缘,x 随机挂点),绳系住第一个球的底部。
   const first = balls[0];
-  const anchor: Vec2 = first ? { x: first.layoutX, y: ANCHOR_KNOT_Y } : { x: opts.width / 2, y: ANCHOR_KNOT_Y };
+  const anchor: Vec2 = first
+    ? { x: opts.anchorKnotX ?? first.layoutX, y: ANCHOR_KNOT_Y }
+    : { x: opts.width / 2, y: ANCHOR_KNOT_Y };
   if (first) {
     createRope(anchor, null, first, "__anchor");
   }
@@ -379,6 +388,12 @@ export function createSectionIsland(opts: {
     const a = balls[i]!;
     const b = balls[i + 1]!;
     createRope(attachOf(a), a.body, b, a.nodeId);
+  }
+  // 考试球绳:末球是考试球且给了下一段挂点 → 系往下一段路牌上缘(随机挂点)。
+  const last = balls[balls.length - 1];
+  const nextKnot = opts.nextKnot && last?.isExam ? opts.nextKnot : undefined;
+  if (nextKnot && last) {
+    createRope(nextKnot, null, last, "__next");
   }
 
   // 浮力(扛住自重 + 实际挂的绳重)+ 风 + 雨滴冲击 + 雪载增重。
@@ -414,8 +429,6 @@ export function createSectionIsland(opts: {
       const g = engine.gravity.y * engine.gravity.scale;
       const fx = swirlAt(b.body.position.x, b.body.position.y, t) * env.wind * WIND_STRENGTH * m + gustDir * gustNow * GUST_STRENGTH * m;
       let fy = -m * g * (lifts.get(b.nodeId) ?? 1);
-      // 雪载:球顶积雪增重压坠(碰撞震落在 collisionStart 里做)
-      if (b.snow > 0) fy += m * g * SNOW_WEIGHT * b.snow;
       // 雨滴:小概率砸一下(向下的瞬时冲量 + 随机横向)
       if (env.rainRate > 0 && Math.random() < env.rainRate) {
         fy += m * g * 0.35;
@@ -491,6 +504,7 @@ export function createSectionIsland(opts: {
     balls,
     links,
     anchor,
+    nextKnot,
     ball(nodeId) {
       return balls.find((b) => b.nodeId === nodeId);
     },
@@ -628,3 +642,29 @@ export function createSectionIsland(opts: {
 
 /** 路牌绳结的 y(岛坐标:容器上缘上方 12px = 路牌 mb-3 间隙 = 牌子下缘)。 */
 export const ANCHOR_KNOT_Y = -12;
+/** 路牌上下缘绳结的随机挂点 x:确定性哈希(同 seed 永远同位,渲染稳定),
+ *  在 [inset, width-inset] 内取值 —— 每段绳的 rigging 各不相同,不呆板。 */
+export function knotX(seed: string, width: number, inset = 20): number {
+  if (width <= inset * 2) return width / 2;
+  return inset + hash01(seed) * (width - inset * 2);
+}
+
+/** 栏宽变化后重映射续接坐标:球按新旧宽度比例**横向重排**(y 不动,高度与栏宽无关),
+ *  钳进新墙内。没有它,跨档(284↔全宽)重建岛时球带着旧绝对 x,首尾两根绳
+ *  (挂点已按新宽度随机)被拉得老长。 */
+export function remapSpawnX(
+  sp: { x: number; y: number; vx?: number; vy?: number },
+  fromW: number,
+  toW: number,
+  margin = BALL_RADIUS,
+): { x: number; y: number; vx?: number; vy?: number } {
+  if (fromW <= 0 || Math.abs(fromW - toW) <= 1) return sp;
+  const k = toW / fromW;
+  const out: { x: number; y: number; vx?: number; vy?: number } = {
+    x: Math.min(toW - margin, Math.max(margin, sp.x * k)),
+    y: sp.y,
+    vy: sp.vy,
+  };
+  if (sp.vx !== undefined) out.vx = sp.vx * k;
+  return out;
+}

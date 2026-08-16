@@ -488,7 +488,7 @@ export function ChatComposer({
         </div>
 
         {/* v0.10 底部工具栏:左=附件入口;右=思考强度·上下文·模型(工具栏后撤,caption 调)。 */}
-        <div className="flex items-center justify-between mt-0.5">
+        <div className="flex flex-wrap items-center justify-between gap-x-0.5 gap-y-1 mt-0.5">
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -510,7 +510,7 @@ export function ChatComposer({
               e.target.value = ""; // 允许连续选同一个文件
             }}
           />
-          <div className="flex items-center gap-0.5">
+          <div className="flex flex-wrap items-center justify-end gap-0.5">
             <EffortPicker />
             <ContextMeter info={ctxInfo} historyTokens={historyTokens} draftTokens={draftTokens} />
             <ModelPicker onGotoSettings={onGotoSettings} />

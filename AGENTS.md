@@ -58,6 +58,7 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 - **Left (MapRail)**: Duolingo-style skill map. A node is a *session group*: clicking it filters the middle pane's threads by `focus_node_id`. Node states: locked / available / in_progress / mastered. Collapsible (`Ctrl+B`).
 - **Middle (chat)**: `ThreadSwitcher` (Chrome-style horizontal tabs, one thread per tab) + `ChatStream` (parts rendering) + `ChatComposer` (input + 教学人设 soul 药丸 + starter prompts + 附件📎/粘贴/拖拽 + 底部工具栏:思考强度 · 上下文用量表 · 模型切换). `Ctrl+K` opens the command palette; `Ctrl+Tab` cycles threads.
 - **Right (NotebookPanel)**: 康奈尔笔记法三区(讲解/笔记)。讲解 tab 显示节点 markdown + 支持选区画线(`✏️ 加笔记`)。笔记 tab 三区:🗺️理解区(AI 产物:概念图/对比表/流程图/代码讲解)、✏️笔记区(用户画线 user_note,带溯源跳转)、📝练习区(quiz + last_result 答题记录)。画线用 `highlightText.ts` 的文本搜索方案(不依赖 DOM offset 稳定性)。
+- **Responsive tiers (v0.11, `lib/paneTiers.ts` + `useWindowTier`)**: T1 ≥1240 三栏共存;T2 920~1239 双栏(中栏+一侧,侧栏互斥——显示左则隐右,默认右侧);T3 <920 单栏(默认对话)+ 窗口顶部浮动按钮组(地图/对话/笔记)。拉宽自动弹回(进 T1 三栏全恢复,T3→T2 承接当前侧);窄化自动收。中栏宽 clamp(480,36vw,800);笔记本内容居中封顶 960;T3 地图全宽(物理岛按新墙宽自动重建);窗口 minWidth 560。
 - **Focus lock**: while the AI is streaming, node/thread switching is blocked so the learner stays in one context. Do not remove this without an explicit off switch the user controls.
 - **HMR rule**: renderer-only changes (CSS/TSX) auto-hot-reload via Vite — no restart needed. Main process or preload changes require `taskkill electron + npm run dev:electron`.
 
@@ -175,7 +176,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + reactive `useLang()` (useSyncExternalStore, no reload on switch) + `translate()` for non-component contexts |
 | Celebration bus | `src/renderer/lib/celebration.ts` + `components/CelebrationLayer.tsx` | `celebrate(kind)` event bus + 根级 canvas 粒子层;7 高光时刻统一渲染(correct/wrong/unlock/mastery/streak/energy-full/exam-pass);reduced-motion a11y 双轨(默认粒子爆发,reduced 静态图标淡入) |
 | State emitter | `src/main/lib/state-emitter.ts` | main→renderer `state:changed` 推送(xp/streak/mastery 变化);修能量条运行时不动 bug;service 内 fire-and-forget,测试时 noop(同 markDirty 模式) |
-| Map physics | `src/renderer/lib/mapPhysics.ts` | 左栏物理地图(Matter.js 0.19):真实重力场+球浮力(彩旗串悬垂链);绳=粒子链(受拉弹力/松弛垂坠);天气驱动环境(风/阵风/雨滴冲击/雪载增重/雾阻尼,weatherPhysFor);顺序=绳链(路牌绳结→球→…→紫考试球,更沉);无弹簧回位自由摆布;锁定球=static 刚体(不可拖,解锁重建岛"苏醒");碰撞=squash+脉冲环(命中点用碰撞支撑点)+天气耦合;视口外岛冻结;reduced-motion 回退静态 |
+| Map physics | `src/renderer/lib/mapPhysics.ts` | 左栏物理地图(Matter.js 0.19):真实重力场+球浮力(彩旗串悬垂链);绳=粒子链(受拉弹力/松弛垂坠);天气驱动环境(风/阵风/雨滴冲击/雪载增重/雾阻尼,weatherPhysFor);顺序=绳链(路牌绳结→球→…→紫考试球,更沉;考试球另系一条绳到下段路牌上缘,整图成连续链,挂点 x 按 section id 确定性随机);无弹簧回位自由摆布;锁定球=static 刚体(不可拖,解锁重建岛"苏醒");碰撞=squash+脉冲环(命中点用碰撞支撑点)+天气耦合;视口外岛冻结;reduced-motion 回退静态 |
 | Motion infra | `src/renderer/lib/motion-presets.ts` + `usePrefersReducedMotion.ts` | `motion` 弹簧/stagger/enter-exit 预设 + a11y reduced-motion 响应式 hook(useSyncExternalStore on matchMedia) |
 
 Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),
@@ -186,7 +187,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (72 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (73 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

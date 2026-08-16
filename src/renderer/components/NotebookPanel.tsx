@@ -147,6 +147,8 @@ export function NotebookPanel({
 
       {/* 内容区:tab 切换时内容滑入(PROPERTY.md motion: 状态传达,150-250ms) */}
       <div className="flex-1 overflow-y-auto min-h-0 animate-tab-slide" key={tab} ref={scrollRef} role="tabpanel">
+        {/* v0.11:内容居中封顶 960 —— 宽屏/单栏档笔记本不空旷,栏宽仍弹性 */}
+        <div className="mx-auto w-full max-w-[960px] min-h-full">
         {tab === "content" ? (
           <ContentTab
             selectedNode={selectedNode}
@@ -171,6 +173,7 @@ export function NotebookPanel({
             onJumpToSource={onJumpToSource}
           />
         )}
+        </div>
       </div>
     </div>
   );

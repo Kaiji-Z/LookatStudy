@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight, AlertTriangle, Map as MapIcon, MessageSquare, PenLine } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -30,6 +30,8 @@ import { useThreads } from "./lib/useThreads.js";
 import { useToast } from "./components/Toast.js";
 import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
 import { useLang, useLangValue } from "./lib/i18n.js";
+import { useWindowTier } from "./lib/useWindowTier.js";
+import { t2SideFromT3, type T2Side, type T3Pane } from "./lib/paneTiers.js";
 import { useFocusTrap } from "./lib/useFocusTrap.js";
 import { CelebrationLayer } from "./components/CelebrationLayer.js";
 import { celebrate } from "./lib/celebration.js";
@@ -92,6 +94,45 @@ export default function App() {
   // 布局切换:左栏/右栏显隐(Cursor 风格)
   const [leftPaneVisible, setLeftPaneVisible] = useState(true);
   const [rightPaneVisible, setRightPaneVisible] = useState(true);
+  /* ── 响应式三档布局(v0.11)─────────────────────────────────────────
+     T1 ≥1240 三栏;T2 920~1239 双栏(中+一侧,侧栏互斥);T3 <920 单栏+顶部按钮组。
+     拉宽自动弹回:进 T1 三栏全恢复。窄化自动收:T2 左栏隐、T3 只剩中栏(默认)。
+     T2 侧栏选择 / T3 当前栏 是会话级用户偏好,跨档往返保留(T3→T2 承接)。 */
+  const tier = useWindowTier();
+  const [t2Side, setT2Side] = useState<T2Side>("notebook");
+  const [t3Pane, setT3Pane] = useState<T3Pane>("chat");
+  const t3PaneRef = useRef(t3Pane);
+  t3PaneRef.current = t3Pane;
+  const prevTierRef = useRef(tier);
+  useEffect(() => {
+    if (prevTierRef.current === tier) return;
+    if (tier === 1) {
+      // 弹回:回三栏档恢复三栏(不记 T1 里的手动收起 —— 用户拍板"拉宽自动弹回")
+      setLeftPaneVisible(true);
+      setRightPaneVisible(true);
+    } else if (tier === 2 && prevTierRef.current === 3) {
+      // T3→T2:单栏正在看哪侧,双栏就保留哪侧
+      setT2Side(t2SideFromT3(t3PaneRef.current));
+    }
+    prevTierRef.current = tier;
+  }, [tier]);
+
+  // 实际可见性(档位 + 用户选择合成)
+  const showLeft = tier === 3 ? t3Pane === "rail" : tier === 2 ? t2Side === "rail" : leftPaneVisible;
+  const showRight = tier === 3 ? t3Pane === "notebook" : tier === 2 ? t2Side === "notebook" : rightPaneVisible;
+  const showChat = tier !== 3 || t3Pane === "chat";
+
+  // 侧栏切换(T1=手动显隐;T2=互斥侧栏:显示左则隐右;T3=切单栏)
+  const toggleLeftPane = () => {
+    if (tier === 1) setLeftPaneVisible((v) => !v);
+    else if (tier === 2) setT2Side((s2) => (s2 === "rail" ? "notebook" : "rail"));
+    else setT3Pane((p) => (p === "rail" ? "chat" : "rail"));
+  };
+  const toggleRightPane = () => {
+    if (tier === 1) setRightPaneVisible((v) => !v);
+    else if (tier === 2) setT2Side((s2) => (s2 === "notebook" ? "rail" : "notebook"));
+    else setT3Pane((p) => (p === "notebook" ? "chat" : "notebook"));
+  };
   // Cmd+K 命令面板(M2)
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   // 当前在右栏聚焦的产物 index(M2)
@@ -344,10 +385,10 @@ export default function App() {
         e.preventDefault();
         setShowCommandPalette((s) => !s);
       }
-      // Ctrl+B → 切换左栏显隐(布局切换)
+      // Ctrl+B → 切换左栏(布局切换;T2 互斥侧栏 / T3 切单栏)
       if ((e.ctrlKey || e.metaKey) && e.key === "b") {
         e.preventDefault();
-        setLeftPaneVisible((v) => !v);
+        toggleLeftPane();
       }
       // Ctrl+Tab → 切换 thread(下一个)。考试进行中拦截(离开需走警告确认)。
       if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
@@ -639,10 +680,58 @@ export default function App() {
   const [isReviewing, setIsReviewing] = useState(false);
 
   return (
-    <div className="h-screen flex bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
-      {/* 左栏:MapRail 全高(顶到底),tab 切换地图/导入 */}
-      {leftPaneVisible && (
+    <div className="h-screen flex flex-col bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
+      <Header
+        streak={streak}
+        xp={xp}
+        fontSize={font.size}
+        onFontBump={font.bump}
+        onOpenSettings={() => setShowSettings(true)}
+        leftVisible={showLeft}
+        rightVisible={showRight}
+        onToggleLeft={toggleLeftPane}
+        onToggleRight={toggleRightPane}
+        tier={tier}
+        centerSlot={tier === 3 ? (
+          <div
+            className="col-start-2 justify-self-center flex items-center gap-1 p-1 rounded-full bg-ink/5"
+            data-testid="t3-pane-switcher"
+            role="tablist"
+            aria-label={t("pane.switcher")}
+          >
+            {([
+              { k: "rail" as const, icon: MapIcon, label: t("pane.map"), testid: "t3-btn-rail" },
+              { k: "chat" as const, icon: MessageSquare, label: t("pane.chat"), testid: "t3-btn-chat" },
+              { k: "notebook" as const, icon: PenLine, label: t("pane.notes"), testid: "t3-btn-notebook" },
+            ]).map(({ k, icon: Icon, label, testid }) => (
+              <button
+                key={k}
+                role="tab"
+                aria-selected={t3Pane === k}
+                aria-label={label}
+                title={label}
+                data-testid={testid}
+                onClick={() => setT3Pane(k)}
+                className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors ${
+                  t3Pane === k ? "bg-brand/15 text-brand" : "text-ink-muted hover:bg-black/5 dark:hover:bg-white/10"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+              </button>
+            ))}
+          </div>
+        ) : undefined}
+      />
+
+      {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
+
+      <div className="flex-1 flex min-h-0 min-w-0">
+
+
+      {/* 左栏:MapRail(header 下方首栏,tab 切换地图/导入;T3 单栏全宽) */}
+      {showLeft && (
         <MapRail
+          fullWidth={tier === 3}
           view={view}
           onViewChange={setView}
           courseTitle={currentCourse?.title ?? null}
@@ -677,22 +766,6 @@ export default function App() {
       )}
 
       {/* 右半区:顶栏 + 中右栏(顶栏只在中右栏上方,左栏全高独立) */}
-      <div className="flex-1 flex flex-col min-h-0">
-      <Header
-        streak={streak}
-        xp={xp}
-        fontSize={font.size}
-        onFontBump={font.bump}
-        onOpenSettings={() => setShowSettings(true)}
-        leftVisible={leftPaneVisible}
-        rightVisible={rightPaneVisible}
-        onToggleLeft={() => setLeftPaneVisible((v) => !v)}
-        onToggleRight={() => setRightPaneVisible((v) => !v)}
-      />
-
-      {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
-
-      <div className="flex-1 flex min-h-0">
         {/* 视图层:AI 对话 + 笔记本 */}
         <>
             {/* 中栏:AI 对话流(ChatStream + ChatComposer) / 考试节点(ExamView)。
@@ -702,9 +775,16 @@ export default function App() {
                   1920 屏 → ~680px(阅读黄金区,AI 长讲解舒服)
                   2560+  → 720px 上限(不浪费,对话不失紧凑)
                 右栏隐藏时 flex:1 撑满。 */}
+            {showChat && (
             <div
-              className="flex flex-col h-full bg-surface-1 shrink-0"
-              style={rightPaneVisible ? { width: "clamp(480px, 40vw, 720px)" } : { flex: 1 }}
+              className="flex flex-col h-full bg-surface-1 shrink-0 min-w-0 motion-safe:transition-[width] motion-safe:duration-200"
+              style={
+                tier === 3
+                  ? { flex: 1 } // 单栏档:对话占满
+                  : showRight
+                    ? { width: "clamp(480px, 36vw, 800px)" } // 右侧有栏:阅读黄金宽(36vw/上限 800)
+                    : { flex: 1 } // 右侧无栏(T1 手动收起 / T2 显示了左栏):撑满
+              }
               data-testid="chat-panel"
             >
               {!selectedCourseId ? (
@@ -831,12 +911,13 @@ export default function App() {
                 </>
               )}
             </div>
+            )}
 
             {/* 右栏:NotebookPanel 康奈尔笔记本(讲解/笔记)。布局切换可隐藏。
                 v0.6 分栏:无描边,色差划分(底色由 NotebookPanel 内部 bg-surface-2 控制)。
                 v0.7 宽度:flex-1 弹性吃中栏剩余,加 min-w 防内容(笔记卡/表格)被挤。 */}
-            {rightPaneVisible && (
-            <main className="flex-1 min-w-[440px] bg-surface-2">
+            {showRight && (
+            <main className={tier === 3 ? "flex-1 min-w-0 bg-surface-2" : "flex-1 min-w-[440px] bg-surface-2"} data-testid={tier === 3 ? "notebook-pane-full" : undefined}>
               <NotebookPanel
                 selectedNode={selectedNode}
                 items={canvas.items}
@@ -875,7 +956,6 @@ export default function App() {
             </main>
             )}
         </>
-      </div>
       </div>
 
       {/* 课程切换/导入已整合进左栏 tab */}
@@ -982,6 +1062,8 @@ function Header({
   rightVisible,
   onToggleLeft,
   onToggleRight,
+  tier,
+  centerSlot,
 }: {
   streak: Streak | null;
   xp: XpStatus | null;
@@ -992,18 +1074,47 @@ function Header({
   rightVisible: boolean;
   onToggleLeft: () => void;
   onToggleRight: () => void;
+  /** 布局档位(1/2/3):T3 单栏时隐藏视图切换组(顶部 switcher 已覆盖)与字号控制,header 才塞得进窄窗 */
+  tier?: 1 | 2 | 3;
+  /** 居中槽(T3 = 面板切换组):有值时 header 变三列网格,切换组真居中、不再浮动遮挡内容 */
+  centerSlot?: React.ReactNode;
 }) {
   const t = useLang();
   return (
-    <header className="app-header px-6 pt-2.5 pb-3 flex items-center justify-between shrink-0">
-      {/* 左:仅项目名(v0.8 重排 —— 图标移除,所有控件归右) */}
-      <h1 className="text-body font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none">
-        Lookat<span className="text-brand">Study</span>
-      </h1>
+    <header
+      className={`app-header pt-2.5 pb-3 items-center shrink-0 ${
+        centerSlot ? "px-4 grid grid-cols-[1fr_auto_1fr]" : "px-6 flex justify-between"
+      }`}
+    >
+      {/* 左:项目名。手机端习惯:logo 常驻左上,宽屏 text-body / 窄屏收成 text-label
+          并 truncate 让位 —— 切换组与设置按钮的尺寸永不让(中间列固定)。 */}
+      {centerSlot ? (
+        <div className="col-start-1 flex items-center gap-2 min-w-0">
+          <h1 className="text-label font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none min-w-0 truncate">
+            Lookat<span className="text-brand">Study</span>
+          </h1>
+          {xp && (
+            <div className="flex items-center gap-1 shrink-0" data-testid="xp-bar" title={t("header.energy")}>
+              <Zap
+                className={`w-3.5 h-3.5 text-brand ${xp.todayXp >= 100 ? "energy-breathe" : ""}`}
+                fill={xp.todayXp >= 100 ? "currentColor" : "none"}
+                aria-hidden="true"
+              />
+              <span className="text-label font-bold tabular-nums text-brand">{xp.todayXp}</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <h1 className="text-body font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none">
+          Lookat<span className="text-brand">Study</span>
+        </h1>
+      )}
+      {centerSlot}
 
-      {/* 右:控件按"视图 → 阅读 → 进度 → 配置"分组 */}
-      <div className="flex items-center gap-3">
-        {/* 视图:左右栏显隐 */}
+      {/* 右:控件按"视图 → 阅读 → 进度 → 配置"分组(T3 时 justify-self-end 贴右列) */}
+      <div className={`flex items-center gap-3 ${centerSlot ? "col-start-3 justify-self-end" : ""}`}>
+        {/* 视图:左右栏显隐(T3 单栏档隐藏:顶部 switcher 已覆盖,header 窄窗塞不下) */}
+        {tier !== 3 && (
         <div className="flex items-center gap-0.5">
           <button
             onClick={onToggleLeft}
@@ -1026,8 +1137,10 @@ function Header({
             <PanelRight className="w-4 h-4" />
           </button>
         </div>
+        )}
 
-        {/* 阅读:全局字号(A-/A+,三档,影响整个应用 rem 基准) */}
+        {/* 阅读:全局字号(A-/A+,三档,影响整个应用 rem 基准)。T3 隐藏(窄窗塞不下,非核心) */}
+        {tier !== 3 && (
         <div className="flex items-center gap-0.5" data-testid="font-size-control">
           <button
             onClick={() => onFontBump("down")}
@@ -1044,11 +1157,12 @@ function Header({
             title={t("header.font.larger")}
           >A+</button>
         </div>
+        )}
 
         {/* 进度:今日学习能量(= todayXp,软参考 100 满条,无配置目标)+ 连击。
             绿色(brand)= 进度/能量(PRODUCT.md);gold 留给 mastery/crown,这里不用。
             ≥100 时填充 Zap 图标(实心闪电)表示"充满",颜色不变。 */}
-        {xp && (
+        {xp && !centerSlot && (
           <div
             className="flex items-center gap-1.5"
             data-testid="xp-bar"
@@ -1070,7 +1184,7 @@ function Header({
             </span>
           </div>
         )}
-        {xp && (
+        {xp && !centerSlot && (
           <div
             className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand/10"
             data-testid="level-badge"
@@ -1079,7 +1193,7 @@ function Header({
             <span className="text-label font-bold text-brand">Lv.{xp.level}</span>
           </div>
         )}
-        {streak && <StreakBadge streak={streak} />}
+        {streak && !centerSlot && <StreakBadge streak={streak} />}
 
         {/* 配置:设置(最右,惯例位置) */}
         <button

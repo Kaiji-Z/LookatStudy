@@ -64,9 +64,10 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 832,
-    // minWidth=1240 = 左栏 300 + 中栏 clamp 下限 480 + 右栏 min-w 440 + 余量。
+    // minWidth=560 = 单栏档(T3)对话的舒适下限。三档布局(T1≥1240 三栏 / T2≥920 双栏 /
+    // T3 单栏+按钮组)由渲染层 paneTiers.ts 决定,窗口可自由缩放跨档。
     // 低于此值三栏 flex 布局会溢出(右栏 min-w 被挤)。改宽度规则时同步算这个。
-    minWidth: 1240,
+    minWidth: 560,
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
@@ -735,6 +736,9 @@ async function runUiTest(screenshot = false): Promise<void> {
   }
 
   // 加载构建产物（不依赖 vite dev server，CI 友好）
+  // v0.11 三档布局:ui-test 断言主体跑在 T1(三栏)——窗口默认 800 落在 T3 单栏,
+  // 先拉宽再加载(渲染层初始化即测得 1280);末尾有专门的跨档行为测试。
+  await win.setBounds({ width: 1280, height: 800 });
   await win.loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"));
 
   // 等渲染层拉完数据 + React 渲染完。轮询所有关键 testid 都出现——
@@ -1600,6 +1604,119 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: pointerProbe?.ok === true,
     detail: pointerProbe,
   });
+
+  // T20c (三档响应式布局): resize 跨档 → 自动收/互斥/单栏按钮组/拉宽弹回
+  const tierSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const paneState = () =>
+    win.webContents.executeJavaScript(`
+      (function() {
+        var rail = document.querySelector('[data-testid="map-rail"]');
+        var chat = document.querySelector('[data-testid="chat-panel"]');
+        var nb = document.querySelector('[data-testid="notebook-panel"]');
+        return {
+          rail: !!rail,
+          railW: rail ? Math.round(rail.getBoundingClientRect().width) : 0,
+          chat: !!chat,
+          nb: !!nb,
+          switcher: !!document.querySelector('[data-testid="t3-pane-switcher"]'),
+        };
+      })()
+    `).catch(() => null);
+  try {
+    // 轮询等档位渲染到位(跨档 = resize 事件 + React 重渲染 + 物理岛重建,
+    // 固定睡眠会跟提交竞速 —— 实测偶发超时,改成谓词轮询)
+    const waitForPane = async (pred: (st: NonNullable<Awaited<ReturnType<typeof paneState>>>) => boolean, timeoutMs = 3000) => {
+      const t0 = Date.now();
+      for (;;) {
+        const st = await paneState();
+        if (st && pred(st)) return st;
+        if (Date.now() - t0 > timeoutMs) return st;
+        await tierSleep(120);
+      }
+    };
+    // → T2 (1000px):左栏自动隐,中+右双栏,无按钮组
+    await win.setBounds({ width: 1000, height: 800 });
+    const t2Default = await waitForPane((st) => !st.rail && st.chat && st.nb && !st.switcher);
+    // T2 互斥:点"显示左栏" → 左栏出、右栏隐
+    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="layout-toggle-left"]').click()`);
+    const t2Left = await waitForPane((st) => st.rail && st.chat && !st.nb);
+    // → T3 (800px):单栏(对话)+ 按钮组;点地图按钮 → 地图全宽单栏
+    await win.setBounds({ width: 800, height: 800 });
+    const t3Chat = await waitForPane((st) => !st.rail && st.chat && !st.nb && st.switcher);
+    // 切换组必须常驻 header(居中槽,非 fixed 浮层)——否则 T3 切到左栏时 header 连带消失,回不来
+    const t3SwitcherDocked = await win.webContents.executeJavaScript(`
+      (function() {
+        var el = document.querySelector('[data-testid="t3-pane-switcher"]');
+        if (!el) return false;
+        var hdr = el.closest("header");
+        if (!hdr || getComputedStyle(el).position === "fixed" || el.getBoundingClientRect().bottom > hdr.getBoundingClientRect().bottom + 1) return false;
+        // 居中槽:三列网格里切换组必须真居中(h1 隐藏后自动放置会把它丢进第一列)
+        var r = el.getBoundingClientRect();
+        return Math.abs((r.left + r.right) / 2 - window.innerWidth / 2) <= 2;
+      })()
+    `).catch(() => false);
+    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-rail"]').click()`);
+    const t3Rail = await waitForPane((st) => st.rail && !st.chat && st.railW >= 700);
+    // T3 极窄(600px):三 pane 逐一切换,各自都不许横向溢出窗口。
+    // (回归:chat pane 曾被 composer 工具栏固有宽度顶出 ~633px 下限;左栏曾被
+    //  物理球 wrapper 顶出横向滚动条 —— min-w-0 / overflow-x-hidden 修)
+    await win.setBounds({ width: 600, height: 800 });
+    const overflowState = (sel: string) =>
+      win.webContents.executeJavaScript(`
+        (function() {
+          var el = document.querySelector('${sel}');
+          if (!el) return null;
+          var r = el.getBoundingClientRect();
+          return {
+            w: Math.round(r.width),
+            overRight: Math.round(r.right - window.innerWidth),
+            selfOver: Math.round(el.scrollWidth - el.clientWidth),
+            overflowX: getComputedStyle(el).overflowX,
+            docOver: Math.round(document.documentElement.scrollWidth - window.innerWidth),
+          };
+        })()
+      `).catch(() => null);
+    const waitFits = async (sel: string) => {
+      const t0 = Date.now();
+      for (;;) {
+        const st = await overflowState(sel);
+        if (st && st.overRight <= 1 && st.docOver <= 1 && (st.overflowX === "hidden" || st.selfOver <= 1)) return true;
+        if (Date.now() - t0 > 3000) return false;
+        await tierSleep(120);
+      }
+    };
+    // rail 查 .map-path 自身:横向滚动条是它内部的(外层 nav overflow-hidden 裁不到文档级)
+    const narrowRail = await waitFits('[data-testid="map-rail"] .map-path');
+    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-notebook"]').click()`);
+    await waitForPane((st) => !st.rail && !st.chat && st.nb);
+    const narrowNb = await waitFits('[data-testid="notebook-panel"]');
+    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-chat"]').click()`);
+    await waitForPane((st) => !st.rail && st.chat && !st.nb);
+    const narrowChat = await waitFits('[data-testid="chat-panel"]');
+    // 拉宽弹回 → T1 (1300px):三栏全恢复、按钮组消失、左栏回 300
+    await win.setBounds({ width: 1300, height: 800 });
+    const t1Back = await waitForPane((st) => st.rail && st.chat && st.nb && !st.switcher);
+    // T1 回来后左栏回到 284px 内容盒。球被拖到墙边时 wrapper(110px,> 球 56px)会伸出
+    // 内容盒 → 溢出依赖拖球行为,headless 无法确定性复现,直接守修复本身:
+    // map-path 必须裁掉横向溢出(computed overflowX=hidden;未修时为 auto → 出滚动条)
+    const railClip = await win.webContents.executeJavaScript(
+      `getComputedStyle(document.querySelector('[data-testid="map-rail"] .map-path')).overflowX`,
+    ).catch(() => "");
+    const t1RailFits = await waitFits('[data-testid="map-rail"] .map-path');
+    results.push({
+      name: "responsive tiers: T2 auto-collapse + exclusive side, T3 single-pane switcher, widen restores T1",
+      ok: t2Default?.rail === false && t2Default?.chat === true && t2Default?.nb === true && t2Default?.switcher === false
+        && t2Left?.rail === true && t2Left?.nb === false && t2Left?.chat === true
+        && t3Chat?.rail === false && t3Chat?.chat === true && t3Chat?.nb === false && t3Chat?.switcher === true
+        && t3SwitcherDocked === true
+        && t3Rail?.rail === true && t3Rail?.chat === false && t3Rail?.railW >= 700
+        && narrowRail && narrowNb && narrowChat
+        && t1Back?.rail === true && t1Back?.railW <= 320 && t1RailFits && railClip === "hidden" && t1Back?.chat === true && t1Back?.nb === true && t1Back?.switcher === false && t1Back?.railW <= 320,
+      detail: { t2Default, t2Left, t3Chat, t3SwitcherDocked, t3Rail, narrowRail, narrowNb, narrowChat, t1Back, t1RailFits, railClip },
+    });
+  } catch (e) {
+    results.push({ name: "responsive tiers", ok: false, detail: String(e) });
+  }
 
   // T21 (课程删除闭环): 地图头"删除当前课程"按钮 → ConfirmCard 确认 → 课程删除,
   // 中栏回到未选课空态 + 课程列表少一门。ui-test 用临时 DB,删种子课不影响下次运行。

@@ -28,6 +28,8 @@ import {
   classifyPointer,
   createSectionIsland,
   decaySquash,
+  knotX,
+  remapSpawnX,
   ropeChainPathD,
   squashTransform,
   swirlAt,
@@ -291,7 +293,7 @@ await test("T15 球-球直接相撞也产生事件,drain 后清空", async () =>
   isl.dispose();
 });
 
-await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载压坠球", () => {
+await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载不压坠(雪纯视觉)", () => {
   // 宽盒单球测风力漂移:窄盒里球会贴墙饱和,位移不再反映风力差异(实测踩过)
   const drift = (weather) => {
     const isl = createSectionIsland({
@@ -316,18 +318,44 @@ await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载压坠球", ()
   const clear = drift("clear");
   assert.ok(storm > clear * 1.5, `storm 漂移应显著大于 clear: ${storm.toFixed(0)} vs ${clear.toFixed(0)}`);
 
-  // 雪载:整条彩旗串被积雪压着整体下垂(单球会被锚绳长度兜住测不出;
-  // 用 4 球串的**平均 y**对比,实测 delta ≈ 45px)
+  // 雪不压坠(实测反馈反转:雪重会把整串彩旗压沉到底):积雪纯视觉,
+  // 球的浮沉只由浮力校准决定 → 雪天与晴天的整串平均 y 应基本一致
   const garlandAvgY = (weather) => {
     const isl = mkIsland(weather);
-    step(isl, 1800); // 30 秒:雪载 0.72 → 增重 25%
+    step(isl, 1800); // 30 秒:雪载涨满 0.72
     const avg = isl.balls.reduce((sum, b) => sum + b.body.position.y, 0) / isl.balls.length;
     isl.dispose();
     return avg;
   };
   const ySnow = garlandAvgY("snow");
   const yClear = garlandAvgY("clear");
-  assert.ok(ySnow > yClear + 20, `雪载应整串压坠: snow avg=${ySnow.toFixed(1)} > clear avg=${yClear.toFixed(1)} + 20`);
+  assert.ok(
+    Math.abs(ySnow - yClear) <= 20,
+    `雪天不应压坠: snow avg=${ySnow.toFixed(1)} vs clear avg=${yClear.toFixed(1)}(差应 ≤20)`,
+  );
+});
+
+await test("T26 remapSpawnX:栏宽变化把续接 x 按比例重排,同宽不动,越界钳回", () => {
+  const sp = { x: 240, y: 100, vx: 2, vy: -1 };
+  // 同宽:原样返回(浅比较相等即可,值不变)
+  assert.deepEqual(remapSpawnX(sp, 268, 268), sp, "同宽不重排");
+  assert.deepEqual(remapSpawnX(sp, 268, 268.5), sp, "1px 内抖动不重排");
+  assert.equal(remapSpawnX(sp, 0, 500).x, sp.x, "fromW 无效不重排");
+  // 284 → 全宽 584:x 按比例放大,vx 等比,y/vy 不动
+  const wide = remapSpawnX(sp, 268, 584);
+  assert.ok(Math.abs(wide.x - (240 * 584) / 268) < 1, `x 等比重排: ${wide.x.toFixed(1)}`);
+  assert.equal(wide.y, 100, "y 不动");
+  assert.ok(Math.abs((wide.vx ?? 0) - (2 * 584) / 268) < 1e-9, "vx 等比");
+  assert.equal(wide.vy, -1, "vy 不动");
+  // 反向:全宽回窄,x 缩回(取墙内可容纳的点;560 缩完 257 > 240 会被钳,另测)
+  const back = remapSpawnX({ x: 400, y: 10 }, 584, 268);
+  assert.ok(Math.abs(back.x - (400 * 268) / 584) < 1, `缩回: ${back.x.toFixed(1)}`);
+  const clamped = remapSpawnX({ x: 999, y: 10, vx: 5 }, 584, 268);
+  assert.equal(clamped.x, 268 - 28, "越界钳到右墙内");
+  assert.ok(clamped.vx !== undefined && clamped.vx < 5, "钳位时 vx 仍等比缩放");
+  // 可选速度字段不被塞进 undefined 以外的脏值
+  const noV = remapSpawnX({ x: 100, y: 10 }, 268, 584);
+  assert.equal(noV.vx, undefined, "无 vx 保持无");
 });
 
 await test("T17 相邻球初始不叠死(球-球碰撞兜底)", () => {
@@ -557,5 +585,70 @@ await test("T23 不重叠不变量:高速对撞/拖拽压实,圆心距永 ≥ 2r
   assert.ok(minD2 >= BALL_RADIUS * 2 - 1, `拖拽压实也不重叠: min=${minD2.toFixed(1)}`);
   isl2.dispose();
 });
+
+await test("T24 挂点随机化 + 考试绳拓扑:knotX 确定性随机;末球系下一段路牌上缘", () => {
+  // knotX:同 seed 同位(重渲染稳定),值域 [inset, width-inset],不同 seed 打散
+  assert.equal(knotX("s1:knot", 268), knotX("s1:knot", 268), "同 seed 确定性");
+  for (const seed of ["a", "b", "c", "d"]) {
+    const x = knotX(seed, 268);
+    assert.ok(x >= 20 && x <= 248, `值域内: ${x}`);
+  }
+  const xs = new Set(["s1", "s2", "s3", "s4", "s5", "s6"].map((s) => Math.round(knotX(s + ":knot", 268))));
+  assert.ok(xs.size >= 4, `不同 seed 应打散: ${xs.size}`);
+  assert.equal(knotX("s", 30), 15, "窄容器回中(不出负坐标)");
+
+  // 岛:锚绳结吃 anchorKnotX;给了 nextKnot 且末球是考试球 → 追加考试绳(最后一条链)
+  const nk = { x: 140, y: H + 24 };
+  const isl = createSectionIsland({
+    nodes: NODES.map((n) => ({ ...n })), width: 268, height: H,
+    anchorKnotX: 33, nextKnot: nk,
+  });
+  assert.equal(isl.anchor.x, 33, "锚绳结 x = 传入挂点");
+  assert.equal(isl.links.length, 5, "1 锚绳 + 3 球间绳 + 1 考试绳");
+  const examRope = isl.links[isl.links.length - 1];
+  assert.deepEqual([examRope.from, examRope.to], ["__next", "n4"], "考试绳:静态绳结 → 考试球");
+  assert.deepEqual(isl.nextKnot, nk, "暴露 nextKnot 供渲染层");
+  assert.ok(examRope.particles.length >= 4, "考试绳也是粒子链");
+  isl.dispose();
+
+  // 守卫:没给挂点 / 末球不是考试球 → 都不创建考试绳(末段没有下一段路牌)
+  const noKnot = mkIsland();
+  assert.equal(noKnot.links.length, 4, "无 nextKnot 不创建");
+  assert.equal(noKnot.nextKnot, undefined);
+  noKnot.dispose();
+  const notExam = createSectionIsland({
+    nodes: [{ id: "a", x: 100, y: 60 }, { id: "b", x: 160, y: 300 }],
+    width: 268, height: H, nextKnot: nk,
+  });
+  assert.equal(notExam.links.length, 2, "末球非考试球不创建");
+  assert.equal(notExam.nextKnot, undefined);
+  notExam.dispose();
+});
+
+await test("T25 考试绳物理:拖考试球远离绳结,绳贡献额外回拽(不是装饰)", async () => {
+  const mk = (nk) => createSectionIsland({
+    nodes: NODES.map((n) => ({ ...n })), width: 268, height: H, nextKnot: nk,
+  });
+  const dragExamUpAndMeasure = (isl) => {
+    const exam = isl.ball("n4");
+    assert.ok(exam);
+    step(isl, 30);
+    isl.beginDrag("n4", exam.body.position.x, 40);
+    for (let i = 0; i < 60; i++) { isl.moveDrag(exam.body.position.x, 40); isl.step(16.67); }
+    isl.endDrag();
+    const top = exam.body.position.y;
+    step(isl, 150);
+    return { top, back: exam.body.position.y };
+  };
+  // clear 天气无阵风/雨的随机源,两岛确定性可比
+  const withRope = dragExamUpAndMeasure(mk({ x: 134, y: H + 24 }));
+  const noRope = dragExamUpAndMeasure(mk(undefined));
+  assert.ok(withRope.top < 80, `拖上去了: ${withRope.top.toFixed(1)}`);
+  assert.ok(
+    withRope.back - withRope.top > noRope.back - noRope.top + 20,
+    `考试绳额外回拽: 有绳 ${(withRope.back - withRope.top).toFixed(1)} vs 无绳 ${(noRope.back - noRope.top).toFixed(1)}`,
+  );
+});
+
 
 console.log(`\n${passed} passed`);

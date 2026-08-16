@@ -347,7 +347,7 @@ interface Flake { x: number; y: number; r: number; v: number; phase: number; }
 
 /* 节点球天气装饰层(画在球上方的 canvas)。
    球位置由 getOrbs() 每帧提供(相对 canvas 坐标,含 balloon-bob 动画位移)。 */
-export interface OrbPos { x: number; y: number; r: number; }
+export interface OrbPos { x: number; y: number; r: number; /** 物理雪载 0..1(传了则雪盖从动于此,不再自累积)。 */ snow?: number; }
 
 /* 水流痕状态:每颗球独立的水流列表(雨球用)。key = 球 id(用 x,y 稳定时做 key 不可靠,
    所以用 orb 索引在 getOrbs 返回顺序稳定时可行;这里用 数组索引 i 做 key)。 */
@@ -366,6 +366,17 @@ let orbStreakTimer: number[] = [];
 interface Splash { x: number; y: number; vx: number; vy: number; life: number; }
 const orbSplashes: Splash[][] = [];   // [球索引][] 每球的溅起水珠
 let orbSplashTimer: number[] = [];    // 下次溅起的倒计时
+/** 物理碰撞溅起(雨天水珠/雪天白屑),位置相对 sizeEl。 */
+const impactBursts: Splash[] = [];
+
+interface Snowflake {
+  x: number; y: number; vx: number; vy: number;
+  life: number;      // 剩余帧
+  maxLife: number;
+  r: number;
+}
+/** 球顶甩出的雪屑(物理 FlakeEvent 驱动):弹道下坠 + 渐隐消逝,不落地堆积。 */
+const shedFlakes: Snowflake[] = [];
 
 /* 雪堆状态:每颗球的积雪厚度(0..1),随雪花堆积增长。 */
 let orbCaps: number[] = [];
@@ -375,8 +386,10 @@ let orbCaps: number[] = [];
    cov 控制覆盖比例(0.5 = 球顶 1/2),用宽度比例定义区域,避免角度参数化
    在 90° 时端点塌缩到中线的 bug。 */
 function drawSnowDome(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, cap: number, _now: number) {
-  const lift = r * (0.04 + cap * 0.05);   // 隆起:微凸出球顶
-  const cov = 0.7 + cap * 0.15;           // 覆盖比例:0.7..0.85(球顶大半)
+  if (cap < 0.04) return; // 残雪过薄不画(物理地板 6% → 只留一线小盖)
+  const lift = r * (0.02 + cap * 0.07);  // 隆起随厚度:薄雪贴着球面,厚雪微凸
+  const cov = 0.12 + cap * 0.73;          // 覆盖全量映射:12%..85%(薄雪只盖一点;
+  // 原 0.7+cap*0.15 的映射雪载掉一半雪盖几乎不变,实测被用户抓过)
   // 雪线端点:按宽度比例定
   const lx = cx - r * cov;
   const rx = cx + r * cov;
@@ -451,6 +464,27 @@ function drawWetGloss(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: 
 
 /* 雨滴溅起:雨滴击中球顶时飞溅的小水珠。每个水珠带初速度(向外散+向上)
    + 重力(vy 递减)+ 生命衰减,画成渐淡的小圆点。模拟真实雨打水面的飞溅。 */
+function drawShedFlakes(ctx: CanvasRenderingContext2D, flakes: Snowflake[]) {
+  if (flakes.length === 0) return;
+  ctx.save();
+  for (let i = flakes.length - 1; i >= 0; i--) {
+    const f = flakes[i]!;
+    f.x += f.vx;
+    f.y += f.vy;
+    f.vy += 0.14;            // 重力(轻,雪屑飘)
+    f.vx *= 0.985;           // 空气阻力
+    f.vy *= 0.99;
+    f.life--;
+    if (f.life <= 0) { flakes.splice(i, 1); continue; }
+    const k = f.life / f.maxLife; // 1→0:渐隐 + 微缩
+    ctx.fillStyle = `rgba(248,250,255,${(0.9 * k).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.r * (0.5 + 0.5 * k), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawSplashes(ctx: CanvasRenderingContext2D, splashes: Splash[]) {
   ctx.save();
   for (let i = splashes.length - 1; i >= 0; i--) {
@@ -526,9 +560,11 @@ function drawOrbWeather(
   for (let i = 0; i < orbs.length; i++) {
     const o = orbs[i]!;
     if (preset.particles === "snow") {
-      // 雪堆:缓慢堆积(每帧 +0.0008),封顶 1
-      orbCaps[i] = Math.min(1, orbCaps[i]! + 0.0008);
-      drawSnowDome(ctx, o.x, o.y, o.r, orbCaps[i]!, now);
+      // 雪盖唯一真值 = 物理雪载(拖动/碰撞甩掉、天气缓涨、封顶 1 全在物理层);
+      // 物理没接进来(理论不发生)时退回自累积兜底。
+      const cap = o.snow !== undefined ? o.snow : Math.min(1, (orbCaps[i] ?? 0.3) + 0.0008);
+      orbCaps[i] = cap;
+      drawSnowDome(ctx, o.x, o.y, o.r, cap, now);
     } else if (preset.particles === "rain") {
       // 湿润光泽(球面水膜反光)
       drawWetGloss(ctx, o.x, o.y, o.r);
@@ -573,21 +609,20 @@ function drawOrbWeather(
   }
 }
 
-function drawRain(ctx: CanvasRenderingContext2D, W: number, H: number, rain: Drop[]) {
-  // 小雨:细线、淡色、慢速、短(毛毛雨感,不是暴雨)
+function drawRain(ctx: CanvasRenderingContext2D, W: number, H: number, rain: Drop[], storm: boolean) {
+  // 雨:垂直雨线(不斜飘)。常雨 = 细淡慢;暴风雨 = 更密更长更亮更急(雨势大)。
   ctx.save();
-  ctx.strokeStyle = "rgba(210,224,238,0.3)";
-  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = storm ? "rgba(205,224,244,0.42)" : "rgba(210,224,238,0.3)";
+  ctx.lineWidth = storm ? 1.0 : 0.7;
   ctx.lineCap = "round";
+  const speed = storm ? 0.013 : 0.007;
   for (const d of rain) {
-    d.y += d.v * 0.007; // 慢
-    d.x += 0.0004;
+    d.y += d.v * speed;
     if (d.y > 1) { d.y -= 1; d.x = Math.random(); }
-    if (d.x > 1) d.x -= 1;
     const x = d.x * W, y = d.y * H;
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineTo(x - 2, y + d.len); // 短
+    ctx.lineTo(x, y + d.len); // 垂直
     ctx.stroke();
   }
   ctx.restore();
@@ -690,7 +725,17 @@ export function attachSky(
     stars = buildStars(W, H);
     // 按预设重建粒子池
     if (preset.particles === "rain" && rain.length === 0) {
-      for (let i = 0; i < 70; i++) rain.push({ x: Math.random(), y: Math.random(), len: 6 + Math.random() * 8, v: 0.5 + Math.random() * 0.3 });
+      // 暴风雨:雨滴数翻倍、线更长、落更急(雨势大的三个维度)
+      const stormRain = preset.weather === "storm";
+      const count = stormRain ? 140 : 70;
+      for (let i = 0; i < count; i++) {
+        rain.push({
+          x: Math.random(),
+          y: Math.random(),
+          len: stormRain ? 12 + Math.random() * 14 : 6 + Math.random() * 8,
+          v: stormRain ? 0.9 + Math.random() * 0.4 : 0.5 + Math.random() * 0.3,
+        });
+      }
     }
     if (preset.particles === "snow" && flakes.length === 0) {
       for (let i = 0; i < 120; i++) flakes.push({ x: Math.random(), y: Math.random(), r: 0.8 + Math.random() * 1.6, v: 0.5 + Math.random() * 0.8, phase: Math.random() * Math.PI * 2 });
@@ -712,7 +757,7 @@ export function attachSky(
     drawMoon(ctx, nightArc(p, W, H, 0.92, 0.08));
     drawSun(ctx, dayArc(p, W, H, 0.16, 0.88), preset.sunTint);
     drawClouds(ctx, p, clouds, W, H, now, preset.cloudCover, sky, preset.weather === "storm");
-    if (preset.particles === "rain") drawRain(ctx, W, H, rain);
+    if (preset.particles === "rain") drawRain(ctx, W, H, rain, preset.weather === "storm");
     if (preset.particles === "snow") drawSnow(ctx, W, H, flakes, now);
     if (preset.fogAlpha > 0) drawFog(ctx, W, H, preset.fogAlpha, sky);
     if (preset.lightning) drawLightning(ctx, W, H, true, now);
@@ -763,6 +808,8 @@ export function attachOrbWeather(
   sizeEl: HTMLElement,
   preset: SkyPreset,
   getOrbs: () => OrbPos[],
+  getImpacts?: () => { x: number; y: number; speed: number }[],
+  getFlakes?: () => { x: number; y: number; vx: number; vy: number; amount: number }[],
 ): () => void {
   // 切换 preset 时总是清空上一个天气的残留状态 + 清 canvas(修 bug:
   // rain→clear 时旧水流痕残留;晴/多云早返回但不清状态导致画面卡住)
@@ -772,6 +819,8 @@ export function attachOrbWeather(
     orbStreakTimer.length = 0;
     orbSplashes.length = 0;
     orbSplashTimer.length = 0;
+    impactBursts.length = 0;
+    shedFlakes.length = 0;
     const c = canvas.getContext("2d");
     if (c) c.clearRect(0, 0, canvas.width, canvas.height);
   };
@@ -811,6 +860,46 @@ export function attachOrbWeather(
     ctx.clearRect(0, 0, W, H); // 透明 canvas,每帧清空重画
     const orbs = getOrbs();
     drawOrbWeather(ctx, orbs, preset, now);
+    // 物理碰撞 → 天气反馈(坐标同 getOrbs,相对 sizeEl):
+    //   雨:命中点溅起水珠(速度越大越多);雪:震落命中球附近雪顶(掉厚度 + 白屑)
+    if (getImpacts) {
+      for (const im of getImpacts()) {
+        const n = 3 + Math.min(5, Math.floor(im.speed / 3));
+        for (let k = 0; k < n; k++) {
+          impactBursts.push({
+            x: im.x,
+            y: im.y,
+            vx: (Math.random() - 0.5) * 3.2,
+            vy: -(1.5 + Math.random() * 2.5),
+            life: 16 + Math.floor(Math.random() * 12),
+          });
+        }
+        // 雪盖消减不再在此做:物理碰撞已 shedSnow 减 b.snow,雪盖从动渲染
+      }
+      if (impactBursts.length > 0) drawSplashes(ctx, impactBursts);
+    }
+    // 球顶甩雪(物理事件):每个事件生成 1-3 片可见雪屑,弹道 + 渐隐;
+    // 同时把来源球的视觉雪盖按量削掉(物理 b.snow 已同步扣,这里只管观感对齐)
+    if (getFlakes) {
+      for (const f of getFlakes()) {
+        const cnt = 1 + Math.min(2, Math.round(f.amount * 40));
+        for (let k = 0; k < cnt; k++) {
+          const maxLife = 55 + Math.floor(Math.random() * 40); // ~1-1.6s 消逝
+          shedFlakes.push({
+            x: f.x + (Math.random() - 0.5) * 8,
+            y: f.y + (Math.random() - 0.5) * 6,
+            vx: f.vx * 0.6 + (Math.random() - 0.5) * 0.8,
+            vy: f.vy * 0.6 - Math.random() * 0.5,
+            life: maxLife,
+            maxLife,
+            r: 1.2 + Math.random() * 2.2,
+          });
+        }
+        // (雪盖消减由物理 b.snow 从动,这里只生成可见雪屑粒子)
+      }
+      while (shedFlakes.length > 240) shedFlakes.shift();
+      drawShedFlakes(ctx, shedFlakes);
+    }
     rafId = requestAnimationFrame(frame);
   }
 

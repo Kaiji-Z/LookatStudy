@@ -52,8 +52,39 @@ export function decideVisionBridge(input: {
 }): VisionBridgeDecision {
   const { imageCount, mainVisionCapable, overrideConfigured } = input;
   if (imageCount <= 0) return "no-images";
+  return visionRouting(mainVisionCapable, overrideConfigured);
+}
+
+/**
+ * 看图通道路由(与图片数量无关):native=主模型直看 / bridge=视觉模型转译 / reject=看不了。
+ * 附件注入、课文图注入(方案 B)、attach_node_images 工具三处共用,保证同一轮对话口径一致。
+ */
+export function visionRouting(
+  mainVisionCapable: boolean,
+  overrideConfigured: boolean,
+): "native" | "bridge" | "reject" {
   if (mainVisionCapable) return "native";
   return overrideConfigured ? "bridge" : "reject";
+}
+
+/**
+ * data-url(data:image/png;base64,xxxx)→ { mediaType, base64 }。
+ * 形状不对(非 data: 前缀/缺逗号/非 base64/空载荷)返回 null。
+ * 课文图两处来源的统一归一化入口:node_assets 的 getAssetDataUrl 与 content 内嵌图
+ * 都给 data-url,而 AI SDK file-part 与本桥的 vision 调用都要纯 base64。
+ */
+export function parseDataUrl(dataUrl: string): { mediaType: string; base64: string } | null {
+  const s = dataUrl.trim();
+  if (!s.startsWith("data:")) return null;
+  const comma = s.indexOf(",");
+  if (comma < 0) return null;
+  const meta = s.slice(5, comma);
+  if (!meta.endsWith(";base64")) return null;
+  const mediaType = meta.slice(0, -";base64".length);
+  if (!mediaType) return null;
+  const base64 = s.slice(comma + 1);
+  if (!base64) return null;
+  return { mediaType, base64 };
 }
 
 /** 从 settings 映射读 vision 覆盖(纯);provider+model 都配齐才算配置。 */

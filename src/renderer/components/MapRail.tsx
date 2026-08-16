@@ -68,7 +68,7 @@ interface MapRailProps {
   onCoursesChanged: () => void;
 }
 
-export function MapRail(props: MapRailProps) {
+export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
   const t = useLang();
   const [panel, setPanel] = useState<"map" | "import">("import");
   /** 当前显示的世界: study(学习) / practice(实操)。默认 study。 */
@@ -163,7 +163,7 @@ export function MapRail(props: MapRailProps) {
   }, [props.tree, props.progressMap]);
 
   return (
-    <nav ref={navRef} className="map-rail-scope relative h-full flex flex-col bg-surface-rail w-[300px] shrink-0 overflow-hidden" data-testid="map-rail">
+    <nav ref={navRef} className={`map-rail-scope relative h-full flex flex-col bg-surface-rail shrink-0 overflow-hidden ${props.fullWidth ? "w-full" : "w-[300px]"}`} data-testid="map-rail">
       {/* 天空 canvas:nav 层铺满全高(含 tab 区),两个面板共享同一背景。
           tab 和面板都透明,让 canvas 从顶到底透出来。 */}
       {skyPreset && (

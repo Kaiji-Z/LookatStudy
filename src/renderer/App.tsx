@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight, AlertTriangle, Map as MapIcon, MessageSquare, PenLine } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -30,6 +30,8 @@ import { useThreads } from "./lib/useThreads.js";
 import { useToast } from "./components/Toast.js";
 import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
 import { useLang, useLangValue } from "./lib/i18n.js";
+import { useWindowTier } from "./lib/useWindowTier.js";
+import { t2SideFromT3, type T2Side, type T3Pane } from "./lib/paneTiers.js";
 import { useFocusTrap } from "./lib/useFocusTrap.js";
 import { CelebrationLayer } from "./components/CelebrationLayer.js";
 import { celebrate } from "./lib/celebration.js";
@@ -92,6 +94,45 @@ export default function App() {
   // 布局切换:左栏/右栏显隐(Cursor 风格)
   const [leftPaneVisible, setLeftPaneVisible] = useState(true);
   const [rightPaneVisible, setRightPaneVisible] = useState(true);
+  /* ── 响应式三档布局(v0.11)─────────────────────────────────────────
+     T1 ≥1240 三栏;T2 920~1239 双栏(中+一侧,侧栏互斥);T3 <920 单栏+顶部按钮组。
+     拉宽自动弹回:进 T1 三栏全恢复。窄化自动收:T2 左栏隐、T3 只剩中栏(默认)。
+     T2 侧栏选择 / T3 当前栏 是会话级用户偏好,跨档往返保留(T3→T2 承接)。 */
+  const tier = useWindowTier();
+  const [t2Side, setT2Side] = useState<T2Side>("notebook");
+  const [t3Pane, setT3Pane] = useState<T3Pane>("chat");
+  const t3PaneRef = useRef(t3Pane);
+  t3PaneRef.current = t3Pane;
+  const prevTierRef = useRef(tier);
+  useEffect(() => {
+    if (prevTierRef.current === tier) return;
+    if (tier === 1) {
+      // 弹回:回三栏档恢复三栏(不记 T1 里的手动收起 —— 用户拍板"拉宽自动弹回")
+      setLeftPaneVisible(true);
+      setRightPaneVisible(true);
+    } else if (tier === 2 && prevTierRef.current === 3) {
+      // T3→T2:单栏正在看哪侧,双栏就保留哪侧
+      setT2Side(t2SideFromT3(t3PaneRef.current));
+    }
+    prevTierRef.current = tier;
+  }, [tier]);
+
+  // 实际可见性(档位 + 用户选择合成)
+  const showLeft = tier === 3 ? t3Pane === "rail" : tier === 2 ? t2Side === "rail" : leftPaneVisible;
+  const showRight = tier === 3 ? t3Pane === "notebook" : tier === 2 ? t2Side === "notebook" : rightPaneVisible;
+  const showChat = tier !== 3 || t3Pane === "chat";
+
+  // 侧栏切换(T1=手动显隐;T2=互斥侧栏:显示左则隐右;T3=切单栏)
+  const toggleLeftPane = () => {
+    if (tier === 1) setLeftPaneVisible((v) => !v);
+    else if (tier === 2) setT2Side((s2) => (s2 === "rail" ? "notebook" : "rail"));
+    else setT3Pane((p) => (p === "rail" ? "chat" : "rail"));
+  };
+  const toggleRightPane = () => {
+    if (tier === 1) setRightPaneVisible((v) => !v);
+    else if (tier === 2) setT2Side((s2) => (s2 === "notebook" ? "rail" : "notebook"));
+    else setT3Pane((p) => (p === "notebook" ? "chat" : "notebook"));
+  };
   // Cmd+K 命令面板(M2)
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   // 当前在右栏聚焦的产物 index(M2)
@@ -344,10 +385,10 @@ export default function App() {
         e.preventDefault();
         setShowCommandPalette((s) => !s);
       }
-      // Ctrl+B → 切换左栏显隐(布局切换)
+      // Ctrl+B → 切换左栏(布局切换;T2 互斥侧栏 / T3 切单栏)
       if ((e.ctrlKey || e.metaKey) && e.key === "b") {
         e.preventDefault();
-        setLeftPaneVisible((v) => !v);
+        toggleLeftPane();
       }
       // Ctrl+Tab → 切换 thread(下一个)。考试进行中拦截(离开需走警告确认)。
       if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
@@ -641,8 +682,9 @@ export default function App() {
   return (
     <div className="h-screen flex bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
       {/* 左栏:MapRail 全高(顶到底),tab 切换地图/导入 */}
-      {leftPaneVisible && (
+      {showLeft && (
         <MapRail
+          fullWidth={tier === 3}
           view={view}
           onViewChange={setView}
           courseTitle={currentCourse?.title ?? null}
@@ -684,11 +726,41 @@ export default function App() {
         fontSize={font.size}
         onFontBump={font.bump}
         onOpenSettings={() => setShowSettings(true)}
-        leftVisible={leftPaneVisible}
-        rightVisible={rightPaneVisible}
-        onToggleLeft={() => setLeftPaneVisible((v) => !v)}
-        onToggleRight={() => setRightPaneVisible((v) => !v)}
+        leftVisible={showLeft}
+        rightVisible={showRight}
+        onToggleLeft={toggleLeftPane}
+        onToggleRight={toggleRightPane}
       />
+
+      {/* T3 单栏档:顶部浮动按钮组切换 地图/对话/笔记(三档布局 v0.11) */}
+      {tier === 3 && (
+        <div
+          className="fixed top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 p-1 bg-surface-0 rounded-full shadow-elevated"
+          data-testid="t3-pane-switcher"
+          role="tablist"
+          aria-label={t("pane.switcher")}
+        >
+          {([
+            { k: "rail" as const, icon: MapIcon, label: t("pane.map"), testid: "t3-btn-rail" },
+            { k: "chat" as const, icon: MessageSquare, label: t("pane.chat"), testid: "t3-btn-chat" },
+            { k: "notebook" as const, icon: PenLine, label: t("pane.notes"), testid: "t3-btn-notebook" },
+          ]).map(({ k, icon: Icon, label, testid }) => (
+            <button
+              key={k}
+              role="tab"
+              aria-selected={t3Pane === k}
+              title={label}
+              data-testid={testid}
+              onClick={() => setT3Pane(k)}
+              className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors ${
+                t3Pane === k ? "bg-brand/15 text-brand" : "text-ink-muted hover:bg-black/5 dark:hover:bg-white/10"
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
 
@@ -702,9 +774,16 @@ export default function App() {
                   1920 屏 → ~680px(阅读黄金区,AI 长讲解舒服)
                   2560+  → 720px 上限(不浪费,对话不失紧凑)
                 右栏隐藏时 flex:1 撑满。 */}
+            {showChat && (
             <div
-              className="flex flex-col h-full bg-surface-1 shrink-0"
-              style={rightPaneVisible ? { width: "clamp(480px, 40vw, 720px)" } : { flex: 1 }}
+              className="flex flex-col h-full bg-surface-1 shrink-0 motion-safe:transition-[width] motion-safe:duration-200"
+              style={
+                tier === 3
+                  ? { flex: 1 } // 单栏档:对话占满
+                  : showRight
+                    ? { width: "clamp(480px, 36vw, 800px)" } // 右侧有栏:阅读黄金宽(36vw/上限 800)
+                    : { flex: 1 } // 右侧无栏(T1 手动收起 / T2 显示了左栏):撑满
+              }
               data-testid="chat-panel"
             >
               {!selectedCourseId ? (
@@ -831,12 +910,13 @@ export default function App() {
                 </>
               )}
             </div>
+            )}
 
             {/* 右栏:NotebookPanel 康奈尔笔记本(讲解/笔记)。布局切换可隐藏。
                 v0.6 分栏:无描边,色差划分(底色由 NotebookPanel 内部 bg-surface-2 控制)。
                 v0.7 宽度:flex-1 弹性吃中栏剩余,加 min-w 防内容(笔记卡/表格)被挤。 */}
-            {rightPaneVisible && (
-            <main className="flex-1 min-w-[440px] bg-surface-2">
+            {showRight && (
+            <main className={tier === 3 ? "flex-1 bg-surface-2" : "flex-1 min-w-[440px] bg-surface-2"} data-testid={tier === 3 ? "notebook-pane-full" : undefined}>
               <NotebookPanel
                 selectedNode={selectedNode}
                 items={canvas.items}

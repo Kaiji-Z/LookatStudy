@@ -64,9 +64,10 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 832,
-    // minWidth=1240 = 左栏 300 + 中栏 clamp 下限 480 + 右栏 min-w 440 + 余量。
+    // minWidth=560 = 单栏档(T3)对话的舒适下限。三档布局(T1≥1240 三栏 / T2≥920 双栏 /
+    // T3 单栏+按钮组)由渲染层 paneTiers.ts 决定,窗口可自由缩放跨档。
     // 低于此值三栏 flex 布局会溢出(右栏 min-w 被挤)。改宽度规则时同步算这个。
-    minWidth: 1240,
+    minWidth: 560,
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
@@ -735,6 +736,9 @@ async function runUiTest(screenshot = false): Promise<void> {
   }
 
   // 加载构建产物（不依赖 vite dev server，CI 友好）
+  // v0.11 三档布局:ui-test 断言主体跑在 T1(三栏)——窗口默认 800 落在 T3 单栏,
+  // 先拉宽再加载(渲染层初始化即测得 1280);末尾有专门的跨档行为测试。
+  await win.setBounds({ width: 1280, height: 800 });
   await win.loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"));
 
   // 等渲染层拉完数据 + React 渲染完。轮询所有关键 testid 都出现——
@@ -1600,6 +1604,62 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: pointerProbe?.ok === true,
     detail: pointerProbe,
   });
+
+  // T20c (三档响应式布局): resize 跨档 → 自动收/互斥/单栏按钮组/拉宽弹回
+  const tierSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const paneState = () =>
+    win.webContents.executeJavaScript(`
+      (function() {
+        var rail = document.querySelector('[data-testid="map-rail"]');
+        var chat = document.querySelector('[data-testid="chat-panel"]');
+        var nb = document.querySelector('[data-testid="notebook-panel"]');
+        return {
+          rail: !!rail,
+          railW: rail ? Math.round(rail.getBoundingClientRect().width) : 0,
+          chat: !!chat,
+          nb: !!nb,
+          switcher: !!document.querySelector('[data-testid="t3-pane-switcher"]'),
+        };
+      })()
+    `).catch(() => null);
+  try {
+    // 轮询等档位渲染到位(跨档 = resize 事件 + React 重渲染 + 物理岛重建,
+    // 固定睡眠会跟提交竞速 —— 实测偶发超时,改成谓词轮询)
+    const waitForPane = async (pred: (st: NonNullable<Awaited<ReturnType<typeof paneState>>>) => boolean, timeoutMs = 3000) => {
+      const t0 = Date.now();
+      for (;;) {
+        const st = await paneState();
+        if (st && pred(st)) return st;
+        if (Date.now() - t0 > timeoutMs) return st;
+        await tierSleep(120);
+      }
+    };
+    // → T2 (1000px):左栏自动隐,中+右双栏,无按钮组
+    await win.setBounds({ width: 1000, height: 800 });
+    const t2Default = await waitForPane((st) => !st.rail && st.chat && st.nb && !st.switcher);
+    // T2 互斥:点"显示左栏" → 左栏出、右栏隐
+    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="layout-toggle-left"]').click()`);
+    const t2Left = await waitForPane((st) => st.rail && st.chat && !st.nb);
+    // → T3 (800px):单栏(对话)+ 按钮组;点地图按钮 → 地图全宽单栏
+    await win.setBounds({ width: 800, height: 800 });
+    const t3Chat = await waitForPane((st) => !st.rail && st.chat && !st.nb && st.switcher);
+    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-rail"]').click()`);
+    const t3Rail = await waitForPane((st) => st.rail && !st.chat && st.railW >= 700);
+    // 拉宽弹回 → T1 (1300px):三栏全恢复、按钮组消失、左栏回 300
+    await win.setBounds({ width: 1300, height: 800 });
+    const t1Back = await waitForPane((st) => st.rail && st.chat && st.nb && !st.switcher);
+    results.push({
+      name: "responsive tiers: T2 auto-collapse + exclusive side, T3 single-pane switcher, widen restores T1",
+      ok: t2Default?.rail === false && t2Default?.chat === true && t2Default?.nb === true && t2Default?.switcher === false
+        && t2Left?.rail === true && t2Left?.nb === false && t2Left?.chat === true
+        && t3Chat?.rail === false && t3Chat?.chat === true && t3Chat?.nb === false && t3Chat?.switcher === true
+        && t3Rail?.rail === true && t3Rail?.chat === false && t3Rail?.railW >= 700
+        && t1Back?.rail === true && t1Back?.chat === true && t1Back?.nb === true && t1Back?.switcher === false && t1Back?.railW <= 320,
+      detail: { t2Default, t2Left, t3Chat, t3Rail, t1Back},
+    });
+  } catch (e) {
+    results.push({ name: "responsive tiers", ok: false, detail: String(e) });
+  }
 
   // T21 (课程删除闭环): 地图头"删除当前课程"按钮 → ConfirmCard 确认 → 课程删除,
   // 中栏回到未选课空态 + 课程列表少一门。ui-test 用临时 DB,删种子课不影响下次运行。

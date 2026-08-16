@@ -18,6 +18,8 @@ import {
   buildCourseFromFiles,
   cdnUrl,
   httpsGet,
+  fetchRepoInventory,
+  fetchFileOutlines,
 } from "../src/main/services/pure/repo-fetcher.ts";
 
 // === T1: extractInternalLinks 提取 .md 和 .ipynb 链接 ===
@@ -234,6 +236,116 @@ console.log("=== 多模态图片引用解析(repo-fetcher): 通过 ✅ ===");
   assert.equal(r.error, "deadline", `应被 deadline 掐穿: ${r.error}`);
   assert.ok(ms < 3000, `应在 deadline 附近返回: ${ms.toFixed(0)}ms`);
   console.log(`✓ httpsGet 硬截止: 哑服务器 ${ms.toFixed(0)}ms 被 deadline 掐穿`);
+}
+
+// === 取消信号穿透:点"取消导入"必须在网络层立即生效,不等截止/批次跑完 ===
+// 覆盖:httpsGet(预中止 + 在飞撕断) / fetchFileOutlines(批间检查,防半截快照) /
+// fetchRepoInventory(README 循环检查,取消不误报成"无法拉取 README")。
+{
+  const { performance } = await import("node:perf_hooks");
+  const net = await import("node:net");
+
+  // C1: httpsGet 预中止 → 不建连接立即返回 aborted
+  {
+    const ctl = new AbortController();
+    ctl.abort();
+    const t0 = performance.now();
+    const r = await httpsGet("https://192.0.2.1/never-reached", { signal: ctl.signal });
+    const ms = performance.now() - t0;
+    assert.equal(r.ok, false, "C1: 预中止应失败");
+    assert.equal(r.error, "aborted", `C1: error 应为 aborted: ${r.error}`);
+    assert.ok(ms < 100, `C1: 预中止应立即返回: ${ms.toFixed(0)}ms`);
+    console.log(`✓ C1 httpsGet 预中止: ${ms.toFixed(1)}ms 返回 aborted(未建连接)`);
+  }
+
+  // C2: httpsGet 在飞中止 → 哑服务器上 120ms 撕断,而非等 5s deadline
+  {
+    const srv = net.createServer((sock) => { /* 接受连接,永不响应 */ });
+    await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+    const port = srv.address().port;
+    const ctl = new AbortController();
+    setTimeout(() => ctl.abort(), 120);
+    const t0 = performance.now();
+    const r = await httpsGet(`https://127.0.0.1:${port}/x`, { rejectUnauthorized: false, deadlineMs: 5000, signal: ctl.signal });
+    const ms = performance.now() - t0;
+    srv.close();
+    assert.equal(r.error, "aborted", `C2: 在飞中止应返回 aborted: ${r.error}`);
+    assert.ok(ms < 1000, `C2: 应在 abort 后立即返回而非等 deadline: ${ms.toFixed(0)}ms`);
+    console.log(`✓ C2 httpsGet 在飞中止: 哑服务器 ${ms.toFixed(0)}ms 被撕断(5s deadline 未触发)`);
+  }
+
+  // C3: fetchFileOutlines 预中止 → 立即抛"导入已取消",零 fetch 调用
+  {
+    let calls = 0;
+    const spy = async () => { calls++; return { ok: true, text: async () => "# x" }; };
+    const ctl = new AbortController();
+    ctl.abort();
+    let threw = null;
+    try {
+      await fetchFileOutlines(["a.md", "b.md", "c.md"], "o", "r", "main", spy, undefined, ctl.signal);
+    } catch (e) { threw = e.message; }
+    assert.match(threw ?? "", /取消/, `C3: 应抛'导入已取消': ${threw}`);
+    assert.equal(calls, 0, `C3: 预中止不应发起任何 fetch,实际 ${calls}`);
+    console.log("✓ C3 fetchFileOutlines 预中止: 抛'导入已取消' + 零 fetch");
+  }
+
+  // C4: fetchFileOutlines 中途中止 → 抛错而非带半截大纲返回(allSettled 会吞 reject,靠批间检查兜住)
+  // 注:直调本函数时 fetchFn 是裸的(signal 由生产环境编排器注入),这里用直接 throw 模拟被撕断的 fetch
+  {
+    const ctl = new AbortController();
+    let call = 0;
+    const slowFetch = async () => {
+      if (++call > 5) { // 第 2 批(第 6 次调用起)触发取消
+        ctl.abort();
+        throw new Error("aborted");
+      }
+      return { ok: true, text: async () => "# 标题\n\n正文" };
+    };
+    const files = Array.from({ length: 12 }, (_, i) => `f${i}.md`);
+    let threw = null;
+    try {
+      await fetchFileOutlines(files, "o", "r", "main", slowFetch, undefined, ctl.signal);
+    } catch (e) { threw = e.message; }
+    assert.match(threw ?? "", /取消/, `C4: 中途取消应抛'导入已取消': ${threw}`);
+    console.log("✓ C4 fetchFileOutlines 中途中止: 抛错,半截大纲不落盘");
+  }
+
+  // C5: fetchRepoInventory 预中止 → README 循环开头即退出,零 fetch
+  {
+    let calls = 0;
+    const spy = async () => { calls++; return { ok: true, text: async () => "# R" }; };
+    const ctl = new AbortController();
+    ctl.abort();
+    let threw = null;
+    try {
+      await fetchRepoInventory("o", "r", "main", spy, undefined, ctl.signal);
+    } catch (e) { threw = e.message; }
+    assert.match(threw ?? "", /取消/, `C5: 应抛'导入已取消': ${threw}`);
+    assert.equal(calls, 0, `C5: 预中止不应 fetch README,实际 ${calls}`);
+    console.log("✓ C5 fetchRepoInventory 预中止: 抛'导入已取消' + 零 fetch");
+  }
+
+  // C6: fetchRepoInventory README 拉取中途取消 → 干净的"已取消",不误报"无法拉取 README"
+  // 注:直调时 fetchFn 是裸的,用直接 throw 模拟被编排器 signal 撕断的 fetch
+  {
+    const ctl = new AbortController();
+    let calls = 0;
+    const fetchThenAbort = async () => {
+      calls++;
+      if (calls >= 2) { // 第 2 个候选:取消已请求,fetch 被撕断
+        ctl.abort();
+        throw new Error("aborted");
+      }
+      return { ok: false, text: async () => "" }; // 第 1 个候选 404 → 走第 2 个
+    };
+    let threw = null;
+    try {
+      await fetchRepoInventory("o", "r", "main", fetchThenAbort, undefined, ctl.signal);
+    } catch (e) { threw = e.message; }
+    assert.match(threw ?? "", /取消/, `C6: 取消应报'导入已取消'而非'无法拉取 README': ${threw}`);
+    assert.ok(!/无法拉取/.test(threw ?? ""), `C6: 不应误报无法拉取 README: ${threw}`);
+    console.log("✓ C6 fetchRepoInventory 拉取中取消: 报'已取消'不误报");
+  }
 }
 
 console.log("=== 翻译语言检测(repo-fetcher): 通过 ✅ ===");

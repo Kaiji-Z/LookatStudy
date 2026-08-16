@@ -41,6 +41,7 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 - **LLM calls and API keys stay in main process.** CSP in `src/renderer/index.html` forbids renderer-side LLM endpoints; renderer only sees booleans for key presence (`agent:isReady`).
 - **AI persistent-state mutations go through Proposal (Propose→Apply).** AI drafts state changes, human applies/rejects — never let AI write learner state directly (see `proposal-service.ts`).
 - **Custom providers** (`custom_providers` table) bypass preset key settings — their API key is stored in the table row, resolved by `resolveLlm()` when `active_provider` starts with `custom-`.
+- **Third runtime: serve (mobile/web).** `src/main/serve/server.ts` runs the SAME 93-handler table (`ipc/runtime.ts` `collectHandlers(deps)`) behind a WebSocket dispatcher — Electron's `ipcMain` and serve share one registry, zero drift. Protocol in `shared/ws-protocol.ts`; channel names ARE the IPC `domain:action` names. Renderer web mode: `src/renderer/lib/api-web.ts` (`installWebApi`) builds `window.api` from `shared/api-channels.ts` when preload is absent (`main.tsx` boot fork + token gate). Token auth (`dataDir/serve-token`, persisted), WS rejects with close 4001. Portable bundle via `scripts/build-mobile.mjs` (esbuild CJS, electron + pdf-inspector external, companion wasm/seed beside server.cjs).
 - **Streaming is parts-based.** Main emits `chat:part` events with a `ChatStreamPart` discriminated union (text / reasoning / tool-start / tool-result / tool-error). Renderer accumulates them via a **pure** `accumulatePart` (no mutation — React 19 StrictMode double-invokes updaters).
 
 ## Three-pane layout (v0.5)
@@ -70,8 +71,10 @@ npm run dev               # vite only (renderer debugging, HMR)
 npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
+npm run serve             # dev serve: esbuild server bundle only + serve dist/renderer (web 模式调试)
+npm run build:mobile      # 便携包 dist/mobile/: server.cjs 单文件 + web 前端 + install-termux.sh(Termux 手机端)
 
-npm run verify:core       # 73 pure-Node/tsx logic test suites
+npm run verify:core       # 74 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -98,7 +101,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z`. `.github/workflows/package.yml` then builds the 3-OS matrix (NSIS exe / arm64 dmg / AppImage + deb) and attaches everything to that tag's GitHub Release automatically.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 72 verify suites + vite build on every PR and push to main — never merge a red PR.
+5. `ci.yml` runs oxlint + both typechecks + 74 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -135,6 +138,10 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | Highlight | `lib/highlightText.ts` | 画线定位:getTextModel + 文本搜索(applyPersistentMarksByText)+ 跨节点包裹(wrapRangeWithMark)+ 闪烁(flashMark)。**不依赖 DOM offset**(ReactMarkdown 重渲染不稳定),用 indexOf 在纯文本上定位 |
 | Course search | `components/CourseSearchPanel.tsx` + `lib/course-tree-filter.ts` | 课程搜索面板(MapRail 全栏 overlay):空查询=章节→课时树状导航(锁定行与地图球同规则 disabled),关键词=标题多词 AND 过滤 + 全文内容匹配(`search:content` 只留本课节点,防抖 250ms)。跳转=切 world + onJumpNode + 滚动定位到球。过滤/锁定计算是纯函数(verify-course-search.mjs) |
 | Custom providers | `services/custom-provider-service.ts` | BYO user-defined provider rows; bypass preset settings, resolved by `custom-` prefix |
+| Serve runtime | `src/main/serve/server.ts` + `serve/index.ts` | 手机/浏览器模式:同一 handler 表的 WS 分发 + 静态前端 + token 鉴权(4001 拒连);启动序与 Electron 主进程对齐(initDb→seed→souls→prefLang),CLI `--port/--data/--web` |
+| Handler registry | `src/main/ipc/runtime.ts` + `ipc/index.ts` + `electron-wiring.ts` | `collectHandlers(deps)` 单表双接线(RuntimeDeps:emitter/dialog/dataDir/ui);Electron 走 ipcMain,serve 走 WS——改 handler 只动一处 |
+| Web transport | `src/renderer/lib/api-web.ts` + `shared/api-channels.ts` + `ws-protocol.ts` | 浏览器版 window.api(WS req/res + event 帧,断线重连,4001 不重连);93 方法↔channel 映射自 preload 生成,verify-serve T5 守漂移 |
+| Mobile bundle | `scripts/build-mobile.mjs` + `scripts/lib/build-server.mjs` | `dist/mobile/` 便携包:vite 前端 + esbuild server.cjs(外置 electron/pdf-inspector,companion sql-wasm.wasm/seed-course.json);`install-termux.sh` 手机端一键装 |
 | Context usage | `services/agent/context-usage.ts` + `shared/token-estimate.ts` | 输入框上下文表(v0.10):`agent:getContextUsage` 返回固定开销(系统提示/课文/学习者快照的启发式 token 估算)——装配抽 `agent-engine.assembleContextBlocks` 与实发同源不漂移;渲染层本地叠加对话历史+草稿(`estimateTokens` CJK 感知纯函数,窗口取 preset contextWindow) |
 | Chat attachments | `services/attachment-store.ts` + `pure/attachment-files.ts` + `shared/attachment-intake.ts` | 聊天附件(v0.10):image(≤5MB,≤4/条)落盘 `userData/attachments/` + 本轮 vision file-part 注入(engine 不受 multimodal flag/关键词门控);text(≤256KB)正文内联进 content(持久化+LLM 历史天然可见);文件名 uuid 守卫防穿越;thread 删除顺带清盘。渲染层 📎/粘贴/拖拽三入口,消息 parts 用 `attachment` part 渲染缩略图+灯箱 |
 | Reasoning effort | `shared/reasoning-effort.ts` | 思考强度方言表(v0.10,存 `settings.reasoning_effort`:""自动/fast/deep):GLM→body.thinking.type、Qwen/SiliconCloud→enable_thinking(经 `llm-client.buildLanguageModel` 的 fetch 覆盖注入)、OpenAI→reasoningEffort、Anthropic/Google→providerOptions;不支持的家族(如 DeepSeek)芯片禁用+引擎降级 none,宁可不生效不瞎发参数 |
@@ -245,8 +252,9 @@ them as load-bearing, not optional.
 ```
 /                       user-facing docs only: README, AGENTS, PRODUCT, CHANGELOG, VERIFICATION,
                         LICENSE, CONTRIBUTING
-/.github/workflows/     CI (ci.yml: lint+typecheck+verify:core+vite build) + packaging
-                        (package.yml: win/mac/linux matrix, workflow_dispatch or v* tag → Release)
+/.github/workflows/     CI (ci.yml: lint+typecheck+verify:core+vite build+mobile bundle) + packaging
+                        (package.yml: win/mac/linux matrix, android-build.yml: launcher APK + mobile zip,
+                         workflow_dispatch or v* tag → Release)
 /docs/                  user-facing assets (screenshots/ embedded by the READMEs; regenerate via npm run shots)
 /dev-docs/              ★ gitignored ★ dev-process docs: ARCHITECTURE, BUILD-NOTES, ROADMAP,
                         DESIGN-PLAN-*.md — kept locally, NOT committed
@@ -255,7 +263,9 @@ them as load-bearing, not optional.
 /src/main/              Electron main process (CJS) — DB, services, IPC handlers
 /src/preload/           contextBridge — the only renderer↔main path
 /src/renderer/          React UI — never touches DB/files/keys directly
-/shared/                types shared across main + renderer (the IPC contract)
+/shared/                types + shared channel/WS protocol shared across main + renderer
+/android/               LookatStudy 手机引导器 APK(Termux 安装 + 一键引导 + Custom Tab;gradle 工程,
+                        termux.apk 构建时 fetch 不入库;见 android/README.md)
 ```
 
 **The rule, stated once:** `docs/` (when it exists) and the root `.md` files are

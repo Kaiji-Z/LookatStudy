@@ -16,6 +16,10 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **手机端全量支持(Termux 便携服务 + 浏览器,同一套前端)** —— 桌面 Electron 之外新增第三种运行形态:**Node 便携服务**。93 个 IPC handler 收敛成共享 handler 表(`ipc/runtime.ts` 的 `collectHandlers`),Electron 的 ipcMain 与 serve 的 WS 分发共用同一张表零漂移;`npm run build:mobile` 产出 `dist/mobile/`(server.cjs 单文件 + web 前端 + install-termux.sh),Termux 里 `node server.cjs` 即起(零 npm install,sql-wasm/种子课程随包),手机浏览器打开 `http://127.0.0.1:17890`。安全:默认只绑回环,WS 需 token(首启生成落盘复用,启动日志打印带 token 链接);无 token/错 token 时网页端有**令牌门**(输一次存 localStorage,token 失效自动切回)。web 模式 UI 分叉:文件夹导入改输路径、课程包导入/导出走浏览器文件选择与下载、导入入口触屏常显;PWA manifest + `pointer-coarse` 触屏适配。**Android 引导器 APK**(`android/`,内置 Termux 安装包一键装 → 复制安装命令跳 Termux → Custom Tab 打开本机服务;CI `android-build.yml` 出 `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` 挂 Release,本地同链构建已验证 37.7MB 可安装包),`ci.yml` 加 mobile-bundle 守护。验证:`verify-serve` 5 组测试(真实 bundle 子进程:静态/SPA、token 4001、WS req/res、渲染层 web 传输 E2E 含真实导入落库、preload↔channels 漂移守卫)全部闭环(破坏→红→复原→绿),真浏览器走通课程点击/地图渲染/令牌门三步;桌面侧 verify:core 74 套 + self-test + ui-test 全绿零回归。
+- **`npm run serve`** —— 开发态快速起 serve(esbuild 只编 server + 复用 dist/renderer,免 vite 全量)。
+
 ### Fixed
 - **取消导入即时生效(网络层穿透)** —— 取消信号此前只掐 LLM 调用(Step2/4),网络层要等当前批次自然跑完:树扫描最坏 240s、大纲/正文按批拖。现在 ① 编排器把 fetchFn 统一收口注入取消信号,所有 CDN 请求(README/大纲/正文/图片)在飞即撕;② `httpsGet` 支持 `signal`,`req.destroy()` 即断(240s 树扫描窗口内任意时刻可取消);③ README 循环/大纲批间加检查:取消报"已取消"不误报"无法拉取 README",半截大纲不落快照;④ 修掉附带真 bug —— Step1 抛错路径漏 `clearInterval`,每次取消泄漏一个 300ms 轮询计时器(Electron 主进程永不退出 → 永久句柄)。verify 新增 C1-C6 + T12 共 7 个取消断言,四路闭环(破坏→红→复原→绿)已证。
 

@@ -17,6 +17,14 @@
  */
 import Matter from "matter-js";
 
+// Matter 对低速接触按"静息"处理(默认 <4px/步 不给反弹冲量)→ 慢速把解锁球
+// 推向锁定球时像被吸附。阈值调低到 1.4:慢碰也保留一点弹性。
+// (Resolver 内部常量,0.19 暴露在 Matter.Resolver 上;防御式赋值防版本变动)
+{
+  const resolver = (Matter as unknown as { Resolver?: { _restingThresh?: number } }).Resolver;
+  if (resolver && typeof resolver._restingThresh === "number") resolver._restingThresh = 1.4;
+}
+
 /** 指针位移 < 此值(px)判为点击(拖拽阈值);超出判为拖拽。与按压时长无关。 */
 export const DRAG_THRESHOLD_PX = 6;
 /** 球物理半径(px)。必须与视觉 w-14 h-14(56px)匹配。 */
@@ -24,7 +32,7 @@ export const BALL_RADIUS = 28;
 /** 绳在球上的悬挂点:球心下方 r*0.92(绳从球底垂下)。 */
 export const ROPE_ATTACH = 0.92;
 /** 绳静止长度比实际间距的富余(>1 = 有松量可垂坠)。 */
-export const ROPE_SLACK = 1.08;
+export const ROPE_SLACK = 1.12;
 /** 绳段粒子的目标段长(px)。段数 = clamp(round(距/段长), 5, 14)。 */
 export const ROPE_SEG_LEN = 34;
 
@@ -47,14 +55,23 @@ export function classifyPointer(track: PointerTrack, endX: number, endY: number)
   return dist < DRAG_THRESHOLD_PX ? "click" : "drag";
 }
 
-/** 绳链 SVG path:折线穿全部点(绳粒位置由物理给出,垂坠/绷直是物理结果)。 */
+/**
+ * 绳链 SVG path:平滑弧线穿绳粒(垂坠/绷直是物理结果,渲染只负责圆滑)。
+ * 手法:二次贝塞尔以绳粒为控制点、穿过相邻粒的中点 → Catmull-Rom 近似的光滑绳。
+ */
 export function ropeChainPathD(points: Vec2[]): string {
-  if (points.length === 0) return "";
-  let d = `M ${points[0]!.x.toFixed(1)} ${points[0]!.y.toFixed(1)}`;
-  for (let i = 1; i < points.length; i++) {
-    d += ` L ${points[i]!.x.toFixed(1)} ${points[i]!.y.toFixed(1)}`;
+  const n = points.length;
+  if (n === 0) return "";
+  const f = (p: Vec2) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+  if (n === 1) return `M ${f(points[0]!)}`;
+  if (n === 2) return `M ${f(points[0]!)} L ${f(points[1]!)}`;
+  let d = `M ${f(points[0]!)}`;
+  for (let i = 1; i < n - 1; i++) {
+    const a = points[i]!;
+    const b = points[i + 1]!;
+    d += ` Q ${f(a)} ${((a.x + b.x) / 2).toFixed(1)} ${((a.y + b.y) / 2).toFixed(1)}`;
   }
-  return d;
+  return `${d} L ${f(points[n - 1]!)}`;
 }
 
 /** squash 指数衰减(时间常数 ~90ms)。dt 毫秒。 */
@@ -117,7 +134,7 @@ export function weatherPhysFor(weather: string): WeatherPhys {
   switch (weather) {
     case "storm": return { wind: 0.95, gust: 1, rainRate: 0.006, snowRate: 0, airDrag: 1.05 };
     case "rain": return { wind: 0.6, gust: 0.25, rainRate: 0.004, snowRate: 0, airDrag: 1.0 };
-    case "snow": return { wind: 0.25, gust: 0, rainRate: 0, snowRate: 0.00016, airDrag: 1.0 };
+    case "snow": return { wind: 0.25, gust: 0, rainRate: 0, snowRate: 0.0004, airDrag: 1.0 };
     case "fog": return { wind: 0.06, gust: 0, rainRate: 0, snowRate: 0, airDrag: 1.7 };
     case "cloudy": return { wind: 0.4, gust: 0.1, rainRate: 0, snowRate: 0, airDrag: 1.0 };
     case "clear":
@@ -200,8 +217,8 @@ const ROPE_STIFF_ATTACH = 0.7;
 const DRAG_STIFFNESS = 0.09;
 /** 产生 squash/脉冲的最低相对速度(px/step)。 */
 const IMPACT_MIN_SPEED = 2.2;
-/** 雪载对球的重力增幅上限(10% 自重)。 */
-const SNOW_WEIGHT = 0.1;
+/** 雪载对球的重力增幅上限(35% 自重 —— 足以压过多数球的浮力盈余)。 */
+const SNOW_WEIGHT = 0.35;
 
 export function createSectionIsland(opts: {
   nodes: { id: string; x: number; y: number; isExam?: boolean; locked?: boolean }[];
@@ -222,7 +239,7 @@ export function createSectionIsland(opts: {
 
   const balls: IslandBall[] = opts.nodes.map((n) => {
     const body = Bodies.circle(n.x, n.y, r, {
-      restitution: 0.42,
+      restitution: 0.5,
       friction: 0.01,
       frictionAir: 0.03 * env.airDrag,
       density: n.isExam ? 0.0016 : 0.001, // 考试(boss)球更沉
@@ -242,6 +259,11 @@ export function createSectionIsland(opts: {
   // 墙(不可见):左右 = 栏宽,上下 = section 边界。内表面分别位于 0 / width / 0 / height。
   const half = WALL_THICKNESS / 2;
   const wallOpts = { isStatic: true, restitution: 0.4, friction: 0.05, collisionFilter: { category: 0x0004, mask: 0x0002 } };
+  /** 拖拽点钳进盒内:指针拉到墙外时,弹簧的靶点停在墙内 —— 手感是"拉到墙就拉不动"。 */
+  const clampPoint = (px: number, py: number): Vec2 => ({
+    x: Math.min(opts.width - r, Math.max(r, px)),
+    y: Math.min(opts.height - r, Math.max(r, py)),
+  });
   Composite.add(engine.world, [
     Bodies.rectangle(opts.width / 2, -half, opts.width * 3, WALL_THICKNESS, wallOpts),
     Bodies.rectangle(opts.width / 2, opts.height + half, opts.width * 3, WALL_THICKNESS, wallOpts),
@@ -315,7 +337,9 @@ export function createSectionIsland(opts: {
   }
 
   // 浮力(扛住自重 + 绳的重量)+ 风 + 雨滴冲击 + 雪载增重。
-  const lifts = new Map(balls.map((b) => [b.nodeId, 0.97 + hash01(b.nodeId) * 0.08]));
+  // 浮力 ≈ 自重但整体略偏上(球还要扛绳的自重 ~5-11%):区间 1.05-1.17,
+  // 约半数球有净浮力(把下绳顶成弧)、半数净下垂(挂在上绳上)→ 静止时绳有松有紧。
+  const lifts = new Map(balls.map((b) => [b.nodeId, 1.05 + hash01(b.nodeId) * 0.12]));
   let gustNow = 0;
   let gustDir = 1;
   Events.on(engine, "beforeUpdate", () => {
@@ -370,15 +394,10 @@ export function createSectionIsland(opts: {
     }
   });
 
-  // 雪天:雪载缓涨(封顶 1)
-  let snowAcc = 0;
+  // 雪天:雪载缓涨(封顶 1;满载约 45 秒 —— 肉眼可见的"越挂越沉")
   Events.on(engine, "afterUpdate", () => {
     if (env.snowRate <= 0) return;
-    snowAcc += env.snowRate;
-    if (snowAcc >= 1) {
-      snowAcc = 0;
-      for (const b of balls) b.snow = Math.min(1, b.snow + 0.01);
-    }
+    for (const b of balls) b.snow = Math.min(1, b.snow + env.snowRate);
   });
 
   // 软抓取:拖拽 = 指针点与球心之间的一条临时弹簧约束。
@@ -394,13 +413,29 @@ export function createSectionIsland(opts: {
     step(dtMs) {
       // dt 钳制:掉帧时最多按 33ms 步进,防止约束爆炸
       Engine.update(engine, Math.min(33, Math.max(8, dtMs)));
+      // 硬钳制(物理不变量:球永不出盒)。墙负责正常速度的反弹;
+      // 蛮力拖拽/极端冲量挤过求解器时,这里兜底拉回 + 切掉向外速度。
+      for (const b of balls) {
+        if (b.body.isStatic) continue;
+        const x = b.body.position.x;
+        const y = b.body.position.y;
+        const cx = Math.min(opts.width - r, Math.max(r, x));
+        const cy = Math.min(opts.height - r, Math.max(r, y));
+        if (cx !== x || cy !== y) {
+          Body.setPosition(b.body, { x: cx, y: cy });
+          Body.setVelocity(b.body, {
+            x: x < r || x > opts.width - r ? 0 : b.body.velocity.x,
+            y: y < r || y > opts.height - r ? 0 : b.body.velocity.y,
+          });
+        }
+      }
     },
     beginDrag(nodeId, px, py) {
       this.endDrag();
       const b = this.ball(nodeId);
       if (!b) return;
       const constraint = Constraint.create({
-        pointA: { x: px, y: py },
+        pointA: clampPoint(px, py),
         bodyB: b.body,
         length: 0,
         stiffness: DRAG_STIFFNESS,
@@ -411,7 +446,8 @@ export function createSectionIsland(opts: {
     },
     moveDrag(px, py) {
       if (!drag) return;
-      drag.constraint.pointA = { x: px, y: py };
+      const c = clampPoint(px, py);
+      drag.constraint.pointA = c;
     },
     endDrag() {
       if (!drag) return;
@@ -437,5 +473,5 @@ export function createSectionIsland(opts: {
   };
 }
 
-/** 路牌绳结的 y(岛坐标:容器上缘上方,视觉落在路牌区)。 */
-export const ANCHOR_KNOT_Y = -46;
+/** 路牌绳结的 y(岛坐标:容器上缘上方 12px = 路牌 mb-3 间隙 = 牌子下缘)。 */
+export const ANCHOR_KNOT_Y = -12;

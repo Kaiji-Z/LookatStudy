@@ -56,11 +56,19 @@ await test("T1 classifyPointer:位移阈值区分点击/拖拽", () => {
   assert.equal(classifyPointer({ startX: 0, startY: 0 }, 3, DRAG_THRESHOLD_PX), "drag");
 });
 
-await test("T2 ropeChainPathD:折线穿全部点", () => {
+await test("T2 ropeChainPathD:平滑弧线(贝塞尔穿绳粒中点)", () => {
+  // 3 点:M 起点,Q 以绳粒为控制点(曲线过相邻粒中点),L 终点
   const d = ropeChainPathD([{ x: 0, y: 0 }, { x: 10.44, y: 5.01 }, { x: 20, y: 8 }]);
-  assert.equal(d, "M 0.0 0.0 L 10.4 5.0 L 20.0 8.0", `折线坐标: ${d}`);
+  assert.equal(d, "M 0.0 0.0 Q 10.4 5.0 15.2 6.5 L 20.0 8.0", `弧线坐标: ${d}`);
+  // 5 点:中段全是 Q(无折线 L),终点 L 收尾
+  const d5 = ropeChainPathD([{ x: 0, y: 0 }, { x: 5, y: 3 }, { x: 10, y: 9 }, { x: 15, y: 2 }, { x: 20, y: 6 }]);
+  assert.ok(d5.startsWith("M 0.0 0.0 Q "), "应以 M + Q 开始");
+  const segs = d5.split(" ");
+  assert.ok(segs.filter((x) => x === "Q").length >= 3, "多段 Q 平滑");
+  assert.ok(!d5.includes(" L ") || d5.trim().endsWith("L 20.0 6.0"), "中段无折线 L,仅终点收尾");
   assert.equal(ropeChainPathD([]), "");
   assert.equal(ropeChainPathD([{ x: 1.6, y: 2.4 }]), "M 1.6 2.4");
+  assert.equal(ropeChainPathD([{ x: 0, y: 0 }, { x: 9, y: 9 }]), "M 0.0 0.0 L 9.0 9.0", "两点直线");
 });
 
 await test("T3 decaySquash:指数衰减到 0,不为负", () => {
@@ -307,7 +315,7 @@ await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载压坠球", ()
       height: 300,
       weather,
     });
-    step(isl, 600); // 10 秒
+    step(isl, 1800); // 30 秒:雪载 0.72 → 增重 25%,压得过任何浮力盈余
     const ball = isl.ball("x");
     assert.ok(ball, "球存在");
     const y = ball.body.position.y;
@@ -316,7 +324,7 @@ await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载压坠球", ()
   };
   const ySnow = drop("snow");
   const yClear = drop("clear");
-  assert.ok(ySnow > yClear, `雪载应压坠: snow y=${ySnow.toFixed(1)} > clear y=${yClear.toFixed(1)}`);
+  assert.ok(ySnow > yClear + 10, `雪载应压坠: snow y=${ySnow.toFixed(1)} > clear y=${yClear.toFixed(1)} + 10`);
 });
 
 await test("T17 相邻球初始不叠死(球-球碰撞兜底)", () => {
@@ -333,6 +341,30 @@ await test("T17 相邻球初始不叠死(球-球碰撞兜底)", () => {
   assert.ok(a && b);
   const d = Math.hypot(a.body.position.x - b.body.position.x, a.body.position.y - b.body.position.y);
   assert.ok(d > BALL_RADIUS, `球-球碰撞应防叠死: d=${d.toFixed(1)}`);
+  isl.dispose();
+});
+
+await test("T18 逃逸回归:蛮力拖拽出界 + 极端冲量,球都出不了盒", async () => {
+  const { Body } = await M();
+  const isl = mkIsland();
+  step(isl, 20);
+  // 1) 拖拽点拽到盒外远端(实测反馈:蛮力能把球拉出边缘消失)
+  isl.beginDrag("n2", -500, -500);
+  for (let i = 0; i < 90; i++) {
+    isl.moveDrag(-500, -500);
+    isl.step(16.67);
+  }
+  isl.endDrag();
+  // 2) 朝角落极端速度甩
+  const n4 = isl.ball("n4");
+  assert.ok(n4);
+  Body.setVelocity(n4.body, { x: 80, y: 80 });
+  step(isl, 40);
+  for (const b of isl.balls) {
+    const { x, y } = b.body.position;
+    assert.ok(x >= BALL_RADIUS - 2 && x <= 268 - BALL_RADIUS + 2, `蛮力后 x 应在盒内: ${x}`);
+    assert.ok(y >= BALL_RADIUS - 2 && y <= H - BALL_RADIUS + 2, `蛮力后 y 应在盒内: ${y}`);
+  }
   isl.dispose();
 });
 

@@ -17,7 +17,7 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Fixed
-- **目录树扫描卡死 700s+(fastgithub 半死态)与全树降级链补全** —— `httpsGet` 只有 socket 空闲超时,TLS 握手卡死时被底层活动不断重置永不触发;加**硬性总截止**(默认 25s,覆盖 DNS/建连/TLS/响应体全阶段,哑服务器测试 615ms 掐穿,闭环已证)。同时把 jsdelivr data API 全树列表加回 `fetchRepoFileTree` 作降级(Tree API 死时中小仓库(<50MB)仍有全树;大仓库 403 继续退 README 链接)——fastgithub 半死时导入不再只有裸 README 一条路。
+- **目录树扫描卡死 700s+(fastgithub 半死态)与全树降级链补全** —— `httpsGet` 只有 socket 空闲超时,TLS 握手卡死时被底层活动不断重置永不触发;加**硬性总截止**(默认 25s,覆盖 DNS/建连/TLS/响应体全阶段,哑服务器测试 615ms 掐穿,闭环已证);**树扫描单独放宽到 240s**——实测部分网络直连 GitHub 被限速 ~24KB/s,大仓库 2-4MB 的树 JSON 是"活着但爬行"的合法传输(210s 拉下 17223 文件),不该被当挂死掐掉,真挂死仍由 20s 空闲超时兜底。同时把 jsdelivr data API 全树列表加回 `fetchRepoFileTree` 作降级(Tree API 死时中小仓库(<50MB)仍有全树;大仓库 403 继续退 README 链接)——fastgithub 半死时导入不再只有裸 README 一条路。
 - **导入截断综合治理(实测 ML-For-Beginners 165 文件,glm-5.2 @ CodingPlan 全链路跑通)** —— 四层根因逐一落地:
   - **思考强度是主犯**:思考与正文共享输出额度,且强度决定思考吃掉多少——默认强度 8K 池挤掉 JSON(截断)、32K 池直接想 6 分钟+零正文被看门狗掐死;`reasoning_effort:"low"` 一锤定音(导入调用强制 fast:CodingPlan 无视 disabled 但认 low)。终版实测 165 文件 5 批全直通,零拆半零截断,212 秒完成(32 章 168 课);
   - **输出上限家族感知**:GLM 家族 32768 / Qwen·SiliconCloud 16384(官方上限内),DeepSeek V3 与未知端点保守 8192;

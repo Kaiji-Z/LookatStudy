@@ -567,16 +567,23 @@ export function docsToDiscoveredFiles(docs: { path: string; title?: string }[]):
  */
 export function httpsGet(
   url: string,
-  opts: { rejectUnauthorized?: boolean; headers?: Record<string, string>; deadlineMs?: number } = {},
+  opts: { rejectUnauthorized?: boolean; headers?: Record<string, string>; deadlineMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ ok: boolean; status?: number; body?: string; error?: string }> {
+  // 预先中止:不建连接直接返回(调用方循环靠 error:"aborted" 识别取消)
+  if (opts.signal?.aborted) return Promise.resolve({ ok: false, error: "aborted" });
   return new Promise((resolve) => {
     let settled = false;
     const done = (r: { ok: boolean; status?: number; body?: string; error?: string }) => {
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
+      opts.signal?.removeEventListener("abort", onAbort);
       resolve(r);
     };
+    // 取消信号:与 deadline 同权 —— req.destroy() 撕掉在飞 socket,
+    // 240s 的树扫描被取消时立即返回,不等传输自然结束。
+    const onAbort = () => { req.destroy(); done({ ok: false, error: "aborted" }); };
+    opts.signal?.addEventListener("abort", onAbort, { once: true });
     // 硬性总截止:覆盖 DNS/建连/TLS 握手/响应体全阶段。仅靠 socket 空闲超时
     // 兜不住"TCP 通了但 TLS 卡死"(实测 fastgithub 半死态:progress 卡 700s+,
     // 20s idle timeout 被底层活动不断重置,永不触发)。
@@ -604,15 +611,16 @@ export async function fetchRepoFileTree(
   repo: string,
   branch: string,
   _fetchFn?: typeof fetch, // 保留签名兼容，实际用内部 httpsGet（可控制 SSL）
+  signal?: AbortSignal,
 ): Promise<DiscoveredTree> {
-  // GitHub Tree API（唯一可靠源：recursive=1 给全部文件，含 translations/、代码、图片等）
-  // jsdelivr 文件列表已证明不可行（仓库大就 403 "Package size exceeded limit"）
+  // GitHub Tree API（主源：recursive=1 给全部文件，含 translations/、代码、图片等；
+  // 大仓库(>50MB)会被 jsdelivr 403，此处反而是唯一可靠源）
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
   try {
     // 大仓库树 JSON 可达 2-4MB;部分网络直连 GitHub 被限速 ~24KB/s(实测 40s 才 948KB),
     // "活着但爬行"的传输不该被总截止掐掉 —— 树扫描单独放宽到 240s(该速度下覆盖 ~5.7MB),
-    // 真挂死仍由 20s 空闲超时兜底。
-    const r = await httpsGet(apiUrl, { rejectUnauthorized: false, deadlineMs: 240_000 });
+    // 真挂死仍由 20s 空闲超时兜底。取消由 signal 即时撕断,不受 240s 拖累。
+    const r = await httpsGet(apiUrl, { rejectUnauthorized: false, deadlineMs: 240_000, signal });
     console.error(`[import] GitHub Tree API: HTTP ${r.status ?? r.error}`);
     if (r.ok && r.body) {
       const data = JSON.parse(r.body) as { tree?: Array<{ path: string; type: string }> };
@@ -627,7 +635,7 @@ export async function fetchRepoFileTree(
   try {
     const r2 = await httpsGet(
       `https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${branch}?structure=flat`,
-      { rejectUnauthorized: false },
+      { rejectUnauthorized: false, signal },
     );
     if (r2.ok && r2.body) {
       const data = JSON.parse(r2.body) as { files?: Array<{ name: string }> };
@@ -1200,6 +1208,7 @@ export async function fetchRepoInventory(
   branch: string,
   fetchFn: typeof fetch,
   onProgress?: (msg: string) => void,
+  signal?: AbortSignal,
 ): Promise<RepoInventory> {
   const send = (msg: string) => onProgress?.(msg);
 
@@ -1214,6 +1223,9 @@ export async function fetchRepoInventory(
   let readmeBranch = branch;
   outer: for (const br of branches) {
     for (const candidate of readmeCandidates) {
+      // 取消即断:在飞请求由调用方注入的 signal 撕断(reject AbortError 被 catch),
+      // 这里在下一个候选开头干净退出,不把"取消"误报成"无法拉取 README"
+      if (signal?.aborted) throw new Error("导入已取消");
       try {
         const r = await fetchFn(cdnUrl(owner, repo, br, candidate));
         if (r.ok) {
@@ -1244,7 +1256,7 @@ export async function fetchRepoInventory(
   let fullTree: string[] = fileList.map((f) => f.path);
   try {
     send("扫描仓库完整目录结构…");
-    const tree = await fetchRepoFileTree(owner, repo, readmeBranch, fetchFn);
+    const tree = await fetchRepoFileTree(owner, repo, readmeBranch, fetchFn, signal);
     if (tree.paths.length > 0) {
       fullTree = tree.paths;
       // 用文件树的内容文件补全 fileList（README 表格可能没列全所有 .md/.ipynb）
@@ -1261,6 +1273,8 @@ export async function fetchRepoInventory(
   } catch {
     send("目录树拉取失败，使用 README 链接列表");
   }
+  // 树扫描被取消(240s 窗口内任意时刻) → 干净退出,不带着 README-only 的残缺清单继续
+  if (signal?.aborted) throw new Error("导入已取消");
 
   // docs-rich 模式下文件树也没找到课程文件 → 不支持
   if (fileList.length === 0) {
@@ -1298,11 +1312,15 @@ export async function fetchFileOutlines(
   branch: string,
   fetchFn: typeof fetch,
   onProgress?: (done: number, total: number, path: string) => void,
+  signal?: AbortSignal,
 ): Promise<Map<string, FileOutline>> {
   const result = new Map<string, FileOutline>();
   const CONCURRENCY = 5;
 
   for (let i = 0; i < filePaths.length; i += CONCURRENCY) {
+    // 取消即断:在飞批次由 signal 撕断(allSettled 吞掉 reject),这里必须抛——
+    // 否则带着半截大纲继续跑,半成品快照会被当 Step3 产物存进 plan
+    if (signal?.aborted) throw new Error("导入已取消");
     const batch = filePaths.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(
       batch.map(async (filePath) => {

@@ -207,6 +207,39 @@ await test("T11 planStore.findByCourse / deleteByCourse", () => {
   assert.equal(deps.store.findByCourse(withCourse.courseId), null, "删除后查不到");
 });
 
+await test("T12 github 导入在 Step1 网络层被取消:立即抛'已取消'(signal 穿透 fetchFn 收口)", async () => {
+  const { performance } = await import("node:perf_hooks");
+  let calls = 0;
+  // 挂起的 fetch:只有注入了 signal 才会被撕断;5s 兜底 reject 防测试挂死
+  // (若穿透回归,这里拿到 "stalled" 而非"已取消" → 红)
+  const hangingFetch = (url, init) => new Promise((_res, rej) => {
+    calls++;
+    init?.signal?.addEventListener("abort", () => rej(new Error("aborted")), { once: true });
+    setTimeout(() => rej(new Error("stalled")), 5000);
+  });
+  let cancelAt = false;
+  setTimeout(() => { cancelAt = true; }, 100); // 100ms 后请求取消
+  const t0 = performance.now();
+  let threw = null;
+  try {
+    await runSmartImport(
+      { kind: "github", url: "https://github.com/octocat/hello-world" },
+      {
+        db, store: createPlanStore(mkdtempSync(join(tmpdir(), "ls-plan-cancel-"))),
+        markDirty: () => {}, onProgress: () => {},
+        shouldAbort: () => cancelAt,
+        fetchFn: hangingFetch,
+      },
+    );
+  } catch (e) { threw = e.message; }
+  const ms = performance.now() - t0;
+  assert.match(threw ?? "", /取消/, `T12: 取消应抛'导入已取消': ${threw}`);
+  assert.ok(!/无法拉取|stalled/.test(threw ?? ""), `T12: 不应误报: ${threw}`);
+  assert.ok(ms < 3000, `T12: 取消应在 1s 量级生效(300ms 轮询 + 撕断),实际 ${ms.toFixed(0)}ms`);
+  assert.ok(calls >= 1, "T12: 应至少发起过一次 fetch(证明 signal 是穿透进真实调用路径的)");
+  console.log(`✓ T12 取消穿透: ${calls} 次 fetch 后 ${ms.toFixed(0)}ms 内干净取消`);
+});
+
 // 清理
 rmSync(courseDir, { recursive: true, force: true });
 rmSync(plansDir, { recursive: true, force: true });

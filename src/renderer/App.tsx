@@ -680,8 +680,55 @@ export default function App() {
   const [isReviewing, setIsReviewing] = useState(false);
 
   return (
-    <div className="h-screen flex bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
-      {/* 左栏:MapRail 全高(顶到底),tab 切换地图/导入 */}
+    <div className="h-screen flex flex-col bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
+      <Header
+        streak={streak}
+        xp={xp}
+        fontSize={font.size}
+        onFontBump={font.bump}
+        onOpenSettings={() => setShowSettings(true)}
+        leftVisible={showLeft}
+        rightVisible={showRight}
+        onToggleLeft={toggleLeftPane}
+        onToggleRight={toggleRightPane}
+        tier={tier}
+        centerSlot={tier === 3 ? (
+          <div
+            className="flex items-center gap-1 p-1 rounded-full bg-ink/5"
+            data-testid="t3-pane-switcher"
+            role="tablist"
+            aria-label={t("pane.switcher")}
+          >
+            {([
+              { k: "rail" as const, icon: MapIcon, label: t("pane.map"), testid: "t3-btn-rail" },
+              { k: "chat" as const, icon: MessageSquare, label: t("pane.chat"), testid: "t3-btn-chat" },
+              { k: "notebook" as const, icon: PenLine, label: t("pane.notes"), testid: "t3-btn-notebook" },
+            ]).map(({ k, icon: Icon, label, testid }) => (
+              <button
+                key={k}
+                role="tab"
+                aria-selected={t3Pane === k}
+                aria-label={label}
+                title={label}
+                data-testid={testid}
+                onClick={() => setT3Pane(k)}
+                className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors ${
+                  t3Pane === k ? "bg-brand/15 text-brand" : "text-ink-muted hover:bg-black/5 dark:hover:bg-white/10"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+              </button>
+            ))}
+          </div>
+        ) : undefined}
+      />
+
+      {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
+
+      <div className="flex-1 flex min-h-0 min-w-0">
+
+
+      {/* 左栏:MapRail(header 下方首栏,tab 切换地图/导入;T3 单栏全宽) */}
       {showLeft && (
         <MapRail
           fullWidth={tier === 3}
@@ -719,53 +766,6 @@ export default function App() {
       )}
 
       {/* 右半区:顶栏 + 中右栏(顶栏只在中右栏上方,左栏全高独立) */}
-      <div className="flex-1 flex flex-col min-h-0 min-w-0">
-      <Header
-        streak={streak}
-        xp={xp}
-        fontSize={font.size}
-        onFontBump={font.bump}
-        onOpenSettings={() => setShowSettings(true)}
-        leftVisible={showLeft}
-        rightVisible={showRight}
-        onToggleLeft={toggleLeftPane}
-        onToggleRight={toggleRightPane}
-        tier={tier}
-      />
-
-      {/* T3 单栏档:顶部浮动按钮组切换 地图/对话/笔记(三档布局 v0.11) */}
-      {tier === 3 && (
-        <div
-          className="fixed top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 p-1 bg-surface-0 rounded-full shadow-elevated"
-          data-testid="t3-pane-switcher"
-          role="tablist"
-          aria-label={t("pane.switcher")}
-        >
-          {([
-            { k: "rail" as const, icon: MapIcon, label: t("pane.map"), testid: "t3-btn-rail" },
-            { k: "chat" as const, icon: MessageSquare, label: t("pane.chat"), testid: "t3-btn-chat" },
-            { k: "notebook" as const, icon: PenLine, label: t("pane.notes"), testid: "t3-btn-notebook" },
-          ]).map(({ k, icon: Icon, label, testid }) => (
-            <button
-              key={k}
-              role="tab"
-              aria-selected={t3Pane === k}
-              title={label}
-              data-testid={testid}
-              onClick={() => setT3Pane(k)}
-              className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors ${
-                t3Pane === k ? "bg-brand/15 text-brand" : "text-ink-muted hover:bg-black/5 dark:hover:bg-white/10"
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-            </button>
-          ))}
-        </div>
-      )}
-
-      {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
-
-      <div className="flex-1 flex min-h-0 min-w-0">
         {/* 视图层:AI 对话 + 笔记本 */}
         <>
             {/* 中栏:AI 对话流(ChatStream + ChatComposer) / 考试节点(ExamView)。
@@ -957,7 +957,6 @@ export default function App() {
             )}
         </>
       </div>
-      </div>
 
       {/* 课程切换/导入已整合进左栏 tab */}
 
@@ -1064,6 +1063,7 @@ function Header({
   onToggleLeft,
   onToggleRight,
   tier,
+  centerSlot,
 }: {
   streak: Streak | null;
   xp: XpStatus | null;
@@ -1076,17 +1076,27 @@ function Header({
   onToggleRight: () => void;
   /** 布局档位(1/2/3):T3 单栏时隐藏视图切换组(顶部 switcher 已覆盖)与字号控制,header 才塞得进窄窗 */
   tier?: 1 | 2 | 3;
+  /** 居中槽(T3 = 面板切换组):有值时 header 变三列网格,切换组真居中、不再浮动遮挡内容 */
+  centerSlot?: React.ReactNode;
 }) {
   const t = useLang();
   return (
-    <header className="app-header px-6 pt-2.5 pb-3 flex items-center justify-between shrink-0">
-      {/* 左:仅项目名(v0.8 重排 —— 图标移除,所有控件归右) */}
-      <h1 className="text-body font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none">
-        Lookat<span className="text-brand">Study</span>
-      </h1>
+    <header
+      className={`app-header px-6 pt-2.5 pb-3 items-center shrink-0 ${
+        centerSlot ? "grid grid-cols-[1fr_auto_1fr]" : "flex justify-between"
+      }`}
+    >
+      {/* 左:仅项目名(v0.8 重排 —— 图标移除,所有控件归右)。
+          T3 单栏档让位给居中切换组(窄窗塞不下品牌名+切换组+控件三方)。 */}
+      {!centerSlot && (
+        <h1 className="text-body font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none">
+          Lookat<span className="text-brand">Study</span>
+        </h1>
+      )}
+      {centerSlot}
 
-      {/* 右:控件按"视图 → 阅读 → 进度 → 配置"分组 */}
-      <div className="flex items-center gap-3">
+      {/* 右:控件按"视图 → 阅读 → 进度 → 配置"分组(T3 时 justify-self-end 贴右列) */}
+      <div className={`flex items-center gap-3 ${centerSlot ? "justify-self-end" : ""}`}>
         {/* 视图:左右栏显隐(T3 单栏档隐藏:顶部 switcher 已覆盖,header 窄窗塞不下) */}
         {tier !== 3 && (
         <div className="flex items-center gap-0.5">
@@ -1147,12 +1157,14 @@ function Header({
               fill={xp.todayXp >= 100 ? "currentColor" : "none"}
               aria-hidden="true"
             />
+            {!centerSlot && (
             <div className="w-16 h-2 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full bg-brand transition-all duration-500"
                 style={{ width: `${Math.min(100, Math.max(3, xp.todayXp))}%` }}
               />
             </div>
+            )}
             <span className="text-label font-bold tabular-nums text-brand">
               {xp.todayXp}
             </span>

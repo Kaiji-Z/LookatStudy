@@ -1643,6 +1643,15 @@ async function runUiTest(screenshot = false): Promise<void> {
     // → T3 (800px):单栏(对话)+ 按钮组;点地图按钮 → 地图全宽单栏
     await win.setBounds({ width: 800, height: 800 });
     const t3Chat = await waitForPane((st) => !st.rail && st.chat && !st.nb && st.switcher);
+    // 切换组必须常驻 header(居中槽,非 fixed 浮层)——否则 T3 切到左栏时 header 连带消失,回不来
+    const t3SwitcherDocked = await win.webContents.executeJavaScript(`
+      (function() {
+        var el = document.querySelector('[data-testid="t3-pane-switcher"]');
+        if (!el) return false;
+        var hdr = el.closest("header");
+        return !!hdr && getComputedStyle(el).position !== "fixed" && el.getBoundingClientRect().bottom <= hdr.getBoundingClientRect().bottom + 1;
+      })()
+    `).catch(() => false);
     await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-rail"]').click()`);
     const t3Rail = await waitForPane((st) => st.rail && !st.chat && st.railW >= 700);
     // T3 极窄(600px):三 pane 逐一切换,各自都不许横向溢出窗口。
@@ -1696,10 +1705,11 @@ async function runUiTest(screenshot = false): Promise<void> {
       ok: t2Default?.rail === false && t2Default?.chat === true && t2Default?.nb === true && t2Default?.switcher === false
         && t2Left?.rail === true && t2Left?.nb === false && t2Left?.chat === true
         && t3Chat?.rail === false && t3Chat?.chat === true && t3Chat?.nb === false && t3Chat?.switcher === true
+        && t3SwitcherDocked === true
         && t3Rail?.rail === true && t3Rail?.chat === false && t3Rail?.railW >= 700
         && narrowRail && narrowNb && narrowChat
         && t1Back?.rail === true && t1Back?.railW <= 320 && t1RailFits && railClip === "hidden" && t1Back?.chat === true && t1Back?.nb === true && t1Back?.switcher === false && t1Back?.railW <= 320,
-      detail: { t2Default, t2Left, t3Chat, t3Rail, narrowRail, narrowNb, narrowChat, t1Back, t1RailFits, railClip },
+      detail: { t2Default, t2Left, t3Chat, t3SwitcherDocked, t3Rail, narrowRail, narrowNb, narrowChat, t1Back, t1RailFits, railClip },
     });
   } catch (e) {
     results.push({ name: "responsive tiers", ok: false, detail: String(e) });

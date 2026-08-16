@@ -136,6 +136,14 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
   const fetchFn = deps.fetchFn ?? fetch;
   const shouldAbort = deps.shouldAbort;
 
+  // 取消通道:shouldAbort 是轮询式回调,LLM 调用需要 AbortSignal 才能掐断在飞的流。
+  // 300ms 轮询把回调折叠成信号,传给 Step2/4 的每一次 LLM 调用 —— 点取消后
+  // 当前调用立即中止(此前要等它跑完,最长 20 分钟,且二分还会继续发新调用)。
+  const cancelCtl = new AbortController();
+  const cancelPoll = setInterval(() => {
+    if (shouldAbort()) cancelCtl.abort();
+  }, 300);
+
   // ───────────────────────── Step 1: 清点(永远现拉) ─────────────────────────
   let readmeMd: string;
   let fileList: DiscoveredFile[];
@@ -274,7 +282,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       roles = planToRoles(plan.classification);
       send(`✓ 文件分类:复用快照(${roles.original.length} 原文 · ${roles.practice.length} 实操 · 原文语言 ${roles.sourceLang})`);
     } else {
-      roles = await (deps.classify ?? classifyFileRoles)(db, readmeMd, fileList, fullTree, send);
+      roles = await (deps.classify ?? classifyFileRoles)(db, readmeMd, fileList, fullTree, send, { signal: cancelCtl.signal });
       send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
       plan.classification = rolesToPlan(roles);
       plan.reachedStep = 2;
@@ -324,7 +332,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       send(`✓ 课程结构:复用快照(${structure.sections.length} 章 · ${lessonCount} 课)`);
       reused = true;
     } else {
-      structure = await (deps.design ?? designCourseStructure)(db, readmeMd, outlines, roles.original, roles.practice, send, standaloneImages);
+      structure = await (deps.design ?? designCourseStructure)(db, readmeMd, outlines, roles.original, roles.practice, send, standaloneImages, { signal: cancelCtl.signal });
       const lessonCount = structure.sections.reduce((n, s) => n + s.lessons.length, 0);
       send(`✓ 课程结构:${structure.sections.length} 章 · ${lessonCount} 课`);
       plan.structure = structure;
@@ -370,5 +378,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     // 失败也带 planId 出去:渲染层"从断点重试"直接用
     if (e instanceof Error) (e as Error & { planId?: string }).planId = planId;
     throw e;
+  } finally {
+    clearInterval(cancelPoll);
   }
 }

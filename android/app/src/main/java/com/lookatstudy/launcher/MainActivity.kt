@@ -31,10 +31,16 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "LookatStudy"
         private const val TERMUX_PACKAGE = "com.termux"
+        private const val INSTALLER_URL =
+            "https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/install-termux.sh"
+
+        /**
+         * 一行安装(KaijiBot 式):装 curl → 拉安装脚本执行。直连失败走 ghproxy 回退
+         * (脚本内部还会再做镜像/依赖/下载回退/保活配置)。
+         */
         private const val INSTALL_CMD =
-            "pkg install curl unzip -y && mkdir -p ~/lookatstudy && cd ~/lookatstudy && " +
-                "curl -fsSL -o ls.zip https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/lookatstudy-mobile.zip && " +
-                "unzip -o ls.zip && bash install-termux.sh"
+            "pkg install curl -y && (curl -fsSL --connect-timeout 10 $INSTALLER_URL || " +
+                "curl -fsSL --connect-timeout 10 https://gh-proxy.com/$INSTALLER_URL) | bash"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,6 +53,10 @@ class MainActivity : AppCompatActivity() {
 
         openWebButton.setOnClickListener {
             startActivity(Intent(this, WebUiActivity::class.java))
+        }
+
+        findViewById<Button>(R.id.helpButton).setOnClickListener {
+            startActivity(Intent(this, HelpActivity::class.java))
         }
 
         updateState()

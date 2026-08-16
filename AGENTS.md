@@ -141,7 +141,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | Serve runtime | `src/main/serve/server.ts` + `serve/index.ts` | 手机/浏览器模式:同一 handler 表的 WS 分发 + 静态前端 + token 鉴权(4001 拒连);启动序与 Electron 主进程对齐(initDb→seed→souls→prefLang),CLI `--port/--data/--web` |
 | Handler registry | `src/main/ipc/runtime.ts` + `ipc/index.ts` + `electron-wiring.ts` | `collectHandlers(deps)` 单表双接线(RuntimeDeps:emitter/dialog/dataDir/ui);Electron 走 ipcMain,serve 走 WS——改 handler 只动一处 |
 | Web transport | `src/renderer/lib/api-web.ts` + `shared/api-channels.ts` + `ws-protocol.ts` | 浏览器版 window.api(WS req/res + event 帧,断线重连,4001 不重连);93 方法↔channel 映射自 preload 生成,verify-serve T5 守漂移 |
-| Mobile bundle | `scripts/build-mobile.mjs` + `scripts/lib/build-server.mjs` | `dist/mobile/` 便携包:vite 前端 + esbuild server.cjs(外置 electron/pdf-inspector,companion sql-wasm.wasm/seed-course.json);`install-termux.sh` 手机端一键装 |
+| Mobile bundle | `scripts/build-mobile.mjs` + `scripts/lib/build-server.mjs` + `scripts/install-termux.sh` | `dist/mobile/` 便携包:vite 前端 + esbuild server.cjs(外置 electron/pdf-inspector,companion sql-wasm.wasm/seed-course.json);install-termux.sh 是完整安装器(CN 时区 TUNA 镜像/apt-get、依赖按需检测、ghproxy 下载回退链、boot+bashrc 双自启、电池白名单+OEM 指引、~/lookatstudy 四常用脚本),随 Release 单独发布 |
 | Context usage | `services/agent/context-usage.ts` + `shared/token-estimate.ts` | 输入框上下文表(v0.10):`agent:getContextUsage` 返回固定开销(系统提示/课文/学习者快照的启发式 token 估算)——装配抽 `agent-engine.assembleContextBlocks` 与实发同源不漂移;渲染层本地叠加对话历史+草稿(`estimateTokens` CJK 感知纯函数,窗口取 preset contextWindow) |
 | Chat attachments | `services/attachment-store.ts` + `pure/attachment-files.ts` + `shared/attachment-intake.ts` | 聊天附件(v0.10):image(≤5MB,≤4/条)落盘 `userData/attachments/` + 本轮 vision file-part 注入(engine 不受 multimodal flag/关键词门控);text(≤256KB)正文内联进 content(持久化+LLM 历史天然可见);文件名 uuid 守卫防穿越;thread 删除顺带清盘。渲染层 📎/粘贴/拖拽三入口,消息 parts 用 `attachment` part 渲染缩略图+灯箱 |
 | Reasoning effort | `shared/reasoning-effort.ts` | 思考强度方言表(v0.10,存 `settings.reasoning_effort`:""自动/fast/deep):GLM→body.thinking.type、Qwen/SiliconCloud→enable_thinking(经 `llm-client.buildLanguageModel` 的 fetch 覆盖注入)、OpenAI→reasoningEffort、Anthropic/Google→providerOptions;不支持的家族(如 DeepSeek)芯片禁用+引擎降级 none,宁可不生效不瞎发参数 |
@@ -264,8 +264,8 @@ them as load-bearing, not optional.
 /src/preload/           contextBridge — the only renderer↔main path
 /src/renderer/          React UI — never touches DB/files/keys directly
 /shared/                types + shared channel/WS protocol shared across main + renderer
-/android/               LookatStudy 手机引导器 APK(Termux 安装 + 一键引导 + Custom Tab;gradle 工程,
-                        termux.apk 构建时 fetch 不入库;见 android/README.md)
+/android/               LookatStudy 手机引导器 APK(Termux 安装 + 一键一行安装 + 常用操作命令卡片
+                        + Custom Tab;gradle 工程,termux.apk 构建时 fetch 不入库;见 android/README.md)
 ```
 
 **The rule, stated once:** `docs/` (when it exists) and the root `.md` files are

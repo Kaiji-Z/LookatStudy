@@ -4,7 +4,7 @@
  *   server.cjs        无头服务端(esbuild 单文件束,零 npm install 即可 `node server.cjs`)
  *   sql-wasm.wasm     sql.js 的 WASM(server.cjs 同目录运行时加载)
  *   web/              渲染层静态产物(复用 vite build 的 dist/)
- *   install-termux.sh Termux 一键安装/启动脚本
+ *   install-termux.sh Termux 一键安装脚本(源文件 scripts/install-termux.sh,含镜像/依赖/保活优化)
  *
  * 跑法: npm run build:mobile (内部先跑 vite build 保证 dist/ 新鲜)
  */
@@ -15,28 +15,6 @@ import { fileURLToPath } from "node:url";
 import { buildServerBundle } from "./lib/build-server.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const TERMUX_SCRIPT = `#!/data/data/com.termux/files/usr/bin/bash
-# LookatStudy Termux 引导脚本 —— 在 Termux 里直接运行:
-#   bash install-termux.sh          # 首次安装 + 启动
-#   bash install-termux.sh --start  # 之后启动(跳过依赖检查)
-set -e
-
-PORT="\${LOOKATSTUDY_PORT:-17890}"
-HERE="$(cd "$(dirname "$0")" && pwd)"
-
-if [ "$1" != "--start" ]; then
-  echo "==> 安装 Node.js(如未装)"
-  command -v node >/dev/null 2>&1 || pkg install -y nodejs
-
-  echo "==> Termux 保活(通知栏出现锁图标;电池优化里给 Termux 放行更稳)"
-  command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock || true
-fi
-
-echo "==> 启动 LookatStudy (端口 $PORT)"
-cd "$HERE"
-exec node server.cjs --port "$PORT" --web "$HERE/web" --data "$HOME/.lookatstudy"
-`;
 
 const ROOT = join(__dirname, "..");
 const OUT = join(ROOT, "dist/mobile");
@@ -64,8 +42,9 @@ for (const entry of readdirSync(join(ROOT, "dist", "renderer"))) {
   cpSync(join(ROOT, "dist", "renderer", entry), join(OUT, "web", entry), { recursive: true });
 }
 
-// ── 6. Termux 安装脚本 ──
-writeFileSync(join(OUT, "install-termux.sh"), TERMUX_SCRIPT, "utf8");
+// ── 6. Termux 安装脚本(源文件即真身:GitHub Release 还会单独发布它,
+//       引导器的一行安装命令 curl 它执行;zip 里再带一份保持自包含) ──
+cpSync(join(__dirname, "install-termux.sh"), join(OUT, "install-termux.sh"));
 
 // ── 7. 便携束说明 ──
 writeFileSync(
@@ -73,9 +52,15 @@ writeFileSync(
   [
     "LookatStudy mobile bundle",
     "",
-    "Requirements: Node.js >= 18 (Termux: pkg install nodejs)",
+    "Requirements: Node.js >= 20 (Termux: bash install-termux.sh does everything)",
     "",
-    "Start:  node server.cjs",
+    "Termux one-shot install (China-mirror aware, autostart + battery setup):",
+    "  bash install-termux.sh",
+    "",
+    "After install, helper scripts live in ~/lookatstudy:",
+    "  start.sh / stop.sh / status.sh / update.sh",
+    "",
+    "Manual start (any platform):  node server.cjs",
     `        (defaults: port 17890, data ~/.lookatstudy, web ./web)`,
     "Open:   the URL printed on startup (contains the auth token)",
     "",
@@ -83,7 +68,7 @@ writeFileSync(
     "  server.cjs        headless server (bundled, zero npm install)",
     "  sql-wasm.wasm     SQLite WASM",
     "  web/              renderer static build",
-    "  install-termux.sh Termux bootstrap helper",
+    "  install-termux.sh Termux installer (mirror/dep/keepalive optimizations)",
     "",
   ].join("\n"),
   "utf8",

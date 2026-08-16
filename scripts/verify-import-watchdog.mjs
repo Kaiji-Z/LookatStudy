@@ -11,6 +11,7 @@
  */
 import assert from "node:assert/strict";
 import { createStreamWatchdog } from "../src/main/services/pure/stream-watchdog.ts";
+import { generateTextWithTimeout, IMPORT_MAX_OUTPUT_TOKENS } from "../src/main/services/import-llm-service.ts";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let passed = 0;
@@ -106,5 +107,43 @@ await test("T6 模拟慢流完整跑完(总时长可超单阈值)", async () => 
     wd.dispose();
   }
 });
+
+// T4: generateTextWithTimeout 必须显式传 maxOutputTokens —— thinking 家族的思考与
+// 正文共享输出额度,吃 provider 默认(4096)时 40 文件批的结构 JSON 会被掐成半个
+// (实测:GLM 66s 流正常结束 + "Unexpected end of JSON input" 触发二分连锁)。
+// 用手搓的假模型(LanguageModelV2 形状)捕获 doStream 收到的参数。
+await test("T7 generateTextWithTimeout 显式传 maxOutputTokens=8192,文本往返完整", async () => {
+  let capturedMax = -1;
+  let capturedPrompt = "";
+  const fakeModel = {
+    specificationVersion: "v2",
+    provider: "verify-fake",
+    modelId: "fake-model",
+    doStream: async (opts) => {
+      capturedMax = opts.maxOutputTokens;
+      const firstMsg = opts.prompt?.[0];
+      const firstPart = firstMsg && Array.isArray(firstMsg.content) ? firstMsg.content[0] : undefined;
+      capturedPrompt = String(firstPart?.text ?? "");
+      return {
+        stream: new ReadableStream({
+          start(c) {
+            c.enqueue({ type: "text-start", id: "t0" });
+            c.enqueue({ type: "text-delta", id: "t0", delta: "hello " });
+            c.enqueue({ type: "text-delta", id: "t0", delta: "world" });
+            c.enqueue({ type: "text-end", id: "t0" });
+            c.enqueue({ type: "finish", finishReason: "stop", usage: { input: 5, output: 2, total: 7 } });
+            c.close();
+          },
+        }),
+      };
+    },
+  };
+  const text = await generateTextWithTimeout(fakeModel, "ping");
+  assert.equal(text, "hello world", `文本应往返完整: ${JSON.stringify(text)}`);
+  assert.equal(capturedPrompt, "ping", "prompt 透传");
+  assert.equal(capturedMax, IMPORT_MAX_OUTPUT_TOKENS, `maxOutputTokens 应显式传 ${IMPORT_MAX_OUTPUT_TOKENS}: ${capturedMax}`);
+  assert.equal(IMPORT_MAX_OUTPUT_TOKENS, 8192, "上限值被改动时同步更新本断言与注释(DeepSeek 上限)");
+});
+
 
 console.log(`\n${passed} passed`);

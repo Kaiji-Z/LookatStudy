@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Fixed
+- **导入结构设计被输出上限掐成半个 JSON(thinking 模型高发)** —— 导入管线的 LLM 调用此前不传输出上限,吃 provider 默认(常见 4096);thinking 家族的思考与正文**共享**这一额度,40 文件批的结构 JSON 写一半流就正常结束(实测 GLM 66s,"Unexpected end of JSON input"),触发批内二分连锁,多烧好几轮调用才收敛。现在显式传 `maxOutputTokens=8192`(DeepSeek 上限、各家通用安全值;仍截断由二分兜底),撞上限时主进程日志留痕。`verify-import-watchdog` 6→7 断言(T7 假模型捕获 doStream 参数,闭环已证)。
+
 ## [0.10.0] - 2026-08-16
 
 

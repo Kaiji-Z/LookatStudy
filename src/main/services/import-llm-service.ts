@@ -28,18 +28,38 @@ const LLM_HARD_CAP = 20 * 60_000;
  * 现在流式消费,每收到 chunk 续命;只有"无输出 120s"或"总时长 20min"才 abort,
  * 且 abort 通过 signal 真正取消请求。
  */
-async function generateTextWithTimeout(
+/** 导入类 LLM 调用的输出 token 上限。
+ *  不传时吃 provider 默认(常见 4096):thinking 家族的思考与正文**共享**输出额度,
+ *  40 文件批的结构 JSON 写一半就被掐断(实测 66s 流正常结束只剩半个 JSON,
+ *  触发批内二分连锁,浪费多轮调用)。8192 = DeepSeek 上限、各家通用的安全值,
+ *  仍截断时由 designSectionsResilient 二分兜底。 */
+export const IMPORT_MAX_OUTPUT_TOKENS = 8192;
+
+export async function generateTextWithTimeout(
   model: Parameters<typeof streamText>[0]["model"],
   prompt: string,
 ): Promise<string> {
   const wd = createStreamWatchdog(LLM_INACTIVE_TIMEOUT, LLM_HARD_CAP);
   try {
-    const { textStream } = streamText({ model, prompt, abortSignal: wd.signal });
+    const result = streamText({
+      model,
+      prompt,
+      abortSignal: wd.signal,
+      maxOutputTokens: IMPORT_MAX_OUTPUT_TOKENS,
+    });
     let text = "";
-    for await (const delta of textStream) {
+    for await (const delta of result.textStream) {
       text += delta;
       wd.touch();
     }
+    // 撞上限的截断留痕:主进程日志可查,配合二分进度消息定位 provider 上限
+    void result.finishReason
+      .then((fr) => {
+        if (fr === "length") {
+          console.warn(`[import-llm] 输出撞 token 上限被截断(maxOutputTokens=${IMPORT_MAX_OUTPUT_TOKENS};批内二分将兜底)`);
+        }
+      })
+      .catch(() => {});
     return text;
   } catch (e) {
     if (wd.signal.aborted) {

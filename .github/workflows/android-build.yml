@@ -1,0 +1,93 @@
+# 手机端产物:① lookatstudy-mobile.zip(Termux 便携包:server.cjs + web 前端,零 npm install)
+#            ② LookatStudy-launcher.apk(引导器:装 Termux + 一键引导 + Custom Tab 打开)
+# 触发与挂包约定同 package.yml:推 v* 标签自动,或 dispatch 带 release_tag 挂到既有 Release。
+name: Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Also attach mobile assets to this existing release tag (e.g. v0.9.0). Empty = only upload workflow artifacts."
+        required: false
+        default: ""
+  push:
+    tags: ["v*"]
+
+# attach-to-release 用 GITHUB_TOKEN 调 gh release upload,需要 release(=contents)写权限。
+permissions:
+  contents: write
+
+jobs:
+  mobile-zip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build mobile bundle (vite renderer + esbuild server.cjs)
+        run: npm run build:mobile
+
+      - name: Zip portable package
+        run: cd dist/mobile && zip -r ../../lookatstudy-mobile.zip .
+
+      - name: Upload mobile zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lookatstudy-mobile-zip
+          path: lookatstudy-mobile.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  launcher-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Fetch Termux APK into res/raw (not committed; GPL work, source linked)
+        run: bash android/fetch-termux.sh
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      - name: Build launcher APK
+        run: cd android && ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk LookatStudy-launcher.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LookatStudy-launcher-apk
+          path: LookatStudy-launcher.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  attach-to-release:
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+    needs: [mobile-zip, launcher-apk]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download mobile artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+
+      - name: Attach mobile assets to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ inputs.release_tag || github.ref_name }}" assets/lookatstudy-mobile-zip/lookatstudy-mobile.zip assets/LookatStudy-launcher-apk/LookatStudy-launcher.apk --repo "$GITHUB_REPOSITORY" --clobber

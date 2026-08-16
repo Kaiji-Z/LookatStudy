@@ -1,0 +1,9 @@
+<resources>
+    <color name="launcher_bg">#0E2A12</color>
+    <color name="launcher_surface">#1E4224</color>
+    <color name="brand">#58CC02</color>
+    <color name="ink">#F2FFF4</color>
+    <color name="ink_dim">#8FB99B</color>
+    <color name="ink_faint">#5E8266</color>
+    <color name="ic_launcher_bg">#58CC02</color>
+</resources>

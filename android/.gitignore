@@ -1,0 +1,4 @@
+build/
+.gradle/
+local.properties
+app/src/main/res/raw/termux.apk

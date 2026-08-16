@@ -24,8 +24,9 @@ const BODY_PATCH_FAMILIES: Record<
   glm: {
     fast: (b) => {
       b.thinking = { type: "disabled" };
-      // CodingPlan 等端点会无视 disabled 强制思考(GLM-5.2 实测):再加官方 reasoning_effort
-      // 压思考量 —— 两个都是文档参数,共存无害,端点认哪个用哪个。
+      // 思考与正文共享输出额度:默认强度会把预算全用来思考(实测 32K 池想了 6min+
+      // 零正文;8K 池挤掉 JSON)——low 让思考短、正文放得下。两个都是官方参数,
+      // 端点认哪个用哪个(CodingPlan 无视 disabled 但认 low)。
       b.reasoning_effort = "low";
     },
     deep: (b) => {

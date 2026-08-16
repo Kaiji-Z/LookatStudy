@@ -15,7 +15,10 @@ import { createStreamWatchdog } from "./pure/stream-watchdog.js";
 type Db = SQLJsDatabase<typeof schema>;
 
 /** 流式活性阈值:无输出超过此时长判死(连接挂起/端点无响应)。 */
-const LLM_INACTIVE_TIMEOUT = 120_000;
+// 思考模型(CodingPlan 端点)思考期间**零流事件**(fullStream 也喂不到看门狗),
+// 默认档思考静默 >120s 是常态 → 120s 判死会误杀(实测两轮零输出掐点恰在 ~120s)。
+// 放宽到 6 分钟;真挂死由 20 分钟硬上限兜底。
+const LLM_INACTIVE_TIMEOUT = 360_000;
 /** 硬上限:单次调用绝对安全网,防无限生成。 */
 const LLM_HARD_CAP = 20 * 60_000;
 
@@ -56,10 +59,10 @@ export interface ImportCallOpts {
 }
 
 /**
- * 导入专用模型:强制关思考(fast)。分类/结构设计是模式化工作,不需要深思;
- * thinking 家族的思考与正文**共享**输出额度,开着思考 glm-5.2 在结构设计上
- * 光思考就能烧 7k+ token(实测 40→20→10 文件批全截断),且每批多等 2-4 分钟。
- * 与聊天侧(agent-engine)共用 reasoningPlanFor/withBodyPatch 方言表。
+ * 导入调用的家族感知配置:**输出上限 + 思考压低(fast)**。
+ * 思考与正文共享输出额度:默认强度会把预算全用来思考(实测 32K 池思考 6min+ 零正文
+ * 被看门狗掐死;8K 池思考挤掉 JSON)——fast(thinking disabled + reasoning_effort low,
+ * CodingPlan 认后者)让批 ~1min 完成。用户拍板导入用 low;聊天档位不受影响。
  */
 export function buildImportModel(
   llm: ResolvedLlm,
@@ -111,8 +114,11 @@ export async function generateTextWithTimeout(
       ...(opts?.providerOptions ? { providerOptions: opts.providerOptions } : {}),
     });
     let text = "";
-    for await (const delta of result.textStream) {
-      text += delta;
+    // fullStream 而非 textStream:思考模型的**推理增量也喂看门狗** ——
+    // textStream 在整个思考阶段是静默的,默认档思考 >120s 就会被 inactive
+    // 看门狗误杀(实测:40 文件批两次零输出,掐点恰在 120s)。任何 part 都算活性。
+    for await (const part of result.fullStream) {
+      if (part.type === "text-delta") text += part.text;
       wd.touch();
     }
     // token 用量留痕:每次调用打实际 in/out token + 结束原因(await:流已结束,零额外等待;
@@ -463,7 +469,11 @@ ${fileList}
 - 代码文件(.py/.js/.go 等): 教程型(带大量注释/docstring, 如 nanoGPT) → original; 实操/练习型 → practice; 配置脚本(setup.py/config.js) → skip
 - 同名不同语言码的成对文件（如 intro.en.txt 与 intro.zh-CN.txt）: 原文语言侧 → original，其余语言侧 → translation
 
-严格返回 JSON 对象，不要 markdown 代码块标记:
+输出格式(严格遵守,违反即废弃重来):
+- 只输出一个 JSON,第一个字符必须是 {,最后一个字符必须是 }
+- 不要任何解释、前言、结尾总结、道歉、markdown 代码块围栏或其他文本
+- JSON 之外的任何字符(包括换行后的备注)都会导致解析失败
+严格返回如下形状的 JSON 对象:
 {
   "sourceLang": "en",
   "files": [
@@ -795,7 +805,11 @@ ${fileList}
 ]
 ${imagesSection}
 
-严格返回 JSON，不要 markdown 代码块标记:
+输出格式(严格遵守,违反即废弃重来):
+- 只输出一个 JSON,第一个字符必须是 {,最后一个字符必须是 }
+- 不要任何解释、前言、结尾总结、道歉、markdown 代码块围栏或其他文本
+- JSON 之外的任何字符(包括换行后的备注)都会导致解析失败
+严格返回如下形状的 JSON:
 {
   "sections": [
     {

@@ -87,6 +87,9 @@ export function MapRail(props: MapRailProps) {
     if (impactQueueRef.current.length > 64) impactQueueRef.current.splice(0, impactQueueRef.current.length - 64);
   }).current;
   const flakeQueueRef = useRef<FlakeEvent[]>([]);
+  /** 物理雪载真值(nodeId → 0..1):MapSection 每帧写,天气层 getOrbs 读 →
+   *  雪盖从动物理(拖动甩掉/碰撞震掉/天气缓涨/封顶,唯一真值在物理层)。 */
+  const orbSnowRef = useRef<Map<string, number>>(new Map());
   const pushFlakes = useRef((list: FlakeEvent[]) => {
     flakeQueueRef.current.push(...list);
     if (flakeQueueRef.current.length > 96) flakeQueueRef.current.splice(0, flakeQueueRef.current.length - 96);
@@ -290,7 +293,7 @@ export function MapRail(props: MapRailProps) {
                 ) : (
                   <div className="space-y-6 pt-2">
                     {visibleSections.map((section, sIdx) => (
-                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} physics={physicsOn} physicsWeather={skyPreset?.weather ?? "clear"} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} onFlakes={pushFlakes} />
+                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} physics={physicsOn} physicsWeather={skyPreset?.weather ?? "clear"} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} onFlakes={pushFlakes} orbSnowRef={orbSnowRef} />
                     ))}
                   </div>
                 )}
@@ -638,12 +641,14 @@ function MapOrbWeatherCanvas({
   preset,
   getImpacts,
   getFlakes,
+  orbSnowRef,
 }: {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   navRef: React.RefObject<HTMLElement | null>;
   preset: SkyPreset;
   getImpacts?: () => ImpactEvent[];
   getFlakes?: () => FlakeEvent[];
+  orbSnowRef?: React.RefObject<Map<string, number>>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -670,10 +675,13 @@ function MapOrbWeatherCanvas({
       for (const b of cachedBtns) {
         const r = b.getBoundingClientRect();
         if (r.bottom < navRect.top || r.top > navRect.bottom) continue;
+        const nodeId = b.closest("[data-node-id]")?.getAttribute("data-node-id");
+        const snow = nodeId ? orbSnowRef?.current?.get(nodeId) : undefined;
         out.push({
           x: r.left - navRect.left + r.width / 2,
           y: r.top - navRect.top + r.height / 2,
           r: r.width / 2,
+          ...(snow !== undefined ? { snow } : {}),
         });
       }
       return out;
@@ -701,6 +709,7 @@ function MapSection({
   navRef,
   onImpacts,
   onFlakes,
+  orbSnowRef,
 }: {
   section: ContentNode;
   sectionIndex: number;
@@ -719,6 +728,8 @@ function MapSection({
   onImpacts: (list: ImpactEvent[]) => void;
   /** 雪屑事件(nav 坐标)→ 天气层(球顶甩雪,弹道渐隐)。 */
   onFlakes: (list: FlakeEvent[]) => void;
+  /** 物理雪载真值表(MapRail 持有,天气层读)。 */
+  orbSnowRef: React.RefObject<Map<string, number>>;
 }) {
   const lessons = tree
     .filter((n) => n.parentId === section.id)
@@ -831,6 +842,7 @@ function MapSection({
           );
         }
         b.squash = decaySquash(b.squash, dt);
+        orbSnowRef.current?.set(b.nodeId, b.snow);
       }
 
       // 绳:折线穿 [起点悬挂位 → 绳粒… → 终点悬挂位],垂坠/绷直是物理结果
@@ -1098,7 +1110,7 @@ function MapSection({
                 : "absolute balloon-bob hover:z-30"}
               style={{
                 left: node.x - NODE_W / 2,
-                top: node.y - NODE_H / 2 + 12,
+                top: node.y - NODE_H / 2 + 10, // 球心在 wrapper 内偏移 28 → +10 使视觉球心 = 物理圆心
                 width: NODE_W,
                 ...(physics ? { touchAction: "none" as const } : {
                   "--bob-delay": bobDelay,

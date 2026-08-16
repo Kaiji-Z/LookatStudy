@@ -454,6 +454,8 @@ await test("T21 甩雪:快速移动/拖拽从球顶甩出雪屑,雪载同步扣�
 
 await test("T22 力场:球靠近相斥(磁悬浮垫),锁定球是场源不受力,远处不激活", async () => {
   const { Body } = await M();
+  // 半径下限:悬停间隙(FIELD_RANGE-2r)必须盖过球缘装饰件(选中环外沿 r+6)
+  assert.ok(FIELD_RANGE >= BALL_RADIUS * 2.4, `力场半径应 ≥ 2.4r(选中环不叠邻球): ${FIELD_RANGE}`);
   // 1) 两自由球放进力场半径内(间距 44px < FIELD_RANGE,未接触):应被推开
   const isl = createSectionIsland({
     nodes: [
@@ -505,6 +507,55 @@ await test("T22 力场:球靠近相斥(磁悬浮垫),锁定球是场源不受力
   step(isl3, 60);
   assert.ok(isl3.balls.every((x) => x.field < 0.05), `远距不激活: ${isl3.balls.map((x) => x.field.toFixed(2))}`);
   isl3.dispose();
+});
+
+await test("T23 不重叠不变量:高速对撞/拖拽压实,圆心距永 ≥ 2r", async () => {
+  const { Body } = await M();
+  // 1) 两球高速对头撞( capped 速度):每步后都不重叠
+  const isl = createSectionIsland({
+    nodes: [
+      { id: "a", x: 60, y: 150 },
+      { id: "b", x: 208, y: 150 },
+    ],
+    width: 268,
+    height: 300,
+    weather: "fog",
+  });
+  const [a, b] = isl.balls;
+  assert.ok(a && b);
+  Body.setVelocity(a.body, { x: 20, y: 0 });
+  Body.setVelocity(b.body, { x: -20, y: 0 });
+  let minD = Infinity;
+  for (let i = 0; i < 90; i++) {
+    isl.step(16.67);
+    minD = Math.min(minD, Math.hypot(a.body.position.x - b.body.position.x, a.body.position.y - b.body.position.y));
+  }
+  assert.ok(minD >= BALL_RADIUS * 2 - 1, `对撞时圆心距应 ≥ 2r-1: min=${minD.toFixed(1)} (2r=${BALL_RADIUS * 2})`);
+  isl.dispose();
+
+  // 2) 拖拽压实:弹簧持续把球压向锁定球,接触中也不重叠
+  const isl2 = createSectionIsland({
+    nodes: [
+      { id: "lock", x: 134, y: 150, locked: true },
+      { id: "free", x: 40, y: 150 },
+    ],
+    width: 268,
+    height: 300,
+    weather: "fog",
+  });
+  const lock = isl2.ball("lock");
+  const free = isl2.ball("free");
+  assert.ok(lock && free);
+  isl2.beginDrag("free", lock.body.position.x - BALL_RADIUS * 2, 150); // 直接压向锁定球
+  let minD2 = Infinity;
+  for (let i = 0; i < 120; i++) {
+    isl2.moveDrag(lock.body.position.x - BALL_RADIUS * 2 + 4, 150); // 越压越进
+    isl2.step(16.67);
+    minD2 = Math.min(minD2, Math.hypot(lock.body.position.x - free.body.position.x, lock.body.position.y - free.body.position.y));
+  }
+  isl2.endDrag();
+  assert.ok(minD2 >= BALL_RADIUS * 2 - 1, `拖拽压实也不重叠: min=${minD2.toFixed(1)}`);
+  isl2.dispose();
 });
 
 console.log(`\n${passed} passed`);

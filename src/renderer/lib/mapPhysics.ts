@@ -236,12 +236,20 @@ const DRAG_STIFFNESS = 0.09;
 const IMPACT_MIN_SPEED = 2.2;
 /** 雪载对球的重力增幅上限(35% 自重 —— 足以压过多数球的浮力盈余)。 */
 const SNOW_WEIGHT = 0.35;
-/** 触发甩雪的最低球速(px/step):慢移不甩,拖拽/被撞/甩动才掉雪。 */
-const FLAKE_MIN_SPEED = 3.5;
-/** 球体力场半径(2.25×球半径 ≈ 63px):进入即相斥,像磁铁同极靠近。 */
-export const FIELD_RANGE = BALL_RADIUS * 2.25;
+/** 触发甩雪的最低球速(px/step ≈ 120px/s):普通拖动即掉雪(慢于它不掉),
+ * 快速甩/被撞掉得更猛。原 3.5(≈210px/s)太高——拖动根本触发不了(实测反馈)。 */
+const FLAKE_MIN_SPEED = 2.0;
+/**
+ * 球体力场半径(2.45×球半径 ≈ 69px):进入即相斥,像磁铁同极靠近。
+ * 取值依据:球缘外的装饰件最远到半径 34px(选中环 ring-4+offset-2),
+ * 常态悬停间隙 ≈ FIELD_RANGE - 2r = 12.6px > 34-28=6px —— 选中环/待复习
+ * 角标不再叠进邻球。
+ */
+export const FIELD_RANGE = BALL_RADIUS * 2.45;
 /** 力场最强推离加速度(px/step²,≈6×重力):贴得越近推得越狠(平方衰减)。 */
 const FIELD_MAX_ACCEL = 0.006;
+/** 球速上限(px/step):Matter 无 CCD,超速会整帧穿透对撞;快但不至于穿。 */
+const MAX_ORB_SPEED = 22;
 
 export function createSectionIsland(opts: {
   nodes: { id: string; x: number; y: number; isExam?: boolean; locked?: boolean; spawn?: { x: number; y: number; vx?: number; vy?: number } }[];
@@ -257,7 +265,7 @@ export function createSectionIsland(opts: {
 
   const engine = Engine.create();
   engine.gravity.y = 1; // 真实重力场:球和绳粒都受重力
-  engine.positionIterations = 6;
+  engine.positionIterations = 8;
   engine.velocityIterations = 4;
 
   const balls: IslandBall[] = opts.nodes.map((n) => {
@@ -510,6 +518,39 @@ export function createSectionIsland(opts: {
       }
       // 力场激活度渐隐(无邻居在范围内时光环淡出)
       for (const b of balls) b.field *= 0.88;
+
+      // 速度钳制 + 球对最小间距硬不变量:视觉上球永不吃进球。
+      // 求解器允许少量穿透(slop)且拖拽弹簧会持续压实接触 —— 这层兜底
+      // 每步把圆心距强制回 ≥ 2r(static 球不动,只推动态球)。
+      for (const b of balls) {
+        if (b.body.isStatic) continue;
+        const v = b.body.velocity;
+        const sp = Math.hypot(v.x, v.y);
+        if (sp > MAX_ORB_SPEED) Body.setVelocity(b.body, { x: (v.x / sp) * MAX_ORB_SPEED, y: (v.y / sp) * MAX_ORB_SPEED });
+      }
+      for (let i = 0; i < balls.length; i++) {
+        const a = balls[i]!;
+        for (let j = i + 1; j < balls.length; j++) {
+          const b = balls[j]!;
+          let dx = b.body.position.x - a.body.position.x;
+          let dy = b.body.position.y - a.body.position.y;
+          let d = Math.hypot(dx, dy);
+          if (d >= r * 2) continue;
+          if (d < 0.01) { dx = 1; dy = 0; d = 1; }
+          const push = (r * 2 - d) + 0.05;
+          const nx = dx / d;
+          const ny = dy / d;
+          if (a.body.isStatic && b.body.isStatic) continue;
+          if (a.body.isStatic) {
+            Body.setPosition(b.body, { x: b.body.position.x + nx * push, y: b.body.position.y + ny * push });
+          } else if (b.body.isStatic) {
+            Body.setPosition(a.body, { x: a.body.position.x - nx * push, y: a.body.position.y - ny * push });
+          } else {
+            Body.setPosition(a.body, { x: a.body.position.x - nx * push / 2, y: a.body.position.y - ny * push / 2 });
+            Body.setPosition(b.body, { x: b.body.position.x + nx * push / 2, y: b.body.position.y + ny * push / 2 });
+          }
+        }
+      }
 
       // 快速移动甩雪:拖拽/被甩/晃动时球顶积雪持续飞离(慢移不掉)
       for (const b of balls) {

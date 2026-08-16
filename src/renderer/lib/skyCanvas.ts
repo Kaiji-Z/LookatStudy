@@ -347,7 +347,7 @@ interface Flake { x: number; y: number; r: number; v: number; phase: number; }
 
 /* 节点球天气装饰层(画在球上方的 canvas)。
    球位置由 getOrbs() 每帧提供(相对 canvas 坐标,含 balloon-bob 动画位移)。 */
-export interface OrbPos { x: number; y: number; r: number; }
+export interface OrbPos { x: number; y: number; r: number; /** 物理雪载 0..1(传了则雪盖从动于此,不再自累积)。 */ snow?: number; }
 
 /* 水流痕状态:每颗球独立的水流列表(雨球用)。key = 球 id(用 x,y 稳定时做 key 不可靠,
    所以用 orb 索引在 getOrbs 返回顺序稳定时可行;这里用 数组索引 i 做 key)。 */
@@ -558,9 +558,11 @@ function drawOrbWeather(
   for (let i = 0; i < orbs.length; i++) {
     const o = orbs[i]!;
     if (preset.particles === "snow") {
-      // 雪堆:缓慢堆积(每帧 +0.0008),封顶 1
-      orbCaps[i] = Math.min(1, orbCaps[i]! + 0.0008);
-      drawSnowDome(ctx, o.x, o.y, o.r, orbCaps[i]!, now);
+      // 雪盖唯一真值 = 物理雪载(拖动/碰撞甩掉、天气缓涨、封顶 1 全在物理层);
+      // 物理没接进来(理论不发生)时退回自累积兜底。
+      const cap = o.snow !== undefined ? o.snow : Math.min(1, (orbCaps[i] ?? 0.3) + 0.0008);
+      orbCaps[i] = cap;
+      drawSnowDome(ctx, o.x, o.y, o.r, cap, now);
     } else if (preset.particles === "rain") {
       // 湿润光泽(球面水膜反光)
       drawWetGloss(ctx, o.x, o.y, o.r);
@@ -870,16 +872,7 @@ export function attachOrbWeather(
             life: 16 + Math.floor(Math.random() * 12),
           });
         }
-        if (preset.particles === "snow") {
-          // 震落:命中球(最近 orb,容差 r+10)雪顶掉 60%,再慢慢积回来
-          for (let i = 0; i < orbs.length; i++) {
-            const o = orbs[i]!;
-            if (Math.hypot(o.x - im.x, o.y - im.y) <= o.r + 10) {
-              orbCaps[i] = (orbCaps[i] ?? 0.3) * 0.4;
-              break;
-            }
-          }
-        }
+        // 雪盖消减不再在此做:物理碰撞已 shedSnow 减 b.snow,雪盖从动渲染
       }
       if (impactBursts.length > 0) drawSplashes(ctx, impactBursts);
     }
@@ -900,15 +893,7 @@ export function attachOrbWeather(
             r: 1.2 + Math.random() * 2.2,
           });
         }
-        if (preset.particles === "snow") {
-          for (let i = 0; i < orbs.length; i++) {
-            const o = orbs[i]!;
-            if (Math.hypot(o.x - f.x, o.y - f.y) <= o.r + 14) {
-              orbCaps[i] = Math.max(0, (orbCaps[i] ?? 0.3) - f.amount * 1.6);
-              break;
-            }
-          }
-        }
+        // (雪盖消减由物理 b.snow 从动,这里只生成可见雪屑粒子)
       }
       while (shedFlakes.length > 240) shedFlakes.shift();
       drawShedFlakes(ctx, shedFlakes);

@@ -71,7 +71,7 @@ npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
 
-npm run verify:core       # 74 pure-Node/tsx logic test suites
+npm run verify:core       # 73 pure-Node/tsx logic test suites
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)

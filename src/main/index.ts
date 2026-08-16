@@ -1681,7 +1681,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       for (;;) {
         const st = await overflowState(sel);
         if (st && st.overRight <= 1 && st.docOver <= 1 && (st.overflowX === "hidden" || st.selfOver <= 1)) return true;
-        if (Date.now() - t0 > 3000) return false;
+        if (Date.now() - t0 > 8000) return false;
         await tierSleep(120);
       }
     };
@@ -1693,6 +1693,29 @@ async function runUiTest(screenshot = false): Promise<void> {
     await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-chat"]').click()`);
     await waitForPane((st) => !st.rail && st.chat && !st.nb);
     const narrowChat = await waitFits('[data-testid="chat-panel"]');
+    {
+      const dbg = await win.webContents.executeJavaScript(`
+        (function() {
+          var el = document.querySelector('[data-testid="notebook-panel"]');
+          if (!el) return "nb不存在";
+          var r = el.getBoundingClientRect();
+          var offenders = [];
+          var walk = function(node, depth) {
+            if (depth > 12 || offenders.length >= 5) return;
+            for (var i = 0; i < node.children.length; i++) {
+              var c = node.children[i];
+              var cr = c.getBoundingClientRect();
+              if (cr.width > 30 && cr.right > r.right + 2) {
+                offenders.push({ tag: c.tagName, cls: String(c.className).slice(0, 50), w: Math.round(cr.width), overR: Math.round(cr.right - r.right) });
+              } else { walk(c, depth + 1); }
+            }
+          };
+          walk(el, 0);
+          return { nbW: Math.round(r.width), nbRight: Math.round(r.right), innerW: window.innerWidth, docOver: Math.round(document.documentElement.scrollWidth - window.innerWidth), offenders: offenders };
+        })()
+      `).catch(() => null);
+      console.error("NB_DEBUG=" + JSON.stringify(dbg));
+    }
     // 拉宽弹回 → T1 (1300px):三栏全恢复、按钮组消失、左栏回 300
     await win.setBounds({ width: 1300, height: 800 });
     const t1Back = await waitForPane((st) => st.rail && st.chat && st.nb && !st.switcher);

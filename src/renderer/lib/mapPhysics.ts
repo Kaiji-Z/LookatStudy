@@ -513,6 +513,10 @@ export function createSectionIsland(opts: {
       Engine.update(engine, Math.min(33, Math.max(8, dtMs)));
       // 力场:球对之间平方衰减的斥力(磁悬浮垫)。等大反向(牛顿第三定律)→
       // 内力相消,整串质心不动;static(锁定)球只当场源不受力。
+      // near 按**接触圆之外的间隙**标定(接触=1,场缘=0):原中心距标定在接触距离
+      // (2r≈56px)处 near² 只剩 ~4%,静止贴着的球几乎不受斥力 —— 长时间不拖动时
+      // 微风同向漂移 + 阻尼沉降把它们慢慢聚成堆(实测反馈)。间隙标定后,贴着的球
+      // 被温和推到场缘(~2.45r)自然散开,拖拽手感不变(力很小)。
       for (let i = 0; i < balls.length; i++) {
         const a = balls[i]!;
         for (let j = i + 1; j < balls.length; j++) {
@@ -522,8 +526,12 @@ export function createSectionIsland(opts: {
           const d2 = dx * dx + dy * dy;
           if (d2 >= FIELD_RANGE * FIELD_RANGE || d2 < 0.01) continue;
           const d = Math.sqrt(d2);
-          const near = 1 - d / FIELD_RANGE; // 0..1
-          const accel = FIELD_MAX_ACCEL * near * near;
+          const gapN = (d - 2 * r) / (FIELD_RANGE - 2 * r); // 0(接触)→1(场缘)
+          const near = gapN <= 0 ? 1 : gapN >= 1 ? 0 : 1 - gapN;
+          // 相对速度门控:慢速贴近(<1.2px/step)才垫开(静置分散);快速接近放行
+          // —— 球-球仍能真实相撞(碰撞事件/雪震落不丢)。撞完弹开减速后垫子重新接手。
+          const relV = Math.hypot(a.body.velocity.x - b.body.velocity.x, a.body.velocity.y - b.body.velocity.y);
+          const accel = relV < 1.2 ? FIELD_MAX_ACCEL * near * near : 0;
           const nx = dx / d;
           const ny = dy / d;
           if (!a.body.isStatic) Body.applyForce(a.body, a.body.position, { x: -nx * accel * a.body.mass, y: -ny * accel * a.body.mass });

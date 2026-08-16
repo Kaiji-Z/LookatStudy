@@ -651,4 +651,27 @@ await test("T25 考试绳物理:拖考试球远离绳结,绳贡献额外回拽(�
 });
 
 
+await test("T27 久置分散:静止贴着的球被力场温和推开(间隙标定),不再聚堆", () => {
+  // 两球 60px(接触 56 + 4),无风(clear),静置 20s —— 应被推到场缘方向散开
+  const isl = createSectionIsland({
+    nodes: [
+      { id: "a", x: 100, y: 150 },
+      { id: "b", x: 160, y: 150 },
+    ],
+    width: 268,
+    height: 400,
+    weather: "clear",
+  });
+  const A = isl.ball("a");
+  const B = isl.ball("b");
+  assert.ok(A && B);
+  const d0 = Math.hypot(A.body.position.x - B.body.position.x, A.body.position.y - B.body.position.y);
+  step(isl, 1200); // 20 秒模拟
+  const d1 = Math.hypot(A.body.position.x - B.body.position.x, A.body.position.y - B.body.position.y);
+  assert.ok(d1 >= d0 + 5, `静置应散开: ${d0.toFixed(1)} → ${d1.toFixed(1)}`);
+  assert.ok(d1 <= 2.45 * BALL_RADIUS + 2, `散到场缘附近为止(不过冲): ${d1.toFixed(1)}`);
+  isl.dispose();
+});
+
+
 console.log(`\n${passed} passed`);

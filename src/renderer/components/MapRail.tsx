@@ -494,14 +494,31 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
                     {isCurrent && <span className="shrink-0 w-5 h-5 rounded-full bg-brand flex items-center justify-center"><Check className="w-3 h-3 text-white" /></span>}
                   </div>
                 </button>
-                {/* 删除:悬浮浮现(当前课也可删,删除后由 App 清空选中态回初始空态) */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); onDeleteCourse(c.id, c.title, rect); }}
-                  data-testid="course-row-delete"
-                  className="absolute bottom-1.5 right-2 text-caption text-white/40 hover:text-warning flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-                >
-                  <Trash2 className="w-2.5 h-2.5" /> {t("import.delete")}
-                </button>
+                {/* 导出课程包 + 删除:悬浮浮现一组(导出仅 GitHub 来源可用,失败 toast 说明) */}
+                <div className="absolute bottom-1.5 right-2 flex items-center gap-2.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setError(null); setSuccess(null);
+                      api.exportPack(c.id).then((path) => {
+                        if (path) setSuccess(t("import.pack.exported", { path }));
+                      }).catch((err: unknown) => {
+                        setError(err instanceof Error ? err.message : String(err));
+                      });
+                    }}
+                    data-testid="course-row-export"
+                    className="text-caption text-white/40 hover:text-brand flex items-center gap-0.5"
+                  >
+                    <Package className="w-2.5 h-2.5" /> {t("import.export")}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); onDeleteCourse(c.id, c.title, rect); }}
+                    data-testid="course-row-delete"
+                    className="text-caption text-white/40 hover:text-warning flex items-center gap-0.5"
+                  >
+                    <Trash2 className="w-2.5 h-2.5" /> {t("import.delete")}
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -552,10 +569,11 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
               </div>
             ) : (
               <>
-                <div className="flex gap-1 p-1 bg-white/5 rounded-lg">
+                <div className="@container flex gap-1 p-1 bg-white/5 rounded-lg">
                   {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }, { k: "pack" as const, label: t("import.tab.pack"), icon: Package }]).map(({ k, label, icon: Icon }) => (
-                    <button key={k} onClick={() => setTab(k)} className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
-                      <Icon className="w-3 h-3" /> {label}
+                    <button key={k} onClick={() => setTab(k)} className={`min-w-0 flex-1 flex items-center justify-center gap-1 py-1.5 px-0.5 rounded-md font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
+                      <Icon className="w-3 h-3 shrink-0" />
+                      <span className="whitespace-nowrap" style={{ fontSize: "clamp(0.75rem, 4.4cqi, 0.875rem)" }}>{label}</span>
                     </button>
                   ))}
                 </div>

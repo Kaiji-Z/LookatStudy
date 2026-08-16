@@ -694,7 +694,7 @@ export default function App() {
         tier={tier}
         centerSlot={tier === 3 ? (
           <div
-            className="flex items-center gap-1 p-1 rounded-full bg-ink/5"
+            className="col-start-2 justify-self-center flex items-center gap-1 p-1 rounded-full bg-ink/5"
             data-testid="t3-pane-switcher"
             role="tablist"
             aria-label={t("pane.switcher")}
@@ -1096,7 +1096,7 @@ function Header({
       {centerSlot}
 
       {/* 右:控件按"视图 → 阅读 → 进度 → 配置"分组(T3 时 justify-self-end 贴右列) */}
-      <div className={`flex items-center gap-3 ${centerSlot ? "justify-self-end" : ""}`}>
+      <div className={`flex items-center gap-3 ${centerSlot ? "col-start-3 justify-self-end" : ""}`}>
         {/* 视图:左右栏显隐(T3 单栏档隐藏:顶部 switcher 已覆盖,header 窄窗塞不下) */}
         {tier !== 3 && (
         <div className="flex items-center gap-0.5">

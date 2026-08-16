@@ -1649,7 +1649,10 @@ async function runUiTest(screenshot = false): Promise<void> {
         var el = document.querySelector('[data-testid="t3-pane-switcher"]');
         if (!el) return false;
         var hdr = el.closest("header");
-        return !!hdr && getComputedStyle(el).position !== "fixed" && el.getBoundingClientRect().bottom <= hdr.getBoundingClientRect().bottom + 1;
+        if (!hdr || getComputedStyle(el).position === "fixed" || el.getBoundingClientRect().bottom > hdr.getBoundingClientRect().bottom + 1) return false;
+        // 居中槽:三列网格里切换组必须真居中(h1 隐藏后自动放置会把它丢进第一列)
+        var r = el.getBoundingClientRect();
+        return Math.abs((r.left + r.right) / 2 - window.innerWidth / 2) <= 2;
       })()
     `).catch(() => false);
     await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-rail"]').click()`);

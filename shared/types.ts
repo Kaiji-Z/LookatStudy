@@ -274,8 +274,10 @@ export interface ContextUsageInfo {
   contextWindow: number | null;
   provider: string;
   model: string;
-  /** 当前模型是否支持看图(附件门控;未收录模型宽松为 true) */
+  /** 当前模型是否支持看图(附件门控;未收录模型宽松为 true;配了 vision 覆盖也视为 true——走转译桥) */
   visionCapable: boolean;
+  /** 主模型不支持看图但配了 vision 覆盖时的桥接模型名(输入框提示用);其余为 null */
+  visionBridgeModel: string | null;
 }
 
 /** 思考强度(应用级偏好,存 settings.reasoning_effort)。"" = 自动(不干预,模型默认)。 */

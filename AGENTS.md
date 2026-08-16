@@ -70,7 +70,7 @@ npm run build             # production build
 npm run start             # build + launch electron
 npm run dist              # build + electron-builder (produces .exe/.dmg/.AppImage)
 
-npm run verify:core       # 71 pure-Node/tsx logic test suites
+npm run verify:core       # 72 pure-Node/tsx logic test suites
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -97,7 +97,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z`. `.github/workflows/package.yml` then builds the 3-OS matrix (NSIS exe / arm64 dmg / AppImage + deb) and attaches everything to that tag's GitHub Release automatically.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 66 verify suites + vite build on every PR and push to main — never merge a red PR.
+5. `ci.yml` runs oxlint + both typechecks + 72 verify suites + vite build on every PR and push to main — never merge a red PR.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -128,6 +128,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | Soul (教学人设) | `services/souls/soul-service.ts` + `prompt-builder.ts` | 教学人设/persona CRUD + 激活;`buildSystemPrompt(db, BASE)` 把激活 soul 的 body 拼到 base prompt 后面注入 `streamText({system})`。3 内置 soul:精讲(direct)/引导(guide)/实战(practice)。**注:soul=persona,非过程性 playbook**;真 skill(多步任务固化)是未来独立模块。`active_soul=null` 时返回 base(等价关闭,无 flag 门控) |
 | LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection`, `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels` |
 | LLM presets | `services/agent/llm-presets.ts` | 19 provider presets (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google, Groq, Together, Mistral, xAI, Volcano, Baidu, MiniMax, Baichuan, StepFun) |
+| Vision bridge | `services/agent/vision-bridge.ts` | 图像转译桥(v0.11,describe-then-chat):主模型纯文本 + 配了 `vision_provider_override`/`vision_model_override` → 视觉模型(resolved by `resolveVisionLlm`)先把图片转译成文字,以**不可信视觉证据**块注入本轮 user 消息(只进 LLM 输入不持久化),主模型仍是唯一大脑;能原生看图 → 引擎原生 file-part 直通。学习者原话原样转发给视觉模型(任务导向转译);sha256(图+问题+语言) 进程内缓存(FIFO 200);watchdog 120s/5min;失败带指引报错绝不静默丢图。`agent:getContextUsage` 的 `visionCapable` 桥感知(配了覆盖=放行)+ `visionBridgeModel` 让输入框显示转译提示;设置页视觉覆盖不再被 `flag_multimodal_import` 门控 |
 | Threads | `services/thread-service.ts` | CRUD for `threads` + `chat_messages`; `findRecentThreadByNode`; thread is node-bound (`focus_node_id`)。`chat_messages.display_text`:按钮触发的消息气泡只显示短动作标签(完整提示词在 `content`,只给 LLM;手打输入 `display_text=null` 原样展示) |
 | Canvas | `services/canvas-service.ts` | 康奈尔笔记本:AI 产物 + user_note 画线 + quiz 答题记录 (`canvas_items`);byZone 三区筛选(understand/note/practice);溯源字段(source_type/source_anchor) |
 | Highlight | `lib/highlightText.ts` | 画线定位:getTextModel + 文本搜索(applyPersistentMarksByText)+ 跨节点包裹(wrapRangeWithMark)+ 闪烁(flashMark)。**不依赖 DOM offset**(ReactMarkdown 重渲染不稳定),用 indexOf 在纯文本上定位 |

@@ -649,8 +649,9 @@ function MultimodalContent({
           <div className="text-label text-ink-muted">{t("settings.multimodal.toggle.desc")}</div>
         </div>
       </div>
-      {enabled && (
-        <div className="px-4 py-3.5 border-t border-[var(--border-faint)] space-y-3">
+      {/* v0.11:视觉覆盖常显(不再被 flag_multimodal_import 门控)——它同时驱动聊天图像转译桥:
+          主模型纯文本时,上传的图片由该模型转译成文字再交给主模型。 */}
+      <div className="px-4 py-3.5 border-t border-[var(--border-faint)] space-y-3">
           {/* 当前主模型 vision 能力提示 */}
           <div className="text-label text-ink-muted bg-ink/5 rounded-lg p-3">
             <div className="font-medium mb-1">{t("settings.multimodal.current_model", { model: activeModel || t("settings.multimodal.not_selected") })}</div>
@@ -664,6 +665,9 @@ function MultimodalContent({
           <div className="bg-ink/5 rounded-lg p-3">
             <div className="text-label font-medium text-ink-muted mb-2">
               {t("settings.multimodal.override_title")}
+            </div>
+            <div className="text-caption text-ink-muted mb-2">
+              {t("settings.multimodal.override_bridge_hint")}
             </div>
             <div className="flex flex-col gap-2">
               <select
@@ -729,8 +733,7 @@ function MultimodalContent({
               )}
             </div>
           </div>
-        </div>
-      )}
+      </div>
     </>
   );
 }

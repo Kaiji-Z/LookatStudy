@@ -11,6 +11,7 @@ import { estimateTokens } from "@shared/token-estimate";
 import * as schema from "../../db/schema.js";
 import { readSettingsMap, supportsVision } from "./llm-client.js";
 import { getProviderPreset } from "./llm-presets.js";
+import { getVisionOverride } from "./vision-bridge.js";
 import { assembleContextBlocks } from "./agent-engine.js";
 
 type Db = SQLJsDatabase<typeof schema>;
@@ -37,6 +38,11 @@ export function getContextUsage(db: Db, nodeId: string, locale?: string | null):
   // 自定义 provider:models 列表在渲染层由 listCustomProviders 提供;
   // 这里 modelsJson 不参与解析 —— 窗口未知(null 只显示用量),vision 宽松 true。
 
+  // v0.11 图像桥:主模型不支持看图但配了 vision 覆盖 → 图片放行,走"视觉模型转译→注入"桥。
+  // visionBridgeModel 非空时渲染层在附件区提示"图片将由 X 转译"。
+  const override = getVisionOverride(db);
+  const bridged = !visionCapable && override !== null;
+
   return {
     systemTokens: estimateTokens(blocks.system),
     nodeTokens: estimateTokens(blocks.nodeContext),
@@ -44,6 +50,7 @@ export function getContextUsage(db: Db, nodeId: string, locale?: string | null):
     contextWindow,
     provider: providerId,
     model,
-    visionCapable,
+    visionCapable: visionCapable || override !== null,
+    visionBridgeModel: bridged ? override!.model : null,
   };
 }

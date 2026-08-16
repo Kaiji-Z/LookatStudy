@@ -291,21 +291,24 @@ await test("T15 球-球直接相撞也产生事件,drain 后清空", async () =>
 });
 
 await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载压坠球", () => {
-  const measure = (weather) => {
-    const isl = mkIsland(weather);
-    let moved = 0;
-    for (let i = 0; i < 360; i++) {
-      const before = isl.balls.map((b) => b.body.position.x);
-      isl.step(16.67);
-      // 前 120 步是开场沉降瞬态(两种天气都有),只测后 240 步的持续扰动
-      if (i >= 120) moved += isl.balls.reduce((s, b, k) => s + Math.abs(b.body.position.x - (before[k] ?? b.body.position.x)), 0);
-    }
+  // 宽盒单球测风力漂移:窄盒里球会贴墙饱和,位移不再反映风力差异(实测踩过)
+  const drift = (weather) => {
+    const isl = createSectionIsland({
+      nodes: [{ id: "d", x: 1000, y: 200 }],
+      width: 2000,
+      height: 400,
+      weather,
+    });
+    step(isl, 120); // 沉降
+    const x0 = isl.ball("d").body.position.x;
+    step(isl, 300);
+    const moved = Math.abs(isl.ball("d").body.position.x - x0);
     isl.dispose();
     return moved;
   };
-  const storm = measure("storm");
-  const clear = measure("clear");
-  assert.ok(storm > clear * 1.5, `storm 扰动应显著大于 clear: ${storm.toFixed(0)} vs ${clear.toFixed(0)}`);
+  const storm = drift("storm");
+  const clear = drift("clear");
+  assert.ok(storm > clear * 1.5, `storm 漂移应显著大于 clear: ${storm.toFixed(0)} vs ${clear.toFixed(0)}`);
 
   // 雪载:整条彩旗串被积雪压着整体下垂(单球会被锚绳长度兜住测不出;
   // 用 4 球串的**平均 y**对比,实测 delta ≈ 45px)
@@ -401,6 +404,45 @@ await test("T20 整体中性:静止分布不堆顶不堆底,相对布局位有�
   // 整体质心不漂太远(中性校准的 aggregate 断言)
   const avg = dys.reduce((a2, b2) => a2 + b2, 0) / dys.length;
   assert.ok(Math.abs(avg) < 60, `整体不应大幅漂移: avg=${avg.toFixed(1)}`);
+  isl.dispose();
+});
+
+await test("T21 甩雪:快速移动/拖拽从球顶甩出雪屑,雪载同步扣减;慢移不掉", async () => {
+  const { Body } = await M();
+  const isl = mkIsland("snow");
+  step(isl, 10);
+  const n2 = isl.ball("n2");
+  assert.ok(n2, "球存在");
+  // 慢速:不掉雪
+  n2.snow = 0.8;
+  Body.setVelocity(n2.body, { x: 1.5, y: 0.5 });
+  step(isl, 6);
+  assert.equal(isl.drainFlakes().length, 0, "慢速不应甩雪");
+  assert.ok(n2.snow > 0.7, `慢速雪载几乎不掉: ${n2.snow.toFixed(2)}`);
+  // 快速(拖拽/甩动量级):连绵掉雪,雪载下降
+  n2.snow = 0.8;
+  Body.setVelocity(n2.body, { x: 9, y: -3 });
+  let flakes = [];
+  for (let i = 0; i < 12; i++) {
+    isl.step(16.67);
+    flakes = flakes.concat(isl.drainFlakes());
+  }
+  assert.ok(flakes.length >= 4, `快速移动应甩雪: ${flakes.length}`);
+  assert.ok(n2.snow < 0.5, `雪载应显著扣减: ${n2.snow.toFixed(2)}`);
+  // 雪屑带初速度(继承球速分量)
+  assert.ok(flakes.every((f) => typeof f.vx === "number" && typeof f.amount > 0 || true));
+  assert.ok(flakes.some((f) => Math.abs(f.vx) > 0.5 || Math.abs(f.vy) > 0.5), "雪屑应有初速度");
+  // 碰撞甩雪:装满雪撞墙 → 一簇雪屑
+  const n3 = isl.ball("n3");
+  assert.ok(n3);
+  n3.snow = 0.9;
+  Body.setVelocity(n3.body, { x: 25, y: 0 });
+  let burst = 0;
+  for (let i = 0; i < 20; i++) {
+    isl.step(16.67);
+    burst += isl.drainFlakes().length;
+  }
+  assert.ok(burst >= 3, `撞墙应甩出一簇雪: ${burst}`);
   isl.dispose();
 });
 

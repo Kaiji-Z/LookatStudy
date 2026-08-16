@@ -177,6 +177,19 @@ export interface ImpactEvent {
   speed: number;
 }
 
+/**
+ * 雪屑事件(岛坐标系):球快速移动/被拖拽/碰撞时从球顶半球甩出的雪,
+ * 带初速度(继承球速)。渲染层做轻量弹道积分(重力+渐隐),**不是** Matter 刚体
+ * ——雪屑量大,物理真算会炸;观感与耦合(球变轻)由 snow 标量保证。
+ */
+export interface FlakeEvent {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  amount: number;
+}
+
 export interface SectionIsland {
   readonly balls: IslandBall[];
   readonly links: RopeLink[];
@@ -190,6 +203,8 @@ export interface SectionIsland {
   isDragging(): boolean;
   /** 取走并清空累积的碰撞事件。 */
   drainImpacts(): ImpactEvent[];
+  /** 取走并清空累积的雪屑事件(快速移动/拖拽/碰撞甩出的球顶积雪)。 */
+  drainFlakes(): FlakeEvent[];
   dispose(): void;
 }
 
@@ -219,6 +234,8 @@ const DRAG_STIFFNESS = 0.09;
 const IMPACT_MIN_SPEED = 2.2;
 /** 雪载对球的重力增幅上限(35% 自重 —— 足以压过多数球的浮力盈余)。 */
 const SNOW_WEIGHT = 0.35;
+/** 触发甩雪的最低球速(px/step):慢移不甩,拖拽/被撞/甩动才掉雪。 */
+const FLAKE_MIN_SPEED = 3.5;
 
 export function createSectionIsland(opts: {
   nodes: { id: string; x: number; y: number; isExam?: boolean; locked?: boolean; spawn?: { x: number; y: number; vx?: number; vy?: number } }[];
@@ -393,6 +410,31 @@ export function createSectionIsland(opts: {
   });
 
   // 碰撞:squash 形变 + 脉冲事件(命中点统一用支撑点——球-墙的中心连线中点会飞到容器外)。
+  // 雪屑事件池(渲染层 drain;碰撞/快速移动/拖拽都会填)
+  const flakes: FlakeEvent[] = [];
+
+  /**
+   * 从球顶半球甩雪:位置随机取上半球面,初速度 = 球速×0.75 + 沿方向散布(向外+微上)。
+   * 同步扣减 b.snow(球变轻 → 微微上浮,物理耦合)。
+   */
+  const shedSnow = (b: IslandBall, dir: Vec2, speed: number, count: number) => {
+    if (b.snow <= 0.02) return;
+    const cnt = Math.max(1, Math.min(count, Math.round(b.snow * count) + 1));
+    for (let i = 0; i < cnt; i++) {
+      const theta = -(0.35 + Math.random() * 1.9); // 上半球随机角
+      const rr = r * (0.55 + Math.random() * 0.45);
+      flakes.push({
+        x: b.body.position.x + Math.cos(theta) * rr,
+        y: b.body.position.y + Math.sin(theta) * rr,
+        vx: b.body.velocity.x * 0.75 + dir.x * (0.5 + Math.random() * 1.8) + (Math.random() - 0.5) * 1.2,
+        vy: b.body.velocity.y * 0.75 + dir.y * (0.5 + Math.random() * 1.8) - 0.6 - Math.random() * 0.8,
+        amount: 0.02 + Math.min(0.05, speed * 0.004),
+      });
+    }
+    b.snow = Math.max(0, b.snow - cnt * (0.02 + Math.min(0.04, speed * 0.003)));
+    if (flakes.length > 96) flakes.splice(0, flakes.length - 96);
+  };
+
   const impacts: ImpactEvent[] = [];
   Events.on(engine, "collisionStart", (e) => {
     for (const pair of e.pairs) {
@@ -414,9 +456,9 @@ export function createSectionIsland(opts: {
       const amount = Math.min(0.32, speed * 0.028);
       if (a && amount > a.squash) { a.squash = amount; a.squashAngle = Math.atan2(n.y, n.x); }
       if (b2 && amount > b2.squash) { b2.squash = amount; b2.squashAngle = Math.atan2(-n.y, -n.x); }
-      // 雪天:撞一下震落 60% 雪载(与视觉层 orbCaps 同步率同口径)
-      if (a) a.snow *= 0.4;
-      if (b2) b2.snow *= 0.4;
+      // 雪天:撞一下甩出一簇带冲击速度的雪屑(shedSnow 里同步扣雪载)
+      if (a) shedSnow(a, { x: n.x, y: n.y }, speed, 5);
+      if (b2) shedSnow(b2, { x: -n.x, y: -n.y }, speed, 5);
     }
   });
 
@@ -439,6 +481,13 @@ export function createSectionIsland(opts: {
     step(dtMs) {
       // dt 钳制:掉帧时最多按 33ms 步进,防止约束爆炸
       Engine.update(engine, Math.min(33, Math.max(8, dtMs)));
+      // 快速移动甩雪:拖拽/被甩/晃动时球顶积雪持续飞离(慢移不掉)
+      for (const b of balls) {
+        const sp = Math.hypot(b.body.velocity.x, b.body.velocity.y);
+        if (b.snow > 0.02 && sp > FLAKE_MIN_SPEED) {
+          shedSnow(b, { x: b.body.velocity.x / sp, y: b.body.velocity.y / sp }, sp, 2);
+        }
+      }
       // 硬钳制(物理不变量:球永不出盒)。墙负责正常速度的反弹;
       // 蛮力拖拽/极端冲量挤过求解器时,这里兜底拉回 + 切掉向外速度。
       for (const b of balls) {
@@ -486,6 +535,11 @@ export function createSectionIsland(opts: {
     drainImpacts() {
       const out = impacts.slice();
       impacts.length = 0;
+      return out;
+    },
+    drainFlakes() {
+      const out = flakes.slice();
+      flakes.length = 0;
       return out;
     },
     dispose() {

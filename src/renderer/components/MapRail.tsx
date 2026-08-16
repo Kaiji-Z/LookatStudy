@@ -25,6 +25,7 @@ import {
   decaySquash,
   ropeChainPathD,
   squashTransform,
+  type FlakeEvent,
   type ImpactEvent,
   type PointerTrack,
   type SectionIsland,
@@ -84,6 +85,11 @@ export function MapRail(props: MapRailProps) {
   const pushImpacts = useRef((list: ImpactEvent[]) => {
     impactQueueRef.current.push(...list);
     if (impactQueueRef.current.length > 64) impactQueueRef.current.splice(0, impactQueueRef.current.length - 64);
+  }).current;
+  const flakeQueueRef = useRef<FlakeEvent[]>([]);
+  const pushFlakes = useRef((list: FlakeEvent[]) => {
+    flakeQueueRef.current.push(...list);
+    if (flakeQueueRef.current.length > 96) flakeQueueRef.current.splice(0, flakeQueueRef.current.length - 96);
   }).current;
 
   // 按 world 过滤 section(practice 节点不受学习门控,自由探索)
@@ -160,7 +166,7 @@ export function MapRail(props: MapRailProps) {
       {skyPreset && (
         <>
           <MapSkyCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} />
-          <MapOrbWeatherCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} getImpacts={() => impactQueueRef.current.splice(0)} />
+          <MapOrbWeatherCanvas scrollRef={mapPathRef} navRef={navRef} preset={skyPreset} getImpacts={() => impactQueueRef.current.splice(0)} getFlakes={() => flakeQueueRef.current.splice(0)} />
         </>
       )}
 
@@ -284,7 +290,7 @@ export function MapRail(props: MapRailProps) {
                 ) : (
                   <div className="space-y-6 pt-2">
                     {visibleSections.map((section, sIdx) => (
-                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} physics={physicsOn} physicsWeather={skyPreset?.weather ?? "clear"} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} />
+                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} physics={physicsOn} physicsWeather={skyPreset?.weather ?? "clear"} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} onFlakes={pushFlakes} />
                     ))}
                   </div>
                 )}
@@ -631,11 +637,13 @@ function MapOrbWeatherCanvas({
   navRef,
   preset,
   getImpacts,
+  getFlakes,
 }: {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   navRef: React.RefObject<HTMLElement | null>;
   preset: SkyPreset;
   getImpacts?: () => ImpactEvent[];
+  getFlakes?: () => FlakeEvent[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -670,9 +678,9 @@ function MapOrbWeatherCanvas({
       }
       return out;
     };
-    const detach = attachOrbWeather(canvas, nav, preset, getOrbs, getImpacts);
+    const detach = attachOrbWeather(canvas, nav, preset, getOrbs, getImpacts, getFlakes);
     return () => { detach(); mo.disconnect(); window.removeEventListener("resize", invalidate); };
-  }, [scrollRef, navRef, preset, getImpacts]);
+  }, [scrollRef, navRef, preset, getImpacts, getFlakes]);
   return (
     <canvas ref={canvasRef} className="map-orb-weather-canvas" aria-hidden="true" />
   );
@@ -692,6 +700,7 @@ function MapSection({
   scrollRef,
   navRef,
   onImpacts,
+  onFlakes,
 }: {
   section: ContentNode;
   sectionIndex: number;
@@ -708,6 +717,8 @@ function MapSection({
   navRef: React.RefObject<HTMLElement | null>;
   /** 碰撞事件(nav 坐标)→ 天气层(溅水花/震雪)。 */
   onImpacts: (list: ImpactEvent[]) => void;
+  /** 雪屑事件(nav 坐标)→ 天气层(球顶甩雪,弹道渐隐)。 */
+  onFlakes: (list: FlakeEvent[]) => void;
 }) {
   const lessons = tree
     .filter((n) => n.parentId === section.id)
@@ -854,10 +865,17 @@ function MapSection({
         el.setAttribute("stroke-width", String(2 + p.s * 1.5));
       }
 
-      if (impacts.length > 0 && navRef.current) {
+      const shedFlakes = island.drainFlakes();
+      if ((impacts.length > 0 || shedFlakes.length > 0) && navRef.current) {
         const cr = container.getBoundingClientRect();
         const nr = navRef.current.getBoundingClientRect();
-        onImpacts(impacts.map((im) => ({ x: im.x + cr.left - nr.left, y: im.y + cr.top - nr.top, speed: im.speed })));
+        const toNav = (p: { x: number; y: number }) => ({ x: p.x + cr.left - nr.left, y: p.y + cr.top - nr.top });
+        if (impacts.length > 0) {
+          onImpacts(impacts.map((im) => ({ ...toNav(im), speed: im.speed })));
+        }
+        if (shedFlakes.length > 0) {
+          onFlakes(shedFlakes.map((f) => ({ ...toNav(f), vx: f.vx, vy: f.vy, amount: f.amount })));
+        }
       }
     };
     raf = requestAnimationFrame(frame);

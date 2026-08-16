@@ -22,6 +22,7 @@ import {
   ANCHOR_KNOT_Y,
   BALL_RADIUS,
   DRAG_THRESHOLD_PX,
+  FIELD_RANGE,
   ROPE_SLACK,
   activeIslandIds,
   classifyPointer,
@@ -300,9 +301,14 @@ await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载压坠球", ()
       weather,
     });
     step(isl, 120); // 沉降
-    const x0 = isl.ball("d").body.position.x;
-    step(isl, 300);
-    const moved = Math.abs(isl.ball("d").body.position.x - x0);
+    let moved = 0;
+    let prevX = isl.ball("d").body.position.x;
+    for (let i = 0; i < 300; i++) {
+      isl.step(16.67);
+      const x = isl.ball("d").body.position.x;
+      moved += Math.abs(x - prevX); // 累计路径长:不受摆动端点相位噪声影响
+      prevX = x;
+    }
     isl.dispose();
     return moved;
   };
@@ -444,6 +450,61 @@ await test("T21 甩雪:快速移动/拖拽从球顶甩出雪屑,雪载同步扣�
   }
   assert.ok(burst >= 3, `撞墙应甩出一簇雪: ${burst}`);
   isl.dispose();
+});
+
+await test("T22 力场:球靠近相斥(磁悬浮垫),锁定球是场源不受力,远处不激活", async () => {
+  const { Body } = await M();
+  // 1) 两自由球放进力场半径内(间距 44px < FIELD_RANGE,未接触):应被推开
+  const isl = createSectionIsland({
+    nodes: [
+      { id: "a", x: 100, y: 150 },
+      { id: "b", x: 144, y: 150 },
+    ],
+    width: 268,
+    height: 300,
+    weather: "fog",
+  });
+  const [a, b] = isl.balls;
+  assert.ok(a && b);
+  step(isl, 90);
+  const d1 = Math.hypot(a.body.position.x - b.body.position.x, a.body.position.y - b.body.position.y);
+  assert.ok(d1 > 44 + 10, `力场应推开: ${44} → ${d1.toFixed(1)}`);
+  assert.ok(a.field > 0 || b.field > 0, "接近期间力场激活度 > 0");
+  isl.dispose();
+
+  // 2) 锁定球是场源:动态球靠近被斥离,锁定球纹丝不动
+  const isl2 = createSectionIsland({
+    nodes: [
+      { id: "lock", x: 100, y: 150, locked: true },
+      { id: "free", x: 140, y: 150 },
+    ],
+    width: 268,
+    height: 300,
+    weather: "fog",
+  });
+  const lock = isl2.ball("lock");
+  const free = isl2.ball("free");
+  assert.ok(lock && free);
+  const lockY = lock.body.position.y;
+  step(isl2, 90);
+  const d2 = Math.hypot(lock.body.position.x - free.body.position.x, lock.body.position.y - free.body.position.y);
+  assert.ok(d2 > 40 + 10, `锁定球的场也排斥: 40 → ${d2.toFixed(1)}`);
+  assert.ok(Math.abs(lock.body.position.y - lockY) < 0.5, "锁定球(static)不受力");
+  isl2.dispose();
+
+  // 3) 远处两球:力场不激活(field ≈ 0)
+  const isl3 = createSectionIsland({
+    nodes: [
+      { id: "a", x: 40, y: 80 },
+      { id: "b", x: 228, y: 250 },
+    ],
+    width: 268,
+    height: 330,
+    weather: "fog",
+  });
+  step(isl3, 60);
+  assert.ok(isl3.balls.every((x) => x.field < 0.05), `远距不激活: ${isl3.balls.map((x) => x.field.toFixed(2))}`);
+  isl3.dispose();
 });
 
 console.log(`\n${passed} passed`);

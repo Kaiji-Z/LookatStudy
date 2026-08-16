@@ -605,21 +605,20 @@ function drawOrbWeather(
   }
 }
 
-function drawRain(ctx: CanvasRenderingContext2D, W: number, H: number, rain: Drop[]) {
-  // 小雨:细线、淡色、慢速、短(毛毛雨感,不是暴雨)
+function drawRain(ctx: CanvasRenderingContext2D, W: number, H: number, rain: Drop[], storm: boolean) {
+  // 雨:垂直雨线(不斜飘)。常雨 = 细淡慢;暴风雨 = 更密更长更亮更急(雨势大)。
   ctx.save();
-  ctx.strokeStyle = "rgba(210,224,238,0.3)";
-  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = storm ? "rgba(205,224,244,0.42)" : "rgba(210,224,238,0.3)";
+  ctx.lineWidth = storm ? 1.0 : 0.7;
   ctx.lineCap = "round";
+  const speed = storm ? 0.013 : 0.007;
   for (const d of rain) {
-    d.y += d.v * 0.007; // 慢
-    d.x += 0.0004;
+    d.y += d.v * speed;
     if (d.y > 1) { d.y -= 1; d.x = Math.random(); }
-    if (d.x > 1) d.x -= 1;
     const x = d.x * W, y = d.y * H;
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineTo(x - 2, y + d.len); // 短
+    ctx.lineTo(x, y + d.len); // 垂直
     ctx.stroke();
   }
   ctx.restore();
@@ -722,7 +721,17 @@ export function attachSky(
     stars = buildStars(W, H);
     // 按预设重建粒子池
     if (preset.particles === "rain" && rain.length === 0) {
-      for (let i = 0; i < 70; i++) rain.push({ x: Math.random(), y: Math.random(), len: 6 + Math.random() * 8, v: 0.5 + Math.random() * 0.3 });
+      // 暴风雨:雨滴数翻倍、线更长、落更急(雨势大的三个维度)
+      const stormRain = preset.weather === "storm";
+      const count = stormRain ? 140 : 70;
+      for (let i = 0; i < count; i++) {
+        rain.push({
+          x: Math.random(),
+          y: Math.random(),
+          len: stormRain ? 12 + Math.random() * 14 : 6 + Math.random() * 8,
+          v: stormRain ? 0.9 + Math.random() * 0.4 : 0.5 + Math.random() * 0.3,
+        });
+      }
     }
     if (preset.particles === "snow" && flakes.length === 0) {
       for (let i = 0; i < 120; i++) flakes.push({ x: Math.random(), y: Math.random(), r: 0.8 + Math.random() * 1.6, v: 0.5 + Math.random() * 0.8, phase: Math.random() * Math.PI * 2 });
@@ -744,7 +753,7 @@ export function attachSky(
     drawMoon(ctx, nightArc(p, W, H, 0.92, 0.08));
     drawSun(ctx, dayArc(p, W, H, 0.16, 0.88), preset.sunTint);
     drawClouds(ctx, p, clouds, W, H, now, preset.cloudCover, sky, preset.weather === "storm");
-    if (preset.particles === "rain") drawRain(ctx, W, H, rain);
+    if (preset.particles === "rain") drawRain(ctx, W, H, rain, preset.weather === "storm");
     if (preset.particles === "snow") drawSnow(ctx, W, H, flakes, now);
     if (preset.fogAlpha > 0) drawFog(ctx, W, H, preset.fogAlpha, sky);
     if (preset.lightning) drawLightning(ctx, W, H, true, now);

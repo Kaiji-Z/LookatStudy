@@ -156,6 +156,8 @@ export interface IslandBall {
   isExam: boolean;
   /** 雪载 0..1(雪天缓涨,碰撞震落)。 */
   snow: number;
+  /** 力场激活度 0..1(有球进入力场半径时升高,离开渐隐)——渲染层画光环。 */
+  field: number;
   squash: number;
   squashAngle: number;
 }
@@ -236,6 +238,10 @@ const IMPACT_MIN_SPEED = 2.2;
 const SNOW_WEIGHT = 0.35;
 /** 触发甩雪的最低球速(px/step):慢移不甩,拖拽/被撞/甩动才掉雪。 */
 const FLAKE_MIN_SPEED = 3.5;
+/** 球体力场半径(2.25×球半径 ≈ 63px):进入即相斥,像磁铁同极靠近。 */
+export const FIELD_RANGE = BALL_RADIUS * 2.25;
+/** 力场最强推离加速度(px/step²,≈6×重力):贴得越近推得越狠(平方衰减)。 */
+const FIELD_MAX_ACCEL = 0.006;
 
 export function createSectionIsland(opts: {
   nodes: { id: string; x: number; y: number; isExam?: boolean; locked?: boolean; spawn?: { x: number; y: number; vx?: number; vy?: number } }[];
@@ -271,7 +277,7 @@ export function createSectionIsland(opts: {
     });
     return {
       nodeId: n.id, body, layoutX: n.x, layoutY: n.y,
-      isExam: !!n.isExam, snow: 0, squash: 0, squashAngle: 0,
+      isExam: !!n.isExam, snow: 0, field: 0, squash: 0, squashAngle: 0,
     };
   });
   for (const b of balls) {
@@ -481,6 +487,30 @@ export function createSectionIsland(opts: {
     step(dtMs) {
       // dt 钳制:掉帧时最多按 33ms 步进,防止约束爆炸
       Engine.update(engine, Math.min(33, Math.max(8, dtMs)));
+      // 力场:球对之间平方衰减的斥力(磁悬浮垫)。等大反向(牛顿第三定律)→
+      // 内力相消,整串质心不动;static(锁定)球只当场源不受力。
+      for (let i = 0; i < balls.length; i++) {
+        const a = balls[i]!;
+        for (let j = i + 1; j < balls.length; j++) {
+          const b = balls[j]!;
+          const dx = b.body.position.x - a.body.position.x;
+          const dy = b.body.position.y - a.body.position.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 >= FIELD_RANGE * FIELD_RANGE || d2 < 0.01) continue;
+          const d = Math.sqrt(d2);
+          const near = 1 - d / FIELD_RANGE; // 0..1
+          const accel = FIELD_MAX_ACCEL * near * near;
+          const nx = dx / d;
+          const ny = dy / d;
+          if (!a.body.isStatic) Body.applyForce(a.body, a.body.position, { x: -nx * accel * a.body.mass, y: -ny * accel * a.body.mass });
+          if (!b.body.isStatic) Body.applyForce(b.body, b.body.position, { x: nx * accel * b.body.mass, y: ny * accel * b.body.mass });
+          a.field = Math.max(a.field, near);
+          b.field = Math.max(b.field, near);
+        }
+      }
+      // 力场激活度渐隐(无邻居在范围内时光环淡出)
+      for (const b of balls) b.field *= 0.88;
+
       // 快速移动甩雪:拖拽/被甩/晃动时球顶积雪持续飞离(慢移不掉)
       for (const b of balls) {
         const sp = Math.hypot(b.body.velocity.x, b.body.velocity.y);

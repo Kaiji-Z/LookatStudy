@@ -796,6 +796,7 @@ function MapSection({
     }
     const ropeEls = Array.from(container.querySelectorAll<SVGPathElement>("[data-rope]"));
     const pulseEls = Array.from(container.querySelectorAll<SVGCircleElement>("[data-pulse]"));
+    const fieldEls = Array.from(container.querySelectorAll<SVGCircleElement>("[data-field]"));
 
     // 视口门控:岛滚出视口 ±200px 冻结(球停在原位,大课程不烧 CPU)
     let inView = true;
@@ -847,6 +848,20 @@ function MapSection({
         for (const p of link.particles) points.push({ x: p.position.x, y: p.position.y });
         points.push(attachOf(link.to));
         ropeEls[i]!.setAttribute("d", ropeChainPathD(points));
+      }
+
+      // 力场光环:有球进入力场半径时淡显(蓝晕,强度=激活度)
+      for (let i = 0; i < island.balls.length && i < fieldEls.length; i++) {
+        const b = island.balls[i]!;
+        const el = fieldEls[i]!;
+        if (b.field > 0.03) {
+          el.setAttribute("cx", String(b.body.position.x));
+          el.setAttribute("cy", String(b.body.position.y));
+          el.setAttribute("r", String(BALL_RADIUS + 4 + b.field * 5));
+          el.setAttribute("opacity", String((0.30 * b.field).toFixed(3)));
+        } else {
+          el.setAttribute("opacity", "0");
+        }
       }
 
       // 碰撞脉冲(SVG 圆环池) + 喂天气层(nav 坐标)
@@ -1027,6 +1042,19 @@ function MapSection({
               ))}
               {Array.from({ length: 8 }, (_, i) => (
                 <circle key={i} data-pulse={i} cx={0} cy={0} r={0} fill="none" stroke="white" opacity={0} />
+              ))}
+              {lessons.map((lesson, i) => (
+                <circle
+                  key={`f-${lesson.id}`}
+                  data-field={i}
+                  cx={0}
+                  cy={0}
+                  r={0}
+                  fill="none"
+                  stroke="#1cb0f6"
+                  strokeWidth={2}
+                  opacity={0}
+                />
               ))}
             </>
           ) : (

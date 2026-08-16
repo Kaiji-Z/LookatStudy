@@ -10,7 +10,7 @@
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, X } from "lucide-react";
+import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X } from "lucide-react";
 import type { Soul, StarterPrompt, HumanFrictionCategory, ChatAttachmentInput, ContextUsageInfo } from "@shared/types";
 import { checkAttachmentFile, ATTACHMENT_LIMITS } from "@shared/attachment-intake";
 import { estimateTokens } from "@shared/token-estimate";
@@ -390,6 +390,16 @@ export function ChatComposer({
         {/* 附件栏:图片缩略图 / 文本 chip,可删(整批上限 4)。 */}
         {attachments.length > 0 && (
           <div className="flex gap-1.5 flex-wrap mb-1.5" data-testid="composer-attachments">
+            {/* 图像桥提示:主模型纯文本 + 配了 vision 覆盖 → 图片先由覆盖模型转译成文字 */}
+            {ctxInfo?.visionBridgeModel && attachments.some((a) => a.kind === "image") && (
+              <div
+                className="w-full flex items-center gap-1 text-caption text-ink-muted"
+                data-testid="vision-bridge-chip"
+              >
+                <ScanText className="w-3.5 h-3.5 shrink-0" />
+                <span>{t("chat.attach.bridgeChip", { model: ctxInfo.visionBridgeModel })}</span>
+              </div>
+            )}
             {attachments.map((a) =>
               a.kind === "image" ? (
                 <div key={a.id} className="relative w-16 h-16 shrink-0">

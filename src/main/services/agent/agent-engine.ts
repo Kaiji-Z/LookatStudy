@@ -27,7 +27,14 @@ import {
 } from "../../db/schema.js";
 import type { BrowserWindow } from "electron";
 import { getDb, markDirty } from "../../db/index.js";
-import { resolveLlm, classifyLlmError, readSettingsMap, buildLanguageModel } from "./llm-client.js";
+import { resolveLlm, classifyLlmError, readSettingsMap, buildLanguageModel, supportsVision } from "./llm-client.js";
+import {
+  decideVisionBridge,
+  getVisionOverride,
+  describeImagesViaBridge,
+  buildObservationBlock,
+  appendObservation,
+} from "./vision-bridge.js";
 import { isFlagOn } from "../flags.js";
 import { listAssetsByNode, getAssetDataUrl } from "../asset-service.js";
 import { saveChatImage } from "../attachment-store.js";
@@ -556,25 +563,65 @@ export async function runAgentTurn(
 
     // v0.10:用户显式上传的图片附件 → 本轮 vision 输入。
     // 不受上面 flag+关键词双门控(那是对"节点配图按需喂"的省 token 门控);用户特意贴的图必须看得见。
+    // v0.11 图像桥:主模型纯文本 + 配了 vision 覆盖 → 视觉模型先把图转译成文字(标记为
+    // 不可信视觉证据)注入本轮 user 消息;主模型仍是唯一的大脑。能原生看图 → file-part 直通。
     if (attachments && attachments.length > 0) {
       const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
       if (lastUserMsg) {
-        preparedMessages = preparedMessages.map((m) =>
-          m.role === "user" && m.content === lastUserMsg.content
-            ? {
-                role: "user" as const,
-                content: [
-                  { type: "text" as const, text: lastUserMsg.content },
-                  { type: "text" as const, text: `\n(用户随消息上传了图片,请结合图片内容回答:)` },
-                  ...attachments.map((a) => ({
-                    type: "file" as const,
-                    mediaType: a.mediaType,
-                    data: a.base64,
-                  })),
-                ],
-              }
-            : m,
-        );
+        const mainVisionCapable =
+          llm.provider.id.startsWith("custom-") || supportsVision(llm.provider, llm.model);
+        const decision = decideVisionBridge({
+          imageCount: attachments.length,
+          mainVisionCapable,
+          overrideConfigured: getVisionOverride(db) !== null,
+        });
+        if (decision === "bridge") {
+          try {
+            const outLang = resolveOutputLang(locale);
+            const { description, visionModel } = await describeImagesViaBridge(
+              db,
+              attachments,
+              lastUserMsg.content,
+              outLang,
+              abortSignal,
+            );
+            const bridged = appendObservation(
+              lastUserMsg.content,
+              buildObservationBlock(description, visionModel, outLang),
+            );
+            preparedMessages = preparedMessages.map((m) =>
+              m.role === "user" && m.content === lastUserMsg.content
+                ? { role: "user" as const, content: bridged }
+                : m,
+            );
+          } catch (e) {
+            // 用户停止:走"已停止"路径,不报错
+            if (e instanceof Error && (e.name === "AbortError" || abortSignal?.aborted)) {
+              return { text: "(已停止)", parts: [] };
+            }
+            // 桥失败绝不静默丢图:报可操作错误(消息里已带"去设置页更换/清空覆盖"指引)
+            const detail = e instanceof Error ? e.message : String(e);
+            events.onError?.(detail);
+            return { text: `(图像转译失败：${detail})`, parts: [] };
+          }
+        } else {
+          preparedMessages = preparedMessages.map((m) =>
+            m.role === "user" && m.content === lastUserMsg.content
+              ? {
+                  role: "user" as const,
+                  content: [
+                    { type: "text" as const, text: lastUserMsg.content },
+                    { type: "text" as const, text: `\n(用户随消息上传了图片,请结合图片内容回答:)` },
+                    ...attachments.map((a) => ({
+                      type: "file" as const,
+                      mediaType: a.mediaType,
+                      data: a.base64,
+                    })),
+                  ],
+                }
+              : m,
+          );
+        }
       }
     }
 

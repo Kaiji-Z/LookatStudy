@@ -16,6 +16,8 @@
  */
 import {
   decideVisionBridge,
+  visionRouting,
+  parseDataUrl,
   getVisionOverrideFromMap,
   buildDescribePrompt,
   buildObservationBlock,
@@ -120,6 +122,25 @@ check("最新的在", bridgeCacheGet("key-200") === "new");
 check("次老的还在", bridgeCacheGet("key-1") === "v1");
 clearVisionBridgeCache();
 check("clear 清空", bridgeCacheSize() === 0);
+
+/* ---------- T7 看图通道路由(与图片数量无关,三处注入点共用) ---------- */
+console.log("T7 visionRouting");
+check("主模型能看图 → native", visionRouting(true, true) === "native" && visionRouting(true, false) === "native");
+check("纯文本 + 覆盖 → bridge", visionRouting(false, true) === "bridge");
+check("纯文本 + 无覆盖 → reject", visionRouting(false, false) === "reject");
+check("decideVisionBridge 委托 visionRouting(有图时)", decideVisionBridge({ imageCount: 1, mainVisionCapable: false, overrideConfigured: true }) === visionRouting(false, true));
+
+/* ---------- T8 data-url 归一化 ---------- */
+console.log("T8 parseDataUrl");
+check("标准 png", JSON.stringify(parseDataUrl("data:image/png;base64,AAAA")) === JSON.stringify({ mediaType: "image/png", base64: "AAAA" }));
+check("svg+xml 复合子类型", parseDataUrl("data:image/svg+xml;base64,PHN2Zw==")?.mediaType === "image/svg+xml");
+check("jpeg 带填充", parseDataUrl("data:image/jpeg;base64,/9j/4AA==")?.base64 === "/9j/4AA==");
+check("首尾空白容忍", parseDataUrl("  data:image/png;base64,BBB  ")?.base64 === "BBB");
+check("非 data: 前缀 → null", parseDataUrl("https://example.com/a.png") === null);
+check("缺逗号 → null", parseDataUrl("data:image/png;base64") === null);
+check("非 base64 载荷 → null", parseDataUrl("data:image/png,RAWTEXT") === null);
+check("空载荷 → null", parseDataUrl("data:image/png;base64,") === null);
+check("空 mediaType → null", parseDataUrl("data:;base64,AAA") === null);
 
 /* ---------- 汇总 ---------- */
 console.log(`\nvision-bridge: ${pass} passed, ${fail} failed`);

@@ -609,7 +609,10 @@ export async function fetchRepoFileTree(
   // jsdelivr 文件列表已证明不可行（仓库大就 403 "Package size exceeded limit"）
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
   try {
-    const r = await httpsGet(apiUrl, { rejectUnauthorized: false });
+    // 大仓库树 JSON 可达 2-4MB;部分网络直连 GitHub 被限速 ~24KB/s(实测 40s 才 948KB),
+    // "活着但爬行"的传输不该被总截止掐掉 —— 树扫描单独放宽到 240s(该速度下覆盖 ~5.7MB),
+    // 真挂死仍由 20s 空闲超时兜底。
+    const r = await httpsGet(apiUrl, { rejectUnauthorized: false, deadlineMs: 240_000 });
     console.error(`[import] GitHub Tree API: HTTP ${r.status ?? r.error}`);
     if (r.ok && r.body) {
       const data = JSON.parse(r.body) as { tree?: Array<{ path: string; type: string }> };

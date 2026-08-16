@@ -28,6 +28,7 @@ import {
   classifyPointer,
   createSectionIsland,
   decaySquash,
+  knotX,
   ropeChainPathD,
   squashTransform,
   swirlAt,
@@ -557,5 +558,70 @@ await test("T23 不重叠不变量:高速对撞/拖拽压实,圆心距永 ≥ 2r
   assert.ok(minD2 >= BALL_RADIUS * 2 - 1, `拖拽压实也不重叠: min=${minD2.toFixed(1)}`);
   isl2.dispose();
 });
+
+await test("T24 挂点随机化 + 考试绳拓扑:knotX 确定性随机;末球系下一段路牌上缘", () => {
+  // knotX:同 seed 同位(重渲染稳定),值域 [inset, width-inset],不同 seed 打散
+  assert.equal(knotX("s1:knot", 268), knotX("s1:knot", 268), "同 seed 确定性");
+  for (const seed of ["a", "b", "c", "d"]) {
+    const x = knotX(seed, 268);
+    assert.ok(x >= 20 && x <= 248, `值域内: ${x}`);
+  }
+  const xs = new Set(["s1", "s2", "s3", "s4", "s5", "s6"].map((s) => Math.round(knotX(s + ":knot", 268))));
+  assert.ok(xs.size >= 4, `不同 seed 应打散: ${xs.size}`);
+  assert.equal(knotX("s", 30), 15, "窄容器回中(不出负坐标)");
+
+  // 岛:锚绳结吃 anchorKnotX;给了 nextKnot 且末球是考试球 → 追加考试绳(最后一条链)
+  const nk = { x: 140, y: H + 24 };
+  const isl = createSectionIsland({
+    nodes: NODES.map((n) => ({ ...n })), width: 268, height: H,
+    anchorKnotX: 33, nextKnot: nk,
+  });
+  assert.equal(isl.anchor.x, 33, "锚绳结 x = 传入挂点");
+  assert.equal(isl.links.length, 5, "1 锚绳 + 3 球间绳 + 1 考试绳");
+  const examRope = isl.links[isl.links.length - 1];
+  assert.deepEqual([examRope.from, examRope.to], ["__next", "n4"], "考试绳:静态绳结 → 考试球");
+  assert.deepEqual(isl.nextKnot, nk, "暴露 nextKnot 供渲染层");
+  assert.ok(examRope.particles.length >= 4, "考试绳也是粒子链");
+  isl.dispose();
+
+  // 守卫:没给挂点 / 末球不是考试球 → 都不创建考试绳(末段没有下一段路牌)
+  const noKnot = mkIsland();
+  assert.equal(noKnot.links.length, 4, "无 nextKnot 不创建");
+  assert.equal(noKnot.nextKnot, undefined);
+  noKnot.dispose();
+  const notExam = createSectionIsland({
+    nodes: [{ id: "a", x: 100, y: 60 }, { id: "b", x: 160, y: 300 }],
+    width: 268, height: H, nextKnot: nk,
+  });
+  assert.equal(notExam.links.length, 2, "末球非考试球不创建");
+  assert.equal(notExam.nextKnot, undefined);
+  notExam.dispose();
+});
+
+await test("T25 考试绳物理:拖考试球远离绳结,绳贡献额外回拽(不是装饰)", async () => {
+  const mk = (nk) => createSectionIsland({
+    nodes: NODES.map((n) => ({ ...n })), width: 268, height: H, nextKnot: nk,
+  });
+  const dragExamUpAndMeasure = (isl) => {
+    const exam = isl.ball("n4");
+    assert.ok(exam);
+    step(isl, 30);
+    isl.beginDrag("n4", exam.body.position.x, 40);
+    for (let i = 0; i < 60; i++) { isl.moveDrag(exam.body.position.x, 40); isl.step(16.67); }
+    isl.endDrag();
+    const top = exam.body.position.y;
+    step(isl, 150);
+    return { top, back: exam.body.position.y };
+  };
+  // clear 天气无阵风/雨的随机源,两岛确定性可比
+  const withRope = dragExamUpAndMeasure(mk({ x: 134, y: H + 24 }));
+  const noRope = dragExamUpAndMeasure(mk(undefined));
+  assert.ok(withRope.top < 80, `拖上去了: ${withRope.top.toFixed(1)}`);
+  assert.ok(
+    withRope.back - withRope.top > noRope.back - noRope.top + 20,
+    `考试绳额外回拽: 有绳 ${(withRope.back - withRope.top).toFixed(1)} vs 无绳 ${(noRope.back - noRope.top).toFixed(1)}`,
+  );
+});
+
 
 console.log(`\n${passed} passed`);

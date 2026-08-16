@@ -176,7 +176,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + reactive `useLang()` (useSyncExternalStore, no reload on switch) + `translate()` for non-component contexts |
 | Celebration bus | `src/renderer/lib/celebration.ts` + `components/CelebrationLayer.tsx` | `celebrate(kind)` event bus + 根级 canvas 粒子层;7 高光时刻统一渲染(correct/wrong/unlock/mastery/streak/energy-full/exam-pass);reduced-motion a11y 双轨(默认粒子爆发,reduced 静态图标淡入) |
 | State emitter | `src/main/lib/state-emitter.ts` | main→renderer `state:changed` 推送(xp/streak/mastery 变化);修能量条运行时不动 bug;service 内 fire-and-forget,测试时 noop(同 markDirty 模式) |
-| Map physics | `src/renderer/lib/mapPhysics.ts` | 左栏物理地图(Matter.js 0.19):真实重力场+球浮力(彩旗串悬垂链);绳=粒子链(受拉弹力/松弛垂坠);天气驱动环境(风/阵风/雨滴冲击/雪载增重/雾阻尼,weatherPhysFor);顺序=绳链(路牌绳结→球→…→紫考试球,更沉);无弹簧回位自由摆布;锁定球=static 刚体(不可拖,解锁重建岛"苏醒");碰撞=squash+脉冲环(命中点用碰撞支撑点)+天气耦合;视口外岛冻结;reduced-motion 回退静态 |
+| Map physics | `src/renderer/lib/mapPhysics.ts` | 左栏物理地图(Matter.js 0.19):真实重力场+球浮力(彩旗串悬垂链);绳=粒子链(受拉弹力/松弛垂坠);天气驱动环境(风/阵风/雨滴冲击/雪载增重/雾阻尼,weatherPhysFor);顺序=绳链(路牌绳结→球→…→紫考试球,更沉;考试球另系一条绳到下段路牌上缘,整图成连续链,挂点 x 按 section id 确定性随机);无弹簧回位自由摆布;锁定球=static 刚体(不可拖,解锁重建岛"苏醒");碰撞=squash+脉冲环(命中点用碰撞支撑点)+天气耦合;视口外岛冻结;reduced-motion 回退静态 |
 | Motion infra | `src/renderer/lib/motion-presets.ts` + `usePrefersReducedMotion.ts` | `motion` 弹簧/stagger/enter-exit 预设 + a11y reduced-motion 响应式 hook(useSyncExternalStore on matchMedia) |
 
 Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),

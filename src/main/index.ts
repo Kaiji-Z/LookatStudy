@@ -1645,17 +1645,61 @@ async function runUiTest(screenshot = false): Promise<void> {
     const t3Chat = await waitForPane((st) => !st.rail && st.chat && !st.nb && st.switcher);
     await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-rail"]').click()`);
     const t3Rail = await waitForPane((st) => st.rail && !st.chat && st.railW >= 700);
+    // T3 极窄(600px):三 pane 逐一切换,各自都不许横向溢出窗口。
+    // (回归:chat pane 曾被 composer 工具栏固有宽度顶出 ~633px 下限;左栏曾被
+    //  物理球 wrapper 顶出横向滚动条 —— min-w-0 / overflow-x-hidden 修)
+    await win.setBounds({ width: 600, height: 800 });
+    const overflowState = (sel: string) =>
+      win.webContents.executeJavaScript(`
+        (function() {
+          var el = document.querySelector('${sel}');
+          if (!el) return null;
+          var r = el.getBoundingClientRect();
+          return {
+            w: Math.round(r.width),
+            overRight: Math.round(r.right - window.innerWidth),
+            selfOver: Math.round(el.scrollWidth - el.clientWidth),
+            overflowX: getComputedStyle(el).overflowX,
+            docOver: Math.round(document.documentElement.scrollWidth - window.innerWidth),
+          };
+        })()
+      `).catch(() => null);
+    const waitFits = async (sel: string) => {
+      const t0 = Date.now();
+      for (;;) {
+        const st = await overflowState(sel);
+        if (st && st.overRight <= 1 && st.docOver <= 1 && (st.overflowX === "hidden" || st.selfOver <= 1)) return true;
+        if (Date.now() - t0 > 3000) return false;
+        await tierSleep(120);
+      }
+    };
+    // rail 查 .map-path 自身:横向滚动条是它内部的(外层 nav overflow-hidden 裁不到文档级)
+    const narrowRail = await waitFits('[data-testid="map-rail"] .map-path');
+    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-notebook"]').click()`);
+    await waitForPane((st) => !st.rail && !st.chat && st.nb);
+    const narrowNb = await waitFits('[data-testid="notebook-panel"]');
+    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-chat"]').click()`);
+    await waitForPane((st) => !st.rail && st.chat && !st.nb);
+    const narrowChat = await waitFits('[data-testid="chat-panel"]');
     // 拉宽弹回 → T1 (1300px):三栏全恢复、按钮组消失、左栏回 300
     await win.setBounds({ width: 1300, height: 800 });
     const t1Back = await waitForPane((st) => st.rail && st.chat && st.nb && !st.switcher);
+    // T1 回来后左栏回到 284px 内容盒。球被拖到墙边时 wrapper(110px,> 球 56px)会伸出
+    // 内容盒 → 溢出依赖拖球行为,headless 无法确定性复现,直接守修复本身:
+    // map-path 必须裁掉横向溢出(computed overflowX=hidden;未修时为 auto → 出滚动条)
+    const railClip = await win.webContents.executeJavaScript(
+      `getComputedStyle(document.querySelector('[data-testid="map-rail"] .map-path')).overflowX`,
+    ).catch(() => "");
+    const t1RailFits = await waitFits('[data-testid="map-rail"] .map-path');
     results.push({
       name: "responsive tiers: T2 auto-collapse + exclusive side, T3 single-pane switcher, widen restores T1",
       ok: t2Default?.rail === false && t2Default?.chat === true && t2Default?.nb === true && t2Default?.switcher === false
         && t2Left?.rail === true && t2Left?.nb === false && t2Left?.chat === true
         && t3Chat?.rail === false && t3Chat?.chat === true && t3Chat?.nb === false && t3Chat?.switcher === true
         && t3Rail?.rail === true && t3Rail?.chat === false && t3Rail?.railW >= 700
-        && t1Back?.rail === true && t1Back?.chat === true && t1Back?.nb === true && t1Back?.switcher === false && t1Back?.railW <= 320,
-      detail: { t2Default, t2Left, t3Chat, t3Rail, t1Back},
+        && narrowRail && narrowNb && narrowChat
+        && t1Back?.rail === true && t1Back?.railW <= 320 && t1RailFits && railClip === "hidden" && t1Back?.chat === true && t1Back?.nb === true && t1Back?.switcher === false && t1Back?.railW <= 320,
+      detail: { t2Default, t2Left, t3Chat, t3Rail, narrowRail, narrowNb, narrowChat, t1Back, t1RailFits, railClip },
     });
   } catch (e) {
     results.push({ name: "responsive tiers", ok: false, detail: String(e) });

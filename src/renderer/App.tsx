@@ -719,7 +719,7 @@ export default function App() {
       )}
 
       {/* 右半区:顶栏 + 中右栏(顶栏只在中右栏上方,左栏全高独立) */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
       <Header
         streak={streak}
         xp={xp}
@@ -730,6 +730,7 @@ export default function App() {
         rightVisible={showRight}
         onToggleLeft={toggleLeftPane}
         onToggleRight={toggleRightPane}
+        tier={tier}
       />
 
       {/* T3 单栏档:顶部浮动按钮组切换 地图/对话/笔记(三档布局 v0.11) */}
@@ -764,7 +765,7 @@ export default function App() {
 
       {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
 
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex min-h-0 min-w-0">
         {/* 视图层:AI 对话 + 笔记本 */}
         <>
             {/* 中栏:AI 对话流(ChatStream + ChatComposer) / 考试节点(ExamView)。
@@ -776,7 +777,7 @@ export default function App() {
                 右栏隐藏时 flex:1 撑满。 */}
             {showChat && (
             <div
-              className="flex flex-col h-full bg-surface-1 shrink-0 motion-safe:transition-[width] motion-safe:duration-200"
+              className="flex flex-col h-full bg-surface-1 shrink-0 min-w-0 motion-safe:transition-[width] motion-safe:duration-200"
               style={
                 tier === 3
                   ? { flex: 1 } // 单栏档:对话占满
@@ -916,7 +917,7 @@ export default function App() {
                 v0.6 分栏:无描边,色差划分(底色由 NotebookPanel 内部 bg-surface-2 控制)。
                 v0.7 宽度:flex-1 弹性吃中栏剩余,加 min-w 防内容(笔记卡/表格)被挤。 */}
             {showRight && (
-            <main className={tier === 3 ? "flex-1 bg-surface-2" : "flex-1 min-w-[440px] bg-surface-2"} data-testid={tier === 3 ? "notebook-pane-full" : undefined}>
+            <main className={tier === 3 ? "flex-1 min-w-0 bg-surface-2" : "flex-1 min-w-[440px] bg-surface-2"} data-testid={tier === 3 ? "notebook-pane-full" : undefined}>
               <NotebookPanel
                 selectedNode={selectedNode}
                 items={canvas.items}
@@ -1062,6 +1063,7 @@ function Header({
   rightVisible,
   onToggleLeft,
   onToggleRight,
+  tier,
 }: {
   streak: Streak | null;
   xp: XpStatus | null;
@@ -1072,6 +1074,8 @@ function Header({
   rightVisible: boolean;
   onToggleLeft: () => void;
   onToggleRight: () => void;
+  /** 布局档位(1/2/3):T3 单栏时隐藏视图切换组(顶部 switcher 已覆盖)与字号控制,header 才塞得进窄窗 */
+  tier?: 1 | 2 | 3;
 }) {
   const t = useLang();
   return (
@@ -1083,7 +1087,8 @@ function Header({
 
       {/* 右:控件按"视图 → 阅读 → 进度 → 配置"分组 */}
       <div className="flex items-center gap-3">
-        {/* 视图:左右栏显隐 */}
+        {/* 视图:左右栏显隐(T3 单栏档隐藏:顶部 switcher 已覆盖,header 窄窗塞不下) */}
+        {tier !== 3 && (
         <div className="flex items-center gap-0.5">
           <button
             onClick={onToggleLeft}
@@ -1106,8 +1111,10 @@ function Header({
             <PanelRight className="w-4 h-4" />
           </button>
         </div>
+        )}
 
-        {/* 阅读:全局字号(A-/A+,三档,影响整个应用 rem 基准) */}
+        {/* 阅读:全局字号(A-/A+,三档,影响整个应用 rem 基准)。T3 隐藏(窄窗塞不下,非核心) */}
+        {tier !== 3 && (
         <div className="flex items-center gap-0.5" data-testid="font-size-control">
           <button
             onClick={() => onFontBump("down")}
@@ -1124,6 +1131,7 @@ function Header({
             title={t("header.font.larger")}
           >A+</button>
         </div>
+        )}
 
         {/* 进度:今日学习能量(= todayXp,软参考 100 满条,无配置目标)+ 连击。
             绿色(brand)= 进度/能量(PRODUCT.md);gold 留给 mastery/crown,这里不用。

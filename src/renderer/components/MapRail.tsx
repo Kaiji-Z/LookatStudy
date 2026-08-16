@@ -24,6 +24,7 @@ import {
   createSectionIsland,
   decaySquash,
   knotX,
+  remapSpawnX,
   ropeChainPathD,
   squashTransform,
   type FlakeEvent,
@@ -774,6 +775,8 @@ function MapSection({
   /** 岛重建(解锁/解锁链变化)时续接:球的最后位置+速度 → 新岛 spawn。
    *  没有它,点开一课解锁新球的瞬间全章球闪回布局原位(v3 实测体验割裂)。 */
   const liveStateRef = useRef<Map<string, { x: number; y: number; vx: number; vy: number }>>(new Map());
+  /** 续接快照采集时的容器宽:栏宽变了(跨档/拖拽窗口)把续接 x 按比例重映射 —— 球随栏宽自适应排布。 */
+  const liveWidthRef = useRef(0);
   const pointerRef = useRef<{ track: PointerTrack; id: number; dragging: boolean; nodeId: string } | null>(null);
   /** 拖拽后的抬手在短窗内抑制 click(真点击/合成 click 不受影响)。 */
   const suppressClickUntilRef = useRef(0);
@@ -807,7 +810,10 @@ function MapSection({
           id: lesson.id, x: n.x, y: n.y,
           isExam: lesson.type === "exam",
           locked: lessonLocked(lesson),
-          spawn: liveStateRef.current.get(lesson.id),
+          spawn: (() => {
+            const sp = liveStateRef.current.get(lesson.id);
+            return sp ? remapSpawnX(sp, liveWidthRef.current, containerW) : undefined;
+          })(),
         };
       }),
       width: containerW,
@@ -947,6 +953,7 @@ function MapSection({
           vx: b.body.velocity.x, vy: b.body.velocity.y,
         });
       }
+      liveWidthRef.current = containerW;
       island.dispose();
       islandRef.current = null;
       // 清残留 transform:球回布局原位(React 渲染的 left/top 本来就在那;

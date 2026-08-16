@@ -237,8 +237,8 @@ const ROPE_STIFF_ATTACH = 0.7;
 const DRAG_STIFFNESS = 0.09;
 /** 产生 squash/脉冲的最低相对速度(px/step)。 */
 const IMPACT_MIN_SPEED = 2.2;
-/** 雪载对球的重力增幅上限(35% 自重 —— 足以压过多数球的浮力盈余)。 */
-const SNOW_WEIGHT = 0.35;
+/* 雪载不增重(实测反馈):整串球被积雪压着集体下沉,彩旗串沉底。
+ * 雪只做视觉(堆积/甩落/撞掉),球的浮沉始终只由浮力校准决定。 */
 /** 触发甩雪的最低球速(px/step ≈ 120px/s):普通拖动即掉雪(慢于它不掉),
  * 快速甩/被撞掉得更猛。原 3.5(≈210px/s)太高——拖动根本触发不了(实测反馈)。 */
 const FLAKE_MIN_SPEED = 2.0;
@@ -429,8 +429,6 @@ export function createSectionIsland(opts: {
       const g = engine.gravity.y * engine.gravity.scale;
       const fx = swirlAt(b.body.position.x, b.body.position.y, t) * env.wind * WIND_STRENGTH * m + gustDir * gustNow * GUST_STRENGTH * m;
       let fy = -m * g * (lifts.get(b.nodeId) ?? 1);
-      // 雪载:球顶积雪增重压坠(碰撞震落在 collisionStart 里做)
-      if (b.snow > 0) fy += m * g * SNOW_WEIGHT * b.snow;
       // 雨滴:小概率砸一下(向下的瞬时冲量 + 随机横向)
       if (env.rainRate > 0 && Math.random() < env.rainRate) {
         fy += m * g * 0.35;
@@ -649,4 +647,24 @@ export const ANCHOR_KNOT_Y = -12;
 export function knotX(seed: string, width: number, inset = 20): number {
   if (width <= inset * 2) return width / 2;
   return inset + hash01(seed) * (width - inset * 2);
+}
+
+/** 栏宽变化后重映射续接坐标:球按新旧宽度比例**横向重排**(y 不动,高度与栏宽无关),
+ *  钳进新墙内。没有它,跨档(284↔全宽)重建岛时球带着旧绝对 x,首尾两根绳
+ *  (挂点已按新宽度随机)被拉得老长。 */
+export function remapSpawnX(
+  sp: { x: number; y: number; vx?: number; vy?: number },
+  fromW: number,
+  toW: number,
+  margin = BALL_RADIUS,
+): { x: number; y: number; vx?: number; vy?: number } {
+  if (fromW <= 0 || Math.abs(fromW - toW) <= 1) return sp;
+  const k = toW / fromW;
+  const out: { x: number; y: number; vx?: number; vy?: number } = {
+    x: Math.min(toW - margin, Math.max(margin, sp.x * k)),
+    y: sp.y,
+    vy: sp.vy,
+  };
+  if (sp.vx !== undefined) out.vx = sp.vx * k;
+  return out;
 }

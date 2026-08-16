@@ -29,6 +29,7 @@ import {
   createSectionIsland,
   decaySquash,
   knotX,
+  remapSpawnX,
   ropeChainPathD,
   squashTransform,
   swirlAt,
@@ -292,7 +293,7 @@ await test("T15 球-球直接相撞也产生事件,drain 后清空", async () =>
   isl.dispose();
 });
 
-await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载压坠球", () => {
+await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载不压坠(雪纯视觉)", () => {
   // 宽盒单球测风力漂移:窄盒里球会贴墙饱和,位移不再反映风力差异(实测踩过)
   const drift = (weather) => {
     const isl = createSectionIsland({
@@ -317,18 +318,44 @@ await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载压坠球", ()
   const clear = drift("clear");
   assert.ok(storm > clear * 1.5, `storm 漂移应显著大于 clear: ${storm.toFixed(0)} vs ${clear.toFixed(0)}`);
 
-  // 雪载:整条彩旗串被积雪压着整体下垂(单球会被锚绳长度兜住测不出;
-  // 用 4 球串的**平均 y**对比,实测 delta ≈ 45px)
+  // 雪不压坠(实测反馈反转:雪重会把整串彩旗压沉到底):积雪纯视觉,
+  // 球的浮沉只由浮力校准决定 → 雪天与晴天的整串平均 y 应基本一致
   const garlandAvgY = (weather) => {
     const isl = mkIsland(weather);
-    step(isl, 1800); // 30 秒:雪载 0.72 → 增重 25%
+    step(isl, 1800); // 30 秒:雪载涨满 0.72
     const avg = isl.balls.reduce((sum, b) => sum + b.body.position.y, 0) / isl.balls.length;
     isl.dispose();
     return avg;
   };
   const ySnow = garlandAvgY("snow");
   const yClear = garlandAvgY("clear");
-  assert.ok(ySnow > yClear + 20, `雪载应整串压坠: snow avg=${ySnow.toFixed(1)} > clear avg=${yClear.toFixed(1)} + 20`);
+  assert.ok(
+    Math.abs(ySnow - yClear) <= 20,
+    `雪天不应压坠: snow avg=${ySnow.toFixed(1)} vs clear avg=${yClear.toFixed(1)}(差应 ≤20)`,
+  );
+});
+
+await test("T26 remapSpawnX:栏宽变化把续接 x 按比例重排,同宽不动,越界钳回", () => {
+  const sp = { x: 240, y: 100, vx: 2, vy: -1 };
+  // 同宽:原样返回(浅比较相等即可,值不变)
+  assert.deepEqual(remapSpawnX(sp, 268, 268), sp, "同宽不重排");
+  assert.deepEqual(remapSpawnX(sp, 268, 268.5), sp, "1px 内抖动不重排");
+  assert.equal(remapSpawnX(sp, 0, 500).x, sp.x, "fromW 无效不重排");
+  // 284 → 全宽 584:x 按比例放大,vx 等比,y/vy 不动
+  const wide = remapSpawnX(sp, 268, 584);
+  assert.ok(Math.abs(wide.x - (240 * 584) / 268) < 1, `x 等比重排: ${wide.x.toFixed(1)}`);
+  assert.equal(wide.y, 100, "y 不动");
+  assert.ok(Math.abs((wide.vx ?? 0) - (2 * 584) / 268) < 1e-9, "vx 等比");
+  assert.equal(wide.vy, -1, "vy 不动");
+  // 反向:全宽回窄,x 缩回(取墙内可容纳的点;560 缩完 257 > 240 会被钳,另测)
+  const back = remapSpawnX({ x: 400, y: 10 }, 584, 268);
+  assert.ok(Math.abs(back.x - (400 * 268) / 584) < 1, `缩回: ${back.x.toFixed(1)}`);
+  const clamped = remapSpawnX({ x: 999, y: 10, vx: 5 }, 584, 268);
+  assert.equal(clamped.x, 268 - 28, "越界钳到右墙内");
+  assert.ok(clamped.vx !== undefined && clamped.vx < 5, "钳位时 vx 仍等比缩放");
+  // 可选速度字段不被塞进 undefined 以外的脏值
+  const noV = remapSpawnX({ x: 100, y: 10 }, 268, 584);
+  assert.equal(noV.vx, undefined, "无 vx 保持无");
 });
 
 await test("T17 相邻球初始不叠死(球-球碰撞兜底)", () => {

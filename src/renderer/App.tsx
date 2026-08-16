@@ -1082,13 +1082,29 @@ function Header({
   const t = useLang();
   return (
     <header
-      className={`app-header px-6 pt-2.5 pb-3 items-center shrink-0 ${
-        centerSlot ? "grid grid-cols-[1fr_auto_1fr]" : "flex justify-between"
+      className={`app-header pt-2.5 pb-3 items-center shrink-0 ${
+        centerSlot ? "px-4 grid grid-cols-[1fr_auto_1fr]" : "px-6 flex justify-between"
       }`}
     >
-      {/* 左:仅项目名(v0.8 重排 —— 图标移除,所有控件归右)。
-          T3 单栏档让位给居中切换组(窄窗塞不下品牌名+切换组+控件三方)。 */}
-      {!centerSlot && (
+      {/* 左:项目名。手机端习惯:logo 常驻左上,宽屏 text-body / 窄屏收成 text-label
+          并 truncate 让位 —— 切换组与设置按钮的尺寸永不让(中间列固定)。 */}
+      {centerSlot ? (
+        <div className="col-start-1 flex items-center gap-2 min-w-0">
+          <h1 className="text-label font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none min-w-0 truncate">
+            Lookat<span className="text-brand">Study</span>
+          </h1>
+          {xp && (
+            <div className="flex items-center gap-1 shrink-0" data-testid="xp-bar" title={t("header.energy")}>
+              <Zap
+                className={`w-3.5 h-3.5 text-brand ${xp.todayXp >= 100 ? "energy-breathe" : ""}`}
+                fill={xp.todayXp >= 100 ? "currentColor" : "none"}
+                aria-hidden="true"
+              />
+              <span className="text-label font-bold tabular-nums text-brand">{xp.todayXp}</span>
+            </div>
+          )}
+        </div>
+      ) : (
         <h1 className="text-body font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none">
           Lookat<span className="text-brand">Study</span>
         </h1>
@@ -1146,7 +1162,7 @@ function Header({
         {/* 进度:今日学习能量(= todayXp,软参考 100 满条,无配置目标)+ 连击。
             绿色(brand)= 进度/能量(PRODUCT.md);gold 留给 mastery/crown,这里不用。
             ≥100 时填充 Zap 图标(实心闪电)表示"充满",颜色不变。 */}
-        {xp && (
+        {xp && !centerSlot && (
           <div
             className="flex items-center gap-1.5"
             data-testid="xp-bar"
@@ -1157,20 +1173,18 @@ function Header({
               fill={xp.todayXp >= 100 ? "currentColor" : "none"}
               aria-hidden="true"
             />
-            {!centerSlot && (
             <div className="w-16 h-2 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full bg-brand transition-all duration-500"
                 style={{ width: `${Math.min(100, Math.max(3, xp.todayXp))}%` }}
               />
             </div>
-            )}
             <span className="text-label font-bold tabular-nums text-brand">
               {xp.todayXp}
             </span>
           </div>
         )}
-        {xp && (
+        {xp && !centerSlot && (
           <div
             className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand/10"
             data-testid="level-badge"
@@ -1179,7 +1193,7 @@ function Header({
             <span className="text-label font-bold text-brand">Lv.{xp.level}</span>
           </div>
         )}
-        {streak && <StreakBadge streak={streak} />}
+        {streak && !centerSlot && <StreakBadge streak={streak} />}
 
         {/* 配置:设置(最右,惯例位置) */}
         <button

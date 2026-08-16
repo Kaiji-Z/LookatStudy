@@ -22,6 +22,11 @@ Entry conventions for contributors:
 
 - **地图绳链跨段成环:考试球系往下一段路牌上缘 + 挂点随机化** —— 每章的紫考试球新增一条绳,系住**下一段路牌的上缘**(整张地图串成一条连续链:牌底→球1→…→考试球→下段牌顶,顺绳走即读序;末段没有下一段路牌则不系)。挂点位置随机化:首球绳在本段路牌**下缘**的挂点、考试绳在下段路牌**上缘**的挂点,x 均按 section id 确定性哈希随机(重渲染稳定、每段 rigging 各不相同);挂点 y 在 effect 里量实测 DOM(路牌上缘真实位置),渲染初值按 24px 估值、mount 后校准。考试绳是真物理(粒子链):拖考试球远离绳结会被绳拽回(不是装饰);浮力自校准自动覆盖新绳质量。`verify-map-physics.mjs` 23→25 断言(T24 拓扑/随机/守卫 + T25 对照回拽,闭环已证:废掉考试绳创建两测皆红)。
 
+### Changed
+- **T3 标题栏手机化重排** —— logo 常驻左上(宽屏 text-body / 窄屏收成 text-label 并 truncate 让位),左槽并排紧凑能量(闪电+数字);**切换组与设置按钮尺寸永不让**(中列固定居中、右列固定),其余显示(等级/连击/能量条)按剩余宽度让位;窄档左右留白从 px-6 收到 px-4。
+- **物理球随栏宽自适应排布** —— 跨档/拖窗改变左栏宽度时,重建岛的续接坐标按新旧宽度比例横向重映射(`remapSpawnX`,钳进新墙;y 不动),不再带着旧绝对坐标把首尾两根绳(挂点已按新宽度随机)拉得老长;`verify-map-physics` 26 断言(T26,闭环已证)。
+- **雪天积雪不再压坠球** —— 雪重(原 35% 自重)实测把整条彩旗串压沉到底;移除后积雪纯视觉(堆积/甩落/撞掉不变),球的浮沉只由浮力校准决定(T16 规范反转,闭环已证)。
+
 ### Fixed
 - **T3 单栏档窄窗仍横向溢出(实测 ~633px 以下不再自适应)+ 左栏出现横向滚动条** —— 两个独立根因:① 中/右 pane 是 flex 子项,`min-width:auto` 的固有宽度地板把 pane 顶在输入框工具条的 min-content(~633px)上下不去,再往上还有一整层结构性溢出:中间列/面板行同样缺 `min-w-0`,被 header 工具条的固有宽(~598px)顶宽出视口 14px(竖向滚动条占位后 innerWidth=584);② 物理球 wrapper 宽 110px > 球碰撞半径 28px,球贴右墙时 wrapper 右缘伸出 284px 内容盒 → `map-path`(overflow-y:auto 把 x 计算成 auto)出横向滚动条。修:中/右 pane + 中间列 + 面板行全补 `min-w-0`,输入框底部工具条 `flex-wrap` 可换行,T3 档 header 隐藏视图切换组(顶部 switcher 已覆盖)与字号控制,`map-path` 加 `overflow-x-hidden`。ui-test 跨档测试扩三探针:T3 600px 逐 pane 断言零溢出(pane 右缘/文档 scrollWidth)+ T1 回档后 map-path computed overflowX=hidden 守卫(溢出依赖拖球行为无法确定性复现,直接守修复);闭环已证:废掉 min-w-0/overflow-x-hidden 三探针皆红。
 - **MapSection 的 `return ro.disconnect`(裸方法引用)在删课卸载时炸掉整棵 React 树** —— React effect cleanup 直接引用 ResizeObserver.disconnect 方法,调用时 `this` 丢失 → `TypeError: Illegal invocation`,物理地图的额外 effect 改变了错误暴露路径后此潜伏 bug 显形(删课程后白屏、不回空态)。绑成闭包修复;ui-test 36 断言全绿复验。

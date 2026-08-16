@@ -565,8 +565,25 @@ export function docsToDiscoveredFiles(docs: { path: string; title?: string }[]):
  * 对这一个获取公开文件树的请求用 rejectUnauthorized:false 绕过。
  * 风险可控：获取的是公开文件路径列表（无敏感数据），且只用于此请求。
  */
-function httpsGet(url: string, opts: { rejectUnauthorized?: boolean; headers?: Record<string, string> } = {}): Promise<{ ok: boolean; status?: number; body?: string; error?: string }> {
+export function httpsGet(
+  url: string,
+  opts: { rejectUnauthorized?: boolean; headers?: Record<string, string>; deadlineMs?: number } = {},
+): Promise<{ ok: boolean; status?: number; body?: string; error?: string }> {
   return new Promise((resolve) => {
+    let settled = false;
+    const done = (r: { ok: boolean; status?: number; body?: string; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve(r);
+    };
+    // 硬性总截止:覆盖 DNS/建连/TLS 握手/响应体全阶段。仅靠 socket 空闲超时
+    // 兜不住"TCP 通了但 TLS 卡死"(实测 fastgithub 半死态:progress 卡 700s+,
+    // 20s idle timeout 被底层活动不断重置,永不触发)。
+    const deadline = setTimeout(() => {
+      req.destroy();
+      done({ ok: false, error: "deadline" });
+    }, opts.deadlineMs ?? 25_000);
     const req = https.get(url, {
       headers: { "User-Agent": "lookatstudy-import", ...opts.headers },
       rejectUnauthorized: opts.rejectUnauthorized ?? true,
@@ -574,10 +591,11 @@ function httpsGet(url: string, opts: { rejectUnauthorized?: boolean; headers?: R
     }, (res) => {
       let body = "";
       res.on("data", (d: Buffer) => { body += d.toString(); });
-      res.on("end", () => resolve({ ok: res.statusCode === 200, status: res.statusCode, body }));
+      res.on("end", () => done({ ok: res.statusCode === 200, status: res.statusCode, body }));
+      res.on("error", (e: Error) => done({ ok: false, status: res.statusCode, error: e.message }));
     });
-    req.on("error", (e: Error) => resolve({ ok: false, error: e.message }));
-    req.on("timeout", () => { req.destroy(); resolve({ ok: false, error: "timeout" }); });
+    req.on("error", (e: Error) => done({ ok: false, error: e.message }));
+    req.on("timeout", () => { req.destroy(); done({ ok: false, error: "timeout" }); });
   });
 }
 
@@ -600,6 +618,24 @@ export async function fetchRepoFileTree(
     }
   } catch (e) {
     console.error(`[import] GitHub Tree API 异常: ${e instanceof Error ? e.message : e}`);
+  }
+  // fallback:jsdelivr data API 全树列表(<50MB 仓库有效;大仓库 403 是它的硬上限,
+  // 历史上因此被砍 —— 但 fastgithub 死时这是中小仓库唯一的全树源,加回来当降级)
+  try {
+    const r2 = await httpsGet(
+      `https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${branch}?structure=flat`,
+      { rejectUnauthorized: false },
+    );
+    if (r2.ok && r2.body) {
+      const data = JSON.parse(r2.body) as { files?: Array<{ name: string }> };
+      const paths = (data.files ?? []).map((f) => f.name);
+      if (paths.length > 0) {
+        console.error(`[import] jsdelivr data API 全树: ${paths.length} 文件(Tree API 降级)`);
+        return { paths, source: "jsdelivr-list" };
+      }
+    }
+  } catch {
+    // 降级链尽头,交给 README 兜底
   }
   return { paths: [], source: "none" };
 }

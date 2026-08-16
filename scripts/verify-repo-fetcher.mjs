@@ -17,6 +17,7 @@ import {
   fetchMarkdownContents,
   buildCourseFromFiles,
   cdnUrl,
+  httpsGet,
 } from "../src/main/services/pure/repo-fetcher.ts";
 
 // === T1: extractInternalLinks 提取 .md 和 .ipynb 链接 ===
@@ -214,6 +215,25 @@ console.log("=== 多模态图片引用解析(repo-fetcher): 通过 ✅ ===");
   const dup = "[English](./translations/en/README.md) | [English Again](./translations/en/README.md)";
   assert.strictEqual(extractLanguagesFromReadme(dup).length, 1);
   console.log("✓ lang-detect extractLanguagesFromReadme: 重复语言去重");
+}
+
+// === httpsGet 硬性总截止:TCP 通但 TLS/响应卡死必须被 deadline 掐穿 ===
+// 复现现场:fastgithub 半死态(接受连接永不回包),导入卡 700s+,
+// 20s 空闲超时不触发。哑服务器 + 小 deadline 直接验证。
+{
+  const net = await import("node:net");
+  const { performance } = await import("node:perf_hooks");
+  const srv = net.createServer((sock) => { /* 接受连接,永不响应 */ });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const port = srv.address().port;
+  const t0 = performance.now();
+  const r = await httpsGet(`https://127.0.0.1:${port}/x`, { rejectUnauthorized: false, deadlineMs: 600 });
+  const ms = performance.now() - t0;
+  srv.close();
+  assert.equal(r.ok, false, "哑服务器应失败");
+  assert.equal(r.error, "deadline", `应被 deadline 掐穿: ${r.error}`);
+  assert.ok(ms < 3000, `应在 deadline 附近返回: ${ms.toFixed(0)}ms`);
+  console.log(`✓ httpsGet 硬截止: 哑服务器 ${ms.toFixed(0)}ms 被 deadline 掐穿`);
 }
 
 console.log("=== 翻译语言检测(repo-fetcher): 通过 ✅ ===");

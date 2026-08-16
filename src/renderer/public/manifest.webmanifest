@@ -1,0 +1,19 @@
+{
+  "name": "LookatStudy",
+  "short_name": "LookatStudy",
+  "description": "把任意 GitHub 学习仓库变成课程:技能地图、AI 导师、间隔重复",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e2a12",
+  "theme_color": "#58cc02",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

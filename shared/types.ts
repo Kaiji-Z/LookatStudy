@@ -58,6 +58,14 @@ export interface Course {
   createdAt: string;
 }
 
+/* ---------- 课程包导出结果 ---------- */
+/** electron: path 为落盘路径;web: path=null + fileName/content 由浏览器端下载 */
+export interface ExportPackResult {
+  path: string | null;
+  fileName?: string;
+  content?: string;
+}
+
 /* ---------- 后台导入任务（import:localFolder / import:github 即返的句柄） ---------- */
 
 /** 后台导入任务句柄：管线在 main 后台跑，进度走 import:progress，结束走 import:done */
@@ -456,7 +464,7 @@ export interface ApiExpose {
   getCourseLanguage(courseId: string): Promise<string | null>;
   /** 从本地文件夹导入（后台任务）:Electron 选目录 → 立即返回 jobId，管线后台跑。
    * push import:progress（进度）+ import:done（完成/失败/取消）。用户取消对话框返回 null */
-  importLocalFolder(): Promise<ImportJobHandle | null>;
+  importLocalFolder(folderPath?: string): Promise<ImportJobHandle | null>;
   /** 从 GitHub 仓库导入（后台任务）:analyzeRepo + importAnalyzed 合一，立即返回 jobId。
    * push import:progress + import:done。URL 无效时立即抛错 */
   importGithub(repoUrl: string): Promise<ImportJobHandle>;
@@ -465,9 +473,9 @@ export interface ApiExpose {
   /** 从断点重试:带上次落盘的导入方案快照续跑(已完成步骤零重烧)。快照不存在时抛错 */
   importResume(planId: string): Promise<ImportJobHandle>;
   /** 导入课程包:Electron 选 .lookatstudy-pack.json → 后台跑(命中则零 AI 调用)。取消对话框返回 null */
-  importPack(): Promise<ImportJobHandle | null>;
+  importPack(pack?: { fileName: string; content: string }): Promise<ImportJobHandle | null>;
   /** 导出课程包(仅 GitHub 来源课程):Electron 另存对话框,返回写入路径;取消返回 null */
-  exportPack(courseId: string): Promise<string | null>;
+  exportPack(courseId: string): Promise<ExportPackResult | null>;
   /** M4: 从 markdown 字符串生成课程（无网络依赖） */
   generateCourseFromMarkdown(
     md: string,

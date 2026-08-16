@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- LookatStudy: 漂浮气球(课程地图球)+书本,品牌绿 -->
+  <rect width="512" height="512" rx="96" fill="#0e2a12"/>
+  <ellipse cx="256" cy="196" rx="150" ry="160" fill="#58cc02"/>
+  <path d="M256 356 L236 416 L276 416 Z" fill="#3ea302"/>
+  <path d="M236 416 q20 26 40 0" fill="none" stroke="#8ee000" stroke-width="10" stroke-linecap="round"/>
+  <ellipse cx="205" cy="150" rx="34" ry="44" fill="#ffffff" opacity="0.35" transform="rotate(-18 205 150)"/>
+  <g transform="translate(256 208) scale(0.62) translate(-256 -256)">
+    <path d="M256 160 q-46 -34 -104 -22 v176 q58 -12 104 22 q46 -34 104 -22 v-176 q-58 -12 -104 22 Z" fill="#0e2a12" opacity="0.85"/>
+    <line x1="256" y1="160" x2="256" y2="336" stroke="#0e2a12" stroke-width="10" opacity="0.85"/>
+  </g>
+</svg>

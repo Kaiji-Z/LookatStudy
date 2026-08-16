@@ -26,3 +26,8 @@ export const api: LookatStudyApi = new Proxy({} as LookatStudyApi, {
     return fn;
   },
 });
+
+/** 运行形态:Electron 桌面(preload 注入,UA 带 Electron) vs 浏览器 serve 模式。
+ *  import 面板等 UI 用它分叉(文件夹路径输入/课程包文件读取只在 web 模式出现)。 */
+export const isDesktopApp: boolean =
+  typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");

@@ -26,16 +26,16 @@ const api = {
     ipcRenderer.invoke("course:analyzeRepo", repoUrl)) as ApiExpose["analyzeRepo"],
   importAnalyzed: ((repoUrl: string, analysis: import("@shared/types").RepoAnalysis) =>
     ipcRenderer.invoke("course:importAnalyzed", repoUrl, analysis)) as ApiExpose["importAnalyzed"],
-  importLocalFolder: (() =>
-    ipcRenderer.invoke("import:localFolder")) as ApiExpose["importLocalFolder"],
+  importLocalFolder: ((folderPath?: string) =>
+    ipcRenderer.invoke("import:localFolder", folderPath)) as ApiExpose["importLocalFolder"],
   importGithub: ((repoUrl: string) =>
     ipcRenderer.invoke("import:github", repoUrl)) as ApiExpose["importGithub"],
   importCancel: (() =>
     ipcRenderer.invoke("import:cancel")) as ApiExpose["importCancel"],
   importResume: ((planId: string) =>
     ipcRenderer.invoke("import:resume", planId)) as ApiExpose["importResume"],
-  importPack: (() =>
-    ipcRenderer.invoke("import:importPack")) as ApiExpose["importPack"],
+  importPack: ((pack?: { fileName: string; content: string }) =>
+    ipcRenderer.invoke("import:importPack", pack)) as ApiExpose["importPack"],
   exportPack: ((courseId: string) =>
     ipcRenderer.invoke("import:exportPack", courseId)) as ApiExpose["exportPack"],
   generateCourseFromMarkdown: ((md: string, repoName: string, repoUrl?: string) =>

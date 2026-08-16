@@ -139,7 +139,7 @@ export function ThreadSwitcher({
               {!isRenaming && (
                 <button
                   onClick={(e) => openMenu(e, th.id)}
-                  className="flex items-center justify-center w-4 h-4 rounded text-ink-muted hover:text-ink-strong hover:bg-ink/5 opacity-0 group-hover:opacity-100 transition-all"
+                  className="flex items-center justify-center w-4 h-4 rounded text-ink-muted hover:text-ink-strong hover:bg-ink/5 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-all"
                   data-testid={`thread-gear-${th.id.slice(0, 8)}`}
                   title={t("thread.actions.label")}
                   aria-label={t("thread.actions.label")}

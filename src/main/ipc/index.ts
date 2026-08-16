@@ -4,7 +4,7 @@
  * 组织方式：按领域分 register* 函数，由 main/index.ts 统一调用。
  * 通道名规范：domain:action（如 course:list, streak:touch）
  */
-import { ipcMain, type BrowserWindow, dialog, app } from "electron";
+import type { RuntimeDeps, IpcHandlerFn } from "./runtime.js";
 import { join } from "node:path";
 import { getDb, markDirty } from "../db/index.js";
 import {
@@ -23,6 +23,7 @@ import { createPlanStore } from "../services/import-plan-store.js";
 import { runSmartImport, planIdOf } from "../services/import-job-service.js";
 import type {
   ApiExpose,
+  ExportPackResult,
   Course,
   ContentNode,
   Progress,
@@ -52,6 +53,22 @@ import {
 } from "../services/canvas-service.js";
 
 type CanvasZoneOpt = CanvasZone | undefined;
+
+/* ── 共享 handler 注册表 ──
+ * Electron 壳(ipc/electron-wiring.ts)和 serve 壳(serve/server.ts)消费同一张表:
+ * 通道名即 method 名,两个运行时的 API 面由同一份代码保证不漂移。 */
+const handlerTable = new Map<string, IpcHandlerFn>();
+function handle(channel: string, fn: IpcHandlerFn): void {
+  if (handlerTable.has(channel)) throw new Error(`handler 重复注册: ${channel}`);
+  handlerTable.set(channel, fn);
+}
+
+/** 构建(并返回)当前进程的完整 handler 表。重复调用先清空(测试用)。 */
+export function collectHandlers(deps: RuntimeDeps): Map<string, IpcHandlerFn> {
+  handlerTable.clear();
+  registerAllHandlers(deps);
+  return handlerTable;
+}
 import {
   listThreads,
   createThread,
@@ -156,13 +173,14 @@ import {
 
 /* ---------- 课程 ---------- */
 
-export function registerCourseHandlers(mainWindow: BrowserWindow): void {
-  ipcMain.handle("course:list", async (): Promise<Course[]> => {
+export function registerCourseHandlers(deps: RuntimeDeps): void {
+  const emitter = deps.emitter;
+  handle("course:list", async (): Promise<Course[]> => {
     const db = getDb();
     return db.select().from(courses).all() as Course[];
   });
 
-  ipcMain.handle(
+  handle(
     "course:getTree",
     async (_e, courseId: string, locale?: string): Promise<ContentNode[]> => {
       const db = getDb();
@@ -187,7 +205,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   // 全仓库导入：从 GitHub repo 拉 README → 检测形态 → 拉所有课时 .md → 落库。
   // 支持:形态 A（课程型，README 链接发现子文件）+ 形态 B（单文件型，README 自身够长）。
   // 进度通过 import:progress 事件推给渲染层。
-  ipcMain.handle(
+  handle(
     "course:importFromRepo",
     async (_e, repoUrl: string, langCode?: string): Promise<Course> => {
       const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
@@ -196,7 +214,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       const cleanRepo = repoRaw.replace(/\.git$/, "");
 
       const send = (msg: string) =>
-        mainWindow?.webContents.send("import:progress", msg);
+        emitter?.send("import:progress", msg);
 
       // 用纯编排函数拉取 + 解析（复用种子脚本同一条路径）
       let importResult;
@@ -323,7 +341,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   );
 
   // 多语言:检测仓库可用翻译语言
-  ipcMain.handle(
+  handle(
     "course:detectLanguages",
     async (_e, repoUrl: string): Promise<{ code: string; name: string }[]> => {
       const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
@@ -336,7 +354,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   );
 
   // 新智能管线 Step 1+2: 分析仓库
-  ipcMain.handle(
+  handle(
     "course:analyzeRepo",
     async (_e, repoUrl: string) => {
       const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
@@ -344,7 +362,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       const [, owner, repoRaw] = m;
       const cleanRepo = repoRaw.replace(/\.git$/, "");
 
-      const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+      const send = (msg: string) => emitter?.send("import:progress", msg);
 
       // Step 1: 拉取 README + 文件列表 + 完整目录树
       send("拉取仓库 README + 完整目录结构");
@@ -396,7 +414,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   );
 
   // 新智能管线 Step 3+4+5: 按分析结果导入（langCode 从 analysis.selectedLang 取）
-  ipcMain.handle(
+  handle(
     "course:importAnalyzed",
     async (_e, repoUrl: string, analysis: RepoAnalysis) => {
       const m = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
@@ -404,7 +422,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
       const [, owner, repoRaw] = m;
       const cleanRepo = repoRaw.replace(/\.git$/, "");
 
-      const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+      const send = (msg: string) => emitter?.send("import:progress", msg);
       const langCode = analysis.selectedLang; // analyzeRepo 已按 pref_lang + sourceLang 自动决定
 
       // Step 3: 提取标题大纲（拉完整文件，算每段字符数供 LLM 拆分决策）
@@ -456,7 +474,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   );
 
   // 多语言:获取课程已导入的翻译语言
-  ipcMain.handle(
+  handle(
     "course:getLanguages",
     async (_e, courseId: string): Promise<string[]> => {
       const { getCourseLanguages } = await import("../services/translation-service.js");
@@ -465,7 +483,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   );
 
   // 多语言:设置/获取课程当前显示语言（存 settings 表）
-  ipcMain.handle(
+  handle(
     "course:setLanguage",
     async (_e, courseId: string, locale: string | null): Promise<void> => {
       const key = `course:${courseId}:locale`;
@@ -484,7 +502,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     },
   );
 
-  ipcMain.handle(
+  handle(
     "course:getLanguage",
     async (_e, courseId: string): Promise<string | null> => {
       const key = `course:${courseId}:locale`;
@@ -494,7 +512,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   );
 
   // M4：从 markdown 字符串生成课程（无网络依赖，给 UI 的"粘贴 markdown"入口）
-  ipcMain.handle(
+  handle(
     "course:generateFromMarkdown",
     async (
       _e,
@@ -523,19 +541,19 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   let importCancelRequested = false;
   let importRunning = false;
   // 导入方案快照(断点续跑 + 课程包):userData/import-plans/*.json
-  const planStore = createPlanStore(join(app.getPath("userData"), "import-plans"));
+  const planStore = createPlanStore(join(deps.dataDir, "import-plans"));
 
   /** 后台跑一个导入管线，结束统一发 import:done。work 返回值随 ok:true 透传(planId/packable 等)。 */
   const runImportJob = (jobId: string, work: () => Promise<{ courseId: string; title: string } & Record<string, unknown>>) => {
     void (async () => {
       try {
         const result = await work();
-        mainWindow?.webContents.send("import:done", { ok: true, ...result });
+        emitter?.send("import:done", { ok: true, ...result });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error(`[import] 后台导入失败(job ${jobId.slice(0, 8)}): ${msg}`);
         const planId = planIdOf(e) ?? undefined;
-        mainWindow?.webContents.send("import:done", { ok: false, error: msg, cancelled: importCancelRequested, ...(planId ? { planId } : {}) });
+        emitter?.send("import:done", { ok: false, error: msg, cancelled: importCancelRequested, ...(planId ? { planId } : {}) });
       } finally {
         importRunning = false;
       }
@@ -545,15 +563,15 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   // 导入本地文件夹 —— 走新 5 步管线(和 GitHub 对齐)，后台 job
   // Step1 buildLocalInventory → Step2 classifyFileRoles → Step3 extractOutlines
   // → Step4 designCourseStructure → Step5 executeImport
-  ipcMain.handle("import:localFolder", async (): Promise<ImportJobHandle | null> => {
-    const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
-    // 1. Electron 文件选择对话框(选文件夹)
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ["openDirectory"],
-      title: "选择要导入的课程文件夹",
-    });
-    if (result.canceled || !result.filePaths[0]) return null;
-    const folderPath = result.filePaths[0];
+  handle("import:localFolder", async (_e, folderPath?: string): Promise<ImportJobHandle | null> => {
+    const send = (msg: string) => emitter?.send("import:progress", msg);
+    // 1. 文件夹来源:web 模式由渲染层传服务器侧路径(浏览器没有原生对话框);
+    //    electron 模式无参调用 → 原生目录选择
+    if (!folderPath && deps.ui === "web") {
+      throw new Error("web 模式需要传入服务器侧文件夹路径");
+    }
+    const resolved = folderPath ?? (await deps.dialog.pickFolder("选择要导入的课程文件夹"));
+    if (!resolved) return null;
 
     if (importRunning) throw new Error("已有导入任务在进行中，请等它结束或先取消");
     const jobId = randomUUID();
@@ -563,7 +581,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
 
     runImportJob(jobId, async () => {
       const r = await runSmartImport(
-        { kind: "folder", path: folderPath },
+        { kind: "folder", path: resolved },
         { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
       );
       const packable = planStore.findByCourse(r.courseId)?.kind === "github";
@@ -575,7 +593,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
 
   // 从 GitHub 仓库导入（后台 job）：analyzeRepo + importAnalyzed 合一，
   // renderer 立即返回，全部步骤的进度连续推 import:progress，结束推 import:done。
-  ipcMain.handle("import:github", async (_e, repoUrl: string): Promise<ImportJobHandle> => {
+  handle("import:github", async (_e, repoUrl: string): Promise<ImportJobHandle> => {
     if (!/github\.com\/([^/]+)\/([^/]+)/.test(repoUrl)) throw new Error("无效的 GitHub URL");
 
     if (importRunning) throw new Error("已有导入任务在进行中，请等它结束或先取消");
@@ -583,7 +601,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     importRunning = true;
     importCancelRequested = false;
     const shouldAbort = () => importCancelRequested;
-    const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+    const send = (msg: string) => emitter?.send("import:progress", msg);
 
     runImportJob(jobId, async () => {
       const r = await runSmartImport(
@@ -598,15 +616,15 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   });
 
   // 请求取消进行中的后台导入（拉取阶段生效，写库前零残留）
-  ipcMain.handle("import:cancel", async (): Promise<boolean> => {
+  handle("import:cancel", async (): Promise<boolean> => {
     if (!importRunning) return false;
     importCancelRequested = true;
-    mainWindow?.webContents.send("import:progress", "正在取消导入…");
+    emitter?.send("import:progress", "正在取消导入…");
     return true;
   });
 
   // 从断点重试:上次失败/中断的导入带着已落盘的方案快照续跑(已完成步骤零重烧)
-  ipcMain.handle("import:resume", async (_e, planId: string): Promise<ImportJobHandle> => {
+  handle("import:resume", async (_e, planId: string): Promise<ImportJobHandle> => {
     const plan = planStore.load(planId);
     if (!plan) throw new Error("找不到对应的导入方案快照(可能已过期)");
     if (importRunning) throw new Error("已有导入任务在进行中，请等它结束或先取消");
@@ -614,7 +632,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     importRunning = true;
     importCancelRequested = false;
     const shouldAbort = () => importCancelRequested;
-    const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+    const send = (msg: string) => emitter?.send("import:progress", msg);
 
     runImportJob(jobId, async () => {
       const r = await runSmartImport(
@@ -628,16 +646,19 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   });
 
   // 导入课程包:选 .lookatstudy-pack.json → 校验 → 走编排器(命中则零 AI 调用)
-  ipcMain.handle("import:importPack", async (): Promise<ImportJobHandle | null> => {
-    const picked = await dialog.showOpenDialog(mainWindow, {
-      properties: ["openFile"],
-      title: "选择课程包文件",
-      filters: [{ name: "LookatStudy 课程包", extensions: ["json"] }],
-    });
-    if (picked.canceled || !picked.filePaths[0]) return null;
+  handle("import:importPack", async (_e, pack?: { fileName: string; content: string }): Promise<ImportJobHandle | null> => {
+    let packJson: string | null;
+    if (pack?.content) {
+      packJson = pack.content; // web 模式:浏览器文件选择器读好内容传上来
+    } else if (deps.ui === "web") {
+      throw new Error("web 模式需要传入课程包文件内容");
+    } else {
+      const picked = await deps.dialog.openPack();
+      if (!picked) return null;
+      packJson = picked.content;
+    }
     const { parsePlan } = await import("../services/pure/import-plan.js");
-    const { readFileSync } = await import("node:fs");
-    const plan = parsePlan(readFileSync(picked.filePaths[0], "utf8"));
+    const plan = parsePlan(packJson);
     if (!plan) throw new Error("课程包格式不识别(版本过旧或文件损坏)");
     if (!plan.structure) throw new Error("课程包不含课程结构,无法直接导入");
 
@@ -646,7 +667,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
     importRunning = true;
     importCancelRequested = false;
     const shouldAbort = () => importCancelRequested;
-    const send = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+    const send = (msg: string) => emitter?.send("import:progress", msg);
     send(`课程包:${plan.kind === "github" ? `${plan.github?.owner}/${plan.github?.repo}` : plan.folder?.absPath ?? "(本地)"}`);
 
     runImportJob(jobId, async () => {
@@ -663,26 +684,27 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   });
 
   // 导出课程包:把某课程的导入方案另存为可分享文件(仅 github 来源;folder 含私有路径不导出)
-  ipcMain.handle("import:exportPack", async (_e, courseId: string): Promise<string | null> => {
+  handle("import:exportPack", async (
+    _e, courseId: string,
+  ): Promise<ExportPackResult | null> => {
     const plan = planStore.findByCourse(courseId);
     if (!plan) throw new Error("这门课没有可导出的导入方案(旧版本导入的课程)");
     if (plan.kind !== "github" || !plan.github) {
       throw new Error("本地文件夹导入的课程不支持导出课程包(包含本机私有路径)");
     }
-    const target = await dialog.showSaveDialog(mainWindow, {
-      title: "导出课程包",
-      defaultPath: `${plan.github.owner}-${plan.github.repo}.lookatstudy-pack.json`,
-      filters: [{ name: "LookatStudy 课程包", extensions: ["json"] }],
-    });
-    if (target.canceled || !target.filePath) return null;
     const { serializePlan } = await import("../services/pure/import-plan.js");
-    const { writeFileSync } = await import("node:fs");
-    writeFileSync(target.filePath, serializePlan(plan), "utf8");
-    return target.filePath;
+    const fileName = `${plan.github.owner}-${plan.github.repo}.lookatstudy-pack.json`;
+    const content = serializePlan(plan);
+    if (deps.ui === "web") {
+      // web 模式:内容直接回传,渲染层用浏览器下载落盘
+      return { path: null, fileName, content };
+    }
+    const path = await deps.dialog.savePack(fileName, content);
+    return path ? { path } : null;
   });
 
   // 删除课程 + 其下全部节点/进度/练习/聊天（级联清理由 services 负责）
-  ipcMain.handle("course:delete", async (_e, courseId: string) => {
+  handle("course:delete", async (_e, courseId: string) => {
     const db = getDb();
     // 先收所有 nodeId（删 progress/exercises/chat_sessions 用）
     const nodes = db
@@ -722,7 +744,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   });
 
   // 取某节点完整内容（课程详情 / 练习生成上下文用）。有 locale 时返回翻译版。
-  ipcMain.handle("course:getNodeContent", async (_e, nodeId: string, locale?: string) => {
+  handle("course:getNodeContent", async (_e, nodeId: string, locale?: string) => {
     const db = getDb();
     if (locale) {
       const { getNodeTranslation } = await import("../services/translation-service.js");
@@ -740,7 +762,7 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   // 取节点摘要(懒生成:DB 没有则实时生成 lesson 摘要并缓存;section 用结构化时的摘要)。
   // locale = 界面语言(zh-CN/en):摘要随界面语言切换——en 优先 summary_en,
   // 历史节点没有英文摘要时单独补一次(不动已有 KC),全部缺失时回退中文 summary。
-  ipcMain.handle("course:getNodeSummary", async (_e, nodeId: string, locale?: string | null) => {
+  handle("course:getNodeSummary", async (_e, nodeId: string, locale?: string | null) => {
     const db = getDb();
     const node = db
       .select()
@@ -780,17 +802,17 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   });
 
   // LLM 课程结构化：把导入的碎片节点重组成教学结构
-  ipcMain.handle("course:restructure", async (_e, courseId: string) => {
-    const restructureSend = (msg: string) => mainWindow?.webContents.send("import:progress", msg);
+  handle("course:restructure", async (_e, courseId: string) => {
+    const restructureSend = (msg: string) => emitter?.send("import:progress", msg);
     restructureSend("AI 正在分析课程结构…");
     const proposal = await analyzeCourseStructure(getDb(), courseId, restructureSend);
-    mainWindow?.webContents.send(
+    emitter?.send(
       "import:progress",
       `分析完成：${proposal.sections.length} 章节，重新组织中…`,
     );
     const result = applyCourseStructure(getDb(), courseId, proposal);
     markDirty();
-    mainWindow?.webContents.send(
+    emitter?.send(
       "import:progress",
       `结构化完成：${result.sectionCount} 章 / ${result.lessonCount} 课 / 跳过 ${result.skippedCount} 个练习节点`,
     );
@@ -798,52 +820,52 @@ export function registerCourseHandlers(mainWindow: BrowserWindow): void {
   });
 
   // 两个世界:查某学习课对应的实操节点(同 source_path 目录)
-  ipcMain.handle("course:getPracticeForLesson", (_e, nodeId: string) => {
+  handle("course:getPracticeForLesson", (_e, nodeId: string) => {
     return findPracticeForLesson(getDb(), nodeId);
   });
   // 两个世界:查某实操节点对应的学习课(反向跳转)
-  ipcMain.handle("course:getLessonForPractice", (_e, nodeId: string) => {
+  handle("course:getLessonForPractice", (_e, nodeId: string) => {
     return findLessonForPractice(getDb(), nodeId);
   });
 
   // LLM 生成章节摘要 + 前置依赖标记
-  ipcMain.handle("course:generateSummaries", async (_e, courseId: string) => {
-    mainWindow?.webContents.send("import:progress", "AI 正在生成章节摘要…");
+  handle("course:generateSummaries", async (_e, courseId: string) => {
+    emitter?.send("import:progress", "AI 正在生成章节摘要…");
     const result = await generateLessonSummaries(getDb(), courseId);
     markDirty();
-    mainWindow?.webContents.send("import:progress", `摘要生成完成: ${result.sectionsUpdated} 章节 / ${result.lessonsUpdated} 课时`);
+    emitter?.send("import:progress", `摘要生成完成: ${result.sectionsUpdated} 章节 / ${result.lessonsUpdated} 课时`);
     return result;
   });
 
   // Starter prompts: 给学习者提供开始引导按钮
-  ipcMain.handle("course:getStarterPrompts", async (_e, nodeId: string) => {
+  handle("course:getStarterPrompts", async (_e, nodeId: string) => {
     return getStarterPrompts(getDb(), nodeId);
   });
 
   /* ---------- 多模态资源(node_assets)---------- */
 
-  ipcMain.handle("asset:listByNode", async (_e, nodeId: string) => {
+  handle("asset:listByNode", async (_e, nodeId: string) => {
     return listAssetsByNode(getDb(), nodeId);
   });
 
-  ipcMain.handle("asset:listByCourse", async (_e, courseId: string) => {
+  handle("asset:listByCourse", async (_e, courseId: string) => {
     return listAssetsByCourse(getDb(), courseId);
   });
 
-  ipcMain.handle("asset:getDataUrl", async (_e, assetId: string): Promise<string | null> => {
+  handle("asset:getDataUrl", async (_e, assetId: string): Promise<string | null> => {
     return getAssetDataUrl(getDb(), assetId);
   });
 }
 
 export function registerProgressHandlers(): void {
-  ipcMain.handle(
+  handle(
     "progress:get",
     async (_e, nodeId: string): Promise<Progress | null> => {
       return getProgressService(getDb(), nodeId);
     },
   );
 
-  ipcMain.handle(
+  handle(
     "progress:update",
     async (
       _e,
@@ -856,7 +878,7 @@ export function registerProgressHandlers(): void {
     },
   );
 
-  ipcMain.handle("progress:markAttempted", async (_e, nodeId: string) => {
+  handle("progress:markAttempted", async (_e, nodeId: string) => {
     markNodeAttemptedService(getDb(), nodeId, () => {
       markDirty();
       // 标记 attempted 即打卡（原行为保留）
@@ -868,16 +890,16 @@ export function registerProgressHandlers(): void {
 /* ---------- SRS ---------- */
 
 export function registerSrsHandlers(): void {
-  ipcMain.handle("srs:getDue", async (): Promise<string[]> => {
+  handle("srs:getDue", async (): Promise<string[]> => {
     return getDueReviewNodeIds();
   });
 
   // v0.2: 详细 SRS 项(供四象限复习面板)
-  ipcMain.handle("srs:getAll", async () => {
+  handle("srs:getAll", async () => {
     return getAllSrsItems();
   });
 
-  ipcMain.handle(
+  handle(
     "srs:record",
     async (_e, nodeId: string, quality: ReviewQuality) => {
       recordReview(nodeId, quality);
@@ -893,9 +915,9 @@ export function registerSrsHandlers(): void {
 /* ---------- 打卡 ---------- */
 
 export function registerStreakHandlers(): void {
-  ipcMain.handle("streak:get", async (): Promise<Streak> => getStreak());
+  handle("streak:get", async (): Promise<Streak> => getStreak());
 
-  ipcMain.handle("streak:touchToday", async (): Promise<Streak> =>
+  handle("streak:touchToday", async (): Promise<Streak> =>
     touchStreakToday(),
   );
 }
@@ -903,7 +925,7 @@ export function registerStreakHandlers(): void {
 /* ---------- 设置 ---------- */
 
 export function registerSettingsHandlers(): void {
-  ipcMain.handle(
+  handle(
     "settings:get",
     async (_e, key: SettingKey): Promise<string | null> => {
       const db = getDb();
@@ -918,7 +940,7 @@ export function registerSettingsHandlers(): void {
     },
   );
 
-  ipcMain.handle(
+  handle(
     "settings:set",
     async (_e, key: SettingKey, value: string) => {
       const db = getDb();
@@ -935,12 +957,12 @@ export function registerSettingsHandlers(): void {
   );
 
   // XP 状态（今日 XP + 每日目标 + 达成百分比）
-  ipcMain.handle("xp:getStatus", async () => {
+  handle("xp:getStatus", async () => {
     return getXpStatus(getDb());
   });
 
   // 导出学习记录（JSON / Markdown）
-  ipcMain.handle("course:export", async (_e, courseId: string, format: "json" | "markdown") => {
+  handle("course:export", async (_e, courseId: string, format: "json" | "markdown") => {
     const data = collectExportData(getDb(), courseId);
     if (!data) throw new Error(`课程不存在: ${courseId}`);
     return format === "json" ? exportJson(data) : exportMarkdown(data);
@@ -950,13 +972,13 @@ export function registerSettingsHandlers(): void {
 /* ---------- Soul 系统（教学人设/persona） ---------- */
 
 export function registerSoulHandlers(): void {
-  ipcMain.handle("soul:list", async () => listSoulsService(getDb()));
+  handle("soul:list", async () => listSoulsService(getDb()));
 
-  ipcMain.handle("soul:get", async (_e, name: string) =>
+  handle("soul:get", async (_e, name: string) =>
     getSoulService(getDb(), name),
   );
 
-  ipcMain.handle(
+  handle(
     "soul:create",
     async (
       _e,
@@ -973,32 +995,32 @@ export function registerSoulHandlers(): void {
     },
   );
 
-  ipcMain.handle("soul:setActive", async (_e, name: string) => {
+  handle("soul:setActive", async (_e, name: string) => {
     setActiveSoulService(getDb(), name);
     markDirty();
   });
 
-  ipcMain.handle("soul:getActive", async () => getActiveSoulService(getDb()));
+  handle("soul:getActive", async () => getActiveSoulService(getDb()));
 }
 
 /* ---------- Agent 引擎 + Proposal（M2） ---------- */
 
-export function registerAgentHandlers(mainWindow: BrowserWindow): void {
+export function registerAgentHandlers(deps: RuntimeDeps): void {
   // agent 对话：流式 token 通过 chat:token 事件推（mainWindow 注入到 handleAgentChat）
-  ipcMain.handle(
+  handle(
     "agent:chat",
     async (_e, nodeId: string, userMessage: string, locale?: string | null) => {
-      return handleAgentChat(mainWindow, nodeId, userMessage, locale);
+      return handleAgentChat(deps.emitter, nodeId, userMessage, locale);
     },
   );
 
   // 中断当前 agent 回复（Stop 按钮）
-  ipcMain.handle("agent:abort", async (_e, nodeId: string) => {
+  handle("agent:abort", async (_e, nodeId: string) => {
     abortAgentChat(nodeId);
   });
 
   // v0.4: Thread 模式 agent 对话(传 threadId,从 thread 装配上下文)
-  ipcMain.handle(
+  handle(
     "agent:chatThread",
     async (
       _e,
@@ -1008,37 +1030,37 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
       locale?: string | null,
       attachments?: ChatAttachmentInput[],
     ) => {
-      return handleAgentChatThread(mainWindow, threadId, userMessage, displayText, locale, attachments);
+      return handleAgentChatThread(deps.emitter, threadId, userMessage, displayText, locale, attachments);
     },
   );
-  ipcMain.handle("agent:abortThread", async (_e, threadId: string) => {
+  handle("agent:abortThread", async (_e, threadId: string) => {
     abortAgentChatThread(threadId);
   });
 
   // v0.10: 输入框上下文表的"固定开销"(system/课文/学习者) + 模型窗口/看图能力
-  ipcMain.handle("agent:getContextUsage", async (_e, nodeId: string, locale?: string | null) => {
+  handle("agent:getContextUsage", async (_e, nodeId: string, locale?: string | null) => {
     return getContextUsage(getDb(), nodeId, locale);
   });
   // v0.10: 聊天图片附件的 data-url(渲染层历史缩略图;文件名守卫在 store 内)
-  ipcMain.handle("attachment:getDataUrl", async (_e, file: string) => {
+  handle("attachment:getDataUrl", async (_e, file: string) => {
     return readAttachmentDataUrl(file);
   });
 
   // 取某节点聊天历史（持久化在 chat_sessions 表）
-  ipcMain.handle("agent:getHistory", async (_e, nodeId: string) => {
+  handle("agent:getHistory", async (_e, nodeId: string) => {
     return getChatHistory(nodeId);
   });
 
   // 清空某节点聊天历史
-  ipcMain.handle("agent:clearHistory", async (_e, nodeId: string) => {
+  handle("agent:clearHistory", async (_e, nodeId: string) => {
     clearChatHistory(nodeId);
   });
 
   // provider 是否就绪（渲染层只见布尔）
-  ipcMain.handle("agent:isReady", async () => isLlmReady(getDb()));
+  handle("agent:isReady", async () => isLlmReady(getDb()));
 
   // 返回所有 provider 预设元数据（给 Settings 页做 provider/model 选择器，不含 key）
-  ipcMain.handle("agent:getProviderPresets", async () => {
+  handle("agent:getProviderPresets", async () => {
     // 剥成 ApiExpose 契约里的 ProviderPresetInfo（不含 key 字段）
     return PROVIDER_PRESETS.map((p) => ({
       id: p.id,
@@ -1054,49 +1076,49 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   });
 
   // 测试当前 provider 连接（Settings 页"测试连接"按钮）
-  ipcMain.handle("agent:testConnection", async () => {
+  handle("agent:testConnection", async () => {
     return testLlmConnection(getDb());
   });
 
   // 测试自定义 provider 配置（不保存，临时验证）
-  ipcMain.handle("agent:testCustomProvider", async (_e, input: CustomProviderInput) => {
+  handle("agent:testCustomProvider", async (_e, input: CustomProviderInput) => {
     return testCustomProvider(input);
   });
 
   // OpenRouter 模型自动发现（公开 API，无需 key）
-  ipcMain.handle("agent:discoverModels", async () => {
+  handle("agent:discoverModels", async () => {
     return fetchOpenRouterModels();
   });
 
   // Provider 直连模型发现（用用户已配的 key 拉取 /v1/models）
-  ipcMain.handle("agent:discoverProviderModels", async (_e, baseUrl: string, apiKey: string) => {
+  handle("agent:discoverProviderModels", async (_e, baseUrl: string, apiKey: string) => {
     return fetchProviderModels(baseUrl, apiKey);
   });
 
   // 自定义 provider CRUD
-  ipcMain.handle("customProvider:list", async () => {
+  handle("customProvider:list", async () => {
     return listCustomProvidersService(getDb());
   });
-  ipcMain.handle("customProvider:create", async (_e, input: CustomProviderInput) => {
+  handle("customProvider:create", async (_e, input: CustomProviderInput) => {
     const result = createCustomProviderService(getDb(), input);
     markDirty();
     return result;
   });
-  ipcMain.handle("customProvider:update", async (_e, id: string, input: Partial<CustomProviderInput>) => {
+  handle("customProvider:update", async (_e, id: string, input: Partial<CustomProviderInput>) => {
     const result = updateCustomProviderService(getDb(), id, input);
     markDirty();
     return result;
   });
-  ipcMain.handle("customProvider:delete", async (_e, id: string) => {
+  handle("customProvider:delete", async (_e, id: string) => {
     deleteCustomProviderService(getDb(), id);
     markDirty();
   });
 
   // Proposal 流水线
-  ipcMain.handle("proposal:listPending", async () =>
+  handle("proposal:listPending", async () =>
     listPendingProposalsService(getDb()),
   );
-  ipcMain.handle("proposal:apply", async (_e, id: string) => {
+  handle("proposal:apply", async (_e, id: string) => {
     const db = getDb();
     // 拿皇冠过渡检测:apply 前该 proposal 节点是否已 mastered(已 mastered 就不算"首次拿皇冠")
     const prop = db.select().from(proposals).where(eq(proposals.id, id)).get();
@@ -1117,14 +1139,14 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
     markDirty();
     return result;
   });
-  ipcMain.handle("proposal:reject", async (_e, id: string) => {
+  handle("proposal:reject", async (_e, id: string) => {
     const result = rejectProposalService(getDb(), id);
     markDirty();
     return result;
   });
   // quiz 产物本地评分 → 自动建+应用 update_mastery 提案。
   // 答题观测是确定性的(无需 LLM 判断/人审),直接 apply。
-  ipcMain.handle("quiz:recordAnswer", async (_e, nodeId: string, correct: boolean, kc?: string) => {
+  handle("quiz:recordAnswer", async (_e, nodeId: string, correct: boolean, kc?: string) => {
     if (!nodeId) return { applied: false };
     // XP 即时反馈(与 exercise:submit 对齐:答对+10/答错+1)。
     correct ? addXpCorrect(getDb()) : addXpWrong(getDb());
@@ -1187,11 +1209,11 @@ function triggerConsolidationOnMilestone(nodeId: string): void {
 }
 
 export function registerM3Handlers(): void {
-  ipcMain.handle("dashboard:get", async (_e, courseId: string) => {
+  handle("dashboard:get", async (_e, courseId: string) => {
     return getDashboardService(getDb(), courseId);
   });
 
-  ipcMain.handle("search:content", async (_e, query: string) => {
+  handle("search:content", async (_e, query: string) => {
     // searchContent 需要原生 sqljs 句柄走 LIKE；从 drizzle $client 拿
     const sqljs = getDb() as unknown as {
       exec: (sql: string, params?: unknown[]) => Array<{ values: unknown[][] }>;
@@ -1200,7 +1222,7 @@ export function registerM3Handlers(): void {
   });
 
   // P3: 学习者主动报"卡点" → 写 friction_log(供 agent 上下文自适应)。
-  ipcMain.handle(
+  handle(
     "friction:log",
     async (
       _e,
@@ -1213,7 +1235,7 @@ export function registerM3Handlers(): void {
     },
   );
 
-  ipcMain.handle(
+  handle(
     "memory:update",
     async (
       _e,
@@ -1229,7 +1251,7 @@ export function registerM3Handlers(): void {
     },
   );
 
-  ipcMain.handle(
+  handle(
     "memory:get",
     async (
       _e,
@@ -1240,7 +1262,7 @@ export function registerM3Handlers(): void {
 
   // 记忆固化:从课程的对话+friction 采集窗口 → LLM 提炼+合并进全三类 memory。
   // memory_system flag off 时 no-op(off=baseline)。返回写入的类别。
-  ipcMain.handle("consolidate:run", async (_e, courseId: string) => {
+  handle("consolidate:run", async (_e, courseId: string) => {
     if (!isFlagOn("memory_system")) {
       return { ok: false, reason: "memory_system flag off" };
     }
@@ -1305,14 +1327,14 @@ async function autoStructureCourse(
   send("知识点提取完成");
 }
 
-export function registerAllHandlers(mainWindow: BrowserWindow): void {
-  registerCourseHandlers(mainWindow);
+export function registerAllHandlers(deps: RuntimeDeps): void {
+  registerCourseHandlers(deps);
   registerProgressHandlers();
   registerSrsHandlers();
   registerStreakHandlers();
   registerSettingsHandlers();
   registerSoulHandlers();
-  registerAgentHandlers(mainWindow);
+  registerAgentHandlers(deps);
   registerM3Handlers();
   registerExerciseHandlers();
   registerExamHandlers();
@@ -1323,25 +1345,25 @@ export function registerAllHandlers(mainWindow: BrowserWindow): void {
 /* ---------- v0.4: Thread 会话 ---------- */
 
 export function registerThreadHandlers(): void {
-  ipcMain.handle(
+  handle(
     "thread:list",
     async (_e, courseId: string, status?: "active" | "archived") => {
       return listThreads(courseId, status);
     },
   );
-  ipcMain.handle("thread:create", async (_e, input) => {
+  handle("thread:create", async (_e, input) => {
     return createThread(input);
   });
-  ipcMain.handle("thread:update", async (_e, id: string, patch) => {
+  handle("thread:update", async (_e, id: string, patch) => {
     return updateThread(id, patch);
   });
-  ipcMain.handle("thread:delete", async (_e, id: string) => {
+  handle("thread:delete", async (_e, id: string) => {
     deleteThread(id);
   });
-  ipcMain.handle("thread:getMessages", async (_e, threadId: string) => {
+  handle("thread:getMessages", async (_e, threadId: string) => {
     return getThreadMessagesForDisplay(threadId);
   });
-  ipcMain.handle(
+  handle(
     "thread:findRecentByNode",
     async (_e, courseId: string, nodeId: string) => {
       return findRecentThreadByNode(courseId, nodeId);
@@ -1355,34 +1377,34 @@ export function registerThreadHandlers(): void {
 
 export function registerCanvasHandlers(): void {
   // zone 可选:undefined=全部 / 'understand'=理解区 / 'note'=笔记区 / 'practice'=练习区
-  ipcMain.handle(
+  handle(
     "canvas:list",
     async (_e, courseId: string, nodeId?: string | null, zone?: string) => {
       return listCanvasItems(courseId, nodeId ?? undefined, zone as CanvasZoneOpt);
     },
   );
-  ipcMain.handle(
+  handle(
     "canvas:save",
     async (_e, input) => {
       return saveCanvasItem(input);
     },
   );
-  ipcMain.handle("canvas:delete", async (_e, id: string) => {
+  handle("canvas:delete", async (_e, id: string) => {
     deleteCanvasItem(id);
   });
-  ipcMain.handle("canvas:togglePin", async (_e, id: string) => {
+  handle("canvas:togglePin", async (_e, id: string) => {
     return togglePinCanvasItem(id);
   });
   // 用户画线加笔记(user_note),带溯源
-  ipcMain.handle("canvas:saveUserNote", async (_e, input) => {
+  handle("canvas:saveUserNote", async (_e, input) => {
     return saveUserNote(input);
   });
   // quiz 重做后更新 last_result(只保留最近一次)
-  ipcMain.handle("canvas:recordQuizResult", async (_e, id: string, correct: boolean) => {
+  handle("canvas:recordQuizResult", async (_e, id: string, correct: boolean) => {
     return recordQuizResult(id, correct);
   });
   // 更新 user_note 的用户注释(canvas_items.notes 列)
-  ipcMain.handle("canvas:updateUserNoteComment", async (_e, id: string, comment: string) => {
+  handle("canvas:updateUserNoteComment", async (_e, id: string, comment: string) => {
     return updateUserNoteComment(id, comment);
   });
 }
@@ -1391,7 +1413,7 @@ export function registerCanvasHandlers(): void {
 
 export function registerExerciseHandlers(): void {
   // AI 生题（缓存到 exercises 表）
-  ipcMain.handle(
+  handle(
     "exercise:generate",
     async (_e, nodeId: string, type?: ExerciseType, locale?: string | null) => {
       const result = await generateExerciseService(getDb(), nodeId, type, locale);
@@ -1401,12 +1423,12 @@ export function registerExerciseHandlers(): void {
   );
 
   // 列出某节点缓存的练习题
-  ipcMain.handle("exercise:list", async (_e, nodeId: string) => {
+  handle("exercise:list", async (_e, nodeId: string) => {
     return listExercisesService(getDb(), nodeId);
   });
 
   // 提交答案 + 判分（触发掌握度更新 Proposal）
-  ipcMain.handle(
+  handle(
     "exercise:submit",
     async (_e, exerciseId: string, userAnswer: string) => {
       const result = submitExerciseAnswerService(getDb(), exerciseId, userAnswer);
@@ -1419,24 +1441,24 @@ export function registerExerciseHandlers(): void {
 /** 章节考试(关底 boss)IPC handlers */
 export function registerExamHandlers(): void {
   // 幂等启动题目生成(后台进行,进度走 exam:status 事件)
-  ipcMain.handle("exam:prepare", (_e, examNodeId: string, locale?: string | null) => {
+  handle("exam:prepare", (_e, examNodeId: string, locale?: string | null) => {
     return prepareExam(getDb(), examNodeId, locale);
   });
 
   // 查状态 + 就绪元信息 + 最新 attempt(悬挂 attempt 在此自动判死)
-  ipcMain.handle("exam:getStatus", (_e, examNodeId: string) => {
+  handle("exam:getStatus", (_e, examNodeId: string) => {
     return getExamStatusView(getDb(), examNodeId);
   });
 
   // 开始/重新考试:建 attempt 行
-  ipcMain.handle("exam:startAttempt", (_e, examNodeId: string) => {
+  handle("exam:startAttempt", (_e, examNodeId: string) => {
     const result = startExamAttempt(getDb(), examNodeId);
     markDirty();
     return result;
   });
 
   // 逐题增量持久化答案(崩溃安全)
-  ipcMain.handle(
+  handle(
     "exam:recordAnswer",
     (_e, examNodeId: string, attemptId: string, exerciseId: string, answer: string) => {
       recordExamAnswer(getDb(), examNodeId, attemptId, exerciseId, answer);
@@ -1445,7 +1467,7 @@ export function registerExamHandlers(): void {
   );
 
   // 提交考试:判分 + 算星数 + 写 attempt 结算 + progress.crownLevel
-  ipcMain.handle(
+  handle(
     "exam:submitAttempt",
     (
       _e,

@@ -8,15 +8,22 @@
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { app } from "electron";
 import {
   isSafeAttachmentFile,
   isSupportedImageMime,
   makeAttachmentFilename,
 } from "./pure/attachment-files.js";
 
-/** 附件根目录:userData/attachments(与 db/index 的 DB 文件同层)。 */
+/** 附件根目录:userData/attachments(与 db/index 的 DB 文件同层)。
+ *  serve 运行时在启动前 setAttachmentsRoot 注入(不进 electron 分支)。 */
+let attachmentsRootOverride: string | null = null;
+export function setAttachmentsRoot(dir: string): void {
+  attachmentsRootOverride = dir;
+}
 export function getAttachmentsRoot(): string {
+  if (attachmentsRootOverride) return attachmentsRootOverride;
+  // CJS 主进程里同步 require;仅在 Electron 进程内会被走到
+  const { app } = require("electron") as typeof import("electron");
   return join(app.getPath("userData"), "attachments");
 }
 

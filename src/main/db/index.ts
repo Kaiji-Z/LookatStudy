@@ -13,7 +13,6 @@
  */
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import { drizzle, type SQLJsDatabase } from "drizzle-orm/sql-js";
-import { app } from "electron";
 import { join, dirname } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,7 +28,11 @@ import schemaSql from "./schema.sql?raw";
  * - require.resolve 优先尝试（dev 时 node_modules 在标准位置）
  */
 function locateWasm(): string {
-  // 主进程是 CJS（vite.config.ts output.format='cjs'），require.resolve 可用
+  // 1) 便携束布局:sql-wasm.wasm 与 server.cjs 并排(build:mobile 复制过去) —— 优先,
+  //    因为束内 require.resolve 找不到 sql.js 包(它已被打进 bundle)
+  const beside = join(__dirname, "sql-wasm.wasm");
+  if (existsSync(beside)) return __dirname;
+  // 2) 主进程是 CJS（vite.config.ts output.format='cjs'），require.resolve 可用
   try {
     const wasmPath = require.resolve("sql.js/dist/sql-wasm.wasm");
     return dirname(wasmPath);
@@ -80,7 +83,7 @@ export function flushDb(): void {
   writeFileSync(_dbPath, Buffer.from(data));
 }
 
-export async function initDb(): Promise<void> {
+export async function initDb(opts?: { dataDir?: string }): Promise<void> {
   if (_db) return;
 
   // --ui-test 模式:独立全新 temp DB。避免持久化 userData DB 的累积状态(threads/provider/
@@ -102,12 +105,20 @@ export async function initDb(): Promise<void> {
         /* 文件锁等无法删——继续(下次尽量全新) */
       }
     }
+  } else if (opts?.dataDir) {
+    // 无头 serve:显式注入数据目录(Termux=~/.lookatstudy),不碰 electron
+    if (!existsSync(opts.dataDir)) mkdirSync(opts.dataDir, { recursive: true });
+    _dbPath = join(opts.dataDir, "lookatstudy.db");
   } else {
+    // electron 惰性 require —— serve 构建里 electron 标记 external 且永不执行此分支
+    const { app } = require("electron") as typeof import("electron");
     const userDataDir = app.getPath("userData");
     if (!existsSync(userDataDir)) {
       mkdirSync(userDataDir, { recursive: true });
     }
     _dbPath = join(userDataDir, "lookatstudy.db");
+    // app 退出前同步落盘(仅 electron 分支注册;serve 由入口注册 SIGINT/SIGTERM)
+    app.on("before-quit", flushDb);
   }
 
   _sqlStatic = await initSqlJs({ locateFile: (file: string) => join(locateWasm(), file) });
@@ -124,9 +135,6 @@ export async function initDb(): Promise<void> {
   _db = drizzle(_sqljs, { schema });
 
   runMigrations(_sqljs);
-
-  // app 退出前同步落盘
-  app.on("before-quit", flushDb);
 }
 
 /**

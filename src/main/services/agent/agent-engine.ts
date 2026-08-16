@@ -25,7 +25,7 @@ import {
   courses,
   threads,
 } from "../../db/schema.js";
-import type { BrowserWindow } from "electron";
+import type { ClientEmitter } from "../../ipc/runtime.js";
 import { getDb, markDirty } from "../../db/index.js";
 import { resolveLlm, classifyLlmError, readSettingsMap, buildLanguageModel, supportsVision } from "./llm-client.js";
 import {
@@ -859,7 +859,7 @@ export async function runAgentTurn(
  * 中断：每个 nodeId 一个 AbortController，agent:abort 时 abort。
  */
 export async function handleAgentChat(
-  win: BrowserWindow | null,
+  win: ClientEmitter | null,
   nodeId: string,
   userMessage: string,
   /** 界面语言(i18n);null/缺省 = zh-CN */
@@ -879,15 +879,15 @@ export async function handleAgentChat(
     nodeId,
     history,
     {
-      onTextDelta: (delta) => win?.webContents.send("chat:token", delta),
+      onTextDelta: (delta) => win?.send("chat:token", delta),
       onToolCall: (name, args) =>
-        win?.webContents.send("chat:toolCall", name, JSON.stringify(args ?? {})),
+        win?.send("chat:toolCall", name, JSON.stringify(args ?? {})),
       onProposalCreated: (id, summary) => {
-        win?.webContents.send("chat:proposal", id, summary, "pending");
+        win?.send("chat:proposal", id, summary, "pending");
       },
-      onError: (msg) => win?.webContents.send("chat:error", msg),
+      onError: (msg) => win?.send("chat:error", msg),
       // v0.2 parts 协议：把 reasoning/tool-start/tool-result/tool-error 透传给渲染层
-      onPart: (part) => win?.webContents.send("chat:part", part),
+      onPart: (part) => win?.send("chat:part", part),
     },
     controller.signal,
     locale,
@@ -898,7 +898,7 @@ export async function handleAgentChat(
   history.push({ role: "assistant", content: reply });
   saveChatHistory(db, nodeId, history);
   markDirty();
-  win?.webContents.send("chat:done", reply, {});
+  win?.send("chat:done", reply, {});
   return reply;
 }
 
@@ -977,7 +977,7 @@ function saveChatHistory(db: Db, nodeId: string, history: ChatTurn[]): void {
  * @returns         assistant 的完整文本回复
  */
 export async function handleAgentChatThread(
-  win: BrowserWindow | null,
+  win: ClientEmitter | null,
   threadId: string,
   userMessage: string,
   /** 按钮触发的消息:气泡展示的短动作标签(完整提示词仍是 userMessage,LLM 只见后者) */
@@ -1061,14 +1061,14 @@ export async function handleAgentChatThread(
     focusNodeId,
     history,
     {
-      onTextDelta: (delta) => win?.webContents.send("chat:token", delta),
+      onTextDelta: (delta) => win?.send("chat:token", delta),
       onToolCall: (name, args) =>
-        win?.webContents.send("chat:toolCall", name, JSON.stringify(args ?? {})),
+        win?.send("chat:toolCall", name, JSON.stringify(args ?? {})),
       onProposalCreated: (id, summary) => {
-        win?.webContents.send("chat:proposal", id, summary, "pending");
+        win?.send("chat:proposal", id, summary, "pending");
       },
-      onError: (msg) => win?.webContents.send("chat:error", msg),
-      onPart: (part) => win?.webContents.send("chat:part", part),
+      onError: (msg) => win?.send("chat:error", msg),
+      onPart: (part) => win?.send("chat:part", part),
     },
     controller.signal,
     locale,
@@ -1088,7 +1088,7 @@ export async function handleAgentChatThread(
   markDirty();
   // chat:done 带上两条消息的真实 DB id(前端用它替换流式时的临时 msg-v2-N id,
   // 让"对话画线笔记"的溯源 msgId 跨重载稳定匹配)
-  win?.webContents.send("chat:done", reply, {
+  win?.send("chat:done", reply, {
     userMessageId: savedUserMsg.id,
     assistantMessageId: savedAssistantMsg.id,
   });

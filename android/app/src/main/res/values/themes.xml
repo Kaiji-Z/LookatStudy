@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.LookatStudy" parent="Theme.AppCompat.NoActionBar">
+        <item name="colorPrimary">@color/brand</item>
+        <item name="android:statusBarColor">@color/launcher_bg</item>
+        <item name="android:navigationBarColor">@color/launcher_bg</item>
+        <item name="android:windowBackground">@color/launcher_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

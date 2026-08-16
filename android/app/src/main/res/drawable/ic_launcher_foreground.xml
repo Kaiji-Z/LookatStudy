@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 气球引导器前景:白气球 + 绳(108dp 自适应画布,中心 66dp 安全区) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 气球主体:双弧圆(圆心 54,45 半径 19) + 结 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35,45 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0 Z M54,64 l-5,-7 h10 Z" />
+    <!-- 绳:从结向下轻弯 -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,64 Q60,76 53,90" />
+
+</vector>

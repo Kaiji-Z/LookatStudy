@@ -30,8 +30,27 @@ jobs:
       - name: Typecheck main + preload
         run: npx tsc -p tsconfig.electron.json --noEmit
 
-      - name: Logic test suites (63 suites)
+      - name: Logic test suites (74 suites)
         run: npm run verify:core
 
       - name: Build renderer
         run: npm run build
+
+  mobile-bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      # 便携束(vite + esbuild server.cjs)随 CI 保持可构建;verify:core 里的
+      # verify-serve 已覆盖束的真实启动/WS/token 行为。
+      - name: Build mobile bundle
+        run: npm run build:mobile

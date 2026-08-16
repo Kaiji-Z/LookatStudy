@@ -762,7 +762,7 @@ function CodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreElement>)
         <button
           onClick={handleCopy}
           aria-label={t("chat.copy")}
-          className="text-caption text-ink-muted hover:text-brand transition-colors opacity-0 group-hover:opacity-100 inline-flex items-center gap-1"
+          className="text-caption text-ink-muted hover:text-brand transition-colors opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 inline-flex items-center gap-1"
           data-testid="md-copy"
         >
           {copied ? (

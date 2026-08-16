@@ -33,6 +33,8 @@ import { applySeedData, type SeedData } from "./seed-apply.js";
 function loadSeedData(): SeedData {
   const fileName = "seed-course.json";
   const candidates = [
+    // 便携束(手机/serve):seed-course.json 与 server.cjs 并排(buildServerBundle 复制)
+    join(__dirname, fileName),
     // tsx 直跑(verify 脚本):__dirname = .../src/main/services
     join(__dirname, "..", "assets", fileName),
     // dev/prod vite 构建:__dirname = .../dist-electron/main → 项目根 → src/main/assets

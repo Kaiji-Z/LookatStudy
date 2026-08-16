@@ -12,7 +12,6 @@
  *
  * DB 注入式,便于 verify 脚本用内存 DB 测(文件读写用注入的 fsOps,默认绑真实 fs)。
  */
-import { app } from "electron";
 import { join } from "node:path";
 import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -84,7 +83,15 @@ export function isImageExt(filename: string): boolean {
  * 定位 assets 根目录:userData/assets。
  * 用 app.getPath('userData') 同 db/index.ts 的 DB 文件位置。
  */
+let assetsRootOverride: string | null = null;
+/** serve 启动前注入(无头模式不进 electron 分支) */
+export function setAssetsRoot(dir: string): void {
+  assetsRootOverride = dir;
+}
 export function getAssetsRoot(): string {
+  if (assetsRootOverride) return assetsRootOverride;
+  // CJS 主进程里同步 require;仅在 Electron 进程内会被走到
+  const { app } = require("electron") as typeof import("electron");
   return join(app.getPath("userData"), "assets");
 }
 

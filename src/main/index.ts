@@ -12,7 +12,7 @@ import { app, BrowserWindow, shell } from "electron";
 import { join, resolve } from "node:path";
 import { writeFileSync, appendFileSync, mkdirSync, existsSync, statSync } from "node:fs";
 import { initDb, getDb, markDirty } from "./db/index.js";
-import { registerAllHandlers } from "./ipc/index.js";
+import { setupIpc } from "./ipc/electron-wiring.js";
 import { setupContextMenu } from "./context-menu.js";
 import { ensureSeedCourse } from "./services/seed.js";
 import { ensureExamNodesForExistingCourses } from "./services/course-generator.js";
@@ -233,10 +233,10 @@ app.whenReady().then(async () => {
   }
 
   if (mainWindow) {
-    registerAllHandlers(mainWindow);
+    setupIpc(mainWindow);
   } else {
     createWindow();
-    if (mainWindow) registerAllHandlers(mainWindow);
+    if (mainWindow) setupIpc(mainWindow);
   }
   // Phase 0: 注入状态变化 emitter。service 内 emitStateChange → 推 "state:changed" 给 renderer。
   setStateEmitter((kind) => mainWindow?.webContents.send("state:changed", kind));
@@ -401,7 +401,7 @@ async function runShots(mode: "zh" | "en"): Promise<void> {
       sandbox: false,
     },
   });
-  registerAllHandlers(win);
+  setupIpc(win);
   setStateEmitter((kind) => win.webContents.send("state:changed", kind));
   setExamStatusSender((payload) => win.webContents.send("exam:status", payload));
   await win.loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"));
@@ -629,7 +629,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       sandbox: false,
     },
   });
-  registerAllHandlers(win);
+  setupIpc(win);
 
   // M2 测试造数：造一条 pending proposal，让 T8 能测 listPending→reject→空 的回路
   // （渲染层没暴露 createProposal IPC——create 是 AI 发起的，学习者只 list/apply/reject）

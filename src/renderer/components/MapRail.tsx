@@ -34,7 +34,7 @@ import {
   type Vec2,
 } from "../lib/mapPhysics.js";
 import { attachSky, attachOrbWeather, pickPreset, PRESETS, type SkyPreset, type OrbPos } from "../lib/skyCanvas.js";
-import { api } from "../lib/api.js";
+import { api, isDesktopApp } from "../lib/api.js";
 import { useLang } from "../lib/i18n.js";
 import { celebrate } from "../lib/celebration.js";
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion.js";
@@ -350,6 +350,8 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
   const [tab, setTab] = useState<"url" | "markdown" | "folder" | "pack">("url");
   const [showImport, setShowImport] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
+  const [folderPath, setFolderPath] = useState("");
+  const packFileRef = useRef<HTMLInputElement | null>(null);
   const [mdText, setMdText] = useState("");
   const [repoName, setRepoName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -440,6 +442,18 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
   const handleImportFolder = async () => {
     if (busy) return;
     setError(null); setSuccess(null); setProgressSteps([]);
+    if (!isDesktopApp) {
+      // web 模式:文件夹在服务器侧(手机=Termux 文件系统),路径由用户输入
+      const p = folderPath.trim();
+      if (!p) { setError(t("import.folder.pathRequired")); return; }
+      try {
+        const job = await api.importLocalFolder(p);
+        if (job) setBusy(true);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
     // 后台 job：选完文件夹立即返回，管线后台跑（完成走 import:done 监听）
     const job = await api.importLocalFolder();
     if (!job) return; // 用户取消了文件夹选择对话框
@@ -448,9 +462,25 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
   const handleImportPack = async () => {
     if (busy) return;
     setError(null); setSuccess(null); setProgressSteps([]);
+    if (!isDesktopApp) {
+      // web 模式:浏览器文件选择器读内容,显式传给服务端
+      packFileRef.current?.click();
+      return;
+    }
     const job = await api.importPack().catch((e) => { setError(e instanceof Error ? e.message : String(e)); return null; });
     if (!job) return; // 用户取消了文件选择对话框(或格式错误已显示)
     setBusy(true);
+  };
+  const handlePackFileChosen = async (file: File | null | undefined) => {
+    if (!file || busy) return;
+    setError(null); setSuccess(null); setProgressSteps([]);
+    try {
+      const content = await file.text();
+      const job = await api.importPack({ fileName: file.name, content });
+      if (job) setBusy(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   };
   const handleResume = async (planId: string) => {
     if (busy) return;
@@ -464,11 +494,27 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
   };
   const handleExportPack = async (courseId: string) => {
     try {
-      const path = await api.exportPack(courseId);
-      if (path) setSuccess(t("import.pack.exported", { path }));
+      const r = await api.exportPack(courseId);
+      if (r?.content && r.fileName) {
+        downloadPackInBrowser(r.fileName, r.content);
+        setSuccess(t("import.pack.exported", { path: r.fileName }));
+      } else if (r?.path) {
+        setSuccess(t("import.pack.exported", { path: r.path }));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  };
+
+  /** web 模式导出:浏览器端把课程包内容落成下载(electron 模式走原生保存对话框,不会到这) */
+  const downloadPackInBrowser = (fileName: string, content: string) => {
+    const blob = new Blob([content], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 
   return (
@@ -495,13 +541,18 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
                   </div>
                 </button>
                 {/* 导出课程包 + 删除:悬浮浮现一组(导出仅 GitHub 来源可用,失败 toast 说明) */}
-                <div className="absolute bottom-1.5 right-2 flex items-center gap-2.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                <div className="absolute bottom-1.5 right-2 flex items-center gap-2.5 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 focus-within:opacity-100 transition-opacity">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setError(null); setSuccess(null);
-                      api.exportPack(c.id).then((path) => {
-                        if (path) setSuccess(t("import.pack.exported", { path }));
+                      api.exportPack(c.id).then((r) => {
+                        if (r?.content && r.fileName) {
+                          downloadPackInBrowser(r.fileName, r.content);
+                          setSuccess(t("import.pack.exported", { path: r.fileName }));
+                        } else if (r?.path) {
+                          setSuccess(t("import.pack.exported", { path: r.path }));
+                        }
                       }).catch((err: unknown) => {
                         setError(err instanceof Error ? err.message : String(err));
                       });
@@ -591,11 +642,25 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
                 ) : tab === "folder" ? (
                   <section className="space-y-2" data-testid="import-folder-section">
                     <p className="text-caption text-white/50 leading-relaxed">{t("import.folder.desc")}</p>
-                    <button onClick={handleImportFolder} disabled={busy} data-testid="import-folder-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.folder")}</button>
+                    {!isDesktopApp && (
+                      <input
+                        type="text" value={folderPath} onChange={(e) => setFolderPath(e.target.value)}
+                        placeholder={t("import.folder.pathPlaceholder")} data-testid="import-folder-path"
+                        className="w-full bg-black/25 text-white placeholder:text-white/35 text-body rounded-lg px-3 py-2 border border-white/15 focus:border-brand focus:outline-none transition-colors"
+                      />
+                    )}
+                    <button onClick={handleImportFolder} disabled={busy || (!isDesktopApp && !folderPath.trim())} data-testid="import-folder-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.folder")}</button>
                   </section>
                 ) : (
                   <section className="space-y-2" data-testid="import-pack-section">
                     <p className="text-caption text-white/50 leading-relaxed">{t("import.pack.desc")}</p>
+                    {!isDesktopApp && (
+                      <input
+                        ref={packFileRef} type="file" accept=".json,application/json" className="hidden"
+                        data-testid="import-pack-file"
+                        onChange={(e) => { void handlePackFileChosen(e.target.files?.[0]); e.currentTarget.value = ""; }}
+                      />
+                    )}
                     <button onClick={handleImportPack} disabled={busy} data-testid="import-pack-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.pack")}</button>
                   </section>
                 )}

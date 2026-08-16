@@ -38,11 +38,17 @@ jobs:
       - name: Zip portable package
         run: cd dist/mobile && zip -r ../../lookatstudy-mobile.zip .
 
+      # 引导器的一行安装命令 curl 它执行(独立资产,免解压 zip)
+      - name: Stage standalone installer
+        run: cp dist/mobile/install-termux.sh ./install-termux.sh
+
       - name: Upload mobile zip artifact
         uses: actions/upload-artifact@v4
         with:
           name: lookatstudy-mobile-zip
-          path: lookatstudy-mobile.zip
+          path: |
+            lookatstudy-mobile.zip
+            install-termux.sh
           if-no-files-found: error
           retention-days: 14
 
@@ -90,4 +96,4 @@ jobs:
       - name: Attach mobile assets to the GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ inputs.release_tag || github.ref_name }}" assets/lookatstudy-mobile-zip/lookatstudy-mobile.zip assets/LookatStudy-launcher-apk/LookatStudy-launcher.apk --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "${{ inputs.release_tag || github.ref_name }}" assets/lookatstudy-mobile-zip/lookatstudy-mobile.zip assets/lookatstudy-mobile-zip/install-termux.sh assets/LookatStudy-launcher-apk/LookatStudy-launcher.apk --repo "$GITHUB_REPOSITORY" --clobber

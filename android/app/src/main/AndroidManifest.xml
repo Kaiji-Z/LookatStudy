@@ -25,6 +25,11 @@
         </activity>
 
         <activity
+            android:name=".HelpActivity"
+            android:exported="false"
+            android:label="@string/help_title" />
+
+        <activity
             android:name=".WebUiActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden"

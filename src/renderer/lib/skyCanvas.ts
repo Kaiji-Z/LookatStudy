@@ -386,8 +386,10 @@ let orbCaps: number[] = [];
    cov 控制覆盖比例(0.5 = 球顶 1/2),用宽度比例定义区域,避免角度参数化
    在 90° 时端点塌缩到中线的 bug。 */
 function drawSnowDome(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, cap: number, _now: number) {
-  const lift = r * (0.04 + cap * 0.05);   // 隆起:微凸出球顶
-  const cov = 0.7 + cap * 0.15;           // 覆盖比例:0.7..0.85(球顶大半)
+  if (cap < 0.04) return; // 残雪过薄不画(物理地板 6% → 只留一线小盖)
+  const lift = r * (0.02 + cap * 0.07);  // 隆起随厚度:薄雪贴着球面,厚雪微凸
+  const cov = 0.12 + cap * 0.73;          // 覆盖全量映射:12%..85%(薄雪只盖一点;
+  // 原 0.7+cap*0.15 的映射雪载掉一半雪盖几乎不变,实测被用户抓过)
   // 雪线端点:按宽度比例定
   const lx = cx - r * cov;
   const rx = cx + r * cov;

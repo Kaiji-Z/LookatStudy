@@ -250,6 +250,8 @@ export const FIELD_RANGE = BALL_RADIUS * 2.45;
 const FIELD_MAX_ACCEL = 0.006;
 /** 球速上限(px/step):Matter 无 CCD,超速会整帧穿透对撞;快但不至于穿。 */
 const MAX_ORB_SPEED = 22;
+/** 甩雪地板:一次抖动/拖拽把雪盖甩到只剩一点(≈6%),再往下不掉,靠天气慢慢积回。 */
+const SHED_FLOOR = 0.06;
 
 export function createSectionIsland(opts: {
   nodes: { id: string; x: number; y: number; isExam?: boolean; locked?: boolean; spawn?: { x: number; y: number; vx?: number; vy?: number } }[];
@@ -432,7 +434,7 @@ export function createSectionIsland(opts: {
    * 同步扣减 b.snow(球变轻 → 微微上浮,物理耦合)。
    */
   const shedSnow = (b: IslandBall, dir: Vec2, speed: number, count: number) => {
-    if (b.snow <= 0.02) return;
+    if (b.snow <= SHED_FLOOR) return;
     const cnt = Math.max(1, Math.min(count, Math.round(b.snow * count) + 1));
     for (let i = 0; i < cnt; i++) {
       const theta = -(0.35 + Math.random() * 1.9); // 上半球随机角
@@ -445,7 +447,7 @@ export function createSectionIsland(opts: {
         amount: 0.02 + Math.min(0.05, speed * 0.004),
       });
     }
-    b.snow = Math.max(0, b.snow - cnt * (0.02 + Math.min(0.04, speed * 0.003)));
+    b.snow = Math.max(SHED_FLOOR * 0.5, b.snow - cnt * (0.03 + Math.min(0.07, speed * 0.005)));
     if (flakes.length > 96) flakes.splice(0, flakes.length - 96);
   };
 
@@ -555,7 +557,7 @@ export function createSectionIsland(opts: {
       // 快速移动甩雪:拖拽/被甩/晃动时球顶积雪持续飞离(慢移不掉)
       for (const b of balls) {
         const sp = Math.hypot(b.body.velocity.x, b.body.velocity.y);
-        if (b.snow > 0.02 && sp > FLAKE_MIN_SPEED) {
+        if (b.snow > SHED_FLOOR && sp > FLAKE_MIN_SPEED) {
           shedSnow(b, { x: b.body.velocity.x / sp, y: b.body.velocity.y / sp }, sp, 2);
         }
       }

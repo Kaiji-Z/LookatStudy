@@ -1534,6 +1534,73 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: courseSearch,
   });
 
+  // T8b2 (物理地图指针路径): 真实 PointerEvent 序列(非合成 click)覆盖
+  // setPointerCapture 重定向 click 的场景 —— pointerup 自路由必须仍能进课;
+  // 锁定球是 static 刚体,指针拖拽后 transform 必须分毫不动。
+  const pointerProbe = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        function fire(el, type, x, y) {
+          el.dispatchEvent(new PointerEvent(type, {
+            bubbles: true, cancelable: true, composed: true,
+            clientX: x, clientY: y, pointerId: 7, pointerType: "mouse",
+            button: 0, buttons: 1, isPrimary: true,
+          }));
+        }
+        const wrappers = Array.from(document.querySelectorAll('[data-node-id]'));
+        if (wrappers.length === 0) return { ok: false, reason: "no balls" };
+        // 当前已选中的球(带 ring-4 选中环)——探针必须选"另一个"解锁球,
+        // 盯选中环移动,否则会被前一条测试的残留状态污染(实测踩过)。
+        const ringEl = document.querySelector('[data-node-id] button[class*="ring-4"]');
+        const ringedId = ringEl ? ringEl.closest('[data-node-id]').getAttribute('data-node-id') : null;
+        let unlockedW = null, lockedW = null;
+        for (const w of wrappers) {
+          const id = w.getAttribute('data-node-id');
+          const btn = w.querySelector('button');
+          if (btn && !btn.disabled && !unlockedW && id !== ringedId) unlockedW = w;
+          if (btn && btn.disabled && !lockedW) lockedW = w;
+        }
+        if (!unlockedW) return { ok: false, reason: "no second unlocked ball" };
+        const targetId = unlockedW.getAttribute('data-node-id');
+        // 1) 解锁球:真实指针按+抬(位移 1px)→ 进课 = 选中环移到它
+        const r1 = unlockedW.getBoundingClientRect();
+        const cx = r1.left + r1.width / 2, cy = r1.top + r1.height / 2;
+        fire(unlockedW, "pointerdown", cx, cy);
+        fire(unlockedW, "pointerup", cx + 1, cy + 1);
+        await new Promise(function(r2){ setTimeout(r2, 700); });
+        const ringAfter = document.querySelector('[data-node-id] button[class*="ring-4"]');
+        const ringAfterId = ringAfter ? ringAfter.closest('[data-node-id]').getAttribute('data-node-id') : null;
+        const clickWorks = ringAfterId === targetId;
+        // 2) 锁定球:指针按住拖 80px → static 刚体,transform 不变
+        let lockedImmovable = null;
+        if (lockedW) {
+          const r3 = lockedW.getBoundingClientRect();
+          const lx = r3.left + r3.width / 2, ly = r3.top + r3.height / 2;
+          const t0 = lockedW.style.transform || "";
+          fire(lockedW, "pointerdown", lx, ly);
+          for (var i = 1; i <= 8; i++) fire(lockedW, "pointermove", lx + i * 10, ly + i * 5);
+          await new Promise(function(r2){ setTimeout(r2, 150); });
+          fire(lockedW, "pointerup", lx + 80, ly + 40);
+          await new Promise(function(r2){ setTimeout(r2, 250); });
+          const t1 = lockedW.style.transform || "";
+          lockedImmovable = t1 === t0;
+        }
+        // 还原选中态(点回原球),不污染下游测试的节点上下文
+        if (ringedId) {
+          const prev = document.querySelector('[data-node-id="' + ringedId + '"] button');
+          if (prev && !prev.disabled) prev.click();
+          await new Promise(function(r2){ setTimeout(r2, 400); });
+        }
+        return { ok: clickWorks === true && lockedImmovable !== false, clickWorks: clickWorks, lockedImmovable: lockedImmovable };
+      } catch (e) { return { ok: false, error: String(e) }; }
+    })()
+  `);
+  results.push({
+    name: "physics map: real-pointer click opens lesson + locked ball immovable",
+    ok: pointerProbe?.ok === true,
+    detail: pointerProbe,
+  });
+
   // T21 (课程删除闭环): 地图头"删除当前课程"按钮 → ConfirmCard 确认 → 课程删除,
   // 中栏回到未选课空态 + 课程列表少一门。ui-test 用临时 DB,删种子课不影响下次运行。
   let courseDelete: { trash?: boolean; card?: boolean; noCourse?: boolean; before?: number; after?: number; importPanel?: boolean; error?: string } = {};

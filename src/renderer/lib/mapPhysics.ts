@@ -1,28 +1,32 @@
 /**
  * mapPhysics —— 左栏地图物理引擎适配层(Matter.js 0.19)。
  *
- * 设计(2026-08-16,物理地图 v1):
- * - **无弹簧回位**:球自由摆布,顺序由绳链表达——绳从章节路牌锚点(绳结)出发,
- *   穿过全部球,终点是紫球(考试/boss)。读序 = 从绳结顺绳走到紫球。
- * - 每 section 一个物理岛(独立 Engine):墙 = 栏宽(左右) + section 边界(上下),
- *   岛内球互相碰撞 + 弹力带约束(相邻球距离约束,中低刚度 = 可拉伸);
- *   视口外的岛不步进(IntersectionObserver 门控,球冻结原位)。
- * - 近中性浮力(与重力等量反向,每球确定性 ± 微差)+ 位置相关正弦风
- *   → 场景永远微微漂浮,不结死块。
- * - 本模块不碰 DOM/React:位置由渲染层每帧读走写 transform;碰撞 squash
- *   形变是渲染层的事(物理体始终是圆,`inertia: Infinity` 不打转)。
- * - a11y:reduced-motion 时调用方完全不启用本模块(静态布局兜底)。
- *
- * 参考:balloons.html(Matter.js 绳系气球沙盒)的浮力/软抓取/风场手法。
+ * 物理模型(v2,2026-08-16 实测反馈重做):
+ * - **真实重力场**:engine.gravity=1 作用于一切——球有重量,绳子(粒子链)也有重量。
+ * - **球自带浮力**悬停:每球浮力 ≈ 自重(确定性哈希 0.97-1.05 微差),还要扛住
+ *   绳子的那份重量 → 有的球微微上顶把绳拉直,有的球微微下垂,形成彩旗串般的悬垂链。
+ * - **绳子 = 粒子链 + 距离约束**(balloons.html 手法):不受力时像普通绳子
+ *   自然垂坠(每段静止长度比实际间距长 8%),受拉时有弹力(段内刚度 0.9);
+ *   绳粒不与任何东西碰撞(纯受力链,轻量且不抖)。
+ * - **顺序 = 绳链**:路牌金色绳结 → 球1 → … → 紫球(考试)。无弹簧回位,自由摆布。
+ * - **天气驱动环境**(不是只有风):风基值/阵风/雨滴冲击/雪载增重/浓雾阻尼
+ *   由 weatherPhysFor 纯函数从天气映射,岛创建时定格。
+ * - 每 section 一个物理岛:墙 = 栏宽(左右) + section 边界(上下);视口外冻结。
+ * - 碰撞命中点统一用 collision.supports(球-墙也用——中心连线中点会飞到容器外)。
+ * - 本模块不碰 DOM/React;reduced-motion 时调用方完全不启用(静态布局兜底)。
  */
 import Matter from "matter-js";
 
-/** 弹力带视觉:绷紧时直线,松弛时下垂(二次贝塞尔)。垂量随松弛度线性增长,封顶。 */
-export const ROPE_MAX_SAG = 26;
 /** 指针位移 < 此值(px)判为点击(拖拽阈值);超出判为拖拽。与按压时长无关。 */
 export const DRAG_THRESHOLD_PX = 6;
 /** 球物理半径(px)。必须与视觉 w-14 h-14(56px)匹配。 */
 export const BALL_RADIUS = 28;
+/** 绳在球上的悬挂点:球心下方 r*0.92(绳从球底垂下)。 */
+export const ROPE_ATTACH = 0.92;
+/** 绳静止长度比实际间距的富余(>1 = 有松量可垂坠)。 */
+export const ROPE_SLACK = 1.08;
+/** 绳段粒子的目标段长(px)。段数 = clamp(round(距/段长), 5, 14)。 */
+export const ROPE_SEG_LEN = 34;
 
 export interface Vec2 {
   x: number;
@@ -43,33 +47,19 @@ export function classifyPointer(track: PointerTrack, endX: number, endY: number)
   return dist < DRAG_THRESHOLD_PX ? "click" : "drag";
 }
 
-/**
- * 弹力带 SVG path(二次贝塞尔):松弛下垂,绷紧变直。
- * sag = clamp((restLen - dist) * 0.6, 0, ROPE_MAX_SAG)。
- */
-export function ropePathD(from: Vec2, to: Vec2, restLen: number): string {
-  const dist = Math.hypot(to.x - from.x, to.y - from.y);
-  const sag = Math.min(ROPE_MAX_SAG, Math.max(0, (restLen - dist) * 0.6));
-  const mx = (from.x + to.x) / 2;
-  const my = (from.y + to.y) / 2 + sag;
-  return `M ${from.x.toFixed(1)} ${from.y.toFixed(1)} Q ${mx.toFixed(1)} ${my.toFixed(1)}, ${to.x.toFixed(1)} ${to.y.toFixed(1)}`;
+/** 绳链 SVG path:折线穿全部点(绳粒位置由物理给出,垂坠/绷直是物理结果)。 */
+export function ropeChainPathD(points: Vec2[]): string {
+  if (points.length === 0) return "";
+  let d = `M ${points[0]!.x.toFixed(1)} ${points[0]!.y.toFixed(1)}`;
+  for (let i = 1; i < points.length; i++) {
+    d += ` L ${points[i]!.x.toFixed(1)} ${points[i]!.y.toFixed(1)}`;
+  }
+  return d;
 }
 
 /** squash 指数衰减(时间常数 ~90ms)。dt 毫秒。 */
 export function decaySquash(squash: number, dtMs: number): number {
   return squash * Math.exp(-dtMs / 90);
-}
-
-/** 球间弹力带静止长度 = 布局距离(下限防两球完全叠死)。JSX 初值与物理岛共用。 */
-export function linkRestLength(a: Vec2, b: Vec2, ballRadius = BALL_RADIUS): number {
-  return Math.max(ballRadius * 2 + 8, Math.hypot(b.x - a.x, b.y - a.y));
-}
-
-/** 路牌绳结的 y(岛坐标:容器上缘上方,视觉落在路牌区)。 */
-export const ANCHOR_KNOT_Y = -46;
-/** 锚绳静止长度(下限 36)。JSX 初值与物理岛共用。 */
-export function anchorRestLength(anchor: Vec2, ball: Vec2): number {
-  return Math.max(36, Math.hypot(ball.x - anchor.x, ball.y - anchor.y));
 }
 
 /** squash → CSS transform 片段:沿碰撞法线方向压扁。squash < 0.01 视为无形变。 */
@@ -81,17 +71,14 @@ export function squashTransform(dx: number, dy: number, squash: number, angleRad
   return `${t} rotate(${deg.toFixed(1)}deg) scale(${(1 + s).toFixed(3)}, ${(1 - s).toFixed(3)}) rotate(${(-deg).toFixed(1)}deg)`;
 }
 
-/**
- * 确定性风场(balloons.html 手法):两个不同频率的行波正弦叠加,
- * 随位置/时间缓慢变化 → 每个球受力略不同,整体缓慢搅动。
- * 返回已按质量缩放前的单位向量系数(|fx| ≤ WIND_STRENGTH)。
- */
-export const WIND_STRENGTH = 0.00005;
-export function windFx(x: number, y: number, tMs: number): number {
-  const swirl =
+/** 确定性风场基频(balloons.html 手法):双频行波正弦,随位置/时间缓慢变化。 */
+export const WIND_STRENGTH = 0.00004;
+export const GUST_STRENGTH = 0.0005;
+export function swirlAt(x: number, y: number, tMs: number): number {
+  return (
     Math.sin(tMs * 0.00037 + y * 0.0013) * 0.6 +
-    Math.sin(tMs * 0.00019 + x * 0.0007 + 1.7) * 0.4;
-  return swirl * WIND_STRENGTH;
+    Math.sin(tMs * 0.00019 + x * 0.0007 + 1.7) * 0.4
+  );
 }
 
 /** 视口门控:返回与 [viewportTop, viewportBottom](± pad) 相交的 section id 集合。 */
@@ -109,6 +96,36 @@ export function activeIslandIds(
 }
 
 /* ============================================================
+ * 天气 → 环境物理参数(纯函数,可测)
+ * ============================================================ */
+
+export interface WeatherPhys {
+  /** 基础风力 0..1(乘 swirlAt 出发力)。 */
+  wind: number;
+  /** 阵风强度 0..1(storm 随机触发,指数衰减)。 */
+  gust: number;
+  /** 每步每球被雨滴砸中的概率(雨滴施加小冲量)。 */
+  rainRate: number;
+  /** 雪载增速(每步,球顶积雪增重压坠,撞一下震落 60%)。 */
+  snowRate: number;
+  /** 空气阻尼乘数(雾天浓稠空气,运动更钝)。 */
+  airDrag: number;
+}
+
+/** 天气 → 环境物理。未知天气按 clear(微风)。 */
+export function weatherPhysFor(weather: string): WeatherPhys {
+  switch (weather) {
+    case "storm": return { wind: 0.95, gust: 1, rainRate: 0.006, snowRate: 0, airDrag: 1.05 };
+    case "rain": return { wind: 0.6, gust: 0.25, rainRate: 0.004, snowRate: 0, airDrag: 1.0 };
+    case "snow": return { wind: 0.25, gust: 0, rainRate: 0, snowRate: 0.00016, airDrag: 1.0 };
+    case "fog": return { wind: 0.06, gust: 0, rainRate: 0, snowRate: 0, airDrag: 1.7 };
+    case "cloudy": return { wind: 0.4, gust: 0.1, rainRate: 0, snowRate: 0, airDrag: 1.0 };
+    case "clear":
+    default: return { wind: 0.3, gust: 0, rainRate: 0, snowRate: 0, airDrag: 1.0 };
+  }
+}
+
+/* ============================================================
  * 物理岛(每 section 一个)
  * ============================================================ */
 
@@ -118,15 +135,22 @@ export interface IslandBall {
   /** mapLayout 的确定性初始位(渲染层 transform 的参照原点)。 */
   layoutX: number;
   layoutY: number;
+  /** 考试(boss)球更沉。 */
+  isExam: boolean;
+  /** 雪载 0..1(雪天缓涨,碰撞震落)。 */
+  snow: number;
   squash: number;
   squashAngle: number;
 }
 
-/** 弹力带(from/to 为 nodeId;"__anchor" = 路牌绳结,锚点见 island.anchor)。 */
+/** 绳链:from("__anchor" = 路牌绳结)|nodeId → to 节点,中间是绳粒。 */
 export interface RopeLink {
   from: string;
   to: string;
+  /** 悬挂点间距的静止长度(信息/测试用)。 */
   restLen: number;
+  /** 中间绳粒(渲染层每帧读位置画折线)。 */
+  particles: Matter.Body[];
 }
 
 /** 碰撞事件(岛坐标系):渲染层画脉冲环 / 转换后喂天气层溅水花。 */
@@ -139,7 +163,7 @@ export interface ImpactEvent {
 export interface SectionIsland {
   readonly balls: IslandBall[];
   readonly links: RopeLink[];
-  /** 路牌绳结锚点(岛坐标,通常在容器上缘附近)。 */
+  /** 路牌绳结锚点(岛坐标,容器上缘上方)。 */
   readonly anchor: Vec2;
   ball(nodeId: string): IslandBall | undefined;
   step(dtMs: number): void;
@@ -168,24 +192,31 @@ function hash01(s: string): number {
 }
 
 const WALL_THICKNESS = 120;
-/** 球间弹力带刚度:低 = 明显可拉伸的弹力带,高 = 硬杆。 */
-const LINK_STIFFNESS = 0.35;
+/** 绳段内刚度(高 = 绳感,受拉有弹力但不过分伸长)。 */
+const ROPE_STIFF_IN = 0.9;
+/** 绳端挂到球/绳结上的刚度(略软,挂点有弹性)。 */
+const ROPE_STIFF_ATTACH = 0.7;
 /** 软抓取刚度(balloons.html MouseConstraint 手法):拖拽是"牵",不是"钉"。 */
 const DRAG_STIFFNESS = 0.09;
 /** 产生 squash/脉冲的最低相对速度(px/step)。 */
 const IMPACT_MIN_SPEED = 2.2;
+/** 雪载对球的重力增幅上限(10% 自重)。 */
+const SNOW_WEIGHT = 0.1;
 
 export function createSectionIsland(opts: {
-  nodes: { id: string; x: number; y: number }[];
+  nodes: { id: string; x: number; y: number; isExam?: boolean; locked?: boolean }[];
   width: number;
   height: number;
   ballRadius?: number;
+  /** 天气(默认 clear)——环境物理参数在创建时定格。 */
+  weather?: string;
 }): SectionIsland {
   const r = opts.ballRadius ?? BALL_RADIUS;
+  const env = weatherPhysFor(opts.weather ?? "clear");
   const { Engine, Bodies, Body, Composite, Constraint, Events } = Matter;
 
   const engine = Engine.create();
-  engine.gravity.y = 1;
+  engine.gravity.y = 1; // 真实重力场:球和绳粒都受重力
   engine.positionIterations = 6;
   engine.velocityIterations = 4;
 
@@ -193,12 +224,18 @@ export function createSectionIsland(opts: {
     const body = Bodies.circle(n.x, n.y, r, {
       restitution: 0.42,
       friction: 0.01,
-      frictionAir: 0.022,
-      density: 0.001,
+      frictionAir: 0.03 * env.airDrag,
+      density: n.isExam ? 0.0016 : 0.001, // 考试(boss)球更沉
       inertia: Infinity, // 不打转:进度环/皇冠朝向不随物理旋转
+      // 锁定球 = static 刚体:不可拖、风吹不动、别的球撞它如撞墙——
+      // 地图初始状态稳定,随学习进度逐球"苏醒"(解锁时重建岛)。
+      isStatic: !!n.locked,
       collisionFilter: { group: 0, category: 0x0002, mask: 0x0002 | 0x0004 },
     });
-    return { nodeId: n.id, body, layoutX: n.x, layoutY: n.y, squash: 0, squashAngle: 0 };
+    return {
+      nodeId: n.id, body, layoutX: n.x, layoutY: n.y,
+      isExam: !!n.isExam, snow: 0, squash: 0, squashAngle: 0,
+    };
   });
   for (const b of balls) Composite.add(engine.world, b.body);
 
@@ -212,48 +249,101 @@ export function createSectionIsland(opts: {
     Bodies.rectangle(opts.width + half, opts.height / 2, WALL_THICKNESS, opts.height * 3, wallOpts),
   ]);
 
-  // 路牌绳结:锚在容器上缘上方(视觉落在路牌区),绳系住第一个球。
-  const first = balls[0];
-  const anchor: Vec2 = first ? { x: first.layoutX, y: ANCHOR_KNOT_Y } : { x: opts.width / 2, y: ANCHOR_KNOT_Y };
+  /* ── 绳子:粒子链(balloons.html createRope 手法) ──
+     每段 = 一个小圆粒 + 两条距离约束;绳粒碰撞掩码 0(纯受力链,不与球/墙碰撞)。
+     段静止长度 = 悬挂点间距 × ROPE_SLACK / 段数 → 不受力时自然垂坠,受拉绷直。 */
+  const attachOf = (b: IslandBall): Vec2 => ({ x: b.body.position.x, y: b.body.position.y + r * ROPE_ATTACH });
   const links: RopeLink[] = [];
-  if (first) {
-    const anchorBody = Bodies.circle(anchor.x, anchor.y, 2, { isStatic: true, collisionFilter: { mask: 0 } });
-    Composite.add(engine.world, anchorBody);
-    const restLen = anchorRestLength(anchor, { x: first.layoutX, y: first.layoutY });
+
+  /** 绳头:挂在刚体上(球,带局部偏移)或纯点(路牌绳结)。球不旋转(inertia=∞),局部偏移恒屏幕对齐。 */
+  type RopeHead = { body: Matter.Body; offset: Vec2 } | { point: Vec2 };
+
+  function ropeConstraintFrom(head: RopeHead, bodyB: Matter.Body, pointB: Vec2 | undefined, length: number, stiffness: number) {
+    return "body" in head
+      ? Constraint.create({ bodyA: head.body, pointA: head.offset, bodyB, pointB, length, stiffness, damping: 0.05 })
+      : Constraint.create({ pointA: head.point, bodyB, pointB, length, stiffness, damping: 0.05 });
+  }
+
+  function createRope(a: Vec2, bodyA: Matter.Body | null, ballB: IslandBall, fromId: string) {
+    const bAttach = { x: ballB.body.position.x, y: ballB.body.position.y + r * ROPE_ATTACH };
+    const dx = bAttach.x - a.x;
+    const dy = bAttach.y - a.y;
+    const dist = Math.max(60, Math.hypot(dx, dy));
+    const segs = Math.max(5, Math.min(14, Math.round(dist / ROPE_SEG_LEN)));
+    const restLen = (dist * ROPE_SLACK) / segs;
+    const particles: Matter.Body[] = [];
+    let head: RopeHead = bodyA
+      ? { body: bodyA, offset: { x: a.x - bodyA.position.x, y: a.y - bodyA.position.y } }
+      : { point: a };
+    let isFirst = true;
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const p = Bodies.circle(a.x + dx * t, a.y + dy * t, 3.5, {
+        density: 0.0007, // 绳很轻,但受重力(球要扛住它)
+        frictionAir: 0.1 * env.airDrag,
+        collisionFilter: { category: 0x0008, mask: 0 },
+      });
+      particles.push(p);
+      Composite.add(engine.world, p);
+      // 首段挂在球/绳结上(软 0.7),粒子之间是绳本体(硬 0.9)→ 受拉有弹力、松弛垂坠
+      Composite.add(
+        engine.world,
+        ropeConstraintFrom(head, p, undefined, restLen, isFirst ? ROPE_STIFF_ATTACH : ROPE_STIFF_IN),
+      );
+      isFirst = false;
+      head = { body: p, offset: { x: 0, y: 0 } };
+    }
+    // 尾段:最后绳粒(或起点)→ 球B 悬挂点(挂点软)
     Composite.add(
       engine.world,
-      Constraint.create({ bodyA: anchorBody, bodyB: first.body, length: restLen, stiffness: 0.5, damping: 0.05 }),
+      ropeConstraintFrom(head, ballB.body, { x: 0, y: r * ROPE_ATTACH }, restLen, ROPE_STIFF_ATTACH),
     );
-    links.push({ from: "__anchor", to: first.nodeId, restLen });
+    links.push({ from: fromId, to: ballB.nodeId, restLen: dist * ROPE_SLACK, particles });
   }
-  // 球间弹力带:restLen = 布局距离(生成即平衡,风慢慢搅动)。
+
+  // 路牌绳结:锚在容器上缘上方(视觉落在路牌区),绳系住第一个球的底部。
+  const first = balls[0];
+  const anchor: Vec2 = first ? { x: first.layoutX, y: ANCHOR_KNOT_Y } : { x: opts.width / 2, y: ANCHOR_KNOT_Y };
+  if (first) {
+    createRope(anchor, null, first, "__anchor");
+  }
+  // 球间绳:前球底部 → 后球底部。
   for (let i = 0; i < balls.length - 1; i++) {
     const a = balls[i]!;
     const b = balls[i + 1]!;
-    const restLen = linkRestLength({ x: a.layoutX, y: a.layoutY }, { x: b.layoutX, y: b.layoutY }, r);
-    Composite.add(
-      engine.world,
-      Constraint.create({ bodyA: a.body, bodyB: b.body, length: restLen, stiffness: LINK_STIFFNESS, damping: 0.06 }),
-    );
-    links.push({ from: a.nodeId, to: b.nodeId, restLen });
+    createRope(attachOf(a), a.body, b, a.nodeId);
   }
 
-  // 近中性浮力 + 风:与重力等量反向(lift 确定性 0.98-1.03 微差 → 有的微升有的微降)。
-  const lifts = new Map(balls.map((b) => [b.nodeId, 0.98 + hash01(b.nodeId) * 0.05]));
+  // 浮力(扛住自重 + 绳的重量)+ 风 + 雨滴冲击 + 雪载增重。
+  const lifts = new Map(balls.map((b) => [b.nodeId, 0.97 + hash01(b.nodeId) * 0.08]));
+  let gustNow = 0;
+  let gustDir = 1;
   Events.on(engine, "beforeUpdate", () => {
     const t = engine.timing.timestamp;
+    // 阵风包络:随机触发 + 指数衰减(balloons.html 手法)
+    gustNow *= 0.97;
+    if (env.gust > 0 && Math.random() < 0.0025 * env.gust) {
+      gustNow = env.gust * (0.6 + Math.random() * 0.4);
+      gustDir = Math.random() < 0.5 ? -1 : 1;
+    }
     for (const b of balls) {
       const m = b.body.mass;
-      Body.applyForce(b.body, b.body.position, {
-        x: windFx(b.body.position.x, b.body.position.y, t) * m,
-        y: -m * engine.gravity.y * engine.gravity.scale * (lifts.get(b.nodeId) ?? 1),
-      });
+      const g = engine.gravity.y * engine.gravity.scale;
+      const fx = swirlAt(b.body.position.x, b.body.position.y, t) * env.wind * WIND_STRENGTH * m + gustDir * gustNow * GUST_STRENGTH * m;
+      let fy = -m * g * (lifts.get(b.nodeId) ?? 1);
+      // 雪载:球顶积雪增重压坠(碰撞震落在 collisionStart 里做)
+      if (b.snow > 0) fy += m * g * SNOW_WEIGHT * b.snow;
+      // 雨滴:小概率砸一下(向下的瞬时冲量 + 随机横向)
+      if (env.rainRate > 0 && Math.random() < env.rainRate) {
+        fy += m * g * 0.35;
+        Body.applyForce(b.body, b.body.position, { x: (Math.random() - 0.5) * m * g * 0.3, y: 0 });
+      }
+      Body.applyForce(b.body, b.body.position, { x: fx, y: fy });
     }
   });
 
-  // 碰撞:squash 形变 + 脉冲事件(球-球 与 球-墙 都算)。
+  // 碰撞:squash 形变 + 脉冲事件(命中点统一用支撑点——球-墙的中心连线中点会飞到容器外)。
   const impacts: ImpactEvent[] = [];
-  const ballSet = new Set(balls.map((b) => b.body));
   Events.on(engine, "collisionStart", (e) => {
     for (const pair of e.pairs) {
       const { bodyA, bodyB } = pair;
@@ -264,21 +354,30 @@ export function createSectionIsland(opts: {
       const speed = Math.hypot(rv.x, rv.y);
       if (speed < IMPACT_MIN_SPEED) continue;
       const n = pair.collision.normal;
-      const hit: ImpactEvent = {
+      const s0 = pair.collision.supports?.[0];
+      impacts.push(s0 ? { x: s0.x, y: s0.y, speed } : {
         x: (bodyA.position.x + bodyB.position.x) / 2,
         y: (bodyA.position.y + bodyB.position.y) / 2,
         speed,
-      };
-      if (ballSet.has(bodyA) && ballSet.has(bodyB)) {
-        // 球-球:命中点用支撑点更准,退化用中点
-        const s0 = pair.collision.supports?.[0];
-        if (s0) { hit.x = s0.x; hit.y = s0.y; }
-      }
-      impacts.push(hit);
+      });
       if (impacts.length > 64) impacts.shift();
       const amount = Math.min(0.32, speed * 0.028);
       if (a && amount > a.squash) { a.squash = amount; a.squashAngle = Math.atan2(n.y, n.x); }
       if (b2 && amount > b2.squash) { b2.squash = amount; b2.squashAngle = Math.atan2(-n.y, -n.x); }
+      // 雪天:撞一下震落 60% 雪载(与视觉层 orbCaps 同步率同口径)
+      if (a) a.snow *= 0.4;
+      if (b2) b2.snow *= 0.4;
+    }
+  });
+
+  // 雪天:雪载缓涨(封顶 1)
+  let snowAcc = 0;
+  Events.on(engine, "afterUpdate", () => {
+    if (env.snowRate <= 0) return;
+    snowAcc += env.snowRate;
+    if (snowAcc >= 1) {
+      snowAcc = 0;
+      for (const b of balls) b.snow = Math.min(1, b.snow + 0.01);
     }
   });
 
@@ -330,9 +429,13 @@ export function createSectionIsland(opts: {
     dispose() {
       this.endDrag();
       Events.off(engine, "beforeUpdate");
+      Events.off(engine, "afterUpdate");
       Events.off(engine, "collisionStart");
       Composite.clear(engine.world, false);
       Engine.clear(engine);
     },
   };
 }
+
+/** 路牌绳结的 y(岛坐标:容器上缘上方,视觉落在路牌区)。 */
+export const ANCHOR_KNOT_Y = -46;

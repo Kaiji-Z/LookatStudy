@@ -18,16 +18,17 @@ import {
 } from "../lib/mapLayout.js";
 import {
   ANCHOR_KNOT_Y,
-  anchorRestLength,
+  BALL_RADIUS,
+  ROPE_ATTACH,
   classifyPointer,
   createSectionIsland,
   decaySquash,
-  linkRestLength,
-  ropePathD,
+  ropeChainPathD,
   squashTransform,
   type ImpactEvent,
   type PointerTrack,
   type SectionIsland,
+  type Vec2,
 } from "../lib/mapPhysics.js";
 import { attachSky, attachOrbWeather, pickPreset, PRESETS, type SkyPreset, type OrbPos } from "../lib/skyCanvas.js";
 import { api } from "../lib/api.js";
@@ -283,7 +284,7 @@ export function MapRail(props: MapRailProps) {
                 ) : (
                   <div className="space-y-6 pt-2">
                     {visibleSections.map((section, sIdx) => (
-                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} physics={physicsOn} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} />
+                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} physics={physicsOn} physicsWeather={skyPreset?.weather ?? "clear"} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} />
                     ))}
                   </div>
                 )}
@@ -687,6 +688,7 @@ function MapSection({
   dueNodeIds,
   onJumpNode,
   physics,
+  physicsWeather,
   scrollRef,
   navRef,
   onImpacts,
@@ -700,6 +702,8 @@ function MapSection({
   onJumpNode: (nodeId: string) => void;
   /** 物理地图开(reduced-motion 时 false,渲染静态布局)。 */
   physics: boolean;
+  /** 天气(clear/rain/storm/snow/fog…)→ 环境物理参数(风/阵风/雨滴/雪载/阻尼)。 */
+  physicsWeather: string;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   navRef: React.RefObject<HTMLElement | null>;
   /** 碰撞事件(nav 坐标)→ 天气层(溅水花/震雪)。 */
@@ -747,6 +751,8 @@ function MapSection({
   /** 拖拽后的抬手在短窗内抑制 click(真点击/合成 click 不受影响)。 */
   const suppressClickUntilRef = useRef(0);
   const lessonSig = lessons.map((l) => l.id).join(",");
+  /** 锁定态指纹:解锁瞬间(locked→false)重建物理岛(static → 动态刚体"苏醒")。 */
+  const lockedSig = lessons.map((l) => (l.type === "exam" ? !chapterLessonsMastered : (progressMap[l.id]?.status ?? "locked") === "locked") ? 1 : 0).join("");
 
   useEffect(() => {
     if (!physics || lessons.length === 0 || containerW <= 0) return;
@@ -755,9 +761,17 @@ function MapSection({
     if (!container || !scroller) return;
 
     const island = createSectionIsland({
-      nodes: layout.nodes.map((n, i) => ({ id: lessons[i]!.id, x: n.x, y: n.y })),
+      nodes: layout.nodes.map((n, i) => {
+        const lesson = lessons[i]!;
+        return {
+          id: lesson.id, x: n.x, y: n.y,
+          isExam: lesson.type === "exam",
+          locked: lessonLocked(lesson),
+        };
+      }),
       width: containerW,
-      height: layout.height,
+      height: layout.height + 40, // 绳链垂坠余量(绳有重量,链比布局间距长 8%)
+      weather: physicsWeather,
     });
     islandRef.current = island;
 
@@ -803,19 +817,21 @@ function MapSection({
         b.squash = decaySquash(b.squash, dt);
       }
 
-      // 绳:绷紧变直/松弛下垂,每帧重画 path d
-      const posOf = (id: string): { x: number; y: number } => {
+      // 绳:折线穿 [起点悬挂位 → 绳粒… → 终点悬挂位],垂坠/绷直是物理结果
+      const attachOf = (id: string): Vec2 => {
+        if (id === "__anchor") return island.anchor;
         const b = island.ball(id);
-        if (b) return { x: b.body.position.x, y: b.body.position.y };
+        if (b) return { x: b.body.position.x, y: b.body.position.y + BALL_RADIUS * ROPE_ATTACH };
         const i = lessons.findIndex((l) => l.id === id);
         const n = i >= 0 ? layout.nodes[i] : undefined;
-        return n ? { x: n.x, y: n.y } : { x: 0, y: 0 };
+        return n ? { x: n.x, y: n.y + BALL_RADIUS * ROPE_ATTACH } : { x: 0, y: 0 };
       };
       for (let i = 0; i < island.links.length && i < ropeEls.length; i++) {
         const link = island.links[i]!;
-        const from = link.from === "__anchor" ? island.anchor : posOf(link.from);
-        const to = posOf(link.to);
-        ropeEls[i]!.setAttribute("d", ropePathD(from, to, link.restLen));
+        const points: Vec2[] = [attachOf(link.from)];
+        for (const p of link.particles) points.push({ x: p.position.x, y: p.position.y });
+        points.push(attachOf(link.to));
+        ropeEls[i]!.setAttribute("d", ropeChainPathD(points));
       }
 
       // 碰撞脉冲(SVG 圆环池) + 喂天气层(nav 坐标)
@@ -851,15 +867,30 @@ function MapSection({
       for (const el of wrappers.values()) el.style.transform = "";
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [physics, containerW, lessonSig, section.id]);
+  }, [physics, containerW, lessonSig, lockedSig, section.id, physicsWeather]);
 
-  /* ── 指针:软拖拽 + 位移阈值区分点击 ── */
+  /* ── 指针:软拖拽 + 位移阈值区分点击 ──
+     注意:setPointerCapture 会把后续 click 重定向到捕获元素(球外层 div),
+     按钮的 onClick 收不到 → 点击路由必须在 pointerup 里自己做。
+     按钮 onClick 仅保留键盘路径(Enter/Space 不经过指针捕获)。 */
+  /** 锁判定(与 MapNode 一口径):锁定的球不可进课也不可拖(钉在原地)。 */
+  const lessonLocked = (lesson: ContentNode | undefined): boolean => {
+    if (!lesson) return true;
+    return lesson.type === "exam"
+      ? !chapterLessonsMastered
+      : (progressMap[lesson.id]?.status ?? "locked") === "locked";
+  };
   const onBallPointerDown = (e: React.PointerEvent<HTMLDivElement>, nodeId: string) => {
     const island = islandRef.current;
     if (!island || e.button !== 0) return;
+    if (lessonLocked(lessons.find((l) => l.id === nodeId))) return; // 锁定球不可拖
     const container = pathRef.current;
     if (!container) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // 合成 PointerEvent 没有真实指针,捕获会抛 InvalidPointerId —— 忽略,拖拽照常
+    }
     suppressClickUntilRef.current = 0;
     pointerRef.current = { track: { startX: e.clientX, startY: e.clientY }, id: e.pointerId, dragging: false, nodeId };
     const cr = container.getBoundingClientRect();
@@ -884,7 +915,15 @@ function MapSection({
     islandRef.current?.endDrag();
     e.currentTarget.style.zIndex = "";
     if (classifyPointer(p.track, e.clientX, e.clientY) === "drag") {
+      // 拖拽:短窗抑制原生 click(capture 重定向后的 click 落在 wrapper 上,按钮收不到)
       suppressClickUntilRef.current = Date.now() + 300;
+    } else {
+      // 点击:pointerup 自路由进课(锁判定与 MapNode 一致)。
+      // setPointerCapture 重定向了 click,按钮 onClick 只剩键盘路径。
+      const lesson = lessons.find((l) => l.id === p.nodeId);
+      if (lesson && Date.now() >= suppressClickUntilRef.current && !lessonLocked(lesson)) {
+        onJumpNode(lesson.id);
+      }
     }
     pointerRef.current = null;
   };
@@ -931,16 +970,17 @@ function MapSection({
         >
           {physics ? (
             <>
-              {/* 路牌绳结(读序起点:从此顺绳走到紫球) + 锚绳 + 弹力带 + 碰撞脉冲池 */}
+              {/* 路牌绳结(读序起点:从此顺绳走到紫球) + 绳链(初值直线,首帧起物理接管) + 脉冲池 */}
               {layout.nodes[0] && (
                 <circle cx={anchor.x} cy={anchor.y} r={3.5} fill="#ffc800" opacity={0.9} />
               )}
               {layout.nodes[0] && (
                 <path
                   data-rope={0}
-                  d={ropePathD(anchor, layout.nodes[0], anchorRestLength(anchor, layout.nodes[0]))}
+                  d={`M ${anchor.x} ${anchor.y} L ${layout.nodes[0].x} ${layout.nodes[0].y + BALL_RADIUS * ROPE_ATTACH}`}
                   fill="none"
                   strokeLinecap="round"
+                  strokeLinejoin="round"
                   style={ropeStyle(0)}
                 />
               )}
@@ -948,9 +988,10 @@ function MapSection({
                 <path
                   key={seg.index}
                   data-rope={i + 1}
-                  d={ropePathD(seg.from, seg.to, linkRestLength(seg.from, seg.to))}
+                  d={`M ${seg.from.x} ${seg.from.y + BALL_RADIUS * ROPE_ATTACH} L ${seg.to.x} ${seg.to.y + BALL_RADIUS * ROPE_ATTACH}`}
                   fill="none"
                   strokeLinecap="round"
+                  strokeLinejoin="round"
                   style={ropeStyle(seg.index)}
                 />
               ))}
@@ -995,7 +1036,7 @@ function MapSection({
               key={lesson.id}
               data-node-id={lesson.id}
               className={physics
-                ? "absolute hover:z-30 cursor-grab active:cursor-grabbing will-change-transform"
+                ? `absolute hover:z-30 will-change-transform ${lessonLocked(lesson) ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"}`
                 : "absolute balloon-bob hover:z-30"}
               style={{
                 left: node.x - NODE_W / 2,

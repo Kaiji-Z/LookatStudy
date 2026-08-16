@@ -307,24 +307,18 @@ await test("T16 天气环境:storm 比 clear 扰动大;snow 雪载压坠球", ()
   const clear = measure("clear");
   assert.ok(storm > clear * 1.5, `storm 扰动应显著大于 clear: ${storm.toFixed(0)} vs ${clear.toFixed(0)}`);
 
-  // 雪载:雪天静止悬浮的球被积雪压着缓缓下沉(对比 clear 同高度球的沉降)
-  const drop = (weather) => {
-    const isl = createSectionIsland({
-      nodes: [{ id: "x", x: 134, y: 120 }],
-      width: 268,
-      height: 300,
-      weather,
-    });
-    step(isl, 1800); // 30 秒:雪载 0.72 → 增重 25%,压得过任何浮力盈余
-    const ball = isl.ball("x");
-    assert.ok(ball, "球存在");
-    const y = ball.body.position.y;
+  // 雪载:整条彩旗串被积雪压着整体下垂(单球会被锚绳长度兜住测不出;
+  // 用 4 球串的**平均 y**对比,实测 delta ≈ 45px)
+  const garlandAvgY = (weather) => {
+    const isl = mkIsland(weather);
+    step(isl, 1800); // 30 秒:雪载 0.72 → 增重 25%
+    const avg = isl.balls.reduce((sum, b) => sum + b.body.position.y, 0) / isl.balls.length;
     isl.dispose();
-    return y;
+    return avg;
   };
-  const ySnow = drop("snow");
-  const yClear = drop("clear");
-  assert.ok(ySnow > yClear + 10, `雪载应压坠: snow y=${ySnow.toFixed(1)} > clear y=${yClear.toFixed(1)} + 10`);
+  const ySnow = garlandAvgY("snow");
+  const yClear = garlandAvgY("clear");
+  assert.ok(ySnow > yClear + 20, `雪载应整串压坠: snow avg=${ySnow.toFixed(1)} > clear avg=${yClear.toFixed(1)} + 20`);
 });
 
 await test("T17 相邻球初始不叠死(球-球碰撞兜底)", () => {
@@ -365,6 +359,48 @@ await test("T18 逃逸回归:蛮力拖拽出界 + 极端冲量,球都出不了�
     assert.ok(x >= BALL_RADIUS - 2 && x <= 268 - BALL_RADIUS + 2, `蛮力后 x 应在盒内: ${x}`);
     assert.ok(y >= BALL_RADIUS - 2 && y <= H - BALL_RADIUS + 2, `蛮力后 y 应在盒内: ${y}`);
   }
+  isl.dispose();
+});
+
+await test("T19 重建续接:岛重建时球从最后位置/速度复生(解锁不闪回原位)", () => {
+  const a = createSectionIsland({ nodes: [{ id: "x", x: 134, y: 200 }], width: 268, height: 300 });
+  a.beginDrag("x", 30, 40);
+  for (let i = 0; i < 60; i++) { a.moveDrag(30, 40); a.step(16.67); }
+  a.endDrag();
+  const bx = a.ball("x");
+  assert.ok(bx, "球存在");
+  const snap = { x: bx.body.position.x, y: bx.body.position.y, vx: bx.body.velocity.x, vy: bx.body.velocity.y };
+  a.dispose();
+  // 重建(如解锁触发):带 spawn → 球生在拖放终点,不在布局原位
+  const b = createSectionIsland({
+    nodes: [{ id: "x", x: 134, y: 200, spawn: snap }],
+    width: 268, height: 300,
+  });
+  const reborn = b.ball("x");
+  assert.ok(reborn, "新岛球存在");
+  assert.ok(Math.abs(reborn.body.position.x - snap.x) < 1 && Math.abs(reborn.body.position.y - snap.y) < 1,
+    `应从续接位复生: (${reborn.body.position.x.toFixed(1)},${reborn.body.position.y.toFixed(1)}) vs (${snap.x.toFixed(1)},${snap.y.toFixed(1)})`);
+  assert.ok(Math.abs(reborn.body.position.y - 200) > 50, "不应闪回布局原位");
+  b.dispose();
+});
+
+await test("T20 整体中性:静止分布不堆顶不堆底,相对布局位有升有降", () => {
+  const isl = mkIsland();
+  step(isl, 360); // 6 秒
+  const dys = isl.balls.map((b) => b.body.position.y - b.layoutY);
+  // 不全体贴顶(y≈28)也不全体沉底(y≈H-r):彩旗串整体中性(v4 曾因绳重双计
+  // 导致整串上浮堆顶)
+  const atCeiling = isl.balls.filter((b) => b.body.position.y < 34).length;
+  const atFloor = isl.balls.filter((b) => b.body.position.y > H - 34).length;
+  assert.ok(atCeiling < isl.balls.length, `不应全部贴顶: ${atCeiling}/${isl.balls.length}`);
+  assert.ok(atFloor < isl.balls.length, `不应全部沉底: ${atFloor}/${isl.balls.length}`);
+  // 有升有降(绳有松有紧的来源)
+  const up = dys.filter((d) => d < -4).length;
+  const down = dys.filter((d) => d > 4).length;
+  assert.ok(up >= 1 && down >= 1, `应有升有降: up=${up} down=${down} dys=${dys.map((d) => d.toFixed(0))}`);
+  // 整体质心不漂太远(中性校准的 aggregate 断言)
+  const avg = dys.reduce((a2, b2) => a2 + b2, 0) / dys.length;
+  assert.ok(Math.abs(avg) < 60, `整体不应大幅漂移: avg=${avg.toFixed(1)}`);
   isl.dispose();
 });
 

@@ -747,6 +747,9 @@ function MapSection({
      无弹簧回位:球自由摆布,顺序由绳链表达(路牌绳结 → 球1 → … → 紫球)。
      每 section 一个独立 Engine,视口外(±200px)不步进。 */
   const islandRef = useRef<SectionIsland | null>(null);
+  /** 岛重建(解锁/解锁链变化)时续接:球的最后位置+速度 → 新岛 spawn。
+   *  没有它,点开一课解锁新球的瞬间全章球闪回布局原位(v3 实测体验割裂)。 */
+  const liveStateRef = useRef<Map<string, { x: number; y: number; vx: number; vy: number }>>(new Map());
   const pointerRef = useRef<{ track: PointerTrack; id: number; dragging: boolean; nodeId: string } | null>(null);
   /** 拖拽后的抬手在短窗内抑制 click(真点击/合成 click 不受影响)。 */
   const suppressClickUntilRef = useRef(0);
@@ -767,6 +770,7 @@ function MapSection({
           id: lesson.id, x: n.x, y: n.y,
           isExam: lesson.type === "exam",
           locked: lessonLocked(lesson),
+          spawn: liveStateRef.current.get(lesson.id),
         };
       }),
       width: containerW,
@@ -861,9 +865,17 @@ function MapSection({
     return () => {
       cancelAnimationFrame(raf);
       io.disconnect();
+      // 续接快照:记录每个球的实时位置/速度(静态锁定球位置=布局位,天然不变)
+      for (const b of island.balls) {
+        liveStateRef.current.set(b.nodeId, {
+          x: b.body.position.x, y: b.body.position.y,
+          vx: b.body.velocity.x, vy: b.body.velocity.y,
+        });
+      }
       island.dispose();
       islandRef.current = null;
-      // 清残留 transform:球回布局原位(React 渲染的 left/top 本来就在那)
+      // 清残留 transform:球回布局原位(React 渲染的 left/top 本来就在那;
+      // 重建后第一帧 transform 立即把球放回续接位,视觉无缝)
       for (const el of wrappers.values()) el.style.transform = "";
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

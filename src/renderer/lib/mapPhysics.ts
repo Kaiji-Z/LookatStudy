@@ -221,7 +221,7 @@ const IMPACT_MIN_SPEED = 2.2;
 const SNOW_WEIGHT = 0.35;
 
 export function createSectionIsland(opts: {
-  nodes: { id: string; x: number; y: number; isExam?: boolean; locked?: boolean }[];
+  nodes: { id: string; x: number; y: number; isExam?: boolean; locked?: boolean; spawn?: { x: number; y: number; vx?: number; vy?: number } }[];
   width: number;
   height: number;
   ballRadius?: number;
@@ -238,7 +238,10 @@ export function createSectionIsland(opts: {
   engine.velocityIterations = 4;
 
   const balls: IslandBall[] = opts.nodes.map((n) => {
-    const body = Bodies.circle(n.x, n.y, r, {
+    // 重建续接:有 spawn(上一岛的最后位置/速度)就从那生,否则布局位
+    const sx = n.spawn?.x ?? n.x;
+    const sy = n.spawn?.y ?? n.y;
+    const body = Bodies.circle(sx, sy, r, {
       restitution: 0.5,
       friction: 0.01,
       frictionAir: 0.03 * env.airDrag,
@@ -254,7 +257,13 @@ export function createSectionIsland(opts: {
       isExam: !!n.isExam, snow: 0, squash: 0, squashAngle: 0,
     };
   });
-  for (const b of balls) Composite.add(engine.world, b.body);
+  for (const b of balls) {
+    Composite.add(engine.world, b.body);
+    const sp = opts.nodes.find((n) => n.id === b.nodeId)?.spawn;
+    if (sp && (sp.vx !== undefined || sp.vy !== undefined)) {
+      Body.setVelocity(b.body, { x: sp.vx ?? 0, y: sp.vy ?? 0 });
+    }
+  }
 
   // 墙(不可见):左右 = 栏宽,上下 = section 边界。内表面分别位于 0 / width / 0 / height。
   const half = WALL_THICKNESS / 2;
@@ -300,7 +309,10 @@ export function createSectionIsland(opts: {
     let isFirst = true;
     for (let i = 1; i < segs; i++) {
       const t = i / segs;
-      const p = Bodies.circle(a.x + dx * t, a.y + dy * t, 3.5, {
+      // 初始摆在带垂度的弧上(sin 半波,接近松量):绳生下来就接近垂坠平衡,
+      // 不会先直线再掉下来(解锁重建时不闪)
+      const bow = Math.sin(Math.PI * t) * dist * (ROPE_SLACK - 1) * 0.85;
+      const p = Bodies.circle(a.x + dx * t, a.y + dy * t + bow, 3.5, {
         density: 0.0007, // 绳很轻,但受重力(球要扛住它)
         frictionAir: 0.1 * env.airDrag,
         collisionFilter: { category: 0x0008, mask: 0 },
@@ -336,10 +348,24 @@ export function createSectionIsland(opts: {
     createRope(attachOf(a), a.body, b, a.nodeId);
   }
 
-  // 浮力(扛住自重 + 绳的重量)+ 风 + 雨滴冲击 + 雪载增重。
-  // 浮力 ≈ 自重但整体略偏上(球还要扛绳的自重 ~5-11%):区间 1.05-1.17,
-  // 约半数球有净浮力(把下绳顶成弧)、半数净下垂(挂在上绳上)→ 静止时绳有松有紧。
-  const lifts = new Map(balls.map((b) => [b.nodeId, 1.05 + hash01(b.nodeId) * 0.12]));
+  // 浮力(扛住自重 + 实际挂的绳重)+ 风 + 雨滴冲击 + 雪载增重。
+  // 彩旗串是整体平衡:任何一个球净上浮都会经绳提起邻居,总浮力>总重就整串
+  // 顶到天花板(v3 实测堆顶)。校准必须按每球**实际挂的绳质量**精确中性:
+  // lift = (1 + 绳重占比) × (0.96~1.04) → 整体严格中性,只剩 ±4% 球间再分布,
+  // 有的微垂有的微顶,静止时绳有松有紧且串不整体漂移。
+  const lifts = new Map<string, number>();
+  for (const b of balls) {
+    let ropeMass = 0;
+    for (const l of links) {
+      if (l.from === b.nodeId || l.to === b.nodeId) {
+        // 每端只计**半条**绳:一条绳两端各补一半 → 总量恰好补一次。
+        // (两端各计全绳会把绳重补偿翻倍 → 整串净上浮堆顶,v4 实测踩过)
+        for (const particle of l.particles) ropeMass += particle.mass * 0.5;
+      }
+    }
+    const share = Math.min(0.25, ropeMass / b.body.mass);
+    lifts.set(b.nodeId, (1 + share) * (0.96 + hash01(b.nodeId) * 0.08));
+  }
   let gustNow = 0;
   let gustDir = 1;
   Events.on(engine, "beforeUpdate", () => {

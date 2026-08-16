@@ -1,92 +1,61 @@
 /**
- * 新智能导入管线完整测试（Step 1 → 5）。
- * 不依赖 electron，直接用 in-memory DB 跑。
+ * Live test: 新 5 步导入管线(runSmartImport,生产路径)实测。
  *
- * 用法: NODE_TLS_REJECT_UNAUTHORIZED=0 npx tsx scripts/live-test/live-test-smart-import.mjs
- * 需要: Z_AI_API_KEY
+ * 跑法: npx tsx scripts/live-test/live-test-smart-import.mjs [owner/repo]
+ * 默认仓库: microsoft/ML-For-Beginners
+ *
+ * 与 UI 完全同路径:Step1 清点 → Step2 LLM 分类 → Step3 大纲 → Step4 LLM 结构设计
+ * → Step5 拉正文+落库(含 plan 快照落盘/复用逻辑)。内存 sql.js 库,provider 注入
+ * glm-5.2 @ ZAI CodingPlan(与用户 dev 实例同款)。每条进度带相对时间戳,
+ * 截断/拆半/token 上限告警直接可见 —— 用来定位"输出不完整"到底卡在哪。
  */
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { readApiKey } from "./_load-env.mjs";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../../src/main/db/schema.ts";
-import { fetchRepoInventory, fetchFileOutlines } from "../../src/main/services/pure/repo-fetcher.ts";
-import { classifyFileRoles, designCourseStructure } from "../../src/main/services/import-llm-service.ts";
-import { executeImport } from "../../src/main/services/import-pipeline.ts";
+import { createPlanStore } from "../../src/main/services/import-plan-store.ts";
+import { runSmartImport } from "../../src/main/services/import-job-service.ts";
 
+const REPO = process.argv[2] ?? "microsoft/ML-For-Beginners";
+const MODEL = process.env.LIVE_MODEL ?? "glm-5.2";
 const API_KEY = readApiKey();
-if (!API_KEY) { console.error("⏭️ 跳过:需要 Z_AI_API_KEY(live-test 可选,缺 key 时 graceful skip)"); process.exit(0); }
-console.log(`API key: ✅\n`);
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "../..");
-
-// === 建 in-memory DB ===
-const wasmDir = join(ROOT, "node_modules/sql.js/dist");
-const SQL = await initSqlJs({ locateFile: (f) => join(wasmDir, f) });
-const sqljs = new SQL.Database();
-sqljs.run("PRAGMA foreign_keys = ON;");
-sqljs.run(readFileSync(join(ROOT, "src/main/db/schema.sql"), "utf8"));
-try { sqljs.run("ALTER TABLE content_nodes ADD COLUMN world TEXT NOT NULL DEFAULT 'study'"); } catch {}
-
-if (API_KEY) {
-  sqljs.run("INSERT INTO custom_providers (id, label, protocol, base_url, api_key, default_model) VALUES (?, ?, ?, ?, ?, ?)",
-    ["custom-test", "ZAI", "openai-compatible", "https://api.z.ai/api/coding/paas/v4", API_KEY, "glm-4.6"]);
-  sqljs.run("INSERT INTO settings (key, value) VALUES ('active_provider', 'custom-test')");
-  sqljs.run("INSERT INTO settings (key, value) VALUES ('active_model', 'glm-4.6')");
+if (!API_KEY) {
+  console.error("❌ 无 Z_AI_API_KEY(检查 .env),LLM 步骤无法运行");
+  process.exit(1);
 }
+console.log(`=== Live Test: runSmartImport(${REPO}) · ${MODEL} @ CodingPlan ===\n`);
+
+const SQL = await initSqlJs({ locateFile: (f) => join(process.cwd(), "node_modules/sql.js/dist", f) });
+const sqljs = new SQL.Database();
+sqljs.run(readFileSync(new URL("../../src/main/db/schema.sql", import.meta.url), "utf8"));
+sqljs.run(
+  `INSERT INTO custom_providers (id, label, protocol, base_url, api_key, default_model)
+   VALUES ('custom-live-test', 'ZAI CodingPlan (live test)', 'openai-compatible',
+           'https://api.z.ai/api/coding/paas/v4', ?, ?)`,
+  [API_KEY, MODEL],
+);
+sqljs.run(`INSERT INTO settings (key, value) VALUES ('active_provider', 'custom-live-test')`);
+sqljs.run(`INSERT INTO settings (key, value) VALUES ('active_model', '${MODEL}')`);
 const db = drizzle(sqljs, { schema });
 
-const OWNER = "microsoft";
-const REPO = "AI-For-Beginners";
+const plansDir = mkdtempSync(join(tmpdir(), "ls-smart-import-"));
+const t0 = Date.now();
+const send = (msg) => console.log(`[+${((Date.now() - t0) / 1000).toFixed(1).padStart(7)}s] ${msg}`);
 
-// === Step 1: 拉取仓库清单 ===
-console.log("=== Step 1: 拉取仓库清单 ===");
-const inventory = await fetchRepoInventory(OWNER, REPO, "main", fetch, (msg) => process.stdout.write(`\r  ${msg.slice(0,70).padEnd(70)}`));
-console.log(`\n  README: ${inventory.readmeMd.length} 字符`);
-console.log(`  文件: ${inventory.fileList.length} 个`);
-console.log(`  形态: ${inventory.detection.pattern}`);
-
-// === Step 2: LLM 判文件角色 ===
-console.log("\n=== Step 2: LLM 判文件角色 ===");
-const roles = await classifyFileRoles(db, inventory.readmeMd, inventory.fileList, (msg) => process.stdout.write(`\r  ${msg.slice(0,70).padEnd(70)}`));
-console.log(`\n  原文课程: ${roles.original.length} 个`);
-console.log(`  实操: ${roles.practice.length} 个`);
-console.log(`  噪声: ${roles.skip.length} 个`);
-console.log(`  翻译语言: ${roles.languages.length} 种 → ${roles.languages.map(l => l.code).join(", ")}`);
-
-// === Step 3: 提取标题大纲 ===
-console.log("\n=== Step 3: 提取标题大纲 ===");
-const allFiles = [...roles.original, ...roles.practice];
-const outlines = await fetchFileOutlines(allFiles, OWNER, REPO, inventory.branch, fetch, (done, total) => process.stdout.write(`\r  ${done}/${total}`));
-console.log(`\n  提取了 ${outlines.size} 个文件的标题大纲`);
-
-// === Step 4: LLM 设计课程结构 ===
-console.log("\n=== Step 4: LLM 设计课程结构 ===");
-const structure = await designCourseStructure(db, inventory.readmeMd, outlines, roles.original, roles.practice, (msg) => process.stdout.write(`\r  ${msg.slice(0,70).padEnd(70)}`));
-console.log(`\n  课程标题: ${structure.courseTitle}`);
-console.log(`  sections: ${structure.sections.length}`);
-for (const sec of structure.sections) {
-  const icon = sec.world === "practice" ? "🔧" : "📚";
-  console.log(`  ${icon} [${sec.world}] ${sec.title} (${sec.lessons.length} lessons)`);
+try {
+  const r = await runSmartImport(
+    { kind: "github", url: `https://github.com/${REPO}` },
+    { db, store: createPlanStore(plansDir), markDirty: () => {}, onProgress: send, shouldAbort: () => false },
+  );
+  const lessons = db.select().from(schema.contentNodes).all().filter((n) => n.type === "lesson").length;
+  console.log(`\n=== 完成 === courseId=${r.courseId} reused=${r.reused} lessons=${lessons} 总耗时 ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+} catch (e) {
+  console.error(`\n=== 失败 === ${(e instanceof Error ? e.message : String(e)).slice(0, 400)}`);
+  console.error(`planId=${e instanceof Error && e.planId ? e.planId : "(无)"} 耗时 ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  process.exitCode = 1;
+} finally {
+  rmSync(plansDir, { recursive: true, force: true });
 }
-
-// === Step 5: 拉正文 + 图片内联 + 落库 ===
-console.log("\n=== Step 5: 拉正文 + 图片 + 落库 ===");
-const result = await executeImport(db, structure, {
-  owner: OWNER, repo: REPO, branch: inventory.branch, fetchFn: fetch,
-  repoUrl: `https://github.com/${OWNER}/${REPO}`, repoName: REPO,
-  langCode: null, translationFiles: null,
-  markDirty: () => {},
-}, (msg) => process.stdout.write(`\r  ${msg.slice(0,70).padEnd(70)}`));
-console.log(`\n  courseId: ${result.courseId}`);
-console.log(`  验证: ${result.verification.ok ? "✅ 通过" : "❌ 有问题"}`);
-console.log(`  stats: ${JSON.stringify(result.verification.stats, null, 2)}`);
-if (result.verification.issues.length > 0) {
-  console.log(`  issues:`);
-  result.verification.issues.slice(0, 5).forEach(i => console.log(`    - ${i}`));
-}
-
-console.log("\n=== 测试完成 ===");

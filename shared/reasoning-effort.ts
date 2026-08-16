@@ -24,6 +24,9 @@ const BODY_PATCH_FAMILIES: Record<
   glm: {
     fast: (b) => {
       b.thinking = { type: "disabled" };
+      // CodingPlan 等端点会无视 disabled 强制思考(GLM-5.2 实测):再加官方 reasoning_effort
+      // 压思考量 —— 两个都是文档参数,共存无害,端点认哪个用哪个。
+      b.reasoning_effort = "low";
     },
     deep: (b) => {
       b.thinking = { type: "enabled" };
@@ -61,6 +64,26 @@ export type ReasoningPlan =
 /** 结构化 JSON 值(AI SDK providerOptions 的元素类型;shared 侧自持定义,不 import "ai")。 */
 export type ReasoningJsonValue = string | number | boolean | null | ReasoningJsonValue[] | { [k: string]: ReasoningJsonValue };
 
+/**
+ * provider 家族判定:预设 id 直接命中;**自定义 provider(custom-\*)按 baseUrl/模型名嗅探**。
+ * 用户主力是自定义 provider(智谱一家就有 4 个端点),预设 id 查表对它们永远落空
+ * → 思考开关静默失效(实测:custom ZAI CodingPlan + glm-5.2,thinking 关不掉,
+ * 结构设计 JSON 被 7k+ 思考 token 挤出 8192 上限,二分到 20 文件仍截断)。
+ * 嗅探保守:认不出返回原 id(降级 none,宁可不生效不瞎发参数吃 400)。
+ */
+export function llmFamilyOf(providerId: string, baseUrl?: string, model?: string): string {
+  if (providerId === "openai" || providerId in BODY_PATCH_FAMILIES) return providerId;
+  const url = (baseUrl ?? "").toLowerCase();
+  const m = (model ?? "").toLowerCase();
+  // 智谱:bigmodel.cn / z.ai 端点(CodingPlan 同款 API),或 glm 前缀模型
+  if (url.includes("bigmodel.cn") || url.includes("z.ai") || m.startsWith("glm")) return "glm";
+  // 阿里:DashScope 端点或 qwen 前缀模型
+  if (url.includes("dashscope") || m.startsWith("qwen")) return "qwen";
+  // SiliconCloud 托管端点
+  if (url.includes("siliconflow")) return "siliconcloud";
+  return providerId;
+}
+
 /** 该 provider 是否支持思考强度控制(不支持的:芯片禁用 + tooltip 说明)。 */
 export function supportsReasoningControl(providerId: string, protocol: LlmProtocol): boolean {
   if (protocol === "anthropic" || protocol === "google") return true;
@@ -76,6 +99,7 @@ export function reasoningPlanFor(
   providerId: string,
   protocol: LlmProtocol,
   effort: ReasoningEffortSetting,
+  hints?: { baseUrl?: string; model?: string },
 ): ReasoningPlan {
   if (!effort) return { kind: "none" };
   if (protocol === "anthropic") {
@@ -98,7 +122,7 @@ export function reasoningPlanFor(
       options: { openai: { reasoningEffort: OPENAI_EFFORT[effort] } },
     };
   }
-  const family = BODY_PATCH_FAMILIES[providerId];
+  const family = BODY_PATCH_FAMILIES[llmFamilyOf(providerId, hints?.baseUrl, hints?.model)];
   if (!family) return { kind: "none" };
   return { kind: "bodyPatch", patch: family[effort] };
 }

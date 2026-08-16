@@ -23,7 +23,7 @@ import { join } from "node:path";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
-import { designSectionsResilient } from "../src/main/services/import-llm-service.ts";
+import { designSectionsResilient, extractJsonBlock } from "../src/main/services/import-llm-service.ts";
 import { runSmartImport, planIdOf } from "../src/main/services/import-job-service.ts";
 import { createPlanStore } from "../src/main/services/import-plan-store.ts";
 
@@ -197,6 +197,39 @@ await test("T9 快照落盘审计日志:savePlan 后 dir() 可诊断", () => {
   const store = createPlanStore(plansDir);
   assert.ok(typeof store.dir() === "string" && store.dir().length > 0, "dir() 暴露落盘目录");
 });
+
+await test("T10 取消:shouldAbort 置位后零 LLM 调用,抛「导入已取消」", async () => {
+  let calls = 0;
+  await assert.rejects(
+    designSectionsResilient("readme", infos(["xx1.md", "xx2.md", "xx3.md"]), [], [], {
+      call: async () => { calls++; return "{}"; },
+      shouldAbort: () => true,
+    }),
+    /导入已取消/,
+    "取消应抛 导入已取消",
+  );
+  assert.equal(calls, 0, "取消后零 LLM 调用(此前二分会继续发新调用)");
+});
+
+await test("T11 JSON 后带尾巴/前面带废话 → 抽取平衡块救回(实测 CodingPlan 会多说两句)", async () => {
+  const good = JSON.stringify({
+    sections: [{ title: "S", world: "study", lessons: [{ title: "L", file: "xx1.md", world: "study" }] }],
+  });
+  const tail = good + String.fromCharCode(10, 10) + "以上就是课程结构设计。";
+  const r1 = await designSectionsResilient("r", infos(["xx1.md"]), [], [], { call: async () => tail });
+  assert.equal(r1.length, 1, "JSON+尾巴应解析成功");
+  const head = "好的,以下是结构:" + String.fromCharCode(10) + good;
+  const r2 = await designSectionsResilient("r", infos(["xx1.md"]), [], [], { call: async () => head });
+  assert.equal(r2.length, 1, "废话+JSON 应解析成功");
+  const tricky = JSON.stringify({
+    sections: [{ title: "带{大括号}的章节", world: "study", lessons: [{ title: "L", file: "xx1.md", world: "study" }] }],
+  });
+  const r3 = await designSectionsResilient("r", infos(["xx1.md"]), [], [], { call: async () => tricky });
+  assert.equal(r3.length, 1, "字符串内大括号不影响平衡扫描");
+  const r4 = await designSectionsResilient("r", infos(["xx1.md"]), [], [], { call: async () => "完全不是 JSON" });
+  assert.equal(r4.length, 1, "纯垃圾在单文件批走兜底一课(不抛)");
+});
+
 
 // 清理
 rmSync(courseDir, { recursive: true, force: true });

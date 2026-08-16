@@ -7,7 +7,8 @@
 import { streamText } from "ai";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
-import { resolveLlm, isLlmReady } from "./agent/llm-client.js";
+import { buildLanguageModel, resolveLlm, isLlmReady, type ResolvedLlm } from "./agent/llm-client.js";
+import { reasoningPlanFor, withBodyPatch, llmFamilyOf, type ReasoningJsonValue } from "@shared/reasoning-effort";
 import type { DiscoveredFile, FileOutline } from "./pure/repo-fetcher.js";
 import { createStreamWatchdog } from "./pure/stream-watchdog.js";
 
@@ -35,31 +36,104 @@ const LLM_HARD_CAP = 20 * 60_000;
  *  仍截断时由 designSectionsResilient 二分兜底。 */
 export const IMPORT_MAX_OUTPUT_TOKENS = 8192;
 
+/** 家族感知的输出上限:GLM/Qwen 端点强制思考(CodingPlan 无视 disabled,实测
+ *  out=8192/8192 打满),思考+正文必须同池预算 → 给到官方上限内的宽裕值
+ *  (GLM-5.2 输出上限 128K,Qwen 32K+)。DeepSeek V3 官方 8K、未知自定义端点
+ *  保守 8192(请求超上限会 400)。 */
+const FAMILY_MAX_OUTPUT_TOKENS: Record<string, number> = {
+  glm: 32768,
+  qwen: 16384,
+  siliconcloud: 16384,
+};
+
+export interface ImportCallOpts {
+  /** 导入专用模型的 providerOptions(思考关的方言,如 OpenAI reasoningEffort) */
+  providerOptions?: Record<string, Record<string, ReasoningJsonValue>>;
+  /** 外部取消(导入 job 的取消标志轮询而来)——abort 立即掐断在飞的 LLM 流 */
+  signal?: AbortSignal;
+  /** 本次调用的输出上限(家族感知:强制思考的端点要给思考留预算);缺省 8192 */
+  maxOutputTokens?: number;
+}
+
+/**
+ * 导入专用模型:强制关思考(fast)。分类/结构设计是模式化工作,不需要深思;
+ * thinking 家族的思考与正文**共享**输出额度,开着思考 glm-5.2 在结构设计上
+ * 光思考就能烧 7k+ token(实测 40→20→10 文件批全截断),且每批多等 2-4 分钟。
+ * 与聊天侧(agent-engine)共用 reasoningPlanFor/withBodyPatch 方言表。
+ */
+export function buildImportModel(
+  llm: ResolvedLlm,
+): {
+  model: Parameters<typeof streamText>[0]["model"];
+  providerOptions?: ImportCallOpts["providerOptions"];
+  /** 家族感知输出上限(强思考端点给思考留预算);未知家族 = 保守 8192 */
+  maxOutputTokens: number;
+} {
+  const family = llmFamilyOf(llm.provider.id, llm.provider.baseUrl, llm.model);
+  const maxOutputTokens = FAMILY_MAX_OUTPUT_TOKENS[family] ?? IMPORT_MAX_OUTPUT_TOKENS;
+  const plan = reasoningPlanFor(llm.provider.id, llm.provider.protocol, "fast", {
+    baseUrl: llm.provider.baseUrl,
+    model: llm.model,
+  });
+  if (plan.kind === "bodyPatch") {
+    return {
+      model: buildLanguageModel(
+        llm.provider.protocol,
+        llm.provider.baseUrl,
+        llm.apiKey,
+        llm.model,
+        withBodyPatch(globalThis.fetch.bind(globalThis), plan.patch),
+      ),
+      maxOutputTokens,
+    };
+  }
+  if (plan.kind === "providerOptions") {
+    return { model: llm.languageModel, providerOptions: plan.options, maxOutputTokens };
+  }
+  return { model: llm.languageModel, maxOutputTokens };
+}
+
 export async function generateTextWithTimeout(
   model: Parameters<typeof streamText>[0]["model"],
   prompt: string,
+  opts?: ImportCallOpts,
 ): Promise<string> {
+  // 预取消直接拒绝(SDK 对已 abort 的信号不保证立刻抛,空流会静默成功)
+  if (opts?.signal?.aborted) throw new Error("导入已取消");
   const wd = createStreamWatchdog(LLM_INACTIVE_TIMEOUT, LLM_HARD_CAP);
+  const signal = opts?.signal ? AbortSignal.any([wd.signal, opts.signal]) : wd.signal;
   try {
     const result = streamText({
       model,
       prompt,
-      abortSignal: wd.signal,
-      maxOutputTokens: IMPORT_MAX_OUTPUT_TOKENS,
+      abortSignal: signal,
+      maxOutputTokens: opts?.maxOutputTokens ?? IMPORT_MAX_OUTPUT_TOKENS,
+      ...(opts?.providerOptions ? { providerOptions: opts.providerOptions } : {}),
     });
     let text = "";
     for await (const delta of result.textStream) {
       text += delta;
       wd.touch();
     }
-    // 撞上限的截断留痕:主进程日志可查,配合二分进度消息定位 provider 上限
-    void result.finishReason
-      .then((fr) => {
-        if (fr === "length") {
-          console.warn(`[import-llm] 输出撞 token 上限被截断(maxOutputTokens=${IMPORT_MAX_OUTPUT_TOKENS};批内二分将兜底)`);
-        }
-      })
-      .catch(() => {});
+    // token 用量留痕:每次调用打实际 in/out token + 结束原因(await:流已结束,零额外等待;
+    // 读取失败要显式报错,不能吞 —— usage 是定位截断根因的唯一硬数据)
+    try {
+      const [usage, fr] = await Promise.all([result.usage, result.finishReason]);
+      const cap = opts?.maxOutputTokens ?? IMPORT_MAX_OUTPUT_TOKENS;
+      if (fr === "length") {
+        console.warn(
+          `[import-llm] 输出撞 token 上限被截断(out=${usage?.outputTokens ?? "?"}/${cap} in=${usage?.inputTokens ?? "?"};批内二分将兜底)`,
+        );
+      } else {
+        console.error(
+          `[import-llm] tokens: in=${usage?.inputTokens ?? "?"} out=${usage?.outputTokens ?? "?"}/${cap} finish=${fr ?? "?"} chars=${text.length}`,
+        );
+      }
+    } catch (ue) {
+      console.error(`[import-llm] usage 读取失败: ${ue instanceof Error ? ue.message : String(ue)} chars=${text.length}`);
+    }
+    // 流中途被取消但静默收尾的兜底:部分文本绝不当完整结果用
+    if (opts?.signal?.aborted) throw new Error("导入已取消");
     return text;
   } catch (e) {
     if (wd.signal.aborted) {
@@ -69,6 +143,7 @@ export async function generateTextWithTimeout(
           : `LLM 调用无输出超过 ${LLM_INACTIVE_TIMEOUT / 1_000}s（连接疑似挂起），已中止——请检查网络/API 端点`,
       );
     }
+    if (opts?.signal?.aborted) throw new Error("导入已取消");
     throw e;
   } finally {
     wd.dispose();
@@ -116,6 +191,7 @@ export async function classifyFileRoles(
   fileList: DiscoveredFile[],
   fullTree: string[],
   onProgress?: (msg: string) => void,
+  opts?: { signal?: AbortSignal },
 ): Promise<FileClassificationResult> {
   const send = (msg: string) => onProgress?.(msg);
   const allPaths = fileList.map((f) => f.path);
@@ -192,9 +268,12 @@ export async function classifyFileRoles(
 
   send(`AI 判断 ${remaining.length} 个文件角色 + 原文语言（看 README + 目录树）`);
   const llm = resolveLlm(db);
+  const im = buildImportModel(llm);
 
-  // 分块（防 prompt 过大）—— 68 个文件 + 3000 字 README 约 5K token，一次性发没问题
-  const CHUNK_SIZE = 200;
+  // 分块。**输出**才是瓶颈:每文件一条 JSON ~50-60 输出 token,thinking 家族的思考
+  // 与正文共享输出额度(maxOutputTokens=8192)—— 200 文件批的 JSON 本体就 6-8k token,
+  // 加思考必截断(实测 112 文件批只剩半个 JSON)。40/批 + 截断批内二分兜底。
+  const CHUNK_SIZE = 40;
   const original: string[] = [];
   const practice: string[] = [];
   const allPathSet = new Set(allPaths);
@@ -208,10 +287,16 @@ export async function classifyFileRoles(
     if (totalChunks > 1) send(`AI 文件分类（第 ${chunkNum}/${totalChunks} 批）…`);
     console.error(`[import] Step 2: 调 LLM (批 ${chunkNum}/${totalChunks}, ${chunk.length} 文件)…`);
 
-    const prompt = buildRolePrompt(readmeMd, chunk, fullTree);
-    const result = await generateTextWithTimeout(llm.languageModel, prompt);
-    console.error(`[import] Step 2: 批 ${chunkNum} LLM 返回 ${result.length} 字符`);
-    const parsed = parseRoleResult(result, chunk);
+    if (opts?.signal?.aborted) throw new Error("导入已取消");
+    const parsed = await classifyFilesResilient(chunk, {
+      buildPrompt: (files) => buildRolePrompt(readmeMd, files, fullTree),
+      call: (prompt) => generateTextWithTimeout(im.model, prompt, { providerOptions: im.providerOptions, signal: opts?.signal, maxOutputTokens: im.maxOutputTokens }).then((r) => {
+        console.error(`[import] Step 2: 批 ${chunkNum} LLM 返回 ${r.length} 字符`);
+        return r;
+      }),
+      onProgress: send,
+      shouldAbort: () => opts?.signal?.aborted === true,
+    });
 
     // sourceLang 取第一块的（整个仓库一致）
     if (!sourceLang && parsed.sourceLang) sourceLang = parsed.sourceLang;
@@ -327,7 +412,7 @@ function buildTreeString(paths: string[], maxPerDir = 10, maxDepth = 3): string 
   return lines.join("\n");
 }
 
-function buildRolePrompt(readmeMd: string, filePaths: string[], fullTree: string[]): string {
+export function buildRolePrompt(readmeMd: string, filePaths: string[], fullTree: string[]): string {
   // README 截取前 3000 字（大纲部分够了）
   const readmeExcerpt = readmeMd.slice(0, 3000);
   const fileList = filePaths.map((p) => `  "${p}"`).join(",\n");
@@ -393,14 +478,20 @@ ${fileList}
 export function parseRoleResult(raw: string, validPaths: string[]): {
   sourceLang: string;
   files: { path: string; role: FileRole; lang?: string; translates?: string }[];
+  /** true = JSON 截断/形状不对走了兜底(全部当 original)—— 调用方据此拆半重试 */
+  degraded: boolean;
 } {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const cleaned = extractJsonBlock(raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim());
   let obj: unknown;
   try {
     obj = JSON.parse(cleaned);
   } catch {
-    // 解析失败: 所有文件当 original（安全降级）
-    return { sourceLang: "", files: validPaths.map((p) => ({ path: p, role: "original" as FileRole })) };
+    // 解析失败: 所有文件当 original（安全降级）。degraded 标记让上层拆半重试救回。
+    return {
+      sourceLang: "",
+      files: validPaths.map((p) => ({ path: p, role: "original" as FileRole })),
+      degraded: true,
+    };
   }
   // 兼容: LLM 可能返回数组（旧格式）或对象（新格式）
   let sourceLang = "";
@@ -412,7 +503,7 @@ export function parseRoleResult(raw: string, validPaths: string[]): {
     if (typeof o.sourceLang === "string") sourceLang = o.sourceLang;
     filesRaw = o.files as unknown[];
   } else {
-    return { sourceLang: "", files: validPaths.map((p) => ({ path: p, role: "original" as FileRole })) };
+    return { sourceLang: "", files: validPaths.map((p) => ({ path: p, role: "original" as FileRole })), degraded: true };
   }
   const validSet = new Set(validPaths);
   const files = (filesRaw as Array<Record<string, unknown>>)
@@ -424,7 +515,48 @@ export function parseRoleResult(raw: string, validPaths: string[]): {
       lang: typeof item.lang === "string" ? item.lang : undefined,
       translates: typeof item.translates === "string" ? item.translates : undefined,
     }));
-  return { sourceLang, files };
+  return { sourceLang, files, degraded: false };
+}
+
+/**
+ * 一批文件的角色分类,截断自愈(与 Step4 designSectionsResilient 同款):
+ * parseRoleResult 走了兜底(degraded:JSON 被 token 上限掐断/形状不对)→ 批拆半各调;
+ * 二分到单文件仍 degraded → 兜底当原文(不丢内容,只丢分类精度)。
+ * 导出供 verify 注入 call 桩测试。
+ */
+export async function classifyFilesResilient(
+  files: string[],
+  deps: {
+    buildPrompt: (files: string[]) => string;
+    call: (prompt: string) => Promise<string>;
+    onProgress?: (msg: string) => void;
+    /** 取消轮询:二分级联每级入口检查,点了取消不再发起新 LLM 调用 */
+    shouldAbort?: () => boolean;
+  },
+): Promise<ReturnType<typeof parseRoleResult>> {
+  const attempt = async (chunk: string[]): Promise<ReturnType<typeof parseRoleResult>> => {
+    const text = await deps.call(deps.buildPrompt(chunk));
+    return parseRoleResult(text, chunk);
+  };
+  const recurse = async (chunk: string[]): Promise<ReturnType<typeof parseRoleResult>> => {
+    if (deps.shouldAbort?.()) throw new Error("导入已取消");
+    const parsed = await attempt(chunk);
+    if (!parsed.degraded) return parsed;
+    if (chunk.length === 1) {
+      deps.onProgress?.(`⚠ 文件分类输出不完整,单文件兜底当原文: ${chunk[0]}`);
+      return parsed;
+    }
+    deps.onProgress?.(`⚠ 文件分类输出不完整(${chunk.length} 文件),拆半重试`);
+    const mid = Math.floor(chunk.length / 2);
+    const left = await recurse(chunk.slice(0, mid));
+    const right = await recurse(chunk.slice(mid));
+    return {
+      sourceLang: left.sourceLang || right.sourceLang,
+      files: [...left.files, ...right.files],
+      degraded: false,
+    };
+  };
+  return recurse(files);
 }
 
 /* ============================================================
@@ -479,6 +611,7 @@ export async function designCourseStructure(
   practiceFiles: string[],
   onProgress?: (msg: string) => void,
   standaloneImages: { path: string; alt: string }[] = [],
+  opts?: { signal?: AbortSignal },
 ): Promise<CourseStructure> {
   const send = (msg: string) => onProgress?.(msg);
   const ready = isLlmReady(db);
@@ -489,6 +622,7 @@ export async function designCourseStructure(
 
   send("AI 设计课程结构（按字数拆分 + study/practice/附属 三分类）");
   const llm = resolveLlm(db);
+  const im = buildImportModel(llm);
 
   // 构建文件+大纲信息（含字符数，供 LLM 做长文件拆分决策）
   const allFiles = [...originalFiles, ...practiceFiles];
@@ -511,22 +645,25 @@ export async function designCourseStructure(
   if (fileInfos.length <= CHUNK_SIZE) {
     allSections.push(
       ...await designSectionsResilient(readmeMd, fileInfos, practiceFiles, standaloneImages, {
-        call: (prompt) => generateTextWithTimeout(llm.languageModel, prompt),
+        call: (prompt) => generateTextWithTimeout(im.model, prompt, { providerOptions: im.providerOptions, signal: opts?.signal, maxOutputTokens: im.maxOutputTokens }),
         onProgress: send,
+        shouldAbort: () => opts?.signal?.aborted === true,
       }),
     );
   } else {
     // 大课程: 分块设计，每块独立分 section
     send(`课程较大（${fileInfos.length} 文件），分 ${Math.ceil(fileInfos.length / CHUNK_SIZE)} 批设计…`);
     for (let i = 0; i < fileInfos.length; i += CHUNK_SIZE) {
+      if (opts?.signal?.aborted) throw new Error("导入已取消");
       const chunk = fileInfos.slice(i, i + CHUNK_SIZE);
       const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
       const totalChunks = Math.ceil(fileInfos.length / CHUNK_SIZE);
       send(`AI 设计中（第 ${chunkNum}/${totalChunks} 批）…`);
       allSections.push(
         ...await designSectionsResilient(readmeMd, chunk, practiceFiles, standaloneImages, {
-          call: (prompt) => generateTextWithTimeout(llm.languageModel, prompt),
+          call: (prompt) => generateTextWithTimeout(im.model, prompt, { providerOptions: im.providerOptions, signal: opts?.signal, maxOutputTokens: im.maxOutputTokens }),
           onProgress: send,
+          shouldAbort: () => opts?.signal?.aborted === true,
         }),
       );
     }
@@ -557,7 +694,7 @@ export async function designSectionsResilient(
   fileInfos: StructureFileInfo[],
   practiceFiles: string[],
   standaloneImages: { path: string; alt: string }[],
-  deps: { call: (prompt: string) => Promise<string>; onProgress?: (msg: string) => void },
+  deps: { call: (prompt: string) => Promise<string>; onProgress?: (msg: string) => void; shouldAbort?: () => boolean },
 ): Promise<DesignedSection[]> {
   const attempt = async (files: StructureFileInfo[]): Promise<DesignedSection[]> => {
     const prompt = buildStructureDesignPrompt(readmeMd, files, standaloneImages);
@@ -565,6 +702,7 @@ export async function designSectionsResilient(
     return parseStructureDesignResult(text, files.map((f) => f.file), practiceFiles, standaloneImages).sections;
   };
   const recurse = async (files: StructureFileInfo[]): Promise<DesignedSection[]> => {
+    if (deps.shouldAbort?.()) throw new Error("导入已取消");
     try {
       return await attempt(files);
     } catch (e) {
@@ -587,7 +725,7 @@ export async function designSectionsResilient(
   return recurse(fileInfos);
 }
 
-function buildStructureDesignPrompt(
+export function buildStructureDesignPrompt(
   readmeMd: string,
   fileInfos: { file: string; role: string; h1: string; totalChars: number; headings: { level: number; title: string; chars: number }[] }[],
   standaloneImages: { path: string; alt: string }[] = [],
@@ -680,18 +818,61 @@ ${imagesSection}
  */
 export class StructureParseError extends Error {}
 
-function parseStructureDesignResult(
+/**
+ * 从模型输出里抽取平衡的 JSON 块:模型偶尔在 JSON 前后带说明文字/内联思考
+ * (实测 CodingPlan 端点:"Unexpected non-whitespace character after JSON")。
+ * 候选顺序:全文 → 第一个平衡 {...} → 最后一个平衡 {...}(前面的当废话丢掉)。
+ * 字符串感知(跳过引号内的大括号),扫描失败返回原文让 JSON.parse 报原错。
+ */
+export function extractJsonBlock(raw: string): string {
+  const scanBalanced = (start: number): number => {
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let i = start; i < raw.length; i++) {
+      const ch = raw[i]!;
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) return i + 1;
+      }
+    }
+    return -1;
+  };
+  const first = raw.indexOf("{");
+  if (first >= 0) {
+    const end = scanBalanced(first);
+    if (end > 0) return raw.slice(first, end);
+  }
+  const last = raw.lastIndexOf("{");
+  if (last >= 0 && last !== first) {
+    const end = scanBalanced(last);
+    if (end > 0) return raw.slice(last, end);
+  }
+  return raw;
+}
+
+export function parseStructureDesignResult(
   raw: string,
   validFiles: string[],
   _practiceFiles: string[],
   standaloneImages: { path: string; alt: string }[] = [],
 ): CourseStructure {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const cleaned = extractJsonBlock(raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim());
   let obj: { sections?: unknown };
   try {
     obj = JSON.parse(cleaned);
   } catch (e) {
-    throw new StructureParseError(`LLM 结构设计 JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`);
+    throw new StructureParseError(
+      `LLM 结构设计 JSON 解析失败: ${e instanceof Error ? e.message : String(e)};原文开头200字: ${cleaned.slice(0, 200).replace(/\s+/g, " ")}`,
+    );
   }
   if (!Array.isArray(obj.sections)) {
     throw new StructureParseError("LLM 结构设计缺少 sections 数组");

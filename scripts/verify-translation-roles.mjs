@@ -16,7 +16,7 @@ import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
 import { detectTranslationLayout, excludeSuffixTranslations } from "../src/main/services/pure/translation-layout.ts";
-import { classifyFileRoles, parseRoleResult } from "../src/main/services/import-llm-service.ts";
+import { classifyFileRoles, classifyFilesResilient, parseRoleResult } from "../src/main/services/import-llm-service.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -142,5 +142,81 @@ const ROOT = join(__dirname, "..");
   assert.equal(roles.sourceLang, "en", "T8: sourceLang=en");
   console.log("✓ T8 classifyFileRoles(无LLM): suffix 双语分流 + 配对 + 语言列表");
 }
+
+// === T9: parseRoleResult 截断 → degraded 标记(上层据此拆半) ===
+{
+  const truncated = '{"sourceLang":"en","files":[{"path":"a.md","role":"original"},{"path":"b.md","ro';
+  const d = parseRoleResult(truncated, ["a.md", "b.md"]);
+  assert.equal(d.degraded, true, "T9: 截断 JSON → degraded=true");
+  assert.deepEqual(d.files.map((f) => f.role), ["original", "original"], "T9: 兜底全 original");
+  const ok = parseRoleResult(JSON.stringify({ sourceLang: "en", files: [{ path: "a.md", role: "skip" }] }), ["a.md"]);
+  assert.equal(ok.degraded, false, "T9: 正常解析 degraded=false");
+  console.log("✓ T9 parseRoleResult: degraded 截断信号");
+}
+
+// === T10: classifyFilesResilient 截断自愈 —— 批>1 截断则拆半,单文件兜底,sourceLang 传播 ===
+{
+  const calls = [];
+  const progress = [];
+  // 桩:批 >1 个文件时返回半个 JSON(截断),单文件返回完整判定
+  const call = async (prompt) => {
+    const n = (prompt.match(/"path"/g) || []).length; // buildPrompt 桩里我们直接数文件数
+    calls.push(n);
+    return n; // 占位,真实返回在下面拼
+  };
+  // 更直接的桩:buildPrompt 收到 files,按长度决定截断/完整
+  const files5 = ["a.md", "b.md", "c.md", "d.md", "e.md"];
+  const stub = {
+    buildPrompt: (fs) => JSON.stringify(fs),
+    call: async (prompt) => {
+      const fs = JSON.parse(prompt);
+      if (fs.length > 1) {
+        return '{"sourceLang":"","files":[{"path":"' + fs[0] + '","role":"original"'; // 半个 JSON
+      }
+      return JSON.stringify({ sourceLang: fs[0] === "a.md" ? "en" : "", files: [{ path: fs[0], role: fs[0] === "b.md" ? "skip" : "practice" }] });
+    },
+    onProgress: (m) => progress.push(m),
+  };
+  const out = await classifyFilesResilient(files5, stub);
+  assert.equal(out.degraded, false, "T10: 自愈后整体不 degraded");
+  assert.equal(out.sourceLang, "en", "T10: sourceLang 从成功子批传播");
+  const byRole = Object.fromEntries(out.files.map((f) => [f.path, f.role]));
+  assert.equal(byRole["a.md"], "practice", "T10: a=practice(桩,bisect 到单文件)");
+  assert.equal(byRole["b.md"], "skip", "T10: b=skip(桩)");
+  assert.equal(byRole["c.md"], "practice", "T10: c=practice(桩)");
+  assert.ok(progress.some((m) => m.includes("拆半重试")), "T10: 进度应有拆半消息");
+  console.log("✓ T10 classifyFilesResilient: 截断拆半自愈 + sourceLang 传播");
+}
+
+// === T11: classifyFilesResilient 单文件仍截断 → 兜底当原文,不抛 ===
+{
+  const progress = [];
+  const out = await classifyFilesResilient(["x.md"], {
+    buildPrompt: (fs) => JSON.stringify(fs),
+    call: async () => "{截断",
+    onProgress: (m) => progress.push(m),
+  });
+  assert.equal(out.files[0].role, "original", "T11: 单文件兜底 original");
+  assert.ok(progress.some((m) => m.includes("单文件兜底")), "T11: 兜底进度消息");
+  console.log("✓ T11 classifyFilesResilient: 单文件截断兜底不抛");
+}
+
+
+// === T12: classifyFilesResilient 取消 —— shouldAbort 置位后不再发起 LLM 调用,抛"导入已取消" ===
+{
+  let calls = 0;
+  await assert.rejects(
+    classifyFilesResilient(["a.md", "b.md"], {
+      buildPrompt: (fs) => JSON.stringify(fs),
+      call: async () => { calls++; return "{}"; },
+      shouldAbort: () => true,
+    }),
+    /导入已取消/,
+    "T12: 取消应抛 导入已取消",
+  );
+  assert.equal(calls, 0, "T12: 取消后零 LLM 调用");
+  console.log("✓ T12 classifyFilesResilient: 取消即断,零新调用");
+}
+
 
 console.log("\n=== ALL TRANSLATION ROLES TESTS PASSED ✅ ===");

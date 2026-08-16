@@ -146,4 +146,36 @@ await test("T7 generateTextWithTimeout 显式传 maxOutputTokens=8192,文本往�
 });
 
 
+// T8: 外部取消信号 —— 预先 abort 的 signal 直接拒绝"导入已取消",不进流;
+// providerOptions 透传到 doStream(导入禁思考的方言经此下发)
+await test("T8 外部取消信号立即拒绝 + providerOptions 透传", async () => {
+  let capturedOpts = null;
+  const fakeModel = {
+    specificationVersion: "v2",
+    provider: "verify-fake",
+    modelId: "fake-model",
+    doStream: async (opts) => {
+      capturedOpts = { maxOutputTokens: opts.maxOutputTokens, providerOptions: opts.providerOptions };
+      return { stream: new ReadableStream({ start(c) { c.close(); } }) };
+    },
+  };
+  const ctl = new AbortController();
+  ctl.abort();
+  await assert.rejects(
+    generateTextWithTimeout(fakeModel, "ping", { signal: ctl.signal }),
+    /导入已取消/,
+    "预取消信号应立即抛 导入已取消",
+  );
+  const ok = await generateTextWithTimeout(fakeModel, "ping", {
+    providerOptions: { openai: { reasoningEffort: "low" } },
+  });
+  assert.equal(typeof ok, "string", "无信号正常返回");
+  assert.deepEqual(
+    capturedOpts?.providerOptions,
+    { openai: { reasoningEffort: "low" } },
+    "providerOptions 应透传到 doStream",
+  );
+});
+
+
 console.log(`\n${passed} passed`);

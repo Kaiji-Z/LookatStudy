@@ -12,6 +12,7 @@ import {
   supportsReasoningControl,
   reasoningPlanFor,
   withBodyPatch,
+  llmFamilyOf,
 } from "../shared/reasoning-effort.ts";
 
 let pass = 0;
@@ -151,6 +152,27 @@ check("T2d 不支持家族 kimi deep → none", reasoningPlanFor("kimi", "openai
   const wrapped = withBodyPatch(fake, () => undefined);
   const res = await wrapped("https://x");
   check("T5d 无 body 请求照常", (await res.text()) === "ok");
+}
+
+// ── 家族嗅探:自定义 provider(custom-*)按 baseUrl/模型名认家族 ──
+check("T? llmFamilyOf: 预设 id 直通", llmFamilyOf("glm") === "glm" && llmFamilyOf("qwen") === "qwen");
+check("T? llmFamilyOf: custom + z.ai 端点 → glm", llmFamilyOf("custom-x", "https://api.z.ai/api/coding/paas/v4", "glm-5.2") === "glm");
+check("T? llmFamilyOf: custom + bigmodel 端点 → glm", llmFamilyOf("custom-y", "https://open.bigmodel.cn/api/paas/v4", "任意") === "glm");
+check("T? llmFamilyOf: custom + glm 模型名 → glm", llmFamilyOf("custom-z", "https://proxy.example.com/v1", "GLM-4.6") === "glm");
+check("T? llmFamilyOf: custom + qwen 模型名 → qwen", llmFamilyOf("custom-w", "https://x.example/v1", "qwen3-max") === "qwen");
+check("T? llmFamilyOf: 认不出 → 原 id(降级 none)", llmFamilyOf("custom-?", "https://unknown.example/v1", "mystery-model") === "custom-?");
+{
+  const plan = reasoningPlanFor("custom-live", "openai-compatible", "fast", {
+    baseUrl: "https://api.z.ai/api/coding/paas/v4",
+    model: "glm-5.2",
+  });
+  check("T? custom ZAI + fast → bodyPatch(此前永远 none,思考关不掉)", plan.kind === "bodyPatch");
+  if (plan.kind === "bodyPatch") {
+    const body = { model: "glm-5.2" };
+    plan.patch(body);
+    check("T? patch 写入 thinking.type=disabled", JSON.stringify(body.thinking) === JSON.stringify({ type: "disabled" }));
+  }
+  check("T? 无 hints 的 custom 仍 none(保守)", reasoningPlanFor("custom-live", "openai-compatible", "fast").kind === "none");
 }
 
 console.log(fail === 0 ? `\nALL PASS (${pass})` : `\nFAIL (${fail}/${pass + fail})`);

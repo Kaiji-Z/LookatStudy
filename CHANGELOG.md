@@ -17,6 +17,13 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Fixed
+- **导入截断综合治理(实测 ML-For-Beginners 165 文件,glm-5.2 @ CodingPlan 全链路跑通)** —— 四层根因逐一落地:
+  - **输出上限家族感知**:思考与正文共享输出额度,且 CodingPlan 端点无视 `thinking.type:"disabled"`(实测 out=8192/8192 打满、探针 25 字符答案 out=330)——GLM 家族 32768 / Qwen·SiliconCloud 16384(官方上限内),DeepSeek V3 与未知端点保守 8192;
+  - **自定义 provider 思考方言嗅探**(`llmFamilyOf`):方言表此前按预设 id 查键,custom-* 永远落空 → 思考开关静默失效;现按 baseUrl/模型名认家族(z.ai/bigmodel/glm- 前缀 → glm),导入调用强制 fast(thinking disabled + `reasoning_effort:"low"` 双参数,端点认哪个用哪个);
+  - **Step 2 分类批 200→40 + 截断拆半自愈**:`parseRoleResult` 加 degraded 标记,`classifyFilesResilient` 与 Step 4 同款二分(此前截断会静默把整批文件全当原文,翻译配对/practice/噪声全丢);
+  - **JSON 抽取平衡块**:模型在 JSON 前后多说两句不再炸解析(实测 "non-whitespace character after JSON");parse 失败的错误消息带原文开头 200 字,下次直接看到模型吐了什么。
+  另:每次 LLM 调用留痕 `tokens: in/out/finish`(撞上限带 out/cap),主进程日志可查;`verify-*` 四套件新增 13 断言(截断信号/拆半自愈/取消/嗅探/平衡块,全部闭环)。
+- **导入取消现在真的能取消** —— 此前取消标志只在步骤边界检查,Step2/4 的在飞 LLM 调用(最长 20 分钟)和二分级联照跑,表现为"点了取消没反应"。现在 runSmartImport 把取消回调折叠成 AbortSignal(300ms 轮询)传进每次调用,流式生成立即中止;二分每级入口检查,零新调用;预取消/中途取消/静默收尾三种路径都有守卫。
 - **导入结构设计被输出上限掐成半个 JSON(thinking 模型高发)** —— 导入管线的 LLM 调用此前不传输出上限,吃 provider 默认(常见 4096);thinking 家族的思考与正文**共享**这一额度,40 文件批的结构 JSON 写一半流就正常结束(实测 GLM 66s,"Unexpected end of JSON input"),触发批内二分连锁,多烧好几轮调用才收敛。现在显式传 `maxOutputTokens=8192`(DeepSeek 上限、各家通用安全值;仍截断由二分兜底),撞上限时主进程日志留痕。`verify-import-watchdog` 6→7 断言(T7 假模型捕获 doStream 参数,闭环已证)。
 
 ## [0.10.0] - 2026-08-16

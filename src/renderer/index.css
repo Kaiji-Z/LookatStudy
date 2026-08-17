@@ -401,6 +401,9 @@ html.light .exam-bubble-locked {
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
     user-select: none;
+    /* 应用式触控:禁双击放大延迟,滚动即时(manipulation);双指页面缩放由
+       viewport user-scalable=no 禁掉 —— 图表捏合只在产物弹窗里(DiagramViewerModal) */
+    touch-action: manipulation;
   }
 
   input,

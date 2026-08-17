@@ -16,9 +16,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dagre from "dagre";
-import { Share2, AlertTriangle } from "lucide-react";
+import { Share2, AlertTriangle, Maximize2 } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
 import { useTouchPanPinch } from "../../lib/useTouchPanPinch.js";
+import { DiagramViewerModal } from "./DiagramViewerModal.js";
 
 interface ConceptMapData {
   artifactType: "concept_map";
@@ -119,15 +120,17 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
   const t = useLang();
   const layout = useMemo(() => computeLayout(d), [d]);
   const [zoom, setZoom] = useState(1);
-  /* 触控/鼠标统一视口控制(#1):单指平移 + 双指捏合缩放(旧实现只有 mouse 事件,
-     手机上被 touch-action:pinch-zoom 拦死单指,拖不动看不全) */
+  /* 手势分界(v0.11):主界面内联区不吃手势(浏览器页面缩放已被 viewport 禁掉,
+     内联只留原生滚动),单指平移/双指捏合只在全屏弹窗舞台里。 */
+  const [expanded, setExpanded] = useState(false);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const modalStageRef = useRef<HTMLDivElement | null>(null);
   const panPinch = useTouchPanPinch(
     useCallback((factor: number) => {
       setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z * factor).toFixed(3))));
     }, []),
   );
-  // 窄屏初始适宽:内容比视口宽时自动缩到整图可见(手机一眼看全,再捏合看细节)
+  // 窄屏初始适宽:内容比视口宽时自动缩到整图可见(手机一眼看全,细节进弹窗捏合看)
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -140,6 +143,14 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [layout.width]);
+  // 弹窗打开时按舞台宽重新适宽
+  useEffect(() => {
+    if (!expanded) return;
+    const el = modalStageRef.current;
+    if (!el) return;
+    const ratio = (el.clientWidth - 16) / layout.width;
+    setZoom(Math.max(MIN_ZOOM, Math.min(1, +ratio.toFixed(2))));
+  }, [expanded, layout.width]);
 
   const zoomIn = useCallback(() => setZoom((z) => Math.min(MAX_ZOOM, +(z + ZOOM_STEP).toFixed(2))), []);
   const zoomOut = useCallback(() => setZoom((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2))), []);
@@ -151,6 +162,119 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
     setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z + delta).toFixed(2))));
   }, []);
 
+  const graphSvg = (
+    <svg
+      width={layout.width}
+      height={layout.height}
+      viewBox={`0 0 ${layout.width} ${layout.height}`}
+      style={{
+        transform: `scale(${zoom})`,
+        transformOrigin: "top left",
+        display: "block",
+      }}
+      data-testid="conceptmap-svg"
+    >
+      <defs>
+      {/* 箭头标记 */}
+      <marker
+        id="cm-arrow"
+        viewBox="0 0 10 10"
+        refX={9}
+        refY={5}
+        markerWidth={7}
+        markerHeight={7}
+        orient="auto-start-reverse"
+      >
+        <path d="M 0 0 L 10 5 L 0 10 z" className="fill-neutral-400 dark:fill-neutral-500" />
+      </marker>
+      {/* 节点柔阴影 */}
+      <filter id="cm-shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor="#00000022" />
+      </filter>
+    </defs>
+
+    {/* 边(先画,在节点下层) */}
+      {layout.edgePoints.map(({ edge, points }, i) => {
+        if (points.length === 0) return null;
+        const path = pointsToPath(points);
+        const midIdx = Math.floor(points.length / 2);
+        const midPoint = points[midIdx] ?? points[0];
+        return (
+          <g key={`e-${i}`}>
+            <path
+              d={path}
+              className="fill-none stroke-neutral-400 dark:stroke-neutral-500"
+              strokeWidth={1.8}
+              markerEnd="url(#cm-arrow)"
+            />
+            {edge.label && (
+              <g>
+                {/* 胶囊背景 */}
+                <rect
+                  x={midPoint.x - edge.label.length * 4 - 6}
+                  y={midPoint.y - 9}
+                  width={edge.label.length * 8 + 12}
+                  height={18}
+                  rx={9}
+                  className="fill-white dark:fill-neutral-800 stroke-neutral-200 dark:stroke-neutral-700"
+                  strokeWidth={1}
+                />
+                <text
+                  x={midPoint.x}
+                  y={midPoint.y + 3.5}
+                  textAnchor="middle"
+                  className="fill-neutral-600 dark:fill-neutral-300 text-caption font-medium"
+                >
+                  {edge.label}
+                </text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+
+      {/* 节点(卡片式:圆角矩形 + 左色条 + 文字) */}
+      {d.nodes.map((node) => {
+        const pos = layout.positions.get(node.id);
+        const size = layout.sizes.get(node.id) ?? { width: 100, height: 40 };
+        if (!pos) return null;
+        const x = pos.x - size.width / 2;
+        const y = pos.y - size.height / 2;
+        return (
+          <g key={node.id} filter="url(#cm-shadow)">
+            {/* 卡片背景 */}
+            <rect
+              x={x}
+              y={y}
+              width={size.width}
+              height={size.height}
+              rx={10}
+              className="fill-white dark:fill-neutral-800 stroke-neutral-200 dark:stroke-neutral-700"
+              strokeWidth={1.2}
+            />
+            {/* 左侧品牌色条(视觉锚点,区分节点类型) */}
+            <rect
+              x={x}
+              y={y}
+              width={4}
+              height={size.height}
+              rx={2}
+              className="fill-brand"
+            />
+            <text
+              x={pos.x + 2}
+              y={pos.y + 4.5}
+              textAnchor="middle"
+              className="fill-neutral-800 dark:fill-neutral-100 text-label font-semibold"
+            >
+              {node.label.length > 14 ? node.label.slice(0, 13) + "…" : node.label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+
   return (
     <div className="surface-card p-4" data-testid="artifact-concept-map">
       <div className="flex items-center justify-between mb-3 gap-2">
@@ -160,168 +284,65 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
             {d.title}
           </h3>
         </div>
-        {/* 缩放控制 */}
-        <div className="flex items-center gap-1 shrink-0" data-testid="conceptmap-zoom-controls">
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* 缩放控制 */}
+          <div className="flex items-center gap-1" data-testid="conceptmap-zoom-controls">
+            <button
+              onClick={zoomOut}
+              disabled={zoom <= MIN_ZOOM}
+              className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
+              title={t("artifact.zoomOut")}
+            >
+              −
+            </button>
+            <button
+              onClick={zoomReset}
+              className="px-1.5 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 text-caption font-bold tabular-nums"
+              title={t("artifact.zoomReset")}
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              onClick={zoomIn}
+              disabled={zoom >= MAX_ZOOM}
+              className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
+              title={t("artifact.zoomIn")}
+            >
+              +
+            </button>
+          </div>
+          {/* 全屏查看:弹窗里单指拖/双指捏合 */}
           <button
-            onClick={zoomOut}
-            disabled={zoom <= MIN_ZOOM}
-            className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
-            title={t("artifact.zoomOut")}
+            onClick={() => setExpanded(true)}
+            data-testid="conceptmap-expand"
+            aria-label={t("artifact.viewer.open")}
+            data-tooltip={t("artifact.viewer.open")}
+            className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-3 flex items-center justify-center"
           >
-            −
-          </button>
-          <button
-            onClick={zoomReset}
-            className="px-1.5 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 text-caption font-bold tabular-nums"
-            title={t("artifact.zoomReset")}
-          >
-            {Math.round(zoom * 100)}%
-          </button>
-          <button
-            onClick={zoomIn}
-            disabled={zoom >= MAX_ZOOM}
-            className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
-            title={t("artifact.zoomIn")}
-          >
-            +
+            <Maximize2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* 渲染视口:可双向滚动 + 抓手拖动。
-          方案(Excalidraw/Figma 同款):外层固定原始尺寸撑开滚动区,内层 transform scale。
-          不用 flex 居中(flex 会抑制横向溢出滚动);不用 mx-auto(内容超容器时算负 margin 裁内容)。
-          左对齐 + overflow-auto,zoom=1 时居中靠外层 margin 实现,放大后左上对齐可滚到全部。 */}
+      {/* 内联视口:原生滚动(手机上不抢手势),点击进弹窗手势操作。
+          方案(Excalidraw/Figma 同款):外层固定原始尺寸撑开滚动区,内层 transform scale。 */}
       <div
         ref={viewportRef}
-        onPointerDown={panPinch.onPointerDown}
-        onPointerMove={panPinch.onPointerMove}
-        onPointerUp={panPinch.onPointerUp}
-        onPointerCancel={panPinch.onPointerUp}
+        onClick={() => setExpanded(true)}
         onWheel={handleWheel}
-        className={`bg-surface-0/40 rounded-lg p-2 overflow-auto min-h-[160px] max-h-[500px] select-none cursor-grab ${panPinch.isPanning() ? "cursor-grabbing" : ""}`}
-        style={{ touchAction: "none" }}
+        className="bg-surface-0/40 rounded-lg p-2 overflow-auto min-h-[160px] max-h-[500px] select-none"
+        style={{ touchAction: "pan-x pan-y" }}
         data-testid="conceptmap-render-area"
-        data-noswipe="" /* 视口内手势归平移/捏合,T3 切栏滑动手势不接管 */
+        data-noswipe="" /* 内联横向滚动与 T3 切栏滑动手势互斥:图上滑动不切栏 */
       >
         <div
           style={{
             width: layout.width * zoom,
             height: layout.height * zoom,
-            // 内容居中:zoom=1 且容器比内容宽时居中;放大后内容超容器,margin auto 不裁(因为有明确 width)
             margin: "0 auto",
           }}
         >
-          <svg
-            width={layout.width}
-            height={layout.height}
-            viewBox={`0 0 ${layout.width} ${layout.height}`}
-            style={{
-              transform: `scale(${zoom})`,
-              transformOrigin: "top left",
-              display: "block",
-            }}
-            data-testid="conceptmap-svg"
-          >
-            <defs>
-            {/* 箭头标记 */}
-            <marker
-              id="cm-arrow"
-              viewBox="0 0 10 10"
-              refX="9"
-              refY="5"
-              markerWidth="7"
-              markerHeight="7"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 0 L 10 5 L 0 10 z" className="fill-neutral-400 dark:fill-neutral-500" />
-            </marker>
-            {/* 节点柔阴影 */}
-            <filter id="cm-shadow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor="#00000022" />
-            </filter>
-          </defs>
-
-          {/* 边(先画,在节点下层) */}
-            {layout.edgePoints.map(({ edge, points }, i) => {
-              if (points.length === 0) return null;
-              const path = pointsToPath(points);
-              const midIdx = Math.floor(points.length / 2);
-              const midPoint = points[midIdx] ?? points[0];
-              return (
-                <g key={`e-${i}`}>
-                  <path
-                    d={path}
-                    className="fill-none stroke-neutral-400 dark:stroke-neutral-500"
-                    strokeWidth={1.8}
-                    markerEnd="url(#cm-arrow)"
-                  />
-                  {edge.label && (
-                    <g>
-                      {/* 胶囊背景 */}
-                      <rect
-                        x={midPoint.x - edge.label.length * 4 - 6}
-                        y={midPoint.y - 9}
-                        width={edge.label.length * 8 + 12}
-                        height={18}
-                        rx={9}
-                        className="fill-white dark:fill-neutral-800 stroke-neutral-200 dark:stroke-neutral-700"
-                        strokeWidth={1}
-                      />
-                      <text
-                        x={midPoint.x}
-                        y={midPoint.y + 3.5}
-                        textAnchor="middle"
-                        className="fill-neutral-600 dark:fill-neutral-300 text-caption font-medium"
-                      >
-                        {edge.label}
-                      </text>
-                    </g>
-                  )}
-                </g>
-              );
-            })}
-
-            {/* 节点(卡片式:圆角矩形 + 左色条 + 文字) */}
-            {d.nodes.map((node) => {
-              const pos = layout.positions.get(node.id);
-              const size = layout.sizes.get(node.id) ?? { width: 100, height: 40 };
-              if (!pos) return null;
-              const x = pos.x - size.width / 2;
-              const y = pos.y - size.height / 2;
-              return (
-                <g key={node.id} filter="url(#cm-shadow)">
-                  {/* 卡片背景 */}
-                  <rect
-                    x={x}
-                    y={y}
-                    width={size.width}
-                    height={size.height}
-                    rx={10}
-                    className="fill-white dark:fill-neutral-800 stroke-neutral-200 dark:stroke-neutral-700"
-                    strokeWidth={1.2}
-                  />
-                  {/* 左侧品牌色条(视觉锚点,区分节点类型) */}
-                  <rect
-                    x={x}
-                    y={y}
-                    width={4}
-                    height={size.height}
-                    rx={2}
-                    className="fill-brand"
-                  />
-                  <text
-                    x={pos.x + 2}
-                    y={pos.y + 4.5}
-                    textAnchor="middle"
-                    className="fill-neutral-800 dark:fill-neutral-100 text-label font-semibold"
-                  >
-                    {node.label.length > 14 ? node.label.slice(0, 13) + "…" : node.label}
-                  </text>
-                </g>
-              );
-            })}
-        </svg>
+          {graphSvg}
         </div>
       </div>
 
@@ -334,6 +355,34 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{d.warnings.join("; ")}</span>
         </div>
+      )}
+
+      {/* 全屏手势舞台:单指平移 + 双指捏合 + Ctrl 滚轮;Esc/背景/X 关闭 */}
+      {expanded && (
+        <DiagramViewerModal title={d.title} onClose={() => setExpanded(false)}>
+          <div
+            ref={modalStageRef}
+            onPointerDown={panPinch.onPointerDown}
+            onPointerMove={panPinch.onPointerMove}
+            onPointerUp={panPinch.onPointerUp}
+            onPointerCancel={panPinch.onPointerUp}
+            onWheel={handleWheel}
+            className={`h-full w-full bg-surface-0/60 rounded-xl overflow-auto select-none ${panPinch.isPanning() ? "cursor-grabbing" : "cursor-grab"}`}
+            style={{ touchAction: "none" }}
+            data-testid="conceptmap-modal-stage"
+          >
+            <div
+              style={{
+                width: layout.width * zoom,
+                height: layout.height * zoom,
+                margin: "0 auto",
+                minWidth: "fit-content",
+              }}
+            >
+              {graphSvg}
+            </div>
+          </div>
+        </DiagramViewerModal>
       )}
     </div>
   );

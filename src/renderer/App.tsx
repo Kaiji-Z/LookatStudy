@@ -716,10 +716,11 @@ export default function App() {
         onToggleRight={toggleRightPane}
         tier={tier}
         bottomBar={tier === 3 ? (
-          /* T3 单行标题栏的居中切换器:紧凑分段控制(图标+短标签)。
-             不再单独占一行 —— 窄屏 chrome 从 106px 压到 48px,内容区最大化。 */
+          /* T3 单行标题栏的居中切换器:紧凑 icon button group(容器底色+内描边,
+             与两侧裸露的 XP/设置图标区分成组)。无文字,名称走 aria-label +
+             tooltip(桌面 hover / 触屏长按,GlobalTooltip 双通道)。 */
           <nav
-            className="inline-flex items-center gap-1 p-1 rounded-xl bg-ink/5"
+            className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-ink/5 ring-1 ring-inset ring-[var(--border)]"
             data-testid="t3-pane-switcher"
             role="tablist"
             aria-label={t("pane.switcher")}
@@ -733,14 +734,15 @@ export default function App() {
                 key={k}
                 role="tab"
                 aria-selected={t3Pane === k}
+                aria-label={label}
                 data-testid={testid}
+                data-tooltip={label}
                 onClick={() => setT3Pane(k)}
-                className={`h-8 px-3 flex items-center justify-center gap-1 rounded-lg text-label font-bold transition-colors ${
-                  t3Pane === k ? "bg-brand/15 text-brand" : "text-ink-muted active:bg-ink/10"
+                className={`w-8 h-7 flex items-center justify-center rounded-md transition-colors ${
+                  t3Pane === k ? "bg-brand/20 text-brand" : "text-ink-muted active:bg-ink/10"
                 }`}
               >
                 <Icon className="w-4 h-4" />
-                <span>{label}</span>
               </button>
             ))}
           </nav>

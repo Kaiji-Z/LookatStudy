@@ -12,10 +12,11 @@
  * 交互:缩放(+/- 按钮 + Ctrl+滚轮)+ 可滚动视口(内容大时双向滚动,不限死高度)
  */
 import { useCallback, useEffect, useId, useState } from "react";
-import { Workflow, AlertTriangle } from "lucide-react";
+import { Workflow, AlertTriangle, Maximize2 } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
 import { renderMermaid } from "../../lib/lazy-mermaid.js";
-import { useDragPan } from "../../lib/useDragPan.js";
+import { useTouchPanPinch } from "../../lib/useTouchPanPinch.js";
+import { DiagramViewerModal } from "./DiagramViewerModal.js";
 
 interface MermaidData {
   artifactType: "diagram";
@@ -50,17 +51,16 @@ export function MermaidArtifact({ data }: { data: unknown }) {
   const [svgSize, setSvgSize] = useState<{ width: number; height: number } | null>(null);
   // 缩放等级:1 = 原始尺寸。< 1 缩小看全貌,> 1 放大看细节
   const [zoom, setZoom] = useState(1);
-  // 拖动平移:放大后可抓手拖动查看(替代只能滚轮滚动)
-  const dragPan = useDragPan();
-  // 拖动事件订阅到 window(拖出元素也能继续)
-  useEffect(() => {
-    window.addEventListener("mousemove", dragPan.onMouseMove);
-    window.addEventListener("mouseup", dragPan.onMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", dragPan.onMouseMove);
-      window.removeEventListener("mouseup", dragPan.onMouseUp);
-    };
-  }, [dragPan.onMouseMove, dragPan.onMouseUp]);
+  /* 手势分界(v0.11):内联区只留原生滚动(不再 pinch-zoom 放行浏览器页面缩放,也去掉了
+     旧 useDragPan —— 它在 mousedown 里 preventDefault,Chromium 触屏 tap 的合成
+     mousedown 被取消会吞掉后续 click,导致"点图开弹窗"在手机上永远不触发),
+     单指平移/双指捏合收进全屏弹窗舞台 */
+  const [expanded, setExpanded] = useState(false);
+  const panPinch = useTouchPanPinch(
+    useCallback((factor: number) => {
+      setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z * factor).toFixed(3))));
+    }, []),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -111,9 +111,10 @@ export function MermaidArtifact({ data }: { data: unknown }) {
             {TYPE_LABELS[d.diagramType] ?? d.diagramType}
           </span>
         </div>
+        <div className="flex items-center gap-1.5 shrink-0">
         {/* 缩放控制(仅渲染成功时显示) */}
         {state.status === "rendered" && (
-          <div className="flex items-center gap-1 shrink-0" data-testid="mermaid-zoom-controls">
+          <div className="flex items-center gap-1" data-testid="mermaid-zoom-controls">
             <button
               onClick={zoomOut}
               disabled={zoom <= MIN_ZOOM}
@@ -142,6 +143,19 @@ export function MermaidArtifact({ data }: { data: unknown }) {
             </button>
           </div>
         )}
+        {/* 全屏查看:弹窗里单指拖/双指捏合(仅渲染成功时显示) */}
+        {state.status === "rendered" && (
+          <button
+            onClick={() => setExpanded(true)}
+            data-testid="mermaid-expand"
+            aria-label={t("artifact.viewer.open")}
+            data-tooltip={t("artifact.viewer.open")}
+            className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-3 flex items-center justify-center"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+        </div>
         <button
           onClick={() => window.open(liveUrl, "_blank")}
           className="text-caption text-accent hover:underline font-bold shrink-0"
@@ -152,14 +166,16 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         </button>
       </div>
 
-      {/* 渲染视口:不限死高度,内容按缩放后尺寸显示,溢出双向滚动 */}
+      {/* 渲染视口:不限死高度,内容按缩放后尺寸显示,溢出双向滚动。
+          内联区不吃捏合手势(touchAction pan-x pan-y 只放行滚动;浏览器页面缩放已被
+          viewport 禁掉)—— 手机点图面进弹窗操作手势。 */}
       <div
-        ref={dragPan.containerRef}
-        onMouseDown={dragPan.onMouseDown}
+        onClick={() => { if (state.status === "rendered") setExpanded(true); }}
         onWheel={handleWheel}
-        className={`bg-surface-0/40 rounded-lg p-3 overflow-auto min-h-[120px] max-h-[500px] select-none ${dragPan.isDragging ? "cursor-grabbing" : "cursor-grab"}`}
-        style={{ touchAction: "pinch-zoom" }}
+        className="bg-surface-0/40 rounded-lg p-3 overflow-auto min-h-[120px] max-h-[500px] select-none"
+        style={{ touchAction: "pan-x pan-y" }}
         data-testid="mermaid-render-area"
+        data-noswipe="" /* 内联横向滚动与 T3 切栏滑动手势互斥:图上滑动不切栏 */
       >
         {state.status === "loading" && (
           <div className="flex items-center gap-2 text-body text-ink-muted my-8 justify-center" data-testid="mermaid-loading">
@@ -222,6 +238,43 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         <div className="mt-1.5 text-caption text-ink-muted flex items-center gap-2">
           <span>{t("artifact.mermaid.hint")}</span>
         </div>
+      )}
+
+      {/* 全屏手势舞台:单指平移 + 双指捏合 + Ctrl 滚轮;Esc/背景/X 关闭。
+          svg 与内联同一字符串(重复 id 但内容相同,defs 引用解析到哪份都等价)。 */}
+      {expanded && state.status === "rendered" && (
+        <DiagramViewerModal title={d.title} onClose={() => setExpanded(false)}>
+          <div
+            onPointerDown={panPinch.onPointerDown}
+            onPointerMove={panPinch.onPointerMove}
+            onPointerUp={panPinch.onPointerUp}
+            onPointerCancel={panPinch.onPointerUp}
+            onWheel={handleWheel}
+            className={`h-full w-full bg-surface-0/60 rounded-xl overflow-auto p-3 select-none ${panPinch.isPanning() ? "cursor-grabbing" : "cursor-grab"}`}
+            style={{ touchAction: "none" }}
+            data-testid="mermaid-modal-stage"
+          >
+            <div
+              style={{
+                width: svgSize ? svgSize.width * zoom : "auto",
+                height: svgSize ? svgSize.height * zoom : "auto",
+                margin: "0 auto",
+                minWidth: "fit-content",
+              }}
+            >
+              <div
+                style={{
+                  transform: `scale(${zoom})`,
+                  transformOrigin: "top left",
+                  width: svgSize?.width ?? undefined,
+                  height: svgSize?.height ?? undefined,
+                }}
+                dangerouslySetInnerHTML={{ __html: state.svg }}
+                data-testid="mermaid-svg-modal"
+              />
+            </div>
+          </div>
+        </DiagramViewerModal>
       )}
 
       {/* harness 修复警告 */}

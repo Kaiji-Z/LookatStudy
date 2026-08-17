@@ -671,8 +671,20 @@ export default function App() {
     const heavy = extractArtifacts(chat.messages).filter((a) =>
       HEAVY_ARTIFACTS.has((a.output as { artifactType?: string } | null)?.artifactType ?? ""),
     );
-    return heavy.length ? heavy[heavy.length - 1] : null;
-  }, [chat.messages]);
+    if (heavy.length) return heavy[heavy.length - 1];
+    // 回退:当前节点理解区里最新一件持久重产物(历史会话存的图也能上黑板,不至于空态)
+    const saved = canvas.items
+      .filter((i) => HEAVY_ARTIFACTS.has(i.artifactType))
+      .map((i) => {
+        try {
+          return { id: i.id, toolName: i.artifactType, output: JSON.parse(i.data) as unknown };
+        } catch {
+          return null;
+        }
+      })
+      .filter((x): x is { id: string; toolName: string; output: unknown } => x !== null);
+    return saved.length ? saved[saved.length - 1] : null;
+  }, [chat.messages, canvas.items]);
   const seenArtifactIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!canvasArtifact || seenArtifactIdsRef.current.has(canvasArtifact.id)) return;

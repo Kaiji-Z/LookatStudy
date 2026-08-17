@@ -211,6 +211,8 @@ const translations: Record<Lang, Record<string, string>> = {
     // —— 笔记本(NotebookPanel)——
     "notebook.tab.explain": "讲解",
     "notebook.tab.notes": "笔记",
+"notebook.tab.board": "黑板",
+"notebook.board.empty": "对话里产生概念图、流程图、对比表、代码讲解时,这里会实时展示最新的一幅大图,方便边看边问。",
     "notebook.zone.understand": "理解",
     "notebook.zone.note": "记录",
     "notebook.zone.practice": "练习",
@@ -777,6 +779,8 @@ const translations: Record<Lang, Record<string, string>> = {
     // —— Notebook ——
     "notebook.tab.explain": "Explain",
     "notebook.tab.notes": "Notes",
+"notebook.tab.board": "Blackboard",
+"notebook.board.empty": "When the tutor produces a concept map, diagram, comparison table, or code walkthrough in chat, the latest one is rendered here in full size.",
     "notebook.zone.understand": "Understand",
     "notebook.zone.note": "Notes",
     "notebook.zone.practice": "Practice",
@@ -1213,3 +1217,4 @@ export function useLang(): (key: string, vars?: Record<string, string | number>)
 export function useLangValue(): Lang {
   return useSyncExternalStore(subscribe, getLang, getLang);
 }
+

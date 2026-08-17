@@ -663,6 +663,23 @@ export default function App() {
   // ref 桥接:让 handleStartLearning(定义在 toast 之前)能调用 sendMessage(定义在 toast 之后)
   sendRef.current = sendMessage;
 
+  // 黑板(canvas):对话里最新一件重产物 → 右栏黑板 tab 大画布渲染;
+  // 流式中出现新重产物时自动把右栏切到黑板(ChatGPT canvas 式联动,仅桌面双/三栏——
+  // T3 单栏时右栏未挂载,切 tab 无副作用)。
+  const HEAVY_ARTIFACTS = new Set(["concept_map", "diagram", "compare_table", "code_walkthrough"]);
+  const canvasArtifact = useMemo(() => {
+    const heavy = extractArtifacts(chat.messages).filter((a) =>
+      HEAVY_ARTIFACTS.has((a.output as { artifactType?: string } | null)?.artifactType ?? ""),
+    );
+    return heavy.length ? heavy[heavy.length - 1] : null;
+  }, [chat.messages]);
+  const seenArtifactIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!canvasArtifact || seenArtifactIdsRef.current.has(canvasArtifact.id)) return;
+    seenArtifactIdsRef.current.add(canvasArtifact.id);
+    if (chat.streaming) setForceArtifactTab("board");
+  }, [canvasArtifact, chat.streaming]);
+
   // v0.10 上下文表的"历史段":当前 thread 全部消息文本(text parts)的估算 token。
   // LLM 历史重放只带 content(文本),reasoning/tool 产物不进上下文,这里只算 text。
   const historyTokens = useMemo(
@@ -925,6 +942,7 @@ export default function App() {
                   void sendMessage(msg);
                 }}
                 onQuizCompleted={handleQuizCompleted}
+                cardMode={tier === 3}
                 chatNotes={canvas.items.filter(
                   (i) => i.artifactType === "user_note" && i.sourceAnchor,
                 )}
@@ -976,6 +994,7 @@ export default function App() {
                 items={canvas.items}
                 loading={canvas.loading}
                 forceTab={forceArtifactTab}
+                canvasArtifact={canvasArtifact}
                 onUserTabChange={() => setForceArtifactTab(null)}
                 onRemove={(id) => {
                   canvas.remove(id);

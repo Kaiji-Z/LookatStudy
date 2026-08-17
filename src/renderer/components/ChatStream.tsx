@@ -59,9 +59,12 @@ interface ChatStreamProps {
   onPickQuizAction?: (message: string) => void;
   /** quiz 答完自动把成绩单发进对话(hook 给 AI 判定下一步)。 */
   onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
+  /** T3 卡片模式(一幕一屏):窄屏下每个 AI 回合装进一张占屏卡片,垂直 snap 翻幕;
+   *  用户消息保持小气泡。宽屏不传=false,行为不变。 */
+  cardMode?: boolean;
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onGotoSettings, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction, onQuizCompleted }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onGotoSettings, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction, onQuizCompleted, cardMode = false }: ChatStreamProps) {
   const t = useLang();
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
@@ -308,7 +311,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         ref={scrollRef}
         onScroll={handleScroll}
         onMouseUp={handleChatMouseUp}
-        className="h-full overflow-y-auto px-5 py-6 space-y-6 relative"
+        className={`h-full overflow-y-auto px-3 py-4 space-y-2 relative ${cardMode ? "snap-y snap-proximity" : "px-5 py-6 space-y-6"}`}
         data-testid="chat-stream"
       >
         {messages.length === 0 && (
@@ -380,16 +383,24 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         )}
 
         {messages.map((msg) => (
-          <MessageRowV2
+          /* T3 一幕一屏:AI 回合 = 一张占屏卡片(讲解/测验/反馈各成一幕),
+             垂直滚动邻近吸附(snap-proximity,不锁滚动方向);用户消息保持小气泡作幕间插页 */
+          <div
             key={msg.id}
-            msg={msg}
-            onApplyProposal={onApplyProposal}
-            onRejectProposal={onRejectProposal}
-            onQuizAnswered={handleQuizAnswered}
-            quizMastery={quizMastery}
-            onPickAction={onPickQuizAction}
-            onQuizCompleted={onQuizCompleted}
-          />
+            className={cardMode ? "snap-start" : "contents"}
+          >
+            <div className={cardMode && msg.role === "assistant" ? "surface-card p-4 rounded-2xl shadow-card" : undefined}>
+              <MessageRowV2
+                msg={msg}
+                onApplyProposal={onApplyProposal}
+                onRejectProposal={onRejectProposal}
+                onQuizAnswered={handleQuizAnswered}
+                quizMastery={quizMastery}
+                onPickAction={onPickQuizAction}
+                onQuizCompleted={onQuizCompleted}
+              />
+            </div>
+          </div>
         ))}
 
         {streaming && (

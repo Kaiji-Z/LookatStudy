@@ -23,10 +23,10 @@ import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
-import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote } from "lucide-react";
+import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote , Presentation } from "lucide-react";
 import { useLang } from "../lib/i18n.js";
 
-export type NotebookTab = "content" | "notes";
+export type NotebookTab = "content" | "notes" | "board";
 
 /** Translate function shape returned by useLang(). */
 type TranslateFn = (key: string, vars?: Record<string, string | number>) => string;
@@ -59,6 +59,9 @@ interface NotebookPanelProps {
   items: CanvasItem[];
   loading: boolean;
   forceTab?: NotebookTab | null;
+  /** 黑板(canvas):当前对话里最新一件重产物(概念图/流程图/对比表/代码讲解),
+   *  大画布实时渲染;App 在流式中出现新重产物时 forceTab 切到 board。 */
+  canvasArtifact?: { id: string; toolName: string; output: unknown } | null;
   /** 用户从复习抽屉选了课 → 讲解底部显示自评卡 */
   isReviewing?: boolean;
   /** 自评完成或退出复习模式 */
@@ -85,6 +88,7 @@ export function NotebookPanel({
   items,
   loading,
   forceTab,
+  canvasArtifact,
   isReviewing,
   onReviewDone,
   onUserTabChange,
@@ -143,11 +147,32 @@ export function NotebookPanel({
             testid="tab-notes"
             badge={nodeItems.length > 0 ? String(nodeItems.length) : undefined}
           />
+          <TabBtn
+            label={t("notebook.tab.board")}
+            icon={Presentation}
+            active={tab === "board"}
+            onClick={() => handleTabClick("board")}
+            testid="tab-board"
+          />
         </div>
       </div>
 
       {/* 内容区:tab 切换时内容滑入(PROPERTY.md motion: 状态传达,150-250ms) */}
       <div className="flex-1 overflow-y-auto min-h-0 animate-tab-slide" key={tab} ref={scrollRef} role="tabpanel">
+        {tab === "board" && (
+          <div className="p-4" data-testid="board-tab-content">
+            {canvasArtifact ? (
+              <ArtifactRenderer data={canvasArtifact.output} />
+            ) : (
+              <div className="text-center py-16">
+                <Presentation className="w-10 h-10 mx-auto mb-3 text-ink-muted opacity-30" />
+                <div className="text-body text-ink-muted max-w-sm mx-auto leading-relaxed">
+                  {t("notebook.board.empty")}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {/* v0.11:内容居中封顶 960 —— 宽屏/单栏档笔记本不空旷,栏宽仍弹性 */}
         <div className="mx-auto w-full max-w-[960px] min-h-full">
         {tab === "content" ? (

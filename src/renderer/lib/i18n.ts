@@ -366,6 +366,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "settings.multimodal.group_custom": "自定义 Provider",
     "settings.multimodal.vision_capable": "vision",
     "settings.multimodal.save_override": "保存覆盖配置",
+"settings.multimodal.test_override": "测试模型",
     "settings.saved_text": "已保存",
     "settings.key.configured": "已配置",
     "settings.custom.test_label": "(测试)",
@@ -935,6 +936,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "settings.multimodal.group_custom": "Custom providers",
     "settings.multimodal.vision_capable": "vision",
     "settings.multimodal.save_override": "Save override",
+"settings.multimodal.test_override": "Test model",
     "settings.saved_text": "Saved",
     "settings.key.configured": "Configured",
     "settings.custom.test_label": "(test)",
@@ -1219,5 +1221,6 @@ export function useLang(): (key: string, vars?: Record<string, string | number>)
 export function useLangValue(): Lang {
   return useSyncExternalStore(subscribe, getLang, getLang);
 }
+
 
 

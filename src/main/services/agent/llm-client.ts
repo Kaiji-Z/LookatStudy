@@ -270,10 +270,13 @@ export function isLlmReady(db: Db): {
  */
 export async function testLlmConnection(
   db: Db,
+  opts?: { vision?: boolean },
 ): Promise<{ ok: boolean; detail: string; errorKind?: LlmErrorKind }> {
   let llm: ResolvedLlm;
   try {
-    llm = resolveLlm(db);
+    // vision=true:测的是"识图生效链路"(视觉覆盖优先,缺省回落主模型)——
+    // 与 vision-bridge 实际用的解析同源,测过即所得。
+    llm = opts?.vision ? resolveVisionLlm(db) : resolveLlm(db);
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : String(e), errorKind: "not-configured" };
   }

@@ -7,7 +7,7 @@
  *
  * 数据自取(active_provider + reasoning_effort 两个 settings + presets 查协议)。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Brain, Check, ChevronUp } from "lucide-react";
 import type { ReasoningEffortSetting, SettingKey } from "@shared/types";
 import { supportsReasoningControl, type LlmProtocol } from "@shared/reasoning-effort";
@@ -27,6 +27,49 @@ export function EffortPicker() {
   const [effort, setEffort] = useState<ReasoningEffortSetting>("");
   const [supported, setSupported] = useState(true);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  /** 窄屏适配:菜单默认右对齐(right-0),溢出屏幕左缘则翻转为左对齐 */
+  const [menuAlign, setMenuAlign] = useState<"right" | "left">("right");
+
+  /** 窄屏双向适配(相位制,防振荡):open 后第一相测量——仅当「另一侧放得下」才翻转锚点
+   *  (两侧都放不下时翻转条件会互相打架,左右横跳无限重渲,React #185 实测炸树);
+   *  第二相对最终锚点做平移校正,把菜单完整推进视口。平移量按「未平移坐标」计算,
+   *  避免「平移→重测→再平移」叠加漂移。 */
+  const [menuShift, setMenuShift] = useState(0);
+  const menuShiftRef = useRef(0);
+  const [alignPhase, setAlignPhase] = useState(0);
+  useLayoutEffect(() => {
+    if (!open) {
+      setAlignPhase(0);
+      menuShiftRef.current = 0;
+      setMenuShift(0);
+      return;
+    }
+    const el = menuRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const left = r.left - menuShiftRef.current;
+    const right = r.right - menuShiftRef.current;
+    const vw = window.innerWidth;
+    if (alignPhase === 0) {
+      if (left < 8 && right <= vw - 8) {
+        setMenuAlign("left");
+        setAlignPhase(1);
+        return;
+      }
+      if (right > vw - 8 && left >= 8) {
+        setMenuAlign("right");
+        setAlignPhase(1);
+        return;
+      }
+      setAlignPhase(1); // 两侧都放得下/都放不下:不翻,直接平移
+    }
+    const shift = Math.min(0, vw - 8 - right) + Math.max(0, 8 - left);
+    if (shift !== menuShiftRef.current) {
+      menuShiftRef.current = shift;
+      setMenuShift(shift);
+    }
+  }, [open, alignPhase]);
 
   const load = useCallback(async () => {
     try {
@@ -112,10 +155,12 @@ export function EffortPicker() {
 
       {open && (
         <div
+          ref={menuRef}
           role="menu"
           aria-label={t("effort.label")}
           data-testid="composer-effort-menu"
-          className="absolute bottom-full right-0 mb-1.5 z-50 w-60 bg-surface-0 rounded-xl shadow-elevated border border-[var(--border)] py-1.5"
+          style={{ transform: menuShift ? `translateX(${menuShift}px)` : undefined }}
+          className={`absolute bottom-full ${menuAlign === "right" ? "right-0" : "left-0"} mb-1.5 z-50 w-60 max-w-[calc(100vw-1.5rem)] bg-surface-0 rounded-xl shadow-elevated border border-[var(--border)] py-1.5`}
         >
           {LEVELS.map((l) => {
             const active = l.value === effort;

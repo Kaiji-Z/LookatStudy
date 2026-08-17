@@ -631,6 +631,24 @@ function MultimodalContent({
     await api.setSetting("vision_model_override", overrideModel);
   };
 
+  /** 测识图覆盖:先保存当前选择再测(测的就是生效链路:覆盖优先,缺省回落主模型) */
+  const [visionTesting, setVisionTesting] = useState(false);
+  const [visionTestResult, setVisionTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const handleTestOverride = async () => {
+    if (visionTesting) return;
+    await handleSaveOverride();
+    setVisionTesting(true);
+    setVisionTestResult(null);
+    try {
+      const res = await api.testLlmConnection({ vision: true });
+      setVisionTestResult({ ok: res.ok, detail: res.detail });
+    } catch (e) {
+      setVisionTestResult({ ok: false, detail: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setVisionTesting(false);
+    }
+  };
+
   const overridePreset = overrideProvider && !overrideProvider.startsWith("custom-")
     ? presets.find((p) => p.id === overrideProvider)
     : null;
@@ -722,13 +740,29 @@ function MultimodalContent({
                       className={`${fieldCls} w-full px-3 py-2`}
                     />
                   )}
-                  <button
-                    onClick={handleSaveOverride}
-                    data-testid="vision-override-save"
-                    className="btn-3d-brand px-4 py-1.5 text-label self-start"
-                  >
-                    {t("settings.multimodal.save_override")}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 self-start">
+                    <button
+                      onClick={handleSaveOverride}
+                      data-testid="vision-override-save"
+                      className="btn-3d-brand px-4 py-1.5 text-label"
+                    >
+                      {t("settings.multimodal.save_override")}
+                    </button>
+                    <button
+                      onClick={() => void handleTestOverride()}
+                      disabled={visionTesting}
+                      data-testid="vision-override-test"
+                      className="btn-3d-neutral px-4 py-1.5 text-label disabled:opacity-50"
+                    >
+                      {visionTesting ? t("settings.testing") : t("settings.multimodal.test_override")}
+                    </button>
+                    {visionTestResult && (
+                      <span className={`text-label inline-flex items-center gap-1 ${visionTestResult.ok ? "text-brand" : "text-warning"}`}>
+                        {visionTestResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
+                        {visionTestResult.detail}
+                      </span>
+                    )}
+                  </div>
                 </>
               )}
             </div>

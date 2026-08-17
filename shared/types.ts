@@ -611,11 +611,7 @@ export interface ApiExpose {
   /** 返回所有 provider 预设元数据（给 Settings 页做 provider/model 选择器，不含 key） */
   getProviderPresets(): Promise<ProviderPresetInfo[]>;
   /** 测试当前 provider 的 key + model + 网络是否通（Settings 页"测试连接"按钮） */
-  testLlmConnection(): Promise<{
-    ok: boolean;
-    detail: string;
-    errorKind?: "auth" | "rate-limit" | "network" | "not-configured" | "unknown";
-  }>;
+  testLlmConnection(opts?: { vision?: boolean }): Promise<{ ok: boolean; detail: string; errorKind?: string }>;
   /** 测试指定自定义 provider 配置（不保存，临时验证） */
   testCustomProvider(input: CustomProviderInput): Promise<{
     ok: boolean;

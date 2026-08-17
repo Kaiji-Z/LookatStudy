@@ -26,6 +26,7 @@ Entry conventions for contributors:
 - **黑板(canvas):右栏第三 tab,重产物画布化** —— 右栏新增「黑板」tab(讲解/笔记/黑板):实时渲染当前对话里最新一件重产物(概念图/流程图/对比表/代码讲解)的大画布;对话流式中产生新重产物时右栏**自动切到黑板**(ChatGPT canvas 式联动,点其他 tab 即收回控制权)。产物在黑板里仍可点开全屏手势弹窗。quiz/guess 等交互产物不进黑板(留在对话里作答);无对话产物时回退显示该节点理解区最新的持久重产物(历史会话存的图也能上黑板)。
 - **图表产物全屏手势查看器(DiagramViewerModal)** —— 手机端手势与主界面彻底分界:**主界面零双指缩放**(viewport `user-scalable=no` 禁掉浏览器整页捏合,Custom Tab 内旧 mermaid 视口 `touch-action: pinch-zoom` 放行页面缩放的口子一并堵上,内联产物区只留原生滚动);概念图/mermaid 图/对比表/代码讲解四类产物**点图面或右上角按钮进全屏弹窗**,弹窗内单指拖动平移、双指捏合缩放、桌面 Ctrl+滚轮,Esc/背景/X 关闭。对比表与代码讲解用 Chromium `zoom` 属性缩放(重排布局,滚动区天然跟随);代码讲解弹窗内点标注仍高亮联动对应行(内联/弹窗两套行 ref 互不覆盖)。E2E 实测:注入四类产物 → tap 开弹窗 → 双指捏合缩放(概念图 100%→250%、表格 1→2.5)→ 标注联动 → 关闭,页面双指捏合 `visualViewport.scale` 恒为 1。
 - **悬浮提示双通道(GlobalTooltip)** —— 手机上 hover 不存在、tap 是误触:触屏改为**长按 500ms 显示提示、手指抬起即消失**(Material Design 触屏规范,Android 原生同款),移动即取消长按(滚动意图);桌面鼠标 hover 跟随光标行为不变。两个通道都做**视口钳制**(左右 clamp、上方放不下翻到下方),手机边缘不再溢出屏幕;tap 的合成 mouseover 被粗指针守卫拦住,不再误弹贴指提示。
+- **识图覆盖模型一键测试** —— 设置 → AI 看图的视觉覆盖配置旁新增「测试模型」按钮:先保存覆盖配置,再实测**生效的视觉链路**(`agent:testConnection` 契约扩展可选 `{vision:true}`,main 侧走 `resolveVisionLlm` —— 即图像转译桥真正会调用的那个模型,不是主模型),结果就地反馈(成功/失败 + 明细),不用再"贴张图试试"盲验。E2E 实测:未配 key 的覆盖 provider 返回明确的「API key 未配置」。
 
 ### Changed
 
@@ -36,6 +37,7 @@ Entry conventions for contributors:
 - **窄屏左栏选球后自动切到对话栏** —— T3 下在地图栏点可用球进入课时,视图自动切到对话栏(宽屏行为不变),省一次手动点"对话"。E2E 已验证选球后对话 tab 高亮。
 
 ### Fixed
+- **思考强度菜单窄屏溢出** —— 390px 手机上思考强度菜单原是 `right-0` 锚定,240px 宽菜单右缘直接出屏(实测 392 > 390);补位方案"测量→平移→再测量"又会形成 useLayoutEffect 反馈环,React 19 双调用下左右锚来回振荡直到 #185 卸载整树。改为两阶段定位:先翻转锚点(**仅当另一侧放得下**,两侧都放不下就不翻、直接进平移),再对最终位置做一次性视口内钳制平移(测量读未平移坐标,不回环);菜单宽 `max-w-[calc(100vw-1.5rem)]` 兜底。E2E 实测 390px 菜单 {left:127, right:382} 完整在屏内,开关往返零页面错误。
 - **思考强度芯条对 custom provider 误禁用(glm-5.3 等)** —— UI 门控 `supportsReasoningControl` 只查 preset id,custom-* 一律判"不支持"→ 芯片禁用;而引擎侧 `reasoningPlanFor` 早已有 baseUrl/模型名嗅探(导入管线思考 low 就是走的它)——门控与引擎口径脱节,导致 glm-5.3 明明可调却点不了。门控补上同一嗅探(custom 的 baseUrl + defaultModel/active_model 作 hints),verify-reasoning-effort 新增 T5 组 5 断言(含 glm-5.3 解禁 + 无 hints 保守关 + 门控开=引擎真落地 bodyPatch),闭环已证。
 - **AI 对自己发过的产物失忆(道歉重发事故)** —— thread 历史喂给 LLM 只带 role+content 纯文本,parts_json(工具调用+产物)只用于渲染 —— 上一回合发出过答题卡但正文只有一句引导语时,模型下一回合完全看不见自己的工具调用,于是"道歉说没真正把题发出去"然后重发(真实事故)。现在历史装配时把 tool-call parts 压成「[工具调用已执行] generate_quiz → 已向学习者发出交互答题卡《X》(共 N 题)」标记注入 content(工具失败同样可见;流中断的未完成调用如实留白);base-prompt 同步加一条"看到标记=题已发出,绝不要道歉重发"。verify-tool-part-summary 8 断言,闭环已证。
 - **选区浮钮不再被手机原生菜单遮挡** —— 手机 Chrome/Safari 的 复制/分享 菜单锚在选区上方,浮钮放上侧必被遮。定位策略改为:优先**选区右侧垂直居中**(移动 8px),右侧放不下(选到行尾)→ 左侧,整行选满 → 选区下方;按钮紧凑化(两钮 ~150px)让右侧大多放得下。selection-popover 纯函数 7 断言 + 390px E2E 实测(按钮 left 290 > 选区右缘 218,垂直居中,不出屏)。

@@ -1075,9 +1075,9 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
     }));
   });
 
-  // 测试当前 provider 连接（Settings 页"测试连接"按钮）
-  handle("agent:testConnection", async () => {
-    return testLlmConnection(getDb());
+  // 测试当前 provider 连接（Settings 页"测试连接"按钮;vision=true 测识图覆盖链路）
+  handle("agent:testConnection", async (_e, opts?: { vision?: boolean }) => {
+    return testLlmConnection(getDb(), opts);
   });
 
   // 测试自定义 provider 配置（不保存，临时验证）

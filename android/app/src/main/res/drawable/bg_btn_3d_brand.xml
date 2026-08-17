@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 3D 压感主按钮(桌面端 btn-3d-brand 的原生对应):实心品牌绿 + 4dp 深色底缘,按下底缘变薄 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <layer-list>
+            <item android:gravity="bottom" android:height="2dp">
+                <shape><solid android:color="@color/brand_edge" /></shape>
+            </item>
+            <item android:bottom="2dp">
+                <shape>
+                    <solid android:color="@color/brand" />
+                    <corners android:radius="14dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    <item>
+        <layer-list>
+            <item android:gravity="bottom" android:height="4dp">
+                <shape>
+                    <solid android:color="@color/brand_edge" />
+                    <corners android:radius="14dp" />
+                </shape>
+            </item>
+            <item android:bottom="4dp">
+                <shape>
+                    <solid android:color="@color/brand" />
+                    <corners android:radius="14dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+</selector>

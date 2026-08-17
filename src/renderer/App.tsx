@@ -680,7 +680,7 @@ export default function App() {
   const [isReviewing, setIsReviewing] = useState(false);
 
   return (
-    <div className="h-screen flex flex-col bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
+    <div className="h-[var(--app-height,100vh)] flex flex-col bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
       <Header
         streak={streak}
         xp={xp}

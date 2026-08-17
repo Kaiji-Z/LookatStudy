@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -17,13 +19,14 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * 引导器主屏:三态
- *  1. Termux 未装 → 用内置 termux.apk(res/raw,构建时下载)拉起系统安装器
- *  2. Termux 已装 → 一键复制安装命令 + 跳 Termux 粘贴执行(装 Node + 下载便携包 + 启动服务)
- *  3. 服务已启动 → 「打开 LookatStudy」走 WebUiActivity(Custom Tab 到 127.0.0.1:17890)
+ * 引导器主屏:状态卡 + 主操作三态
+ *  1. Termux 未装 → 主按钮 = 安装 Termux(内置安装包)
+ *  2. Termux 已装 → 主按钮 = 复制安装命令 + 跳 Termux
+ *  「打开 LookatStudy」常驻(装完 Termux 才可用)
  */
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var statusDot: android.view.View
     private lateinit var statusText: TextView
     private lateinit var actionButton: Button
     private lateinit var openWebButton: Button
@@ -47,6 +50,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        statusDot = findViewById(R.id.statusDot)
         statusText = findViewById(R.id.statusText)
         actionButton = findViewById(R.id.actionButton)
         openWebButton = findViewById(R.id.openWebButton)
@@ -55,7 +59,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, WebUiActivity::class.java))
         }
 
-        findViewById<Button>(R.id.helpButton).setOnClickListener {
+        findViewById<TextView>(R.id.helpButton).setOnClickListener {
             startActivity(Intent(this, HelpActivity::class.java))
         }
 
@@ -65,15 +69,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateState()
-    }
-
-    private fun updateState() {
-        openWebButton.isEnabled = isTermuxInstalled()
-        if (isTermuxInstalled()) {
-            showTermuxReady()
-        } else {
-            showInstallTermux()
-        }
     }
 
     private fun isTermuxInstalled(): Boolean {
@@ -90,9 +85,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateState() {
+        openWebButton.isEnabled = isTermuxInstalled()
+        if (isTermuxInstalled()) showTermuxReady() else showInstallTermux()
+    }
+
+    /** 状态点换色:shape drawable mutate 后 setColor */
+    private fun setDotColor(color: Int) {
+        (statusDot.background.mutate() as? GradientDrawable)?.setColor(color)
+    }
+
     private fun showInstallTermux() {
-        statusText.text = "// termux: 未安装"
-        statusText.setTextColor(android.graphics.Color.parseColor("#8FB99B"))
+        setDotColor(Color.parseColor("#5E8266"))
+        statusText.text = getString(R.string.status_no_termux)
         actionButton.text = "安装 Termux(内置安装包)"
         actionButton.setOnClickListener { installBundledTermux() }
     }
@@ -109,7 +114,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 runOnUiThread {
-                    statusText.text = "// 正在安装 Termux…"
+                    statusText.text = "正在安装 Termux…"
                     val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
                     val intent = Intent(Intent.ACTION_VIEW).apply {
                         setDataAndType(uri, "application/vnd.android.package-archive")
@@ -125,7 +130,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    statusText.text = "// 安装失败: ${e.message}"
+                    statusText.text = "安装失败: ${e.message}"
                     Toast.makeText(this, "安装失败: ${e.message}", Toast.LENGTH_LONG).show()
                     Log.e(TAG, "installBundledTermux failed", e)
                 }
@@ -139,8 +144,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTermuxReady() {
-        statusText.text = "// termux: 就绪"
-        statusText.setTextColor(android.graphics.Color.parseColor("#58CC02"))
+        setDotColor(Color.parseColor("#58CC02"))
+        statusText.text = getString(R.string.status_termux_ready)
         actionButton.text = "复制安装命令并打开 Termux"
         actionButton.setOnClickListener {
             copyToClipboard()

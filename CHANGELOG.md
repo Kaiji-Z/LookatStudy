@@ -20,7 +20,7 @@ Entry conventions for contributors:
 - **引导器 UI 重设计(impeccable)** —— 三屏对齐应用本体的 Playful Product 词汇:深绿表面分层(#0B1F0E→卡面 #143518)、3D 压感按钮(桌面端 btn-3d 的原生对应:实心+深色底缘,按下底缘变薄)、状态卡(语义色圆点+状态行)、常用操作命令卡分组(服务/信息/系统,着色圆点前导+等宽命令)、错误屏卡片化。
 
 ### Fixed
-- **手机浏览器地图黑球+绳子隐形(旧内核兼容)** —— 调色板 101 处 `oklch()` 精确转 sRGB hex(OKLab→线性→gamma;18 个色域外颜色按 CSS Color 4 降彩度映射)+ **`@supports` 渐进增强**——支持 oklch 的浏览器(2023 年中起 Baseline)在双作用域恢复 oklch 原值,广色域屏(P3)拿回完整鲜艳度;老内核回落 hex,黑白球不复现,`color-mix(in oklch)` 预混成静态变量(暗/亮两套)。国产浏览器内核(夸克/UC 系 Custom Tab)停在 Chromium 105-110,不支持 oklch(需 111+):渐变背景失效只剩内阴影=黑球,SVG stroke 失效=绳隐形;容器查询(105+)恰好支持,与实测症状吻合。
+- **手机浏览器地图黑球+绳子隐形(旧内核兼容)** —— 调色板改为 **oklch 主位 + hex 回退双层**(改色只改 `@supports (color: oklch(..))` 层的 oklch 真源;同作用域 base hex 是降彩度映射后的同色回退,老内核(<Chromium 111,如部分国产浏览器 Custom Tab)渲染正确不再黑球/绳隐形;新浏览器广色域屏保留 oklch 原值鲜艳度)。verify-theme 新增 T3b 双层同步守卫(86 变量逐个校验映射一致,闭环已证),`color-mix(in oklch)` 预混成静态变量(暗/亮两套)。国产浏览器内核(夸克/UC 系 Custom Tab)停在 Chromium 105-110,不支持 oklch(需 111+):渐变背景失效只剩内阴影=黑球,SVG stroke 失效=绳隐形;容器查询(105+)恰好支持,与实测症状吻合。
 - **Custom Tab 顶部地址栏导致内容超出一屏(需滚动)** —— 外壳 `100vh` 改 `--app-height`(`visualViewport.height` + 100/300/800ms 延迟复测 + resize/scroll 监听,KaijiBot 三轮迭代验证的终版方案;dvh 和 position:fixed 都救不了 CCT 工具栏动画时序)。桌面 Electron 不受影响(visualViewport.height === innerHeight)。
 - **令牌门支持粘贴整条启动链接** —— Termux 里长按复制的就是带 `?token=` 的完整 URL,原样粘进门即可(自动抽取 token),不再要求手抄长令牌。
 - **正式应用图标(用户设计的 3D 字母 L)** —— 同一设计应用到三端:桌面 `build/icon.png`(electron-builder 标准位,win/mac/linux 安装包从此不再是默认 Electron 图标);Android 引导器自适应图标(满幅位图双层,渐变底视差无缝,五密度 108-432px);网页端 PWA manifest + favicon(192/512 PNG,含 maskable,L 占 62% 在 80% 安全区内)。

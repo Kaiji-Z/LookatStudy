@@ -3,8 +3,10 @@
  *
  * 程序化验证浅色模式实现完整性,不依赖视觉截图(capturePage 在无 GPU 环境返回 0x0):
  *   T1 html.light 块存在 + 覆盖所有必须 token
- *   T2 语义色浅色版对比度 ≥4.5:1(OKLCH→sRGB→WCAG 公式)
+ *   T2 语义色浅色版对比度 ≥4.5:1(OKLCH→sRGB→WCAG 公式;真源=@supports 层 oklch)
  *   T3 -rgb 通道值与 OKLCH 计算结果一致(防手填 RGB 不准)
+ *   T3b @supports oklch 层 ↔ base hex 层逐变量同步(降彩度映射后必须同色)——
+ *       守「oklch 主位 + hex 回退」双层结构:改了 oklch 忘改 hex 这里红
  *   T4 useTheme hook 存在且三态完整
  *   T5 index.html 有 FOUC 防闪烁脚本 + 不再硬编码 class="dark"
  *   T6 GlobalTooltip 用 CSS 变量(不再硬编码 rgba)
@@ -20,7 +22,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const pass = (n) => console.log(`✓ ${n}`);
 const fail = (n, d) => { console.error(`✗ ${n}` + (d ? ` — ${d}` : "")); process.exitCode = 1; };
 
-// OKLCH → sRGB(CSS Color 4 spec 矩阵)
+// OKLCH → sRGB(CSS Color 4 spec 矩阵;越界通道钳制)
 function oklchToRgb(L, C, h) {
   const hr = (h * Math.PI) / 180;
   const a = C * Math.cos(hr), b = C * Math.sin(hr);
@@ -34,6 +36,31 @@ function oklchToRgb(L, C, h) {
   const enc = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
   return [r, g, bl].map((c) => Math.round(Math.max(0, Math.min(1, enc(c))) * 255));
 }
+
+// CSS Color 4 simple gamut mapping:色域外二分降彩度(Chrome 对 oklch 的同款语义)
+function oklchGamutMapped(L, C, h) {
+  const inGamut = (l2, c2) => {
+    const hr = (h * Math.PI) / 180;
+    const a = c2 * Math.cos(hr), b = c2 * Math.sin(hr);
+    const l_ = l2 + 0.3963377774 * a + 0.2158037573 * b;
+    const m_ = l2 - 0.1055613458 * a - 0.0638541728 * b;
+    const s_ = l2 - 0.0894841775 * a - 1.2914855480 * b;
+    const [r, g, bl] = [
+      +4.0767416621 * l_ ** 3 - 3.3077115913 * m_ ** 3 + 0.2309699292 * s_ ** 3,
+      -1.2684380046 * l_ ** 3 + 2.6097574011 * m_ ** 3 - 0.3413193965 * s_ ** 3,
+      -0.0041960863 * l_ ** 3 - 0.7034186147 * m_ ** 3 + 1.7076147010 * s_ ** 3,
+    ];
+    return r >= -1e-9 && r <= 1 + 1e-9 && g >= -1e-9 && g <= 1 + 1e-9 && bl >= -1e-9 && bl <= 1 + 1e-9;
+  };
+  if (inGamut(L, C)) return [L, C];
+  let lo = 0, hi = C;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (inGamut(L, mid)) lo = mid;
+    else hi = mid;
+  }
+  return [L, lo];
+}
 function relLum([r, g, b]) {
   const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
@@ -46,6 +73,11 @@ const WHITE = [255, 255, 255];
 
 const css = readFileSync(join(ROOT, "src/renderer/index.css"), "utf8");
 const lightBlock = css.match(/html\.light\s*\{([\s\S]*?)\n\}/);
+// @supports oklch 层(真源):@supports (...) { <selector> { vars } } — 双层结构的作者位
+const supportsBlocks = [...css.matchAll(
+  /@supports \(color: oklch\([^)]*\)\)\s*\{\s*\n\s*([^\{\n]+?)\s*\{([\s\S]*?)\n\s*\}\s*\n\}/g,
+)].map((m) => ({ selector: (m[1] || "").trim(), body: m[2] || "" }));
+const lightOklch = supportsBlocks.find((b) => b.selector === "html.light");
 const themeHook = existsSync(join(ROOT, "src/renderer/lib/useTheme.ts"));
 const themeHookSrc = themeHook ? readFileSync(join(ROOT, "src/renderer/lib/useTheme.ts"), "utf8") : "";
 const indexHtml = readFileSync(join(ROOT, "src/renderer/index.html"), "utf8");
@@ -68,10 +100,11 @@ if (lightBlock) {
   check(missing.length === 0, "T1 html.light 覆盖所有必须 token", `缺 ${missing.join(", ")}`);
 }
 
-// T2: 语义色浅色版对比度
+// T2: 语义色浅色版对比度(真源 = @supports 层的 oklch)
 if (lightBlock) {
   const extract = (name) => {
-    const m = lightBlock[1].match(new RegExp(`--${name}:\\s*oklch\\(([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)\\)`));
+    const src = lightOklch ? lightOklch.body : lightBlock[1];
+    const m = src.match(new RegExp(`--${name}:\\s*oklch\\(([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)\\)`));
     return m ? [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])] : null;
   };
   const semColors = ["brand", "accent", "warning", "exam", "review"];
@@ -86,7 +119,7 @@ if (lightBlock) {
   check(failing.length === 0, "T2 语义色浅色版对比度 ≥4.5:1", failing.join("; "));
 }
 
-// T3: -rgb 通道与 OKLCH 一疏(抽检 brand/accent)
+// T3: -rgb 通道与 OKLCH 一致(抽检 brand/accent;真源 = @supports 层)
 if (lightBlock) {
   const pairs = [
     ["brand", "brand-rgb"],
@@ -96,7 +129,8 @@ if (lightBlock) {
   ];
   const mismatches = [];
   for (const [okName, rgbName] of pairs) {
-    const okM = lightBlock[1].match(new RegExp(`--${okName}:\\s*oklch\\(([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)\\)`));
+    const src = lightOklch ? lightOklch.body : lightBlock[1];
+    const okM = src.match(new RegExp(`--${okName}:\\s*oklch\\(([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)\\)`));
     const rgbM = lightBlock[1].match(new RegExp(`--${rgbName}:\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)`));
     if (!okM || !rgbM) continue;
     const computed = oklchToRgb(parseFloat(okM[1]), parseFloat(okM[2]), parseFloat(okM[3])).join(" ");
@@ -104,6 +138,40 @@ if (lightBlock) {
     if (computed !== declared) mismatches.push(`${okName}: 算 ${computed} vs 填 ${declared}`);
   }
   check(mismatches.length === 0, "T3 -rgb 通道与 OKLCH 一致", mismatches.join("; "));
+}
+
+// T3b: @supports oklch 层 ↔ base hex 层逐变量同步
+// 每个 @supports 变量经降彩度映射后的 hex 必须等于同作用域 base 层的 hex —— 双层同色,
+// 改 oklch 忘同步 hex(或反之)在这里红。这是「oklch 主位 + hex 回退」结构的闭环守卫。
+{
+  // base 层 = 全文件剥掉所有 @supports 块后的顶层规则(变量定义后跟注释,无嵌套花括号)
+  const cssNoSupports = css.replace(/@supports \(color: oklch[^)]*\)\s*\{[\s\S]*?\n\}\s*\}/g, "");
+  const baseScopes = new Map();
+  for (const m of cssNoSupports.matchAll(/(^|\n)([^\n@{}]+?)\s*\{([^{}]*?)\n\}/g)) {
+    const sel = (m[2] || "").trim();
+    if (!baseScopes.has(sel)) baseScopes.set(sel, m[3] || "");
+  }
+  const bad = [];
+  check(supportsBlocks.length >= 2, "T3b @supports oklch 层存在(≥2 作用域)", `实际 ${supportsBlocks.length}`);
+  for (const sb of supportsBlocks) {
+    const baseBody = baseScopes.get(sb.selector);
+    if (!baseBody) { bad.push(`${sb.selector} 无 base 层`); continue; }
+    for (const vm of sb.body.matchAll(/(--[\w-]+):\s*oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/g)) {
+      const name = vm[1] || "", Ls = vm[2] || "0", Cs = vm[3] || "0", Hs = vm[4] || "0", As = vm[5];
+      const baseM = baseBody.match(new RegExp(`${name.replace(/-/g, "\\-")}:\\s*#([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?`));
+      if (!baseM) { bad.push(`${sb.selector} ${name} base 缺 hex`); continue; }
+      const mapped = oklchGamutMapped(parseFloat(Ls), parseFloat(Cs), parseFloat(Hs)); const L = mapped[0], C = mapped[1];
+      const want = oklchToRgb(L, C, parseFloat(Hs)).join(" ");
+      const got = [0, 2, 4].map((i) => parseInt((baseM[1] || "").slice(i, i + 2), 16)).join(" ");
+      if (want !== got) bad.push(`${sb.selector} ${name}: 映射 ${want} vs base ${got}`);
+      if (As !== undefined && baseM[2]) {
+        const aHex = baseM[2] ? parseInt(baseM[2], 16) : -1;
+        const aWant = Math.round(parseFloat(As) * 255);
+        if (Math.abs(aHex - aWant) > 1) bad.push(`${name} alpha ${aHex} vs ${aWant}`);
+      }
+    }
+  }
+  check(bad.length === 0, "T3b @supports oklch ↔ base hex 双层同步", bad.join("; "));
 }
 
 // T4: useTheme hook 三态

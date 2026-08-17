@@ -19,64 +19,63 @@
  * ============================================================ */
 :root {
   /* —— brand 绿(进度/正确/主操作)—— */
-  --brand: #58CC01;       /* #58cc02 */
+  --brand: #58CC01;  /* oklch(0.748 0.229 137.6) */
   --brand-rgb: 88 204 2;                   /* 同色 sRGB 通道,供 Tailwind /opacity */
-  --brand-dark: #46A302;  /* #46a302 按下阴影/深源色 */
+  --brand-dark: #46A302;  /* oklch(0.633 0.193 137.5) */
   --brand-dark-rgb: 70 163 2;
-  --brand-light: #7ED957; /* #7ed957 hover/浅源色 */
+  --brand-light: #7ED957;  /* oklch(0.801 0.188 137.5) */
   --brand-light-rgb: 126 217 87;
   --brand-glow: #58CC0159;  /* oklch(0.748 0.229 137.6 / 0.35) */
   --brand-ring: #58CC0126;  /* oklch(0.748 0.229 137.6 / 0.15) */
 
   /* —— accent 蓝(交互/进行中/链接)—— */
-  --accent: #1DB0F6;      /* #1cb0f6 */
+  --accent: #1DB0F6;  /* oklch(0.718 0.151 237.1) */
   --accent-rgb: 28 176 246;
-  --accent-dark: #098CDC; /* #0a8cdc */
+  --accent-dark: #098CDC;  /* oklch(0.619 0.155 245.4) */
   --accent-dark-rgb: 10 140 220;
-  --accent-light: #65C6FF;    /* #5ed4ff 高光位 */
+  --accent-light: #65C6FF;  /* oklch(0.79 0.13 237) */
   --accent-light-rgb: 94 212 255;
   --accent-glow: #1DB0F64C;  /* oklch(0.718 0.151 237.1 / 0.3) */
   --accent-ring: #1DB0F626;  /* oklch(0.718 0.151 237.1 / 0.15) */
 
   /* —— gold 黄(mastery/皇冠/达成)—— */
-  --gold: #FFC801;         /* #ffc800 */
+  --gold: #FFC801;  /* oklch(0.857 0.175 88.5) */
   --gold-rgb: 255 200 0;
-  --gold-dark: #D59800;        /* #d99e00 */
+  --gold-dark: #D59800;  /* oklch(0.72 0.16 80) */
   --gold-dark-rgb: 217 158 0;
-  --gold-light: #FFE294;       /* #ffe680 高光位 */
+  --gold-light: #FFE294;  /* oklch(0.92 0.16 90) */
   --gold-light-rgb: 255 230 128;
   --gold-glow: #FFC80173;  /* oklch(0.857 0.175 88.5 / 0.45) */
   --gold-ring: #FFC80133;  /* oklch(0.857 0.175 88.5 / 0.2) */
 
   /* —— warning 红(错误/破坏性/overdue SRS)—— */
-  --warning: #FF4B4B;      /* #ff4b4b */
+  --warning: #FF4B4B;  /* oklch(0.671 0.217 25.2) */
   --warning-rgb: 255 75 75;
-  --warning-dark: #D01C29;     /* 深源色 */
+  --warning-dark: #D01C29;  /* oklch(0.55 0.21 25) */
   --warning-dark-rgb: 230 43 43;
-  --warning-light: #FF7E77;    /* 浅源色 */
+  --warning-light: #FF7E77;  /* oklch(0.74 0.18 25) */
   --warning-light-rgb: 255 117 117;
   --warning-glow: #FF4B4B4C;  /* oklch(0.671 0.217 25.2 / 0.3) */
   --warning-ring: #FF4B4B26;  /* oklch(0.671 0.217 25.2 / 0.15) */
-  --warning-tint: #FF4B4B1A;   /* 错误背景晕 */
+  --warning-tint: #FF4B4B1A;  /* oklch(0.671 0.217 25.2 / 0.1) */
   --warning-tint-border: #FF4B4B40;  /* oklch(0.671 0.217 25.2 / 0.25) */
 
   /* —— review 橙(SRS 复习/streak 连击,暖端独立于 warning 红)—— */
   /* PRODUCT.md 原 warning #ff4b4b→#ff7a00 渐变,这里拆为两色:warning=红(错误),
      review=橙(连击/复习提醒,非错误)。避免 streak 连击被误读为错误。 */
-  --review: #FA6E1D;            /* #ff7a1a 橙 */
+  --review: #FA6E1D;  /* oklch(0.7 0.19 45) */
   --review-rgb: 255 122 26;
   --review-glow: #FA6E1D26;  /* oklch(0.7 0.19 45 / 0.15) */
   --review-tint: #FA6E1D1A;  /* oklch(0.7 0.19 45 / 0.1) */
 
   /* —— exam 紫(章节考试节点,第6语义色)—— */
-  --exam: #A855F7;        /* #a855f7 */
+  --exam: #A855F7;  /* oklch(0.627 0.233 303.9) */
   --exam-rgb: 168 85 247;
-  --exam-dark: #7E22CE;  /* #7e22ce */
+  --exam-dark: #7E22CE;  /* oklch(0.496 0.237 301.9) */
   --exam-dark-rgb: 126 34 206;
-  --exam-light: #C084FC; /* #c084fc 高光位 */
+  --exam-light: #C084FC;  /* oklch(0.722 0.177 305.5) */
   --exam-light-rgb: 192 132 252;
-  --exam-locked: #524569;    /* #4a3f6b 锁定暗灰紫 */
-  --exam-locked-mix: #362F45;  /* 60% exam-locked + surface-1(原 color-mix in oklch,预混兼容旧内核) */
+  --exam-locked: #524569;  /* oklch(0.42 0.06 300) */
   --exam-glow: #A855F759;  /* oklch(0.627 0.233 303.9 / 0.35) */
   --exam-ring: #A855F726;  /* oklch(0.627 0.233 303.9 / 0.15) */
 
@@ -88,26 +87,26 @@
      L 间隔实测:0.04 在深色低亮度区肉眼几乎无感(Weber-Fechner:暗部 ΔL 感知压缩),
      0.06(RGB 差 12-14)才是深色底能明显分层的实测阈值。rail 保持 L0.13 略高于
      天空夜空段 0.13,星空沉浸感不丢。 */
-  --surface-rail: #08090B;  /* 左栏专属最深底 */
+  --surface-rail: #08090B;  /* oklch(0.14 0.005 270) */
   --surface-rail-rgb: 8 9 11;
-  --surface-0: #0C0D0F;      /* neutral-950 最深底(modal/drawer) */
+  --surface-0: #0C0D0F;  /* oklch(0.16 0.005 270) */
   --surface-0-rgb: 12 13 15;
-  --surface-1: #111114;      /* 中栏 chat 底 */
+  --surface-1: #111114;  /* oklch(0.18 0.005 270) */
   --surface-1-rgb: 17 17 20;
-  --surface-2: #1A1A1D;      /* 右栏 notebook 底(最亮阅读区) */
+  --surface-2: #1A1A1D;  /* oklch(0.22 0.005 270) */
   --surface-2-rgb: 26 26 29;
-  --surface-3: #2A2B2E;      /* neutral-700 hover/elevated */
+  --surface-3: #2A2B2E;  /* oklch(0.29 0.005 270) */
   --surface-3-rgb: 42 43 46;
-  --ink: #F1F2F4;            /* neutral-100 主文字 */
+  --ink: #F1F2F4;  /* oklch(0.96 0.003 270) */
   --ink-rgb: 245 245 250;
-  --ink-strong: #FAFAFA;          /* neutral-50 标题/强调 */
+  --ink-strong: #FAFAFA;  /* oklch(0.985 0 0) */
   --ink-strong-rgb: 250 250 250;
-  --ink-muted: #9D9EA2;       /* neutral-400 次文字 */
+  --ink-muted: #9D9EA2;  /* oklch(0.7 0.005 270) */
   --ink-muted-rgb: 166 166 176;
-  --ink-faint: #707175;      /* neutral-500 弱文字(time stamp) */
+  --ink-faint: #707175;  /* oklch(0.55 0.005 270) */
   --ink-faint-rgb: 117 117 126;
-  --border: #252629;         /* neutral-800 边框 */
-  --border-faint: #1A1A1D;   /* neutral-850 弱边框 */
+  --border: #252629;  /* oklch(0.27 0.005 270) */
+  --border-faint: #1A1A1D;  /* oklch(0.22 0.005 270) */
 
   /* —— 通用发光/阴影 —— */
   --shadow-rgb: 0 0 0;
@@ -127,18 +126,51 @@
      曾有 --sky-* 变量但 canvas 不读它们(死代码),已删除。浅色天空在批次2 实现。 */
 }
 
-/* 广色域增强:oklch 原值(超出 sRGB 的颜色在 P3 屏更鲜艳);不支持 oklch 的老内核回落上面的 hex */
+/* oklch 原值(主格式):支持 oklch 的浏览器(2023 年中起 Baseline)用此层;   老内核(<Chromium 111)回落上面同色渲染的 sRGB hex。改色只改这里。 */
 @supports (color: oklch(0.748 0.229 137.6)) {
   :root {
+    --brand: oklch(0.748 0.229 137.6);
+    --brand-dark: oklch(0.633 0.193 137.5);
+    --brand-light: oklch(0.801 0.188 137.5);
+    --brand-glow: oklch(0.748 0.229 137.6 / 0.35);
+    --brand-ring: oklch(0.748 0.229 137.6 / 0.15);
+    --accent: oklch(0.718 0.151 237.1);
+    --accent-dark: oklch(0.619 0.155 245.4);
     --accent-light: oklch(0.79 0.13 237);
+    --accent-glow: oklch(0.718 0.151 237.1 / 0.3);
+    --accent-ring: oklch(0.718 0.151 237.1 / 0.15);
+    --gold: oklch(0.857 0.175 88.5);
     --gold-dark: oklch(0.72 0.16 80);
     --gold-light: oklch(0.92 0.16 90);
+    --gold-glow: oklch(0.857 0.175 88.5 / 0.45);
+    --gold-ring: oklch(0.857 0.175 88.5 / 0.2);
     --warning: oklch(0.671 0.217 25.2);
+    --warning-dark: oklch(0.55 0.21 25);
     --warning-light: oklch(0.74 0.18 25);
     --warning-glow: oklch(0.671 0.217 25.2 / 0.3);
     --warning-ring: oklch(0.671 0.217 25.2 / 0.15);
     --warning-tint: oklch(0.671 0.217 25.2 / 0.1);
     --warning-tint-border: oklch(0.671 0.217 25.2 / 0.25);
+    --review: oklch(0.7 0.19 45);
+    --review-glow: oklch(0.7 0.19 45 / 0.15);
+    --review-tint: oklch(0.7 0.19 45 / 0.1);
+    --exam: oklch(0.627 0.233 303.9);
+    --exam-dark: oklch(0.496 0.237 301.9);
+    --exam-light: oklch(0.722 0.177 305.5);
+    --exam-locked: oklch(0.42 0.06 300);
+    --exam-glow: oklch(0.627 0.233 303.9 / 0.35);
+    --exam-ring: oklch(0.627 0.233 303.9 / 0.15);
+    --surface-rail: oklch(0.14 0.005 270);
+    --surface-0: oklch(0.16 0.005 270);
+    --surface-1: oklch(0.18 0.005 270);
+    --surface-2: oklch(0.22 0.005 270);
+    --surface-3: oklch(0.29 0.005 270);
+    --ink: oklch(0.96 0.003 270);
+    --ink-strong: oklch(0.985 0 0);
+    --ink-muted: oklch(0.7 0.005 270);
+    --ink-faint: oklch(0.55 0.005 270);
+    --border: oklch(0.27 0.005 270);
+    --border-faint: oklch(0.22 0.005 270);
   }
 }
 
@@ -163,13 +195,13 @@ html.light {
   /* —— neutral surface ramp(浅色:reading area 最亮,左栏略沉)—— */
   --surface-rail: #F1F2F4;  /* oklch(0.96 0.003 270) */
   --surface-rail-rgb: 241 242 244;
-  --surface-0:    #FFFFFF;            /* 纯白:modal/drawer */
+  --surface-0: #FFFFFF;  /* oklch(1 0 0) */
   --surface-0-rgb: 255 255 255;
-  --surface-1:    #F8F8F8;         /* 中栏 chat:#fafafa */
+  --surface-1: #F8F8F8;  /* oklch(0.98 0 0) */
   --surface-1-rgb: 248 248 248;
-  --surface-2:    #FFFFFF;            /* 右栏 reading area:纯白 */
+  --surface-2: #FFFFFF;  /* oklch(1 0 0) */
   --surface-2-rgb: 255 255 255;
-  --surface-3:    #EAEBED;   /* hover/elevated */
+  --surface-3: #EAEBED;  /* oklch(0.94 0.003 270) */
   --surface-3-rgb: 234 235 237;
 
   /* —— ink 文字(非纯黑 #000,避免光晕;用 #171717 ~18:1 AAA)—— */
@@ -177,9 +209,9 @@ html.light {
   --ink-rgb: 24 24 24;
   --ink-strong: #0A0A0A;  /* oklch(0.145 0 0) */
   --ink-strong-rgb: 10 10 10;
-  --ink-muted:    #555555;         /* 次文字 ~5:1 AA */
+  --ink-muted: #555555;  /* oklch(0.45 0 0) */
   --ink-muted-rgb: 85 85 85;
-  --ink-faint:    #717171;         /* 弱文字 ~4.7:1 AA(shadcn muted-foreground 共识) */
+  --ink-faint: #717171;  /* oklch(0.55 0 0) */
   --ink-faint-rgb: 113 113 113;
 
   /* —— border(浅色:shadcn 0.92 共识)—— */
@@ -246,17 +278,32 @@ html.light {
   --exam-dark-rgb: 100 26 165;
   --exam-light: #905FC0;  /* oklch(0.58 0.15 305.5) */
   --exam-light-rgb: 144 95 192;
-  --exam-locked: #756D86;  /* oklch(0.55 0.04 300) */
-  --exam-locked-mix: #A7A2B2;
+  --exam-locked: #756D86;
+  --exam-locked-mix: #A7A2B2;  /* oklch(0.55 0.04 300) */
   --exam-locked-rgb: 117 109 134;
   --exam-glow: #7D37BD40;  /* oklch(0.50 0.20 303.9 / 0.25) */
   --exam-ring: #7D37BD2E;  /* oklch(0.50 0.20 303.9 / 0.18) */
 }
 
-/* 广色域增强:oklch 原值(超出 sRGB 的颜色在 P3 屏更鲜艳);不支持 oklch 的老内核回落上面的 hex */
+/* oklch 原值(主格式):支持 oklch 的浏览器(2023 年中起 Baseline)用此层;   老内核(<Chromium 111)回落上面同色渲染的 sRGB hex。改色只改这里。 */
 @supports (color: oklch(0.748 0.229 137.6)) {
   html.light {
+    --surface-rail: oklch(0.96 0.003 270);
+    --surface-0: oklch(1 0 0);
+    --surface-1: oklch(0.98 0 0);
+    --surface-2: oklch(1 0 0);
+    --surface-3: oklch(0.94 0.003 270);
+    --ink: oklch(0.21 0 0);
+    --ink-strong: oklch(0.145 0 0);
+    --ink-muted: oklch(0.45 0 0);
+    --ink-faint: oklch(0.55 0 0);
+    --border: oklch(0.92 0 0);
+    --border-faint: oklch(0.95 0 0);
+    --brand: oklch(0.55 0.16 137.6);
     --brand-dark: oklch(0.45 0.15 137.6);
+    --brand-light: oklch(0.62 0.15 137.6);
+    --brand-glow: oklch(0.55 0.16 137.6 / 0.25);
+    --brand-ring: oklch(0.55 0.16 137.6 / 0.18);
     --accent: oklch(0.50 0.16 237.1);
     --accent-dark: oklch(0.42 0.15 245.4);
     --accent-light: oklch(0.58 0.14 237);
@@ -264,12 +311,25 @@ html.light {
     --accent-ring: oklch(0.50 0.16 237.1 / 0.18);
     --gold: oklch(0.65 0.15 88.5);
     --gold-dark: oklch(0.55 0.14 80);
+    --gold-light: oklch(0.72 0.14 90);
     --gold-glow: oklch(0.65 0.15 88.5 / 0.3);
     --gold-ring: oklch(0.65 0.15 88.5 / 0.2);
+    --warning: oklch(0.50 0.20 25.2);
     --warning-dark: oklch(0.42 0.20 25);
+    --warning-light: oklch(0.56 0.18 25);
+    --warning-glow: oklch(0.50 0.20 25.2 / 0.22);
+    --warning-ring: oklch(0.50 0.20 25.2 / 0.18);
+    --warning-tint: oklch(0.50 0.20 25.2 / 0.08);
+    --warning-tint-border: oklch(0.50 0.20 25.2 / 0.22);
     --review: oklch(0.55 0.17 45);
     --review-glow: oklch(0.55 0.17 45 / 0.12);
     --review-tint: oklch(0.55 0.17 45 / 0.08);
+    --exam: oklch(0.50 0.20 303.9);
+    --exam-dark: oklch(0.42 0.20 301.9);
+    --exam-light: oklch(0.58 0.15 305.5);
+    --exam-locked: oklch(0.55 0.04 300);
+    --exam-glow: oklch(0.50 0.20 303.9 / 0.25);
+    --exam-ring: oklch(0.50 0.20 303.9 / 0.18);
   }
 }
 
@@ -288,6 +348,14 @@ html.light .map-rail-scope {
   --ink-faint: #707175;      --ink-faint-rgb: 117 117 126;
   --border: #252629;  /* oklch(0.27 0.005 270) */
   --border-faint: #1A1A1D;  /* oklch(0.22 0.005 270) */
+}
+
+/* oklch 原值(主格式):支持 oklch 的浏览器(2023 年中起 Baseline)用此层;   老内核(<Chromium 111)回落上面同色渲染的 sRGB hex。改色只改这里。 */
+@supports (color: oklch(0.748 0.229 137.6)) {
+  html.light .map-rail-scope {
+    --border: oklch(0.27 0.005 270);
+    --border-faint: oklch(0.22 0.005 270);
+  }
 }
 
 /* 浅色模式下锁定球的球体光照:浅底上需要深色球才有立体感。

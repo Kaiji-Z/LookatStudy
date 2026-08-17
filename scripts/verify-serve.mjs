@@ -37,6 +37,26 @@ let passed = 0;
 const ok = (name) => { console.log(`✓ ${name}`); passed++; };
 const fail = (name, e) => { console.error(`✗ ${name}: ${e.message}`); process.exitCode = 1; };
 
+/** kill 是异步信号:等子进程真正退出(带超时兜底),否则 serve 的 500ms 防抖落库会和 rmSync 竞态 */
+function waitForExit(child, ms = 5000) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(), ms);
+    child.once("exit", () => { clearTimeout(t); resolve(); });
+  });
+}
+
+/** rmSync 带重试:文件系统竞态(进程刚退出句柄未放)偶发 ENOTEMPTY/EBUSY */
+async function rmRetry(dir, tries = 3) {
+  for (let i = 0; ; i++) {
+    try {
+      return rmSync(dir, { recursive: true, force: true });
+    } catch (e) {
+      if (i >= tries - 1) throw e;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+}
+
 try {
   // ── 0. 构建真实交付物(与 build:mobile 同一配置) ──
   await buildServerBundle(serverCjs, { quiet: true });
@@ -169,11 +189,12 @@ try {
   } catch (e) { fail("T5 漂移守卫", e); }
 
   child.kill();
-  console.error("[debug] work dir kept:", work);
-  if (!process.env.KEEP_SERVE_WORK) rmSync(work, { recursive: true, force: true });
+  await waitForExit(child);
+  if (process.env.KEEP_SERVE_WORK) console.error("[debug] work dir kept:", work);
+  else await rmRetry(work);
 } catch (e) {
   fail("setup", e);
-  rmSync(work, { recursive: true, force: true });
+  await rmRetry(work).catch(() => {});
 }
 
 console.log(`\n${passed} passed`);

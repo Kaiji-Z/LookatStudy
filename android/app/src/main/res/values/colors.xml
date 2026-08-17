@@ -1,8 +1,20 @@
 <resources>
-    <color name="launcher_bg">#0E2A12</color>
-    <color name="launcher_surface">#1E4224</color>
+    <!-- 表面分层(对应桌面端 rail→base→raised→hover 深度阶) -->
+    <color name="launcher_bg">#0B1F0E</color>
+    <color name="launcher_base">#0E2A12</color>
+    <color name="launcher_card">#143518</color>
+    <color name="launcher_card_pressed">#1A421F</color>
+    <color name="launcher_edge">#0A1A0C</color>
+
+    <!-- 品牌与语义(与 PRODUCT.md 六角色一致) -->
     <color name="brand">#58CC02</color>
+    <color name="brand_edge">#3F9100</color>
+    <color name="gold">#FFC800</color>
+    <color name="accent">#1CB0F6</color>
+
+    <!-- 墨色阶 -->
     <color name="ink">#F2FFF4</color>
     <color name="ink_dim">#8FB99B</color>
     <color name="ink_faint">#5E8266</color>
+    <color name="ink_on_brand">#0B1F0E</color>
 </resources>

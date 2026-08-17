@@ -20,31 +20,36 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * 常用操作(照搬 KaijiBot 的 Help 模式):命令卡片,点击复制命令并跳 Termux 粘贴执行。
+ * 常用操作(KaijiBot 的 Help 模式 + 本应用设计词汇):命令卡片点击复制并跳 Termux。
  * 命令对应 install-termux.sh 落盘的 ~/lookatstudy/{start,stop,status,update}.sh。
- * 电池白名单卡片直接开系统设置;Termux:Boot 卡片复制自启脚本安装命令 + 打开 F-Droid。
+ * 电池白名单直接开系统设置;Termux:Boot 复制自启配置并打开 F-Droid。
  */
 class HelpActivity : AppCompatActivity() {
 
     companion object {
         private const val TERMUX_PACKAGE = "com.termux"
-        private const val BG = "#0E2A12"
-        private const val CARD = "#1E4224"
+        private const val BG = "#0B1F0E"
+        private const val CARD = "#143518"
         private const val BRAND = "#58CC02"
+        private const val GOLD = "#FFC800"
+        private const val ACCENT = "#1CB0F6"
         private const val INK = "#F2FFF4"
         private const val INK_DIM = "#8FB99B"
-        private const val MONO = "#9FD48A"
+        private const val INK_FAINT = "#5E8266"
     }
 
-    private data class Cmd(val title: String, val command: String)
+    private data class Cmd(val title: String, val command: String, val tint: String)
 
-    private val commands = listOf(
-        Cmd("查看运行状态", "bash ~/lookatstudy/status.sh"),
-        Cmd("启动服务", "bash ~/lookatstudy/start.sh"),
-        Cmd("停止服务", "bash ~/lookatstudy/stop.sh"),
-        Cmd("更新到最新版", "bash ~/lookatstudy/update.sh"),
-        Cmd("查看日志(最近 50 行)", "tail -50 ~/lookatstudy/server.log"),
-        Cmd("显示访问链接(带 token)", "cat ~/lookatstudy/url.txt"),
+    private val serviceCmds = listOf(
+        Cmd("查看运行状态", "bash ~/lookatstudy/status.sh", ACCENT),
+        Cmd("启动服务", "bash ~/lookatstudy/start.sh", BRAND),
+        Cmd("停止服务", "bash ~/lookatstudy/stop.sh", GOLD),
+        Cmd("更新到最新版", "bash ~/lookatstudy/update.sh", ACCENT),
+    )
+
+    private val infoCmds = listOf(
+        Cmd("查看日志(最近 50 行)", "tail -50 ~/lookatstudy/server.log", ACCENT),
+        Cmd("显示访问链接(带 token)", "cat ~/lookatstudy/url.txt", BRAND),
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,33 +62,53 @@ class HelpActivity : AppCompatActivity() {
         val scroll = ScrollView(this).apply { setFillViewport(true) }
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(40), dp(20), dp(32))
+            setPadding(dp(24), dp(52), dp(24), dp(32))
         }
 
-        list.addView(TextView(this).apply {
-            text = "常用操作"
+        // 头部:返回 + 标题
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(TextView(this).apply {
+            text = "‹  返回"
+            setTextColor(Color.parseColor(INK_DIM))
+            textSize = 15f
+            setPadding(0, dp(4), dp(16), dp(4))
+            background = obtainStyledAttributes(intArrayOf(android.R.attr.selectableItemBackground))
+                .getDrawable(0)?.mutate()
+            isClickable = true
+            setOnClickListener { finish() }
+        })
+        header.addView(TextView(this).apply {
+            text = getString(R.string.help_title)
             setTextColor(Color.parseColor(INK))
             textSize = 20f
             typeface = Typeface.DEFAULT_BOLD
         })
+        list.addView(header)
         list.addView(TextView(this).apply {
             text = "点击卡片复制命令,自动跳转 Termux 粘贴执行"
-            setTextColor(Color.parseColor(INK_DIM))
+            setTextColor(Color.parseColor(INK_FAINT))
             textSize = 12f
-            setPadding(0, dp(6), 0, dp(16))
+            setPadding(dp(4), dp(6), dp(4), dp(20))
         })
 
-        for (cmd in commands) {
-            list.addView(commandCard(cmd.title, cmd.command) { copyAndLaunchTermux(cmd.command) }, cardParams())
+        sectionLabel(list, "服务")
+        for (cmd in serviceCmds) {
+            list.addView(commandCard(cmd) { copyAndLaunchTermux(cmd.command) }, cardParams())
         }
 
-        // 特殊卡片:电池白名单(直接开系统设置,不用进 Termux)
-        list.addView(commandCard("电池白名单(后台保活)", "设置 → 应用 → Termux → 不受限制") {
+        sectionLabel(list, "信息")
+        for (cmd in infoCmds) {
+            list.addView(commandCard(cmd) { copyAndLaunchTermux(cmd.command) }, cardParams())
+        }
+
+        sectionLabel(list, "系统")
+        list.addView(commandCard(Cmd("电池白名单(后台保活)", "设置 → 应用 → Termux → 不受限制", GOLD)) {
             openBatteryOptimizationSettings()
         }, cardParams())
-
-        // 特殊卡片:Termux:Boot 开机自启(复制安装命令 + 打开 F-Droid)
-        list.addView(commandCard("开机自启(装 Termux:Boot)", "复制自启配置命令") {
+        list.addView(commandCard(Cmd("开机自启(装 Termux:Boot)", "复制自启配置命令", ACCENT)) {
             openTermuxBootInstall()
         }, cardParams())
 
@@ -95,16 +120,26 @@ class HelpActivity : AppCompatActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun cardParams(): LinearLayout.LayoutParams =
-        LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) }
+        LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
 
-    private fun commandCard(title: String, subtitle: String, onClick: () -> Unit): View {
+    /** 分组标签:小号暗色,不是大写 eyebrow,只承担分组信息 */
+    private fun sectionLabel(parent: LinearLayout, text: String) {
+        parent.addView(TextView(this).apply {
+            this.text = text
+            setTextColor(Color.parseColor(INK_FAINT))
+            textSize = 13f
+            setPadding(dp(4), dp(14), dp(4), dp(8))
+        })
+    }
+
+    private fun commandCard(cmd: Cmd, onClick: () -> Unit): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setPadding(dp(14), dp(13), dp(14), dp(13))
             background = GradientDrawable().apply {
                 setColor(Color.parseColor(CARD))
-                cornerRadius = dp(10).toFloat()
+                cornerRadius = dp(14).toFloat()
             }
             isClickable = true
             isFocusable = true
@@ -112,25 +147,28 @@ class HelpActivity : AppCompatActivity() {
                 .getDrawable(0)?.mutate()
             setOnClickListener { onClick() }
         }
-        card.addView(ImageView(this).apply {
-            setImageResource(R.drawable.ic_dot)
-            setColorFilter(Color.parseColor(BRAND))
-            setPadding(0, 0, 0, 0)
-        }, LinearLayout.LayoutParams(dp(20), dp(20)).apply { rightMargin = dp(12) })
+
+        // 前导图标:着色圆点(色彩语义:绿=启动/前进,蓝=信息,金=注意)
+        card.addView(View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(cmd.tint))
+            }
+        }, LinearLayout.LayoutParams(dp(10), dp(10)).apply { rightMargin = dp(14) })
 
         val textCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         textCol.addView(TextView(this).apply {
-            text = title
+            text = cmd.title
             setTextColor(Color.parseColor(INK))
-            textSize = 14f
+            textSize = 14.5f
         })
         textCol.addView(TextView(this).apply {
-            text = subtitle
-            setTextColor(Color.parseColor(MONO))
-            textSize = 11f
+            text = cmd.command
+            setTextColor(Color.parseColor(INK_DIM))
+            textSize = 11.5f
             typeface = Typeface.MONOSPACE
             maxLines = 1
-        }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(2) })
+        }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(3) })
         card.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
         return card
     }

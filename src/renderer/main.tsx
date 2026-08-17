@@ -23,17 +23,20 @@ function TokenGate({ rejected }: { rejected: boolean }) {
   const [value, setValue] = React.useState("");
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const token = value.trim();
+    // 接受裸 token 或整条启动链接(Termux 里长按复制的就是带 ?token= 的完整 URL)
+    const raw = value.trim();
+    if (!raw) return;
+    const token = raw.includes("token=") ? new URL(raw).searchParams.get("token") ?? "" : raw;
     if (!token) return;
     import("./lib/api-web.js").then(({ setWebToken }) => setWebToken(token));
   };
   return (
-    <div className="min-h-screen bg-[#0e2a12] flex items-center justify-center p-6">
+    <div className="min-h-[var(--app-height,100vh)] bg-[#0e2a12] flex items-center justify-center p-6">
       <form onSubmit={onSubmit} className="w-full max-w-sm text-center">
         <div className="text-4xl mb-3">🎈</div>
         <h1 className="text-title font-bold text-white mb-1">LookatStudy</h1>
         <p className="text-label text-white/55 leading-relaxed mb-5">
-          {zh ? "连接本机学习服务，请输入启动时打印的访问令牌" : "Connect to your study server — enter the access token printed at startup"}
+          {zh ? "连接本机学习服务：粘贴启动时打印的令牌或整条链接" : "Connect to your study server — paste the token or the full link printed at startup"}
         </p>
         {rejected && (
           <p className="text-label text-warning-light mb-3">
@@ -84,6 +87,8 @@ function renderGate(rejected: boolean) {
 // 启动分叉:浏览器(serve)模式没有 preload 注入的 window.api —— 动态挂 web 传输
 // (WS + shared/api-channels 方法面)。Electron 模式 window.api 已在,此 import 不发生。
 async function boot(): Promise<void> {
+  const { installAppHeight } = await import("./lib/app-height.js");
+  installAppHeight();
   if (!(window as { api?: unknown }).api) {
     const web = await import("./lib/api-web.js");
     // 令牌门:没 token 先别连(连了也是 4001),让用户输入;

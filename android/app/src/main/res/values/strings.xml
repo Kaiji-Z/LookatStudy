@@ -3,6 +3,9 @@
     <string name="subtitle">把 GitHub 仓库变成课程 · 手机引导器</string>
     <string name="open_web">打开 LookatStudy</string>
     <string name="help_title">常用操作</string>
-    <string name="help_btn">常用操作</string>
-    <string name="steps_hint">三步上手:\n1. 安装 Termux(本应用内置安装包)\n2. 点按钮复制安装命令,在 Termux 里粘贴执行(装 Node + 下载便携包 + 启动服务)\n3. 回到本应用点「打开 LookatStudy」,输入启动日志里打印的令牌\n\n日常:打开 Termux 即自动启动服务;常用操作里可启停/更新/看日志</string>
+    <string name="help_btn">常用操作 ›</string>
+    <string name="status_checking">正在检查环境…</string>
+    <string name="status_no_termux">Termux 还没安装</string>
+    <string name="status_termux_ready">Termux 就绪,服务待安装</string>
+    <string name="steps_hint">三步上手\n1. 安装 Termux(内置安装包,无需应用商店)\n2. 复制安装命令,在 Termux 里粘贴执行\n3. 回到这里点「打开 LookatStudy」\n\n日常:打开 Termux 即自动启动服务;启停/更新/日志都在常用操作里</string>
 </resources>

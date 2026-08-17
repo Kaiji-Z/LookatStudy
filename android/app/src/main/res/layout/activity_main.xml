@@ -1,74 +1,131 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
+    android:fillViewport="true"
     android:background="@color/launcher_bg">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/app_name"
-        android:textColor="@color/brand"
-        android:textSize="28sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="@string/subtitle"
-        android:textColor="@color/ink_dim"
-        android:textSize="13sp" />
-
-    <TextView
-        android:id="@+id/statusText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="40dp"
-        android:fontFamily="monospace"
-        android:textColor="@color/ink_dim"
-        android:textSize="14sp" />
-
-    <Button
-        android:id="@+id/actionButton"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="28dp"
-        android:backgroundTint="@color/brand"
-        android:textColor="@color/launcher_bg"
-        android:textSize="15sp" />
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="56dp"
+        android:paddingBottom="32dp">
 
-    <Button
-        android:id="@+id/helpButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:backgroundTint="@color/launcher_surface"
-        android:textColor="@color/ink"
-        android:textSize="15sp"
-        android:text="@string/help_btn" />
+        <!-- 品牌头:L 徽标 + 名称 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-    <Button
-        android:id="@+id/openWebButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:backgroundTint="@color/launcher_surface"
-        android:textColor="@color/ink"
-        android:textSize="15sp"
-        android:enabled="false"
-        android:text="@string/open_web" />
+            <ImageView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:src="@mipmap/ic_launcher_background"
+                android:background="@drawable/bg_card"
+                android:scaleType="centerCrop"
+                android:contentDescription="@string/app_name" />
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="40dp"
-        android:lineSpacingExtra="4dp"
-        android:text="@string/steps_hint"
-        android:textColor="@color/ink_faint"
-        android:textSize="12sp" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
 
-</LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/app_name"
+                    android:textColor="@color/ink"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="1dp"
+                    android:text="@string/subtitle"
+                    android:textColor="@color/ink_dim"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 状态卡:点 + 状态行(代码更新) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/bg_card"
+            android:padding="16dp"
+            android:layout_marginTop="28dp">
+
+            <View
+                android:id="@+id/statusDot"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:background="@drawable/dot_status" />
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="12dp"
+                android:textColor="@color/ink_dim"
+                android:textSize="15sp"
+                android:text="@string/status_checking" />
+        </LinearLayout>
+
+        <!-- 主操作(3D 品牌按钮) -->
+        <Button
+            android:id="@+id/actionButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/bg_btn_3d_brand"
+            android:stateListAnimator="@null"
+            android:textColor="@color/ink_on_brand"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <!-- 打开应用(3D 次按钮) -->
+        <Button
+            android:id="@+id/openWebButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_btn_3d_neutral"
+            android:stateListAnimator="@null"
+            android:textColor="@color/ink"
+            android:textSize="16sp"
+            android:text="@string/open_web" />
+
+        <!-- 常用操作:文字入口(次级,不再挤第三颗大按钮) -->
+        <TextView
+            android:id="@+id/helpButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="18dp"
+            android:padding="8dp"
+            android:text="@string/help_btn"
+            android:textColor="@color/ink_dim"
+            android:textSize="14sp"
+            android:background="?attr/selectableItemBackground" />
+
+        <!-- 三步引导(页脚,非层级) -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="40dp"
+            android:lineSpacingExtra="5dp"
+            android:text="@string/steps_hint"
+            android:textColor="@color/ink_faint"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+</ScrollView>

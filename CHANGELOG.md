@@ -17,6 +17,12 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **引导器 UI 重设计(impeccable)** —— 三屏对齐应用本体的 Playful Product 词汇:深绿表面分层(#0B1F0E→卡面 #143518)、3D 压感按钮(桌面端 btn-3d 的原生对应:实心+深色底缘,按下底缘变薄)、状态卡(语义色圆点+状态行)、常用操作命令卡分组(服务/信息/系统,着色圆点前导+等宽命令)、错误屏卡片化。
+
+### Fixed
+- **手机浏览器地图黑球+绳子隐形(旧内核兼容)** —— 调色板 101 处 `oklch()` 精确转 sRGB hex(OKLab→线性→gamma,渲染结果逐位一致),`color-mix(in oklch)` 预混成静态变量(暗/亮两套)。国产浏览器内核(夸克/UC 系 Custom Tab)停在 Chromium 105-110,不支持 oklch(需 111+):渐变背景失效只剩内阴影=黑球,SVG stroke 失效=绳隐形;容器查询(105+)恰好支持,与实测症状吻合。
+- **Custom Tab 顶部地址栏导致内容超出一屏(需滚动)** —— 外壳 `100vh` 改 `--app-height`(`visualViewport.height` + 100/300/800ms 延迟复测 + resize/scroll 监听,KaijiBot 三轮迭代验证的终版方案;dvh 和 position:fixed 都救不了 CCT 工具栏动画时序)。桌面 Electron 不受影响(visualViewport.height === innerHeight)。
+- **令牌门支持粘贴整条启动链接** —— Termux 里长按复制的就是带 `?token=` 的完整 URL,原样粘进门即可(自动抽取 token),不再要求手抄长令牌。
 - **正式应用图标(用户设计的 3D 字母 L)** —— 同一设计应用到三端:桌面 `build/icon.png`(electron-builder 标准位,win/mac/linux 安装包从此不再是默认 Electron 图标);Android 引导器自适应图标(满幅位图双层,渐变底视差无缝,五密度 108-432px);网页端 PWA manifest + favicon(192/512 PNG,含 maskable,L 占 62% 在 80% 安全区内)。
 - **Termux 安装链路全面强化(照搬 KaijiBot 实测经验)** —— `scripts/install-termux.sh` 从 10 行引导升格为完整安装器:中国时区自动切 TUNA apt 镜像(getprop 判定,apt-get 而非 pkg 绕过其全球镜像测速);`apt upgrade` 先行(全新 Termux 跳过会 OpenSSL 链接错误);依赖按需检测(nodejs-lts/curl/unzip,已装跳过)+ Node ≥20 验证;便携包下载回退链(直连 → gh-proxy.com → ghproxy.net → ghfast.top,实测筛选);落盘 `~/lookatstudy/{start,stop,status,update}.sh` 常用脚本;自启双保险(`~/.termux/boot/` + `.bashrc` 幂等块,开 Termux 即拉起);电池优化自动弹白名单对话框 + 六厂商手动路径指引;bash 健壮性全套(set -e 下 pkill 挂 `|| true` 等踩坑修正)。脚本随 Release 单独发布,引导器安装命令改为 KaijiBot 式一行 `curl 安装脚本 | bash`(直连失败走代理)。
 - **引导器「常用操作」屏** —— 第二屏命令卡片(查看状态/启动/停止/更新/看日志/显示访问链接/电池白名单/Termux:Boot 设置),点击复制命令并自动跳 Termux 粘贴执行;电池白名单卡片直接开系统设置,Termux:Boot 卡片复制自启配置命令并打开 F-Droid。日常形态收敛为:打开 Termux(或重启手机装了 Termux:Boot)→ 服务自动起 → 引导器点「打开」。

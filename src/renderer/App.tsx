@@ -26,6 +26,7 @@ import { CommandPalette } from "./components/CommandPalette.js";
 // ReviewPanel component no longer used — SelfRatingCard is imported by NotebookPanel directly
 import { SettingsView } from "./components/SettingsView.js";
 import { useChatStream } from "./lib/useChatStream.js";
+import { buildQuizHookLabel, buildQuizHookMessage } from "./lib/quiz-hook.js";
 import { useThreads } from "./lib/useThreads.js";
 import { useToast } from "./components/Toast.js";
 import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
@@ -640,6 +641,25 @@ export default function App() {
     },
     [chat, thread, toast, t],
   );
+  // 答题完成自动 hook:最后一题提交即把成绩单发给 AI(气泡只显示短标签,完整判定只给 LLM),
+  // 由 AI 决定下一步(讲错题/放行/换角度)—— 用户不再手动点"下一步动作"。
+  // AI 还在流式输出时等它结束再发(答题时上一轮可能仍在生成),最多等 20s。
+  const handleQuizCompleted = useCallback(
+    (r: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => {
+      const content = buildQuizHookMessage(r, t);
+      const label = buildQuizHookLabel(r, t);
+      const trySend = (left: number) => {
+        if (!chat.streaming) {
+          void sendMessage(content, label);
+          return;
+        }
+        if (left > 0) setTimeout(() => trySend(left - 1), 2000);
+      };
+      trySend(10);
+    },
+    [chat.streaming, sendMessage, t],
+  );
+
   // ref 桥接:让 handleStartLearning(定义在 toast 之前)能调用 sendMessage(定义在 toast 之后)
   sendRef.current = sendMessage;
 
@@ -904,6 +924,7 @@ export default function App() {
                 onPickQuizAction={(msg) => {
                   void sendMessage(msg);
                 }}
+                onQuizCompleted={handleQuizCompleted}
                 chatNotes={canvas.items.filter(
                   (i) => i.artifactType === "user_note" && i.sourceAnchor,
                 )}

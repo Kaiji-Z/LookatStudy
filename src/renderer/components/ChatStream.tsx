@@ -26,6 +26,7 @@ import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
+import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { useLang } from "../lib/i18n.js";
 /** 一条消息 = role + parts 数组(v0.2 parts-based)。
  * ChatMessageV2 / ChatMessagePart 定义已移至 @shared/part-accumulator(main 与 renderer 共用)。 */
@@ -56,9 +57,11 @@ interface ChatStreamProps {
   chatNotes?: CanvasItem[];
   /** 答完一组题后点"下一步"动作 → 把消息发进对话(父组件接 sendMessage)。消灭"答完不知道干嘛"死胡同。 */
   onPickQuizAction?: (message: string) => void;
+  /** quiz 答完自动把成绩单发进对话(hook 给 AI 判定下一步)。 */
+  onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onGotoSettings, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onGotoSettings, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction, onQuizCompleted }: ChatStreamProps) {
   const t = useLang();
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
@@ -169,7 +172,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
   }, []);
 
   // 对话流画线加笔记:选 assistant 消息文字 → 浮出"✏️ 加笔记"按钮
-  const [chatNoteBtn, setChatNoteBtn] = useState<{ x: number; y: number; text: string; msgId: string; startOffset?: number; endOffset?: number } | null>(null);
+  const [chatNoteBtn, setChatNoteBtn] = useState<{ x: number; y: number; transform?: string; text: string; msgId: string; startOffset?: number; endOffset?: number } | null>(null);
   const handleChatMouseUp = useCallback(() => {
     if (!onSaveChatNote || !threadId) return;
     const sel = window.getSelection();
@@ -203,9 +206,23 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
     const offsets = rangeToOffsets(range, model);
     const rect = range.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
+    // 浮钮定位:右侧优先(手机 Chrome 原生 复制/分享 菜单锚在选区上方,上侧必被遮)
+    const pos = selectionPopoverPosition(
+      {
+        left: rect.left - containerRect.left,
+        top: rect.top - containerRect.top,
+        right: rect.right - containerRect.left,
+        bottom: rect.bottom - containerRect.top,
+        width: rect.width,
+        height: rect.height,
+      },
+      containerRect.width,
+      110,
+    );
     setChatNoteBtn({
-      x: rect.left + rect.width / 2 - containerRect.left,
-      y: rect.top - containerRect.top - 8,
+      x: pos.left,
+      y: pos.top,
+      transform: pos.transform,
       text,
       msgId,
       startOffset: offsets?.start,
@@ -371,6 +388,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
             onQuizAnswered={handleQuizAnswered}
             quizMastery={quizMastery}
             onPickAction={onPickQuizAction}
+            onQuizCompleted={onQuizCompleted}
           />
         ))}
 
@@ -404,7 +422,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         <button
           onClick={handleSaveChatNote}
           data-testid="save-chat-note-btn"
-          style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: "translate(-50%, -100%)" }}
+          style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: chatNoteBtn.transform }}
           className="absolute z-20 px-3 py-1.5 rounded-lg bg-brand text-white text-body font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition msg-enter"
           title={t("chat.note.add.title")}
         >
@@ -443,6 +461,7 @@ function MessageRowV2({
   onQuizAnswered,
   quizMastery,
   onPickAction,
+  onQuizCompleted,
 }: {
   msg: ChatMessageV2;
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
@@ -450,6 +469,7 @@ function MessageRowV2({
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
   quizMastery?: number | null;
   onPickAction?: (message: string) => void;
+  onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
 }) {
   if (msg.role === "user") {
     // user:极简阅读流(claude.ai 风)。右对齐 + 极轻微染,无气泡边框。
@@ -485,6 +505,7 @@ function MessageRowV2({
             onQuizAnswered={onQuizAnswered}
             quizMastery={quizMastery}
             onPickAction={onPickAction}
+            onQuizCompleted={onQuizCompleted}
           />
         ))}
       </div>
@@ -501,6 +522,7 @@ function PartRenderer({
   onQuizAnswered,
   quizMastery,
   onPickAction,
+  onQuizCompleted,
 }: {
   part: ChatMessagePart;
   msgId: string;
@@ -510,6 +532,7 @@ function PartRenderer({
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
   quizMastery?: number | null;
   onPickAction?: (message: string) => void;
+  onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
 }) {
   if (part.type === "text") {
     return (
@@ -549,6 +572,7 @@ function PartRenderer({
       onQuizAnswered={onQuizAnswered}
       quizMastery={quizMastery}
       onPickAction={onPickAction}
+      onQuizCompleted={onQuizCompleted}
     />
   );
 }
@@ -591,6 +615,7 @@ function ToolCallBlock({
   onQuizAnswered,
   quizMastery,
   onPickAction,
+  onQuizCompleted,
 }: {
   toolName: string;
   state: "input-available" | "output-available" | "output-error";
@@ -603,6 +628,7 @@ function ToolCallBlock({
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
   quizMastery?: number | null;
   onPickAction?: (message: string) => void;
+  onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
 }) {
   const t = useLang();
   // proposal 类工具(record_answer/mark_mastered):output 里有 proposalId + summary。
@@ -688,6 +714,7 @@ function ToolCallBlock({
           onQuizAnswered={onQuizAnswered}
           quizMastery={quizMastery}
           onPickAction={onPickAction}
+          onQuizCompleted={onQuizCompleted}
         />
       </div>
     );

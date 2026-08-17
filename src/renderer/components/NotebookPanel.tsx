@@ -21,6 +21,7 @@ import { ErrorBoundary } from "./ErrorBoundary.js";
 import { SelfRatingCard } from "./ReviewPanel.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
+import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote } from "lucide-react";
 import { useLang } from "../lib/i18n.js";
@@ -206,7 +207,7 @@ function ContentTab({
   // 多模态:当前节点的图片资源(集中插图区展示)
   const [assets, setAssets] = useState<NodeAsset[]>([]);
   // 选区浮按钮:选中文字后显示。带 offsets(Range-based 偏移,精准)和 surroundingText(legacy 回退)
-  const [quoteBtn, setQuoteBtn] = useState<{ x: number; y: number; text: string; surrounding: string; offsets?: { start: number; end: number } } | null>(null);
+  const [quoteBtn, setQuoteBtn] = useState<{ x: number; y: number; transform?: string; text: string; surrounding: string; offsets?: { start: number; end: number } } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null); // 整个讲解容器(标题+正文+提示)
   const proseRef = useRef<HTMLDivElement>(null); // 仅 Markdown 正文(offset 计算和画线基于此,避免标题/提示污染偏移)
 
@@ -305,9 +306,23 @@ function ContentTab({
     const modelText = proseEl ? getTextModel(proseEl).text : text;
     const startIdx = offsets ? offsets.start : modelText.indexOf(text);
     const surrounding = startIdx >= 0 ? modelText.slice(Math.max(0, startIdx - 30), startIdx + text.length + 30) : text;
+    // 浮钮定位:右侧优先(手机 Chrome 原生 复制/分享 菜单锚在选区上方,上侧必被遮)
+    const pos = selectionPopoverPosition(
+      {
+        left: rect.left - containerRect.left,
+        top: rect.top - containerRect.top,
+        right: rect.right - containerRect.left,
+        bottom: rect.bottom - containerRect.top,
+        width: rect.width,
+        height: rect.height,
+      },
+      containerRect.width,
+      onQuoteToChat ? 150 : 100,
+    );
     setQuoteBtn({
-      x: rect.left + rect.width / 2 - containerRect.left,
-      y: rect.top - containerRect.top - 8,
+      x: pos.left,
+      y: pos.top,
+      transform: pos.transform,
       text,
       surrounding,
       offsets: offsets ?? undefined,
@@ -463,17 +478,17 @@ function ContentTab({
       {/* 选区浮按钮:提问 + 加到笔记 */}
       {quoteBtn && (
         <div
-          style={{ left: quoteBtn.x, top: quoteBtn.y, transform: "translate(-50%, -100%)" }}
-          className="absolute z-20 flex items-center gap-1 msg-enter"
+          style={{ left: quoteBtn.x, top: quoteBtn.y, transform: quoteBtn.transform }}
+          className="absolute z-20 flex items-center gap-0.5 msg-enter"
         >
           {onQuoteToChat && (
             <button
               onClick={handleQuoteClick}
               data-testid="quote-to-chat-btn"
               aria-label={t("notebook.quote.ask")}
-              className="px-3 py-1.5 rounded-lg bg-brand text-white text-body font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition-colors"
+              className="px-2 py-1.5 rounded-lg bg-brand text-white text-label font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition-colors"
             >
-              <MessageCircle className="w-3.5 h-3.5" />
+              <MessageCircle className="w-3 h-3" />
               {t("notebook.quote.ask")}
             </button>
           )}
@@ -481,7 +496,7 @@ function ContentTab({
             onClick={handleSaveNoteClick}
             data-testid="save-note-btn"
             aria-label={t("notebook.quote.add_note")}
-            className="px-3 py-1.5 rounded-lg bg-accent text-white text-body font-bold shadow-elevated flex items-center gap-1 hover:brightness-110 transition"
+            className="px-2 py-1.5 rounded-lg bg-accent text-white text-label font-bold shadow-elevated flex items-center gap-1 hover:brightness-110 transition"
             title={t("notebook.quote.save_note.title")}
           >
             <Pencil className="w-3.5 h-3.5" />

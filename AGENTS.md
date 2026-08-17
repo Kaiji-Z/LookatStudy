@@ -74,7 +74,7 @@ npm run dist              # build + electron-builder (produces .exe/.dmg/.AppIma
 npm run serve             # dev serve: esbuild server bundle only + serve dist/renderer (web 模式调试)
 npm run build:mobile      # 便携包 dist/mobile/: server.cjs 单文件 + web 前端 + install-termux.sh(Termux 手机端)
 
-npm run verify:core       # 75 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
+npm run verify:core       # 78 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -194,7 +194,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (75 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (78 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

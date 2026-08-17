@@ -6,7 +6,7 @@
  *
  * 这是 v0.2 把"📝练习 tab"并入对话流的核心:练习题作为 Generative UI 产物出现。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { celebrate } from "../../lib/celebration.js";
 import { ListChecks, Check, X, AlertTriangle, HelpCircle, RotateCcw, Sparkles, CheckCircle2, ArrowRight } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
@@ -22,6 +22,7 @@ interface QuizQuestion {
 }
 interface QuizData {
   artifactType: "quiz";
+  title?: string;
   questions: QuizQuestion[];
   /** harness 可能注入的修复警告 */
   warnings?: string[];
@@ -60,11 +61,20 @@ const ACTION_META: Record<PostQuizActionId, { icon: LucideIcon; labelKey: string
   },
 };
 
+/** 答完整组题的成绩单(自动 hook 给 AI 用):总分 + 逐题判定。 */
+export interface QuizCompletedResult {
+  title: string;
+  correct: number;
+  total: number;
+  detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[];
+}
+
 export function QuizArtifact({
   data,
   onAnswered,
   quizMastery,
   onPickAction,
+  onQuizCompleted,
 }: {
   data: unknown;
   onAnswered?: (question: QuizQuestion, selectedIndex: number, correct: boolean) => void;
@@ -72,6 +82,9 @@ export function QuizArtifact({
   quizMastery?: number | null;
   /** 点某个动作 → 把对应消息发进对话(父组件接 sendMessage)。常开:有回调就显示下一步动作(消灭死胡同)。 */
   onPickAction?: (message: string) => void;
+  /** 答完最后一题提交时自动触发(真实点击才算,进度恢复不重放)——父组件把成绩单 hook 给 AI,
+   *  由 AI 决定下一步(讲错题/放行/换角度)。提供后完成卡不再显示手动下一步按钮。 */
+  onQuizCompleted?: (result: QuizCompletedResult) => void;
 }) {
   const d = data as QuizData;
   const t = useLang();
@@ -84,14 +97,29 @@ export function QuizArtifact({
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(saved?.score ?? { correct: 0, total: 0 });
+  /* 逐题判定累积(真实提交才追加;恢复的进度没有判定,也不触发完成 hook) */
+  const detailRef = useRef<QuizCompletedResult["detail"]>([]);
   useEffect(() => {
     saveQuizProgress(progressKey, { current, score });
   }, [progressKey, current, score]);
 
   if (current >= d.questions.length) {
-    // 全部做完
-    // 答完题不再"到此为止"——给出下一步动作,消灭死胡同。常开:有 onPickAction 就显示。
-    const showActions = !!onPickAction;
+    // 全部做完。自动 hook 模式:成绩单已交给 AI(提交最后一题时触发),等 AI 分析;
+    // 手动"下一步动作"仅在无 hook 回调的上下文保留(消灭死胡同)。
+    const showActions = !!onPickAction && !onQuizCompleted;
+    if (onQuizCompleted) {
+      return (
+        <div className="surface-card p-4 text-center" data-testid="artifact-quiz-done">
+          <div className="text-2xl mb-2">{score.correct === score.total ? "🎉" : "📚"}</div>
+          <div className="text-body font-bold text-ink">
+            {t("quiz.scoreSummary", { correct: score.correct, total: score.total })}
+          </div>
+          <div className="text-label text-ink-muted mt-1" data-testid="quiz-hook-sent">
+            {t("quiz.hook.sent")}
+          </div>
+        </div>
+      );
+    }
     const actions = showActions ? getPostQuizActions(score, quizMastery ?? null) : [];
     return (
       <div className="surface-card p-4 text-center" data-testid="artifact-quiz-done">
@@ -135,6 +163,23 @@ export function QuizArtifact({
     const correct = selected === q.answer;
     setScore((s) => ({ correct: s.correct + (correct ? 1 : 0), total: s.total + 1 }));
     onAnswered?.(q, selected, correct);
+    // 逐题判定累积(供完成 hook 的成绩单)
+    detailRef.current.push({
+      prompt: q.prompt,
+      chosen: q.options[selected] ?? "?",
+      answerText: q.options[q.answer] ?? "?",
+      correct,
+    });
+    // 最后一题提交 = 自动 hook:把成绩单交给 AI 决定下一步(讲错题/放行/换角度)。
+    // 只在真实点击时发生——localStorage 恢复的完成态不重放。
+    if (current === d.questions.length - 1 && onQuizCompleted) {
+      onQuizCompleted({
+        title: d.title ?? "",
+        correct: score.correct + (correct ? 1 : 0),
+        total: score.total + 1,
+        detail: [...detailRef.current],
+      });
+    }
     // Phase 1: 答题高光时刻 — 答对粒子爆发,答错柔红光闪(CelebrationLayer 统一渲染)。
     celebrate(correct ? "correct" : "wrong");
   };

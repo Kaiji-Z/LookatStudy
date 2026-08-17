@@ -64,6 +64,7 @@ import type { ReviewQuality } from "@shared/types";
 // P3: 注入学习者近期卡点,让 agent "看见并记住"挣扎点(relatedness + 自适应)
 import { remember, defaultLlmMerge } from "../memory-service.js";
 import { buildLearnerSnapshot } from "../learner-model-service.js";
+import { summarizeToolPartsJson } from "../pure/tool-part-summary.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -1031,7 +1032,16 @@ export async function handleAgentChatThread(
 
   // 从 thread 拉历史 + 焦点节点
   const rawMsgs = getThreadMessages(threadId);
-  const history: ChatTurn[] = rawMsgs.map((m) => ({ role: m.role, content: m.content }));
+  // 历史注入工具调用标记:parts_json 只用于渲染,不喂回 LLM 的话模型对自己上回合的
+  // 工具调用失忆(真实事故:发过答题卡,下一回合道歉说"没真正发题"然后重发)。
+  const history: ChatTurn[] = rawMsgs.map((m) => {
+    let content = m.content;
+    if (m.role === "assistant" && m.partsJson) {
+      const s = summarizeToolPartsJson(m.partsJson);
+      if (s) content = content ? `${content}\n${s}` : s;
+    }
+    return { role: m.role, content };
+  });
   history.push({ role: "user", content });
 
   // 先把 user 消息持久化(乐观:用户消息立刻入库)

@@ -29,10 +29,12 @@ export interface ArtifactProps {
   quizMastery?: number | null;
   /** 点某下一步动作 → 发消息进对话(仅 quiz 完成态用)。 */
   onPickAction?: (message: string) => void;
+  /** quiz 答完最后一题提交时自动触发(成绩单 hook 给 AI,由 AI 决定下一步)。 */
+  onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
 }
 
 /** 按 artifactType 路由到对应组件。未识别类型返回 fallback。 */
-export function ArtifactRenderer({ data, onQuizAnswered, quizMastery, onPickAction }: ArtifactProps) {
+export function ArtifactRenderer({ data, onQuizAnswered, quizMastery, onPickAction, onQuizCompleted }: ArtifactProps) {
   const d = data as { artifactType?: string } | null;
   if (!d || !d.artifactType) {
     return <UnknownArtifact data={data} />;
@@ -47,6 +49,7 @@ export function ArtifactRenderer({ data, onQuizAnswered, quizMastery, onPickActi
           onAnswered={onQuizAnswered}
           quizMastery={quizMastery}
           onPickAction={onPickAction}
+          onQuizCompleted={onQuizCompleted}
         />
       );
     case "compare_table":

@@ -175,5 +175,19 @@ check("T? llmFamilyOf: 认不出 → 原 id(降级 none)", llmFamilyOf("custom-?
   check("T? 无 hints 的 custom 仍 none(保守)", reasoningPlanFor("custom-live", "openai-compatible", "fast").kind === "none");
 }
 
+/* ---- T5 supportsReasoningControl 门控嗅探(v0.12:custom glm-5.3 解禁) ---- */
+{
+  check("T5a custom 智谱端点 + glm-5.3 → 门控开(此前误禁,芯片点不了)",
+    supportsReasoningControl("custom-zai", "openai-compatible", { baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-5.3" }) === true);
+  check("T5b custom 无 hints → 门控关(保守)",
+    supportsReasoningControl("custom-zai", "openai-compatible") === false);
+  check("T5c custom 认不出的端点 → 门控关",
+    supportsReasoningControl("custom-x", "openai-compatible", { baseUrl: "https://api.example.com", model: "foo-1" }) === false);
+  check("T5d 门控开 = 引擎真的能落地(fast 走 bodyPatch,不是只开芯片)",
+    reasoningPlanFor("custom-zai", "openai-compatible", "fast", { baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-5.3" }).kind === "bodyPatch");
+  check("T5e anthropic 协议 custom → 门控开(协议直查)",
+    supportsReasoningControl("custom-claude", "anthropic", { baseUrl: "https://x" }) === true);
+}
+
 console.log(fail === 0 ? `\nALL PASS (${pass})` : `\nFAIL (${fail}/${pass + fail})`);
 process.exit(fail === 0 ? 0 : 1);

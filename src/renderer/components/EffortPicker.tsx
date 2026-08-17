@@ -30,18 +30,24 @@ export function EffortPicker() {
 
   const load = useCallback(async () => {
     try {
-      const [provider, saved, presets, customs] = await Promise.all([
+      const [provider, saved, presets, customs, activeModel] = await Promise.all([
         api.getSetting("active_provider"),
         api.getSetting("reasoning_effort" as SettingKey),
         api.getProviderPresets(),
         api.listCustomProviders(),
+        api.getSetting("active_model" as SettingKey),
       ]);
       const id = provider ?? "glm";
+      const custom = customs.find((c) => c.id === id);
       const protocol =
         (presets.find((p) => p.id === id)?.protocol as LlmProtocol | undefined) ??
-        (customs.find((c) => c.id === id)?.protocol as LlmProtocol | undefined) ??
+        (custom?.protocol as LlmProtocol | undefined) ??
         "openai-compatible";
-      setSupported(supportsReasoningControl(id, protocol));
+      // 嗅探 hints:custom provider 用 baseUrl + defaultModel/active_model
+      setSupported(supportsReasoningControl(id, protocol, {
+        baseUrl: custom?.baseUrl,
+        model: activeModel ?? custom?.defaultModel,
+      }));
       const v = saved ?? "";
       setEffort(v === "fast" || v === "deep" ? v : "");
     } catch {

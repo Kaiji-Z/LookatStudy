@@ -159,7 +159,8 @@ export function NotebookPanel({
 
       {/* 内容区:tab 切换时内容滑入(PROPERTY.md motion: 状态传达,150-250ms) */}
       <div className="flex-1 overflow-y-auto min-h-0 animate-tab-slide" key={tab} ref={scrollRef} role="tabpanel">
-        {tab === "board" && (
+        {tab === "board" ? (
+          /* 黑板:全宽大画布,不套 960 居中(画布越大越好) */
           <div className="p-4" data-testid="board-tab-content">
             {canvasArtifact ? (
               <ArtifactRenderer data={canvasArtifact.output} />
@@ -172,34 +173,37 @@ export function NotebookPanel({
               </div>
             )}
           </div>
-        )}
-        {/* v0.11:内容居中封顶 960 —— 宽屏/单栏档笔记本不空旷,栏宽仍弹性 */}
-        <div className="mx-auto w-full max-w-[960px] min-h-full">
-        {tab === "content" ? (
-          <ContentTab
-            selectedNode={selectedNode}
-            contentNotes={nodeItems.filter(
-              (i) => i.artifactType === "user_note" && i.sourceAnchor,
-            )}
-            onQuoteToChat={onQuoteToChat}
-            onSaveContentNote={onSaveContentNote}
-            locale={locale}
-            isReviewing={isReviewing}
-            onReviewDone={onReviewDone}
-          />
         ) : (
-          <NotesTab
-            items={nodeItems}
-            loading={loading}
-            selectedNode={selectedNode}
-            onRemove={onRemove}
-            onTogglePin={onTogglePin}
-            onRecordQuizResult={onRecordQuizResult}
-            onUpdateNoteComment={onUpdateNoteComment}
-            onJumpToSource={onJumpToSource}
-          />
+          <>
+            {/* v0.11:内容居中封顶 960 —— 宽屏/单栏档笔记本不空旷,栏宽仍弹性 */}
+            <div className="mx-auto w-full max-w-[960px] min-h-full">
+              {tab === "content" ? (
+                <ContentTab
+                  selectedNode={selectedNode}
+                  contentNotes={nodeItems.filter(
+                    (i) => i.artifactType === "user_note" && i.sourceAnchor,
+                  )}
+                  onQuoteToChat={onQuoteToChat}
+                  onSaveContentNote={onSaveContentNote}
+                  locale={locale}
+                  isReviewing={isReviewing}
+                  onReviewDone={onReviewDone}
+                />
+              ) : (
+                <NotesTab
+                  items={nodeItems}
+                  loading={loading}
+                  selectedNode={selectedNode}
+                  onRemove={onRemove}
+                  onTogglePin={onTogglePin}
+                  onRecordQuizResult={onRecordQuizResult}
+                  onUpdateNoteComment={onUpdateNoteComment}
+                  onJumpToSource={onJumpToSource}
+                />
+              )}
+            </div>
+          </>
         )}
-        </div>
       </div>
     </div>
   );

@@ -85,10 +85,17 @@ export function llmFamilyOf(providerId: string, baseUrl?: string, model?: string
   return providerId;
 }
 
-/** 该 provider 是否支持思考强度控制(不支持的:芯片禁用 + tooltip 说明)。 */
-export function supportsReasoningControl(providerId: string, protocol: LlmProtocol): boolean {
+/** 该 provider 是否支持思考强度控制(不支持的:芯片禁用 + tooltip 说明)。
+ * 与 reasoningPlanFor 同一判定口径:preset 直查;custom-* 按 baseUrl/模型名嗅探
+ * (custom 智谱端点 + glm-5.3 这类必须能过门控,否则引擎明明支持、UI 却把芯片禁用了)。 */
+export function supportsReasoningControl(
+  providerId: string,
+  protocol: LlmProtocol,
+  hints?: { baseUrl?: string; model?: string },
+): boolean {
   if (protocol === "anthropic" || protocol === "google") return true;
-  return providerId === "openai" || providerId in BODY_PATCH_FAMILIES;
+  if (providerId === "openai" || providerId in BODY_PATCH_FAMILIES) return true;
+  return llmFamilyOf(providerId, hints?.baseUrl, hints?.model) in BODY_PATCH_FAMILIES;
 }
 
 /**

@@ -397,6 +397,19 @@ html.light .exam-bubble-locked {
   .text-title   { font-size: 1.125rem; }  /* 18px@small: 卡片标题 */
   .text-hero    { font-size: 1.5rem; }    /* 24px@small: 大标题/空状态 */
 
+  /* CanvasStage:画布点阵底纹(Figma/Excalidraw 式画布感,极低调) */
+  .canvas-grid {
+    background-image: radial-gradient(rgb(var(--ink-rgb) / 0.10) 1px, transparent 1px);
+    background-size: 22px 22px;
+    background-position: center;
+  }
+  .canvas-stage-gesture {
+    cursor: grab;
+  }
+  .canvas-stage-gesture:active {
+    cursor: grabbing;
+  }
+
   body {
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;

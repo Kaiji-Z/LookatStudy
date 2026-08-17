@@ -23,6 +23,7 @@ import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
+import { CanvasStage } from "./CanvasStage.js";
 import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote , Presentation } from "lucide-react";
 import { useLang } from "../lib/i18n.js";
 
@@ -160,10 +161,25 @@ export function NotebookPanel({
       {/* 内容区:tab 切换时内容滑入(PROPERTY.md motion: 状态传达,150-250ms) */}
       <div className="flex-1 overflow-y-auto min-h-0 animate-tab-slide" key={tab} ref={scrollRef} role="tabpanel">
         {tab === "board" ? (
-          /* 黑板:全宽大画布,不套 960 居中(画布越大越好) */
-          <div className="p-4" data-testid="board-tab-content">
+          /* 黑板:全宽画布(CanvasStage)—— 大幅产物自适应容器宽高(contain 适屏),
+             与笔记区的内联卡片区分;点阵底纹 + 底部缩放工具条;只显示最新一件。 */
+          <div className="h-full flex flex-col" data-testid="board-tab-content">
             {canvasArtifact ? (
-              <ArtifactRenderer data={canvasArtifact.output} />
+              <>
+                <div className="px-4 pt-3 pb-2 shrink-0 flex items-center gap-2 min-w-0">
+                  <Presentation className="w-4 h-4 text-ink-muted shrink-0" />
+                  <span className="text-label font-bold text-ink truncate">
+                    {(canvasArtifact.output as { title?: string })?.title ?? canvasArtifact.toolName}
+                  </span>
+                </div>
+                <div className="flex-1 min-h-0 px-2 pb-2">
+                  <div className="h-full rounded-xl overflow-hidden bg-surface-0/60 border border-[var(--border-faint)]">
+                    <CanvasStage testid="board-canvas-stage">
+                      <ArtifactRenderer data={canvasArtifact.output} variant="canvas" />
+                    </CanvasStage>
+                  </div>
+                </div>
+              </>
             ) : (
               <div className="text-center py-16">
                 <Presentation className="w-10 h-10 mx-auto mb-3 text-ink-muted opacity-30" />

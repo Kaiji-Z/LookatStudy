@@ -18,8 +18,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dagre from "dagre";
 import { Share2, AlertTriangle, Maximize2 } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
-import { useTouchPanPinch } from "../../lib/useTouchPanPinch.js";
 import { DiagramViewerModal } from "./DiagramViewerModal.js";
+import { CanvasStage } from "../CanvasStage.js";
 
 interface ConceptMapData {
   artifactType: "concept_map";
@@ -115,7 +115,7 @@ function pointsToPath(points: { x: number; y: number }[]): string {
   return path;
 }
 
-export function ConceptMapArtifact({ data }: { data: unknown }) {
+export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; variant?: "card" | "canvas" }) {
   const d = data as ConceptMapData;
   const t = useLang();
   const layout = useMemo(() => computeLayout(d), [d]);
@@ -124,12 +124,6 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
      内联只留原生滚动),单指平移/双指捏合只在全屏弹窗舞台里。 */
   const [expanded, setExpanded] = useState(false);
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const modalStageRef = useRef<HTMLDivElement | null>(null);
-  const panPinch = useTouchPanPinch(
-    useCallback((factor: number) => {
-      setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z * factor).toFixed(3))));
-    }, []),
-  );
   // 窄屏初始适宽:内容比视口宽时自动缩到整图可见(手机一眼看全,细节进弹窗捏合看)
   useEffect(() => {
     const el = viewportRef.current;
@@ -143,15 +137,6 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [layout.width]);
-  // 弹窗打开时按舞台宽重新适宽
-  useEffect(() => {
-    if (!expanded) return;
-    const el = modalStageRef.current;
-    if (!el) return;
-    const ratio = (el.clientWidth - 16) / layout.width;
-    setZoom(Math.max(MIN_ZOOM, Math.min(1, +ratio.toFixed(2))));
-  }, [expanded, layout.width]);
-
   const zoomIn = useCallback(() => setZoom((z) => Math.min(MAX_ZOOM, +(z + ZOOM_STEP).toFixed(2))), []);
   const zoomOut = useCallback(() => setZoom((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2))), []);
   const zoomReset = useCallback(() => setZoom(1), []);
@@ -167,11 +152,7 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
       width={layout.width}
       height={layout.height}
       viewBox={`0 0 ${layout.width} ${layout.height}`}
-      style={{
-        transform: `scale(${zoom})`,
-        transformOrigin: "top left",
-        display: "block",
-      }}
+      style={{ display: "block" }}
       data-testid="conceptmap-svg"
     >
       <defs>
@@ -275,6 +256,11 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
     </svg>
   );
 
+  /* canvas 变体:裸内容自然尺寸 —— 黑板/全屏查看器的 CanvasStage 用 transform 接管缩放平移 */
+  if (variant === "canvas") {
+    return <div data-testid="conceptmap-canvas-content">{graphSvg}</div>;
+  }
+
   return (
     <div className="surface-card p-4" data-testid="artifact-concept-map">
       <div className="flex items-center justify-between mb-3 gap-2">
@@ -342,7 +328,9 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
             margin: "0 auto",
           }}
         >
-          {graphSvg}
+          <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: layout.width, height: layout.height }}>
+            {graphSvg}
+          </div>
         </div>
       </div>
 
@@ -357,30 +345,14 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
         </div>
       )}
 
-      {/* 全屏手势舞台:单指平移 + 双指捏合 + Ctrl 滚轮;Esc/背景/X 关闭 */}
+      {/* 全屏画布舞台:纯 transform pan/zoom(锚定手势中点,零布局耦合不抖动);
+          Esc/背景/X 关闭 */}
       {expanded && (
         <DiagramViewerModal title={d.title} onClose={() => setExpanded(false)}>
-          <div
-            ref={modalStageRef}
-            onPointerDown={panPinch.onPointerDown}
-            onPointerMove={panPinch.onPointerMove}
-            onPointerUp={panPinch.onPointerUp}
-            onPointerCancel={panPinch.onPointerUp}
-            onWheel={handleWheel}
-            className={`h-full w-full bg-surface-0/60 rounded-xl overflow-auto select-none ${panPinch.isPanning() ? "cursor-grabbing" : "cursor-grab"}`}
-            style={{ touchAction: "none" }}
-            data-testid="conceptmap-modal-stage"
-          >
-            <div
-              style={{
-                width: layout.width * zoom,
-                height: layout.height * zoom,
-                margin: "0 auto",
-                minWidth: "fit-content",
-              }}
-            >
-              {graphSvg}
-            </div>
+          <div className="h-full w-full rounded-xl overflow-hidden bg-surface-0/60">
+            <CanvasStage testid="conceptmap-modal-stage">
+              <ConceptMapArtifact data={data} variant="canvas" />
+            </CanvasStage>
           </div>
         </DiagramViewerModal>
       )}

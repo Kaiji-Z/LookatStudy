@@ -15,8 +15,8 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { Workflow, AlertTriangle, Maximize2 } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
 import { renderMermaid } from "../../lib/lazy-mermaid.js";
-import { useTouchPanPinch } from "../../lib/useTouchPanPinch.js";
 import { DiagramViewerModal } from "./DiagramViewerModal.js";
+import { CanvasStage } from "../CanvasStage.js";
 
 interface MermaidData {
   artifactType: "diagram";
@@ -36,7 +36,7 @@ const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.2;
 
-export function MermaidArtifact({ data }: { data: unknown }) {
+export function MermaidArtifact({ data, variant = "card" }: { data: unknown; variant?: "card" | "canvas" }) {
   const d = data as MermaidData;
   const t = useLang();
   const TYPE_LABELS: Record<string, string> = {
@@ -53,14 +53,9 @@ export function MermaidArtifact({ data }: { data: unknown }) {
   const [zoom, setZoom] = useState(1);
   /* 手势分界(v0.11):内联区只留原生滚动(不再 pinch-zoom 放行浏览器页面缩放,也去掉了
      旧 useDragPan —— 它在 mousedown 里 preventDefault,Chromium 触屏 tap 的合成
-     mousedown 被取消会吞掉后续 click,导致"点图开弹窗"在手机上永远不触发),
-     单指平移/双指捏合收进全屏弹窗舞台 */
+     mousedown 被取消会吞掉后续 click,导致"点图开弹窗"在手机上永远不触发)。
+     v0.12:全屏弹窗改用 CanvasStage(纯 transform 画布,锚定手势中点)。 */
   const [expanded, setExpanded] = useState(false);
-  const panPinch = useTouchPanPinch(
-    useCallback((factor: number) => {
-      setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z * factor).toFixed(3))));
-    }, []),
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +93,35 @@ export function MermaidArtifact({ data }: { data: unknown }) {
     const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
     setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z + delta).toFixed(2))));
   }, []);
+
+  /** 裸 svg(自然尺寸,无缩放):内联经外层 scale 包裹;canvas 变体直接给 CanvasStage。 */
+  const svgBody =
+    state.status === "rendered" ? (
+      <div
+        ref={(el) => {
+          // 渲染后测量 svg 实际尺寸(只测一次,存 state 触发重渲染撑开外层)
+          if (el && !svgSize) {
+            const svgEl = el.querySelector("svg");
+            if (svgEl) {
+              const bbox = svgEl.getBoundingClientRect();
+              // 用 viewBox 优先(更准),fallback 到 bbox
+              const vb = svgEl.viewBox?.baseVal;
+              const w = vb && vb.width ? vb.width : bbox.width;
+              const h = vb && vb.height ? vb.height : bbox.height;
+              if (w > 0 && h > 0) setSvgSize({ width: w, height: h });
+            }
+          }
+        }}
+        style={{ width: svgSize?.width ?? undefined, height: svgSize?.height ?? undefined }}
+        // SVG 是 mermaid 渲染产物(纯图形 + 文本),无脚本;CSP style-src 'unsafe-inline' 已允许
+        dangerouslySetInnerHTML={{ __html: state.svg }}
+        data-testid="mermaid-svg"
+      />
+    ) : null;
+
+  if (variant === "canvas") {
+    return <div data-testid="mermaid-canvas-content">{svgBody}</div>;
+  }
 
   return (
     <div className="surface-card p-4" data-testid="artifact-mermaid">
@@ -193,31 +217,9 @@ export function MermaidArtifact({ data }: { data: unknown }) {
               margin: "0 auto",
             }}
           >
-            <div
-              ref={(el) => {
-                // 渲染后测量 svg 实际尺寸(只测一次,存 state 触发重渲染撑开外层)
-                if (el && !svgSize) {
-                  const svgEl = el.querySelector("svg");
-                  if (svgEl) {
-                    const bbox = svgEl.getBoundingClientRect();
-                    // 用 viewBox 优先(更准),fallback 到 bbox
-                    const vb = svgEl.viewBox?.baseVal;
-                    const w = vb && vb.width ? vb.width : bbox.width;
-                    const h = vb && vb.height ? vb.height : bbox.height;
-                    if (w > 0 && h > 0) setSvgSize({ width: w, height: h });
-                  }
-                }
-              }}
-              style={{
-                transform: `scale(${zoom})`,
-                transformOrigin: "top left",
-                width: svgSize?.width ?? undefined,
-                height: svgSize?.height ?? undefined,
-              }}
-              // SVG 是 mermaid 渲染产物(纯图形 + 文本),无脚本;CSP style-src 'unsafe-inline' 已允许
-              dangerouslySetInnerHTML={{ __html: state.svg }}
-              data-testid="mermaid-svg"
-            />
+            <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+              {svgBody}
+            </div>
           </div>
         )}
         {state.status === "error" && (
@@ -240,39 +242,13 @@ export function MermaidArtifact({ data }: { data: unknown }) {
         </div>
       )}
 
-      {/* 全屏手势舞台:单指平移 + 双指捏合 + Ctrl 滚轮;Esc/背景/X 关闭。
-          svg 与内联同一字符串(重复 id 但内容相同,defs 引用解析到哪份都等价)。 */}
+      {/* 全屏画布舞台:纯 transform pan/zoom(CanvasStage),Esc/背景/X 关闭 */}
       {expanded && state.status === "rendered" && (
         <DiagramViewerModal title={d.title} onClose={() => setExpanded(false)}>
-          <div
-            onPointerDown={panPinch.onPointerDown}
-            onPointerMove={panPinch.onPointerMove}
-            onPointerUp={panPinch.onPointerUp}
-            onPointerCancel={panPinch.onPointerUp}
-            onWheel={handleWheel}
-            className={`h-full w-full bg-surface-0/60 rounded-xl overflow-auto p-3 select-none ${panPinch.isPanning() ? "cursor-grabbing" : "cursor-grab"}`}
-            style={{ touchAction: "none" }}
-            data-testid="mermaid-modal-stage"
-          >
-            <div
-              style={{
-                width: svgSize ? svgSize.width * zoom : "auto",
-                height: svgSize ? svgSize.height * zoom : "auto",
-                margin: "0 auto",
-                minWidth: "fit-content",
-              }}
-            >
-              <div
-                style={{
-                  transform: `scale(${zoom})`,
-                  transformOrigin: "top left",
-                  width: svgSize?.width ?? undefined,
-                  height: svgSize?.height ?? undefined,
-                }}
-                dangerouslySetInnerHTML={{ __html: state.svg }}
-                data-testid="mermaid-svg-modal"
-              />
-            </div>
+          <div className="h-full w-full rounded-xl overflow-hidden bg-surface-0/60">
+            <CanvasStage testid="mermaid-modal-stage">
+              <MermaidArtifact data={data} variant="canvas" />
+            </CanvasStage>
           </div>
         </DiagramViewerModal>
       )}

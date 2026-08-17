@@ -8,11 +8,11 @@
  * 点表格/「放大查看」进全屏弹窗,弹窗里单指拖动 + 双指捏合(Chromium `zoom`
  * 属性重排,滚动区天然跟随,无需手工撑开)。
  */
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Table2, AlertTriangle, Maximize2 } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
-import { useTouchPanPinch } from "../../lib/useTouchPanPinch.js";
 import { DiagramViewerModal } from "./DiagramViewerModal.js";
+import { CanvasStage } from "../CanvasStage.js";
 
 interface CompareTableData {
   artifactType: "compare_table";
@@ -23,19 +23,10 @@ interface CompareTableData {
   warnings?: string[];
 }
 
-const MIN_ZOOM = 0.4;
-const MAX_ZOOM = 2.5;
-
-export function CompareTableArtifact({ data }: { data: unknown }) {
+export function CompareTableArtifact({ data, variant = "card" }: { data: unknown; variant?: "card" | "canvas" }) {
   const d = data as CompareTableData;
   const t = useLang();
   const [expanded, setExpanded] = useState(false);
-  const [zoom, setZoom] = useState(1);
-  const panPinch = useTouchPanPinch(
-    useCallback((factor: number) => {
-      setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z * factor).toFixed(3))));
-    }, []),
-  );
 
   const tableEl = (
     <table className="w-full text-body">
@@ -75,6 +66,11 @@ export function CompareTableArtifact({ data }: { data: unknown }) {
     </table>
   );
 
+  /* canvas 变体:裸表格自然尺寸(CanvasStage 接管缩放平移;黑板/全屏查看器) */
+  if (variant === "canvas") {
+    return <div className="w-fit" data-testid="comparetable-canvas-content">{tableEl}</div>;
+  }
+
   return (
     <div className="surface-card p-4" data-testid="artifact-compare-table">
       <div className="flex items-center justify-between gap-2 mb-3">
@@ -83,7 +79,7 @@ export function CompareTableArtifact({ data }: { data: unknown }) {
           <h3 className="text-body font-bold text-ink truncate">{d.title}</h3>
         </div>
         <button
-          onClick={() => { setZoom(1); setExpanded(true); }}
+          onClick={() => setExpanded(true)}
           data-testid="comparetable-expand"
           aria-label={t("artifact.viewer.open")}
           data-tooltip={t("artifact.viewer.open")}
@@ -95,7 +91,7 @@ export function CompareTableArtifact({ data }: { data: unknown }) {
       {/* 内联:原生横向滚动(手机不抢手势);点表格进弹窗 */}
       <div
         className="overflow-x-auto rounded-lg border border-[var(--border-faint)]"
-        onClick={() => { setZoom(1); setExpanded(true); }}
+        onClick={() => setExpanded(true)}
         style={{ touchAction: "pan-x pan-y" }}
         data-noswipe="" /* 表格横向滚动与 T3 切栏滑动手势互斥 */
       >
@@ -108,21 +104,15 @@ export function CompareTableArtifact({ data }: { data: unknown }) {
         </div>
       )}
 
-      {/* 全屏手势舞台:单指平移 + 双指捏合;zoom 属性重排,滚动区天然跟随 */}
+      {/* 全屏画布舞台(CanvasStage):纯 transform,表格小字捏合放大读 */}
       {expanded && (
         <DiagramViewerModal title={d.title} onClose={() => setExpanded(false)}>
-          <div
-            onPointerDown={panPinch.onPointerDown}
-            onPointerMove={panPinch.onPointerMove}
-            onPointerUp={panPinch.onPointerUp}
-            onPointerCancel={panPinch.onPointerUp}
-            className={`h-full w-full bg-surface-0/60 rounded-xl overflow-auto select-none ${panPinch.isPanning() ? "cursor-grabbing" : "cursor-grab"}`}
-            style={{ touchAction: "none" }}
-            data-testid="comparetable-modal-stage"
-          >
-            <div style={{ zoom }} className="min-w-fit p-1">
-              {tableEl}
-            </div>
+          <div className="h-full w-full rounded-xl overflow-hidden bg-surface-0/60">
+            <CanvasStage testid="comparetable-modal-stage">
+              <div className="p-2 surface-card">
+                <CompareTableArtifact data={data} variant="canvas" />
+              </div>
+            </CanvasStage>
           </div>
         </DiagramViewerModal>
       )}

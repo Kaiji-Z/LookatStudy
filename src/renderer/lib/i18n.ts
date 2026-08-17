@@ -530,6 +530,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "artifact.zoomOut": "缩小",
     "artifact.zoomReset": "重置缩放",
     "artifact.zoomIn": "放大",
+"artifact.canvas.fit": "适屏",
     "artifact.viewer.open": "放大查看",
     "artifact.viewer.hint": "双指缩放 · 单指拖动 · Ctrl+滚轮",
     "artifact.conceptmap.stats": "{nodes} 个概念 · {edges} 个关系 · Ctrl+滚轮缩放 · 拖动平移",
@@ -1098,6 +1099,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "artifact.zoomOut": "Zoom out",
     "artifact.zoomReset": "Reset zoom",
     "artifact.zoomIn": "Zoom in",
+"artifact.canvas.fit": "Fit",
     "artifact.viewer.open": "Open large view",
     "artifact.viewer.hint": "Pinch to zoom · drag to pan · Ctrl+scroll",
     "artifact.conceptmap.stats": "{nodes} concepts · {edges} relations · Ctrl+scroll to zoom · drag to pan",
@@ -1217,4 +1219,5 @@ export function useLang(): (key: string, vars?: Record<string, string | number>)
 export function useLangValue(): Lang {
   return useSyncExternalStore(subscribe, getLang, getLang);
 }
+
 

@@ -31,17 +31,19 @@ export interface ArtifactProps {
   onPickAction?: (message: string) => void;
   /** quiz 答完最后一题提交时自动触发(成绩单 hook 给 AI,由 AI 决定下一步)。 */
   onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
+  /** card=内联卡片(默认);canvas=裸内容给 CanvasStage 画布(黑板/全屏查看器)。 */
+  variant?: "card" | "canvas";
 }
 
 /** 按 artifactType 路由到对应组件。未识别类型返回 fallback。 */
-export function ArtifactRenderer({ data, onQuizAnswered, quizMastery, onPickAction, onQuizCompleted }: ArtifactProps) {
+export function ArtifactRenderer({ data, onQuizAnswered, quizMastery, onPickAction, onQuizCompleted, variant = "card" }: ArtifactProps) {
   const d = data as { artifactType?: string } | null;
   if (!d || !d.artifactType) {
     return <UnknownArtifact data={data} />;
   }
   switch (d.artifactType) {
     case "concept_map":
-      return <ConceptMapArtifact data={data} />;
+      return <ConceptMapArtifact data={data} variant={variant} />;
     case "quiz":
       return (
         <QuizArtifact
@@ -53,11 +55,11 @@ export function ArtifactRenderer({ data, onQuizAnswered, quizMastery, onPickActi
         />
       );
     case "compare_table":
-      return <CompareTableArtifact data={data} />;
+      return <CompareTableArtifact data={data} variant={variant} />;
     case "diagram":
-      return <MermaidArtifact data={data} />;
+      return <MermaidArtifact data={data} variant={variant} />;
     case "code_walkthrough":
-      return <CodeWalkthroughArtifact data={data} />;
+      return <CodeWalkthroughArtifact data={data} variant={variant} />;
     case "guess":
       return <GuessArtifact data={data} onPickAction={onPickAction} />;
     default:

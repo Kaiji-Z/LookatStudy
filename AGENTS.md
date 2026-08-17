@@ -58,7 +58,7 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 
 - **Left (MapRail)**: Duolingo-style skill map. A node is a *session group*: clicking it filters the middle pane's threads by `focus_node_id`. Node states: locked / available / in_progress / mastered. Collapsible (`Ctrl+B`).
 - **Middle (chat)**: `ThreadSwitcher` (Chrome-style horizontal tabs, one thread per tab) + `ChatStream` (parts rendering) + `ChatComposer` (input + 教学人设 soul 药丸 + starter prompts + 附件📎/粘贴/拖拽 + 底部工具栏:思考强度 · 上下文用量表 · 模型切换). `Ctrl+K` opens the command palette; `Ctrl+Tab` cycles threads.
-- **Right (NotebookPanel)**: 康奈尔笔记法三区(讲解/笔记)+ **黑板 tab**(v0.12:对话最新重产物 concept_map/diagram/compare_table/code_walkthrough 的大画布,流式中出现新重产物自动切到该 tab,App `canvasArtifact`+`forceTab` 联动)。讲解 tab 显示节点 markdown + 支持选区画线(`✏️ 加笔记`)。笔记 tab 三区:🗺️理解区(AI 产物:概念图/对比表/流程图/代码讲解)、✏️笔记区(用户画线 user_note,带溯源跳转)、📝练习区(quiz + last_result 答题记录)。画线用 `highlightText.ts` 的文本搜索方案(不依赖 DOM offset 稳定性)。
+- **Right (NotebookPanel)**: 康奈尔笔记法三区(讲解/笔记)+ **黑板 tab**(v0.12:对话最新重产物 concept_map/diagram/compare_table/code_walkthrough 的大画布,流式中出现新重产物自动切到该 tab,App `canvasArtifact`+`forceTab` 联动;画布=CanvasStage 纯 transform pan/zoom,contain 适屏自适应容器,缩放锚定手势中点,双击适屏↔100%,四产物 canvas 裸内容变体经 ArtifactRenderer variant 透传,放大弹窗同引擎)。讲解 tab 显示节点 markdown + 支持选区画线(`✏️ 加笔记`)。笔记 tab 三区:🗺️理解区(AI 产物:概念图/对比表/流程图/代码讲解)、✏️笔记区(用户画线 user_note,带溯源跳转)、📝练习区(quiz + last_result 答题记录)。画线用 `highlightText.ts` 的文本搜索方案(不依赖 DOM offset 稳定性)。
 - **Responsive tiers (v0.11, `lib/paneTiers.ts` + `useWindowTier`)**: T1 ≥1240 三栏共存;T2 920~1239 双栏(中栏+一侧,侧栏互斥——显示左则隐右,默认右侧);T3 <920 单栏(默认对话,对话流卡片模式:每 AI 回合一卡+scroll-snap 邻近吸附「一幕一屏」)+ 单行窄标题栏(51px:左 XP 紧凑数字 / 中居中分段切换器 课程/导师/黑板 / 右设置;三栏名即教室隐喻 i18n `pane.*`)+ 内容区水平滑屏切换(纯函数 swipeTarget,横向>60px 主导;data-noswipe 区域豁免)+ 左栏选球自动切到对话栏。拉宽自动弹回(进 T1 三栏全恢复,T3→T2 承接当前侧);窄化自动收。中栏宽 clamp(480,36vw,800);笔记本内容居中封顶 960;T3 地图全宽(物理岛按新墙宽自动重建);窗口 minWidth 560。
 - **Focus lock**: while the AI is streaming, node/thread switching is blocked so the learner stays in one context. Do not remove this without an explicit off switch the user controls.
 - **HMR rule**: renderer-only changes (CSS/TSX) auto-hot-reload via Vite — no restart needed. Main process or preload changes require `taskkill electron + npm run dev:electron`.
@@ -74,7 +74,7 @@ npm run dist              # build + electron-builder (produces .exe/.dmg/.AppIma
 npm run serve             # dev serve: esbuild server bundle only + serve dist/renderer (web 模式调试)
 npm run build:mobile      # 便携包 dist/mobile/: server.cjs 单文件 + web 前端 + install-termux.sh(Termux 手机端)
 
-npm run verify:core       # 78 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
+npm run verify:core       # 79 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -194,7 +194,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (78 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (79 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

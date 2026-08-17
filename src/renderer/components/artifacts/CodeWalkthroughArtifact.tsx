@@ -12,11 +12,11 @@
  * v0.11:手机全屏读码 —— 点代码块/「放大查看」进弹窗,弹窗里单指拖动 + 双指捏合
  * (zoom 属性重排);标注点击联动在弹窗内同样生效(独立的 modal 行 ref,互不覆盖)。
  */
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Code2, AlertTriangle, Maximize2 } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
-import { useTouchPanPinch } from "../../lib/useTouchPanPinch.js";
 import { DiagramViewerModal } from "./DiagramViewerModal.js";
+import { CanvasStage } from "../CanvasStage.js";
 
 interface Annotation {
   lineStart: number;
@@ -33,23 +33,15 @@ interface CodeWalkthroughData {
   warnings?: string[];
 }
 
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 2.5;
-
-export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
+export function CodeWalkthroughArtifact({ data, variant = "card" }: { data: unknown; variant?: "card" | "canvas" }) {
   const d = data as CodeWalkthroughData;
   const t = useLang();
   const [activeAnnotation, setActiveAnnotation] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const [zoom, setZoom] = useState(1);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const modalLineRefs = useRef<(HTMLDivElement | null)[]>([]);
+  /** canvas 变体(黑板/全屏画布)专用 ref:与卡片内联互不覆盖 */
+  const canvasLineRefs = useRef<(HTMLDivElement | null)[]>([]);
   const lines = d.code.split("\n");
-  const panPinch = useTouchPanPinch(
-    useCallback((factor: number) => {
-      setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z * factor).toFixed(3))));
-    }, []),
-  );
 
   const isLineHighlighted = (lineNum: number) => {
     if (activeAnnotation === null) return false;
@@ -63,7 +55,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
     if (next !== null) {
       // 滚动代码块到标注的起始行(弹窗开着滚弹窗内的行,否则滚内联的行)
       const a = d.annotations[next];
-      const el = (expanded ? modalLineRefs : lineRefs).current[a.lineStart - 1];
+      const el = (expanded ? canvasLineRefs : lineRefs).current[a.lineStart - 1];
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   };
@@ -124,6 +116,15 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
     </div>
   );
 
+  /* canvas 变体:裸代码块(标注留在卡片;画布上读码为主,CanvasStage 接管缩放平移) */
+  if (variant === "canvas") {
+    return (
+      <div className="w-fit" data-testid="codewalk-canvas-content">
+        {renderCode(canvasLineRefs)}
+      </div>
+    );
+  }
+
   return (
     <div className="surface-card p-4" data-testid="artifact-code-walkthrough">
       <div className="flex items-center justify-between gap-2 mb-3">
@@ -135,7 +136,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
           </span>
         </div>
         <button
-          onClick={() => { setZoom(1); setExpanded(true); }}
+          onClick={() => setExpanded(true)}
           data-testid="codewalk-expand"
           aria-label={t("artifact.viewer.open")}
           data-tooltip={t("artifact.viewer.open")}
@@ -148,7 +149,7 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* 代码块(带行号)。内联:手机点代码进弹窗读 */}
         <div
-          onClick={() => { if (!expanded) { setZoom(1); setExpanded(true); } }}
+          onClick={() => { if (!expanded) setExpanded(true); }}
           style={{ touchAction: "pan-x pan-y" }}
           data-noswipe="" /* 代码横向滚动与 T3 切栏滑动手势互斥 */
         >
@@ -164,22 +165,13 @@ export function CodeWalkthroughArtifact({ data }: { data: unknown }) {
         </div>
       )}
 
-      {/* 全屏读码:代码 + 标注都在,单指平移 + 双指捏合;点标注高亮联动弹窗内的行 */}
+      {/* 全屏画布读码(CanvasStage):纯 transform,捏合看小字;标注留在卡片 */}
       {expanded && (
         <DiagramViewerModal title={d.title} onClose={() => setExpanded(false)}>
-          <div
-            onPointerDown={panPinch.onPointerDown}
-            onPointerMove={panPinch.onPointerMove}
-            onPointerUp={panPinch.onPointerUp}
-            onPointerCancel={panPinch.onPointerUp}
-            className={`h-full w-full bg-surface-0/60 rounded-xl overflow-auto p-3 select-none ${panPinch.isPanning() ? "cursor-grabbing" : "cursor-grab"}`}
-            style={{ touchAction: "none" }}
-            data-testid="codewalk-modal-stage"
-          >
-            <div style={{ zoom }} className="grid grid-cols-1 gap-3 min-w-fit max-w-3xl mx-auto">
-              {renderCode(modalLineRefs)}
-              {annotationsEl}
-            </div>
+          <div className="h-full w-full rounded-xl overflow-hidden bg-surface-0/60">
+            <CanvasStage testid="codewalk-modal-stage">
+              <CodeWalkthroughArtifact data={data} variant="canvas" />
+            </CanvasStage>
           </div>
         </DiagramViewerModal>
       )}

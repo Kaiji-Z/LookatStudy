@@ -468,15 +468,12 @@ function MessageRowV2({
     );
   }
 
-  // assistant:全宽无背景,带小 AI 头像。parts 按 type 分别渲染。
+  // assistant:全宽无背景、无头像(claude.ai 风)。头像列给每条 AI 消息制造 ~38px
+  // 固定左缩进(正文/产物卡全被推右,手机窄屏最伤);对话双方靠"用户右对齐微染底
+  // vs AI 全宽"已足够区分,不靠头像。
   return (
-    <div className="msg-enter flex gap-2.5" data-testid="msg-assistant" data-msg-id={msg.id}>
-      <div
-        className="w-7 h-7 rounded-full bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center text-white text-label font-bold shrink-0 mt-0.5 shadow-accent-soft"
-      >
-        AI
-      </div>
-      <div className="flex-1 min-w-0 space-y-2.5">
+    <div className="msg-enter" data-testid="msg-assistant" data-msg-id={msg.id}>
+      <div className="min-w-0 space-y-2.5">
         {msg.parts.map((part, idx) => (
           <PartRenderer
             key={idx}

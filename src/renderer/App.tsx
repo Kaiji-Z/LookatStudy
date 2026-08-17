@@ -716,10 +716,10 @@ export default function App() {
         onToggleRight={toggleRightPane}
         tier={tier}
         bottomBar={tier === 3 ? (
-          /* T3 第二行:满宽三栏切换栏。整行等分三钮(图标+文字),标准移动 tab 高度,
-             一眼可见可切。上行仍是原标题栏内容(压缩)。 */
+          /* T3 单行标题栏的居中切换器:紧凑分段控制(图标+短标签)。
+             不再单独占一行 —— 窄屏 chrome 从 106px 压到 48px,内容区最大化。 */
           <nav
-            className="grid grid-cols-3 gap-1 px-3 pb-2"
+            className="inline-flex items-center gap-1 p-1 rounded-xl bg-ink/5"
             data-testid="t3-pane-switcher"
             role="tablist"
             aria-label={t("pane.switcher")}
@@ -735,7 +735,7 @@ export default function App() {
                 aria-selected={t3Pane === k}
                 data-testid={testid}
                 onClick={() => setT3Pane(k)}
-                className={`h-11 flex items-center justify-center gap-1.5 rounded-lg text-label font-bold transition-colors ${
+                className={`h-8 px-3 flex items-center justify-center gap-1 rounded-lg text-label font-bold transition-colors ${
                   t3Pane === k ? "bg-brand/15 text-brand" : "text-ink-muted active:bg-ink/10"
                 }`}
               >
@@ -1106,35 +1106,58 @@ function Header({
   onToggleRight: () => void;
   /** 布局档位(1/2/3):T3 单栏时隐藏视图切换组(顶部 switcher 已覆盖)与字号控制,header 才塞得进窄窗 */
   tier?: 1 | 2 | 3;
-  /** 第二行(T3 = 满宽三栏切换栏):有值时标题栏变两行,下行由调用方填充 */
+  /** T3 居中切换器:有值时标题栏切到单行窄版(左 XP / 中切换器 / 右设置),不占第二行 */
   bottomBar?: React.ReactNode;
 }) {
   const t = useLang();
+  if (bottomBar) {
+    /* T3 单行标题栏(48px):左 XP 紧凑数字、中三栏切换器(真居中,两侧 flex-1 对称)、右设置。
+       应用名不上栏 —— 引导器/浏览器标签已可见,省下的高度全给内容(滑屏手势兜底切换)。 */
+    return (
+      <header className="app-header shrink-0">
+        <div className="flex items-center h-12 px-4">
+          <div className="flex-1 flex items-center min-w-0">
+            {xp && (
+              <div className="flex items-center gap-1 shrink-0" data-testid="xp-bar" title={t("header.energy")}>
+                <Zap
+                  className={`w-3.5 h-3.5 text-brand ${xp.todayXp >= 100 ? "energy-breathe" : ""}`}
+                  fill={xp.todayXp >= 100 ? "currentColor" : "none"}
+                  aria-hidden="true"
+                />
+                <span className="text-label font-bold tabular-nums text-brand">{xp.todayXp}</span>
+              </div>
+            )}
+          </div>
+          {bottomBar}
+          <div className="flex-1 flex items-center justify-end">
+            <button
+              onClick={onOpenSettings}
+              data-testid="header-settings"
+              aria-label={t("header.settings")}
+              className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800/50 transition-colors"
+              title={t("header.settings")}
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </header>
+    );
+  }
   return (
     <header className="app-header shrink-0 flex flex-col">
-      {/* 行1:原标题栏内容(T3 时压缩:标题缩字号、xp 只留数字,给行2 让高度) */}
-      <div className={`flex items-center pt-2.5 ${bottomBar ? "pb-1.5 px-4" : "pb-3 px-6"} justify-between`}>
-      {/* 左:项目名。手机端习惯:logo 常驻左上,宽屏 text-body / 窄屏收成 text-label
-          并 truncate 让位;T3 时 xp 只留紧凑数字(满条/等级/连击放不下,精简)。 */}
+      {/* 行1:宽屏(T1/T2)标题栏 */}
+      <div className="flex items-center pt-2.5 pb-3 px-6 justify-between">
+      {/* 左:项目名 */}
       <div className="flex items-center gap-2 min-w-0">
-        <h1 className={`${bottomBar ? "text-label" : "text-body"} font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none min-w-0 truncate`}>
+        <h1 className="text-body font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none min-w-0 truncate">
           Lookat<span className="text-brand">Study</span>
         </h1>
-        {xp && bottomBar && (
-          <div className="flex items-center gap-1 shrink-0" data-testid="xp-bar" title={t("header.energy")}>
-            <Zap
-              className={`w-3.5 h-3.5 text-brand ${xp.todayXp >= 100 ? "energy-breathe" : ""}`}
-              fill={xp.todayXp >= 100 ? "currentColor" : "none"}
-              aria-hidden="true"
-            />
-            <span className="text-label font-bold tabular-nums text-brand">{xp.todayXp}</span>
-          </div>
-        )}
       </div>
 
-      {/* 右:控件按"视图 → 阅读 → 进度 → 配置"分组(T3 时 justify-self-end 贴右列) */}
+      {/* 右:控件按"视图 → 阅读 → 进度 → 配置"分组 */}
       <div className="flex items-center gap-3">
-        {/* 视图:左右栏显隐(T3 单栏档隐藏:顶部 switcher 已覆盖,header 窄窗塞不下) */}
+        {/* 视图:左右栏显隐 */}
         {tier !== 3 && (
         <div className="flex items-center gap-0.5">
           <button
@@ -1160,7 +1183,7 @@ function Header({
         </div>
         )}
 
-        {/* 阅读:全局字号(A-/A+,三档,影响整个应用 rem 基准)。T3 隐藏(窄窗塞不下,非核心) */}
+        {/* 阅读:全局字号(A-/A+,三档,影响整个应用 rem 基准) */}
         {tier !== 3 && (
         <div className="flex items-center gap-0.5" data-testid="font-size-control">
           <button
@@ -1183,7 +1206,7 @@ function Header({
         {/* 进度:今日学习能量(= todayXp,软参考 100 满条,无配置目标)+ 连击。
             绿色(brand)= 进度/能量(PRODUCT.md);gold 留给 mastery/crown,这里不用。
             ≥100 时填充 Zap 图标(实心闪电)表示"充满",颜色不变。 */}
-        {xp && !bottomBar && (
+        {xp && (
           <div
             className="flex items-center gap-1.5"
             data-testid="xp-bar"
@@ -1205,7 +1228,7 @@ function Header({
             </span>
           </div>
         )}
-        {xp && !bottomBar && (
+        {xp && (
           <div
             className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand/10"
             data-testid="level-badge"
@@ -1214,7 +1237,7 @@ function Header({
             <span className="text-label font-bold text-brand">Lv.{xp.level}</span>
           </div>
         )}
-        {streak && !bottomBar && <StreakBadge streak={streak} />}
+        {streak && <StreakBadge streak={streak} />}
 
         {/* 配置:设置(最右,惯例位置) */}
         <button
@@ -1227,7 +1250,6 @@ function Header({
         </button>
       </div>
       </div>
-      {bottomBar}
     </header>
   );
 }

@@ -121,14 +121,10 @@ class WebUiActivity : AppCompatActivity() {
         })
 
         card.addView(TextView(this).apply {
-            text = "回到「常用操作」点「启动服务」,或回到 Termux 执行:
-
-bash ~/lookatstudy/start.sh
-
-首次启动打印的链接里有 token,浏览器打开一次即可。"
+            text = "回到「常用操作」点「启动服务」，或回到 Termux 执行：\n\nbash ~/lookatstudy/start.sh\n\n首次启动打印的链接里有 token，浏览器打开一次即可。"
             setTextColor(Color.parseColor(INK_DIM))
             textSize = 13f
-            setLineSpacing(dp(3), 1f)
+            setLineSpacing(dp(3).toFloat(), 1f)
         })
 
         val retry = Button(this).apply {

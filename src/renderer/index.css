@@ -25,48 +25,48 @@
   --brand-dark-rgb: 70 163 2;
   --brand-light: #7ED957; /* #7ed957 hover/浅源色 */
   --brand-light-rgb: 126 217 87;
-  --brand-glow: #58CC0159;
-  --brand-ring: #58CC0126;
+  --brand-glow: #58CC0159;  /* oklch(0.748 0.229 137.6 / 0.35) */
+  --brand-ring: #58CC0126;  /* oklch(0.748 0.229 137.6 / 0.15) */
 
   /* —— accent 蓝(交互/进行中/链接)—— */
   --accent: #1DB0F6;      /* #1cb0f6 */
   --accent-rgb: 28 176 246;
   --accent-dark: #098CDC; /* #0a8cdc */
   --accent-dark-rgb: 10 140 220;
-  --accent-light: #5DC6FF;    /* #5ed4ff 高光位 */
+  --accent-light: #65C6FF;    /* #5ed4ff 高光位 */
   --accent-light-rgb: 94 212 255;
-  --accent-glow: #1DB0F64C;
-  --accent-ring: #1DB0F626;
+  --accent-glow: #1DB0F64C;  /* oklch(0.718 0.151 237.1 / 0.3) */
+  --accent-ring: #1DB0F626;  /* oklch(0.718 0.151 237.1 / 0.15) */
 
   /* —— gold 黄(mastery/皇冠/达成)—— */
   --gold: #FFC801;         /* #ffc800 */
   --gold-rgb: 255 200 0;
-  --gold-dark: #D89700;        /* #d99e00 */
+  --gold-dark: #D59800;        /* #d99e00 */
   --gold-dark-rgb: 217 158 0;
-  --gold-light: #FFDF53;       /* #ffe680 高光位 */
+  --gold-light: #FFE294;       /* #ffe680 高光位 */
   --gold-light-rgb: 255 230 128;
-  --gold-glow: #FFC80173;
-  --gold-ring: #FFC80133;
+  --gold-glow: #FFC80173;  /* oklch(0.857 0.175 88.5 / 0.45) */
+  --gold-ring: #FFC80133;  /* oklch(0.857 0.175 88.5 / 0.2) */
 
   /* —— warning 红(错误/破坏性/overdue SRS)—— */
   --warning: #FF4B4B;      /* #ff4b4b */
   --warning-rgb: 255 75 75;
   --warning-dark: #D01C29;     /* 深源色 */
   --warning-dark-rgb: 230 43 43;
-  --warning-light: #FF756F;    /* 浅源色 */
+  --warning-light: #FF7E77;    /* 浅源色 */
   --warning-light-rgb: 255 117 117;
-  --warning-glow: #FF4B4B4C;
-  --warning-ring: #FF4B4B26;
+  --warning-glow: #FF4B4B4C;  /* oklch(0.671 0.217 25.2 / 0.3) */
+  --warning-ring: #FF4B4B26;  /* oklch(0.671 0.217 25.2 / 0.15) */
   --warning-tint: #FF4B4B1A;   /* 错误背景晕 */
-  --warning-tint-border: #FF4B4B40;
+  --warning-tint-border: #FF4B4B40;  /* oklch(0.671 0.217 25.2 / 0.25) */
 
   /* —— review 橙(SRS 复习/streak 连击,暖端独立于 warning 红)—— */
   /* PRODUCT.md 原 warning #ff4b4b→#ff7a00 渐变,这里拆为两色:warning=红(错误),
      review=橙(连击/复习提醒,非错误)。避免 streak 连击被误读为错误。 */
   --review: #FA6E1D;            /* #ff7a1a 橙 */
   --review-rgb: 255 122 26;
-  --review-glow: #FA6E1D26;
-  --review-tint: #FA6E1D1A;
+  --review-glow: #FA6E1D26;  /* oklch(0.7 0.19 45 / 0.15) */
+  --review-tint: #FA6E1D1A;  /* oklch(0.7 0.19 45 / 0.1) */
 
   /* —— exam 紫(章节考试节点,第6语义色)—— */
   --exam: #A855F7;        /* #a855f7 */
@@ -77,8 +77,8 @@
   --exam-light-rgb: 192 132 252;
   --exam-locked: #524569;    /* #4a3f6b 锁定暗灰紫 */
   --exam-locked-mix: #362F45;  /* 60% exam-locked + surface-1(原 color-mix in oklch,预混兼容旧内核) */
-  --exam-glow: #A855F759;
-  --exam-ring: #A855F726;
+  --exam-glow: #A855F759;  /* oklch(0.627 0.233 303.9 / 0.35) */
+  --exam-ring: #A855F726;  /* oklch(0.627 0.233 303.9 / 0.15) */
 
   /* —— neutral surface ramp(深色优先,v0.6 分栏语汇:三栏色阶分层)——
      分栏不再用描边,改用背景色深浅差传达层级(Linear/Raycast 风):
@@ -127,6 +127,21 @@
      曾有 --sky-* 变量但 canvas 不读它们(死代码),已删除。浅色天空在批次2 实现。 */
 }
 
+/* 广色域增强:oklch 原值(超出 sRGB 的颜色在 P3 屏更鲜艳);不支持 oklch 的老内核回落上面的 hex */
+@supports (color: oklch(0.748 0.229 137.6)) {
+  :root {
+    --accent-light: oklch(0.79 0.13 237);
+    --gold-dark: oklch(0.72 0.16 80);
+    --gold-light: oklch(0.92 0.16 90);
+    --warning: oklch(0.671 0.217 25.2);
+    --warning-light: oklch(0.74 0.18 25);
+    --warning-glow: oklch(0.671 0.217 25.2 / 0.3);
+    --warning-ring: oklch(0.671 0.217 25.2 / 0.15);
+    --warning-tint: oklch(0.671 0.217 25.2 / 0.1);
+    --warning-tint-border: oklch(0.671 0.217 25.2 / 0.25);
+  }
+}
+
 /* —— 全局焦点环(a11y WCAG 2.4.7):键盘聚焦时所有交互元素显示 brand ring。
      限定 button/a/role=button/tabindex,不碰 input/textarea(它们用 focus:border 表焦点)。
      outline 不挤布局;reduced-motion 下被全局 guard 自动同步为瞬时。 —— */
@@ -146,7 +161,7 @@
  * ============================================================ */
 html.light {
   /* —— neutral surface ramp(浅色:reading area 最亮,左栏略沉)—— */
-  --surface-rail: #F1F2F4;
+  --surface-rail: #F1F2F4;  /* oklch(0.96 0.003 270) */
   --surface-rail-rgb: 241 242 244;
   --surface-0:    #FFFFFF;            /* 纯白:modal/drawer */
   --surface-0-rgb: 255 255 255;
@@ -158,9 +173,9 @@ html.light {
   --surface-3-rgb: 234 235 237;
 
   /* —— ink 文字(非纯黑 #000,避免光晕;用 #171717 ~18:1 AAA)—— */
-  --ink:          #181818;
+  --ink: #181818;  /* oklch(0.21 0 0) */
   --ink-rgb: 24 24 24;
-  --ink-strong:   #0A0A0A;
+  --ink-strong: #0A0A0A;  /* oklch(0.145 0 0) */
   --ink-strong-rgb: 10 10 10;
   --ink-muted:    #555555;         /* 次文字 ~5:1 AA */
   --ink-muted-rgb: 85 85 85;
@@ -168,74 +183,94 @@ html.light {
   --ink-faint-rgb: 113 113 113;
 
   /* —— border(浅色:shadcn 0.92 共识)—— */
-  --border:       #E4E4E4;
+  --border: #E4E4E4;  /* oklch(0.92 0 0) */
   --border-rgb: 228 228 228;
-  --border-faint: #EEEEEE;
+  --border-faint: #EEEEEE;  /* oklch(0.95 0 0) */
   --border-faint-rgb: 238 238 238;
 
   /* —— 球体内高光(浅底减弱:0.55→0.3,白底上不需要那么强)—— */
   --inner-highlight: rgb(255 255 255 / 0.3);
 
   /* —— brand 绿(降 L:0.748→0.55,白底 4.55:1 过 AA)—— */
-  --brand: #3C8613;
+  --brand: #3C8613;  /* oklch(0.55 0.16 137.6) */
   --brand-rgb: 60 134 19;
-  --brand-dark: #226700;
+  --brand-dark: #286600;  /* oklch(0.45 0.15 137.6) */
   --brand-dark-rgb: 34 103 0;
-  --brand-light: #559A38;
+  --brand-light: #559A38;  /* oklch(0.62 0.15 137.6) */
   --brand-light-rgb: 85 154 56;
-  --brand-glow: #3C861340;
-  --brand-ring: #3C86132E;
+  --brand-glow: #3C861340;  /* oklch(0.55 0.16 137.6 / 0.25) */
+  --brand-ring: #3C86132E;  /* oklch(0.55 0.16 137.6 / 0.18) */
 
   /* —— accent 蓝(降 L:0.718→0.50,白底 5.56:1 过 AA)—— */
-  --accent: #006CB1;
+  --accent: #006B99;  /* oklch(0.50 0.16 237.1) */
   --accent-rgb: 0 108 177;
-  --accent-dark: #004F98;
+  --accent-dark: #005183;  /* oklch(0.42 0.15 245.4) */
   --accent-dark-rgb: 0 79 152;
-  --accent-light: #0084C2;
+  --accent-light: #0084BB;  /* oklch(0.58 0.14 237) */
   --accent-light-rgb: 0 132 194;
-  --accent-glow: #006CB138;
-  --accent-ring: #006CB12E;
+  --accent-glow: #006B9938;  /* oklch(0.50 0.16 237.1 / 0.22) */
+  --accent-ring: #006B992E;  /* oklch(0.50 0.16 237.1 / 0.18) */
 
   /* —— gold 黄(降 L:0.857→0.65,白底 3.25:1 AA-large;文字用 gold-dark 4.94:1)—— */
-  --gold: #B48800;
+  --gold: #B08900;  /* oklch(0.65 0.15 88.5) */
   --gold-rgb: 180 136 0;
-  --gold-dark: #9B6500;
+  --gold-dark: #946900;  /* oklch(0.55 0.14 80) */
   --gold-dark-rgb: 155 101 0;
-  --gold-light: #C7A01E;
+  --gold-light: #C7A01E;  /* oklch(0.72 0.14 90) */
   --gold-light-rgb: 199 160 30;
-  --gold-glow: #B488004C;
-  --gold-ring: #B4880033;
+  --gold-glow: #B089004C;  /* oklch(0.65 0.15 88.5 / 0.3) */
+  --gold-ring: #B0890033;  /* oklch(0.65 0.15 88.5 / 0.2) */
 
   /* —— warning 红(降 L:0.671→0.50,白底 6.64:1 过 AA)—— */
-  --warning: #BB071E;
+  --warning: #BB071E;  /* oklch(0.50 0.20 25.2) */
   --warning-rgb: 187 7 30;
-  --warning-dark: #9E0000;
+  --warning-dark: #940015;  /* oklch(0.42 0.20 25) */
   --warning-dark-rgb: 158 0 0;
-  --warning-light: #C8393A;
+  --warning-light: #C8393A;  /* oklch(0.56 0.18 25) */
   --warning-light-rgb: 200 57 58;
-  --warning-glow: #BB071E38;
-  --warning-ring: #BB071E2E;
-  --warning-tint: #BB071E14;
-  --warning-tint-border: #BB071E38;
+  --warning-glow: #BB071E38;  /* oklch(0.50 0.20 25.2 / 0.22) */
+  --warning-ring: #BB071E2E;  /* oklch(0.50 0.20 25.2 / 0.18) */
+  --warning-tint: #BB071E14;  /* oklch(0.50 0.20 25.2 / 0.08) */
+  --warning-tint-border: #BB071E38;  /* oklch(0.50 0.20 25.2 / 0.22) */
 
   /* —— review 橙(降 L:0.7→0.55,白底 5.20:1 过 AA)—— */
-  --review: #BD4600;
+  --review: #B84B00;  /* oklch(0.55 0.17 45) */
   --review-rgb: 189 70 0;
-  --review-glow: #BD46001F;
-  --review-tint: #BD460014;
+  --review-glow: #B84B001F;  /* oklch(0.55 0.17 45 / 0.12) */
+  --review-tint: #B84B0014;  /* oklch(0.55 0.17 45 / 0.08) */
 
   /* —— exam 紫(降 L:0.627→0.50,白底 6.66:1 过 AA)—— */
-  --exam: #7D37BD;
+  --exam: #7D37BD;  /* oklch(0.50 0.20 303.9) */
   --exam-rgb: 125 55 189;
-  --exam-dark: #641AA5;
+  --exam-dark: #641AA5;  /* oklch(0.42 0.20 301.9) */
   --exam-dark-rgb: 100 26 165;
-  --exam-light: #905FC0;
+  --exam-light: #905FC0;  /* oklch(0.58 0.15 305.5) */
   --exam-light-rgb: 144 95 192;
-  --exam-locked: #756D86;
+  --exam-locked: #756D86;  /* oklch(0.55 0.04 300) */
   --exam-locked-mix: #A7A2B2;
   --exam-locked-rgb: 117 109 134;
-  --exam-glow: #7D37BD40;
-  --exam-ring: #7D37BD2E;
+  --exam-glow: #7D37BD40;  /* oklch(0.50 0.20 303.9 / 0.25) */
+  --exam-ring: #7D37BD2E;  /* oklch(0.50 0.20 303.9 / 0.18) */
+}
+
+/* 广色域增强:oklch 原值(超出 sRGB 的颜色在 P3 屏更鲜艳);不支持 oklch 的老内核回落上面的 hex */
+@supports (color: oklch(0.748 0.229 137.6)) {
+  html.light {
+    --brand-dark: oklch(0.45 0.15 137.6);
+    --accent: oklch(0.50 0.16 237.1);
+    --accent-dark: oklch(0.42 0.15 245.4);
+    --accent-light: oklch(0.58 0.14 237);
+    --accent-glow: oklch(0.50 0.16 237.1 / 0.22);
+    --accent-ring: oklch(0.50 0.16 237.1 / 0.18);
+    --gold: oklch(0.65 0.15 88.5);
+    --gold-dark: oklch(0.55 0.14 80);
+    --gold-glow: oklch(0.65 0.15 88.5 / 0.3);
+    --gold-ring: oklch(0.65 0.15 88.5 / 0.2);
+    --warning-dark: oklch(0.42 0.20 25);
+    --review: oklch(0.55 0.17 45);
+    --review-glow: oklch(0.55 0.17 45 / 0.12);
+    --review-tint: oklch(0.55 0.17 45 / 0.08);
+  }
 }
 
 /* 左栏(MapRail)游戏化深色场景:light 模式下强制锁回深色 token。
@@ -251,8 +286,8 @@ html.light .map-rail-scope {
   --ink-strong: #FAFAFA;          --ink-strong-rgb: 250 250 250;
   --ink-muted: #9D9EA2;       --ink-muted-rgb: 166 166 176;
   --ink-faint: #707175;      --ink-faint-rgb: 117 117 126;
-  --border: #252629;
-  --border-faint: #1A1A1D;
+  --border: #252629;  /* oklch(0.27 0.005 270) */
+  --border-faint: #1A1A1D;  /* oklch(0.22 0.005 270) */
 }
 
 /* 浅色模式下锁定球的球体光照:浅底上需要深色球才有立体感。

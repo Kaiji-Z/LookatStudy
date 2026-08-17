@@ -314,6 +314,32 @@ function ContentTab({
     });
   }, [onQuoteToChat, onSaveContentNote]);
 
+  // 触屏长按选字/拖选区句柄不触发 mouseup:selectionchange(防抖)走同一检测,
+  // 手机上选完松手按钮才会出现(桌面 mouseup 仍即时响应,行为不变)。
+  // 选区清空时延迟 250ms 收按钮 —— 触屏点按钮的 tap 会先清选区再派发 click,立即隐藏会吃掉点击。
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+    const onChange = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const hasText = (window.getSelection()?.toString().trim().length ?? 0) >= 2;
+        if (hasText) {
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+          handleMouseUp();
+        } else if (!hideTimer) {
+          hideTimer = setTimeout(() => setQuoteBtn((cur) => (cur ? null : cur)), 250);
+        }
+      }, 250);
+    };
+    document.addEventListener("selectionchange", onChange);
+    return () => {
+      document.removeEventListener("selectionchange", onChange);
+      if (timer) clearTimeout(timer);
+      if (hideTimer) clearTimeout(hideTimer);
+    };
+  }, [handleMouseUp]);
+
   const handleQuoteClick = useCallback(() => {
     if (!quoteBtn || !onQuoteToChat) return;
     const truncated = quoteBtn.text.length > 200 ? quoteBtn.text.slice(0, 200) + "…" : quoteBtn.text;

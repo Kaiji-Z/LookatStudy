@@ -213,6 +213,31 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
     });
   }, [onSaveChatNote, threadId]);
 
+  // 触屏长按选字不触发 mouseup:selectionchange(防抖)走同一检测(与 NotebookPanel 同款);
+  // 选区清空延迟 250ms 收按钮,给 tap 的 click 留竞态窗口。
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+    const onChange = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const hasText = (window.getSelection()?.toString().trim().length ?? 0) >= 2;
+        if (hasText) {
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+          handleChatMouseUp();
+        } else if (!hideTimer) {
+          hideTimer = setTimeout(() => setChatNoteBtn((cur) => (cur ? null : cur)), 250);
+        }
+      }, 250);
+    };
+    document.addEventListener("selectionchange", onChange);
+    return () => {
+      document.removeEventListener("selectionchange", onChange);
+      if (timer) clearTimeout(timer);
+      if (hideTimer) clearTimeout(hideTimer);
+    };
+  }, [handleChatMouseUp]);
+
   const handleSaveChatNote = useCallback(() => {
     if (!chatNoteBtn || !onSaveChatNote) return;
     const text = chatNoteBtn.text.length > 200 ? chatNoteBtn.text.slice(0, 200) + "…" : chatNoteBtn.text;

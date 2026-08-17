@@ -49,7 +49,8 @@ class HelpActivity : AppCompatActivity() {
 
     private val infoCmds = listOf(
         Cmd("查看日志(最近 50 行)", "tail -50 ~/lookatstudy/server.log", ACCENT),
-        Cmd("显示访问链接(带 token)", "cat ~/lookatstudy/url.txt", BRAND),
+        // url.txt 只在 serve-token 落盘后由 start.sh 写,首启竞态可能缺席 → status.sh 兜底显示链接
+        Cmd("显示访问链接(带 token)", "cat ~/lookatstudy/url.txt 2>/dev/null || bash ~/lookatstudy/status.sh", BRAND),
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {

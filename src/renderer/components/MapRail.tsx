@@ -1070,8 +1070,8 @@ function MapSection({
     }
     suppressClickUntilRef.current = 0;
     pointerRef.current = { track: { startX: e.clientX, startY: e.clientY }, id: e.pointerId, dragging: false, nodeId };
-    const cr = container.getBoundingClientRect();
-    island.beginDrag(nodeId, e.clientX - cr.left, e.clientY - cr.top);
+    // beginDrag 延迟到 move 里判定为拖拽才开始:pan-y 下浏览器可能接管垂直滚动(pointercancel),
+    // 提前 beginDrag 会让球跟着手指跳一下再弹回。
   };
   const onBallPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const p = pointerRef.current;
@@ -1082,7 +1082,9 @@ function MapSection({
     if (!p.dragging && classifyPointer(p.track, e.clientX, e.clientY) === "drag") {
       p.dragging = true;
       e.currentTarget.style.zIndex = "40";
+      island.beginDrag(p.nodeId, e.clientX - container.getBoundingClientRect().left, e.clientY - container.getBoundingClientRect().top);
     }
+    if (!p.dragging) return; // 未过拖拽阈值:不动球(垂直手势让给滚动)
     const cr = container.getBoundingClientRect();
     island.moveDrag(e.clientX - cr.left, e.clientY - cr.top);
   };
@@ -1250,6 +1252,7 @@ function MapSection({
             <div
               key={lesson.id}
               data-node-id={lesson.id}
+              data-noswipe="" /* 球上横滑=拖球(物理交互),不让 T3 切栏手势接管 */
               className={physics
                 ? `absolute hover:z-30 will-change-transform ${lessonLocked(lesson) ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"}`
                 : "absolute balloon-bob hover:z-30"}
@@ -1257,7 +1260,9 @@ function MapSection({
                 left: node.x - NODE_W / 2,
                 top: node.y - NODE_H / 2 + 10, // 球心在 wrapper 内偏移 28 → +10 使视觉球心 = 物理圆心
                 width: NODE_W,
-                ...(physics ? { touchAction: "none" as const } : {
+                // pan-y:垂直手势归浏览器滚动(手机上手指落球也能滑地图),水平手势归物理拖拽。
+                // 曾经 touch-action:none —— 手机想上下滚动、指尖落在球上时滚动被吞(#6)。
+                ...(physics ? { touchAction: "pan-y" as const } : {
                   "--bob-delay": bobDelay,
                   "--bob-duration": bobDuration,
                 } as CSSProperties),

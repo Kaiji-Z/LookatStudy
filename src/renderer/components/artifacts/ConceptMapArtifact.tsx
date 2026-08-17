@@ -14,11 +14,11 @@
  *   - 节点宽度按 label 长度自适应,dagre 据此布局不重叠
  *   - 缩放 + 滚动视口(同 mermaid:大图可缩放查看)
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dagre from "dagre";
 import { Share2, AlertTriangle } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
-import { useDragPan } from "../../lib/useDragPan.js";
+import { useTouchPanPinch } from "../../lib/useTouchPanPinch.js";
 
 interface ConceptMapData {
   artifactType: "concept_map";
@@ -119,15 +119,27 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
   const t = useLang();
   const layout = useMemo(() => computeLayout(d), [d]);
   const [zoom, setZoom] = useState(1);
-  const dragPan = useDragPan();
+  /* 触控/鼠标统一视口控制(#1):单指平移 + 双指捏合缩放(旧实现只有 mouse 事件,
+     手机上被 touch-action:pinch-zoom 拦死单指,拖不动看不全) */
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const panPinch = useTouchPanPinch(
+    useCallback((factor: number) => {
+      setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z * factor).toFixed(3))));
+    }, []),
+  );
+  // 窄屏初始适宽:内容比视口宽时自动缩到整图可见(手机一眼看全,再捏合看细节)
   useEffect(() => {
-    window.addEventListener("mousemove", dragPan.onMouseMove);
-    window.addEventListener("mouseup", dragPan.onMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", dragPan.onMouseMove);
-      window.removeEventListener("mouseup", dragPan.onMouseUp);
+    const el = viewportRef.current;
+    if (!el) return;
+    const fit = () => {
+      const ratio = (el.clientWidth - 16) / layout.width;
+      if (ratio < 1) setZoom(Math.max(MIN_ZOOM, +ratio.toFixed(2)));
     };
-  }, [dragPan.onMouseMove, dragPan.onMouseUp]);
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [layout.width]);
 
   const zoomIn = useCallback(() => setZoom((z) => Math.min(MAX_ZOOM, +(z + ZOOM_STEP).toFixed(2))), []);
   const zoomOut = useCallback(() => setZoom((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2))), []);
@@ -181,12 +193,16 @@ export function ConceptMapArtifact({ data }: { data: unknown }) {
           不用 flex 居中(flex 会抑制横向溢出滚动);不用 mx-auto(内容超容器时算负 margin 裁内容)。
           左对齐 + overflow-auto,zoom=1 时居中靠外层 margin 实现,放大后左上对齐可滚到全部。 */}
       <div
-        ref={dragPan.containerRef}
-        onMouseDown={dragPan.onMouseDown}
+        ref={viewportRef}
+        onPointerDown={panPinch.onPointerDown}
+        onPointerMove={panPinch.onPointerMove}
+        onPointerUp={panPinch.onPointerUp}
+        onPointerCancel={panPinch.onPointerUp}
         onWheel={handleWheel}
-        className={`bg-surface-0/40 rounded-lg p-2 overflow-auto min-h-[160px] max-h-[500px] select-none ${dragPan.isDragging ? "cursor-grabbing" : "cursor-grab"}`}
-        style={{ touchAction: "pinch-zoom" }}
+        className={`bg-surface-0/40 rounded-lg p-2 overflow-auto min-h-[160px] max-h-[500px] select-none cursor-grab ${panPinch.isPanning() ? "cursor-grabbing" : ""}`}
+        style={{ touchAction: "none" }}
         data-testid="conceptmap-render-area"
+        data-noswipe="" /* 视口内手势归平移/捏合,T3 切栏滑动手势不接管 */
       >
         <div
           style={{

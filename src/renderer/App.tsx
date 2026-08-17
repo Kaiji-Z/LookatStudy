@@ -31,7 +31,7 @@ import { useToast } from "./components/Toast.js";
 import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
 import { useLang, useLangValue } from "./lib/i18n.js";
 import { useWindowTier } from "./lib/useWindowTier.js";
-import { t2SideFromT3, type T2Side, type T3Pane } from "./lib/paneTiers.js";
+import { t2SideFromT3, swipeTarget, type T2Side, type T3Pane } from "./lib/paneTiers.js";
 import { useFocusTrap } from "./lib/useFocusTrap.js";
 import { CelebrationLayer } from "./components/CelebrationLayer.js";
 import { celebrate } from "./lib/celebration.js";
@@ -132,6 +132,29 @@ export default function App() {
     if (tier === 1) setRightPaneVisible((v) => !v);
     else if (tier === 2) setT2Side((s2) => (s2 === "notebook" ? "rail" : "notebook"));
     else setT3Pane((p) => (p === "notebook" ? "chat" : "notebook"));
+  };
+
+  /* T3 手势滑屏切栏:水平滑动(判定在纯函数 swipeTarget,verify-pane-tiers 覆盖)
+     * 切换 地图↔对话↔笔记。起点在 data-noswipe 元素(地图球/概念图视口等自带
+     * 横向交互)或多指时不接管。 */
+  const swipeStartRef = useRef<{ x: number; y: number; multi: boolean; noswipe: boolean } | null>(null);
+  const onPanesTouchStart = (e: React.TouchEvent) => {
+    if (tier !== 3) return;
+    const t = e.touches[0];
+    swipeStartRef.current = {
+      x: t.clientX,
+      y: t.clientY,
+      multi: e.touches.length > 1,
+      noswipe: !!(e.target as HTMLElement).closest?.("[data-noswipe]"),
+    };
+  };
+  const onPanesTouchEnd = (e: React.TouchEvent) => {
+    const st = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!st || st.multi || st.noswipe || tier !== 3) return;
+    const t = e.changedTouches[0];
+    const target = swipeTarget(t3PaneRef.current, t.clientX - st.x, t.clientY - st.y);
+    if (target) setT3Pane(target);
   };
   // Cmd+K 命令面板(M2)
   const [showCommandPalette, setShowCommandPalette] = useState(false);
@@ -692,9 +715,11 @@ export default function App() {
         onToggleLeft={toggleLeftPane}
         onToggleRight={toggleRightPane}
         tier={tier}
-        centerSlot={tier === 3 ? (
-          <div
-            className="col-start-2 justify-self-center flex items-center gap-1 p-1 rounded-full bg-ink/5"
+        bottomBar={tier === 3 ? (
+          /* T3 第二行:满宽三栏切换栏。整行等分三钮(图标+文字),标准移动 tab 高度,
+             一眼可见可切。上行仍是原标题栏内容(压缩)。 */
+          <nav
+            className="grid grid-cols-3 gap-1 px-3 pb-2"
             data-testid="t3-pane-switcher"
             role="tablist"
             aria-label={t("pane.switcher")}
@@ -708,24 +733,27 @@ export default function App() {
                 key={k}
                 role="tab"
                 aria-selected={t3Pane === k}
-                aria-label={label}
-                title={label}
                 data-testid={testid}
                 onClick={() => setT3Pane(k)}
-                className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors ${
-                  t3Pane === k ? "bg-brand/15 text-brand" : "text-ink-muted hover:bg-black/5 dark:hover:bg-white/10"
+                className={`h-11 flex items-center justify-center gap-1.5 rounded-lg text-label font-bold transition-colors ${
+                  t3Pane === k ? "bg-brand/15 text-brand" : "text-ink-muted active:bg-ink/10"
                 }`}
               >
                 <Icon className="w-4 h-4" />
+                <span>{label}</span>
               </button>
             ))}
-          </div>
+          </nav>
         ) : undefined}
       />
 
       {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
 
-      <div className="flex-1 flex min-h-0 min-w-0">
+      <div
+        className="flex-1 flex min-h-0 min-w-0"
+        onTouchStart={onPanesTouchStart}
+        onTouchEnd={onPanesTouchEnd}
+      >
 
 
       {/* 左栏:MapRail(header 下方首栏,tab 切换地图/导入;T3 单栏全宽) */}
@@ -750,6 +778,8 @@ export default function App() {
             if (chat.streaming) return;
             const node = tree.find((n) => n.id === id);
             if (node) handleLessonClick(node);
+            // T3 单栏:选完球自动切到对话栏(手机习惯:地图是选择器,内容在对话里看)
+            if (tier === 3) setT3Pane("chat");
           }}
           onOpenReview={() => setShowReviewDrawer(true)}
           onSelectCourse={(id) => guardedNav(() => { setSelectedCourseId(id); refreshAll(); })}
@@ -1063,7 +1093,7 @@ function Header({
   onToggleLeft,
   onToggleRight,
   tier,
-  centerSlot,
+  bottomBar,
 }: {
   streak: Streak | null;
   xp: XpStatus | null;
@@ -1076,43 +1106,34 @@ function Header({
   onToggleRight: () => void;
   /** 布局档位(1/2/3):T3 单栏时隐藏视图切换组(顶部 switcher 已覆盖)与字号控制,header 才塞得进窄窗 */
   tier?: 1 | 2 | 3;
-  /** 居中槽(T3 = 面板切换组):有值时 header 变三列网格,切换组真居中、不再浮动遮挡内容 */
-  centerSlot?: React.ReactNode;
+  /** 第二行(T3 = 满宽三栏切换栏):有值时标题栏变两行,下行由调用方填充 */
+  bottomBar?: React.ReactNode;
 }) {
   const t = useLang();
   return (
-    <header
-      className={`app-header pt-2.5 pb-3 items-center shrink-0 ${
-        centerSlot ? "px-4 grid grid-cols-[1fr_auto_1fr]" : "px-6 flex justify-between"
-      }`}
-    >
+    <header className="app-header shrink-0 flex flex-col">
+      {/* 行1:原标题栏内容(T3 时压缩:标题缩字号、xp 只留数字,给行2 让高度) */}
+      <div className={`flex items-center pt-2.5 ${bottomBar ? "pb-1.5 px-4" : "pb-3 px-6"} justify-between`}>
       {/* 左:项目名。手机端习惯:logo 常驻左上,宽屏 text-body / 窄屏收成 text-label
-          并 truncate 让位 —— 切换组与设置按钮的尺寸永不让(中间列固定)。 */}
-      {centerSlot ? (
-        <div className="col-start-1 flex items-center gap-2 min-w-0">
-          <h1 className="text-label font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none min-w-0 truncate">
-            Lookat<span className="text-brand">Study</span>
-          </h1>
-          {xp && (
-            <div className="flex items-center gap-1 shrink-0" data-testid="xp-bar" title={t("header.energy")}>
-              <Zap
-                className={`w-3.5 h-3.5 text-brand ${xp.todayXp >= 100 ? "energy-breathe" : ""}`}
-                fill={xp.todayXp >= 100 ? "currentColor" : "none"}
-                aria-hidden="true"
-              />
-              <span className="text-label font-bold tabular-nums text-brand">{xp.todayXp}</span>
-            </div>
-          )}
-        </div>
-      ) : (
-        <h1 className="text-body font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none">
+          并 truncate 让位;T3 时 xp 只留紧凑数字(满条/等级/连击放不下,精简)。 */}
+      <div className="flex items-center gap-2 min-w-0">
+        <h1 className={`${bottomBar ? "text-label" : "text-body"} font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 select-none min-w-0 truncate`}>
           Lookat<span className="text-brand">Study</span>
         </h1>
-      )}
-      {centerSlot}
+        {xp && bottomBar && (
+          <div className="flex items-center gap-1 shrink-0" data-testid="xp-bar" title={t("header.energy")}>
+            <Zap
+              className={`w-3.5 h-3.5 text-brand ${xp.todayXp >= 100 ? "energy-breathe" : ""}`}
+              fill={xp.todayXp >= 100 ? "currentColor" : "none"}
+              aria-hidden="true"
+            />
+            <span className="text-label font-bold tabular-nums text-brand">{xp.todayXp}</span>
+          </div>
+        )}
+      </div>
 
       {/* 右:控件按"视图 → 阅读 → 进度 → 配置"分组(T3 时 justify-self-end 贴右列) */}
-      <div className={`flex items-center gap-3 ${centerSlot ? "col-start-3 justify-self-end" : ""}`}>
+      <div className="flex items-center gap-3">
         {/* 视图:左右栏显隐(T3 单栏档隐藏:顶部 switcher 已覆盖,header 窄窗塞不下) */}
         {tier !== 3 && (
         <div className="flex items-center gap-0.5">
@@ -1162,7 +1183,7 @@ function Header({
         {/* 进度:今日学习能量(= todayXp,软参考 100 满条,无配置目标)+ 连击。
             绿色(brand)= 进度/能量(PRODUCT.md);gold 留给 mastery/crown,这里不用。
             ≥100 时填充 Zap 图标(实心闪电)表示"充满",颜色不变。 */}
-        {xp && !centerSlot && (
+        {xp && !bottomBar && (
           <div
             className="flex items-center gap-1.5"
             data-testid="xp-bar"
@@ -1184,7 +1205,7 @@ function Header({
             </span>
           </div>
         )}
-        {xp && !centerSlot && (
+        {xp && !bottomBar && (
           <div
             className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand/10"
             data-testid="level-badge"
@@ -1193,7 +1214,7 @@ function Header({
             <span className="text-label font-bold text-brand">Lv.{xp.level}</span>
           </div>
         )}
-        {streak && !centerSlot && <StreakBadge streak={streak} />}
+        {streak && !bottomBar && <StreakBadge streak={streak} />}
 
         {/* 配置:设置(最右,惯例位置) */}
         <button
@@ -1205,6 +1226,8 @@ function Header({
           <Settings className="w-4 h-4" />
         </button>
       </div>
+      </div>
+      {bottomBar}
     </header>
   );
 }

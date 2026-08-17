@@ -6,11 +6,12 @@
  *
  * 这是 v0.2 把"📝练习 tab"并入对话流的核心:练习题作为 Generative UI 产物出现。
  */
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { celebrate } from "../../lib/celebration.js";
 import { ListChecks, Check, X, AlertTriangle, HelpCircle, RotateCcw, Sparkles, CheckCircle2, ArrowRight } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
 import { getPostQuizActions, type PostQuizActionId } from "../../lib/post-quiz-actions.js";
+import { quizProgressKey, loadQuizProgress, saveQuizProgress } from "../../lib/quiz-progress.js";
 import type { LucideIcon } from "lucide-react";
 
 interface QuizQuestion {
@@ -74,10 +75,18 @@ export function QuizArtifact({
 }) {
   const d = data as QuizData;
   const t = useLang();
-  const [current, setCurrent] = useState(0);
+  /* 进度跨挂载持久化(#2):T3 切栏卸载聊天面板会让本地 state 蒸发,
+     判完分的卡切回来变回未作答。以题目内容哈希为键恢复 {current, score};
+     副作用(判分上报/庆祝)只在提交点击时发生,恢复不重放。 */
+  const progressKey = useMemo(() => quizProgressKey(d), [d]);
+  const saved = useMemo(() => loadQuizProgress(progressKey), [progressKey]);
+  const [current, setCurrent] = useState(saved?.current ?? 0);
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
-  const [score, setScore] = useState({ correct: 0, total: 0 });
+  const [score, setScore] = useState(saved?.score ?? { correct: 0, total: 0 });
+  useEffect(() => {
+    saveQuizProgress(progressKey, { current, score });
+  }, [progressKey, current, score]);
 
   if (current >= d.questions.length) {
     // 全部做完

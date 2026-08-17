@@ -40,3 +40,13 @@ export type T3Pane = "rail" | "chat" | "notebook";
 export function t2SideFromT3(pane: T3Pane): T2Side {
   return pane === "rail" ? "rail" : "notebook";
 }
+
+/** T3 手势切栏的判定(纯函数,verify-pane-tiers 覆盖):
+ *  水平位移 ≥60px 且横向明显占优(≥1.6×纵向)才算切栏手势;
+ *  返回目标栏,不构成手势返回 null。左滑=下一栏,右滑=上一栏。 */
+export function swipeTarget(pane: T3Pane, dx: number, dy: number): T3Pane | null {
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6) return null; // BROKEN
+  const order: T3Pane[] = ["rail", "chat", "notebook"];
+  const next = order.indexOf(pane) + (dx < 0 ? 1 : -1);
+  return next >= 0 && next < order.length ? order[next]! : null;
+}

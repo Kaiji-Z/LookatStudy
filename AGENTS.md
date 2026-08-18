@@ -98,7 +98,7 @@ npm run verify:core && npx vite build && npm run self-test
 ## Release process
 
 1. Fold `[Unreleased]` in `CHANGELOG.md` into a versioned section and bump `version` in `package.json` (one commit, `chore(release): vX.Y.Z`).
-2. Push tag `vX.Y.Z`. `.github/workflows/package.yml` then builds the 3-OS matrix (NSIS exe / arm64 dmg / AppImage + deb) and attaches everything to that tag's GitHub Release automatically.
+2. Push tag `vX.Y.Z` — `package.yml` (3-OS matrix) and `android-build.yml` both auto-trigger on `v*`. **Neither creates the Release**: their attach steps (`gh release upload`) fail with `release not found` until the Release object exists. So right after pushing the tag, run `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <file>` (notes drafted per human-writing + check_prose, English first). If the attach jobs already failed, `gh run rerun <id> --failed` after creating the release — builds are cached, only attach re-runs.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
 5. `ci.yml` runs oxlint + both typechecks + 83 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.

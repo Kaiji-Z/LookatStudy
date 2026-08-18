@@ -101,8 +101,8 @@ Banned: `text-[10px]`, `text-[11px]`, `text-xs` (all eliminated). When adding te
 ### Component primitives (v0.6)
 - **`btn-3d-brand`** = primary action everywhere (no `btn-3d-blue`, removed as orphan).
 - **`btn-icon-3d-brand` / `-warning`** = circular 3D icon buttons (send/stop). `btn-3d-brand` is rectangular (`rounded-2xl`); circular icon buttons use this vocabulary to avoid distortion.
-- **`ConfirmCard`** — inline confirmation popover (portal to body), replaces ALL native `confirm()`. Danger actions get warning-red left stripe.
-- **`Toast`** with `severity` prop (success/error/warning/info/default), each with semantic left-stripe + lucide icon, exit animation.
+- **`ConfirmCard`** — inline confirmation popover (portal to body), replaces ALL native `confirm()`. Danger actions get a full warning-colored border; regular confirmations stay neutral (the confirm button already carries the semantic color).
+- **`Toast`** with `severity` prop (success/error/warning/info/default), pill capsule with semantic lucide icon + tint, exit animation (no side-stripes — design-system ban).
 - **`GlobalTooltip`** — portal-based, follows mouse, left-bottom anchor. Any element with `data-tooltip` attribute gets hover tooltip. Use this for truncated titles, mode explanations, node names.
 
 ## What this is not

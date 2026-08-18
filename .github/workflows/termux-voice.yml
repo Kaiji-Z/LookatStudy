@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # npm trusted publishing(OIDC)需要;provenance 同吃这个
 
 jobs:
   build-and-attach:
@@ -46,6 +47,15 @@ jobs:
       - name: npm deps (tar-stream for the build script + JS wrapper layer)
         run: npm install --no-audit --no-fund
 
+      - name: Resolve release tag early
+        id: rel0
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.release_tag }}" ]; then
+            echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build engine package
         run: node scripts/build-termux-voice.mjs
         env:
@@ -53,6 +63,7 @@ jobs:
           ANDROID_NDK: /usr/local/lib/android/sdk/ndk/28.2.13676358
           CMAKE_BIN: cmake
           NINJA_BIN: ninja
+          RELEASE_TAG: ${{ steps.rel0.outputs.tag }}
 
       - name: Resolve release tag
         id: rel
@@ -70,3 +81,14 @@ jobs:
           TAG="${{ steps.rel.outputs.tag }}"
           gh release upload "$TAG" .termux-build/lookatstudy-termux-voice.tar.gz --clobber
           gh release view "$TAG" --json assets --jq '.assets[].name'
+
+      # npm 分发(npmmirror 自动同步,Termux 安装器主源)。
+      # trusted publishing(OIDC):零 token——npmjs.com 上为包名配置 pending publisher
+      # (repo=Kaiji-Z/LookatStudy, workflow=termux-voice.yml)后,首Publish即认领。
+      # npm CLI ≥11.5.1 才认 OIDC(Node 22 自带 npm 10),先升级。
+      - name: Publish engine package to npm (trusted publishing)
+        run: |
+          npm install -g npm@latest >/dev/null
+          npm --version
+          cd .termux-build/stage/sherpa-onnx-node
+          npm publish --access public

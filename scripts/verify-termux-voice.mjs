@@ -30,6 +30,7 @@ console.log("T1 三端资产名一致");
   const installer = read("scripts/install-termux.sh");
   const wf = read(".github/workflows/termux-voice.yml");
   assert.ok(build.includes(`"${ASSET}"`), "构建脚本产物名");
+  assert.ok(build.includes('"lookatstudy-termux-voice"'), "npm 包名(lookatstudy-termux-voice)");
   assert.ok(installer.includes(`download/${ASSET}`), "安装器下载 URL");
   assert.ok(wf.includes("sherpa-onnx-node-android-arm64-*.tar.gz") || wf.includes(ASSET), "工作流挂载通配");
   ok("资产名统一为 " + ASSET);
@@ -88,6 +89,31 @@ console.log("T5 构建产物被 git 忽略");
   const gi = read(".gitignore");
   assert.ok(/\.termux-build/.test(gi), ".gitignore 缺 .termux-build/");
   ok("构建目录已忽略");
+}
+
+// ---------------------------------------------------------------------------
+console.log("T6 npm 分发(npmmirror 主源 + trusted publishing)");
+{
+  const installer = read("scripts/install-termux.sh");
+  const wfVoice = read(".github/workflows/termux-voice.yml");
+  const wfAndroid = read(".github/workflows/android-build.yml");
+  // 安装器:两个产物都走 npm_tarball 主源 + --strip-components=1 解包
+  assert.ok(/npm_tarball lookatstudy-mobile/.test(installer), "便携包走 npm 镜像主源");
+  assert.ok(/npm_tarball lookatstudy-termux-voice/.test(installer), "语音包走 npm 镜像主源");
+  assert.ok(installer.includes("registry.npmmirror.com/$1/latest"), "latest 元数据端点");
+  const strips = installer.match(/--strip-components=1/g) ?? [];
+  assert.ok(strips.length >= 2, "两个 tgz 解包剥 package/ 前缀");
+  // CI:trusted publishing(OIDC)——id-token 权限 + npm≥11.5.1 升级 + 无 token 残留
+  for (const [name, wf] of [["termux-voice", wfVoice], ["android-build", wfAndroid]]) {
+    assert.ok(wf.includes("id-token: write"), `${name}: id-token 权限`);
+    assert.ok(wf.includes("npm install -g npm@latest"), `${name}: npm 升级到 OIDC 版`);
+    assert.ok(/npm publish .*--access public/.test(wf), `${name}: publish 步`);
+    assert.ok(!wf.includes("NODE_AUTH_TOKEN"), `${name}: 无 token 残留`);
+  }
+  const build = read("scripts/build-termux-voice.mjs");
+  assert.ok(build.includes("Kaiji-Z/LookatStudy.git"), "repository.url 指向本仓库");
+  assert.ok(wfVoice.includes("RELEASE_TAG:"), "引擎包版本随 Release tag");
+  ok("双源安装 + 双工作流 OIDC 发布");
 }
 
 console.log(`\nverify-termux-voice: ${passed} 组全绿 ✓`);

@@ -16,6 +16,11 @@ GH_VOICE="https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/lookat
 # 直连优先,失败再走代理前缀(镜像只做回退:KaijiBot 教训是镜像同步延迟会坏事,大头收益在 apt 的 TUNA)
 DL_PREFIXES=("" "https://gh-proxy.com/" "https://ghproxy.net/" "https://ghfast.top/")
 
+# npmmirror(阿里,自动同步 npm)解析包的 latest tarball 地址;空输出=未同步/网络失败
+npm_tarball() {
+  curl -sfL --connect-timeout 8 --max-time 20 "https://registry.npmmirror.com/$1/latest"     | sed -n 's/.*"tarball":"\([^"]*\)".*//p'
+}
+
 info() { printf '\033[1m[*]\033[0m %s\n' "$*"; }
 ok()   { printf '\033[38;2;0;229;204m[✓]\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m[!]\033[0m %s\n' "$*"; }
@@ -68,7 +73,17 @@ start_service() {
 download_bundle() {
   mkdir -p "$APP_DIR"
   cd "$APP_DIR"
-  info "下载便携包(约 5MB,失败自动换源)..."
+  info "下载便携包(约 5MB)..."
+  # 主源:npm 镜像(npmmirror 同步 npm 发布,国内直连快;tgz 需剥 package/ 前缀)
+  local tb
+  tb=$(npm_tarball lookatstudy-mobile)
+  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb"; then
+    tar -xzf mobile.tgz --strip-components=1
+    rm -f mobile.tgz
+    ok "便携包就位(npm 镜像): $APP_DIR"
+    return 0
+  fi
+  info "npm 镜像未命中,回退 GitHub 直连+代理链..."
   local dl_ok=0 p=""
   for p in "${DL_PREFIXES[@]}"; do
     if curl -fL --connect-timeout 10 --retry 2 -o ls.zip "${p}${GH_ASSET}"; then
@@ -88,7 +103,19 @@ download_bundle() {
 
 install_voice() {
   mkdir -p "$APP_DIR/node_modules"
-  info "下载 Termux 语音引擎包(约 12MB,失败自动换源)..."
+  info "下载 Termux 语音引擎包(约 12MB)..."
+  # 主源:npm 镜像(tgz 剥 package/ 前缀,解出 sherpa-onnx-node/ 目录)
+  local tb
+  tb=$(npm_tarball lookatstudy-termux-voice)
+  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o voice.tgz "$tb"; then
+    tar -xzf voice.tgz --strip-components=1 -C "$APP_DIR/node_modules"
+    rm -f voice.tgz
+    ok "语音引擎就位(npm 镜像): $APP_DIR/node_modules/sherpa-onnx-node"
+    info "语音模型(朗读约 430MB + 听写约 200MB)在应用内下载: 设置 → 语音能力"
+    info "装完模型重启服务生效: bash ~/lookatstudy/start.sh"
+    return 0
+  fi
+  info "npm 镜像未命中,回退 GitHub 直连+代理链..."
   local dl_ok=0 p=""
   for p in "${DL_PREFIXES[@]}"; do
     if curl -fL --connect-timeout 10 --retry 2 -o voice.tar.gz "${p}${GH_VOICE}"; then

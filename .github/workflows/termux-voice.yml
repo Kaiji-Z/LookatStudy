@@ -1,0 +1,68 @@
+name: Termux Voice
+
+# 路 3:CI 交叉编译 Termux(bionic arm64)语音引擎包,挂到 Release。
+# 产物 sherpa-onnx-node-android-arm64-*.tar.gz(~12MB):
+#   上游 C-API NAPI 绑定(NDK 编译)+ k2-fsa 官方 android 预编译双 .so + npm JS 包装层。
+# 用户侧零编译:install-termux.sh 下载解压即用(构建细节见 scripts/build-termux-voice.mjs 头注)。
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "挂载到哪个 Release(如 v0.12.1)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-attach:
+    name: Build termux voice engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install toolchain (cmake/ninja/NDK)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build
+          cmake --version
+          ninja --version
+          yes | sdkmanager "ndk;28.2.13676358" >/dev/null
+          ls /usr/local/lib/android/sdk/ndk/
+
+      - name: npm deps (tar-stream for the build script + JS wrapper layer)
+        run: npm install --no-audit --no-fund
+
+      - name: Build engine package
+        run: node scripts/build-termux-voice.mjs
+        env:
+          GITHUB_ACTIONS: "1"
+          ANDROID_NDK: /usr/local/lib/android/sdk/ndk/28.2.13676358
+          CMAKE_BIN: cmake
+          NINJA_BIN: ninja
+
+      - name: Resolve release tag
+        id: rel
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.release_tag }}" ]; then
+            echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.rel.outputs.tag }}"
+          gh release upload "$TAG" .termux-build/sherpa-onnx-node-android-arm64-*.tar.gz --clobber
+          gh release view "$TAG" --json assets --jq '.assets[].name'

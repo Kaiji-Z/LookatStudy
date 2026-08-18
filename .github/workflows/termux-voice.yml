@@ -68,5 +68,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.rel.outputs.tag }}"
-          gh release upload "$TAG" .termux-build/sherpa-onnx-node-android-arm64-*.tar.gz --clobber
+          gh release upload "$TAG" .termux-build/lookatstudy-termux-voice.tar.gz --clobber
           gh release view "$TAG" --json assets --jq '.assets[].name'

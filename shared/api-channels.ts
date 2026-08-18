@@ -38,6 +38,7 @@ export const API_CHANNELS: Record<string, string> = {
   listExercises: "exercise:list",
   submitExerciseAnswer: "exercise:submit",
   examPrepare: "exam:prepare",
+  examRegenerate: "exam:regenerate",
   examGetStatus: "exam:getStatus",
   examStartAttempt: "exam:startAttempt",
   examRecordAnswer: "exam:recordAnswer",

@@ -109,6 +109,43 @@ export function prepareExam(db: Db, examNodeId: string, locale?: string | null):
 }
 
 /**
+ * 重新生成题库:删旧题 + 重启后台生成。
+ * - 在飞生成中 → no-op(共享同一次生成,不删题)
+ * - 悬挂 attempt 先按"未答=错"判死(与"离开即终止"规则一致)
+ * - attempt 档案与 progress.crownLevel(历史星数)保留——重新出题不否定历史成绩
+ * - 旧题删除后,历史 attempt 的逐题回顾靠判分时快照的 prompt/options 自包含
+ */
+export function regenerateExam(db: Db, examNodeId: string, locale?: string | null): ExamStatus {
+  const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
+  if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
+
+  // 在飞生成 → 共享同一次生成,不做任何变更
+  const inFlight = getPromise(examNodeId);
+  if (inFlight) {
+    const p = peek(examNodeId);
+    return p
+      ? { nodeId: examNodeId, ...p }
+      : { nodeId: examNodeId, status: "generating", done: 0, total: 0, error: null };
+  }
+
+  // 悬挂 attempt 判死(未答=错,terminated)——旧题即将删除,不能留未结账的场次
+  const dangling = latestUnfinishedAttempt(db, examNodeId);
+  if (dangling) {
+    gradeAndFinalize(db, examNodeId, dangling, safeParseRecord(dangling.answersJson), true);
+  }
+
+  db.delete(exercisesTable).where(eq(exercisesTable.nodeId, examNodeId)).run();
+
+  // generateExamBank 的同步前缀里 setGenerating 会覆盖 store 旧条目(ready/failed 复位)
+  const p = generateExamBank(db, examNodeId, locale);
+  setPromise(examNodeId, p);
+  const state = peek(examNodeId);
+  return state
+    ? { nodeId: examNodeId, ...state }
+    : { nodeId: examNodeId, status: "generating", done: 0, total: 0, error: null };
+}
+
+/**
  * 查状态 + 就绪元信息 + 最新 attempt。
  * 悬挂 attempt(崩溃遗留)在此自动按"未答=错"判死。
  */
@@ -405,6 +442,9 @@ function gradeAndFinalize(
       correctAnswer: q.answer,
       explanation: q.explanation,
       answered: userAnswer !== "",
+      // 题干/选项快照:重新生成题库会删 exercises 行,历史回顾必须自包含
+      prompt: q.prompt,
+      options: q.options ?? null,
     });
   }
 

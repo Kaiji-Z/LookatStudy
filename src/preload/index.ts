@@ -84,6 +84,8 @@ const api = {
   /* 章节考试 v2（后台生成 + KC 出题 + attempt 档案） */
   examPrepare: ((examNodeId: string, locale?: string | null) =>
     ipcRenderer.invoke("exam:prepare", examNodeId, locale ?? null)) as ApiExpose["examPrepare"],
+  examRegenerate: ((examNodeId: string, locale?: string | null) =>
+    ipcRenderer.invoke("exam:regenerate", examNodeId, locale ?? null)) as ApiExpose["examRegenerate"],
   examGetStatus: ((examNodeId: string) =>
     ipcRenderer.invoke("exam:getStatus", examNodeId)) as ApiExpose["examGetStatus"],
   examStartAttempt: ((examNodeId: string) =>

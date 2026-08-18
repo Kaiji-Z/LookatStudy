@@ -165,6 +165,7 @@ import {
 // 章节考试服务 v2(后台生成 + KC 出题 + attempt 档案)
 import {
   prepareExam,
+  regenerateExam,
   getExamStatusView,
   startExamAttempt,
   recordExamAnswer,
@@ -1443,6 +1444,11 @@ export function registerExamHandlers(): void {
   // 幂等启动题目生成(后台进行,进度走 exam:status 事件)
   handle("exam:prepare", (_e, examNodeId: string, locale?: string | null) => {
     return prepareExam(getDb(), examNodeId, locale);
+  });
+
+  // 重新生成题库:删旧题重启生成(在飞 no-op;悬挂 attempt 判死;历史星数保留)
+  handle("exam:regenerate", (_e, examNodeId: string, locale?: string | null) => {
+    return regenerateExam(getDb(), examNodeId, locale);
   });
 
   // 查状态 + 就绪元信息 + 最新 attempt(悬挂 attempt 在此自动判死)

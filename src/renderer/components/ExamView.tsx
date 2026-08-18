@@ -33,6 +33,7 @@ import {
 import { api } from "../lib/api.js";
 import { celebrate } from "../lib/celebration.js";
 import { useLang } from "../lib/i18n.js";
+import { ConfirmCard } from "./ConfirmCard.js";
 import { Target, Star, RotateCcw, Check, X, ArrowRight, AlertCircle, Timer, Lightbulb } from "lucide-react";
 
 interface ExamViewProps {
@@ -83,6 +84,8 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
   const [result, setResult] = useState<ResultData | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [timeLeft, setTimeLeft] = useState(0);
+  // 重新出题确认卡锚点(非 null = 确认中;复用于 ready/result 两态)
+  const [regenRect, setRegenRect] = useState<DOMRect | null>(null);
   // answers 镜像(terminate 回调异步读最新值,不依赖闭包过期)
   const answersRef = useRef<Record<string, string>>({});
   const attemptIdRef = useRef<string | null>(null);
@@ -191,6 +194,50 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
       setPhase("failed");
     }
   }, [examNode.id]);
+
+  /* ---------- 重新出题:删旧题库重走后台生成(ConfirmCard 确认后调用) ---------- */
+  const startRegenerate = useCallback(() => {
+    setRegenRect(null);
+    setResult(null);
+    setPhase("generating");
+    setStatusView((prev) => (prev ? { ...prev, status: "generating", done: 0, total: 0 } : prev));
+    api
+      .examRegenerate(examNode.id, locale ?? null)
+      .then((st) => {
+        // 无 LLM/同步失败等场景:事件之外的就地兜底(事件与这里幂等)
+        if (st.status === "failed") {
+          setErrorMsg(st.error ?? t("exam.errorEmpty"));
+          setPhase("failed");
+        }
+      })
+      .catch((e) => {
+        setErrorMsg(e instanceof Error ? e.message : String(e));
+        setPhase("failed");
+      });
+  }, [examNode.id, locale, t]);
+
+  /** 重新出题按钮 + 内联确认卡(ready 与 result 两态共用;一次只渲染一个分支) */
+  const regenButton = (
+    <>
+      <button
+        className="btn-3d-neutral px-4 py-1.5 text-body"
+        data-testid="exam-regen-btn"
+        onClick={(e) => setRegenRect(e.currentTarget.getBoundingClientRect())}
+      >
+        <RotateCcw className="w-3.5 h-3.5 inline" />
+        {t("exam.regenerate")}
+      </button>
+      {regenRect && (
+        <ConfirmCard
+          anchorRect={regenRect}
+          message={t("exam.regenerate.confirmMsg")}
+          confirmLabel={t("exam.regenerate")}
+          onConfirm={startRegenerate}
+          onCancel={() => setRegenRect(null)}
+        />
+      )}
+    </>
+  );
 
   /* ---------- 换题:重置计时与选择 ---------- */
   useEffect(() => {
@@ -365,14 +412,17 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
             min: estMin,
           })}
         </div>
-        <button
-          className="btn-3d-brand px-6 py-2 text-lead"
-          onClick={startAttempt}
-          data-testid="exam-start-btn"
-        >
-          {t("exam.start")}
-          <ArrowRight className="w-4 h-4 inline ml-1" />
-        </button>
+        <div className="flex flex-col items-center gap-3">
+          <button
+            className="btn-3d-brand px-6 py-2 text-lead"
+            onClick={startAttempt}
+            data-testid="exam-start-btn"
+          >
+            {t("exam.start")}
+            <ArrowRight className="w-4 h-4 inline ml-1" />
+          </button>
+          {regenButton}
+        </div>
       </div>
     );
   }
@@ -522,7 +572,9 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
           <div className="flex flex-col gap-2">
             {result.perQuestion.map((pq, i) => {
               const ex = exById.get(pq.exerciseId);
-              const opts = ex?.options ?? null;
+              // 快照优先(重新生成删旧题后历史回顾仍自包含),老 attempt 无快照回退查表
+              const opts = pq.options ?? ex?.options ?? null;
+              const promptText = pq.prompt ?? ex?.prompt ?? `#${i + 1}`;
               const label = (v: string) =>
                 opts && v !== "" && opts[Number(v)] !== undefined ? opts[Number(v)]! : v;
               return (
@@ -534,7 +586,7 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
                       <X className={`w-4 h-4 shrink-0 mt-0.5 ${pq.answered ? "text-warning" : "text-ink-muted"}`} />
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="text-body text-ink mb-1">{ex?.prompt ?? `#${i + 1}`}</div>
+                      <div className="text-body text-ink mb-1">{promptText}</div>
                       <div className="text-caption text-ink-muted">
                         {!pq.answered ? (
                           t("exam.result.unanswered")
@@ -559,12 +611,13 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
           </div>
         </div>
 
-        {/* 重新考试(题序 + 选项序都重排) */}
-        <div className="flex justify-center pb-4">
+        {/* 重新考试(题序 + 选项序都重排)/ 重新出题(换一批新题) */}
+        <div className="flex justify-center items-center gap-3 pb-4">
           <button className="btn-3d-brand px-5 py-2 text-body" onClick={startAttempt} data-testid="exam-retry-btn">
             <RotateCcw className="w-3.5 h-3.5 inline" />
             {t("exam.retryExam")}
           </button>
+          {regenButton}
         </div>
       </div>
     );

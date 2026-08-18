@@ -23,12 +23,13 @@ import {
   accuracyToStars,
   getExamStatusView,
   prepareExam,
+  regenerateExam,
   startExamAttempt,
   recordExamAnswer,
   submitExamAttempt,
   listExamQuestions,
 } from "../src/main/services/exam-service.ts";
-import { resetStoreForTest } from "../src/main/services/exam-generation-store.ts";
+import { resetStoreForTest, setGenerating, setPromise, getPromise } from "../src/main/services/exam-generation-store.ts";
 import {
   planExamQuota,
   questionTimeLimitSec,
@@ -320,6 +321,74 @@ console.log("✓ T3 questionTimeLimitSec 60/90 规则");
   assert.strictEqual(e1Qs[0].kcTitle, "梯度下降", "T14: kcTitle 透传");
   assert.strictEqual(listExamQuestions(db, "e2")[0].kcTitle, null, "T14: 无标注 → null");
   console.log("✓ T14 listExamQuestions 按节点隔离 + kcTitle");
+}
+
+// === T15: regenerateExam 删旧题 + 悬挂 attempt 判死 + 星数保留(无 LLM → 同步 failed)==
+{
+  resetStoreForTest();
+  const { sqljs, db } = await makeDb();
+  seedExam(sqljs, 3);
+  sqljs.run(`INSERT INTO content_nodes (id, course_id, parent_id, type, title, content) VALUES ('l1','c1','s1','lesson','L1','课时内容')`);
+  // 历史 2 星(重新出题不得清成绩)
+  sqljs.run(`INSERT INTO progress (node_id, status, crown_level) VALUES ('e1','available',2)`);
+  // 悬挂 attempt:答 1 题不提交(崩溃模拟)
+  const { attemptId } = startExamAttempt(db, "e1");
+  recordExamAnswer(db, "e1", attemptId, "ex0", "0");
+  const st = regenerateExam(db, "e1");
+  // 测试库无 LLM 配置:resolveLlm 同步抛错 → 整个后台生成同步收敛为 failed
+  assert.strictEqual(st.status, "failed", "T15: 无 LLM → 同步 failed(而非假 generating)");
+  assert.strictEqual(listExamQuestions(db, "e1").length, 0, "T15: 旧题库已删");
+  const sv = getExamStatusView(db, "e1");
+  const la = sv.latestAttempt;
+  assert.ok(la && la.finishedAt, "T15: 悬挂 attempt 在重新出题时判死");
+  assert.strictEqual(la.terminated, true, "T15: 判死为 terminated");
+  assert.strictEqual(la.correctCount, 1, "T15: 判死成绩 1/3(ex0 对,ex1/ex2 未答=错)");
+  assert.strictEqual(sv.bestStars, 2, "T15: 历史星数保留(重新出题不清成绩)");
+  assert.strictEqual(sv.attemptCount, 1, "T15: attempt 档案保留");
+  await getPromise("e1"); // 已同步失败,await 恒安全
+  assert.strictEqual(getExamStatusView(db, "e1").status, "failed", "T15: 失败后状态保持(旧题不复活)");
+  assert.throws(() => regenerateExam(db, "nope"), /不存在/, "T15: 不存在的节点抛错");
+  console.log("✓ T15 regenerateExam 删旧题 + 悬挂判死 + 星数保留");
+}
+
+// === T16: 在飞生成中 regenerate = no-op(共享同一次生成,不删题)==
+{
+  resetStoreForTest();
+  const { sqljs, db } = await makeDb();
+  seedExam(sqljs, 3);
+  // store 是公开接缝:直接注入一个在飞(永不 settle)的生成
+  setGenerating("e1", 5);
+  const never = new Promise(() => {});
+  setPromise("e1", never);
+  const st = regenerateExam(db, "e1");
+  assert.strictEqual(st.status, "generating", "T16: 在飞 → 原样返回 generating");
+  assert.strictEqual(listExamQuestions(db, "e1").length, 3, "T16: 旧题未删(no-op)");
+  assert.strictEqual(getPromise("e1"), never, "T16: promise 未被替换(共享同一次生成)");
+  console.log("✓ T16 在飞生成中 regenerate no-op");
+}
+
+// === T17: 判分快照自包含(重新生成删题后历史回顾仍有题干/选项)==
+{
+  resetStoreForTest();
+  const { sqljs, db } = await makeDb();
+  seedExam(sqljs, 3);
+  const { attemptId } = startExamAttempt(db, "e1");
+  const r = submitExamAttempt(db, "e1", attemptId, { ex0: "0", ex1: "1" });
+  assert.ok(
+    r.perQuestion.every((pq) => typeof pq.prompt === "string" && pq.prompt.startsWith("Q")),
+    "T17: 判分快照带题干",
+  );
+  assert.ok(
+    r.perQuestion.every((pq) => Array.isArray(pq.options) && pq.options.length === 4),
+    "T17: 判分快照带选项数组",
+  );
+  // 模拟重新生成后的删题:历史 attempt 回顾仍自包含
+  sqljs.run(`DELETE FROM exercises WHERE node_id='e1'`);
+  const la = getExamStatusView(db, "e1").latestAttempt;
+  assert.ok(la && la.perQuestion, "T17: 历史 attempt 在");
+  assert.strictEqual(la.perQuestion[0].prompt, "Q0", "T17: 删题后回顾仍有题干(不退化为 #1)");
+  assert.deepStrictEqual(la.perQuestion[0].options, ["正确", "错1", "错2", "错3"], "T17: 删题后回顾仍有选项(答案文本可显示)");
+  console.log("✓ T17 判分快照自包含");
 }
 
 console.log("\n=== ALL EXAM SERVICE TESTS PASSED ✅ ===");

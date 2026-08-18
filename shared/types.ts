@@ -380,6 +380,10 @@ export interface ExamPerQuestionResult {
   explanation: string | null;
   /** false = 未答(超时/终止跳过),结算页区分"未答"与"答错" */
   answered: boolean;
+  /** 题干快照(判分时定格):重新生成题库删旧题后,历史回顾仍自包含 */
+  prompt?: string | null;
+  /** 选项快照(判分时定格;老 attempt 无此字段) */
+  options?: string[] | null;
 }
 
 /** getStatus 返回:生成状态 + 就绪元信息 + 最新 attempt */
@@ -531,6 +535,8 @@ export interface ApiExpose {
   /* 章节考试 v2（后台生成 + KC 出题 + attempt 档案 + 限时考试） */
   /** 幂等启动题目生成(已就绪/生成中则无副作用),立即返回当前状态。生成在 main 后台继续。 */
   examPrepare(examNodeId: string, locale?: string | null): Promise<ExamStatus>;
+  /** 重新生成题库:删旧题重启生成(在飞 no-op;悬挂 attempt 判死;历史星数保留) */
+  examRegenerate(examNodeId: string, locale?: string | null): Promise<ExamStatus>;
   /** 查状态 + 就绪元信息 + 最新 attempt。悬挂 attempt(崩溃遗留)在此调用内自动按"未答=错"判死。 */
   examGetStatus(examNodeId: string): Promise<ExamStatusView>;
   /** 开始/重新考试:建 attempt 行,返回 attemptId + 就绪题目(含 KC 标签)。 */

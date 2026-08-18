@@ -50,7 +50,7 @@ jobs:
           npm --version
           PKG_V="${PKG_VERSION#v}" node -e "const fs=require('fs');fs.writeFileSync('dist/mobile/package.json',JSON.stringify({name:'lookatstudy-mobile',version:process.env.PKG_V,description:'LookatStudy Termux portable bundle (server.cjs + web frontend)',repository:{type:'git',url:'git+https://github.com/Kaiji-Z/LookatStudy.git'}},null,2))"
           cat dist/mobile/package.json
-          npm publish dist/mobile --access public
+          cd dist/mobile && npm publish --access public
 
       # 引导器的一行安装命令 curl 它执行(独立资产,免解压 zip)
       - name: Stage standalone installer

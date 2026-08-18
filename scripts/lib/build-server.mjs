@@ -39,7 +39,7 @@ export async function buildServerBundle(outfile, opts = {}) {
     outfile,
     // electron 只剩惰性 require 分支(serve 路径不执行);pdf-inspector 是 napi
     // 预编译(Android bionic 加载不了),运行时 require 失败走 pdf-parse fallback
-    external: ["electron", "@firecrawl/pdf-inspector"],
+    external: ["electron", "@firecrawl/pdf-inspector", "sherpa-onnx-node"],
     loader: { ".wasm": "file" },
     plugins: [rawQueryPlugin],
     logLevel: opts.quiet ? "silent" : "info",

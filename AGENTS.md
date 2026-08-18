@@ -23,7 +23,7 @@ Electron app, local SQLite (sql.js), BYO LLM API key. Light/dark theme.
 
 - **TypeScript** full-stack · **React 19 + Vite 6 + Tailwind v3** (renderer)
 - **Electron 33** main process — **CJS output, not ESM** (see gotchas)
-- **Vercel AI SDK v5** (`ai` + `@ai-sdk/openai` + `@ai-sdk/anthropic` + `@ai-sdk/google`) · **zod v3** for tool schemas
+- **Vercel AI SDK v5** (`ai` + `@ai-sdk/openai` + `@ai-sdk/openai-compatible` + `@ai-sdk/anthropic` + `@ai-sdk/google`) · **zod v3** for tool schemas
 - **sql.js** (SQLite compiled to WASM, pure JS) + **Drizzle ORM** — *not* better-sqlite3
 - **pdfjs-dist** (PDF rendering, pure WASM/JS) — for PDF text + image extraction, no canvas dependency
 - **tsx** runs `scripts/verify-*.mjs` deterministic tests · `scripts/live-test/*.mjs` for LLM behavior tests
@@ -74,7 +74,7 @@ npm run dist              # build + electron-builder (produces .exe/.dmg/.AppIma
 npm run serve             # dev serve: esbuild server bundle only + serve dist/renderer (web 模式调试)
 npm run build:mobile      # 便携包 dist/mobile/: server.cjs 单文件 + web 前端 + install-termux.sh(Termux 手机端)
 
-npm run verify:core       # 79 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
+npm run verify:core       # 80 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -130,7 +130,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 |---------|------|-------------|
 | Agent engine | `services/agent/agent-engine.ts` | `handleAgentChatThread` — thread-based context assembly, 6 display tools (`show_concept_map` / `generate_quiz` / `compare_table` / `draw_diagram` / `show_code_walkthrough` / `pose_guess`), `chat:part` emission, mastery-based teaching strategy; 注入近期 friction 卡点(`pure/friction-context.ts` buildFrictionContext)让 AI 看见学习者挣扎点;**AI 输出语言 = 界面语言**(i18n,非课程 🌐):渲染层穿 locale → `resolveOutputLang`(`@shared/locales`,纯函数)→ `agent/base-prompt.ts` 组装提示词(zh 默认逐字节不变,非 zh 英文指令点名工具参数也跟随);exercise/exam 出题同一链 |
 | Soul (教学人设) | `services/souls/soul-service.ts` + `prompt-builder.ts` | 教学人设/persona CRUD + 激活;`buildSystemPrompt(db, BASE)` 把激活 soul 的 body 拼到 base prompt 后面注入 `streamText({system})`。3 内置 soul:精讲(direct)/引导(guide)/实战(practice)。**注:soul=persona,非过程性 playbook**;真 skill(多步任务固化)是未来独立模块。`active_soul=null` 时返回 base(等价关闭,无 flag 门控) |
-| LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection`, `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels` |
+| LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection` (主模型/视觉覆盖双路), `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels`。openai-compatible 协议分家:官方 OpenAI 端点 `createOpenAI`(原生 providerOptions),第三方端点 `@ai-sdk/openai-compatible`(chat/completions 解析 `reasoning_content` → reasoning-delta,思考流进 UI;includeUsage 与官方包对齐) |
 | LLM presets | `services/agent/llm-presets.ts` | 19 provider presets (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google, Groq, Together, Mistral, xAI, Volcano, Baidu, MiniMax, Baichuan, StepFun) |
 | Vision bridge | `services/agent/vision-bridge.ts` | 图像转译桥(v0.11,describe-then-chat):`visionRouting`(native/bridge/reject)是**三处喂图点共用的通道路由**——① 聊天附件注入 ② 课文图主动注入(方案 B,`flag_multimodal_import` + `isImageRelatedQuery` 门控)③ `attach_node_images` 工具。native=主模型直看 file-part;bridge=纯文本主模型 + 配了 `vision_provider_override`/`vision_model_override` → 视觉模型(`resolveVisionLlm`)转译成**不可信视觉证据**文字注入(工具则返回转译文本;reject 通道下工具不注册、方案 B 不喂图,修掉纯文本模型硬吃 file-part 的 400 坑);主模型永远是唯一大脑。学习者原话原样转发(任务导向转译);sha256(图+问题+语言) 进程内缓存(FIFO 200);watchdog 120s/5min;失败带指引报错绝不静默丢图;`parseDataUrl` 统一图源归一化(纯 base64)。`agent:getContextUsage` 的 `visionCapable` 桥感知 + `visionBridgeModel` 驱动输入框转译提示;设置页视觉覆盖不被 `flag_multimodal_import` 门控 |
 | Threads | `services/thread-service.ts` | CRUD for `threads` + `chat_messages`; `findRecentThreadByNode`; thread is node-bound (`focus_node_id`)。`chat_messages.display_text`:按钮触发的消息气泡只显示短动作标签(完整提示词在 `content`,只给 LLM;手打输入 `display_text=null` 原样展示) |
@@ -194,7 +194,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (79 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (80 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

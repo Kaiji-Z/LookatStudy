@@ -4,11 +4,16 @@
  * 密钥在这里读取（settings 表），永不离开主进程。渲染层只见"是否配置"的布尔。
  *
  * 三类协议:
- *   - openai-compatible: createOpenAI（自定义 baseURL），覆盖 GLM/OpenAI/DeepSeek
+ *   - openai-compatible: 官方 OpenAI 端点用 createOpenAI；第三方兼容端点
+ *     （GLM/DeepSeek/Kimi/custom 等）用 @ai-sdk/openai-compatible —— 它的
+ *     chat/completions 解析认 delta.reasoning_content，思考流能变成 reasoning-delta；
+ *     createOpenAI 的 schema 只认 role/content/tool_calls，reasoning_content 被
+ *     zod 静默剥掉（实测 z.ai CodingPlan + glm-5.3：端点全程流式发思考，SDK 层全丢）。
  *   - anthropic:         createAnthropic
  *   - google:            createGoogleGenerativeAI
  */
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText, type LanguageModel } from "ai";
@@ -24,6 +29,15 @@ import {
 import { getCustomProviderRaw } from "../custom-provider-service.js";
 
 type Db = SQLJsDatabase<typeof schema>;
+
+/** 官方 OpenAI 端点判定（host 精确匹配；其余一律视为第三方兼容端点）。 */
+export function isOfficialOpenAiBase(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).host.toLowerCase() === "api.openai.com";
+  } catch {
+    return false;
+  }
+}
 
 /** 读 settings 表成 key→value 映射（主进程用） */
 export function readSettingsMap(db: Db): Record<string, string | null> {
@@ -59,8 +73,22 @@ export function buildLanguageModel(
       if (!baseUrl) {
         throw new Error(`openai-compatible 协议需要 baseUrl`);
       }
-      const openai = createOpenAI({ baseURL: baseUrl, apiKey, ...(fetchFn ? { fetch: fetchFn } : {}) });
-      return openai.chat(model);
+      // 官方 OpenAI：保留官方包（原生 openai: providerOptions 如 reasoningEffort、严格 schema）。
+      if (isOfficialOpenAiBase(baseUrl)) {
+        const openai = createOpenAI({ baseURL: baseUrl, apiKey, ...(fetchFn ? { fetch: fetchFn } : {}) });
+        return openai.chat(model);
+      }
+      // 第三方兼容端点：openai-compatible 包（解析 reasoning_content → reasoning-delta）。
+      // includeUsage 与 createOpenAI 的无条件 stream_options.include_usage 对齐（usage 是导入
+      // 管线定位截断的硬数据，这些端点今天就在收这个参数，不引入新行为）。
+      const compat = createOpenAICompatible({
+        name: "openai-compatible",
+        baseURL: baseUrl,
+        apiKey,
+        includeUsage: true,
+        ...(fetchFn ? { fetch: fetchFn } : {}),
+      });
+      return compat.chatModel(model);
     }
     case "anthropic": {
       // Anthropic 允许自定义 baseURL（覆盖官方端点，如代理）

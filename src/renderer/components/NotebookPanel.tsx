@@ -181,9 +181,9 @@ export function NotebookPanel({
                 </div>
               </>
             ) : (
-              <div className="text-center py-16">
-                <Presentation className="w-10 h-10 mx-auto mb-3 text-ink-muted opacity-30" />
-                <div className="text-body text-ink-muted max-w-sm mx-auto leading-relaxed">
+              <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
+                <Presentation className="w-10 h-10 mb-3 text-ink-muted opacity-30" />
+                <div className="text-body text-ink-muted max-w-sm leading-relaxed">
                   {t("notebook.board.empty")}
                 </div>
               </div>
@@ -594,7 +594,7 @@ function NotesTab({
     return <EmptyNotebook message={t("notebook.empty.notes.title")} icon="📓" />;
   }
   if (loading) {
-    return <div className="text-center py-12 text-body text-ink-muted flex items-center justify-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />{t("notebook.empty.notes.title")}</div>;
+    return <div className="flex-1 flex items-center justify-center gap-2 text-body text-ink-muted"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />{t("notebook.empty.notes.title")}</div>;
   }
 
   // 三区筛选
@@ -1021,10 +1021,11 @@ function CanvasItemCard({
 }
 
 function EmptyNotebook({ message, icon }: { message: string; icon: string }) {
+  // 三 tab 空态统一词汇:flex-1 真垂直居中(与讲解空态/中栏空态同款;旧 py-16 垫顶方案吊在上部 20%)
   return (
-    <div className="text-center py-16" data-testid="empty-notebook">
+    <div className="flex-1 flex flex-col items-center justify-center text-center px-6" data-testid="empty-notebook">
       <div className="text-4xl mb-3 opacity-30">{icon}</div>
-      <div className="text-body text-ink-muted max-w-xs mx-auto leading-relaxed">
+      <div className="text-body text-ink-muted max-w-xs leading-relaxed">
         {message}
       </div>
     </div>

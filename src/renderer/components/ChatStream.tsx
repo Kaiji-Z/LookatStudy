@@ -663,7 +663,7 @@ function ToolCallBlock({
     // —— 已忽略:muted 徽章,无按钮 ——
     if (status === "rejected") {
       return (
-        <div className="proposal-card rounded-xl border border-white/10 bg-white/5 p-3 flex items-center gap-2" data-testid="part-proposal">
+        <div className="proposal-card rounded-xl border border-ink/10 bg-ink/5 p-3 flex items-center gap-2" data-testid="part-proposal">
           <CircleSlash className="w-4 h-4 text-ink-muted shrink-0" />
           <span className="text-body text-ink-muted">{t("chat.proposal.rejected")}</span>
         </div>

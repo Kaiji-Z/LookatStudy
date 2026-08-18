@@ -66,7 +66,7 @@ function StarRow({ stars }: { stars: number }) {
       {[1, 2, 3].map((i) => (
         <Star
           key={i}
-          className={`w-7 h-7 ${i <= stars ? "text-gold fill-gold" : "text-white/20"}`}
+          className={`w-7 h-7 ${i <= stars ? "text-gold fill-gold" : "text-ink/20"}`}
         />
       ))}
     </div>
@@ -364,7 +364,7 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
         <div className="text-title font-bold text-ink mb-2">{t("exam.generating.title")}</div>
         <div className="text-body text-ink-muted mb-4">{t("exam.generating.stage")}</div>
         <div
-          className="w-56 h-2.5 rounded-full bg-white/10 overflow-hidden mb-2"
+          className="w-56 h-2.5 rounded-full bg-ink/10 overflow-hidden mb-2"
           role="progressbar"
           aria-valuenow={pct}
           aria-valuemin={0}
@@ -458,7 +458,7 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
             </div>
           </div>
           {/* 总进度条 */}
-          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden mb-6">
+          <div className="w-full h-1.5 rounded-full bg-ink/10 overflow-hidden mb-6">
             <div
               className="h-full bg-accent transition-all duration-300"
               style={{ width: `${(currentIdx / exercises.length) * 100}%` }}
@@ -491,7 +491,7 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
                 className={`text-left px-4 py-3 rounded-xl border transition-all duration-150 ${
                   selected === d
                     ? "border-accent bg-accent/15 text-ink"
-                    : "border-white/10 bg-white/5 text-ink hover:border-white/25"
+                    : "border-ink/10 bg-ink/5 text-ink hover:border-ink/25"
                 }`}
               >
                 <span className="text-body break-words">{opts[origIdx]}</span>
@@ -568,7 +568,7 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
                 const acc = g.total > 0 ? g.correct / g.total : 0;
                 const weak = acc < 0.6;
                 return (
-                  <div key={kc} className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-white/5" data-testid="exam-kc-row">
+                  <div key={kc} className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-ink/5" data-testid="exam-kc-row">
                     <div className="flex items-center gap-2 min-w-0">
                       <Lightbulb className="w-3.5 h-3.5 text-accent shrink-0" />
                       <span className="text-body text-ink truncate">{kc}</span>
@@ -598,7 +598,7 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
               const label = (v: string) =>
                 opts && v !== "" && opts[Number(v)] !== undefined ? opts[Number(v)]! : v;
               return (
-                <div key={pq.exerciseId} className="px-4 py-3 rounded-xl bg-white/5" data-testid="exam-review-row">
+                <div key={pq.exerciseId} className="px-4 py-3 rounded-xl bg-ink/5" data-testid="exam-review-row">
                   <div className="flex items-start gap-2">
                     {pq.correct ? (
                       <Check className="w-4 h-4 text-brand shrink-0 mt-0.5" />

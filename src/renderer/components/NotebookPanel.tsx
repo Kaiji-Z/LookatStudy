@@ -459,7 +459,7 @@ function ContentTab({
               <div className="text-body text-warning mb-2">
                 {t("notebook.content.render_failed")}
               </div>
-              <pre className="text-caption text-ink-faint whitespace-pre-wrap break-words bg-surface-1 p-3 rounded">
+              <pre className="text-caption text-ink-muted whitespace-pre-wrap break-words bg-surface-1 p-3 rounded">
                 {content.slice(0, 500)}
                 {content.length > 500 ? "\n" + t("notebook.content.truncated") : ""}
               </pre>
@@ -902,7 +902,7 @@ function CanvasItemCard({
                 </div>
               </div>
             ) : existingComment ? (
-              <div className="mt-2 pl-2 border-l-2 border-accent/40">
+              <div className="mt-2 px-2.5 py-1.5 rounded-lg bg-ink/5">
                 <div className="text-label text-ink-muted italic leading-relaxed whitespace-pre-wrap">
                   {existingComment}
                 </div>

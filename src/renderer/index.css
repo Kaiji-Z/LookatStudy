@@ -103,8 +103,8 @@
   --ink-strong-rgb: 250 250 250;
   --ink-muted: #9D9EA2;  /* oklch(0.7 0.005 270) */
   --ink-muted-rgb: 166 166 176;
-  --ink-faint: #707175;  /* oklch(0.55 0.005 270) */
-  --ink-faint-rgb: 117 117 126;
+  --ink-faint: #88898C;  /* oklch(0.63 0.005 270) 暗面对比 2.9→3.95:1,内容文本用 ink-muted */
+  --ink-faint-rgb: 136 137 140;
   --border: #252629;  /* oklch(0.27 0.005 270) */
   --border-rgb: 37 38 41;
   --border-faint: #1A1A1D;  /* oklch(0.22 0.005 270) */
@@ -170,7 +170,7 @@
     --ink: oklch(0.96 0.003 270);
     --ink-strong: oklch(0.985 0 0);
     --ink-muted: oklch(0.7 0.005 270);
-    --ink-faint: oklch(0.55 0.005 270);
+    --ink-faint: oklch(0.63 0.005 270);
     --border: oklch(0.27 0.005 270);
     --border-faint: oklch(0.22 0.005 270);
   }
@@ -347,7 +347,7 @@ html.light .map-rail-scope {
   --ink: #F1F2F4;            --ink-rgb: 245 245 250;
   --ink-strong: #FAFAFA;          --ink-strong-rgb: 250 250 250;
   --ink-muted: #9D9EA2;       --ink-muted-rgb: 166 166 176;
-  --ink-faint: #707175;      --ink-faint-rgb: 117 117 126;
+  --ink-faint: #88898C;      --ink-faint-rgb: 136 137 140;
   --border: #252629;  /* oklch(0.27 0.005 270) */
   --border-faint: #1A1A1D;  /* oklch(0.22 0.005 270) */
 }

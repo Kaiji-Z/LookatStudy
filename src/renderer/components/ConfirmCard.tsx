@@ -98,7 +98,7 @@ export function ConfirmCard({
   return createPortal(
     <div
       ref={cardRef}
-      className={`confirm-card fixed z-[60] w-[220px] bg-surface-0 rounded-xl shadow-elevated border border-[var(--border)] p-3 ${danger ? "border-l-2 border-l-warning" : "border-l-2 border-l-brand"}`}
+      className={`confirm-card fixed z-[60] w-[220px] bg-surface-0 rounded-xl shadow-elevated border p-3 ${danger ? "border-warning/50" : "border-[var(--border)]"}`}
       style={{ left, top }}
       role="alertdialog"
       aria-modal="false"

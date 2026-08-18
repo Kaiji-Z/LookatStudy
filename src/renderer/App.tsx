@@ -1084,7 +1084,7 @@ export default function App() {
         >
           <div
             ref={examLeaveModalRef}
-            className="w-[min(400px,90vw)] rounded-2xl bg-surface-0 p-6 shadow-elevated border-l-2 border-l-warning"
+            className="w-[min(400px,90vw)] rounded-2xl bg-surface-0 p-6 shadow-elevated border border-warning/40"
             role="dialog"
             aria-modal="true"
             aria-label={t("exam.leave.title")}

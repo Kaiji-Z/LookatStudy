@@ -333,6 +333,9 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
     };
     const active = phase === "answering" || phase === "submitting";
     onSessionChange?.(active ? { active: true, terminate } : { active: false, terminate: null });
+    // 卸载兜底:任何离开本组件的路径(终止后导航/换课/删课)都要把会话标记结束,
+    // 否则 examSessionRef 残留 active:true,之后每次切节点都被离开守卫误拦。
+    return () => onSessionChange?.({ active: false, terminate: null });
   }, [phase, examNode.id, onExamCompleted, onSessionChange]);
 
   /* ---------- 渲染 ---------- */

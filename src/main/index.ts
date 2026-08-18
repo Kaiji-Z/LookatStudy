@@ -1937,11 +1937,47 @@ async function runUiTest(screenshot = false): Promise<void> {
             if (!res) return await bail({ ok: false, reason: "result page never shown", overflow: overflow });
             var txt = res.innerText || "";
             var scoreOk = txt.indexOf("3 / 3") >= 0;
+            // 离开守卫链路(v0.12 用户报告):结算页再开一场 → 中途切节点弹警告 → 确认终止
+            // → 连续再切节点【不应】再弹警告(会话已被消费;卸载时无清理则 ref 残留 active)
+            var leave = { shown: false, cleared: null, error: null };
+            try {
+              var retry2 = q('[data-testid="exam-retry-btn"]');
+              if (!retry2) {
+                leave.error = "no retry btn on result page";
+              } else {
+                retry2.click();
+                if (!(await waitFor('[data-testid="exam-answering"]', 10000))) {
+                  leave.error = "retry did not enter answering";
+                } else {
+                  var balls = document.querySelectorAll('button[data-testid^="map-node-"]:enabled');
+                  if (balls.length < 2) {
+                    leave.error = "need 2 enabled lesson balls, got " + balls.length;
+                  } else {
+                    balls[0].click();
+                    for (var lt = 0; lt < 5000 && !q('[data-testid="exam-leave-modal"]'); lt += 250) await sleep(250);
+                    leave.shown = !!q('[data-testid="exam-leave-modal"]');
+                    var leaveConfirm = q('[data-testid="exam-leave-confirm"]');
+                    if (leave.shown && leaveConfirm) {
+                      leaveConfirm.click();
+                      await sleep(1200); // terminate(await)+导航
+                      // 切另一个节点:守卫不得再拦(会话应已清)
+                      balls[1].click();
+                      await sleep(900);
+                      leave.cleared = !q('[data-testid="exam-leave-modal"]');
+                    } else if (!leave.shown) {
+                      leave.error = "leave modal did not appear on node switch during exam";
+                    }
+                  }
+                }
+              }
+            } catch (e4) { leave.error = String(e4); }
+            var leaveOk = leave.error === null && leave.shown === true && leave.cleared === true;
             return {
-              ok: scoreOk && !!overflow && overflow.rootFits && overflow.promptNoX && overflow.scroller && overflow.scrollable,
+              ok: scoreOk && !!overflow && overflow.rootFits && overflow.promptNoX && overflow.scroller && overflow.scrollable && leaveOk,
               scoreOk: scoreOk,
               answered: answered,
               overflow: overflow,
+              leave: leave,
             };
           } catch (e) { return { ok: false, error: String(e) }; }
         })()

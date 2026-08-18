@@ -500,11 +500,14 @@ export default function App() {
     [],
   );
 
-  // 离开警告确认:先终止考试(未答=错),再执行被拦截的导航
+  // 离开警告确认:先终止考试(未答=错),再执行被拦截的导航。
+  // 会话在此消费:清掉 examSessionRef,否则残留 active:true 会让之后每次切节点都误弹警告
+  // (用户实测:终止离开后警告框反复弹,直到切回考试节点重新挂载才被 effect 清掉)。
   const confirmExamLeave = useCallback(async () => {
     const action = examLeave.pendingAction;
     setExamLeave({ open: false, pendingAction: null });
     const s = examSessionRef.current;
+    examSessionRef.current = { active: false, terminate: null };
     if (s.active && s.terminate) {
       try {
         await s.terminate();

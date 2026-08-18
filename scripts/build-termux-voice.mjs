@@ -51,10 +51,21 @@ const die = (m) => { console.error(`[termux-voice] FAIL ${m}`); process.exit(1);
 // 工具
 // ---------------------------------------------------------------------------
 
+function toolAvailable(p) {
+  // 绝对/相对路径看文件;裸命令名(CI 的 cmake/ninja)跑 --version 探测
+  if (p.includes("/") || p.includes("\\")) return fs.existsSync(p);
+  try {
+    execFileSync(p, ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function findTool(label, envVar, candidates) {
   const fromEnv = process.env[envVar];
-  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
-  for (const c of candidates) if (fs.existsSync(c)) return c;
+  if (fromEnv && toolAvailable(fromEnv)) return fromEnv;
+  for (const c of candidates) if (toolAvailable(c)) return c;
   die(`找不到 ${label}:设 ${envVar} 指定(试过 ${candidates.join(" | ")})`);
 }
 

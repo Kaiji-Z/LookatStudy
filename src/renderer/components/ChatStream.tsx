@@ -59,7 +59,7 @@ interface ChatStreamProps {
   onPickQuizAction?: (message: string) => void;
   /** quiz 答完自动把成绩单发进对话(hook 给 AI 判定下一步)。 */
   onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
-  /** T3 卡片模式(一幕一屏):窄屏下每个 AI 回合装进一张占屏卡片,垂直 snap 翻幕;
+  /** T3 卡片模式(一幕一屏):窄屏下每个 AI 回合装进一张占屏卡片,自由滚动(不做 snap 吸附);
    *  用户消息保持小气泡。宽屏不传=false,行为不变。 */
   cardMode?: boolean;
 }
@@ -311,7 +311,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         ref={scrollRef}
         onScroll={handleScroll}
         onMouseUp={handleChatMouseUp}
-        className={`h-full overflow-y-auto px-3 py-4 space-y-2 relative ${cardMode ? "snap-y snap-proximity" : "px-5 py-6 space-y-6"}`}
+        className={`h-full overflow-y-auto px-3 py-4 space-y-2 relative ${cardMode ? "" : "px-5 py-6 space-y-6"}`}
         data-testid="chat-stream"
       >
         {messages.length === 0 && (
@@ -384,10 +384,10 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
 
         {messages.map((msg) => (
           /* T3 一幕一屏:AI 回合 = 一张占屏卡片(讲解/测验/反馈各成一幕),
-             垂直滚动邻近吸附(snap-proximity,不锁滚动方向);用户消息保持小气泡作幕间插页 */
+             自由滚动不吸附(snap 实测会在甩动后回拉,已去掉);用户消息保持小气泡作幕间插页 */
           <div
             key={msg.id}
-            className={cardMode ? "snap-start" : "contents"}
+            className={cardMode ? "" : "contents"}
           >
             <div className={cardMode && msg.role === "assistant" ? "surface-card p-4 rounded-2xl shadow-card" : undefined}>
               <MessageRowV2

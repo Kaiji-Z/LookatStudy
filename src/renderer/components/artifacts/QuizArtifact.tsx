@@ -82,7 +82,7 @@ export function QuizArtifact({
   quizMastery?: number | null;
   /** 点某个动作 → 把对应消息发进对话(父组件接 sendMessage)。常开:有回调就显示下一步动作(消灭死胡同)。 */
   onPickAction?: (message: string) => void;
-  /** 答完点「完成答题」时触发(真实点击才算,进度恢复不重放)——父组件把成绩单 hook 给 AI,
+  /** 最后一题提交后点「完成」时触发(真实点击才算,进度恢复不重放)——父组件把成绩单 hook 给 AI,
    *  由 AI 决定下一步(讲错题/放行/换角度)。提供后完成卡不再显示手动下一步按钮。 */
   onQuizCompleted?: (result: QuizCompletedResult) => void;
 }) {
@@ -103,12 +103,11 @@ export function QuizArtifact({
     saveQuizProgress(progressKey, { current, score });
   }, [progressKey, current, score]);
 
-    // 答完最后一题不自动发:完成卡先亮出成绩,学习者点「完成答题」才把成绩单交给 AI
-    // (交卷是显式动作——提交完最后一题可能还想回看,不该被 AI 的分析打断)。
+    // hook 触发点 = 最后一题提交后的「完成」按钮(先看答案再交卷);
+    // hookSent 只为兜底:刷新恢复的完成态没经过「完成」点击,成绩卡留一个补交按钮。
     const [hookSent, setHookSent] = useState(false);
     if (current >= d.questions.length) {
-      // 全部做完。自动 hook 模式:点「完成答题」后成绩单交给 AI,等 AI 分析;
-      // 手动"下一步动作"仅在无 hook 回调的上下文保留(消灭死胡同)。
+      // 全部做完。hook 模式:成绩卡 + 已交给导师;手动"下一步动作"仅在无 hook 回调的上下文保留。
       const showActions = !!onPickAction && !onQuizCompleted;
       if (onQuizCompleted) {
         return (
@@ -192,13 +191,24 @@ export function QuizArtifact({
       answerText: q.options[q.answer] ?? "?",
       correct,
     });
-    // 最后一题提交不再自动发成绩单——完成卡的「完成答题」按钮显式交卷(见上方 done 分支)。
-    // 只在真实点击时累积判定——localStorage 恢复的完成态 detail 为空,交卷时只带总分。
+    // 最后一题提交只判分出答案,不发成绩单——hook 在「完成」按钮(handleNext)触发。
+    // 逐题判定只在真实提交时累积——localStorage 恢复的完成态 detail 为空,补交时只带总分。
     // Phase 1: 答题高光时刻 — 答对粒子爆发,答错柔红光闪(CelebrationLayer 统一渲染)。
     celebrate(correct ? "correct" : "wrong");
   };
 
   const handleNext = () => {
+    // 最后一题的「完成」按钮 = 交卷:触发 hook 把成绩单交给 AI,卡片翻成成绩卡。
+    // 此时 detailRef 已含全部逐题判定(最后一题在 handleSubmit 里刚累积完)。
+    if (current === d.questions.length - 1 && onQuizCompleted && !hookSent) {
+      setHookSent(true);
+      onQuizCompleted({
+        title: d.title ?? "",
+        correct: score.correct,
+        total: score.total,
+        detail: [...detailRef.current],
+      });
+    }
     setCurrent((c) => c + 1);
     setSelected(null);
     setSubmitted(false);

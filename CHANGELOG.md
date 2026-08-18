@@ -30,7 +30,7 @@ Entry conventions for contributors:
 
 ### Changed
 
-- **答题 hook 改为「完成答题」按钮显式交卷** —— 此前提交最后一题的瞬间成绩单就自动发给 AI,学习者可能还想回看却被 AI 的分析插入打断。现在答完最后一题先亮出成绩卡 +「完成答题」主按钮,点下才把成绩单交给导师(按钮变为"成绩单已交给导师,等待分析…");恢复的答题进度没有逐题判定,交卷时只带总分。
+- **答题 hook 触发点定为最后一题的「完成」按钮** —— 此前提交最后一题的瞬间成绩单就自动发给 AI,学习者还没看清答案就被 AI 的分析插入打断。现在:最后一题提交只判分出答案+讲解,「下一题」按钮变「完成」,点「完成」才把成绩单交给导师,卡片随即翻成成绩卡(🎉/📚 + N/M + "成绩单已交给导师,等待分析…");刷新恢复的完成态没经过「完成」点击,成绩卡留一个补交按钮(只带总分)。真实 E2E 全流程验证(出题→作答→提交→答案→完成→成绩卡+气泡)。
 - **T3 单行窄标题栏(三栏切换器居中)** —— 窄屏标题栏收敛为一行 51px:左 = XP 紧凑数字、中 = 居中紧凑 icon button group(容器底色+内描边成组,与两侧裸露的 XP/设置图标区分;无文字,名称走 aria-label + tooltip)、右 = 设置;应用名不上栏(引导器/浏览器标签已可见),配合滑屏手势兜底切换。内容区较此前两行方案多出 55px。宽屏(T1/T2)标题栏不变。E2E 实测:高度 51px、切换器 111×34 居中偏移 0、切换功能正常。
 - **三栏更名:课程 / 导师 / 黑板** —— 窄屏切换栏三栏名从"课程地图/对话/笔记本"改为教室隐喻的"课程/导师/黑板"(i18n `pane.*`,zh+en 同步:Course/Tutor/Blackboard);短名同时服务单行标题栏的紧凑布局。
 - **AI 消息去头像列** —— 每条 AI 消息左侧的圆形 AI 头像(28px + 10px 间距)给正文/产物卡制造 ~38px 固定左缩进,左缘参差且窄屏最浪费宽度;移除后 AI 内容真正全宽(claude.ai 风),对话双方靠「用户右对齐微染底 vs AI 全宽」区分,不靠头像。
@@ -38,6 +38,7 @@ Entry conventions for contributors:
 - **窄屏左栏选球后自动切到对话栏** —— T3 下在地图栏点可用球进入课时,视图自动切到对话栏(宽屏行为不变),省一次手动点"对话"。E2E 已验证选球后对话 tab 高亮。
 
 ### Fixed
+- **答题 hook 在 AI 流式期间交卷会被静默吞掉(两层过期闭包)** —— 答题通常发生在上一轮流式收尾时(AI 出完题还有尾文在生成):hook 的重试循环读闭包里冻结的 `chat.streaming=true`,10 次重试全读过期值;第一层修掉后发现 `sendMessage` 自己的守卫同样读冻结值,重试到了也照样 return——两层叠加导致流式期间点「完成」成绩单永远不发、且无任何提示(真实 E2E 连续踩中)。修复:流态走 `chatStreamingRef`(每渲染刷新),发送走 `sendRef.current` 桥(复用 handleStartLearning 的既有模式,指向最新 sendMessage,其守卫读的也是最新状态)。E2E 实测流式期间交卷,1 秒内气泡出现。
 - **对话引擎的思考强度对 glm-codingplan 预设和自定义 provider 静默失效(开了"快速"仍长思考)** —— UI 门控与引擎两处口径脱节的第二半:v0.12 修了门控嗅探(`supportsReasoningControl` 按 baseUrl/模型名认家族),但引擎调用点 `reasoningPlanFor` 一直没传 hints,按预设 id 直查方言表——`glm-codingplan`(id≠"glm")和一切 `custom-*` 的 fast/deep 全部降级 none,请求体里根本不带 thinking/reasoning_effort 参数。实测后果:glm-5.3 开"快速"仍思考 9187 字。修复:引擎调用点补传 `{baseUrl, model}` hints(与门控同口径);verify-reasoning-effort 新增 T6(含 glm-codingplan 预设嗅探命中 + 无 hints 即 none 的唯一变量证明 + **T6d 源码级接线守卫**——防止调用点再次丢 hints),闭环已证(去掉调用点 hints → T6d 红)。
 - **第三方端点的思考流被 SDK 静默丢弃(三个点期间其实在流思考)** —— 实测 z.ai CodingPlan + glm-5.3:端点从第一个 SSE 事件起就流式发 `reasoning_content`(首题实测 315 块/1138 字),但 `@ai-sdk/openai` 的 chat/completions chunk schema 只认 role/content/tool_calls,思考字段被 zod 静默剥掉,永不产生 reasoning-delta —— 引擎转发(agent-engine)和 UI 折叠「思考过程」行两端早就备好,一直在等一个 SDK 不会给的东西;此前"CodingPlan 思考期零流事件"的旧结论实为同一缺口的表象(隔着 SDK 看不到)。修法:openai-compatible 协议分家 —— 官方 OpenAI 端点(host=api.openai.com)保留 `createOpenAI`(原生 `openai:` providerOptions 的 reasoningEffort、严格 schema 不失配),其余第三方端点(GLM/DeepSeek/Kimi/Qwen/自定义 provider/Ollama 等)改用 `@ai-sdk/openai-compatible@1.0.48`(解析 `reasoning_content`/`reasoning` → reasoning-delta);`includeUsage: true` 与官方包的无条件 `stream_options.include_usage` 对齐(usage 是导入管线定位截断的硬数据,请求形状零变化);思考强度 bodyPatch(fetch 包装注入 thinking/enable_thinking)在新路径下原样生效。真端到端实测:glm-5.3 经新路径 4.8s 起流思考(129 增量/521 字),6.3s 正文跟上,usage 正常。verify-reasoning-stream 4 组(官方端点判定含后缀伪装域名/思考流穿通/请求形状/bodyPatch 兼容),闭环已证(改回 createOpenAI 即红)。
 - **思考强度菜单窄屏溢出** —— 390px 手机上思考强度菜单原是 `right-0` 锚定,240px 宽菜单右缘直接出屏(实测 392 > 390);补位方案"测量→平移→再测量"又会形成 useLayoutEffect 反馈环,React 19 双调用下左右锚来回振荡直到 #185 卸载整树。改为两阶段定位:先翻转锚点(**仅当另一侧放得下**,两侧都放不下就不翻、直接进平移),再对最终位置做一次性视口内钳制平移(测量读未平移坐标,不回环);菜单宽 `max-w-[calc(100vw-1.5rem)]` 兜底。E2E 实测 390px 菜单 {left:127, right:382} 完整在屏内,开关往返零页面错误。

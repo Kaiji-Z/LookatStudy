@@ -641,23 +641,29 @@ export default function App() {
     },
     [chat, thread, toast, t],
   );
-  // 答题完成自动 hook:最后一题提交即把成绩单发给 AI(气泡只显示短标签,完整判定只给 LLM),
+  // 答题完成自动 hook:最后一题提交后点「完成」即把成绩单发给 AI(气泡只显示短标签,完整判定只给 LLM),
   // 由 AI 决定下一步(讲错题/放行/换角度)—— 用户不再手动点"下一步动作"。
   // AI 还在流式输出时等它结束再发(答题时上一轮可能仍在生成),最多等 20s。
+  // 两处都必须走 ref,不能信闭包:答题发生在上一轮流式收尾时,handleQuizCompleted
+  // 捕获的 sendMessage 闭包里 chat.streaming 冻结为 true,重试 10 次都被它自己的
+  // 守卫静默吞掉 → 永远不发(真实 E2E 连续踩中两层)。chatStreamingRef 读实时流态,
+  // sendRef.current 每渲染都指向最新 sendMessage(其守卫读的也是最新 chat)。
+  const chatStreamingRef = useRef(chat.streaming);
+  chatStreamingRef.current = chat.streaming;
   const handleQuizCompleted = useCallback(
     (r: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => {
       const content = buildQuizHookMessage(r, t);
       const label = buildQuizHookLabel(r, t);
       const trySend = (left: number) => {
-        if (!chat.streaming) {
-          void sendMessage(content, label);
+        if (!chatStreamingRef.current) {
+          void sendRef.current?.(content, label);
           return;
         }
         if (left > 0) setTimeout(() => trySend(left - 1), 2000);
       };
       trySend(10);
     },
-    [chat.streaming, sendMessage, t],
+    [t],
   );
 
   // ref 桥接:让 handleStartLearning(定义在 toast 之前)能调用 sendMessage(定义在 toast 之后)

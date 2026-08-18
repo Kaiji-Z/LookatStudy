@@ -4,8 +4,9 @@
  * 结构：streamText 包一层工具调度循环，执行工具，写操作走 Proposal。
  *   buildSystemPrompt(db, BASE) → streamText({model, system, messages, tools, maxSteps})
  *   工具里凡是要改学习者持久状态的，都走 Proposal（原则 2）：
- *     - record_answer : 学习者答了题 → 提议 update_mastery（人确认后才落库）
- *     - mark_mastered : AI 判断掌握了 → 提议 mark_mastered
+ *     - record_answer : 学习者答了题 → create+apply 立即生效（AI 已判分，与 quiz:recordAnswer 对齐；
+ *       同步 BKT/SRS/XP——这是引擎里唯一自动落库的掌握度写入口）
+ *     - mark_mastered : AI 判断掌握了 → 只创建待确认 Proposal（人可以拒绝）
  *     - get_node_info : 只读，直接返回（不走 proposal）
  *
  * 流式：emit 回调把 text-delta / tool-call / done 推给调用方（IPC 用 webContents.send）。
@@ -763,8 +764,13 @@ export async function runAgentTurn(
 
     // v0.10 思考强度:fast/deep 按各 provider 方言落地(pure/reasoning-effort 是方言表)。
     // 自动(空串)= 零干预;不支持的家族降级 none —— 宁可不生效,不瞎发参数吃 400。
+    // hints 必传:glm-codingplan 预设和 custom-* 的家族靠 baseUrl/模型名嗅探,
+    // 不传 hints 时 fast 对它们静默失效(实测:glm-5.3 开了快速仍思考 9187 字)。
     const effort = (readSettingsMap(db).reasoning_effort ?? "") as ReasoningEffortSetting;
-    const effortPlan = reasoningPlanFor(llm.provider.id, llm.provider.protocol, effort);
+    const effortPlan = reasoningPlanFor(llm.provider.id, llm.provider.protocol, effort, {
+      baseUrl: llm.provider.baseUrl,
+      model: llm.model,
+    });
     let chatModel = llm.languageModel;
     let providerOptions: Record<string, Record<string, ReasoningJsonValue>> | undefined;
     if (effortPlan.kind === "providerOptions") {

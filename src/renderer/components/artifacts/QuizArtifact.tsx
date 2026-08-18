@@ -82,7 +82,7 @@ export function QuizArtifact({
   quizMastery?: number | null;
   /** 点某个动作 → 把对应消息发进对话(父组件接 sendMessage)。常开:有回调就显示下一步动作(消灭死胡同)。 */
   onPickAction?: (message: string) => void;
-  /** 答完最后一题提交时自动触发(真实点击才算,进度恢复不重放)——父组件把成绩单 hook 给 AI,
+  /** 答完点「完成答题」时触发(真实点击才算,进度恢复不重放)——父组件把成绩单 hook 给 AI,
    *  由 AI 决定下一步(讲错题/放行/换角度)。提供后完成卡不再显示手动下一步按钮。 */
   onQuizCompleted?: (result: QuizCompletedResult) => void;
 }) {
@@ -103,23 +103,45 @@ export function QuizArtifact({
     saveQuizProgress(progressKey, { current, score });
   }, [progressKey, current, score]);
 
-  if (current >= d.questions.length) {
-    // 全部做完。自动 hook 模式:成绩单已交给 AI(提交最后一题时触发),等 AI 分析;
-    // 手动"下一步动作"仅在无 hook 回调的上下文保留(消灭死胡同)。
-    const showActions = !!onPickAction && !onQuizCompleted;
-    if (onQuizCompleted) {
-      return (
-        <div className="surface-card p-4 text-center" data-testid="artifact-quiz-done">
-          <div className="text-2xl mb-2">{score.correct === score.total ? "🎉" : "📚"}</div>
-          <div className="text-body font-bold text-ink">
-            {t("quiz.scoreSummary", { correct: score.correct, total: score.total })}
+    // 答完最后一题不自动发:完成卡先亮出成绩,学习者点「完成答题」才把成绩单交给 AI
+    // (交卷是显式动作——提交完最后一题可能还想回看,不该被 AI 的分析打断)。
+    const [hookSent, setHookSent] = useState(false);
+    if (current >= d.questions.length) {
+      // 全部做完。自动 hook 模式:点「完成答题」后成绩单交给 AI,等 AI 分析;
+      // 手动"下一步动作"仅在无 hook 回调的上下文保留(消灭死胡同)。
+      const showActions = !!onPickAction && !onQuizCompleted;
+      if (onQuizCompleted) {
+        return (
+          <div className="surface-card p-4 text-center" data-testid="artifact-quiz-done">
+            <div className="text-2xl mb-2">{score.correct === score.total ? "🎉" : "📚"}</div>
+            <div className="text-body font-bold text-ink">
+              {t("quiz.scoreSummary", { correct: score.correct, total: score.total })}
+            </div>
+            {hookSent ? (
+              <div className="text-label text-ink-muted mt-1" data-testid="quiz-hook-sent">
+                {t("quiz.hook.sent")}
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setHookSent(true);
+                  onQuizCompleted({
+                    title: d.title ?? "",
+                    correct: score.correct,
+                    total: score.total,
+                    // 恢复的进度没有逐题判定:成绩单只带总分(detail 空),AI 仍可分析
+                    detail: [...detailRef.current],
+                  });
+                }}
+                data-testid="quiz-hook-finish"
+                className="btn-3d-brand mt-3 px-5 py-2 text-body"
+              >
+                {t("quiz.hook.finish")}
+              </button>
+            )}
           </div>
-          <div className="text-label text-ink-muted mt-1" data-testid="quiz-hook-sent">
-            {t("quiz.hook.sent")}
-          </div>
-        </div>
-      );
-    }
+        );
+      }
     const actions = showActions ? getPostQuizActions(score, quizMastery ?? null) : [];
     return (
       <div className="surface-card p-4 text-center" data-testid="artifact-quiz-done">
@@ -170,16 +192,8 @@ export function QuizArtifact({
       answerText: q.options[q.answer] ?? "?",
       correct,
     });
-    // 最后一题提交 = 自动 hook:把成绩单交给 AI 决定下一步(讲错题/放行/换角度)。
-    // 只在真实点击时发生——localStorage 恢复的完成态不重放。
-    if (current === d.questions.length - 1 && onQuizCompleted) {
-      onQuizCompleted({
-        title: d.title ?? "",
-        correct: score.correct + (correct ? 1 : 0),
-        total: score.total + 1,
-        detail: [...detailRef.current],
-      });
-    }
+    // 最后一题提交不再自动发成绩单——完成卡的「完成答题」按钮显式交卷(见上方 done 分支)。
+    // 只在真实点击时累积判定——localStorage 恢复的完成态 detail 为空,交卷时只带总分。
     // Phase 1: 答题高光时刻 — 答对粒子爆发,答错柔红光闪(CelebrationLayer 统一渲染)。
     celebrate(correct ? "correct" : "wrong");
   };

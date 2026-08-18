@@ -189,5 +189,29 @@ check("T? llmFamilyOf: 认不出 → 原 id(降级 none)", llmFamilyOf("custom-?
     supportsReasoningControl("custom-claude", "anthropic", { baseUrl: "https://x" }) === true);
 }
 
+/* ---- T6 引擎接线:glm-codingplan/custom 的 hints 必须真传到 reasoningPlanFor ----
+ * 背景(2026-08-18):UI 门控修了嗅探,但 agent-engine 调 reasoningPlanFor 时没传 hints,
+ * glm-codingplan 预设(id≠"glm"不在方言表)和一切 custom-* 的 fast 全部静默降级 none
+ * —— 用户开了快速思考,glm-5.3 仍思考 9187 字。纯函数(T5d)只证明"传了 hints 就能落地",
+ * 拦不住调用点丢 hints,所以这里加一道源码级接线守卫。 */
+{
+  const plan = reasoningPlanFor("glm-codingplan", "openai-compatible", "fast", {
+    baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
+    model: "glm-5.3",
+  });
+  check("T6a glm-codingplan 预设 + hints + fast → bodyPatch(id 不在表,靠 baseUrl 嗅探)", plan.kind === "bodyPatch");
+  check("T6b glm-codingplan 无 hints → none(旧缺口的行为,证明 hints 是唯一变量)",
+    reasoningPlanFor("glm-codingplan", "openai-compatible", "fast").kind === "none");
+  check("T6c deep 也走嗅探",
+    reasoningPlanFor("glm-codingplan", "openai-compatible", "deep", { baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4", model: "glm-5.3" }).kind === "bodyPatch");
+  {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("../src/main/services/agent/agent-engine.ts", import.meta.url), "utf8");
+    const m = src.match(/reasoningPlanFor\(([^)]*)\)/s);
+    check("T6d 引擎调用点传了 baseUrl hints(接线守卫,丢了这里红)",
+      !!m && m[1].includes("baseUrl: llm.provider.baseUrl") && m[1].includes("model: llm.model"));
+  }
+}
+
 console.log(fail === 0 ? `\nALL PASS (${pass})` : `\nFAIL (${fail}/${pass + fail})`);
 process.exit(fail === 0 ? 0 : 1);

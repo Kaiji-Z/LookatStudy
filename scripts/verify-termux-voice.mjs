@@ -77,7 +77,8 @@ console.log("T4 工作流结构与 NDK 版本对齐");
   assert.ok(/gh release upload/.test(wf), "Release 挂载");
   const ndk = [...build.matchAll(/ndk\/(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
   const ndkSet = new Set(ndk);
-  for (const v of ndkSet) assert.ok(wf.includes(`ndk;${v}`), `工作流 NDK 版本缺 ${v}`);
+  // 工作流经 CDN zip 装 NDK(不再走 sdkmanager 的 ndk;X 语法),只断版本串在场且目录名一致
+  for (const v of ndkSet) assert.ok(wf.includes(v), `工作流 NDK 版本缺 ${v}`);
   ok(`触发/挂载齐,NDK ${[...ndkSet].join(",")} 对齐`);
 }
 

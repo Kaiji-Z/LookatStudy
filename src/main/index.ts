@@ -21,7 +21,7 @@ import { seedBuiltinSouls } from "./services/souls/soul-service.js";
 import { createProposal } from "./services/proposal-service.js";
 import { setStateEmitter } from "./lib/state-emitter.js";
 import { setExamStatusSender } from "./services/exam-generation-store.js";
-import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems, progress as progressTable, chatMessages, threads as threadsTable } from "./db/schema.js";
+import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems, progress as progressTable, chatMessages, threads as threadsTable, exercises as exercisesTable, examAttempts } from "./db/schema.js";
 import { eq } from "drizzle-orm";
 
 // 主进程以 CJS 打包（见 vite.config.ts），__dirname 天然可用。
@@ -1740,6 +1740,238 @@ async function runUiTest(screenshot = false): Promise<void> {
   } catch (e) {
     results.push({ name: "responsive tiers", ok: false, detail: String(e) });
   }
+
+  // T-exam (考试答题正确性): 答题 UI 的选项显示序必须与判分端的 perm 映射配对
+  // (v0.12 真实事故:渲染按自然序、判分按显示位穿置换 → 点对的选项被判成另一个)。
+  // 造数:解锁第一个考试球(章节课时全部 mastery≥0.5)+ 注入 3 道已知答案的题
+  // (E2E-长题干 兼测超长题干溢出)。点"正确选项的文本"答题 → 断言 3/3 + 零溢出。
+  const UITEST_EXAM_QS = [
+    {
+      id: "uitest-exam-q1",
+      prompt: "E2E-选择题一:LookatStudy 的学习数据存储在哪里?",
+      options: ["本地 SQLite 数据库", "云端服务器", "浏览器 localStorage", "别人的电脑"],
+    },
+    {
+      id: "uitest-exam-q2",
+      prompt:
+        "E2E-长题干:" +
+        "这是一段很长的题干内容,用来测试超长题目在窄屏上是否会溢出屏幕边界,需要注意各种极端情况下的布局表现。".repeat(8) +
+        "\n```js\nconst veryLongIdentifierName = someFunction(with, many, arguments, that, never, ends);\n```\n" +
+        "另一个不可断行的超长字符串:" +
+        "x".repeat(160),
+      options: [
+        "长题干的正确答案是本地优先架构,数据归属明确且离线可用",
+        "错误选项二" + "重复填充文本".repeat(12),
+        "错误选项三" + "重复填充文本".repeat(12),
+        "错误选项四",
+      ],
+    },
+    {
+      id: "uitest-exam-q3",
+      prompt: "E2E-选择题三:以下哪一个是间隔重复算法?",
+      options: ["SM-2", "HTTP", "CSS", "JSON"],
+    },
+  ];
+  const examSetup: { examId?: string; injectedLessonProgress: string[] } = { injectedLessonProgress: [] };
+  let examIntegrity: { ok?: boolean; scoreOk?: boolean; reason?: string; error?: string; overflow?: unknown } = {};
+  try {
+    const examNode = getDb().select().from(contentNodes).all().find((n) => n.type === "exam");
+    if (!examNode) {
+      examIntegrity = { reason: "no exam node in seed course" };
+    } else {
+      examSetup.examId = examNode.id;
+      // 解锁:同章课时全部 mastery≥0.5(无行的插入并记为注入,有行的抬高不还原——T21 会删整门课)
+      const sectionLessons = getDb()
+        .select()
+        .from(contentNodes)
+        .all()
+        .filter((n) => n.parentId === examNode.parentId && n.type === "lesson");
+      for (const l of sectionLessons) {
+        const has = getDb().select().from(progressTable).where(eq(progressTable.nodeId, l.id)).get();
+        if (!has) {
+          getDb().insert(progressTable).values({ nodeId: l.id, status: "mastered", mastery: 0.95 }).run();
+          examSetup.injectedLessonProgress.push(l.id);
+        } else if ((has.mastery ?? 0) < 0.5) {
+          getDb().update(progressTable).set({ mastery: 0.95 }).where(eq(progressTable.nodeId, l.id)).run();
+        }
+      }
+      for (const x of UITEST_EXAM_QS) {
+        getDb()
+          .insert(exercisesTable)
+          .values({
+            id: x.id,
+            nodeId: examNode.id,
+            type: "mcq",
+            prompt: x.prompt,
+            answer: "0",
+            optionsJson: JSON.stringify(x.options),
+            aiGenerated: true,
+            kcTitle: "UI测试知识点",
+          })
+          .run();
+      }
+      markDirty();
+      // DB 直写不发 state:changed → 已渲染的地图还认为考试球锁定;reload 让进度重拉
+      await win.webContents.loadURL(win.webContents.getURL());
+      examIntegrity = await win.webContents.executeJavaScript(`
+        (async function() {
+          try {
+            var q = function(s) { return document.querySelector(s); };
+            var sleep = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+            var waitFor = async function(sel, timeout) {
+              for (var t = 0; t < timeout; t += 250) {
+                var el = q(sel);
+                if (el) return el;
+                await sleep(250);
+              }
+              return null;
+            };
+            var row = await waitFor('[data-testid="course-row"]', 20000);
+            if (!row) return { ok: false, reason: "no course row after reload" };
+            // 选课处理器在行内第一个 button 上(行 div 本身无 onClick)
+            var rowBtn = row.querySelector("button");
+            if (!rowBtn) return { ok: false, reason: "course row has no select button" };
+            rowBtn.click();
+            var ball = null;
+            for (var t = 0; t < 20000; t += 300) {
+              ball = q('button[data-testid^="exam-node-"]:enabled');
+              if (ball) break;
+              await sleep(300);
+            }
+            if (!ball) {
+              var dump = { examBtns: [], rail: !!q('[data-testid="map-rail"]'), path: !!q(".map-path"), wrappers: document.querySelectorAll("[data-node-id]").length, noCourse: !!q('[data-testid="chat-no-course"]'), progress: {} };
+              document.querySelectorAll('button[data-testid^="exam-node-"]').forEach(function(b) {
+                dump.examBtns.push({ id: b.getAttribute("data-testid"), disabled: b.disabled });
+              });
+              try {
+                var courseRows = document.querySelectorAll('[data-testid="course-row"]');
+                if (courseRows.length > 0) {
+                  var cid = courseRows[0].getAttribute("data-course-id");
+                  if (cid) {
+                    var nodes = await window.api.getCourseTree(cid);
+                    var examN = nodes.filter(function(n) { return n.type === "exam"; })[0];
+                    var secLessons = nodes.filter(function(n) { return n.parentId === examN.parentId && n.type === "lesson"; });
+                    dump.progress.examId = examN.id;
+                    dump.progress.exam = await window.api.getProgress(examN.id);
+                    for (var li = 0; li < secLessons.length; li++) {
+                      dump.progress[secLessons[li].id] = await window.api.getProgress(secLessons[li].id);
+                    }
+                  }
+                }
+              } catch (e2) { dump.progress.error = String(e2); }
+              return { ok: false, reason: "exam ball not unlocked/found", dump: dump };
+            }
+            ball.click();
+            var entered = null;
+            for (var t2 = 0; t2 < 15000; t2 += 300) {
+              if (q('[data-testid="exam-start-btn"]')) { entered = "ready"; break; }
+              if (q('[data-testid="exam-result"]')) { entered = "result"; break; }
+              await sleep(300);
+            }
+            if (!entered) return { ok: false, reason: "exam view did not mount" };
+            if (entered === "result") {
+              var retry = q('[data-testid="exam-retry-btn"]');
+              if (!retry) return { ok: false, reason: "result page without retry btn" };
+              retry.click();
+            } else {
+              q('[data-testid="exam-start-btn"]').click();
+            }
+            if (!(await waitFor('[data-testid="exam-answering"]', 10000))) return { ok: false, reason: "answering not shown" };
+            // 答题会话 active 时提前退出会拦住后续步骤的导航/删除 —— 失败路径先走离开确认终止
+            var bail = async function(payload) {
+              try {
+                if (!q('[data-testid="exam-answering"]')) return payload;
+                var anyBall = q('button[data-testid^="map-node-"]:enabled');
+                if (!anyBall) return payload;
+                anyBall.click();
+                await sleep(500);
+                var leaveConfirm = q('[data-testid="exam-leave-confirm"]');
+                if (leaveConfirm) { leaveConfirm.click(); await sleep(700); }
+              } catch (e3) { /* 尽力而为 */ }
+              return payload;
+            };
+            var FPS = [
+              ["E2E-选择题一", "本地 SQLite 数据库"],
+              ["E2E-长题干", "长题干的正确答案是本地优先架构,数据归属明确且离线可用"],
+              ["E2E-选择题三", "SM-2"],
+            ];
+            var overflow = null, answered = 0;
+            for (var k = 0; k < 6; k++) {
+              if (q('[data-testid="exam-result"]')) break; // 最后一题提交后 answering 卸载,先查结算页
+              var root = q('[data-testid="exam-answering"]');
+              if (!root) return await bail({ ok: false, reason: "answering vanished at q" + k, overflow: overflow });
+              var body = root.innerText || "";
+              var fp = null;
+              for (var i = 0; i < FPS.length; i++) if (body.indexOf(FPS[i][0]) >= 0) { fp = FPS[i]; break; }
+              if (!fp) return await bail({ ok: false, reason: "unknown prompt: " + body.slice(0, 40) });
+              if (fp[0] === "E2E-长题干" && !overflow) {
+                var rb = root.getBoundingClientRect();
+                var pr = root.querySelector(".whitespace-pre-wrap");
+                var sc = null;
+                var divs = root.querySelectorAll("div");
+                for (var j = 0; j < divs.length; j++) {
+                  var st = getComputedStyle(divs[j]);
+                  if (st.overflowY === "auto" || st.overflowY === "scroll") { sc = divs[j]; break; }
+                }
+                overflow = {
+                  rootFits: rb.bottom <= window.innerHeight + 1,
+                  promptNoX: pr ? pr.scrollWidth <= pr.clientWidth + 1 : null,
+                  scroller: !!sc,
+                  scrollable: sc ? sc.scrollHeight >= sc.clientHeight : false,
+                };
+              }
+              var btns = root.querySelectorAll('button[data-testid^="exam-option-"]');
+              var hit = null;
+              for (var b = 0; b < btns.length; b++) if ((btns[b].innerText || "").trim() === fp[1]) { hit = btns[b]; break; }
+              if (!hit) return await bail({ ok: false, reason: "correct option not found for " + fp[0], overflow: overflow });
+              hit.click();
+              // React 状态更新异步落地:点击后等渲染再读按钮态
+              await sleep(300);
+              var next = q('[data-testid="exam-next-btn"]');
+              if (!next || next.disabled) return await bail({ ok: false, reason: "next btn disabled after select", overflow: overflow });
+              next.click();
+              answered++;
+              await sleep(400);
+            }
+            var res = await waitFor('[data-testid="exam-result"]', 20000);
+            if (!res) return await bail({ ok: false, reason: "result page never shown", overflow: overflow });
+            var txt = res.innerText || "";
+            var scoreOk = txt.indexOf("3 / 3") >= 0;
+            return {
+              ok: scoreOk && !!overflow && overflow.rootFits && overflow.promptNoX && overflow.scroller && overflow.scrollable,
+              scoreOk: scoreOk,
+              answered: answered,
+              overflow: overflow,
+            };
+          } catch (e) { return { ok: false, error: String(e) }; }
+        })()
+      `);
+    }
+  } catch (e) {
+    examIntegrity = { error: String(e) };
+  } finally {
+    // 清理注入( attempt/考试进度/题目/注入的课时进度),不污染后续步骤与下次运行
+    try {
+      if (examSetup.examId) {
+        getDb().delete(examAttempts).where(eq(examAttempts.examNodeId, examSetup.examId)).run();
+        getDb().delete(progressTable).where(eq(progressTable.nodeId, examSetup.examId)).run();
+      }
+      for (const x of UITEST_EXAM_QS) {
+        getDb().delete(exercisesTable).where(eq(exercisesTable.id, x.id)).run();
+      }
+      for (const lid of examSetup.injectedLessonProgress) {
+        getDb().delete(progressTable).where(eq(progressTable.nodeId, lid)).run();
+      }
+      markDirty();
+    } catch (e) {
+      console.error("[lookatstudy] ui-test exam cleanup failed:", e);
+    }
+  }
+  results.push({
+    name: "exam answering: option display order matches grading (click correct text → 3/3) + long prompt stays in viewport",
+    ok: examIntegrity?.ok === true,
+    detail: examIntegrity,
+  });
 
   // T21 (课程删除闭环): 地图头"删除当前课程"按钮 → ConfirmCard 确认 → 课程删除,
   // 中栏回到未选课空态 + 课程列表少一门。ui-test 用临时 DB,删种子课不影响下次运行。

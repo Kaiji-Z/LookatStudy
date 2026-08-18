@@ -78,7 +78,7 @@ npm run verify:core       # 82 pure-Node/tsx logic test suites (incl. verify-ser
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 40 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + seed bilingual 🌐 switcher + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
+npm run ui-test           # real-GUI verification (headless Electron, 38 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + seed bilingual 🌐 switcher + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue + exam answering integrity (option display order matches grading, click correct text → 3/3, long prompt stays in viewport))
 npm run lint              # oxlint
 npm run shots             # capture README screenshots → docs/screenshots/ (headless window, temp DB, real .env LLM; GPU stays ON for capturePage)
 npx tsc --noEmit                       # typecheck renderer

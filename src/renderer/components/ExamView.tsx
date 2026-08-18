@@ -91,11 +91,17 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
   const attemptIdRef = useRef<string | null>(null);
   // 单题消费守卫(「下一题」按钮与 0 秒超时竞态防重:一题只推进一次)
   const consumedQRef = useRef<string | null>(null);
+  // 答题滚动容器(换题归顶:长题滚到底后,下一题不该从半截开始)
+  const answerScrollRef = useRef<HTMLDivElement | null>(null);
 
   const currentQ: ExamQuestionView | null = shuffle
     ? (exercises[shuffle.questionOrder[currentIdx]] ?? null)
     : null;
-  const perm = currentQ && shuffle ? (shuffle.optionPerms[currentQ.id] ?? []) : [];
+  const rawPerm = currentQ && shuffle ? (shuffle.optionPerms[currentQ.id] ?? []) : [];
+  const opts = currentQ?.options ?? [];
+  // 显示序 = 选项重排(判分端 displayAnswerToOriginal 按 perm[d] 映射,渲染端必须
+  // 把 options[perm[d]] 显示在第 d 位——两端配对,漏一边答案就会错换)。长度不符兜底恒等。
+  const perm = rawPerm.length === opts.length ? rawPerm : opts.map((_, i) => i);
 
   /* ---------- 挂载/换节点:拉状态,必要时自动触发生成 ---------- */
   useEffect(() => {
@@ -245,6 +251,7 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
     if (consumedQRef.current !== currentQ.id) {
       setTimeLeft(questionTimeLimitSec(currentQ.prompt));
       setSelected(null);
+      answerScrollRef.current?.scrollTo({ top: 0 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIdx, phase]);
@@ -432,68 +439,78 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
     if (!currentQ) return null;
     const timeWarn = timeLeft <= 10;
     return (
-      <div className="flex-1 flex flex-col px-6 py-6 max-w-2xl w-full mx-auto" data-testid="exam-answering">
-        {/* 顶栏:进度 + 计时 */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-label text-ink-muted tabular-nums">
-            {t("exam.q.progress", { i: currentIdx + 1, n: exercises.length })}
-          </div>
-          <div
-            className={`flex items-center gap-1 text-label font-bold tabular-nums transition-colors ${timeWarn ? "text-warning" : "text-ink"}`}
-            data-testid="exam-timer"
-          >
-            <Timer className="w-3.5 h-3.5" />
-            {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
-          </div>
-        </div>
-        {/* 总进度条 */}
-        <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden mb-6">
-          <div
-            className="h-full bg-accent transition-all duration-300"
-            style={{ width: `${(currentIdx / exercises.length) * 100}%` }}
-          />
-        </div>
-        {/* KC 标签 */}
-        {currentQ.kcTitle && (
-          <div className="inline-flex items-center gap-1 text-caption text-accent bg-accent/10 rounded-full px-2.5 py-1 mb-3 self-start">
-            <Lightbulb className="w-3 h-3" />
-            {currentQ.kcTitle}
-          </div>
-        )}
-        {/* 题干 */}
-        <div className="text-lead text-ink leading-relaxed mb-6 whitespace-pre-wrap">{currentQ.prompt}</div>
-        {/* 选项(重排后的显示序) */}
-        <div className="flex flex-col gap-2.5">
-          {(currentQ.options ?? []).map((opt, j) => (
-            <button
-              key={j}
-              onClick={() => setSelected(j)}
-              data-testid={`exam-option-${j}`}
-              className={`text-left px-4 py-3 rounded-xl border transition-all duration-150 ${
-                selected === j
-                  ? "border-accent bg-accent/15 text-ink"
-                  : "border-white/10 bg-white/5 text-ink hover:border-white/25"
-              }`}
+      <div className="flex-1 flex flex-col min-h-0" data-testid="exam-answering">
+        {/* 固定顶栏:进度 + 计时 + 总进度条(长题滚动时保持可见) */}
+        <div className="px-6 pt-6 w-full max-w-2xl mx-auto shrink-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-label text-ink-muted tabular-nums">
+              {t("exam.q.progress", { i: currentIdx + 1, n: exercises.length })}
+            </div>
+            <div
+              className={`flex items-center gap-1 text-label font-bold tabular-nums transition-colors ${timeWarn ? "text-warning" : "text-ink"}`}
+              data-testid="exam-timer"
             >
-              <span className="text-body">{opt}</span>
-            </button>
-          ))}
+              <Timer className="w-3.5 h-3.5" />
+              {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
+            </div>
+          </div>
+          {/* 总进度条 */}
+          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden mb-6">
+            <div
+              className="h-full bg-accent transition-all duration-300"
+              style={{ width: `${(currentIdx / exercises.length) * 100}%` }}
+            />
+          </div>
         </div>
-        {/* 下一题/提交 */}
-        <div className="mt-6 flex justify-end">
-          {phase === "submitting" ? (
-            <div className="text-body text-ink-muted">{t("exam.submitting")}</div>
-          ) : (
-            <button
-              className="btn-3d-brand px-5 py-2 text-body disabled:opacity-40 disabled:cursor-not-allowed"
-              disabled={selected === null}
-              onClick={handleNext}
-              data-testid="exam-next-btn"
-            >
-              {currentIdx + 1 < exercises.length ? t("exam.q.next") : t("exam.q.submit")}
-              <ArrowRight className="w-3.5 h-3.5 inline ml-1" />
-            </button>
+        {/* 可滚内容:KC + 题干 + 选项 + 提交(超长题干不溢出屏幕,内部滚动) */}
+        <div
+          ref={answerScrollRef}
+          className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 w-full max-w-2xl mx-auto"
+        >
+          {/* KC 标签 */}
+          {currentQ.kcTitle && (
+            <div className="inline-flex items-center gap-1 text-caption text-accent bg-accent/10 rounded-full px-2.5 py-1 mb-3 self-start">
+              <Lightbulb className="w-3 h-3" />
+              {currentQ.kcTitle}
+            </div>
           )}
+          {/* 题干(break-words:不可断行的长 token/URL 不撑破横向) */}
+          <div className="text-lead text-ink leading-relaxed mb-6 whitespace-pre-wrap break-words">
+            {currentQ.prompt}
+          </div>
+          {/* 选项:按重排后的显示序(第 d 位 = options[perm[d]],与判分映射配对) */}
+          <div className="flex flex-col gap-2.5">
+            {perm.map((origIdx, d) => (
+              <button
+                key={origIdx}
+                onClick={() => setSelected(d)}
+                data-testid={`exam-option-${d}`}
+                className={`text-left px-4 py-3 rounded-xl border transition-all duration-150 ${
+                  selected === d
+                    ? "border-accent bg-accent/15 text-ink"
+                    : "border-white/10 bg-white/5 text-ink hover:border-white/25"
+                }`}
+              >
+                <span className="text-body break-words">{opts[origIdx]}</span>
+              </button>
+            ))}
+          </div>
+          {/* 下一题/提交 */}
+          <div className="mt-6 flex justify-end">
+            {phase === "submitting" ? (
+              <div className="text-body text-ink-muted">{t("exam.submitting")}</div>
+            ) : (
+              <button
+                className="btn-3d-brand px-5 py-2 text-body disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={selected === null}
+                onClick={handleNext}
+                data-testid="exam-next-btn"
+              >
+                {currentIdx + 1 < exercises.length ? t("exam.q.next") : t("exam.q.submit")}
+                <ArrowRight className="w-3.5 h-3.5 inline ml-1" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );

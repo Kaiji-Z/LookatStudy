@@ -11,10 +11,17 @@ files:
   - node_modules/sql.js/dist/sql-wasm.wasm
   # pdf-inspector 预编译 .node 二进制(平台子包 @firecrawl/pdf-inspector-{win32-x64-msvc,...})
   - node_modules/@firecrawl/**/*
+  # v0.12 语音:sherpa-onnx-node 是原生模块(vite external),二进制在平台子包
+  # sherpa-onnx-{win,linux,darwin}-{arch}(optionalDependencies,随平台自动装)。
+  # 纯 JS 的 unbzip2-stream/tar-stream 已被 rollup 打进 dist-electron,无需列入。
+  - node_modules/sherpa-onnx-node/**/*
+  - node_modules/sherpa-onnx-*/**/*
 asarUnpack:
   - "node_modules/sql.js/dist/sql-wasm.wasm"
   # napi .node 必须从 asar 解包才能被 require 加载(否则 ENOENT)
   - "node_modules/@firecrawl/**/*"
+  - "node_modules/sherpa-onnx-node/**/*"
+  - "node_modules/sherpa-onnx-*/**/*"
 mac:
   category: public.app-category.education
   target: dmg

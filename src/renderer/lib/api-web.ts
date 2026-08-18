@@ -125,6 +125,14 @@ class WebTransport {
     return this.connectPromise;
   }
 
+
+  // v0.12 语音:asrFeed 的 Float32Array 过 JSON 河转 base64(服务端解码还原)
+  private static float32ToB64(arr: Float32Array): string {
+    const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
   async invoke(channel: string, ...args: unknown[]): Promise<unknown> {
     const ws = await this.connect();
     const id = (globalThis.crypto?.randomUUID?.() ?? String(Math.random()).slice(2));
@@ -134,21 +142,42 @@ class WebTransport {
         reject(new Error(`调用 ${channel} 超时`));
       }, 300_000); // 长任务(导入/出题)允许 5 分钟
       this.pending.set(id, { resolve, reject, timer });
-      ws.send(JSON.stringify({ v: WS_PROTOCOL_VERSION, type: "req", id, channel, args }));
+      // 语音 PCM 上行:Float32Array 无法过 JSON —— base64 包装(服务端 speech:asrFeed 解包)
+      const wireArgs =
+        channel === "speech:asrFeed" && args[0] instanceof Float32Array
+          ? [WebTransport.float32ToB64(args[0])]
+          : args;
+      ws.send(JSON.stringify({ v: WS_PROTOCOL_VERSION, type: "req", id, channel, args: wireArgs }));
     });
   }
 
   on(channel: string, listener: (...args: unknown[]) => void): () => void {
+    // 语音音频帧经 WS 时是 base64(JSON 信道装不下 ArrayBuffer)——分派前还原
+    const effective =
+      channel === "speech:ttsAudio"
+        ? (...args: unknown[]) => {
+            const first = args[0] as { wavBase64?: string } | undefined;
+            if (first && typeof first.wavBase64 === "string") {
+              const bin = atob(first.wavBase64);
+              const bytes = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+              const { wavBase64: _drop, ...rest } = first;
+              listener({ ...rest, wavBytes: bytes.buffer });
+            } else {
+              listener(...args);
+            }
+          }
+        : listener;
     let set = this.listeners.get(channel);
     if (!set) {
       set = new Set();
       this.listeners.set(channel, set);
     }
-    set.add(listener);
+    set.add(effective);
     // 事件由服务端广播,连接保持即订阅;懒建连接保证首屏事件不丢
     void this.connect().catch(() => {});
     return () => {
-      set!.delete(listener);
+      set!.delete(effective);
     };
   }
 }

@@ -254,3 +254,6 @@ esac
 info "启动 LookatStudy..."
 start_service
 ok "完成。日常使用:打开启动器点「打开 LookatStudy」,或浏览器访问 http://127.0.0.1:$PORT"
+echo ''
+info '语音朗读/语音输入(v0.12):桌面端功能。Termux 是 bionic libc,sherpa-onnx 原生引擎暂无'
+info '预编译包,手机端自动优雅降级(界面不显示语音入口或提示平台不支持),不影响其他功能。' 

@@ -111,6 +111,13 @@ export async function startServe(opts: ServeOptions): Promise<ServeInstance> {
   const clients = new Set<WebSocket>();
   const emitter: ClientEmitter = {
     send(channel, ...args) {
+      // WS 是 JSON 信道:ArrayBuffer 会被序列化成 {}。语音音频帧在此转 base64
+      // 过河,web 端 transport(api-web.ts)收到后再还原成 ArrayBuffer —— 渲染层两头无感。
+      const first = args[0] as { wavBytes?: unknown } | undefined;
+      if (channel === "speech:ttsAudio" && first && typeof first === "object" && first.wavBytes instanceof ArrayBuffer) {
+        const { wavBytes, ...rest } = first as Record<string, unknown> & { wavBytes: ArrayBuffer };
+        args = [{ ...rest, wavBase64: Buffer.from(wavBytes).toString("base64") }];
+      }
       const frame: WsServerFrame = { v: WS_PROTOCOL_VERSION, type: "event", channel, args };
       const raw = JSON.stringify(frame);
       for (const c of clients) {
@@ -161,6 +168,11 @@ export async function startServe(opts: ServeOptions): Promise<ServeInstance> {
       if (!frame) {
         ws.send(JSON.stringify({ v: WS_PROTOCOL_VERSION, type: "res", id: "", ok: false, error: "bad frame" }));
         return;
+      }
+      // v0.12 语音:asrFeed 的 PCM 以 base64 过河(JSON 装不下 Float32Array),分派前还原
+      if (frame.channel === "speech:asrFeed" && typeof frame.args[0] === "string") {
+        const buf = Buffer.from(frame.args[0] as string, "base64");
+        frame.args = [new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.byteLength / 4))];
       }
       const handler = handlers.get(frame.channel);
       if (!handler) {

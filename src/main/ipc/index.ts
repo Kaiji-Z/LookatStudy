@@ -78,6 +78,22 @@ import {
   findRecentThreadByNode,
 } from "../services/thread-service.js";
 import { getStreak, touchStreakToday } from "../services/streak.js";
+// v0.12 语音:TTS 朗读编排 + 模型管理
+import {
+  ensureSpeechModelEmitting,
+  speakMessage,
+  speechModelsStatusSnapshot,
+  stopSpeaking,
+} from "../services/speech/tts-service.js";
+import { deleteSpeechModel } from "../services/speech/speech-model-service.js";
+import type { SpeechModelId } from "@shared/speech-types";
+import { invalidateSpeechEngines } from "../services/speech/speech-engine.js";
+import {
+  startAsrSession,
+  feedAsrSamples,
+  stopAsrSession,
+  abandonAsrSession,
+} from "../services/speech/asr-service.js";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
 import {
   getProgress as getProgressService,
@@ -1328,6 +1344,44 @@ async function autoStructureCourse(
   send("知识点提取完成");
 }
 
+/* ---------- v0.12:语音(朗读/模型管理) ---------- */
+
+export function registerSpeechHandlers(deps: RuntimeDeps): void {
+  const emit = (channel: string, payload: unknown) => deps.emitter.send(channel, payload);
+
+  handle("speech:getModelStatus", async () => speechModelsStatusSnapshot(deps.dataDir));
+
+  handle("speech:ensureModel", async (_e, id: SpeechModelId) => {
+    await ensureSpeechModelEmitting(emit, deps.dataDir, id);
+    // 落盘后变体可能变化(如 fp32 兜底 → int8),引擎单例按旧目录内容建的必须失效
+    invalidateSpeechEngines();
+    return speechModelsStatusSnapshot(deps.dataDir);
+  });
+
+  handle("speech:deleteModel", async (_e, id: SpeechModelId) => {
+    stopSpeaking();
+    invalidateSpeechEngines();
+    await deleteSpeechModel(deps.dataDir, id);
+  });
+
+  handle("speech:ttsSpeak", async (_e, text: string, messageId: string) => {
+    return speakMessage(emit, deps.dataDir, messageId, text);
+  });
+
+  handle("speech:ttsStop", async () => {
+    stopSpeaking();
+  });
+
+  handle("speech:asrStart", async () => startAsrSession(deps.dataDir));
+  handle("speech:asrFeed", async (_e, samples: Float32Array) => {
+    emit("speech:asrPartial", { text: feedAsrSamples(samples) });
+  });
+  handle("speech:asrStop", async () => ({ text: stopAsrSession() }));
+  handle("speech:asrCancel", async () => {
+    abandonAsrSession();
+  });
+}
+
 export function registerAllHandlers(deps: RuntimeDeps): void {
   registerCourseHandlers(deps);
   registerProgressHandlers();
@@ -1341,6 +1395,7 @@ export function registerAllHandlers(deps: RuntimeDeps): void {
   registerExamHandlers();
   registerCanvasHandlers();
   registerThreadHandlers();
+  registerSpeechHandlers(deps);
 }
 
 /* ---------- v0.4: Thread 会话 ---------- */

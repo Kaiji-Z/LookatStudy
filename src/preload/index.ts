@@ -137,6 +137,26 @@ const api = {
     ipcRenderer.invoke("agent:abortThread", threadId)) as ApiExpose["abortAgentChatThread"],
   getContextUsage: ((nodeId: string, locale?: string | null) =>
     ipcRenderer.invoke("agent:getContextUsage", nodeId, locale ?? null)) as ApiExpose["getContextUsage"],
+
+  // ---------- v0.12 语音(TTS/ASR/模型管理) ----------
+  getSpeechModelStatus: (() =>
+    ipcRenderer.invoke("speech:getModelStatus")) as ApiExpose["getSpeechModelStatus"],
+  ensureSpeechModel: ((id: string) =>
+    ipcRenderer.invoke("speech:ensureModel", id)) as ApiExpose["ensureSpeechModel"],
+  deleteSpeechModel: ((id: string) =>
+    ipcRenderer.invoke("speech:deleteModel", id)) as ApiExpose["deleteSpeechModel"],
+  ttsSpeak: ((text: string, messageId: string) =>
+    ipcRenderer.invoke("speech:ttsSpeak", text, messageId)) as ApiExpose["ttsSpeak"],
+  ttsStop: (() =>
+    ipcRenderer.invoke("speech:ttsStop")) as ApiExpose["ttsStop"],
+  asrStart: (() =>
+    ipcRenderer.invoke("speech:asrStart")) as ApiExpose["asrStart"],
+  asrFeed: ((samples: Float32Array) =>
+    ipcRenderer.invoke("speech:asrFeed", samples)) as ApiExpose["asrFeed"],
+  asrStop: (() =>
+    ipcRenderer.invoke("speech:asrStop")) as ApiExpose["asrStop"],
+  asrCancel: (() =>
+    ipcRenderer.invoke("speech:asrCancel")) as ApiExpose["asrCancel"],
   getAttachmentDataUrl: ((file: string) =>
     ipcRenderer.invoke("attachment:getDataUrl", file)) as ApiExpose["getAttachmentDataUrl"],
   isAgentReady: (() =>

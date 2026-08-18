@@ -17,6 +17,8 @@ BKT mastery tracking, SM-2 spaced repetition, XP/streak/crown retention).
 Supports 10 document formats (.md/.ipynb/.rst/.Rmd/.org/.adoc/.pdf/.pptx/.html/.txt) +
 30+ code file types (.py/.js/.ts/.go/.rs/.java/.c/.cpp/.rb/.sh/etc) +
 multimodal image import + AI vision.
+Local voice (v0.12): sherpa-onnx TTS read-aloud + streaming ASR dictation,
+models downloaded on demand (ModelScope mirror primary), fully offline inference.
 Electron app, local SQLite (sql.js), BYO LLM API key. Light/dark theme.
 
 ## Tech stack (locked — do not change)
@@ -26,6 +28,10 @@ Electron app, local SQLite (sql.js), BYO LLM API key. Light/dark theme.
 - **Vercel AI SDK v5** (`ai` + `@ai-sdk/openai` + `@ai-sdk/openai-compatible` + `@ai-sdk/anthropic` + `@ai-sdk/google`) · **zod v3** for tool schemas
 - **sql.js** (SQLite compiled to WASM, pure JS) + **Drizzle ORM** — *not* better-sqlite3
 - **pdfjs-dist** (PDF rendering, pure WASM/JS) — for PDF text + image extraction, no canvas dependency
+- **sherpa-onnx-node** (native sherpa-onnx) — local TTS (Kokoro fp32) + streaming ASR (zipformer int8).
+  CRITICAL: every native→JS Float32Array transfer MUST pass `enableExternalBuffer: false`
+  (Electron 21+ bans external array buffers in ALL process forms — M0 spike proved it;
+  the flag is read by the native side, centralised in `speech-engine.ts` `synthesize()`).
 - **tsx** runs `scripts/verify-*.mjs` deterministic tests · `scripts/live-test/*.mjs` for LLM behavior tests
 
 ## Architecture boundaries (critical)
@@ -133,6 +139,10 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection` (主模型/视觉覆盖双路), `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels`。openai-compatible 协议分家:官方 OpenAI 端点 `createOpenAI`(原生 providerOptions),第三方端点 `@ai-sdk/openai-compatible`(chat/completions 解析 `reasoning_content` → reasoning-delta,思考流进 UI;includeUsage 与官方包对齐) |
 | LLM presets | `services/agent/llm-presets.ts` | 19 provider presets (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google, Groq, Together, Mistral, xAI, Volcano, Baidu, MiniMax, Baichuan, StepFun) |
 | Vision bridge | `services/agent/vision-bridge.ts` | 图像转译桥(v0.11,describe-then-chat):`visionRouting`(native/bridge/reject)是**三处喂图点共用的通道路由**——① 聊天附件注入 ② 课文图主动注入(方案 B,`flag_multimodal_import` + `isImageRelatedQuery` 门控)③ `attach_node_images` 工具。native=主模型直看 file-part;bridge=纯文本主模型 + 配了 `vision_provider_override`/`vision_model_override` → 视觉模型(`resolveVisionLlm`)转译成**不可信视觉证据**文字注入(工具则返回转译文本;reject 通道下工具不注册、方案 B 不喂图,修掉纯文本模型硬吃 file-part 的 400 坑);主模型永远是唯一大脑。学习者原话原样转发(任务导向转译);sha256(图+问题+语言) 进程内缓存(FIFO 200);watchdog 120s/5min;失败带指引报错绝不静默丢图;`parseDataUrl` 统一图源归一化(纯 base64)。`agent:getContextUsage` 的 `visionCapable` 桥感知 + `visionBridgeModel` 驱动输入框转译提示;设置页视觉覆盖不被 `flag_multimodal_import` 门控 |
+| Speech models | `services/speech/speech-model-manifest.ts` + `speech-model-service.ts` + `pure/speech-plan.ts` | 语音模型清单(单源事实:URL 实测)与下载器:ModelScope 逐文件主源(断点续跑=逐文件粒度)+ GitHub 归档代理链兜底(unbzip2-stream+tar-stream 流式解压);`.part`→rename 原子落盘;纯函数层(计划/路径安全/变体挑选/进度聚合)verify 直测 |
+| Speech engine | `services/speech/speech-engine.ts` | sherpa-onnx 懒加载持有者(进程内,无子进程)+ 纯配置构建器 + `synthesize()`(**enableExternalBuffer:false 唯一收口**,Electron 红线)。kokoro fp32 TTS(24kHz,句级缓存见 tts-cache)+ zipformer int8 ASR(int8 偏好/fp32 兜底变体探测) |
+| TTS 朗读 | `services/speech/tts-service.ts` + `tts-cache.ts` + `wav-codec.ts` | 朗读编排:净化→句切分(shared/speech-text)→缓存优先合成→`speech:ttsAudio` WAV 事件;单场朗读语义(新场停旧场);句级磁盘缓存 LRU 200MB;引擎不可载平台(如 Termux)结构化降级 engine-unavailable |
+| ASR 听写 | `services/speech/asr-service.ts` | 单会话流式识别:`asrStart/Feed/Stop` + `speech:asrPartial` 事件;端点检测命中即 committed+reset(防转导上下文无限增长) |
 | Threads | `services/thread-service.ts` | CRUD for `threads` + `chat_messages`; `findRecentThreadByNode`; thread is node-bound (`focus_node_id`)。`chat_messages.display_text`:按钮触发的消息气泡只显示短动作标签(完整提示词在 `content`,只给 LLM;手打输入 `display_text=null` 原样展示) |
 | Canvas | `services/canvas-service.ts` | 康奈尔笔记本:AI 产物 + user_note 画线 + quiz 答题记录 (`canvas_items`);byZone 三区筛选(understand/note/practice);溯源字段(source_type/source_anchor) |
 | Highlight | `lib/highlightText.ts` | 画线定位:getTextModel + 文本搜索(applyPersistentMarksByText)+ 跨节点包裹(wrapRangeWithMark)+ 闪烁(flashMark)。**不依赖 DOM offset**(ReactMarkdown 重渲染不稳定),用 indexOf 在纯文本上定位 |

@@ -433,7 +433,7 @@ export function sanitizeArtifact(input: unknown, type: string): SanitizeResult {
 
 export const QUALITY_GUIDE = {
   concept_map:
-    "质量要求:≤ 8 个概念节点(过多会拥挤),关系清晰避免网状交叉,每个节点 label 简短(≤ 8 字)。id 用英文小写下划线(如 attention / feed_forward)。",
+    "质量要求:6-9 个节点。以一个中心概念为根(其余概念大多与它相关),但根的直接子节点 ≤ 4 —— 不要星形摊大饼;二级概念之间有真实关系就给交叉边(不是纯树)。边标签用具体关系词(如 生成/依赖/对比/输入),不要全用『包含』。每个节点 label ≤ 8 字。id 用英文小写下划线(如 attention / feed_forward)。",
   quiz:
     "质量要求:3-4 题最佳(最多 5 题),每题 4 个选项,distractor 要有迷惑性(不能明显荒谬),explanation 说清为什么对/错。",
   compare_table:

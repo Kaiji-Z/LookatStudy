@@ -19,23 +19,85 @@ let mermaidPromise: Promise<Mermaid> | null = null;
 /**
  * 动态加载 mermaid(只加载一次,后续复用)。
  * 主题切换时 invalidate(见下方 theme-changed 监听)——下次调用重新 initialize。
+ *
+ * v0.12:不再用内置 dark/default 主题(默认调色板与应用的 token 体系完全脱节),
+ * 改 theme:"base" + themeVariables 从 :root 的 CSS 变量实时读取 —— 节点面色/文字/连线
+ * 全部走 surface/ink/border token,暗亮双色系自动跟随,字号跟应用字体系统。
  */
 export function loadMermaid(): Promise<Mermaid> {
   if (!mermaidPromise) {
     mermaidPromise = import("mermaid").then((mod) => {
       const mermaid = mod.default;
-      const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
       mermaid.initialize({
         startOnLoad: false,
-        theme: isDark ? "dark" : "default",
+        theme: "base",
         securityLevel: "loose", // 允许 label 带 HTML/特殊字符(学习内容常有)
-        flowchart: { useMaxWidth: true, htmlLabels: true },
-        sequence: { useMaxWidth: true },
+        themeVariables: mermaidThemeVariables(),
+        flowchart: { useMaxWidth: true, htmlLabels: true, curve: "basis", nodeSpacing: 42, rankSpacing: 54, padding: 10 },
+        sequence: { useMaxWidth: true, boxMargin: 8, noteMargin: 8, messageMargin: 32 },
       });
       return mermaid;
     });
   }
   return mermaidPromise;
+}
+
+/** 从 :root CSS 变量取 token 色,拼成 mermaid themeVariables。
+ *  变量值是 "R G B" 三元组(rgb(var(--x-rgb)) 的内脏),拼回 rgb() 字符串。 */
+function mermaidThemeVariables(): Record<string, string> {
+  const read = (name: string, fallback: string): string => {
+    if (typeof document === "undefined") return fallback;
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v ? `rgb(${v})` : fallback;
+  };
+  const bodyFont =
+    typeof document !== "undefined"
+      ? getComputedStyle(document.body).fontFamily || "ui-sans-serif, system-ui, sans-serif"
+      : "ui-sans-serif, system-ui, sans-serif";
+  return {
+    background: "transparent",
+    fontFamily: bodyFont,
+    fontSize: "14px",
+    // 节点(水线/主色系):中性抬升面 + token 描边 + ink 文字
+    primaryColor: read("--surface-3-rgb", "rgb(42 43 46)"),
+    primaryBorderColor: read("--border-rgb", "rgb(37 38 41)"),
+    primaryTextColor: read("--ink-strong-rgb", "rgb(250 250 250)"),
+    // 分支/聚簇:同族降一档
+    secondaryColor: read("--surface-2-rgb", "rgb(32 33 36)"),
+    secondaryBorderColor: read("--border-faint-rgb", "rgb(26 26 29)"),
+    secondaryTextColor: read("--ink-rgb", "rgb(245 245 250)"),
+    tertiaryColor: read("--surface-1-rgb", "rgb(24 25 27)"),
+    tertiaryBorderColor: read("--border-faint-rgb", "rgb(26 26 29)"),
+    tertiaryTextColor: read("--ink-rgb", "rgb(245 245 250)"),
+    // 线与箭头:比文字安静一档
+    lineColor: read("--ink-faint-rgb", "rgb(117 117 126)"),
+    textColor: read("--ink-rgb", "rgb(245 245 250)"),
+    // 边标签底:不透明面,压线可读
+    edgeLabelBackground: read("--surface-0-rgb", "rgb(12 13 15)"),
+    // 聚簇/子图
+    clusterBkg: read("--surface-1-rgb", "rgb(24 25 27)"),
+    clusterBorder: read("--border-faint-rgb", "rgb(26 26 29)"),
+    // 各类小品件
+    nodeBorder: read("--border-rgb", "rgb(37 38 41)"),
+    mainBkg: read("--surface-3-rgb", "rgb(42 43 46)"),
+    nodeTextColor: read("--ink-rgb", "rgb(245 245 250)"),
+    arrowheadColor: read("--ink-faint-rgb", "rgb(117 117 126)"),
+    // 时序图生命线/激活条
+    actorBkg: read("--surface-3-rgb", "rgb(42 43 46)"),
+    actorBorder: read("--border-rgb", "rgb(37 38 41)"),
+    actorTextColor: read("--ink-strong-rgb", "rgb(250 250 250)"),
+    activationBkgColor: read("--surface-3-rgb", "rgb(42 43 46)"),
+    activationBorderColor: read("--border-rgb", "rgb(37 38 41)"),
+    signalColor: read("--ink-rgb", "rgb(245 245 250)"),
+    signalTextColor: read("--ink-rgb", "rgb(245 245 250)"),
+    labelBoxBkgColor: read("--surface-2-rgb", "rgb(32 33 36)"),
+    labelBoxBorderColor: read("--border-rgb", "rgb(37 38 41)"),
+    labelTextColor: read("--ink-rgb", "rgb(245 245 250)"),
+    loopTextColor: read("--ink-strong-rgb", "rgb(250 250 250)"),
+    noteBkgColor: "rgb(255 200 0 / 0.12)",
+    noteBorderColor: "rgb(255 200 0 / 0.4)",
+    noteTextColor: read("--ink-rgb", "rgb(245 245 250)"),
+  };
 }
 
 /**

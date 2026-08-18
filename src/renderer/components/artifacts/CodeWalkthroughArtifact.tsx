@@ -60,7 +60,9 @@ export function CodeWalkthroughArtifact({ data, variant = "card" }: { data: unkn
     }
   };
 
-  /** 代码块(带行号)。refs 数组按调用方传入 —— 内联与弹窗两份副本互不覆盖 ref。 */
+  /** 代码块(带行号)。refs 数组按调用方传入 —— 内联与弹窗两份副本互不覆盖 ref。
+   *  代码块固定深底(neutral-950),文字必须用固定浅色 —— 不能用 ink token
+   *  (亮色主题下 ink 变深字,黑底上不可读)。 */
   const renderCode = (refs: React.MutableRefObject<(HTMLDivElement | null)[]>) => (
     <div className="bg-neutral-950 rounded-lg overflow-hidden border border-neutral-800 max-h-[420px] overflow-y-auto">
       <pre className="text-label font-mono leading-relaxed overflow-x-auto">
@@ -75,10 +77,10 @@ export function CodeWalkthroughArtifact({ data, variant = "card" }: { data: unkn
                 }}
                 className={`flex ${isLineHighlighted(lineNum) ? "bg-brand/15" : ""}`}
               >
-                <span className="select-none text-neutral-600 pr-3 pl-3 text-right w-10 shrink-0 border-r border-neutral-800">
+                <span className="select-none text-neutral-600 pr-3 pl-3 text-right w-10 shrink-0 border-r border-neutral-800 tabular-nums">
                   {lineNum}
                 </span>
-                <span className="text-ink-muted pl-3 whitespace-pre">{line || " "}</span>
+                <span className="text-neutral-200 pl-3 whitespace-pre">{line || " "}</span>
               </div>
             );
           })}
@@ -89,7 +91,7 @@ export function CodeWalkthroughArtifact({ data, variant = "card" }: { data: unkn
 
   const annotationsEl = (
     <div className="space-y-2">
-      <div className="text-caption font-bold text-ink-muted uppercase tracking-wider">
+      <div className="text-caption font-bold text-ink-muted">
         {t("artifact.codewalk.sectionLabel")}
       </div>
       {d.annotations.map((a, i) => (

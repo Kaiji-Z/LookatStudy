@@ -47,6 +47,14 @@ export function MermaidArtifact({ data, variant = "card" }: { data: unknown; var
   // useId 保证 SSR-safe 唯一 id,mermaid v11 需要它作为内部 dom 节点 id
   const reactId = useId().replace(/[:]/g, "_");
   const [state, setState] = useState<RenderState>({ status: "loading" });
+  // 主题切换 nonce:lazy-mermaid 只清自己的初始化缓存,已渲染的 SVG 不会自己换色
+  // —— 这里监听 theme-changed 重跑下方渲染路径,让在场的图卡跟着主题变色。
+  const [themeNonce, setThemeNonce] = useState(0);
+  useEffect(() => {
+    const onTheme = () => setThemeNonce((n) => n + 1);
+    window.addEventListener("theme-changed", onTheme);
+    return () => window.removeEventListener("theme-changed", onTheme);
+  }, []);
   // 渲染后测量到的 svg 实际尺寸(用于撑开滚动区,让 scale 后能滚动看到全部)
   const [svgSize, setSvgSize] = useState<{ width: number; height: number } | null>(null);
   // 缩放等级:1 = 原始尺寸。< 1 缩小看全貌,> 1 放大看细节
@@ -78,7 +86,7 @@ export function MermaidArtifact({ data, variant = "card" }: { data: unknown; var
     return () => {
       cancelled = true;
     };
-  }, [d.mermaid, reactId]);
+  }, [d.mermaid, reactId, themeNonce]);
 
   const liveUrl = `https://mermaid.live/edit#${encodeURIComponent(d.mermaid)}`;
 

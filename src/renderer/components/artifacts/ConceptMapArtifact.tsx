@@ -1,25 +1,24 @@
 /**
- * ConceptMapArtifact —— 概念图产物(v0.2.2, dagre 布局重写)。
+ * ConceptMapArtifact —— 概念图产物(v0.12 径向重设计)。
  *
- * 之前用手写 BFS 拓扑分层,真实概念图(交叉边、不等长子树、环)布局效果差。
- * v0.2.2 改用 dagre —— 业界标准的 DAG 分层布局库(React Flow dagre 示例同款),
- * 处理交叉边、节点尺寸差异、边路由都远比手写好。
+ * v0.2.2 用 dagre TB 分层,但概念图数据形态是"以中心概念展开的网",分层布局
+ * 产出宽扁层+交叉边;v0.12 换径向布局(见 lib/conceptmap-layout.ts)。
  *
- * dagre 静态 import(~140KB gzip,比 mermaid 小),它本身是纯 JS 无 wasm,打包开销可接受。
+ * 视觉规则(yFiles 图可视化指南 + impeccable Playful Product):
+ *   - 节点大小 = 重要度:hub(中心/高度数)更大、accent 描边、粗体;叶子收敛
+ *   - 无装饰:去掉旧版每节点一致的左侧色条(side-stripe 禁令),颜色只编码 hub
+ *   - 文字两行自适应包裹,不再 14 字硬截断
+ *   - 边 = 轻弧贝塞尔 + 中点标签胶囊(宽度与文字同源估算,不再溢出)
+ *   - 不加投影滤镜:清晰描边 + 面色分层即可(暗亮双色系走 token)
  *
- * 视觉升级(参考 Cambridge Intelligence / Tom Sawyer 图可视化最佳实践):
- *   - 卡片式节点(圆角矩形 + 柔阴影 + 左侧色条),替代单色椭圆
- *   - 边用 dagre 路由点画平滑贝塞尔曲线(不是直线/直角)
- *   - 边标签用胶囊背景(可读性)
- *   - 节点宽度按 label 长度自适应,dagre 据此布局不重叠
- *   - 缩放 + 滚动视口(同 mermaid:大图可缩放查看)
+ * 交互不变:v0.12 CanvasStage 全屏手势弹窗 / 黑板 canvas 变体 / 内联原生滚动 + 缩放按钮。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import dagre from "dagre";
 import { Share2, AlertTriangle, Maximize2 } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
 import { DiagramViewerModal } from "./DiagramViewerModal.js";
 import { CanvasStage } from "../CanvasStage.js";
+import { radialLayout, labelPillSize, type CmNode, type CmEdge } from "../../lib/conceptmap-layout.js";
 
 interface ConceptMapData {
   artifactType: "concept_map";
@@ -34,91 +33,115 @@ const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 0.2;
 
-/** 估算节点尺寸:dagre 需要明确宽高来布局。label 长度 → 像素宽。 */
-function nodeSize(label: string): { width: number; height: number } {
-  // 中文约 16px/字,英文约 9px/字,取中间 12 估算 + padding
-  const charWidth = /[\u4e00-\u9fa5]/.test(label) ? 16 : 9;
-  const textWidth = label.length * charWidth;
-  return {
-    width: Math.min(200, Math.max(90, textWidth + 32)),
-    height: 40,
-  };
-}
+function ConceptMapSvg({ data }: { data: ConceptMapData }) {
+  const L = useMemo(
+    () => radialLayout(data.nodes as CmNode[], data.edges as CmEdge[]),
+    [data.nodes, data.edges],
+  );
+  return (
+    <svg
+      width={L.width}
+      height={L.height}
+      viewBox={`0 0 ${L.width} ${L.height}`}
+      style={{ display: "block" }}
+      data-testid="conceptmap-svg"
+    >
+      <defs>
+        <marker
+          id="cm-arrow"
+          viewBox="0 0 10 10"
+          refX={9}
+          refY={5}
+          markerWidth={6.5}
+          markerHeight={6.5}
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" className="fill-ink-faint" />
+        </marker>
+      </defs>
 
-/** 用 dagre 计算所有节点和边的布局位置 + 图尺寸。 */
-function computeLayout(data: ConceptMapData) {
-  const g = new dagre.graphlib.Graph();
-  // rankdir TB = 自上而下分层(Top→Bottom);LR 横向。概念图用 TB 最直观。
-  g.setGraph({ rankdir: "TB", ranksep: 70, nodesep: 36, marginx: 24, marginy: 24 });
-  g.setDefaultEdgeLabel(() => ({}));
+      {/* 边:先画在节点下层;标签胶囊不透明,压线可读 */}
+      {L.edges.map(({ edge, d, labelPt }, i) => {
+        const pill = edge.label ? labelPillSize(edge.label) : null;
+        return (
+          <g key={`e-${i}`}>
+            <path
+              d={d}
+              className="fill-none stroke-ink-faint/70"
+              strokeWidth={1.6}
+              markerEnd="url(#cm-arrow)"
+            />
+            {edge.label && pill && (
+              <g>
+                <rect
+                  x={labelPt.x - pill.width / 2}
+                  y={labelPt.y - pill.height / 2}
+                  width={pill.width}
+                  height={pill.height}
+                  rx={pill.height / 2}
+                  className="fill-surface-0 stroke-[var(--border-faint)]"
+                  strokeWidth={1}
+                />
+                <text
+                  x={labelPt.x}
+                  y={labelPt.y + 3.5}
+                  textAnchor="middle"
+                  className="fill-ink-muted text-caption font-medium"
+                >
+                  {edge.label}
+                </text>
+              </g>
+            )}
+          </g>
+        );
+      })}
 
-  const sizes = new Map<string, { width: number; height: number }>();
-  for (const n of data.nodes) {
-    const size = nodeSize(n.label);
-    sizes.set(n.id, size);
-    g.setNode(n.id, { label: n.label, width: size.width, height: size.height });
-  }
-  for (const e of data.edges) {
-    // 避免重复边(dagre 允许,但会画重叠曲线)
-    try {
-      g.setEdge(e.from, e.to);
-    } catch {
-      /* 节点不存在的边已被 harness 过滤,这里防御 */
-    }
-  }
-  dagre.layout(g);
-
-  const positions = new Map<string, { x: number; y: number }>();
-  for (const n of data.nodes) {
-    const pos = g.node(n.id);
-    if (pos) positions.set(n.id, { x: pos.x, y: pos.y });
-  }
-
-  // 边路由点(dagre 给出折线/曲线控制点)
-  const edgePoints = data.edges.map((e) => ({
-    edge: e,
-    points: (() => {
-      try {
-        const edge = g.edge(e.from, e.to);
-        return edge?.points ?? [];
-      } catch {
-        return [];
-      }
-    })(),
-  }));
-
-  return {
-    positions,
-    sizes,
-    edgePoints,
-    width: g.graph().width ?? 400,
-    height: g.graph().height ?? 300,
-  };
-}
-
-/** 把 dagre 的折线点连成平滑贝塞尔路径(SVG path)。 */
-function pointsToPath(points: { x: number; y: number }[]): string {
-  if (points.length === 0) return "";
-  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
-  const [first, ...rest] = points;
-  let path = `M ${first.x} ${first.y}`;
-  // 用相邻点中点做控制点,画 quadratic/cubic 平滑曲线
-  for (let i = 0; i < rest.length - 1; i++) {
-    const cp = rest[i];
-    const next = rest[i + 1];
-    const midX = (cp.x + next.x) / 2;
-    const midY = (cp.y + next.y) / 2;
-    path += ` Q ${cp.x} ${cp.y} ${midX} ${midY}`;
-  }
-  const last = rest[rest.length - 1] ?? first;
-  path += ` L ${last.x} ${last.y}`;
-  return path;
+      {/* 节点:hub = accent 描边 + 染底 + 粗体;普通 = 中性面 + 标准描边 */}
+      {[...L.nodes.values()].map((n) => {
+        const x = n.center.x - n.box.width / 2;
+        const y = n.center.y - n.box.height / 2;
+        const fs = n.box.hub ? 14 : 13;
+        return (
+          <g key={n.id}>
+            <rect
+              x={x}
+              y={y}
+              width={n.box.width}
+              height={n.box.height}
+              rx={n.box.hub ? 13 : 11}
+              className={
+                n.box.hub
+                  ? "fill-accent/10 stroke-accent/80"
+                  : "fill-surface-3 stroke-[var(--border)]"
+              }
+              strokeWidth={n.box.hub ? 1.6 : 1.1}
+            />
+            {n.box.lines.map((line, li) => (
+              <text
+                key={li}
+                x={n.center.x}
+                y={n.center.y + (li - (n.box.lines.length - 1) / 2) * 17 + 4.5}
+                textAnchor="middle"
+                fontSize={fs}
+                className={n.box.hub ? "fill-ink-strong font-bold" : "fill-ink"}
+              >
+                {line}
+              </text>
+            ))}
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; variant?: "card" | "canvas" }) {
   const d = data as ConceptMapData;
   const t = useLang();
-  const layout = useMemo(() => computeLayout(d), [d]);
+  const layout = useMemo(
+    () => radialLayout(d.nodes as CmNode[], d.edges as CmEdge[]),
+    [d.nodes, d.edges],
+  );
   const [zoom, setZoom] = useState(1);
   /* 手势分界(v0.11):主界面内联区不吃手势(浏览器页面缩放已被 viewport 禁掉,
      内联只留原生滚动),单指平移/双指捏合只在全屏弹窗舞台里。 */
@@ -147,118 +170,9 @@ export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; 
     setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z + delta).toFixed(2))));
   }, []);
 
-  const graphSvg = (
-    <svg
-      width={layout.width}
-      height={layout.height}
-      viewBox={`0 0 ${layout.width} ${layout.height}`}
-      style={{ display: "block" }}
-      data-testid="conceptmap-svg"
-    >
-      <defs>
-      {/* 箭头标记 */}
-      <marker
-        id="cm-arrow"
-        viewBox="0 0 10 10"
-        refX={9}
-        refY={5}
-        markerWidth={7}
-        markerHeight={7}
-        orient="auto-start-reverse"
-      >
-        <path d="M 0 0 L 10 5 L 0 10 z" className="fill-neutral-400 dark:fill-neutral-500" />
-      </marker>
-      {/* 节点柔阴影 */}
-      <filter id="cm-shadow" x="-20%" y="-20%" width="140%" height="140%">
-        <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor="#00000022" />
-      </filter>
-    </defs>
-
-    {/* 边(先画,在节点下层) */}
-      {layout.edgePoints.map(({ edge, points }, i) => {
-        if (points.length === 0) return null;
-        const path = pointsToPath(points);
-        const midIdx = Math.floor(points.length / 2);
-        const midPoint = points[midIdx] ?? points[0];
-        return (
-          <g key={`e-${i}`}>
-            <path
-              d={path}
-              className="fill-none stroke-neutral-400 dark:stroke-neutral-500"
-              strokeWidth={1.8}
-              markerEnd="url(#cm-arrow)"
-            />
-            {edge.label && (
-              <g>
-                {/* 胶囊背景 */}
-                <rect
-                  x={midPoint.x - edge.label.length * 4 - 6}
-                  y={midPoint.y - 9}
-                  width={edge.label.length * 8 + 12}
-                  height={18}
-                  rx={9}
-                  className="fill-white dark:fill-neutral-800 stroke-neutral-200 dark:stroke-neutral-700"
-                  strokeWidth={1}
-                />
-                <text
-                  x={midPoint.x}
-                  y={midPoint.y + 3.5}
-                  textAnchor="middle"
-                  className="fill-neutral-600 dark:fill-neutral-300 text-caption font-medium"
-                >
-                  {edge.label}
-                </text>
-              </g>
-            )}
-          </g>
-        );
-      })}
-
-      {/* 节点(卡片式:圆角矩形 + 左色条 + 文字) */}
-      {d.nodes.map((node) => {
-        const pos = layout.positions.get(node.id);
-        const size = layout.sizes.get(node.id) ?? { width: 100, height: 40 };
-        if (!pos) return null;
-        const x = pos.x - size.width / 2;
-        const y = pos.y - size.height / 2;
-        return (
-          <g key={node.id} filter="url(#cm-shadow)">
-            {/* 卡片背景 */}
-            <rect
-              x={x}
-              y={y}
-              width={size.width}
-              height={size.height}
-              rx={10}
-              className="fill-white dark:fill-neutral-800 stroke-neutral-200 dark:stroke-neutral-700"
-              strokeWidth={1.2}
-            />
-            {/* 左侧品牌色条(视觉锚点,区分节点类型) */}
-            <rect
-              x={x}
-              y={y}
-              width={4}
-              height={size.height}
-              rx={2}
-              className="fill-brand"
-            />
-            <text
-              x={pos.x + 2}
-              y={pos.y + 4.5}
-              textAnchor="middle"
-              className="fill-neutral-800 dark:fill-neutral-100 text-label font-semibold"
-            >
-              {node.label.length > 14 ? node.label.slice(0, 13) + "…" : node.label}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-
   /* canvas 变体:裸内容自然尺寸 —— 黑板/全屏查看器的 CanvasStage 用 transform 接管缩放平移 */
   if (variant === "canvas") {
-    return <div data-testid="conceptmap-canvas-content">{graphSvg}</div>;
+    return <div data-testid="conceptmap-canvas-content"><ConceptMapSvg data={d} /></div>;
   }
 
   return (
@@ -276,14 +190,14 @@ export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; 
             <button
               onClick={zoomOut}
               disabled={zoom <= MIN_ZOOM}
-              className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
+              className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
               title={t("artifact.zoomOut")}
             >
               −
             </button>
             <button
               onClick={zoomReset}
-              className="px-1.5 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 text-caption font-bold tabular-nums"
+              className="px-1.5 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-3 text-caption font-bold tabular-nums"
               title={t("artifact.zoomReset")}
             >
               {Math.round(zoom * 100)}%
@@ -291,7 +205,7 @@ export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; 
             <button
               onClick={zoomIn}
               disabled={zoom >= MAX_ZOOM}
-              className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-1 hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
+              className="w-6 h-6 rounded border border-[var(--border)] text-ink-muted hover:bg-surface-3 disabled:opacity-30 text-label font-bold flex items-center justify-center"
               title={t("artifact.zoomIn")}
             >
               +
@@ -329,7 +243,7 @@ export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; 
           }}
         >
           <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: layout.width, height: layout.height }}>
-            {graphSvg}
+            <ConceptMapSvg data={d} />
           </div>
         </div>
       </div>

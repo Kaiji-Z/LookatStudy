@@ -74,11 +74,11 @@ npm run dist              # build + electron-builder (produces .exe/.dmg/.AppIma
 npm run serve             # dev serve: esbuild server bundle only + serve dist/renderer (web 模式调试)
 npm run build:mobile      # 便携包 dist/mobile/: server.cjs 单文件 + web 前端 + install-termux.sh(Termux 手机端)
 
-npm run verify:core       # 80 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
+npm run verify:core       # 82 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 35 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + seed bilingual 🌐 switcher + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
+npm run ui-test           # real-GUI verification (headless Electron, 40 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + seed bilingual 🌐 switcher + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue)
 npm run lint              # oxlint
 npm run shots             # capture README screenshots → docs/screenshots/ (headless window, temp DB, real .env LLM; GPU stays ON for capturePage)
 npx tsc --noEmit                       # typecheck renderer
@@ -101,7 +101,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z`. `.github/workflows/package.yml` then builds the 3-OS matrix (NSIS exe / arm64 dmg / AppImage + deb) and attaches everything to that tag's GitHub Release automatically.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 74 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
+5. `ci.yml` runs oxlint + both typechecks + 82 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -183,6 +183,8 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + reactive `useLang()` (useSyncExternalStore, no reload on switch) + `translate()` for non-component contexts |
 | Celebration bus | `src/renderer/lib/celebration.ts` + `components/CelebrationLayer.tsx` | `celebrate(kind)` event bus + 根级 canvas 粒子层;7 高光时刻统一渲染(correct/wrong/unlock/mastery/streak/energy-full/exam-pass);reduced-motion a11y 双轨(默认粒子爆发,reduced 静态图标淡入) |
 | State emitter | `src/main/lib/state-emitter.ts` | main→renderer `state:changed` 推送(xp/streak/mastery 变化);修能量条运行时不动 bug;service 内 fire-and-forget,测试时 noop(同 markDirty 模式) |
+| Concept map layout | `src/renderer/lib/conceptmap-layout.ts` + `components/artifacts/ConceptMapArtifact.tsx` | 概念图径向布局纯函数(v0.12,替代 dagre):最高度节点居中 hub(accent 两级视觉)+ BFS 扇区角度分配 + 逐环弦长约束(同环等距零重叠)+ 贝塞尔边框缘起止 + 边标签胶囊 CJK 感知估宽;`wrapLabel` 两行包裹防截断;孤儿节点兜底挂根;verify-conceptmap-layout 守重叠/居中/确定性 |
+| Mermaid theming | `src/renderer/lib/lazy-mermaid.ts` | mermaid `theme:"base"` + `themeVariables` 实时读 CSS 设计 token(暗/亮自适应);theme-changed 清初始化缓存,MermaidArtifact 监听同事件重渲染在场图卡 |
 | Map physics | `src/renderer/lib/mapPhysics.ts` | 左栏物理地图(Matter.js 0.19):真实重力场+球浮力(彩旗串悬垂链);绳=粒子链(受拉弹力/松弛垂坠);天气驱动环境(风/阵风/雨滴冲击/雪载增重/雾阻尼,weatherPhysFor);顺序=绳链(路牌绳结→球→…→紫考试球,更沉;考试球另系一条绳到下段路牌上缘,整图成连续链,挂点 x 按 section id 确定性随机);无弹簧回位自由摆布;锁定球=static 刚体(不可拖,解锁重建岛"苏醒");碰撞=squash+脉冲环(命中点用碰撞支撑点)+天气耦合;视口外岛冻结;reduced-motion 回退静态 |
 | Motion infra | `src/renderer/lib/motion-presets.ts` + `usePrefersReducedMotion.ts` | `motion` 弹簧/stagger/enter-exit 预设 + a11y reduced-motion 响应式 hook(useSyncExternalStore on matchMedia) |
 
@@ -194,7 +196,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (80 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (82 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

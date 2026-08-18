@@ -106,7 +106,9 @@
   --ink-faint: #707175;  /* oklch(0.55 0.005 270) */
   --ink-faint-rgb: 117 117 126;
   --border: #252629;  /* oklch(0.27 0.005 270) */
+  --border-rgb: 37 38 41;
   --border-faint: #1A1A1D;  /* oklch(0.22 0.005 270) */
+  --border-faint-rgb: 26 26 29;
 
   /* —— 通用发光/阴影 —— */
   --shadow-rgb: 0 0 0;

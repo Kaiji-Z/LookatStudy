@@ -29,14 +29,14 @@ export function CompareTableArtifact({ data, variant = "card" }: { data: unknown
   const [expanded, setExpanded] = useState(false);
 
   const tableEl = (
-    <table className="w-full text-body">
+    <table className="text-body" style={{ width: "max-content", minWidth: "100%" }}>
       <thead>
-        <tr className="bg-surface-1/60">
+        <tr className="bg-surface-3/60">
           {d.headers.map((h, i) => (
             <th
               key={i}
-              className={`px-3 py-2 text-left font-bold text-ink-muted border-b border-[var(--border-faint)] ${
-                i === 0 ? "w-32" : ""
+              className={`px-3 py-2.5 text-left font-bold border-b border-[var(--border)] ${
+                i === 0 ? "text-ink-strong" : "text-ink"
               }`}
             >
               {h}
@@ -48,14 +48,15 @@ export function CompareTableArtifact({ data, variant = "card" }: { data: unknown
         {d.rows.map((row, ri) => (
           <tr
             key={ri}
-            className={ri % 2 === 0 ? "bg-surface-0" : "bg-surface-0/30"}
+            className={ri % 2 === 0 ? "bg-surface-0/40" : ""}
           >
             {row.map((cell, ci) => (
               <td
                 key={ci}
-                className={`px-3 py-2 text-ink-muted border-b border-[var(--border-faint)] align-top ${
-                  ci === 0 ? "font-bold text-ink-strong" : ""
+                className={`px-3 py-2.5 border-b border-[var(--border-faint)] align-top leading-relaxed ${
+                  ci === 0 ? "font-bold text-ink-strong whitespace-nowrap bg-surface-1/40" : "text-ink-muted"
                 }`}
+                style={ci === 0 ? undefined : { maxWidth: 260, overflowWrap: "anywhere" }}
               >
                 {cell}
               </td>

@@ -247,6 +247,23 @@ async function buildAddon(addonDir, installDir) {
 // 3. ELF 验证:依赖 .so 齐、RUNPATH 带 $ORIGIN、NAPI 注册符号、AArch64
 // ---------------------------------------------------------------------------
 
+function elfDynamic(nodePath) {
+  return execFileSync(READELF, ["-d", nodePath], { encoding: "utf-8" });
+}
+
+/** RUNPATH 归一。不同平台 cmake 对 -Wl,-rpath 的合并顺序不同(Linux 会把构建机
+ *  绝对路径放前面),产物必须可移植:有 patchelf 就重写为恰好 $ORIGIN(顺带清掉
+ *  构建机路径残迹);没有 patchelf 但已含 $ORIGIN(本地 Windows 实测即如此)放过。 */
+function normalizeRpath(nodePath) {
+  const has = elfDynamic(nodePath).includes("$ORIGIN");
+  if (!toolAvailable("patchelf")) {
+    if (has) return;
+    die("RUNPATH 缺 $ORIGIN 且无 patchelf 可修正");
+  }
+  execFileSync("patchelf", ["--set-rpath", "$ORIGIN", nodePath], { stdio: "inherit" });
+  log("RUNPATH 已归一为 $ORIGIN(patchelf)");
+}
+
 function verifyElf(nodePath) {
   const out = execFileSync(READELF, ["-d", nodePath], { encoding: "utf-8" });
   for (const so of NEED_SO) {
@@ -314,6 +331,7 @@ async function main() {
   log(`NDK=${NDK}`);
   const { addonDir, installDir } = await prepareSources();
   const node = await buildAddon(addonDir, installDir);
+  normalizeRpath(node);
   verifyElf(node);
   const out = await assemble(node);
   console.log(`\nTERMUX_VOICE_PACKAGE=${out}`);

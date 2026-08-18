@@ -33,7 +33,7 @@ jobs:
       - name: Install toolchain (cmake/ninja/NDK r28c)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build unzip
+          sudo apt-get install -y --no-install-recommends ninja-build unzip patchelf
           cmake --version
           ninja --version
           # sdkmanager 拉 NDK 在 runner 上实测 >30min 超时;Google CDN 直连 zip 秒级

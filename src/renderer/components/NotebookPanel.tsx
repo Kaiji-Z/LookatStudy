@@ -191,8 +191,10 @@ export function NotebookPanel({
           </div>
         ) : (
           <>
-            {/* v0.11:内容居中封顶 960 —— 宽屏/单栏档笔记本不空旷,栏宽仍弹性 */}
-            <div className="mx-auto w-full max-w-[960px] min-h-full">
+            {/* v0.11:内容居中封顶 960 —— 宽屏/单栏档笔记本不空旷,栏宽仍弹性。
+                flex-col 让空态可用 flex-1 垂直居中(min-h-full 父级下 h-full 百分比
+                会塌缩,空态曾贴顶;黑板分支不受影响,它有自己的 h-full 结构)。 */}
+            <div className="mx-auto w-full max-w-[960px] min-h-full flex flex-col">
               {tab === "content" ? (
                 <ContentTab
                   selectedNode={selectedNode}
@@ -425,7 +427,7 @@ function ContentTab({
 
   if (!selectedNode) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center px-6">
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
         <div className="text-4xl mb-3 opacity-30">📖</div>
         <div className="text-body text-ink-muted max-w-xs">
           {t("notebook.empty.select_node")}

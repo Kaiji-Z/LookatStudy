@@ -129,6 +129,54 @@ try {
     ok("T3 WS req/res(course:list 种子课 + 未知通道报错)");
   } catch (e) { fail("T3 WS req/res", e); }
 
+  // ── T3b 模块级事件单例推送:exam:status 必须经 WS 广播到达(v0.11.0 手机端进度条冻结根因)──
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/?token=${token}`);
+    await once(ws, "open");
+    const invoke = (id, channel, ...args) => ws.send(JSON.stringify({ v: 1, type: "req", id, channel, args }));
+    const waitRes = (wantId) => new Promise((resolve) => {
+      const on = (d) => {
+        const f = JSON.parse(d.toString());
+        if (f.type === "res" && f.id === wantId) { ws.off("message", on); resolve(f); }
+      };
+      ws.on("message", on);
+    });
+    // 先挂事件监听再触发,防瞬时失败的事件先于监听到达
+    const events = [];
+    ws.on("message", (d) => {
+      const f = JSON.parse(d.toString());
+      if (f.type === "event") events.push(f);
+    });
+    invoke("cl", "course:list");
+    const rl = await waitRes("cl");
+    assert.ok(rl.ok && rl.result.length >= 1, "course:list 应成功");
+    invoke("t", "course:getTree", rl.result[0].id);
+    const tree = await waitRes("t");
+    assert.ok(tree.ok, "course:tree 应成功");
+    const examNode = tree.result.find((n) => n.type === "exam");
+    assert.ok(examNode, "种子课程应有考试节点");
+    // exam:prepare:serve 测试库无 LLM → 生成同步失败,但 setGenerating/setFailed
+    // 两次 emit 都应经 WS 广播到达(没接 setExamStatusSender 时这里一条都收不到)
+    invoke("ep", "exam:prepare", examNode.id, null);
+    const rp = await waitRes("ep");
+    assert.ok(rp.ok, `exam:prepare 应返回状态: ${JSON.stringify(rp).slice(0, 120)}`);
+    const examEvents = await Promise.race([
+      new Promise((resolve) => {
+        const poll = setInterval(() => {
+          const got = events.filter((f) => f.channel === "exam:status" && f.args?.[0]?.nodeId === examNode.id);
+          if (got.length > 0) { clearInterval(poll); resolve(got); }
+        }, 50);
+        setTimeout(() => { clearInterval(poll); resolve([]); }, 5000);
+      }),
+    ]);
+    assert.ok(
+      examEvents.length > 0,
+      `应收到 exam:status 事件帧(实际 ${JSON.stringify(events.map((f) => f.channel))})——serve 漏接 setExamStatusSender 的回归`,
+    );
+    ws.close();
+    ok(`T3b exam:status 事件经 WS 广播到达(${examEvents.length} 帧)`);
+  } catch (e) { fail("T3b exam:status 事件推送", e); }
+
   // ── T4 真渲染层 web 传输(E2E):invoke + 事件订阅 + 完整导入管线 ──
   try {
     // 浏览器全局桩:api-web.ts 只依赖 window.location/localStorage/setTimeout/WebSocket

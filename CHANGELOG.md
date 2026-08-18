@@ -48,6 +48,7 @@ Entry conventions for contributors:
 - **窄屏左栏选球后自动切到对话栏** —— T3 下在地图栏点可用球进入课时,视图自动切到对话栏(宽屏行为不变),省一次手动点"对话"。E2E 已验证选球后对话 tab 高亮。
 
 ### Fixed
+- **手机端考试生成进度条冻结(serve 漏接 exam:status 事件线)** —— 手机上章节考试的生成进度条不动,切走页面再回来才跳到最新值;桌面 Electron 正常。根因:`exam:status` 与 `state:changed` 同为模块级事件单例,Electron 启动时两根都接了 `webContents.send`,serve 只接了 `state:changed`——考试进度事件在手机端整个是 noop,进度条只能靠切页重挂载时的轮询刷新。修复:serve 启动时补接 `setExamStatusSender` → WS 广播。顺带系统性排查了全部 main→renderer 推送点:handler 内推送(chat:part/import 等)走 `deps.emitter` 双端天然同源,模块级单例就这两个,现已双端齐接。verify-serve 新增 T3b(真 bundle 子进程:WS 客户端收 exam:status 事件帧),闭环已证(摘线 → 0 帧红)。
 - **全量 UI/UX 审计修复(impeccable,第一性原理 + 对抗性)** —— 五维度审计(主题/无障碍/响应式/性能/反模式)扫出四类真实缺陷并修复:
   - **中栏裸白色 alpha(浅色主题下控件隐身)**:考试答题页 7 处(进度槽 `bg-white/10`、选项卡 `border-white/10 bg-white/5`、未得星 `text-white/20`、KC/回顾行底色)与对话流提议卡,浅色主题下这些元素亮度趋近面板背景完全不可见——这是"考试页当年只按暗色写"的遗留。全部换成主题感知的 `ink` token(dark=浅墨/亮色=深墨自动翻转),浅色主题 DOM 取证:槽/边框/底色对面板亮度差全部有效。
   - **三处侧条描边违反设计系统绝对禁令**(>1px 彩色 border-left 装饰):ConfirmCard 核心原语本身(danger=warning 全边框/常规=中性边框,语义仍由确认按钮颜色承载)、考试离开警告模态(warning 全边框)、笔记评论标记(accent 侧条 → ink 染色块)。

@@ -23,6 +23,7 @@ import { ensureSeedCourse } from "../services/seed.js";
 import { seedBuiltinSouls } from "../services/souls/soul-service.js";
 import { ensureExamNodesForExistingCourses } from "../services/course-generator.js";
 import { setStateEmitter } from "../lib/state-emitter.js";
+import { setExamStatusSender } from "../services/exam-generation-store.js";
 
 export interface ServeOptions {
   /** 数据目录(DB/assets/attachments/import-plans/serve-token 都在下面) */
@@ -118,6 +119,9 @@ export async function startServe(opts: ServeOptions): Promise<ServeInstance> {
     },
   };
   setStateEmitter((kind) => emitter.send("state:changed", kind));
+  // 考试生成进度与 state:changed 同为模块级单例发射器:Electron 在 index.ts 接线,
+  // serve 这里漏接会让手机端进度条冻住(只能靠切页重挂载轮询刷新,v0.11.0 实测)。
+  setExamStatusSender((payload) => emitter.send("exam:status", payload));
 
   // ── 3. handler 表(与 electron 同一张) + WS 分发 ──
   const handlers = collectHandlers({ ui: "web", dataDir: opts.dataDir, emitter, dialog: stubDialog });

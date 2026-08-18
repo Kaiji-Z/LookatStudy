@@ -65,6 +65,9 @@ export function SettingsView() {
   const [discovering, setDiscovering] = useState(false);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; label: string; rect: DOMRect } | null>(null);
+  // 当前模型上下文窗口编辑(自定义 provider):从 models 列表条目同步,保存时写回
+  const [customWindow, setCustomWindow] = useState("");
+  const [customWindowSaving, setCustomWindowSaving] = useState(false);
   const theme = useTheme();
 
   const handleDiscoverModels = async () => {
@@ -232,6 +235,37 @@ export function SettingsView() {
   const activeCustomProvider = activeProvider.startsWith("custom-")
     ? customProviders.find((c) => c.id === activeProvider)
     : null;
+
+  // 活跃 provider/模型变化 → 窗口输入框跟随该模型条目的现值(空 = 未知)
+  useEffect(() => {
+    if (!activeCustomProvider) return;
+    const entry = activeCustomProvider.models.find((m) => m.id === activeModel);
+    setCustomWindow(entry?.contextWindow ? String(entry.contextWindow) : "");
+  }, [activeCustomProvider, activeModel]);
+
+  const handleSaveCustomWindow = async () => {
+    if (!activeCustomProvider) return;
+    const raw = customWindow.trim().replace(/[,\s_]/g, "");
+    // 支持 128k / 1m 风格
+    const m = /^(\d+)([km]?)$/i.exec(raw);
+    if (raw !== "" && !m) return; // 非法输入不保存
+    const mult = m?.[2]?.toLowerCase() === "k" ? 1000 : m?.[2]?.toLowerCase() === "m" ? 1_000_000 : 1;
+    const parsed = raw === "" || !m ? null : Math.max(1, Math.round(parseInt(m[1]!, 10) * mult));
+    setCustomWindowSaving(true);
+    try {
+      const models = activeCustomProvider.models.map((en) =>
+        en.id === activeModel ? { ...en, contextWindow: parsed } : en,
+      );
+      await api.updateCustomProvider(activeCustomProvider.id, { models });
+      await load();
+      window.dispatchEvent(new Event("llm-config-changed"));
+    } catch {
+      /* 保存失败静默(下次打开仍显示旧值) */
+    } finally {
+      setCustomWindowSaving(false);
+    }
+  };
+
   const currentPreset = !activeProvider.startsWith("custom-")
     ? presets.find((p) => p.id === activeProvider)
     : null;
@@ -418,6 +452,24 @@ export function SettingsView() {
                       <input type="text" value={activeModel} onChange={(e) => setActiveModel(e.target.value)} placeholder={t("settings.custom.model_ph")} data-testid="model-input-custom" className={`${fieldCls} flex-1 px-2.5 py-1.5 font-mono`} />
                     )}
                   </div>
+                </div>
+                <div className={rowCls(true)}>
+                  <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.custom.windowLabel")}</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={customWindow}
+                      onChange={(e) => setCustomWindow(e.target.value)}
+                      placeholder={t("settings.custom.windowPh")}
+                      data-testid="context-window-input"
+                      className={`${fieldCls} flex-1 px-2.5 py-1.5 font-mono tabular-nums`}
+                    />
+                    <button onClick={handleSaveCustomWindow} disabled={customWindowSaving} data-testid="context-window-save" className="btn-3d-neutral px-3 py-1.5 text-label shrink-0 disabled:opacity-40">
+                      {t("settings.custom.save")}
+                    </button>
+                  </div>
+                  <div className="text-caption text-ink-faint mt-1">{t("settings.custom.windowHint")}</div>
                 </div>
                 <div className={rowCls(true)}>
                   <div className="flex items-center gap-3">

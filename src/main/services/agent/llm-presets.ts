@@ -434,3 +434,17 @@ export function resolveProviderConfig(settings: {
   const model = settings.active_model ?? preset.defaultModel;
   return { ready: true, provider: preset, model, apiKey };
 }
+
+/**
+ * 从模型列表解析上下文窗口(预设与自定义 provider 共用同一口径)。
+ * 大小写不敏感;查不到 → null(诚实"未知",不做家族猜测 —— 猜错的窗口
+ * 会让用量表显示假占比)。
+ */
+export function resolveModelContextWindow(
+  models: Array<{ id: string; contextWindow: number | null }> | undefined,
+  model: string,
+): number | null {
+  if (!models || !model) return null;
+  const entry = models.find((m) => m.id === model || m.id.toLowerCase() === model.toLowerCase());
+  return entry?.contextWindow ?? null;
+}

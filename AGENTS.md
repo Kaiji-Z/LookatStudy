@@ -74,7 +74,7 @@ npm run dist              # build + electron-builder (produces .exe/.dmg/.AppIma
 npm run serve             # dev serve: esbuild server bundle only + serve dist/renderer (web 模式调试)
 npm run build:mobile      # 便携包 dist/mobile/: server.cjs 单文件 + web 前端 + install-termux.sh(Termux 手机端)
 
-npm run verify:core       # 82 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
+npm run verify:core       # 83 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -101,7 +101,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z`. `.github/workflows/package.yml` then builds the 3-OS matrix (NSIS exe / arm64 dmg / AppImage + deb) and attaches everything to that tag's GitHub Release automatically.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 82 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
+5. `ci.yml` runs oxlint + both typechecks + 83 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -142,7 +142,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | Handler registry | `src/main/ipc/runtime.ts` + `ipc/index.ts` + `electron-wiring.ts` | `collectHandlers(deps)` 单表双接线(RuntimeDeps:emitter/dialog/dataDir/ui);Electron 走 ipcMain,serve 走 WS——改 handler 只动一处 |
 | Web transport | `src/renderer/lib/api-web.ts` + `shared/api-channels.ts` + `ws-protocol.ts` | 浏览器版 window.api(WS req/res + event 帧,断线重连,4001 不重连);94 方法↔channel 映射自 preload 生成,verify-serve T5 守漂移 |
 | Mobile bundle | `scripts/build-mobile.mjs` + `scripts/lib/build-server.mjs` + `scripts/install-termux.sh` | `dist/mobile/` 便携包:vite 前端 + esbuild server.cjs(外置 electron/pdf-inspector,companion sql-wasm.wasm/seed-course.json);install-termux.sh 是完整安装器(CN 时区 TUNA 镜像/apt-get、依赖按需检测、ghproxy 下载回退链、boot+bashrc 双自启、电池白名单+OEM 指引、~/lookatstudy 四常用脚本),随 Release 单独发布 |
-| Context usage | `services/agent/context-usage.ts` + `shared/token-estimate.ts` | 输入框上下文表(v0.10):`agent:getContextUsage` 返回固定开销(系统提示/课文/学习者快照的启发式 token 估算)——装配抽 `agent-engine.assembleContextBlocks` 与实发同源不漂移;渲染层本地叠加对话历史+草稿(`estimateTokens` CJK 感知纯函数,窗口取 preset contextWindow) |
+| Context usage | `services/agent/context-usage.ts` + `shared/token-estimate.ts` | 输入框上下文表(v0.10):`agent:getContextUsage` 返回固定开销(系统提示/课文/学习者快照的启发式 token 估算)——装配抽 `agent-engine.assembleContextBlocks` 与实发同源不漂移;渲染层本地叠加对话历史+草稿(`estimateTokens` CJK 感知纯函数,窗口 = `resolveModelContextWindow` 统一解析:预设表 → 自定义 provider modelsJson 条目(设置页可编辑,OpenRouter 发现自动带回 context_length,其余家 /models 不含窗口需手填)→ null 诚实未知) |
 | Chat attachments | `services/attachment-store.ts` + `pure/attachment-files.ts` + `shared/attachment-intake.ts` | 聊天附件(v0.10):image(≤5MB,≤4/条)落盘 `userData/attachments/` + 本轮 vision file-part 注入(engine 不受 multimodal flag/关键词门控);text(≤256KB)正文内联进 content(持久化+LLM 历史天然可见);文件名 uuid 守卫防穿越;thread 删除顺带清盘。渲染层 📎/粘贴/拖拽三入口,消息 parts 用 `attachment` part 渲染缩略图+灯箱 |
 | Reasoning effort | `shared/reasoning-effort.ts` | 思考强度方言表(v0.10,存 `settings.reasoning_effort`:""自动/fast/deep):GLM→body.thinking.type、Qwen/SiliconCloud→enable_thinking(经 `llm-client.buildLanguageModel` 的 fetch 覆盖注入)、OpenAI→reasoningEffort、Anthropic/Google→providerOptions;不支持的家族(如 DeepSeek)芯片禁用+引擎降级 none,宁可不生效不瞎发参数。**家族嗅探必须传 hints**:UI 门控(supportsReasoningControl)与引擎调用点(reasoningPlanFor)都按 baseUrl/模型名嗅探 glm-codingplan 预设与 custom-*(2026-08-18 修:引擎调用点曾漏传 hints,fast 对它们静默失效——开了快速仍思考 9187 字);verify T6d 是源码级接线守卫 |
 | Course generator | `services/course-generator.ts` | `generateCourseFromMarkdown` + `generateCourseFromRepoFiles` |
@@ -196,7 +196,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (82 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (83 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

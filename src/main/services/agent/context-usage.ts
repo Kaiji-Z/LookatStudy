@@ -10,7 +10,8 @@ import type { ContextUsageInfo } from "@shared/types";
 import { estimateTokens } from "@shared/token-estimate";
 import * as schema from "../../db/schema.js";
 import { readSettingsMap, supportsVision } from "./llm-client.js";
-import { getProviderPreset } from "./llm-presets.js";
+import { getProviderPreset, resolveModelContextWindow } from "./llm-presets.js";
+import { getCustomProvider } from "../custom-provider-service.js";
 import { getVisionOverride } from "./vision-bridge.js";
 import { assembleContextBlocks } from "./agent-engine.js";
 
@@ -29,14 +30,17 @@ export function getContextUsage(db: Db, nodeId: string, locale?: string | null):
   let contextWindow: number | null = null;
   let visionCapable = true; // 宽松:未知模型默认支持(与 supportsVision 的口径一致)
   if (preset) {
-    const entry = preset.models.find(
-      (m) => m.id === model || m.id.toLowerCase() === model.toLowerCase(),
-    );
-    contextWindow = entry?.contextWindow ?? null;
+    contextWindow = resolveModelContextWindow(preset.models, model);
     visionCapable = supportsVision(preset, model);
+  } else if (providerId.startsWith("custom-")) {
+    // 自定义 provider:窗口来自 modelsJson 里该模型的 contextWindow(设置页可编辑;
+    // OpenRouter 发现时自动带回 context_length,其余家 /models 不含窗口需手填)。
+    // 查不到就 null —— 用量表诚实显示"未知",不做会误导占比的家族猜测。
+    const cp = getCustomProvider(db, providerId);
+    if (cp) {
+      contextWindow = resolveModelContextWindow(cp.models, model);
+    }
   }
-  // 自定义 provider:models 列表在渲染层由 listCustomProviders 提供;
-  // 这里 modelsJson 不参与解析 —— 窗口未知(null 只显示用量),vision 宽松 true。
 
   // v0.11 图像桥:主模型不支持看图但配了 vision 覆盖 → 图片放行,走"视觉模型转译→注入"桥。
   // visionBridgeModel 非空时渲染层在附件区提示"图片将由 X 转译"。

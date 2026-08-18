@@ -30,14 +30,18 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install toolchain (cmake/ninja/NDK)
+      - name: Install toolchain (cmake/ninja/NDK r28c)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build
+          sudo apt-get install -y --no-install-recommends ninja-build unzip
           cmake --version
           ninja --version
-          yes | sdkmanager "ndk;28.2.13676358" >/dev/null
-          ls /usr/local/lib/android/sdk/ndk/
+          # sdkmanager 拉 NDK 在 runner 上实测 >30min 超时;Google CDN 直连 zip 秒级
+          curl -fL --retry 2 -o /tmp/ndk.zip https://dl.google.com/android/repository/android-ndk-r28c-linux.zip
+          unzip -q /tmp/ndk.zip -d /tmp/ndkout
+          mkdir -p /usr/local/lib/android/sdk/ndk
+          mv /tmp/ndkout/android-ndk-r28c /usr/local/lib/android/sdk/ndk/28.2.13676358
+          test -f /usr/local/lib/android/sdk/ndk/28.2.13676358/build/cmake/android.toolchain.cmake
 
       - name: npm deps (tar-stream for the build script + JS wrapper layer)
         run: npm install --no-audit --no-fund

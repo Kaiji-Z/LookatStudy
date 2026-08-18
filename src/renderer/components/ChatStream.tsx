@@ -21,13 +21,15 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
-import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Copy, Settings, GraduationCap, CheckCircle2, CircleSlash } from "lucide-react";
+import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Copy, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square } from "lucide-react";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { useLang } from "../lib/i18n.js";
+import { useSpeech } from "../lib/useSpeech.js";
+import { useToast } from "./Toast.js";
 /** 一条消息 = role + parts 数组(v0.2 parts-based)。
  * ChatMessageV2 / ChatMessagePart 定义已移至 @shared/part-accumulator(main 与 renderer 共用)。 */
 
@@ -66,6 +68,19 @@ interface ChatStreamProps {
 
 export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onGotoSettings, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction, onQuizCompleted, cardMode = false }: ChatStreamProps) {
   const t = useLang();
+  const toast = useToast();
+  const speech = useSpeech();
+
+  useEffect(() => {
+    if (speech.failReason) {
+      const key =
+        speech.failReason === "engine-unavailable"
+          ? "chat.speech.engine_unavailable"
+          : "chat.speech.model_missing";
+      toast.show(t(key), { severity: "warning" });
+      speech.clearFailReason();
+    }
+  }, [speech.failReason, toast, t, speech]);
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
     (q: { prompt: string; kc?: string }, _idx: number, correct: boolean) => {
@@ -398,6 +413,9 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                 quizMastery={quizMastery}
                 onPickAction={onPickQuizAction}
                 onQuizCompleted={onQuizCompleted}
+                speakingMessageId={speech.speakingMessageId}
+                speakingSentence={speech.speakingSentence}
+                onSpeak={speech.speak}
               />
             </div>
           </div>
@@ -473,6 +491,9 @@ function MessageRowV2({
   quizMastery,
   onPickAction,
   onQuizCompleted,
+  speakingMessageId,
+  speakingSentence,
+  onSpeak,
 }: {
   msg: ChatMessageV2;
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
@@ -481,7 +502,11 @@ function MessageRowV2({
   quizMastery?: number | null;
   onPickAction?: (message: string) => void;
   onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
+  speakingMessageId?: string | null;
+  speakingSentence?: { index: number; total: number } | null;
+  onSpeak?: (messageId: string, text: string) => void;
 }) {
+  const t = useLang();
   if (msg.role === "user") {
     // user:极简阅读流(claude.ai 风)。右对齐 + 极轻微染,无气泡边框。
     // 与 AI 消息靠"右对齐 + 稍亮底色 + 你 标签"区分,不靠气泡。
@@ -502,6 +527,13 @@ function MessageRowV2({
   // assistant:全宽无背景、无头像(claude.ai 风)。头像列给每条 AI 消息制造 ~38px
   // 固定左缩进(正文/产物卡全被推右,手机窄屏最伤);对话双方靠"用户右对齐微染底
   // vs AI 全宽"已足够区分,不靠头像。
+  // 朗读文本 = 全部 text part 拼接(工具产物/附件不读)
+  const speakableText = msg.parts
+    .map((p) => (p.type === "text" ? p.text : ""))
+    .join("")
+    .trim();
+  const isSpeakingThis = speakingMessageId === msg.id;
+
   return (
     <div className="msg-enter" data-testid="msg-assistant" data-msg-id={msg.id}>
       <div className="min-w-0 space-y-2.5">
@@ -520,6 +552,28 @@ function MessageRowV2({
           />
         ))}
       </div>
+      {onSpeak && speakableText && (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <button
+            onClick={() => onSpeak(msg.id, speakableText)}
+            data-testid={isSpeakingThis ? "speech-stop-btn" : "speech-speak-btn"}
+            aria-label={isSpeakingThis ? t("chat.speech.stop") : t("chat.speech.speak")}
+            title={isSpeakingThis ? t("chat.speech.stop") : t("chat.speech.speak")}
+            className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${
+              isSpeakingThis
+                ? "bg-brand/15 text-brand"
+                : "text-ink-muted hover:bg-ink/[0.06] hover:text-ink"
+            }`}
+          >
+            {isSpeakingThis ? <Square className="w-3.5 h-3.5" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+          {isSpeakingThis && speakingSentence && speakingSentence.total > 0 && (
+            <span className="text-caption text-ink-muted">
+              {t("chat.speech.progress").replace("{n}", String(speakingSentence.index + 1)).replace("{total}", String(speakingSentence.total))}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

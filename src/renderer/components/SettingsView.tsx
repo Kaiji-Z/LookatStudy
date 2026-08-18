@@ -510,6 +510,14 @@ export function SettingsView() {
           </div>
         </section>
 
+        {/* ========== 组 2.7:语音能力(v0.12) ========== */}
+        <section>
+          <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.speech.title")}</h3>
+          <div className="surface-card overflow-hidden">
+            <SpeechContent />
+          </div>
+        </section>
+
         {/* ========== 组 3:外观与语言 ========== */}
         <section>
           <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.appearance")}</h3>
@@ -887,5 +895,141 @@ function Toggle({
         className={`absolute left-0.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-6" : ""}`}
       />
     </button>
+  );
+}
+
+
+/* ---------- v0.12 语音能力:模型下载/删除/状态 ---------- */
+
+interface SpeechModelRow {
+  id: string;
+  state: string;
+  progress: number;
+  totalBytes: number;
+}
+
+function SpeechContent() {
+  const t = useLang();
+  const [rows, setRows] = useState<SpeechModelRow[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [prog, setProg] = useState<{ id: string; pct: number; label: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    void window.api
+      .getSpeechModelStatus()
+      .then((st) => setRows(st as SpeechModelRow[]))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const off = window.api.on("speech:modelProgress", (e: { id: string; progress: number; currentFile?: string }) => {
+      setProg({
+        id: e.id,
+        pct: Math.floor(e.progress * 100),
+        label: e.currentFile ? e.currentFile.split("/").pop() ?? "" : "",
+      });
+    });
+    return off;
+  }, [refresh]);
+
+  const download = (id: string) => {
+    setErr(null);
+    setBusy(id);
+    setProg({ id, pct: 0, label: "" });
+    void window.api
+      .ensureSpeechModel(id as never)
+      .then(() => {
+        setBusy(null);
+        setProg(null);
+        refresh();
+      })
+      .catch((e: unknown) => {
+        setBusy(null);
+        setProg(null);
+        setErr(e instanceof Error ? e.message : String(e));
+        refresh();
+      });
+  };
+
+  const remove = (id: string) => {
+    setBusy(id);
+    setConfirmDelete(null);
+    void window.api
+      .deleteSpeechModel(id as never)
+      .then(refresh)
+      .catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(null));
+  };
+
+  const labelOf = (id: string) => (id === "tts-kokoro" ? t("settings.speech.model.tts") : t("settings.speech.model.asr"));
+  const stateLabel = (state: string) =>
+    state === "ready" ? t("settings.speech.state.ready") : state === "error" ? t("settings.speech.state.error") : t("settings.speech.state.absent");
+
+  return (
+    <div className="p-4 space-y-3" data-testid="settings-speech">
+      <p className="text-label text-ink-muted">{t("settings.speech.desc")}</p>
+      {err && (
+        <div className="text-label text-warning break-all" role="alert">
+          {err === "engine-unavailable" ? t("chat.speech.engine_unavailable") : err}
+        </div>
+      )}
+      {rows.map((m) => (
+        <div key={m.id} className="flex items-center gap-3 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="text-label font-medium text-ink-strong truncate">{labelOf(m.id)}</div>
+            <div className="text-caption text-ink-muted">
+              {stateLabel(m.state)} · {t("settings.speech.license")}
+            </div>
+            {busy === m.id && prog?.id === m.id && (
+              <div className="mt-1.5 h-1.5 rounded-full bg-ink/[0.08] overflow-hidden" data-testid={`speech-dl-bar-${m.id}`}>
+                <div className="h-full bg-brand transition-all" style={{ width: `${prog.pct}%` }} />
+              </div>
+            )}
+            {busy === m.id && prog?.id === m.id && (
+              <div className="text-caption text-ink-muted mt-0.5" data-testid={`speech-dl-pct-${m.id}`}>
+                {prog.pct}% {prog.label}
+              </div>
+            )}
+          </div>
+          {m.state === "ready" ? (
+            confirmDelete === m.id ? (
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => remove(m.id)}
+                  className="px-3 py-1.5 rounded-xl text-label font-bold bg-warning text-white"
+                  data-testid={`speech-del-confirm-${m.id}`}
+                >
+                  {t("action.confirm")}
+                </button>
+                <button onClick={() => setConfirmDelete(null)} className="px-3 py-1.5 rounded-xl text-label font-bold bg-ink/[0.08] text-ink">
+                  {t("action.cancel")}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmDelete(m.id)}
+                disabled={busy !== null}
+                className="px-3 py-1.5 rounded-xl text-label font-bold bg-ink/[0.08] text-ink hover:bg-ink/[0.12] disabled:opacity-40"
+                data-testid={`speech-del-${m.id}`}
+              >
+                {t("settings.speech.delete")}
+              </button>
+            )
+          ) : (
+            <button
+              onClick={() => download(m.id)}
+              disabled={busy !== null}
+              className="btn-3d-brand px-3 py-1.5 text-label"
+              data-testid={`speech-dl-${m.id}`}
+            >
+              {busy === m.id ? `${prog?.pct ?? 0}%` : t("settings.speech.download")}
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

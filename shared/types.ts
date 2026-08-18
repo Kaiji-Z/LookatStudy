@@ -449,6 +449,23 @@ export interface NodeAsset {
 /** 用户主动上报的卡点类型(写 friction_log,供 agent 上下文自适应)。 */
 export type HumanFrictionCategory = "confused" | "blocked" | "frustrated";
 
+export type {
+  SpeechModelId,
+  SpeechModelStatus,
+  SpeechDownloadProgress,
+  SpeechTtsAudioEvent,
+  SpeechTtsDoneEvent,
+  SpeechTtsErrorEvent,
+} from "./speech-types";
+import type {
+  SpeechModelId as SpeechModelIdT,
+  SpeechModelStatus as SpeechModelStatusT,
+  SpeechDownloadProgress as SpeechDownloadProgressT,
+  SpeechTtsAudioEvent as SpeechTtsAudioEventT,
+  SpeechTtsDoneEvent as SpeechTtsDoneEventT,
+  SpeechTtsErrorEvent as SpeechTtsErrorEventT,
+} from "./speech-types";
+
 export interface ApiExpose {
   /* 课程 */
   listCourses(): Promise<Course[]>;
@@ -689,6 +706,25 @@ export interface ApiExpose {
   getSetting(key: SettingKey): Promise<string | null>;
   setSetting(key: SettingKey, value: string): Promise<void>;
 
+  /** 语音模型状态(全部;absent/downloading/ready/error) */
+  getSpeechModelStatus(): Promise<SpeechModelStatusT[]>;
+  /** 下载/确保语音模型(进度经 speech:modelProgress 事件推送;全源失败抛错) */
+  ensureSpeechModel(id: SpeechModelIdT): Promise<SpeechModelStatusT[]>;
+  /** 删除语音模型释放磁盘(同时停朗读、失效引擎) */
+  deleteSpeechModel(id: SpeechModelIdT): Promise<void>;
+  /** 朗读一段消息文本(逐句 speech:ttsAudio → speech:ttsDone;模型未下载返回结构化 reason) */
+  ttsSpeak(text: string, messageId: string): Promise<{ ok: true; sentences: number } | { ok: false; reason: "engine-unavailable" | "model-missing" | "empty-text" }>;
+  /** 停止当前朗读(幂等) */
+  ttsStop(): Promise<void>;
+  /** 开始语音输入会话(建识别流;模型未下载返回结构化 reason) */
+  asrStart(): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** 喂 16kHz 单声道 PCM 块(约 250ms 批;partial 经 speech:asrPartial 事件推送) */
+  asrFeed(samples: Float32Array): Promise<void>;
+  /** 结束并收尾,返回识别全文 */
+  asrStop(): Promise<{ text: string }>;
+  /** 丢弃会话(取消,不要结果) */
+  asrCancel(): Promise<void>;
+
   /** XP 状态（今日经验值 + 每日目标 + 达成百分比） */
   getXpStatus(): Promise<XpStatus>;
   /** 导出学习记录（JSON / Markdown 格式） */
@@ -865,4 +901,14 @@ export interface IpcEvents {
   "exam:status": (status: ExamStatus) => void;
   /** main→renderer 状态变化推送(xp/streak/mastery 变化)。renderer 重拉 + 触发庆祝。 */
   "state:changed": (kind: "xp" | "streak" | "mastery") => void;
+  /** v0.12 语音:逐句朗读音频(16-bit PCM WAV;serve 模式 wavBytes 为 base64 还原产物) */
+  "speech:ttsAudio": (e: SpeechTtsAudioEventT) => void;
+  /** 朗读结束(播完/被停/换场) */
+  "speech:ttsDone": (e: SpeechTtsDoneEventT) => void;
+  /** 朗读失败 */
+  "speech:ttsError": (e: SpeechTtsErrorEventT) => void;
+  /** 模型下载进度 */
+  "speech:modelProgress": (e: SpeechDownloadProgressT) => void;
+  /** 语音输入实时部分结果 */
+  "speech:asrPartial": (e: { text: string }) => void;
 }

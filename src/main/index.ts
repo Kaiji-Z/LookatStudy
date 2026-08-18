@@ -8,7 +8,7 @@
  * 4. 加载种子课程（ensureSeedCourse）
  * 5. dev 模式从 vite dev server 加载，生产从打包文件加载
  */
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, session, shell } from "electron";
 import { join, resolve } from "node:path";
 import { writeFileSync, appendFileSync, mkdirSync, existsSync, statSync } from "node:fs";
 import { initDb, getDb, markDirty } from "./db/index.js";
@@ -22,7 +22,7 @@ import { createProposal } from "./services/proposal-service.js";
 import { setStateEmitter } from "./lib/state-emitter.js";
 import { setExamStatusSender } from "./services/exam-generation-store.js";
 import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems, progress as progressTable, chatMessages, threads as threadsTable, exercises as exercisesTable, examAttempts } from "./db/schema.js";
-import { eq } from "drizzle-orm";
+import { and, eq, like as like_ } from "drizzle-orm";
 
 // 主进程以 CJS 打包（见 vite.config.ts），__dirname 天然可用。
 // 这里的声明只为 TypeScript 类型检查；运行时被 CJS 全局覆盖。
@@ -61,6 +61,16 @@ if (!isShotsRun) {
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
+  // v0.12 语音输入:允许渲染层请求麦克风(默认 handler 会拒,getUserMedia 直接失败)。
+  // 只放行 media(麦克风),其余权限仍走默认询问/拒绝。
+  try {
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(permission === "media");
+    });
+  } catch {
+    /* 测试模式等无 session 场景 */
+  }
+
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 832,
@@ -124,6 +134,11 @@ function createWindow(): void {
 // 导致重启时新实例 requestSingleInstanceLock() 拿不到锁立即 quit(表现:重启 dev 打不开、
 // electron exit 0 无任何日志)。production 打包后才需要锁(防用户双击多次开多窗口)。
 const isTestMode = process.argv.includes("--self-test") || process.argv.includes("--ui-test") || isShotsRun;
+// ui-test 需要真麦克风流来验证语音输入链:用 Chromium 假设备(正弦音)换真硬件。
+if (process.argv.includes("--ui-test")) {
+  app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+  app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+}
 if (!isTestMode && !isDev) {
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {
@@ -1118,6 +1133,167 @@ async function runUiTest(screenshot = false): Promise<void> {
     /* 尽力而为:清理失败不阻塞后续测试 */
   }
 
+  // T-ASR (v0.12 语音输入): 假麦克风(正弦音)驱动全链 —— mic 按钮 → listening 态
+  // → PCM 上行(会话真跑,不校验识别文本质量,那是 live-test 职责)→ 停止复原。
+  // 模型缺失环境(CI):asrStart 返回 model-missing → notice 行出现(降级断言)。
+  let asrInput: { branch?: string; ok?: boolean; error?: string; [k: string]: unknown } = {};
+  try {
+    asrInput = await win.webContents.executeJavaScript(`
+      (async function() {
+        var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+        function q(sel){ return document.querySelector(sel); }
+        try {
+          var mic = q('[data-testid="composer-mic"]');
+          if (!mic) return { ok: false, error: "no mic button" };
+          var status = await window.api.getSpeechModelStatus();
+          var asr = (status || []).filter(function(s){ return s.id === "asr-zipformer"; })[0];
+          mic.click();
+          if (!asr || asr.state !== "ready") {
+            for (var i = 0; i < 30; i++) { await sleep(200); if (q('[data-testid="composer-notice"]')) return { ok: true, branch: "model-missing" }; }
+            return { ok: false, error: "no notice after model-missing" };
+          }
+          var active = null;
+          for (var j = 0; j < 20; j++) { await sleep(250); active = q('[data-testid="composer-mic-active"]'); if (active) break; }
+          if (!active) {
+            try { await window.api.asrCancel(); } catch (e) {}
+            return { ok: false, error: "listening state never appeared", branch: "ready" };
+          }
+          await sleep(800); // 让 PCM 批跑几轮
+          active.click();
+          var back = false;
+          for (var k = 0; k < 30; k++) { await sleep(250); if (q('[data-testid="composer-mic"]')) { back = true; break; } }
+          return { ok: back, branch: "ready", stoppedBack: back };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      })()
+    `);
+  } catch (e) {
+    asrInput = { error: String(e) };
+  }
+  results.push({
+    name: "asr dictation: mic button → listening → stop restores (fake device) or model-missing notice",
+    ok: asrInput?.ok === true,
+    detail: asrInput,
+  });
+
+  // T-SPEECH (v0.12 语音朗读): 种一条 assistant 消息 → 点朗读按钮。
+  // 双分支(可移植):本机 userData 已有 tts 模型 → 完整环(speak→stop→复原);
+  // 无模型环境(CI/新机)→ toast 引导下载(模型缺失路径)。语音模型在 userData(非临时 DB),
+  // 与 --ui-test 的临时库互不影响。
+  let speechLoop: { branch?: string; ok?: boolean; error?: string; [k: string]: unknown } = {};
+  try {
+    // 1) 点第一个可用课时球,拿 nodeId
+    const pick = await win.webContents.executeJavaScript(`
+      (async function() {
+        var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+        var balls = Array.prototype.slice.call(document.querySelectorAll('button[data-testid^="map-node-"]:enabled'))
+          .filter(function(b){ return !/exam/.test(b.getAttribute('data-testid') || ''); });
+        if (balls.length < 2) return { error: 'need 2 lesson balls, got ' + balls.length };
+        balls[0].click();
+        await sleep(700);
+        return { nodeId: (balls[0].getAttribute('data-testid') || '').replace('map-node-', '') };
+      })()
+    `);
+    if (pick?.nodeId) {
+      // 2) testid 是 id 前 8 位(map-node-{id.slice(0,8)}),先解析成完整节点 id
+      let fullNodeId = "";
+      try {
+        const like = `${pick.nodeId}%`;
+        const rows = getDb().select({ id: contentNodes.id }).from(contentNodes)
+          .where(and(eq(contentNodes.courseId, "seed-lookatstudy-guide"), like_(contentNodes.id, like)))
+          .all();
+        fullNodeId = rows[0]?.id ?? "";
+      } catch (e) {
+        console.error("[lookatstudy] ui-test speech node resolve failed:", e);
+      }
+      try {
+        getDb().insert(threadsTable).values({
+          id: "ui-speech-thread",
+          courseId: "seed-lookatstudy-guide",
+          focusNodeId: fullNodeId,
+          status: "active",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }).onConflictDoNothing().run();
+        getDb().insert(chatMessages).values({
+          id: "ui-speech-msg",
+          threadId: "ui-speech-thread",
+          role: "assistant",
+          content: "你好。递归就像俄罗斯套娃,一层套一层。理解它之后,编程会变得轻松许多。",
+          partsJson: JSON.stringify([{ type: "text", text: "你好。递归就像俄罗斯套娃,一层套一层。理解它之后,编程会变得轻松许多。" }]),
+          createdAt: new Date().toISOString(),
+        }).onConflictDoNothing().run();
+        markDirty();
+        if (!fullNodeId) throw new Error("node id prefix unresolved: " + pick.nodeId);
+      } catch (e) {
+        console.error("[lookatstudy] ui-test speech seed failed:", e);
+      }
+      // 3) 换节点再换回(强制 useThreads reload)→ 断言朗读环
+      speechLoop = await win.webContents.executeJavaScript(`
+        (async function() {
+          var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+          function q(sel){ return document.querySelector(sel); }
+          try {
+            var balls = Array.prototype.slice.call(document.querySelectorAll('button[data-testid^="map-node-"]:enabled'))
+              .filter(function(b){ return !/exam/.test(b.getAttribute('data-testid') || ''); });
+            balls[1].click(); await sleep(600);
+            balls[0].click(); await sleep(800);
+            if (!q('[data-testid="msg-assistant"]')) {
+              var diag = { tabs: document.querySelectorAll('[data-testid^="thread-tab-"]').length };
+              try {
+                var th = await window.api.threadList("seed-lookatstudy-guide", "active");
+                diag.threads = (th || []).map(function(t){ return { id: t.id, f: t.focusNodeId, mc: t.messageCount }; });
+              } catch (e2) { diag.threadsErr = String(e2); }
+              try {
+                var msgs = await window.api.threadGetMessages("ui-speech-thread");
+                diag.msgCount = (msgs || []).length;
+              } catch (e3) { diag.msgsErr = String(e3); }
+              diag.hasEmpty = !!q('[data-testid="thread-switcher-empty"]');
+              return { ok: false, error: "no assistant msg after nav", diag: diag };
+            }
+            var speakBtn = q('[data-testid="speech-speak-btn"]');
+            if (!speakBtn) return { ok: false, error: "no speak button" };
+            var status = await window.api.getSpeechModelStatus();
+            var tts = (status || []).filter(function(s){ return s.id === "tts-kokoro"; })[0];
+            if (!tts || tts.state !== "ready") {
+              speakBtn.click();
+              var toastSeen = false;
+              for (var i = 0; i < 30; i++) { await sleep(200); if (q('[data-testid^="toast-"]')) { toastSeen = true; break; } }
+              return { ok: toastSeen, branch: "model-missing", toastSeen: toastSeen };
+            }
+            speakBtn.click();
+            var stopBtn = null;
+            for (var j = 0; j < 240; j++) { await sleep(250); stopBtn = q('[data-testid="speech-stop-btn"]'); if (stopBtn) break; }
+            if (!stopBtn) {
+              try { await window.api.ttsStop(); } catch (e) {}
+              return { ok: false, error: "stop button never appeared (60s)", branch: "ready" };
+            }
+            stopBtn.click();
+            var back = false;
+            for (var k = 0; k < 40; k++) { await sleep(250); if (q('[data-testid="speech-speak-btn"]')) { back = true; break; } }
+            return { ok: back, branch: "ready", stoppedBack: back };
+          } catch (e) { return { ok: false, error: String(e) }; }
+        })()
+      `);
+    } else {
+      speechLoop = { ok: false, error: String(pick?.error ?? "no nodeId") };
+    }
+  } catch (e) {
+    speechLoop = { error: String(e) };
+  } finally {
+    // 现场清理(ui-test 状态卫生):thread + 消息直删,防污染后续步骤
+    try {
+      getDb().delete(chatMessages).where(eq(chatMessages.threadId, "ui-speech-thread")).run();
+      getDb().delete(threadsTable).where(eq(threadsTable.id, "ui-speech-thread")).run();
+      markDirty();
+    } catch { /* 非关键 */ }
+  }
+  results.push({
+    name: "speech: read-aloud button full loop (speak→stop→restore) or model-missing toast",
+    ok: speechLoop?.ok === true,
+    detail: speechLoop,
+  });
+
+
   // 原 🤔 卡点 toggle+表单已撤(friction 折进"我没太懂"巩固选择)。
   // 巩固选择的"内容"由 verify-starter-prompts 覆盖;"语境前不出现"由 App 的 prop 门控(tsc 保证)。
 
@@ -2003,6 +2179,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       console.error("[lookatstudy] ui-test exam cleanup failed:", e);
     }
   }
+
   results.push({
     name: "exam answering: option display order matches grading (click correct text → 3/3) + long prompt stays in viewport",
     ok: examIntegrity?.ok === true,

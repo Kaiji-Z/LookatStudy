@@ -10,12 +10,13 @@
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X } from "lucide-react";
+import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X, Mic } from "lucide-react";
 import type { Soul, StarterPrompt, HumanFrictionCategory, ChatAttachmentInput, ContextUsageInfo } from "@shared/types";
 import { checkAttachmentFile, ATTACHMENT_LIMITS } from "@shared/attachment-intake";
 import { estimateTokens } from "@shared/token-estimate";
 import { api } from "../lib/api.js";
 import { useLang, useLangValue, translate } from "../lib/i18n.js";
+import { useAsrInput } from "../lib/useAsrInput.js";
 import { ModelPicker } from "./ModelPicker.js";
 import { ContextMeter } from "./ContextMeter.js";
 import { EffortPicker } from "./EffortPicker.js";
@@ -110,6 +111,21 @@ export function ChatComposer({
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepthRef = useRef(0);
+
+  // v0.12 语音输入:结束的识别全文追加进输入框(已有内容则空格衔接)
+  const asr = useAsrInput((text) => {
+    setInput((prev) => (prev.trim() ? `${prev} ${text}` : text));
+  });
+  useEffect(() => {
+    if (!asr.startError) return;
+    const key =
+      asr.startError === "model-missing"
+        ? "chat.speech.asr_model_missing"
+        : asr.startError === "engine-unavailable"
+          ? "chat.speech.engine_unavailable"
+          : "chat.speech.asr_start_fail";
+    setNotice(t(key));
+  }, [asr.startError, t]);
 
   // 外部插入文字(哪里不会点哪里:右栏选中→注入提问)。每次 insertText 变化时追加到输入框。
   useEffect(() => {
@@ -489,6 +505,21 @@ export function ChatComposer({
 
         {/* v0.10 底部工具栏:左=附件入口;右=思考强度·上下文·模型(工具栏后撤,caption 调)。 */}
         <div className="flex flex-wrap items-center justify-between gap-x-0.5 gap-y-1 mt-0.5">
+          <button
+            type="button"
+            onClick={asr.listening ? asr.stop : asr.start}
+            data-tooltip={asr.listening ? t("chat.speech.dictation_stop") : t("chat.speech.dictation")}
+            aria-label={asr.listening ? t("chat.speech.dictation_stop") : t("chat.speech.dictation")}
+            data-testid={asr.listening ? "composer-mic-active" : "composer-mic"}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-caption font-medium transition-colors ${
+              asr.listening ? "text-warning animate-pulse" : "text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06]"
+            }`}
+          >
+            <Mic className="w-3.5 h-3.5" />
+            {asr.listening && asr.partial && (
+              <span className="max-w-40 truncate" data-testid="asr-partial">{asr.partial}</span>
+            )}
+          </button>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}

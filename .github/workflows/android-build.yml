@@ -16,6 +16,7 @@ on:
 # attach-to-release 用 GITHUB_TOKEN 调 gh release upload,需要 release(=contents)写权限。
 permissions:
   contents: write
+  id-token: write # npm trusted publishing(OIDC)
 
 jobs:
   mobile-zip:
@@ -37,6 +38,19 @@ jobs:
 
       - name: Zip portable package
         run: cd dist/mobile && zip -r ../../lookatstudy-mobile.zip .
+
+      # npm 分发(npmmirror 同步,Termux 安装器主源)。
+      # trusted publishing(OIDC):零 token——npmjs.com 上配 pending publisher
+      # (repo=Kaiji-Z/LookatStudy, workflow=android-build.yml)。npm ≥11.5.1 先升级。
+      - name: Publish mobile bundle to npm (trusted publishing)
+        env:
+          PKG_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+        run: |
+          npm install -g npm@latest >/dev/null
+          npm --version
+          PKG_V="${PKG_VERSION#v}" node -e "const fs=require('fs');fs.writeFileSync('dist/mobile/package.json',JSON.stringify({name:'lookatstudy-mobile',version:process.env.PKG_V,description:'LookatStudy Termux portable bundle (server.cjs + web frontend)',repository:{type:'git',url:'git+https://github.com/Kaiji-Z/LookatStudy.git'}},null,2))"
+          cat dist/mobile/package.json
+          npm publish dist/mobile --access public
 
       # 引导器的一行安装命令 curl 它执行(独立资产,免解压 zip)
       - name: Stage standalone installer

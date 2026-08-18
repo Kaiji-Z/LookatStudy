@@ -38,6 +38,8 @@ const unbzip2 = require("unbzip2-stream");
 
 const SHERPA_VERSION = "1.13.6";
 const PKG_VERSION = `${SHERPA_VERSION}-termux.1`;
+/** npm 分发包名(安装器经 npmmirror 拉;解压到 node_modules/sherpa-onnx-node 由目录名决定,包名可自定义) */
+const NPM_NAME = "lookatstudy-termux-voice";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const OUT_DIR = path.join(ROOT, ".termux-build");
 const PROXIES = ["", "https://gh-proxy.com/", "https://ghproxy.net/"];
@@ -300,7 +302,13 @@ async function assemble(nodePath) {
     fs.copyFileSync(path.join(OUT_DIR, "install/lib", so), path.join(stage, so));
   }
   const pkgJson = JSON.parse(fs.readFileSync(path.join(stage, "package.json"), "utf-8"));
-  pkgJson.version = PKG_VERSION;
+  // npm 分发身份:版本跟应用 Release(每次发布唯一);sherpa 上游版本留档
+  const releaseTag = (process.env.RELEASE_TAG ?? "").replace(/^v/, "");
+  pkgJson.name = NPM_NAME;
+  pkgJson.version = releaseTag || PKG_VERSION;
+  pkgJson.sherpaVersion = SHERPA_VERSION;
+  // trusted publishing 要求 repository.url 与 GitHub 仓库精确匹配(覆盖上游指向)
+  pkgJson.repository = { type: "git", url: "git+https://github.com/Kaiji-Z/LookatStudy.git" };
   pkgJson.description = `${pkgJson.description ?? ""} [termux android-arm64 build with bundled .so]`;
   fs.writeFileSync(path.join(stage, "package.json"), JSON.stringify(pkgJson, null, 2));
 

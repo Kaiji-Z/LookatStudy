@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **Termux 两个包改经 npm 分发(npmmirror 主源,GitHub 链降为兜底)** —— `install-termux.sh` 的便携包与语音引擎包下载改为双源:npm 镜像(阿里 npmmirror,自动同步 npm,国内直连快;tgz 剥 `package/` 前缀)优先,GitHub 直连+代理链回退。CI 发布走 **trusted publishing(OIDC,零密钥)**:`termux-voice.yml` 发 `lookatstudy-termux-voice`、`android-build.yml` 发 `lookatstudy-mobile`,工作流只需 `id-token: write` 权限 + npm≥11.5.1(经典 token 已被 npm 于 2025-12 废除,不再依赖任何长期凭据);`repository.url` 按校验要求指向本仓库。npmjs.com 上为两个包名配置一次 pending publisher 后,首次发布即认领包名。verify-termux-voice 增至 6 组(双源安装/IDC 权限/无 token 残留等)。
+
 ## [0.12.1] - 2026-08-19
 
 ### Added

@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-18
+
 ### Added
 - **本地语音朗读(AI 回复 🔊 按钮)** —— 虚拟导师第一步:点 AI 消息下的朗读按钮即可听。链路:文本净化(markdown 语法/代码块剔除,只读"人话")→ 句级切分流式合成(首句先出声,不等全文)→ 句级磁盘缓存(同句重读零合成、秒回)→ WebAudio 顺序无缝播放,按钮旁显示句进度,再点即停、点其他消息自动换场。引擎为 Kokoro 82M v1.1(fp32,24kHz,中英混读,Apache-2.0),模型约 430MB,首次使用从镜像源下载(ModelScope 逐文件主源 + GitHub 归档经代理链兜底,断点续跑、逐文件校验),下载后**完全离线推理**,无云端、无按量付费。桌面端技术破局:sherpa-onnx 原生引擎以 `enableExternalBuffer:false` 直跑 Electron 主进程(绕过 Electron 21+ 全进程外部缓冲禁令),无子进程、无 sidecar、无额外运行时。
 - **语音输入(输入框 🎤 听写)** —— 点麦克风说话,实时转写紧跟按钮显示,再点停止后全文自动进输入框。引擎为流式 Zipformer 双语 zh-en 识别(int8,16kHz,Apache-2.0,约 200MB),端点检测自动断句,增量上行低延迟。桌面端开箱可用;浏览器/手机模式在 localhost 下可用(局域网 http 受浏览器麦克风安全策略限制)。

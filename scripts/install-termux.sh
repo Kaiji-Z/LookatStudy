@@ -12,6 +12,7 @@ PORT="${LOOKATSTUDY_PORT:-17890}"
 APP_DIR="$HOME/lookatstudy"
 DATA_DIR="$HOME/.lookatstudy"
 GH_ASSET="https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/lookatstudy-mobile.zip"
+GH_VOICE="https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/lookatstudy-termux-voice.tar.gz"
 # 直连优先,失败再走代理前缀(镜像只做回退:KaijiBot 教训是镜像同步延迟会坏事,大头收益在 apt 的 TUNA)
 DL_PREFIXES=("" "https://gh-proxy.com/" "https://ghproxy.net/" "https://ghfast.top/")
 
@@ -50,6 +51,8 @@ start_service() {
   pkill -f "server.cjs --port $PORT" 2>/dev/null || true
   sleep 1
   termux-wake-lock 2>/dev/null || true
+  # 语音引擎 .so 就位后由 $ORIGIN/LD_LIBRARY_PATH 双保险解析(路 3)
+  export LD_LIBRARY_PATH="$APP_DIR/node_modules/sherpa-onnx-node${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   nohup node "$APP_DIR/server.cjs" --port "$PORT" --web "$APP_DIR/web" --data "$DATA_DIR" \
     >> "$APP_DIR/server.log" 2>&1 &
   sleep 3
@@ -81,6 +84,29 @@ download_bundle() {
   unzip -o ls.zip
   rm -f ls.zip
   ok "便携包就位: $APP_DIR"
+}
+
+install_voice() {
+  mkdir -p "$APP_DIR/node_modules"
+  info "下载 Termux 语音引擎包(约 12MB,失败自动换源)..."
+  local dl_ok=0 p=""
+  for p in "${DL_PREFIXES[@]}"; do
+    if curl -fL --connect-timeout 10 --retry 2 -o voice.tar.gz "${p}${GH_VOICE}"; then
+      dl_ok=1
+      break
+    fi
+    info "${p:-GitHub 直连}失败,尝试下一个下载源..."
+  done
+  if [ "$dl_ok" != 1 ]; then
+    echo "语音引擎包下载失败(可稍后重跑本脚本,或跳过语音功能)。"
+    rm -f voice.tar.gz
+    return 1
+  fi
+  tar -xzf voice.tar.gz -C "$APP_DIR/node_modules"
+  rm -f voice.tar.gz
+  ok "语音引擎就位: $APP_DIR/node_modules/sherpa-onnx-node"
+  info "语音模型(朗读约 430MB + 听写约 200MB)在应用内下载: 设置 → 语音能力"
+  info "装完模型重启服务生效: bash ~/lookatstudy/start.sh"
 }
 
 # ── 1. 中国时区 → TUNA apt 镜像(默认源在中国极慢/不可达) ─────
@@ -134,6 +160,7 @@ PORT="${PORT}"
 APP_DIR="${APP_DIR}"
 termux-wake-lock 2>/dev/null
 pkill -f "server.cjs --port \$PORT" 2>/dev/null; sleep 1
+export LD_LIBRARY_PATH="\$APP_DIR/node_modules/sherpa-onnx-node\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
 nohup node "\$APP_DIR/server.cjs" --port "\$PORT" --web "\$APP_DIR/web" --data "${DATA_DIR}" >> "\$APP_DIR/server.log" 2>&1 &
 sleep 3
 if pgrep -f "server.cjs --port \$PORT" >/dev/null 2>&1; then
@@ -197,7 +224,7 @@ mkdir -p "$HOME/.termux/boot"
 cat > "$HOME/.termux/boot/start-lookatstudy.sh" <<EOS
 #!/data/data/com.termux/files/usr/bin/bash
 termux-wake-lock 2>/dev/null
-nohup node ${APP_DIR}/server.cjs --port ${PORT} --web ${APP_DIR}/web --data ${DATA_DIR} >> ${APP_DIR}/server.log 2>&1 &
+LD_LIBRARY_PATH="${APP_DIR}/node_modules/sherpa-onnx-node:${LD_LIBRARY_PATH:-}" nohup node ${APP_DIR}/server.cjs --port ${PORT} --web ${APP_DIR}/web --data ${DATA_DIR} >> ${APP_DIR}/server.log 2>&1 &
 EOS
 chmod 755 "$HOME/.termux/boot/start-lookatstudy.sh"
 
@@ -207,7 +234,7 @@ if ! grep -q "$BASHRC_MARKER" "$HOME/.bashrc" 2>/dev/null; then
 ${BASHRC_MARKER}
 if ! pgrep -f "server.cjs --port ${PORT}" >/dev/null 2>&1; then
   termux-wake-lock 2>/dev/null
-  nohup node ${APP_DIR}/server.cjs --port ${PORT} --web ${APP_DIR}/web --data ${DATA_DIR} >> ${APP_DIR}/server.log 2>&1 &
+  LD_LIBRARY_PATH="${APP_DIR}/node_modules/sherpa-onnx-node:${LD_LIBRARY_PATH:-}" nohup node ${APP_DIR}/server.cjs --port ${PORT} --web ${APP_DIR}/web --data ${DATA_DIR} >> ${APP_DIR}/server.log 2>&1 &
   echo "LookatStudy 已自动启动 (http://127.0.0.1:${PORT})"
 fi
 # <<< lookatstudy autostart <<<
@@ -249,6 +276,20 @@ case "$(getprop ro.product.manufacturer 2>/dev/null | tr '[:upper:]' '[:lower:]'
     echo "    设置 → 应用 → Termux → 电池 → 不受限制/不优化"
     ;;
 esac
+
+# ── 6.5 语音引擎(Termux 专属交叉编译包,可选) ────────────────
+# 引擎包 ~12MB 一次性下载;语音模型(约 630MB)由用户在应用内按需下载。
+if [ "$1" = "--voice" ] || [ -d "$APP_DIR/node_modules/sherpa-onnx-node" ]; then
+  install_voice || true
+else
+  echo ''
+  info "可选:Termux 语音朗读/听写(引擎包约 12MB,语音模型在应用内另下)。"
+  read -r -p "[*] 现在安装吗?[y/N] " ans </dev/tty 2>/dev/null || ans="n"
+  case "$ans" in
+    y|Y) install_voice || true ;;
+    *) info "跳过(以后可: bash install-termux.sh --voice)" ;;
+  esac
+fi
 
 # ── 7. 启动 + 打印访问链接 ───────────────────────────────────
 info "启动 LookatStudy..."

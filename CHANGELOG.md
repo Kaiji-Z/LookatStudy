@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **Termux 手机端语音(路 3:CI 交叉编译,用户零编译)** —— 此前 Termux(bionic libc)装不了桌面用的 glibc 原生引擎,语音整体降级。现在 GitHub Actions 用 NDK 交叉编译上游 C-API 绑定、直接链接 k2-fsa 官方 Android 预编译 .so(不编译 sherpa 核心),产出约 12MB 的 `lookatstudy-termux-voice.tar.gz` 随 Release 发布;`install-termux.sh` 新增可选语音步骤(交互询问或 `--voice` 直装),解压到 node_modules + 四个启动点注入 LD_LIBRARY_PATH。引擎包就位后朗读/听写与桌面同链路,语音模型仍在应用内按需下载(约 630MB,断点续跑)。技术细节:上游 npm 包的绑定源码是指向 harmony-os 目录的软链(解包需按 linkname 还原);NDK 默认 `--no-undefined` 会拦下本该留给宿主 node 解析的 NAPI 符号,需 `-Wl,-z,undefs` 放行;RUNPATH 打 `$ORIGIN` 保证部署机可解析。verify-termux-voice 5 组静态守卫(资产名三端一致/配方在场/启动注入/工作流对齐/产物忽略),构建脚本本地(Windows NDK)与 CI 同源可复跑。
+
 ## [0.12.0] - 2026-08-18
 
 ### Added

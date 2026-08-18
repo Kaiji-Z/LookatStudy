@@ -61,3 +61,6 @@ dev-docs/
 
 # local memory (per-developer agent memory)
 memory/
+
+# Termux 语音引擎本地构建产物(scripts/build-termux-voice.mjs)
+.termux-build/

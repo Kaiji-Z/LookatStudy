@@ -39,6 +39,12 @@ test("T3 其余 http(s) → article 路由", () => {
   assert.equal(r.url, "https://example.com/blog/some-post?utm=1");
   // 无协议前缀自动补 https
   assert.equal(routeImportUrl("example.com/post")?.flavor, "article");
+  // 抖音三个域名都走 ytdlp 视频路径(此前掉进 article 是真 bug)
+  const d1 = routeImportUrl("https://www.douyin.com/video/7301234567890123456");
+  assert.equal(d1?.kind, "video");
+  assert.equal(d1?.source, "ytdlp", "douyin.com/video → ytdlp");
+  assert.equal(routeImportUrl("https://v.douyin.com/iAbCdEf/")?.source, "ytdlp", "v.douyin.com 短链");
+  assert.equal(routeImportUrl("https://www.iesdouyin.com/share/video/7301234567890")?.source, "ytdlp", "iesdouyin 分享链");
 });
 
 test("T4 arXiv 非论文页(列表页)降级为 article", () => {

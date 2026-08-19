@@ -56,13 +56,17 @@ export function routeImportUrl(raw: string): UrlRoute | null {
     // arxiv 域名但路径不像论文页 → 当普通文章抓(如列表页)
   }
 
-  // 视频链接:B站(bilibili.com/b23.tv,路径带 BV/av 号或 /video/)与
-  // YouTube(youtube.com/watch|shorts, youtu.be)——转写课程的主力来源
+  // 视频链接:B站(bilibili.com/b23.tv,路径带 BV/av 号或 /video/)、
+  // YouTube(youtube.com/watch|shorts, youtu.be)与抖音(douyin.com/v.douyin.com
+  // 短链/iesdouyin.com 分享链)——后两者走 yt-dlp(需用户自装)
   const path = parsed.pathname;
   if (host === "bilibili.com" || host === "b23.tv") {
     if (/(BV[a-zA-Z0-9]+|av\d+)/i.test(path) || host === "b23.tv" || path.startsWith("/video/")) {
       return { kind: "video", source: "bilibili", url: parsed.toString() };
     }
+  }
+  if (host === "douyin.com" || host === "v.douyin.com" || host === "iesdouyin.com") {
+    return { kind: "video", source: "ytdlp", url: parsed.toString() };
   }
   if (host === "youtube.com" || host === "youtu.be" || host === "m.youtube.com") {
     if (host === "youtu.be" || path === "/watch" || path.startsWith("/shorts/") || path.startsWith("/live/")) {

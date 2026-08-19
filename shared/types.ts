@@ -221,9 +221,13 @@ export interface ProviderPresetInfo {
 
 /* ---------- 自定义 Provider（用户自建 LLM 端点） ---------- */
 
+/** custom_providers 的用途分区(v0.15 三模型区):主模型/看图覆盖/朗读/听写 */
+export type CustomProviderKind = "llm" | "vision" | "tts" | "asr";
+
 export interface CustomProvider {
   id: string;
   label: string;
+  kind: CustomProviderKind;
   protocol: "openai-compatible" | "anthropic" | "google";
   baseUrl: string;
   defaultModel: string;
@@ -236,6 +240,8 @@ export interface CustomProvider {
 
 export interface CustomProviderInput {
   label: string;
+  /** 缺省 llm(主模型区);vision/tts/asr 由对应设置区建 */
+  kind?: CustomProviderKind;
   protocol: "openai-compatible" | "anthropic" | "google";
   baseUrl: string;
   apiKey?: string;
@@ -713,13 +719,14 @@ export interface ApiExpose {
   /** 删除语音模型释放磁盘(同时停朗读、失效引擎) */
   deleteSpeechModel(id: SpeechModelIdT): Promise<void>;
   /** 朗读一段消息文本(逐句 speech:ttsAudio → speech:ttsDone;模型未下载返回结构化 reason)。
-   * v0.13:三档引擎(edge 默认/azure BYO/local 离线);edge 抖动自动落 local(fellBackTo);
+   * v0.15:edge 默认 / local 离线 / custom-<id>(自定义 OpenAI 兼容端点);
+   * azure 为旧库遗留取值仍生效;edge 抖动自动落 local(fellBackTo);
    * firstUse=首次用 edge 档(渲染层一次性披露"经微软在线服务") */
   ttsSpeak(text: string, messageId: string): Promise<
     | {
         ok: true;
         sentences: number;
-        engine: "edge" | "azure" | "local";
+        engine: "edge" | "azure" | "local" | "custom";
         fellBackTo?: "local";
         firstUse?: boolean;
       }
@@ -731,17 +738,36 @@ export interface ApiExpose {
           | "empty-text"
           | "azure-key-missing"
           | "azure-region-missing"
-          | "edge-failed";
+          | "edge-failed"
+          | "custom-provider-missing";
       }
   >;
   /** 停止当前朗读(幂等) */
   ttsStop(): Promise<void>;
   /** 听写:渲染层录完整段 WAV(16kHz 单声道),一次调用换全文(v0.13 质量优先,
-   *  local=Whisper 离线自带标点 / groq 复用 LLM key / azure STT BYO)。locale 用于语言提示 */
+   *  v0.15:local=Whisper 离线(asr_local_model 指定)/ custom-<id>=OpenAI 兼容端点;
+   *  groq/azure 为旧库遗留取值仍生效)。locale 用于语言提示 */
   asrTranscribe(
     wavBytes: ArrayBuffer,
     locale?: string,
   ): Promise<{ ok: true; text: string } | { ok: false; reason: string; detail?: string }>;
+
+  /** v0.15 设置页:自定义朗读 provider 测试(真实合成一句验音频字节)。
+   * providerId=已存的 provider(密钥在主进程解析);或直接传表单值(未保存先测) */
+  testCustomTts(input: {
+    providerId?: string;
+    baseUrl?: string;
+    apiKey?: string;
+    model?: string;
+    voice?: string;
+  }): Promise<{ ok: boolean; detail: string }>;
+  /** v0.15 设置页:自定义听写 provider 探活(GET /models;端点不提供列表时如实说明) */
+  testCustomAsr(input: {
+    providerId?: string;
+    baseUrl?: string;
+    apiKey?: string;
+    model?: string;
+  }): Promise<{ ok: boolean; detail: string }>;
 
   /** XP 状态（今日经验值 + 每日目标 + 达成百分比） */
   getXpStatus(): Promise<XpStatus>;
@@ -881,6 +907,7 @@ export type SettingKey =
   // 语言偏好:导入时自动按此偏好选翻译 (en / zh-CN / zh-TW)
   | "pref_lang"
   // v0.13 语音三档:edge(默认)/azure/local 的引擎与音色语速
+  // v0.15:tts_engine 取值扩为 edge/local/custom-<id>(azure 为旧库遗留,后端仍解析)
   | "tts_engine"
   | "tts_voice_edge"
   | "tts_sid_local"
@@ -888,12 +915,17 @@ export type SettingKey =
   | "azure_tts_voice"
   | "azure_tts_api_key"
   | "azure_tts_region"
+  // v0.15:自定义朗读的音色(OpenAI 兼容 /audio/speech 的 voice 参数,可空)
+  | "tts_custom_voice"
   // edge 档首次使用已披露(在线服务告知,一次性)
   | "tts_edge_disclosed"
   // v0.13 听写三档:local(Whisper 离线,默认)/groq(复用 LLM preset key)/azure STT
+  // v0.15:asr_engine 取值改 local/custom-<id>(groq/azure 为旧库遗留,后端仍解析)
   | "asr_engine"
   | "azure_stt_api_key"
   | "azure_stt_region"
+  // v0.15:本地听写选哪个 whisper(asr-whisper-turbo/asr-whisper-small;缺省 turbo 优先)
+  | "asr_local_model"
   // 听写 UX:静音自动停(默认开);v0.14 飞书式复查浮层落地后 auto-send 已废
   | "asr_auto_stop"
   // Groq LLM preset 早已使用(设置页经 as 断言写入);入 union 让听写档零断言读取

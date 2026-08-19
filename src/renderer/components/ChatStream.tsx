@@ -82,7 +82,9 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
               ? "chat.speech.azure_region_missing"
               : speech.failReason === "edge-failed"
                 ? "chat.speech.edge_failed"
-                : "chat.speech.model_missing";
+                : speech.failReason === "custom-provider-missing"
+                  ? "chat.speech.custom_provider_missing"
+                  : "chat.speech.model_missing";
       toast.show(t(key), { severity: "warning" });
       speech.clearFailReason();
     }

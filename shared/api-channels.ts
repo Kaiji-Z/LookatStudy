@@ -66,6 +66,8 @@ export const API_CHANNELS: Record<string, string> = {
   ttsSpeak: "speech:ttsSpeak",
   ttsStop: "speech:ttsStop",
   asrTranscribe: "speech:asrTranscribe",
+  testCustomTts: "speech:testCustomTts",
+  testCustomAsr: "speech:testCustomAsr",
   getAttachmentDataUrl: "attachment:getDataUrl",
   isAgentReady: "agent:isReady",
   getProviderPresets: "agent:getProviderPresets",

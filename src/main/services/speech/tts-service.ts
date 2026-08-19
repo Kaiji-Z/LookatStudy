@@ -40,14 +40,24 @@ import { encodeWavPcm16 } from "./wav-codec";
 import {
   azureTtsMissing,
   resolveTtsTier,
+  speedToOpenaiSpeed,
   speedToRatePercent,
   type TtsEngineTier,
   type TtsTierConfig,
 } from "./tts-tiers";
 import { synthesizeEdgeMp3 } from "./edge-tts-client";
 import { synthesizeAzureWav } from "./azure-tts-client";
+import { synthesizeOpenaiTts } from "./openai-tts-client";
 
 export type SpeechEmitter = (channel: string, payload: unknown) => void;
+
+/** custom 朗读档的已解析配置(IPC 层查 custom_providers 行后注入;verify 也可注入) */
+export interface CustomTtsConfig {
+  baseUrl: string;
+  apiKey: string | null;
+  model: string;
+  voice: string | null;
+}
 
 export type SpeakFailReason =
   | "engine-unavailable"
@@ -55,7 +65,8 @@ export type SpeakFailReason =
   | "empty-text"
   | "azure-key-missing"
   | "azure-region-missing"
-  | "edge-failed";
+  | "edge-failed"
+  | "custom-provider-missing";
 
 export type SpeakResult =
   | { ok: true; sentences: number; engine: TtsEngineTier; fellBackTo?: "local" }
@@ -86,15 +97,22 @@ async function synthSentence(
   cfg: TtsTierConfig,
   engine: TtsEngineTier,
   sentence: string,
-  opts: { sid: number; onChunk?: () => boolean },
+  opts: { sid: number; onChunk?: () => boolean; custom?: CustomTtsConfig },
 ): Promise<SynthOut> {
+  const isMp3 = engine === "edge" || engine === "custom";
   const key = ttsCacheKey({
-    engine,
-    voice: engine === "local" ? `sid-${opts.sid}` : cfg.voice,
+    engine: engine === "custom" ? (cfg.customProviderId ?? "custom") : engine,
+    // custom 缓存键把模型并进 voice 段(同 provider 换模型/音色不串味)
+    voice:
+      engine === "local"
+        ? `sid-${opts.sid}`
+        : engine === "custom"
+          ? `${opts.custom?.model ?? "?"}|${opts.custom?.voice ?? ""}`
+          : cfg.voice,
     speed: cfg.speed,
     sentence,
   });
-  const mime: TtsAudioMime = engine === "edge" ? "audio/mpeg" : "audio/wav";
+  const mime: TtsAudioMime = isMp3 ? "audio/mpeg" : "audio/wav";
   const cached = readCachedAudio(dataDir, key, mime);
   if (cached) return { bytes: cached, mime, sampleRate: 24000 };
 
@@ -102,6 +120,20 @@ async function synthSentence(
     const mp3 = await synthesizeEdgeMp3(sentence, {
       voice: cfg.voice,
       rate: speedToRatePercent(cfg.speed),
+    });
+    const bytes = bufferToArrayBuffer(mp3);
+    await writeCachedAudio(dataDir, key, mime, bytes);
+    return { bytes, mime, sampleRate: 24000 };
+  }
+  if (engine === "custom") {
+    if (!opts.custom) throw new Error("custom tts provider not resolved");
+    const mp3 = await synthesizeOpenaiTts({
+      baseUrl: opts.custom.baseUrl,
+      apiKey: opts.custom.apiKey,
+      model: opts.custom.model,
+      voice: opts.custom.voice ?? cfg.customVoice,
+      text: sentence,
+      speed: speedToOpenaiSpeed(cfg.speed),
     });
     const bytes = bufferToArrayBuffer(mp3);
     await writeCachedAudio(dataDir, key, mime, bytes);
@@ -136,7 +168,12 @@ export async function speakMessage(
   settings: Record<string, string | null>,
   messageId: string,
   rawText: string,
-  deps: { synth?: typeof synthSentence; localReady?: typeof localModelReady } = {},
+  deps: {
+    synth?: typeof synthSentence;
+    localReady?: typeof localModelReady;
+    /** custom 档的 provider 配置(IPC 层解析注入);engine=custom 且为 null = 行已删 */
+    custom?: CustomTtsConfig | null;
+  } = {},
 ): Promise<SpeakResult> {
   const cfg = resolveTtsTier(settings);
   const sid = parseSid(settings.tts_sid_local);
@@ -152,6 +189,9 @@ export async function speakMessage(
     const missing = azureTtsMissing(cfg);
     if (missing === "key") return { ok: false, reason: "azure-key-missing" };
     if (missing === "region") return { ok: false, reason: "azure-region-missing" };
+  } else if (cfg.engine === "custom") {
+    // 显式选择的自定义端点,失败不静默降级;行缺失给结构化引导
+    if (!deps.custom) return { ok: false, reason: "custom-provider-missing" };
   }
 
   const { sentences } = splitSentences(normalizeSpeechText(rawText), { flush: true });
@@ -174,6 +214,7 @@ export async function speakMessage(
     const p = synth(dataDir, cfg, engine, sentence, {
       sid,
       onChunk: () => !mine.stopped && active === mine,
+      custom: deps.custom ?? undefined,
     }).finally(() => inflight.delete(i));
     inflight.set(i, p);
     return p;

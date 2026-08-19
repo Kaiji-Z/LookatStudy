@@ -1,15 +1,18 @@
 /**
- * ASR 三档解析(纯函数,verify 直测)—— settings map → 听写引擎档位。
+ * ASR 档位解析(纯函数,verify 直测)—— settings map → 听写引擎档位。
  *
- * 档位:local(默认,Whisper 离线,自带标点)/ groq(whisper-large-v3-turbo,复用
- * LLM preset 的 groq_api_key —— 已配 Groq 学 LLM 的用户零配置)/ azure STT(BYO key)。
+ * 档位(v0.15):local(默认,Whisper 离线,自带标点)/ custom-<id>(自定义 provider,
+ * OpenAI 兼容 /audio/transcriptions;Groq 即此形状)。groq/azure 是 v0.13-0.14 的
+ * 旧取值,后端仍解析(老库已配用户不受影响),UI 不再提供。
  * 语言提示由 UI locale 推导;推不出就交给模型自动检测。
  */
 
-export type AsrEngineTier = "local" | "groq" | "azure";
+export type AsrEngineTier = "local" | "groq" | "azure" | "custom";
 
 export interface AsrTierConfig {
   engine: AsrEngineTier;
+  /** custom 档的 provider id("custom-xxx");其余档为 null */
+  customProviderId: string | null;
   groqKey: string | null;
   azureKey: string | null;
   azureRegion: string | null;
@@ -18,11 +21,15 @@ export interface AsrTierConfig {
 export const DEFAULT_ASR_ENGINE: AsrEngineTier = "local";
 
 export function resolveAsrTier(settings: Record<string, string | null>): AsrTierConfig {
-  const raw = settings.asr_engine;
+  const raw = settings.asr_engine?.trim() ?? "";
+  const isCustom = raw.startsWith("custom-");
   const engine: AsrEngineTier =
-    raw === "groq" || raw === "azure" || raw === "local" ? raw : DEFAULT_ASR_ENGINE;
+    isCustom || raw === "groq" || raw === "azure" || raw === "local"
+      ? (isCustom ? "custom" : (raw as AsrEngineTier))
+      : DEFAULT_ASR_ENGINE;
   return {
     engine,
+    customProviderId: isCustom ? raw : null,
     groqKey: settings.groq_api_key?.trim() || null,
     azureKey: settings.azure_stt_api_key?.trim() || null,
     azureRegion: settings.azure_stt_region?.trim() || null,

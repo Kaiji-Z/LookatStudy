@@ -83,9 +83,9 @@ A guide course ships built in, six chapters, eighteen lessons, six exams, so you
 
 The desktop app is the main form. There is also a phone path, and it reuses everything, same interface, same data file, same AI.
 
-Grab `LookatStudy-launcher.apk` and `lookatstudy-mobile.zip` from the latest [Release](https://github.com/Kaiji-Z/LookatStudy/releases). Install the APK. Its first button installs Termux, which it carries inside, so no store needed. The second button copies one command. Paste it into Termux and it downloads the zip, installs Node, and starts the server. The Open button then drops you into the app in Chrome. The first startup prints an access token in Termux; type it into the page once and it sticks.
+Grab `LookatStudy-launcher.apk` from the latest [Release](https://github.com/Kaiji-Z/LookatStudy/releases) and install it. Its first button installs Termux, which it carries inside, so no store needed. The second button copies one command. Paste it into Termux and it downloads the portable bundle together with the speech engine, installs Node, and starts the server. The Open button then drops you into the app in Chrome. The first startup prints an access token in Termux; type it into the page once and it sticks.
 
-The phone runs the server itself and Chrome talks to it over localhost, so your data stays on the phone the way it stays on your PC. Nothing goes through npm. The server is one self-contained file plus the web assets. Skip the launcher if you like, the zip alone works in any Termux.
+The phone runs the server itself and Chrome talks to it over localhost, so your data stays on the phone the way it stays on your PC. No npm runs on the phone. The bundle download prefers a China friendly npm mirror and falls back to GitHub when the mirror lags. The server is one self-contained file plus the web assets. Skip the launcher if you like, the same one line works in any Termux.
 
 ## What it can't do yet
 
@@ -95,7 +95,7 @@ The phone runs the server itself and Chrome talks to it over localhost, so your 
 
 ## Under the hood
 
-Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there's nothing native to build and `npm install` doesn't blow up on Windows. The renderer can't reach the database, the filesystem, or your key. Every cross-process call goes through one typed IPC bridge. Seventy-four deterministic test suites and a headless real-GUI test watch the whole thing, all runnable with `npm run verify:core`.
+Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there's nothing native to build and `npm install` doesn't blow up on Windows. The renderer can't reach the database, the filesystem, or your key. Every cross-process call goes through one typed IPC bridge. Eighty-nine deterministic test suites and a headless real-GUI test watch the whole thing, all runnable with `npm run verify:core`.
 
 ## Status
 

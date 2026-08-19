@@ -10,7 +10,10 @@
      pkg，绕过 pkg 的全球镜像测速）；非中国时区保持默认源
    - `apt upgrade` 先行（全新 Termux 不升级直接装 Node 会 OpenSSL 链接错误）+ 依赖
      按需检测安装（nodejs-lts / curl / unzip，已装跳过）+ Node >= 20 版本验证
-   - 便携包下载回退链：GitHub 直连 → gh-proxy.com → ghproxy.net → ghfast.top（实测可用）
+   - 便携包/语音引擎包下载：npmmirror 主源（npm 镜像，国内直连快；镜像版本落后于
+     GitHub 最新 release 时自动走回退链，防同步滞后拿到旧版）→ GitHub 直连 →
+     gh-proxy.com → ghproxy.net → ghfast.top（实测可用）
+   - 语音引擎默认安装（约 12MB，零交互；失败不阻断安装，重跑即补装）
    - 落盘 `~/lookatstudy/{start,stop,status,update}.sh` 四个常用脚本
    - 自启双保险：`~/.termux/boot/`（需 Termux:Boot）+ `.bashrc` 幂等块（开 Termux 即
      自动拉起，无需 Termux:Boot）

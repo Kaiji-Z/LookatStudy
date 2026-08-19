@@ -5,7 +5,7 @@
 #   bash ~/lookatstudy/stop.sh        # 停止
 #   bash ~/lookatstudy/status.sh      # 状态 + 访问链接
 #   bash ~/lookatstudy/update.sh      # 更新便携包并重启
-# 无 npm 依赖:便携包(server.cjs 单文件)从 GitHub Release 下载,中国网络走 ghproxy 回退链。
+# 不在本机跑 npm:便携包与语音引擎包的 tarball 主源 npmmirror(自动同步 npmjs),未同步/失败回退 GitHub Release 直连+代理链。
 set -euo pipefail
 
 PORT="${LOOKATSTUDY_PORT:-17890}"
@@ -16,9 +16,41 @@ GH_VOICE="https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/lookat
 # 直连优先,失败再走代理前缀(镜像只做回退:KaijiBot 教训是镜像同步延迟会坏事,大头收益在 apt 的 TUNA)
 DL_PREFIXES=("" "https://gh-proxy.com/" "https://ghproxy.net/" "https://ghfast.top/")
 
-# npmmirror(阿里,自动同步 npm)解析包的 latest tarball 地址;空输出=未同步/网络失败
+# npmmirror(阿里,自动同步 npm)解析包的 latest tarball 地址;空输出=未同步/网络失败。
+# 同步滞后守卫:刚发版的头几分钟镜像 latest 可能还指向上一个版本,静默拿到旧包
+# —— 版本落后于 GitHub 最新 release 时按"未命中"处理,走 GitHub 回退链(GitHub 的
+# releases/latest/download 永远指向最新版)。GitHub 版本探测失败(网络)则信任镜像,
+# 不因 GitHub 不可达惩罚国内直连的镜像主源。
 npm_tarball() {
-  curl -sfL --connect-timeout 8 --max-time 20 "https://registry.npmmirror.com/$1/latest"     | sed -n 's/.*"tarball":"\([^"]*\)".*//p'
+  local json ver gh
+  json=$(curl -sfL --connect-timeout 8 --max-time 20 "https://registry.npmmirror.com/$1/latest" || true)
+  [ -n "$json" ] || return 1
+  ver=$(printf '%s' "$json" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+  if [ -n "$ver" ]; then
+    gh=$(gh_latest_version)
+    if [ -n "$gh" ] && ! ver_ge "$ver" "$gh"; then
+      info "npm 镜像同步滞后(镜像 v${ver} < GitHub v${gh}),走 GitHub 链…"
+      return 1
+    fi
+  fi
+  printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p'
+}
+
+# GitHub 最新 release 版本号(仅数字串;空=探测失败)。releases/latest/download 会 302 到
+# 带 tag 的最终资产 URL,HEAD 一次读 url_effective 即得,不用碰 api.github.com。
+gh_latest_version() {
+  local final
+  final=$(curl -sIL --connect-timeout 8 --max-time 20 -o /dev/null -w '%{url_effective}' \
+    "https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/probe" 2>/dev/null || true)
+  printf '%s' "$final" | sed -n 's#.*/download/v\([0-9][0-9.]*\)/.*#\1#p'
+}
+
+# 语义版本比较:ver_ge A B = A >= B(空段按 0 补齐;非数字/空返回失败)
+ver_ge() {
+  local a b
+  a=$(printf '%s' "$1" | tr -d 'v' | awk -F. '{printf "%02d%02d%02d", $1, $2, $3}')
+  b=$(printf '%s' "$2" | tr -d 'v' | awk -F. '{printf "%02d%02d%02d", $1, $2, $3}')
+  [ -n "$a" ] && [ -n "$b" ] && [ "$a" -ge "$b" 2>/dev/null ]
 }
 
 info() { printf '\033[1m[*]\033[0m %s\n' "$*"; }

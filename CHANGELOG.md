@@ -14,6 +14,12 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Fixed
+- **Termux 安装器防 npmmirror 同步滞后拿到旧版** —— 刚发版的头几分钟,镜像的 `latest` 可能仍指向上一个版本,此前安装/更新会静默下载旧包。现在解析到镜像版本落后于 GitHub 最新 release 时自动改走 GitHub 回退链(`releases/latest/download` 永远指向最新);GitHub 探测失败(网络不可达)则信任镜像,不因 GitHub 问题惩罚国内直连的镜像主源。探测用一次 HEAD 读重定向目标里的 tag,不碰 api.github.com。
+- **文档同步** —— 英文 README 手机章节的 "Nothing goes through npm" 已过时(便携包/语音引擎包主源现为 npm 镜像),重写并补上语音引擎默认安装;英文 README 测试套件计数 74→89;中文 README 补齐缺失的手机安装章节;`android/README.md` 下载源描述与安装器头注释同步双源现状。
+
 ## [0.15.0] - 2026-08-19
 
 ### Changed

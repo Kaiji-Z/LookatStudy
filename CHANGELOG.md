@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.15.0] - 2026-08-19
 
 ### Changed
 - **设置页重组为三个模型区,统一「内置 + 自定义」选择范式** —— 此前主模型、看图覆盖、语音能力三处各自一套控件(pill/下拉/密钥行混用)。现在设置页分为 **主模型 / 看图模型 / 语音模型** 三区:看图=「复用主模型 / 自定义」两选项;朗读=「Edge 在线 / 本地离线 / 自定义」;听写=「本地离线 / 自定义」。选「自定义」后与主模型区的自定义 provider 用**同一套配置方法**(名字 + 协议 + Base URL + 模型 + 密钥 + 测试),朗读走 OpenAI 兼容 `/audio/speech` 端点(测试=真实合成一句),听写走 `/audio/transcriptions`(Groq 用户填 `https://api.groq.com/openai/v1` + `whisper-large-v3-turbo` 即一比一迁移)。本地听写的模型下拉直接选 Whisper Turbo/Small(带下载状态,写 `asr_local_model` 设置,未就绪自动回退);kokoro/Whisper 的下载管理融入各自档位下方,独立模型管理列表取消。

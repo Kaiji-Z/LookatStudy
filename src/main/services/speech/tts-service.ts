@@ -1,11 +1,16 @@
 /**
- * TTS 朗读编排 —— 文本净化 → 句切分 → 逐句(缓存优先)合成 → WAV 事件推送。
+ * TTS 朗读编排(v0.13 三档)—— 文本净化 → 句切分 → 逐句(缓存优先)合成 → 音频事件推送。
  *
- * 并发语义:同一时刻只有一场朗读;新开朗读先停旧的(旧场收到 stopped 的 done)。
- * 取消语义:ttsStop 置停标志 —— 句间检查标志,合成中的句子靠 onChunk 返回 false
- * 让原生侧提前终止(sherpa generateAsync 的进度回调返 0 = 停)。
+ * 档位:edge(默认,在线)/ azure(BYO key,在线)/ local(kokoro 离线)。
+ * edge 句级预取(播第 i 句时已在合成第 i+1 句,抵消每句 RTT);
+ * edge 合成失败且 local 模型就绪 → 剩余句子自动落 local(fellBackTo 标记),
+ * local 未就绪 → 结构化失败(edge-failed)。azure 是用户的显式选择,失败即报错不静默降级。
  *
- * 模型门控:未就绪不合成,返回结构化 reason 让渲染层引导去设置页下载。
+ * 并发语义:同一时刻只有一场朗读;新开朗读先停旧的。取消语义:ttsStop 置停标志,
+ * 句间检查;local 档合成中的句子靠 onChunk 返回 false 让原生侧提前终止
+ * (edge/azure 的在飞请求无法取消,完成后丢弃)。
+ *
+ * 服务保持 db-free:settings 由 IPC 层注入(纯 map,verify 可直测)。
  */
 
 import type {
@@ -18,14 +23,43 @@ import { splitSentences, normalizeSpeechText } from "@shared/speech-text";
 
 import { SPEECH_MODELS_MANIFEST } from "./speech-model-manifest";
 import { ensureSpeechModel, readSpeechModelStatus } from "./speech-model-service";
-import { DEFAULT_TTS_SID, DEFAULT_TTS_SPEED, getTtsEngine, isSpeechEngineLoadable, synthesize } from "./speech-engine";
-import { readCachedWav, ttsCacheKey, writeCachedWav } from "./tts-cache";
+import {
+  DEFAULT_TTS_SID,
+  getTtsEngine,
+  isSpeechEngineLoadable,
+  synthesize,
+} from "./speech-engine";
+import {
+  bufferToArrayBuffer,
+  readCachedAudio,
+  ttsCacheKey,
+  writeCachedAudio,
+  type TtsAudioMime,
+} from "./tts-cache";
 import { encodeWavPcm16 } from "./wav-codec";
+import {
+  azureTtsMissing,
+  resolveTtsTier,
+  speedToRatePercent,
+  type TtsEngineTier,
+  type TtsTierConfig,
+} from "./tts-tiers";
+import { synthesizeEdgeMp3 } from "./edge-tts-client";
+import { synthesizeAzureWav } from "./azure-tts-client";
 
 export type SpeechEmitter = (channel: string, payload: unknown) => void;
 
-export type SpeakFailReason = "engine-unavailable" | "model-missing" | "empty-text";
-export type SpeakResult = { ok: true; sentences: number } | { ok: false; reason: SpeakFailReason };
+export type SpeakFailReason =
+  | "engine-unavailable"
+  | "model-missing"
+  | "empty-text"
+  | "azure-key-missing"
+  | "azure-region-missing"
+  | "edge-failed";
+
+export type SpeakResult =
+  | { ok: true; sentences: number; engine: TtsEngineTier; fellBackTo?: "local" }
+  | { ok: false; reason: SpeakFailReason };
 
 const TTS_ENTRY = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === "tts-kokoro")!;
 
@@ -36,21 +70,90 @@ interface ActiveSpeech {
 
 let active: ActiveSpeech | null = null;
 
+interface SynthOut {
+  bytes: ArrayBuffer;
+  mime: TtsAudioMime;
+  sampleRate: number;
+}
+
+function localModelReady(dataDir: string): boolean {
+  return isSpeechEngineLoadable() && readSpeechModelStatus(dataDir, TTS_ENTRY).state === "ready";
+}
+
+/** 单句合成(缓存优先)。engine 参数允许运行中降级(edge → local)。 */
+async function synthSentence(
+  dataDir: string,
+  cfg: TtsTierConfig,
+  engine: TtsEngineTier,
+  sentence: string,
+  opts: { sid: number; onChunk?: () => boolean },
+): Promise<SynthOut> {
+  const key = ttsCacheKey({
+    engine,
+    voice: engine === "local" ? `sid-${opts.sid}` : cfg.voice,
+    speed: cfg.speed,
+    sentence,
+  });
+  const mime: TtsAudioMime = engine === "edge" ? "audio/mpeg" : "audio/wav";
+  const cached = readCachedAudio(dataDir, key, mime);
+  if (cached) return { bytes: cached, mime, sampleRate: 24000 };
+
+  if (engine === "edge") {
+    const mp3 = await synthesizeEdgeMp3(sentence, {
+      voice: cfg.voice,
+      rate: speedToRatePercent(cfg.speed),
+    });
+    const bytes = bufferToArrayBuffer(mp3);
+    await writeCachedAudio(dataDir, key, mime, bytes);
+    return { bytes, mime, sampleRate: 24000 };
+  }
+  if (engine === "azure") {
+    const wav = await synthesizeAzureWav(sentence, {
+      key: cfg.azureKey ?? "",
+      region: cfg.azureRegion ?? "",
+      voice: cfg.voice,
+      rate: speedToRatePercent(cfg.speed),
+    });
+    const bytes = bufferToArrayBuffer(wav);
+    await writeCachedAudio(dataDir, key, mime, bytes);
+    return { bytes, mime, sampleRate: 24000 };
+  }
+  const tts = await getTtsEngine(dataDir);
+  const audio = await synthesize(tts, sentence, { sid: opts.sid, speed: cfg.speed, onChunk: opts.onChunk });
+  const bytes = encodeWavPcm16(audio.samples, audio.sampleRate);
+  await writeCachedAudio(dataDir, key, mime, bytes);
+  return { bytes, mime, sampleRate: audio.sampleRate };
+}
+
 /**
  * 朗读一段消息文本。messageId 随事件回传(渲染层靠它标记"正在朗读的气泡")。
- * 模型未下载 → {ok:false, reason:"model-missing"}(渲染层引导下载,不在这里拉起下载)。
+ * local 档模型未下载 → {ok:false, reason:"model-missing"}(渲染层引导下载,不在这里拉起下载)。
+ * deps 仅测试注入(降级链/合成 stub);生产缺省走真实实现。
  */
 export async function speakMessage(
   emit: SpeechEmitter,
   dataDir: string,
+  settings: Record<string, string | null>,
   messageId: string,
   rawText: string,
+  deps: { synth?: typeof synthSentence; localReady?: typeof localModelReady } = {},
 ): Promise<SpeakResult> {
-  // 平台闸门(如 Termux/bionic 无预编译原生包):先于模型状态,避免误导下载
-  if (!isSpeechEngineLoadable()) return { ok: false, reason: "engine-unavailable" };
-  if (readSpeechModelStatus(dataDir, TTS_ENTRY).state !== "ready") {
-    return { ok: false, reason: "model-missing" };
+  const cfg = resolveTtsTier(settings);
+  const sid = parseSid(settings.tts_sid_local);
+  const synth = deps.synth ?? synthSentence;
+  const isLocalReady = deps.localReady ?? localModelReady;
+
+  if (cfg.engine === "local") {
+    if (!isSpeechEngineLoadable()) return { ok: false, reason: "engine-unavailable" };
+    if (readSpeechModelStatus(dataDir, TTS_ENTRY).state !== "ready") {
+      return { ok: false, reason: "model-missing" };
+    }
+  } else if (cfg.engine === "azure") {
+    const missing = azureTtsMissing(cfg);
+    if (missing === "key") return { ok: false, reason: "azure-key-missing" };
+    if (missing === "region") return { ok: false, reason: "azure-region-missing" };
   }
+
   const { sentences } = splitSentences(normalizeSpeechText(rawText), { flush: true });
   if (sentences.length === 0) return { ok: false, reason: "empty-text" };
 
@@ -59,29 +162,49 @@ export async function speakMessage(
   const mine: ActiveSpeech = { messageId, stopped: false };
   active = mine;
 
+  let engine: TtsEngineTier = cfg.engine;
+  let fellBackTo: "local" | undefined;
+
+  // 句级预取(深度 2):合成是缓存优先的 Promise,不预热的句子是 sync 命中
+  const inflight = new Map<number, Promise<SynthOut>>();
+  const ensure = (i: number): Promise<SynthOut> => {
+    const running = inflight.get(i);
+    if (running) return running;
+    const sentence = sentences[i]!;
+    const p = synth(dataDir, cfg, engine, sentence, {
+      sid,
+      onChunk: () => !mine.stopped && active === mine,
+    }).finally(() => inflight.delete(i));
+    inflight.set(i, p);
+    return p;
+  };
+
   try {
-    const tts = await getTtsEngine(dataDir);
     for (let i = 0; i < sentences.length; i++) {
       if (mine.stopped || active !== mine) break;
-      const sentence = sentences[i]!;
-      const key = ttsCacheKey(sentence, DEFAULT_TTS_SID, DEFAULT_TTS_SPEED);
-      let wav = readCachedWav(dataDir, key);
-      if (!wav) {
-        const audio = await synthesize(tts, sentence, {
-          sid: DEFAULT_TTS_SID,
-          speed: DEFAULT_TTS_SPEED,
-          onChunk: () => !mine.stopped && active === mine,
-        });
-        if (mine.stopped || active !== mine) break;
-        wav = encodeWavPcm16(audio.samples, audio.sampleRate);
-        await writeCachedWav(dataDir, key, wav);
+      let out: SynthOut;
+      try {
+        if (i + 1 < sentences.length) void ensure(i + 1).catch(() => {}); // 预热下一句(错误在 await 时统一处理)
+        out = await ensure(i);
+      } catch (e) {
+        if (engine === "edge" && isLocalReady(dataDir)) {
+          // edge 通道抖动 → 剩余句子(含当前句)落 local
+          engine = "local";
+          fellBackTo = "local";
+          inflight.clear();
+          out = await ensure(i);
+        } else {
+          throw e;
+        }
       }
+      if (mine.stopped || active !== mine) break;
       const payload: SpeechTtsAudioEvent = {
         messageId,
         sentenceIndex: i,
         sentenceTotal: sentences.length,
-        wavBytes: wav,
-        sampleRate: tts.sampleRate,
+        wavBytes: out.bytes,
+        sampleRate: out.sampleRate,
+        mime: out.mime,
       };
       emit("speech:ttsAudio", payload);
     }
@@ -89,7 +212,7 @@ export async function speakMessage(
     if (active === mine) active = null;
     const done: SpeechTtsDoneEvent = { messageId, sentenceTotal: sentences.length, stopped };
     emit("speech:ttsDone", done);
-    return { ok: true, sentences: sentences.length };
+    return { ok: true, sentences: sentences.length, engine: cfg.engine, ...(fellBackTo ? { fellBackTo } : {}) };
   } catch (e) {
     if (active === mine) active = null;
     const errPayload: SpeechTtsErrorEvent = {
@@ -99,6 +222,11 @@ export async function speakMessage(
     emit("speech:ttsError", errPayload);
     throw e;
   }
+}
+
+function parseSid(raw: string | null | undefined): number {
+  const v = Number.parseInt(raw ?? "", 10);
+  return Number.isFinite(v) && v >= 0 && v <= 200 ? v : DEFAULT_TTS_SID;
 }
 
 /** 停当前朗读(幂等;done 事件由朗读循环收尾时发) */

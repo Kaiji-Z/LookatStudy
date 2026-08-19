@@ -5,7 +5,8 @@
  *  - TTS kokoro:OfflineTts.createAsync 非阻塞初始化;合成走 generateAsync,
  *    增量块经 onProgress 流出 —— 全部传 enableExternalBuffer:false(Electron 红线,
  *    见 sherpa-onnx-node.d.ts 头注)。
- *  - ASR zipformer:OnlineRecognizer 常驻,PCM 逐块 acceptWaveform → decode。
+ *  - ASR whisper(v0.13,质量优先取代 zipformer 流式):OfflineRecognizer 整段
+ *    recognize —— decodeAsync 非阻塞,结果 JSON 回流(不涉外部 buffer,天然免 ABI 坑)。
  *
  * 原生模块按 pdf-text.ts 同款模式函数内懒 require:tsx verify 只 import 纯构建器,
  * 不加载 .node 二进制;生产 Electron(CJS)在首次调用时才加载。
@@ -15,8 +16,8 @@ import path from "node:path";
 
 import type {
   OfflineTts,
-  OnlineRecognizer,
-  OnlineRecognizerConfig,
+  OfflineRecognizer,
+  OfflineRecognizerConfig,
   OfflineTtsConfig,
 } from "sherpa-onnx-node";
 import type { SpeechModelEntry } from "@shared/speech-types";
@@ -56,32 +57,46 @@ export function buildTtsConfig(modelDir: string): OfflineTtsConfig {
   };
 }
 
-export type AsrVariant = "int8" | "fp32";
+export type WhisperVariant = "int8" | "fp32";
 
-export function buildAsrConfig(modelDir: string, variant: AsrVariant): OnlineRecognizerConfig {
+/** whisper 模型文件名前缀(镜像布局:{prefix}-encoder.int8.onnx 等) */
+export function whisperPrefix(entryId: string): "turbo" | "small" {
+  return entryId === "asr-whisper-small" ? "small" : "turbo";
+}
+
+export function buildWhisperConfig(
+  modelDir: string,
+  prefix: string,
+  variant: WhisperVariant,
+  language?: string,
+): OfflineRecognizerConfig {
   const p = (f: string) => path.join(modelDir, f);
   const suffix = variant === "int8" ? ".int8" : "";
   return {
     featConfig: { sampleRate: 16000, featureDim: 80 },
     modelConfig: {
-      transducer: {
-        encoder: p(`encoder-epoch-99-avg-1${suffix}.onnx`),
-        decoder: p(`decoder-epoch-99-avg-1${suffix}.onnx`),
-        joiner: p(`joiner-epoch-99-avg-1${suffix}.onnx`),
+      whisper: {
+        encoder: p(`${prefix}-encoder${suffix}.onnx`),
+        decoder: p(`${prefix}-decoder${suffix}.onnx`),
+        ...(language ? { language } : {}),
+        task: "transcribe",
       },
-      tokens: p("tokens.txt"),
-      numThreads: 2,
+      tokens: p(`${prefix}-tokens.txt`),
+      numThreads: 4,
       provider: "cpu",
       debug: false,
     },
   };
 }
 
-/** 从磁盘现状解析 ASR 变体(int8 偏好;不就绪返回 null) */
-export function resolveAsrVariant(dataDir: string, entry: SpeechModelEntry): AsrVariant | null {
+/** 从磁盘现状解析 Whisper 变体(int8 偏好;不就绪返回 null) */
+export function resolveWhisperVariant(
+  dataDir: string,
+  entry: SpeechModelEntry,
+): WhisperVariant | null {
   const variant = pickVariant(entry, new Set(listModelFiles(speechModelDir(dataDir, entry.id)).keys()));
   if (!variant) return null;
-  return variant === "int8" ? "int8" : "fp32";
+  return variant === "fp32" ? "fp32" : "int8";
 }
 
 // ---------------------------------------------------------------------------
@@ -93,13 +108,13 @@ interface TtsHolder {
   tts: OfflineTts;
 }
 
-interface AsrHolder {
-  dir: string;
-  recognizer: OnlineRecognizer;
+interface WhisperHolder {
+  key: string;
+  recognizer: OfflineRecognizer;
 }
 
 let ttsHolder: TtsHolder | null = null;
-let asrHolder: AsrHolder | null = null;
+let whisperHolder: WhisperHolder | null = null;
 
 type SherpaModule = typeof import("sherpa-onnx-node");
 
@@ -136,24 +151,32 @@ export async function getTtsEngine(dataDir: string): Promise<OfflineTts> {
   return ttsHolder.tts;
 }
 
-/** 取 ASR 识别器;模型未就绪抛错 */
-export function getAsrEngine(dataDir: string, entry: SpeechModelEntry): OnlineRecognizer {
+/** 取 Whisper 识别器(按 模型目录+语言 缓存);模型未就绪抛错(调用方先查状态) */
+export async function getWhisperRecognizer(
+  dataDir: string,
+  entry: SpeechModelEntry,
+  language?: string,
+): Promise<OfflineRecognizer> {
   const dir = speechModelDir(dataDir, entry.id);
-  if (asrHolder?.dir === dir) return asrHolder.recognizer;
-  if (asrHolder) asrHolder.recognizer.release?.();
-  const variant = resolveAsrVariant(dataDir, entry);
+  const key = `${dir}|${language ?? ""}`;
+  if (whisperHolder?.key === key) return whisperHolder.recognizer;
+  if (whisperHolder) whisperHolder.recognizer.release?.();
+  const variant = resolveWhisperVariant(dataDir, entry);
   if (!variant) throw new Error("asr model not ready");
   const sherpa = loadSherpa();
-  asrHolder = { dir, recognizer: new sherpa.OnlineRecognizer(buildAsrConfig(dir, variant)) };
-  return asrHolder.recognizer;
+  const recognizer = await sherpa.OfflineRecognizer.createAsync(
+    buildWhisperConfig(dir, whisperPrefix(entry.id), variant, language),
+  );
+  whisperHolder = { key, recognizer };
+  return recognizer;
 }
 
 /** 模型目录变化(重下/删除)后失效缓存;app 退出时释放 */
 export function invalidateSpeechEngines(): void {
   ttsHolder?.tts.release?.();
   ttsHolder = null;
-  asrHolder?.recognizer.release?.();
-  asrHolder = null;
+  whisperHolder?.recognizer.release?.();
+  whisperHolder = null;
 }
 
 // ---------------------------------------------------------------------------

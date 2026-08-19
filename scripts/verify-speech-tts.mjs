@@ -11,11 +11,12 @@ import path from "node:path";
 
 import { encodeWavPcm16 } from "../src/main/services/speech/wav-codec";
 import {
+  extOfMime,
   pickCacheEviction,
-  readCachedWav,
+  readCachedAudio,
   speechCacheDir,
   ttsCacheKey,
-  writeCachedWav,
+  writeCachedAudio,
 } from "../src/main/services/speech/tts-cache";
 
 let passed = 0;
@@ -56,34 +57,46 @@ console.log("T2 量化:clamp + 幅值边界");
 }
 
 // ---------------------------------------------------------------------------
-console.log("T3 缓存键:同文同参稳定 / 异文异键");
+console.log("T3 缓存键:同参稳定 / 引擎·音色·语速·文本任一异则异键");
 {
-  const k1 = ttsCacheKey("你好。", 48, 1);
-  const k1b = ttsCacheKey("你好。", 48, 1);
-  const k2 = ttsCacheKey("你好。", 48, 1.2);
-  const k3 = ttsCacheKey("再见。", 48, 1);
+  const base = { engine: "edge", voice: "zh-CN-XiaoxiaoNeural", speed: 1, sentence: "你好。" };
+  const k1 = ttsCacheKey(base);
+  const k1b = ttsCacheKey({ ...base });
+  const k2 = ttsCacheKey({ ...base, speed: 1.2 });
+  const k3 = ttsCacheKey({ ...base, sentence: "再见。" });
+  const k4 = ttsCacheKey({ ...base, engine: "local", voice: "sid-48" });
+  const k5 = ttsCacheKey({ ...base, voice: "en-US-AriaNeural" });
   assert.equal(k1, k1b);
   assert.notEqual(k1, k2, "速度不同键不同");
   assert.notEqual(k1, k3, "文本不同键不同");
+  assert.notEqual(k1, k4, "引擎不同键不同(在线/离线不串味)");
+  assert.notEqual(k1, k5, "音色不同键不同");
   assert.ok(/^[0-9a-f]{64}$/.test(k1), "sha256 hex");
   ok("键推导正确");
 }
 
 // ---------------------------------------------------------------------------
-console.log("T4 缓存读写 + 独立 ArrayBuffer 拷贝");
+console.log("T4 缓存读写 + 独立 ArrayBuffer 拷贝 + 按容器分扩展名");
 {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ls-tts-cache-"));
   try {
     const wav = encodeWavPcm16(new Float32Array([0.1, -0.1]), 24000);
-    const key = ttsCacheKey("t", 48, 1);
-    assert.equal(readCachedWav(tmp, key), null, "未写先读=null");
-    await writeCachedWav(tmp, key, wav);
-    const back = readCachedWav(tmp, key);
+    const key = ttsCacheKey({ engine: "local", voice: "sid-48", speed: 1, sentence: "t" });
+    assert.equal(readCachedAudio(tmp, key, "audio/wav"), null, "未写先读=null");
+    await writeCachedAudio(tmp, key, "audio/wav", wav);
+    const back = readCachedAudio(tmp, key, "audio/wav");
     assert.ok(back instanceof ArrayBuffer);
     assert.equal(back.byteLength, wav.byteLength);
     assert.deepEqual(Buffer.from(back), Buffer.from(wav));
     assert.notEqual(back, wav, "返回独立拷贝(不共享源 buffer)");
     assert.ok(fs.existsSync(path.join(speechCacheDir(tmp), `${key}.wav`)));
+    // mp3 容器走 .mp3 扩展名,与 wav 同键互不可见
+    const mp3 = new ArrayBuffer(8);
+    await writeCachedAudio(tmp, key, "audio/mpeg", mp3);
+    assert.ok(fs.existsSync(path.join(speechCacheDir(tmp), `${key}.mp3`)));
+    assert.equal(readCachedAudio(tmp, key, "audio/wav")?.byteLength, wav.byteLength, "wav 仍在");
+    assert.equal(extOfMime("audio/mpeg"), ".mp3");
+    assert.equal(extOfMime("audio/wav"), ".wav");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -114,7 +127,7 @@ console.log("T5 LRU 淘汰:新→旧保留,超预算删最旧");
 // ---------------------------------------------------------------------------
 console.log("T6 线性降采样:48k → 16k");
 {
-  const { resampleLinear } = await import("../src/renderer/lib/useAsrInput.js");
+  const { resampleLinear } = await import("../shared/speech-wav.ts");
   // 1kHz 正弦 @48k 采 48 点 → 16k 应 16 点
   const sin = new Float32Array(48);
   for (let i = 0; i < 48; i++) sin[i] = Math.sin((2 * Math.PI * 1000 * i) / 48000);

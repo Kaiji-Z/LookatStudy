@@ -1,75 +1,123 @@
 /**
- * ASR 流式识别会话 —— 单活动会话模型(renderer 麦克风 ↔ main 识别器)。
+ * 听写转录编排(v0.13 质量优先版)—— 渲染层录完整段 WAV,一次调用换全文。
  *
- * 生命周期:asrStart(建流) → asrFeed×N(16kHz PCM 块,增量 decode) → asrStop(收尾取全文)。
- * 端点检测(isEndpoint)命中即把已确认文本累进 committed,并 reset 流 —— 避免
- * 转导解码器上下文无限增长(端点后历史对后续识别已无贡献)。
- * partial = committed + 当前流文本,每次 feed 后推事件。
+ * 路由:asr_engine 设置 → local(Whisper 离线,自带标点;turbo 优先,small 兜底)
+ * / groq(whisper-large-v3-turbo,复用 LLM preset key)/ azure STT(BYO key)。
+ * 流式会话(asrStart/asrFeed/asrStop)随 zipformer 一起退役:partial 换质量,用户拍板。
+ *
+ * 服务 db-free:settings 由 IPC 层注入。本地档串行化(turbo 解码吃满 CPU,
+ * 并发两段只会互相拖慢);云端档天然并发安全。
  */
 
-import type { OnlineRecognizer, OnlineStream } from "sherpa-onnx-node";
+import type { SpeechModelEntry } from "@shared/speech-types";
+import { decodeWavPcm16, resampleLinear } from "@shared/speech-wav";
 
 import { SPEECH_MODELS_MANIFEST } from "./speech-model-manifest";
-import { getAsrEngine, isSpeechEngineLoadable } from "./speech-engine";
+import { getWhisperRecognizer, isSpeechEngineLoadable } from "./speech-engine";
 import { readSpeechModelStatus } from "./speech-model-service";
+import { asrCloudMissing, localeToBcp47, localeToWhisperLang, resolveAsrTier } from "./asr-tiers";
+import { azureSttTranscribe, groqTranscribe } from "./cloud-asr-client";
 
-const ASR_ENTRY = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === "asr-zipformer")!;
+export type TranscribeFailReason =
+  | "engine-unavailable"
+  | "model-missing"
+  | "groq-key-missing"
+  | "azure-key-missing"
+  | "azure-region-missing"
+  | "bad-audio"
+  | "asr-failed";
 
-interface AsrSession {
-  recognizer: OnlineRecognizer;
-  stream: OnlineStream;
-  committed: string;
+export type TranscribeResult =
+  | { ok: true; text: string }
+  | { ok: false; reason: TranscribeFailReason; detail?: string };
+
+/** 本地档用哪个 whisper 模型(turbo 就绪优先,其次 small;都不就绪 null) */
+export function pickLocalWhisperEntry(dataDir: string): SpeechModelEntry | null {
+  for (const id of ["asr-whisper-turbo", "asr-whisper-small"] as const) {
+    const entry = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === id);
+    if (entry && readSpeechModelStatus(dataDir, entry).state === "ready") return entry;
+  }
+  return null;
 }
 
-let session: AsrSession | null = null;
+let localQueue: Promise<unknown> = Promise.resolve();
 
-export type AsrStartResult = { ok: true } | { ok: false; reason: "model-missing" | string };
+/** 串行化本地解码(CPU 密集,并发互拖) */
+function runLocal<T>(fn: () => Promise<T>): Promise<T> {
+  const next = localQueue.then(fn, fn);
+  localQueue = next.catch(() => {});
+  return next;
+}
 
-export function startAsrSession(dataDir: string): AsrStartResult {
-  if (!isSpeechEngineLoadable()) return { ok: false, reason: "engine-unavailable" };
-  if (readSpeechModelStatus(dataDir, ASR_ENTRY).state !== "ready") {
-    return { ok: false, reason: "model-missing" };
-  }
+// whisper 的 zh 输出常为繁体(模型级行为);简体用户看着像 bug ——
+// locale 以 zh 开头时用 opencc 归一成简体。懒建一次,失败静默回原文。
+let toSimplified: ((s: string) => string) | null = null;
+function normalizeChineseScript(text: string, locale?: string): string {
+  if (!text || !locale || !locale.toLowerCase().startsWith("zh")) return text;
   try {
-    if (session) abandonAsrSession();
-    const recognizer = getAsrEngine(dataDir, ASR_ENTRY);
-    session = { recognizer, stream: recognizer.createStream(), committed: "" };
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+    if (toSimplified == null) {
+      const OpenCC = require("opencc-js") as {
+        Converter: (o: { from: string; to: string }) => (s: string) => string;
+      };
+      toSimplified = OpenCC.Converter({ from: "tw", to: "cn" });
+    }
+    return toSimplified(text);
+  } catch {
+    return text;
   }
 }
 
-/** 喂 16kHz 单声道 PCM 块;返回当前 partial 文本(committed + 在流文本) */
-export function feedAsrSamples(samples: Float32Array): string {
-  if (!session || samples.length === 0) return partialAsrText();
-  const { recognizer, stream } = session;
-  stream.acceptWaveform({ sampleRate: 16000, samples });
-  while (recognizer.isReady(stream)) recognizer.decode(stream);
-  if (recognizer.isEndpoint(stream)) {
-    session.committed += recognizer.getResult(stream).text;
-    recognizer.reset(stream);
+export async function transcribeAudio(
+  dataDir: string,
+  settings: Record<string, string | null>,
+  wavBytes: ArrayBuffer,
+  locale?: string,
+): Promise<TranscribeResult> {
+  const cfg = resolveAsrTier(settings);
+
+  if (cfg.engine === "groq" || cfg.engine === "azure") {
+    const missing = asrCloudMissing(cfg);
+    if (missing === "groq-key") return { ok: false, reason: "groq-key-missing" };
+    if (missing === "azure-key") return { ok: false, reason: "azure-key-missing" };
+    if (missing === "azure-region") return { ok: false, reason: "azure-region-missing" };
+    try {
+      const lang = localeToBcp47(locale);
+      const text =
+        cfg.engine === "groq"
+          ? await groqTranscribe(cfg.groqKey!, wavBytes, lang)
+          : await azureSttTranscribe(cfg.azureKey!, cfg.azureRegion!, wavBytes, lang);
+      return { ok: true, text: normalizeChineseScript(text, locale) };
+    } catch (e) {
+      return { ok: false, reason: "asr-failed", detail: e instanceof Error ? e.message : String(e) };
+    }
   }
-  return partialAsrText();
-}
 
-export function partialAsrText(): string {
-  if (!session) return "";
-  return (session.committed + session.recognizer.getResult(session.stream).text).trim();
-}
-
-/** 收尾:flush 尾部音频 → 全文;会话结束 */
-export function stopAsrSession(): string {
-  if (!session) return "";
-  const { recognizer, stream, committed } = session;
-  stream.inputFinished();
-  while (recognizer.isReady(stream)) recognizer.decode(stream);
-  const final = (committed + recognizer.getResult(stream).text).trim();
-  session = null;
-  return final;
-}
-
-/** 丢弃会话(取消:不要结果) */
-export function abandonAsrSession(): void {
-  session = null;
+  // local 档
+  if (!isSpeechEngineLoadable()) return { ok: false, reason: "engine-unavailable" };
+  const entry = pickLocalWhisperEntry(dataDir);
+  if (!entry) return { ok: false, reason: "model-missing" };
+  return runLocal(async () => {
+    let samples: Float32Array;
+    let sampleRate: number;
+    try {
+      const decoded = decodeWavPcm16(new Uint8Array(wavBytes));
+      samples = decoded.samples;
+      sampleRate = decoded.sampleRate;
+    } catch (e) {
+      return { ok: false as const, reason: "bad-audio" as const, detail: e instanceof Error ? e.message : String(e) };
+    }
+    if (samples.length === 0) return { ok: false as const, reason: "bad-audio" as const, detail: "empty samples" };
+    if (sampleRate !== 16000) {
+      samples = resampleLinear(samples, sampleRate / 16000);
+    }
+    try {
+      const recognizer = await getWhisperRecognizer(dataDir, entry, localeToWhisperLang(locale));
+      const stream = recognizer.createStream();
+      stream.acceptWaveform({ sampleRate: 16000, samples });
+      const result = await recognizer.decodeAsync(stream);
+      return { ok: true as const, text: normalizeChineseScript((result.text ?? "").trim(), locale) };
+    } catch (e) {
+      return { ok: false as const, reason: "asr-failed" as const, detail: e instanceof Error ? e.message : String(e) };
+    }
+  });
 }

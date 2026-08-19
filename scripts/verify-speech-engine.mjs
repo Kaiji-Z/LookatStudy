@@ -1,6 +1,8 @@
 /**
  * verify-speech-engine —— 语音引擎纯配置构建器 + 变体解析(不加载原生模块)。
  *
+ * v0.13:ASR 换 Whisper 离线(zipformer 流式退役);T2/T3 断言 whisper 布局。
+ *
  * 运行:tsx scripts/verify-speech-engine.mjs
  */
 
@@ -11,9 +13,10 @@ import path from "node:path";
 
 import { SPEECH_MODELS_MANIFEST } from "../src/main/services/speech/speech-model-manifest";
 import {
-  buildAsrConfig,
   buildTtsConfig,
-  resolveAsrVariant,
+  buildWhisperConfig,
+  resolveWhisperVariant,
+  whisperPrefix,
 } from "../src/main/services/speech/speech-engine";
 
 let passed = 0;
@@ -43,38 +46,48 @@ console.log("T1 TTS 配置:kokoro 布局 + 双词表拼接 + 单句模式");
 }
 
 // ---------------------------------------------------------------------------
-console.log("T2 ASR 配置:int8/fp32 变体文件名");
+console.log("T2 Whisper 配置:turbo/small 前缀 + int8/fp32 变体文件名 + 语言提示");
 {
-  const int8 = buildAsrConfig("D:/m", "int8");
-  assert.equal(norm(int8.modelConfig.transducer.encoder), "D:/m/encoder-epoch-99-avg-1.int8.onnx");
-  assert.equal(norm(int8.modelConfig.transducer.decoder), "D:/m/decoder-epoch-99-avg-1.int8.onnx");
-  assert.equal(norm(int8.modelConfig.transducer.joiner), "D:/m/joiner-epoch-99-avg-1.int8.onnx");
-  assert.equal(norm(int8.modelConfig.tokens), "D:/m/tokens.txt");
-  assert.equal(int8.featConfig.sampleRate, 16000);
-  assert.equal(int8.featConfig.featureDim, 80);
+  const t8 = buildWhisperConfig("D:/m", "turbo", "int8");
+  assert.equal(norm(t8.modelConfig.whisper.encoder), "D:/m/turbo-encoder.int8.onnx");
+  assert.equal(norm(t8.modelConfig.whisper.decoder), "D:/m/turbo-decoder.int8.onnx");
+  assert.equal(norm(t8.modelConfig.tokens), "D:/m/turbo-tokens.txt");
+  assert.equal(t8.featConfig.sampleRate, 16000);
+  assert.equal(t8.featConfig.featureDim, 80);
+  assert.equal(t8.modelConfig.whisper.task, "transcribe");
 
-  const fp32 = buildAsrConfig("D:/m", "fp32");
-  assert.equal(norm(fp32.modelConfig.transducer.encoder), "D:/m/encoder-epoch-99-avg-1.onnx", "fp32 无 .int8 后缀");
-  ok("ASR 变体配置正确");
+  const s32 = buildWhisperConfig("D:/m", "small", "fp32", "zh");
+  assert.equal(norm(s32.modelConfig.whisper.encoder), "D:/m/small-encoder.onnx", "fp32 无 .int8 后缀");
+  assert.equal(s32.modelConfig.whisper.language, "zh", "语言提示透传");
+  const noLang = buildWhisperConfig("D:/m", "turbo", "int8");
+  assert.equal(noLang.modelConfig.whisper.language, undefined, "缺省语言=自动检测");
+
+  assert.equal(whisperPrefix("asr-whisper-turbo"), "turbo");
+  assert.equal(whisperPrefix("asr-whisper-small"), "small");
+  ok("Whisper 配置正确");
 }
 
 // ---------------------------------------------------------------------------
-console.log("T3 变体解析:磁盘现状 → int8 偏好");
+console.log("T3 变体解析:磁盘现状 → int8 偏好(turbo 单变体 + small 双变体)");
 {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ls-speech-engine-"));
   try {
-    const asr = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === "asr-zipformer");
-    assert.equal(resolveAsrVariant(tmp, asr), null, "无文件 → null");
+    const turbo = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === "asr-whisper-turbo");
+    const small = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === "asr-whisper-small");
+    assert.equal(resolveWhisperVariant(tmp, turbo), null, "无文件 → null");
 
-    const dir = path.join(tmp, "speech-models", asr.id);
+    const dir = path.join(tmp, "speech-models", small.id);
     fs.mkdirSync(dir, { recursive: true });
     // 先只放 fp32 全套
-    for (const f of asr.variants.fp32.files) fs.writeFileSync(path.join(dir, f), "x");
-    assert.equal(resolveAsrVariant(tmp, asr), "fp32", "仅 fp32 → fp32");
+    for (const f of small.variants.fp32.files) fs.writeFileSync(path.join(dir, f), "x");
+    assert.equal(resolveWhisperVariant(tmp, small), "fp32", "仅 fp32 → fp32");
 
     // 补齐 int8 → 偏好翻转到 int8
-    for (const f of asr.variants.int8.files) fs.writeFileSync(path.join(dir, f), "x");
-    assert.equal(resolveAsrVariant(tmp, asr), "int8", "双全 → int8");
+    for (const f of small.variants.int8.files) fs.writeFileSync(path.join(dir, f), "x");
+    assert.equal(resolveWhisperVariant(tmp, small), "int8", "双全 → int8");
+
+    // turbo 清单只有 int8 变体(镜像 int8-only)
+    assert.deepEqual(Object.keys(turbo.variants), ["int8"], "turbo 单变体");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

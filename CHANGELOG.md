@@ -17,6 +17,13 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **朗读三档引擎(默认换 Edge 在线音色)** —— 此前本地 Kokoro 音色被实测嫌"怪"(TTS 模型小,表现力有限)。现在朗读默认走 **Edge 在线通道**(微软 Edge 朗读,免费、无需密钥、产品级中文音色:晓晓/云希/辽宁晓北等 9 个精选),另有两档可切:**Azure**(自带密钥,官方通道,F0 层每月 50 万字符免费)与**本地离线**(原 Kokoro,下载后完全离线)。Edge 抖动时若本地模型就绪会**自动降级**继续读完(不打断学习);首次使用 Edge 一次性告知"文本经微软在线服务"(local-first 知情)。设置页语音能力组新增:引擎切换、音色下拉(Edge/Azure 共用 Neural 名册,本地为 8 个 kokoro 音色)、语速滑条、Azure 密钥/区域。句级缓存键扩为 引擎+音色+语速+文本,三档互不串味;Edge 档在 Termux 免装引擎包即可用(纯 JS,无原生依赖)。Windows 实测坑:Node 默认 DNS 顺序会让 Edge 端点握手重置,进程内调 ipv4first 修复。
+- **讲解 tab 整课朗读(🔊)** —— 右栏讲解标题旁新增朗读按钮:整课正文念给耳朵听(同款净化:代码块/markdown 记号不读),切节点自动停。看书和听课双通道,通勤/闭目复习场景打开。
+- **语音输入换 Whisper(质量优先)+ 云端两档** —— 用户拍板"流式不重要,质量重要":本地听写引擎从流式 Zipformer 换 **Whisper 离线转写**(sherpa-onnx 同引擎零新原生依赖;**Turbo int8 约 1GB 推荐桌面 / Small int8 约 360MB 轻量**两档任下,自带标点,中文质量显著好于 Zipformer;zh 输出经 OpenCC 繁→简归一)。新增云端两档:**Groq**(whisper-large-v3-turbo,已配 Groq 学大模型的用户**零额外配置**——复用同一把密钥)与 **Azure STT**(自带密钥,F0 层每月 5 小时免费)。实时 partial 字幕随流式会话退役,换来"说完等几秒出全文"的质量档位(云端 <1 秒)。
+- **听写 UX 三件:静音自动停 / 按住说话 / 自动发送(默认关)** —— 录音中说话后 ≥1.2 秒静音自动结束并转录(可关);**按住麦克风按钮 ≥0.4 秒即录、松开即停**(微信式,快点击仍是原来的开关模式);"静音后自动发送"默认**关**(local-first 谨慎默认),设置页可开。录音中显示实时音量条,转录中显示 spinner。
+
+### Changed
+- 语音输入 IPC 通道重构:流式四通道(asrStart/Feed/Stop/Cancel)退役,合并为一次 `speech:asrTranscribe(WAV)`(录音纯渲染层,主进程只收成品);handler 总数 103→100,preload/api-web/serve 三端同步,WAV 过 WS 走 base64(与音频下行同法)。语音模型清单移除旧 asr-zipformer 条目(已下载的文件保留在盘上不删)。
 - **Termux 两个包改经 npm 分发(npmmirror 主源,GitHub 链降为兜底)** —— `install-termux.sh` 的便携包与语音引擎包下载改为双源:npm 镜像(阿里 npmmirror,自动同步 npm,国内直连快;tgz 剥 `package/` 前缀)优先,GitHub 直连+代理链回退。CI 发布走 **trusted publishing(OIDC,零密钥)**:`termux-voice.yml` 发 `lookatstudy-termux-voice`、`android-build.yml` 发 `lookatstudy-mobile`,工作流只需 `id-token: write` 权限 + npm≥11.5.1(经典 token 已被 npm 于 2025-12 废除,不再依赖任何长期凭据);`repository.url` 按校验要求指向本仓库。npmjs.com 上为两个包名配置一次 pending publisher 后,首次发布即认领包名。verify-termux-voice 增至 6 组(双源安装/IDC 权限/无 token 残留等)。
 
 ## [0.12.1] - 2026-08-19

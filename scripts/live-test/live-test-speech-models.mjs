@@ -16,7 +16,7 @@ import path from "node:path";
 import { readApiKey } from "./_load-env.mjs"; // 不需要 LLM key(纯模型下载+本地推理),导入仅为统一入口惯例
 import { SPEECH_MODELS_MANIFEST } from "../../src/main/services/speech/speech-model-manifest";
 import { ensureSpeechModel, readSpeechModelStatus } from "../../src/main/services/speech/speech-model-service";
-import { getAsrEngine, getTtsEngine, synthesize } from "../../src/main/services/speech/speech-engine";
+import { getTtsEngine, getWhisperRecognizer, synthesize } from "../../src/main/services/speech/speech-engine";
 import { normalizeSpeechText, splitSentences } from "../../shared/speech-text";
 
 if (process.env.LIVE_SPEECH !== "1") {
@@ -83,28 +83,23 @@ for (const s of sentences.slice(0, 2)) {
 assert.ok(totalSamples > sampleRate, "应合成出至少 1 秒音频");
 
 // ---------------------------------------------------------------------------
-// Step 3:ASR 回环(24k→16k 抽取降采样,live 冒烟足够)
+// Step 3:ASR 回环(v0.13 Whisper 离线):TTS 产物 24k→16k 降采样 → decodeAsync。
+// turbo 约 1GB;想要快跑可先删缓存目录换 small。whisper 自带标点 → 断言含标点。
 // ---------------------------------------------------------------------------
-const asrEntry = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === "asr-zipformer");
-const recognizer = getAsrEngine(dataDir, asrEntry);
-const stream = recognizer.createStream();
-// 用 TTS 首句产物
+const asrEntry = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === "asr-whisper-turbo");
 const a0 = await synthesize(tts, sentences[0]);
 const ratio = a0.sampleRate / 16000;
 const pcm16 = new Float32Array(Math.floor(a0.samples.length / ratio));
 for (let i = 0; i < pcm16.length; i++) pcm16[i] = a0.samples[Math.floor(i * ratio)];
-const chunkSz = 16000 * 0.3;
-let text = "";
-for (let i = 0; i < pcm16.length; i += chunkSz) {
-  stream.acceptWaveform({ sampleRate: 16000, samples: pcm16.subarray(i, i + chunkSz) });
-  while (recognizer.isReady(stream)) recognizer.decode(stream);
-  if (recognizer.isEndpoint(stream)) { recognizer.reset(stream); }
-}
-stream.inputFinished();
-while (recognizer.isReady(stream)) recognizer.decode(stream);
-text = recognizer.getResult(stream).text;
-console.log(`[live] ASR roundtrip: ${JSON.stringify(text)}`);
+const recognizer = await getWhisperRecognizer(dataDir, asrEntry, "zh");
+const stream = recognizer.createStream();
+stream.acceptWaveform({ sampleRate: 16000, samples: pcm16 });
+const t0 = Date.now();
+const result = await recognizer.decodeAsync(stream);
+const text = (result.text ?? "").trim();
+console.log(`[live] ASR roundtrip: ${JSON.stringify(text)} (${((Date.now() - t0) / 1000).toFixed(1)}s for ${(pcm16.length / 16000).toFixed(1)}s audio)`);
 assert.ok(text.length > 0, "ASR 应产出非空文本");
+assert.ok(/[。,.!?!?]/.test(text), "whisper 输出应自带标点");
 
 console.log("\nLIVE-SPEECH-MODELS ALL PASS ✅");
 process.exit(0);

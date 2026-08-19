@@ -169,10 +169,12 @@ export async function startServe(opts: ServeOptions): Promise<ServeInstance> {
         ws.send(JSON.stringify({ v: WS_PROTOCOL_VERSION, type: "res", id: "", ok: false, error: "bad frame" }));
         return;
       }
-      // v0.12 语音:asrFeed 的 PCM 以 base64 过河(JSON 装不下 Float32Array),分派前还原
-      if (frame.channel === "speech:asrFeed" && typeof frame.args[0] === "string") {
+      // v0.13 语音:听写 WAV 以 base64 过河(JSON 装不下 ArrayBuffer),分派前还原
+      if (frame.channel === "speech:asrTranscribe" && typeof frame.args[0] === "string") {
         const buf = Buffer.from(frame.args[0] as string, "base64");
-        frame.args = [new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.byteLength / 4))];
+        const ab = new ArrayBuffer(buf.byteLength);
+        new Uint8Array(ab).set(buf);
+        frame.args = [ab, ...frame.args.slice(1)];
       }
       const handler = handlers.get(frame.channel);
       if (!handler) {

@@ -899,7 +899,7 @@ function Toggle({
 }
 
 
-/* ---------- v0.12 语音能力:模型下载/删除/状态 ---------- */
+/* ---------- v0.12 语音能力:模型下载/删除/状态;v0.13 三档 TTS 引擎 ---------- */
 
 interface SpeechModelRow {
   id: string;
@@ -908,6 +908,30 @@ interface SpeechModelRow {
   totalBytes: number;
 }
 
+/** Edge/Azure 共用音色表(ShortName 同格式);local 用 kokoro sid */
+const TTS_VOICE_OPTIONS = [
+  { id: "zh-CN-XiaoxiaoNeural", label: "zh-CN · 晓晓(女)" },
+  { id: "zh-CN-XiaoyiNeural", label: "zh-CN · 晓伊(女)" },
+  { id: "zh-CN-YunxiNeural", label: "zh-CN · 云希(男)" },
+  { id: "zh-CN-YunyangNeural", label: "zh-CN · 云扬(男·新闻)" },
+  { id: "zh-CN-liaoning-XiaobeiNeural", label: "zh-CN · 晓北(女·东北)" },
+  { id: "zh-CN-shaanxi-XiaoniNeural", label: "zh-CN · 晓妮(女·陕西)" },
+  { id: "en-US-AriaNeural", label: "en-US · Aria(女)" },
+  { id: "en-US-GuyNeural", label: "en-US · Guy(男)" },
+  { id: "en-US-JennyNeural", label: "en-US · Jenny(女)" },
+];
+
+const TTS_LOCAL_SID_OPTIONS = [
+  { sid: "45", label: "zf_xiaobei(女)" },
+  { sid: "46", label: "zf_xiaoni(女)" },
+  { sid: "47", label: "zf_xiaoxiao(女)" },
+  { sid: "48", label: "zf_xiaoyi(女·默认)" },
+  { sid: "49", label: "zm_yunjian(男)" },
+  { sid: "50", label: "zm_yunxi(男)" },
+  { sid: "51", label: "zm_yunxia(男)" },
+  { sid: "52", label: "zm_yunyang(男)" },
+];
+
 function SpeechContent() {
   const t = useLang();
   const [rows, setRows] = useState<SpeechModelRow[]>([]);
@@ -915,6 +939,73 @@ function SpeechContent() {
   const [err, setErr] = useState<string | null>(null);
   const [prog, setProg] = useState<{ id: string; pct: number; label: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // v0.13 三档 TTS 设置
+  const [engine, setEngine] = useState<"edge" | "azure" | "local">("edge");
+  const [voiceEdge, setVoiceEdge] = useState("zh-CN-XiaoxiaoNeural");
+  const [voiceAzure, setVoiceAzure] = useState("zh-CN-XiaoxiaoNeural");
+  const [sidLocal, setSidLocal] = useState("48");
+  const [speed, setSpeed] = useState("1.0");
+  const [azureKey, setAzureKey] = useState("");
+  const [azureRegion, setAzureRegion] = useState("");
+  const [keyMasked, setKeyMasked] = useState(false);
+
+  // v0.13 听写三档 + UX 开关
+  const [asrEngine, setAsrEngine] = useState<"local" | "groq" | "azure">("local");
+  const [sttKey, setSttKey] = useState("");
+  const [sttRegion, setSttRegion] = useState("");
+  const [sttKeyMasked, setSttKeyMasked] = useState(false);
+  const [groqReady, setGroqReady] = useState(false);
+  const [asrAutoStop, setAsrAutoStop] = useState(true);
+  const [asrAutoSend, setAsrAutoSend] = useState(false);
+
+  useEffect(() => {
+    void Promise.all([
+      api.getSetting("tts_engine"),
+      api.getSetting("tts_voice_edge"),
+      api.getSetting("azure_tts_voice"),
+      api.getSetting("tts_sid_local"),
+      api.getSetting("tts_speed"),
+      api.getSetting("azure_tts_region"),
+      api.getSetting("azure_tts_api_key"),
+      api.getSetting("asr_engine"),
+      api.getSetting("azure_stt_region"),
+      api.getSetting("azure_stt_api_key"),
+      api.getSetting("groq_api_key"),
+      api.getSetting("asr_auto_stop"),
+      api.getSetting("asr_auto_send"),
+    ]).then(([e, ve, va, sid, sp, region, key, ae, sttRegionRaw, sttKeyRaw, groqKeyRaw, autoStopRaw, autoSendRaw]) => {
+      if (e === "azure" || e === "local") setEngine(e);
+      if (ve) setVoiceEdge(ve);
+      if (va) setVoiceAzure(va);
+      if (sid) setSidLocal(sid);
+      if (sp) setSpeed(sp);
+      if (region) setAzureRegion(region);
+      if (key) {
+        setKeyMasked(true);
+        setAzureKey("");
+      }
+      if (ae === "groq" || ae === "azure") setAsrEngine(ae);
+      if (sttRegionRaw) setSttRegion(sttRegionRaw);
+      if (sttKeyRaw) {
+        setSttKeyMasked(true);
+        setSttKey("");
+      }
+      setGroqReady(!!groqKeyRaw);
+      setAsrAutoStop(autoStopRaw !== "0");
+      setAsrAutoSend(autoSendRaw === "1");
+    });
+  }, []);
+
+  const saveEngine = (next: "edge" | "azure" | "local") => {
+    setEngine(next);
+    void api.setSetting("tts_engine", next);
+  };
+
+  const saveAsrEngine = (next: "local" | "groq" | "azure") => {
+    setAsrEngine(next);
+    void api.setSetting("asr_engine", next);
+  };
 
   const refresh = useCallback(() => {
     void window.api
@@ -964,24 +1055,292 @@ function SpeechContent() {
       .finally(() => setBusy(null));
   };
 
-  const labelOf = (id: string) => (id === "tts-kokoro" ? t("settings.speech.model.tts") : t("settings.speech.model.asr"));
+  const labelOf = (id: string) =>
+    id === "tts-kokoro"
+      ? t("settings.speech.model.tts")
+      : id === "asr-whisper-turbo"
+        ? t("settings.speech.model.asr_turbo")
+        : id === "asr-whisper-small"
+          ? t("settings.speech.model.asr_small")
+          : t("settings.speech.model.asr");
+  const licenseOf = (id: string) =>
+    id.startsWith("asr-whisper") ? t("settings.speech.license_mit") : t("settings.speech.license");
   const stateLabel = (state: string) =>
     state === "ready" ? t("settings.speech.state.ready") : state === "error" ? t("settings.speech.state.error") : t("settings.speech.state.absent");
+
+  const voiceValue = engine === "azure" ? voiceAzure : voiceEdge;
+  const setVoiceValue = (v: string) => {
+    if (engine === "azure") {
+      setVoiceAzure(v);
+      void api.setSetting("azure_tts_voice", v);
+    } else {
+      setVoiceEdge(v);
+      void api.setSetting("tts_voice_edge", v);
+    }
+  };
 
   return (
     <div className="p-4 space-y-3" data-testid="settings-speech">
       <p className="text-label text-ink-muted">{t("settings.speech.desc")}</p>
+
+      {/* 引擎三选一 */}
+      <div className={rowCls(false)}>
+        <div className="text-label font-medium text-ink-strong mb-2">{t("settings.speech.tts_engine")}</div>
+        <div className="flex gap-2 flex-wrap">
+          {([
+            { id: "edge" as const, label: t("settings.speech.engine.edge") },
+            { id: "azure" as const, label: t("settings.speech.engine.azure") },
+            { id: "local" as const, label: t("settings.speech.engine.local") },
+          ]).map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => saveEngine(id)}
+              data-testid={`tts-engine-${id}`}
+              aria-pressed={engine === id}
+              className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${engine === id ? pillActiveCls : pillInactiveCls}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-label text-ink-muted mt-2">
+          {engine === "edge"
+            ? t("settings.speech.engine.edge_note")
+            : engine === "azure"
+              ? t("settings.speech.engine.azure_note")
+              : t("settings.speech.engine.local_note")}
+        </p>
+      </div>
+
+      {/* 音色(azure 复用 Edge 同名 Neural 音色) */}
+      {engine !== "local" && (
+        <div className={rowCls(false)}>
+          <div className="flex items-center gap-2">
+            <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.voice")}</span>
+            <select
+              value={voiceValue}
+              onChange={(e) => setVoiceValue(e.target.value)}
+              data-testid="tts-voice-select"
+              className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+            >
+              {TTS_VOICE_OPTIONS.map((v) => (
+                <option key={v.id} value={v.id}>{v.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+      {engine === "local" && (
+        <div className={rowCls(false)}>
+          <div className="flex items-center gap-2">
+            <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.voice")}</span>
+            <select
+              value={sidLocal}
+              onChange={(e) => {
+                setSidLocal(e.target.value);
+                void api.setSetting("tts_sid_local", e.target.value);
+              }}
+              data-testid="tts-sid-select"
+              className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+            >
+              {TTS_LOCAL_SID_OPTIONS.map((v) => (
+                <option key={v.sid} value={v.sid}>{v.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* 语速(三档共用) */}
+      <div className={rowCls(false)}>
+        <div className="flex items-center gap-2">
+          <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.speed")}</span>
+          <input
+            type="range"
+            min={0.5}
+            max={2}
+            step={0.05}
+            value={Number(speed)}
+            onChange={(e) => setSpeed(e.target.value)}
+            onPointerUp={() => void api.setSetting("tts_speed", speed)}
+            onKeyUp={() => void api.setSetting("tts_speed", speed)}
+            data-testid="tts-speed-range"
+            className="flex-1 accent-brand"
+          />
+          <span className="text-label text-ink-muted w-10 text-right" data-testid="tts-speed-value">{Number(speed).toFixed(2)}×</span>
+        </div>
+      </div>
+
+      {/* azure 凭据 */}
+      {engine === "azure" && (
+        <>
+          <div className={rowCls(false)}>
+            <div className="flex items-center gap-2">
+              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.azure_key")}</span>
+              <div className="flex-1 flex items-center gap-2">
+                {keyMasked && azureKey === "" && (
+                  <span className="text-label text-brand shrink-0">✓</span>
+                )}
+                <input
+                  type="password"
+                  value={azureKey}
+                  onChange={(e) => setAzureKey(e.target.value)}
+                  onBlur={() => {
+                    if (azureKey.trim()) {
+                      void api.setSetting("azure_tts_api_key", azureKey.trim());
+                      setKeyMasked(true);
+                      setAzureKey("");
+                    }
+                  }}
+                  placeholder={keyMasked ? t("settings.key.overwrite_ph") : t("settings.key.paste_ph")}
+                  data-testid="azure-tts-key-input"
+                  className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+                />
+              </div>
+            </div>
+          </div>
+          <div className={rowCls(true)}>
+            <div className="flex items-center gap-2">
+              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.azure_region")}</span>
+              <input
+                type="text"
+                value={azureRegion}
+                onChange={(e) => setAzureRegion(e.target.value)}
+                onBlur={() => void api.setSetting("azure_tts_region", azureRegion.trim())}
+                placeholder="eastus"
+                data-testid="azure-tts-region-input"
+                className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* 听写引擎三选一(v0.13:质量优先,local=Whisper 离线) */}
+      <div className={rowCls(false)}>
+        <div className="text-label font-medium text-ink-strong mb-2">{t("settings.speech.asr_engine")}</div>
+        <div className="flex gap-2 flex-wrap">
+          {([
+            { id: "local" as const, label: t("settings.speech.asr_engine.local") },
+            { id: "groq" as const, label: t("settings.speech.asr_engine.groq") },
+            { id: "azure" as const, label: t("settings.speech.asr_engine.azure") },
+          ]).map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => saveAsrEngine(id)}
+              data-testid={`asr-engine-${id}`}
+              aria-pressed={asrEngine === id}
+              className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${asrEngine === id ? pillActiveCls : pillInactiveCls}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-label text-ink-muted mt-2">
+          {asrEngine === "local"
+            ? t("settings.speech.asr_engine.local_note")
+            : asrEngine === "groq"
+              ? groqReady
+                ? t("settings.speech.asr_engine.groq_ready")
+                : t("settings.speech.asr_engine.groq_note")
+              : t("settings.speech.asr_engine.azure_note")}
+        </p>
+      </div>
+
+      {/* azure STT 凭据 */}
+      {asrEngine === "azure" && (
+        <>
+          <div className={rowCls(false)}>
+            <div className="flex items-center gap-2">
+              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.azure_key")}</span>
+              <div className="flex-1 flex items-center gap-2">
+                {sttKeyMasked && sttKey === "" && <span className="text-label text-brand shrink-0">✓</span>}
+                <input
+                  type="password"
+                  value={sttKey}
+                  onChange={(e) => setSttKey(e.target.value)}
+                  onBlur={() => {
+                    if (sttKey.trim()) {
+                      void api.setSetting("azure_stt_api_key", sttKey.trim());
+                      setSttKeyMasked(true);
+                      setSttKey("");
+                    }
+                  }}
+                  placeholder={sttKeyMasked ? t("settings.key.overwrite_ph") : t("settings.key.paste_ph")}
+                  data-testid="azure-stt-key-input"
+                  className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+                />
+              </div>
+            </div>
+          </div>
+          <div className={rowCls(false)}>
+            <div className="flex items-center gap-2">
+              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.azure_region")}</span>
+              <input
+                type="text"
+                value={sttRegion}
+                onChange={(e) => setSttRegion(e.target.value)}
+                onBlur={() => void api.setSetting("azure_stt_region", sttRegion.trim())}
+                placeholder="eastus"
+                data-testid="azure-stt-region-input"
+                className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* 听写 UX 开关 */}
+      <div className={rowCls(false)}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-label font-medium text-ink-strong">{t("settings.speech.asr_auto_stop")}</div>
+          <button
+            onClick={() => {
+              const next = !asrAutoStop;
+              setAsrAutoStop(next);
+              void api.setSetting("asr_auto_stop", next ? "1" : "0");
+            }}
+            role="switch"
+            aria-checked={asrAutoStop}
+            data-testid="asr-auto-stop-toggle"
+            className={`relative w-10 h-6 rounded-full transition-colors ${asrAutoStop ? "bg-brand" : "bg-ink/[0.15]"}`}
+          >
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${asrAutoStop ? "left-[18px]" : "left-0.5"}`} />
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-3 mt-1">
+          <div className="text-label font-medium text-ink-strong">{t("settings.speech.asr_auto_send")}</div>
+          <button
+            onClick={() => {
+              const next = !asrAutoSend;
+              setAsrAutoSend(next);
+              void api.setSetting("asr_auto_send", next ? "1" : "0");
+            }}
+            role="switch"
+            aria-checked={asrAutoSend}
+            data-testid="asr-auto-send-toggle"
+            className={`relative w-10 h-6 rounded-full transition-colors ${asrAutoSend ? "bg-brand" : "bg-ink/[0.15]"}`}
+          >
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${asrAutoSend ? "left-[18px]" : "left-0.5"}`} />
+          </button>
+        </div>
+        <p className="text-label text-ink-muted mt-2">{t("settings.speech.asr_ux_note")}</p>
+      </div>
+
+      {/* 模型管理:local TTS 档才需要 kokoro;ASR 模型常驻列表 */}
       {err && (
         <div className="text-label text-warning break-all" role="alert">
           {err === "engine-unavailable" ? t("chat.speech.engine_unavailable") : err}
         </div>
       )}
-      {rows.map((m) => (
+      {rows
+        .filter((m) => m.id !== "tts-kokoro" || engine === "local")
+        .map((m) => (
         <div key={m.id} className="flex items-center gap-3 flex-wrap">
           <div className="min-w-0 flex-1">
             <div className="text-label font-medium text-ink-strong truncate">{labelOf(m.id)}</div>
             <div className="text-caption text-ink-muted">
-              {stateLabel(m.state)} · {t("settings.speech.license")}
+              {stateLabel(m.state)} · {licenseOf(m.id)}
             </div>
             {busy === m.id && prog?.id === m.id && (
               <div className="mt-1.5 h-1.5 rounded-full bg-ink/[0.08] overflow-hidden" data-testid={`speech-dl-bar-${m.id}`}>

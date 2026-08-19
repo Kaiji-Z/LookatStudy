@@ -126,11 +126,14 @@ class WebTransport {
   }
 
 
-  // v0.12 语音:asrFeed 的 Float32Array 过 JSON 河转 base64(服务端解码还原)
-  private static float32ToB64(arr: Float32Array): string {
-    const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+  // v0.13 语音:听写 WAV 上行过 JSON 河转 base64(服务端 speech:asrTranscribe 解包)
+  private static bytesToB64(buf: ArrayBuffer): string {
+    const bytes = new Uint8Array(buf);
     let bin = "";
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
     return btoa(bin);
   }
   async invoke(channel: string, ...args: unknown[]): Promise<unknown> {
@@ -140,12 +143,12 @@ class WebTransport {
       const timer = window.setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`调用 ${channel} 超时`));
-      }, 300_000); // 长任务(导入/出题)允许 5 分钟
+      }, 300_000); // 长任务(导入/出题/本地 whisper 转录)允许 5 分钟
       this.pending.set(id, { resolve, reject, timer });
-      // 语音 PCM 上行:Float32Array 无法过 JSON —— base64 包装(服务端 speech:asrFeed 解包)
+      // 听写 WAV 上行:ArrayBuffer 无法过 JSON —— base64 包装(服务端解包)
       const wireArgs =
-        channel === "speech:asrFeed" && args[0] instanceof Float32Array
-          ? [WebTransport.float32ToB64(args[0])]
+        channel === "speech:asrTranscribe" && args[0] instanceof ArrayBuffer
+          ? [WebTransport.bytesToB64(args[0]), ...args.slice(1)]
           : args;
       ws.send(JSON.stringify({ v: WS_PROTOCOL_VERSION, type: "req", id, channel, args: wireArgs }));
     });

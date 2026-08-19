@@ -24,8 +24,10 @@ import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } f
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { CanvasStage } from "./CanvasStage.js";
-import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote , Presentation } from "lucide-react";
+import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote , Presentation, Volume2, Square } from "lucide-react";
 import { useLang } from "../lib/i18n.js";
+import { useSpeech } from "../lib/useSpeech.js";
+import { useToast } from "./Toast.js";
 
 export type NotebookTab = "content" | "notes" | "board";
 
@@ -248,6 +250,37 @@ function ContentTab({
   onReviewDone?: () => void;
 }) {
   const t = useLang();
+  const toast = useToast();
+  // 整课朗读(v0.13):讲给耳朵听;切节点自动停(messageId 绑节点)
+  const speech = useSpeech();
+  useEffect(() => {
+    if (speech.failReason) {
+      const key =
+        speech.failReason === "engine-unavailable"
+          ? "chat.speech.engine_unavailable"
+          : speech.failReason === "azure-key-missing"
+            ? "chat.speech.azure_key_missing"
+            : speech.failReason === "azure-region-missing"
+              ? "chat.speech.azure_region_missing"
+              : speech.failReason === "edge-failed"
+                ? "chat.speech.edge_failed"
+                : "chat.speech.model_missing";
+      toast.show(t(key), { severity: "warning" });
+      speech.clearFailReason();
+    } else if (speech.onlineNotice) {
+      toast.show(t("chat.speech.edge_disclosed"), { severity: "info" });
+      speech.clearOnlineNotice();
+    }
+  }, [speech.failReason, speech.onlineNotice, toast, t, speech]);
+  // 切节点/卸载:停当前课朗读(messageId 绑节点,不主动停会读串课)
+  const speechStopRef = useRef(speech.stop);
+  speechStopRef.current = speech.stop;
+  const nodeSpeechId = selectedNode ? `content-${selectedNode.id}` : null;
+  useEffect(() => {
+    return () => {
+      speechStopRef.current();
+    };
+  }, [nodeSpeechId]);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -444,9 +477,38 @@ function ContentTab({
             ? t("notebook.node_type.concept")
             : t("notebook.node_type.lesson")}
       </div>
-      <h2 className="text-title font-extrabold mb-4 text-ink-strong tracking-tight">
-        {selectedNode.title}
-      </h2>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <h2 className="text-title font-extrabold text-ink-strong tracking-tight" data-testid="node-content-title">
+          {selectedNode.title}
+        </h2>
+        {!loading && !loadError && content && (
+          <button
+            onClick={() => speech.speak(nodeSpeechId ?? "content", content)}
+            data-tooltip={
+              speech.speakingMessageId === nodeSpeechId
+                ? t("chat.speech.stop")
+                : t("chat.speech.read_aloud_node")
+            }
+            aria-label={
+              speech.speakingMessageId === nodeSpeechId
+                ? t("chat.speech.stop")
+                : t("chat.speech.read_aloud_node")
+            }
+            data-testid={speech.speakingMessageId === nodeSpeechId ? "node-content-speak-active" : "node-content-speak"}
+            className={`shrink-0 rounded-full p-2 transition-colors ${
+              speech.speakingMessageId === nodeSpeechId
+                ? "text-brand bg-brand/10 animate-pulse"
+                : "text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06]"
+            }`}
+          >
+            {speech.speakingMessageId === nodeSpeechId ? (
+              <Square className="w-4 h-4" />
+            ) : (
+              <Volume2 className="w-4 h-4" />
+            )}
+          </button>
+        )}
+      </div>
       {loading ? (
         <div className="text-body text-ink-muted flex items-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />{t("notebook.content.loading")}</div>
       ) : loadError ? (

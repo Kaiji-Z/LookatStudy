@@ -957,7 +957,6 @@ function SpeechContent() {
   const [sttKeyMasked, setSttKeyMasked] = useState(false);
   const [groqReady, setGroqReady] = useState(false);
   const [asrAutoStop, setAsrAutoStop] = useState(true);
-  const [asrAutoSend, setAsrAutoSend] = useState(false);
 
   useEffect(() => {
     void Promise.all([
@@ -973,8 +972,7 @@ function SpeechContent() {
       api.getSetting("azure_stt_api_key"),
       api.getSetting("groq_api_key"),
       api.getSetting("asr_auto_stop"),
-      api.getSetting("asr_auto_send"),
-    ]).then(([e, ve, va, sid, sp, region, key, ae, sttRegionRaw, sttKeyRaw, groqKeyRaw, autoStopRaw, autoSendRaw]) => {
+    ]).then(([e, ve, va, sid, sp, region, key, ae, sttRegionRaw, sttKeyRaw, groqKeyRaw, autoStopRaw]) => {
       if (e === "azure" || e === "local") setEngine(e);
       if (ve) setVoiceEdge(ve);
       if (va) setVoiceAzure(va);
@@ -993,7 +991,6 @@ function SpeechContent() {
       }
       setGroqReady(!!groqKeyRaw);
       setAsrAutoStop(autoStopRaw !== "0");
-      setAsrAutoSend(autoSendRaw === "1");
     });
   }, []);
 
@@ -1290,7 +1287,7 @@ function SpeechContent() {
         </>
       )}
 
-      {/* 听写 UX 开关 */}
+      {/* 听写 UX 开关(v0.14 飞书式:语音文本先进复查浮层再发送,auto-send 已废) */}
       <div className={rowCls(false)}>
         <div className="flex items-center justify-between gap-3">
           <div className="text-label font-medium text-ink-strong">{t("settings.speech.asr_auto_stop")}</div>
@@ -1306,22 +1303,6 @@ function SpeechContent() {
             className={`relative w-10 h-6 rounded-full transition-colors ${asrAutoStop ? "bg-brand" : "bg-ink/[0.15]"}`}
           >
             <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${asrAutoStop ? "left-[18px]" : "left-0.5"}`} />
-          </button>
-        </div>
-        <div className="flex items-center justify-between gap-3 mt-1">
-          <div className="text-label font-medium text-ink-strong">{t("settings.speech.asr_auto_send")}</div>
-          <button
-            onClick={() => {
-              const next = !asrAutoSend;
-              setAsrAutoSend(next);
-              void api.setSetting("asr_auto_send", next ? "1" : "0");
-            }}
-            role="switch"
-            aria-checked={asrAutoSend}
-            data-testid="asr-auto-send-toggle"
-            className={`relative w-10 h-6 rounded-full transition-colors ${asrAutoSend ? "bg-brand" : "bg-ink/[0.15]"}`}
-          >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${asrAutoSend ? "left-[18px]" : "left-0.5"}`} />
           </button>
         </div>
         <p className="text-label text-ink-muted mt-2">{t("settings.speech.asr_ux_note")}</p>

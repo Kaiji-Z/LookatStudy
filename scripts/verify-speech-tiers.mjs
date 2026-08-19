@@ -28,6 +28,7 @@ import {
   resolveAsrTier,
 } from "../src/main/services/speech/asr-tiers";
 import { createSilenceDetector } from "../src/renderer/lib/silence-detector";
+import { trimSilenceEdges } from "../src/renderer/lib/audio-trim";
 import { decodeWavPcm16, encodeWavPcm16 as encodeWavPcm16Ref } from "../shared/speech-wav.ts";
 import { speakMessage } from "../src/main/services/speech/tts-service";
 
@@ -148,7 +149,50 @@ console.log("T4 静音检测状态机:说话后静音触发 / 未说话不触发
   const det = createSilenceDetector({ maxMs: 300, autoStop: true });
   assert.equal(det.feed(0.001, 0), "listening");
   assert.equal(det.feed(0.001, 350), "auto-stop", "硬上限触发");
+  // hadSpeech(v0.14 无入声守卫):说过话 true / 纯静音 false / 单帧碰撞 false;
+  // autoStop=false 也要能回答(守卫不依赖自动停设置)
+  const h1 = createSilenceDetector({ minSpeechMs: 100 });
+  h1.feed(0.05, 0); h1.feed(0.05, 100); h1.feed(0.001, 200);
+  assert.equal(h1.hadSpeech(), true, "累计有声 ≥ minSpeech → 说过话");
+  const h2 = createSilenceDetector({ minSpeechMs: 100 });
+  h2.feed(0.001, 0); h2.feed(0.001, 100); h2.feed(0.001, 200);
+  assert.equal(h2.hadSpeech(), false, "纯静音 → 没说过话");
+  const h3 = createSilenceDetector({ minSpeechMs: 100 });
+  h3.feed(0.06, 0); h3.feed(0.001, 100); h3.feed(0.001, 200);
+  assert.equal(h3.hadSpeech(), false, "单帧碰撞不算说过话");
+  const h4 = createSilenceDetector({ minSpeechMs: 100, autoStop: false });
+  h4.feed(0.05, 0); h4.feed(0.05, 100);
+  assert.equal(h4.hadSpeech(), true, "autoStop=false 语音统计照常");
   ok("静音状态机正确");
+}
+
+// ---------------------------------------------------------------------------
+console.log("T4b 首尾静音裁剪:裁头尾 / 留中段 / 全静音守卫 / 失配防御");
+{
+  const chunk = (v) => new Float32Array([v, v, v, v]);
+  // 头 2 块 + 尾 1 块低于阈值,中段有声:只裁头尾
+  const rms = [0.001, 0.002, 0.3, 0.4, 0.5, 0.002];
+  const kept = trimSilenceEdges(rms.map(chunk), rms);
+  assert.equal(kept.length, 3, "头 2 尾 1 被裁,中段 3 块保留");
+  assert.ok(Math.abs(kept[0][0] - 0.3) < 1e-6, "首块是有声块");
+  assert.ok(Math.abs(kept[kept.length - 1][0] - 0.5) < 1e-6, "末块是有声块");
+  // 全有声:一块不裁
+  const allVocal = [0.3, 0.4, 0.5];
+  assert.equal(trimSilenceEdges(allVocal.map(chunk), allVocal).length, 3, "全有声不裁");
+  // 全静音:守卫至少留 1 块(不返回空音频)
+  const allSilent = [0.001, 0.002, 0.001];
+  assert.equal(trimSilenceEdges(allSilent.map(chunk), allSilent).length, 1, "全静音留 1 块守卫");
+  // 单块:永远保留
+  assert.equal(trimSilenceEdges([chunk(0.001)], [0.001]).length, 1, "单块不裁");
+  // rms 与块数失配:原样返回(宁多喂不丢音频)
+  const mismatch = trimSilenceEdges([chunk(0.3), chunk(0.4)], [0.3]);
+  assert.equal(mismatch.length, 2, "失配防御原样返回");
+  // 空输入
+  assert.equal(trimSilenceEdges([], []).length, 0, "空输入空返回");
+  // 自定义阈值
+  const rms2 = [0.02, 0.3, 0.02];
+  assert.equal(trimSilenceEdges(rms2.map(chunk), rms2, { threshold: 0.05 }).length, 1, "更高阈值收紧裁剪");
+  ok("首尾静音裁剪正确");
 }
 
 // ---------------------------------------------------------------------------

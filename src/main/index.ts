@@ -1133,59 +1133,70 @@ async function runUiTest(screenshot = false): Promise<void> {
     /* 尽力而为:清理失败不阻塞后续测试 */
   }
 
-  // T-ASR (v0.13 听写,质量优先管线): 假麦克风(连续音)→ mic 点击起录 → 转录态 →
-  // 停止复原。双分支:本机已下 Whisper → 完整环(录音→停→转录文本进输入框/转录态出现);
-  // 无模型环境(CI)→ 转录返回 model-missing → notice 行出现(降级断言)。
-  // mic.click() 的 e.detail=0 走 onClick 开关路径(pointerdown/up 由真实指针触发)。
+  // T-ASR (v0.14 听写,飞书式): mic 点击切语音模式 → 按住说话(dispatch 原生
+  // pointerdown/up,React 根委托可收到)→ 录音浮层 → 松开 → 转录 → 复查浮层
+  // (可编辑 textarea)/错误浮层。双分支:本机已下 Whisper → 复查浮层出现(假设备
+  // 蜂鸣,文本内容不校验,可能为空或触发 no-speech 错误浮层);无模型环境(CI)
+  // → model-missing → 错误浮层出现(降级断言)。收尾:切回键盘并断言输入框复位。
   let asrInput: { branch?: string; ok?: boolean; error?: string; [k: string]: unknown } = {};
   try {
     asrInput = await win.webContents.executeJavaScript(`
       (async function() {
         var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
         function q(sel){ return document.querySelector(sel); }
+        function dispatch(el, type) {
+          el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true }));
+        }
+        async function backToKeyboard() {
+          var kb = q('[data-testid="voice-keyboard-toggle"]');
+          if (kb) kb.click();
+          await sleep(300);
+          return !!q('[data-testid="chat-input"]');
+        }
         try {
           var mic = q('[data-testid="composer-mic"]');
           if (!mic) return { ok: false, error: "no mic button" };
           var status = await window.api.getSpeechModelStatus();
           var whisper = (status || []).filter(function(s){ return s.id === "asr-whisper-turbo" || s.id === "asr-whisper-small"; });
           var modelReady = whisper.some(function(s){ return s.state === "ready"; });
-          mic.click();
-          var active = null;
-          for (var j = 0; j < 24; j++) { await sleep(250); active = q('[data-testid="composer-mic-active"]'); if (active) break; }
-          if (!active) {
-            var notice0 = q('[data-testid="composer-notice"]');
-            if (notice0) return { ok: true, branch: "mic-unavailable" };
-            return { ok: false, error: "listening state never appeared" };
+          mic.click(); // → 语音模式:整卡换成「按住说话」大按钮
+          var hold = null;
+          for (var j = 0; j < 20; j++) { await sleep(250); hold = q('[data-testid="voice-hold-btn"]'); if (hold) break; }
+          if (!hold) return { ok: false, error: "voice mode never appeared" };
+          dispatch(hold, "pointerdown"); // 按住 → 起录
+          var rec = null;
+          for (var j2 = 0; j2 < 24; j2++) { await sleep(250); rec = q('[data-testid="voice-panel-recording"]'); if (rec) break; }
+          if (!rec) {
+            var err0 = q('[data-testid="voice-panel-error"]');
+            dispatch(hold, "pointerup");
+            if (err0) return { ok: true, branch: "mic-unavailable", back: await backToKeyboard() };
+            return { ok: false, error: "recording panel never appeared" };
           }
           await sleep(700); // 让假设备音频攒一小段
-          active.click();
-          // 停录 → 转录中(busy)→ 结果/notice
-          var busyOrBack = null;
-          for (var k = 0; k < 12; k++) {
-            await sleep(250);
-            busyOrBack = q('[data-testid="composer-mic-busy"]') || q('[data-testid="composer-mic"]');
-            if (busyOrBack) break;
-          }
-          if (!busyOrBack) return { ok: false, error: "mic never left active state" };
+          var active = q('[data-testid="voice-hold-btn-active"]') || hold;
+          dispatch(active, "pointerup"); // 松开 → 停录转录
           if (!modelReady) {
             for (var i = 0; i < 40; i++) {
               await sleep(250);
-              if (q('[data-testid="composer-notice"]')) return { ok: true, branch: "model-missing" };
-              if (q('[data-testid="composer-mic"]')) return { ok: true, branch: "model-missing-notext" };
+              if (q('[data-testid="voice-panel-error"]')) {
+                return { ok: true, branch: "model-missing", back: await backToKeyboard() };
+              }
             }
-            return { ok: false, error: "no notice after model-missing transcribe" };
+            return { ok: false, error: "error panel never appeared after model-missing transcribe" };
           }
-          // 有模型:转录后输入框出现文本(假设备蜂鸣,内容不校验;也可能判空文本)
-          var sawBusy = !!q('[data-testid="composer-mic-busy"]');
+          // 有模型:等复查浮层(假设备蜂鸣内容不校验)或错误浮层(no-speech 判空等仍是有效闭环)
           for (var m = 0; m < 120; m++) {
             await sleep(500);
-            var ta = q('textarea');
-            if (ta && ta.value && ta.value.length > 0) return { ok: true, branch: "ready", text: ta.value.slice(0, 20) };
-            if (q('[data-testid="composer-notice"]')) return { ok: true, branch: "ready-notice" };
-            if (q('[data-testid="composer-mic-busy"]')) { sawBusy = true; continue; }
-            if (sawBusy && q('[data-testid="composer-mic"]')) return { ok: true, branch: "ready-empty" };
+            var panel = q('[data-testid="voice-panel-review"]');
+            if (panel) {
+              var ta = q('[data-testid="voice-result-text"]');
+              return { ok: true, branch: "ready", len: ta && ta.value ? ta.value.length : 0, back: await backToKeyboard() };
+            }
+            if (q('[data-testid="voice-panel-error"]')) {
+              return { ok: true, branch: "ready-error", back: await backToKeyboard() };
+            }
           }
-          return { ok: false, error: "transcription never settled", branch: "ready" };
+          return { ok: false, error: "review panel never settled", branch: "ready" };
         } catch (e) { return { ok: false, error: String(e) }; }
       })()
     `);
@@ -1193,13 +1204,13 @@ async function runUiTest(screenshot = false): Promise<void> {
     asrInput = { error: String(e) };
   }
   results.push({
-    name: "asr dictation: mic click → listening → stop → transcribe or model-missing notice (fake device)",
+    name: "asr dictation: voice mode → hold → release → review/error panel → back to keyboard (fake device)",
     ok: asrInput?.ok === true,
     detail: asrInput,
   });
 
-  // T-VOICE-SETTINGS (v0.13): 设置页语音组 —— TTS 三档 pill + 听写三档 pill +
-  // 自动发送开关默认关(local-first 拍板)+ 讲解 tab 🔊 朗读按钮在位。
+  // T-VOICE-SETTINGS (v0.14): 设置页语音组 —— TTS 三档 pill + 听写三档 pill +
+  // 讲解 tab 🔊 朗读按钮在位(飞书式复查浮层落地后 auto-send 开关已废,不再断言)。
   let voiceSettings: { ok?: boolean; error?: string; [k: string]: unknown } = {};
   try {
     voiceSettings = await win.webContents.executeJavaScript(`
@@ -1222,15 +1233,12 @@ async function runUiTest(screenshot = false): Promise<void> {
           speech.scrollIntoView({ block: "center" });
           await sleep(200);
           var has = function(id){ var el = q('[data-testid="' + id + '"]'); return !!el; };
-          var autoSend = q('[data-testid="asr-auto-send-toggle"]');
-          var autoSendOff = autoSend ? autoSend.getAttribute("aria-checked") === "false" : false;
           var r = {
             notebookSpeak: notebookSpeak,
             ttsEdge: has("tts-engine-edge"), ttsAzure: has("tts-engine-azure"), ttsLocal: has("tts-engine-local"),
             asrLocal: has("asr-engine-local"), asrGroq: has("asr-engine-groq"), asrAzure: has("asr-engine-azure"),
-            autoSendOff: autoSendOff,
           };
-          r.ok = r.notebookSpeak && r.ttsEdge && r.ttsAzure && r.ttsLocal && r.asrLocal && r.asrGroq && r.asrAzure && r.autoSendOff;
+          r.ok = r.notebookSpeak && r.ttsEdge && r.ttsAzure && r.ttsLocal && r.asrLocal && r.asrGroq && r.asrAzure;
           // 关设置(别污染后续步骤的界面状态)
           var closeBtn = q('[data-testid="settings-close"]');
           if (closeBtn) closeBtn.click();
@@ -1242,7 +1250,7 @@ async function runUiTest(screenshot = false): Promise<void> {
     voiceSettings = { error: String(e) };
   }
   results.push({
-    name: "voice settings: tts/asr engine pills + auto-send default off + notebook read-aloud button",
+    name: "voice settings: tts/asr engine pills + notebook read-aloud button",
     ok: voiceSettings?.ok === true,
     detail: voiceSettings,
   });

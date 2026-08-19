@@ -645,9 +645,11 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
     const shouldAbort = () => importCancelRequested;
     const send = (msg: string) => emitter?.send("import:progress", msg);
 
+    // 视频链接(B站/YouTube)分流到 video spec(B站直连/yt-dlp 字幕优先)
+    const route = routeImportUrl(url);
     runImportJob(jobId, async () => {
       const r = await runSmartImport(
-        { kind: "url", url },
+        route?.kind === "video" ? { kind: "video" as const, url } : { kind: "url" as const, url },
         { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
       );
       const planKind = planStore.findByCourse(r.courseId)?.kind;
@@ -726,7 +728,7 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
     } else if (deps.ui === "web") {
       throw new Error("web 模式需要传入音频文件内容");
     } else {
-      const picked = await deps.dialog.pickContentFiles([{ name: "音频", extensions: ["wav", "mp3", "m4a", "flac", "aac", "ogg", "opus"] }]);
+      const picked = await deps.dialog.pickContentFiles([{ name: "音频/视频", extensions: ["wav", "mp3", "m4a", "flac", "aac", "ogg", "opus", "mp4", "m4v", "mov"] }]);
       if (!picked || picked.length === 0) return null;
       payload = picked;
     }

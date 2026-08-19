@@ -54,7 +54,7 @@ export interface ImportPlan {
   formatVersion: number;
   planId: string;
   /** kind:github | folder | url(网页文章/arXiv) | text(粘贴) | epub | audio(本地音频转写) */
-  kind: "github" | "folder" | "url" | "text" | "epub" | "audio";
+  kind: "github" | "folder" | "url" | "text" | "epub" | "audio" | "video";
   github?: { owner: string; repo: string; branch: string };
   folder?: { absPath: string };
   /** url 源身份:归一化 URL */
@@ -65,6 +65,8 @@ export interface ImportPlan {
   epub?: { sha1: string };
   /** audio 源身份:各音频文件字节哈希的聚合(同批文件=同课程;转写模型变化走内容哈希漂移) */
   audio?: { sha1: string };
+  /** video 源身份:归一化视频 URL(B站/YouTube/抖音) */
+  video?: { url: string };
   /** 漂移检测哈希:github/folder = 路径集合;url/text/epub/audio = 路径+内容(这些源改内容不改路径) */
   treeHash: string;
   createdAt: string;
@@ -116,7 +118,7 @@ export function serializePlan(plan: ImportPlan): string {
   return JSON.stringify(plan);
 }
 
-const PLAN_KINDS = new Set(["github", "folder", "url", "text", "epub", "audio"]);
+const PLAN_KINDS = new Set(["github", "folder", "url", "text", "epub", "audio", "video"]);
 
 /** 解析 + 版本守卫:格式不对/坏 JSON 返回 null(调用方按"没有可用快照"处理,不崩)。 */
 export function parsePlan(raw: string): ImportPlan | null {
@@ -134,13 +136,14 @@ export function parsePlan(raw: string): ImportPlan | null {
 
 /** 导入源身份。branch 不参与身份(清点时解析实际分支),treeHash 决定内容一致与否。 */
 export interface PlanIdentity {
-  kind: "github" | "folder" | "url" | "text" | "epub" | "audio";
+  kind: "github" | "folder" | "url" | "text" | "epub" | "audio" | "video";
   github?: { owner: string; repo: string };
   folder?: { absPath: string };
   url?: { url: string };
   text?: { sha1: string };
   epub?: { sha1: string };
   audio?: { sha1: string };
+  video?: { url: string };
 }
 
 /** 身份键:同 kind + github(owner/repo) / folder(absPath) / url(归一化) / text|epub(内容哈希) 视为同一导入源。 */
@@ -153,6 +156,7 @@ export function planIdentityKey(plan: PlanIdentity): string {
   if (plan.kind === "text" && plan.text) return `text:${plan.text.sha1}`;
   if (plan.kind === "epub" && plan.epub) return `epub:${plan.epub.sha1}`;
   if (plan.kind === "audio" && plan.audio) return `audio:${plan.audio.sha1}`;
+  if (plan.kind === "video" && plan.video) return `video:${plan.video.url}`;
   return "unknown";
 }
 

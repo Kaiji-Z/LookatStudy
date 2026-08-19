@@ -9,6 +9,10 @@
 import { decodeWavPcm16 } from "@shared/speech-wav";
 
 export const AUDIO_IMPORT_EXTS = ["wav", "mp3", "m4a", "flac", "aac", "ogg", "opus"] as const;
+/** 视频容器(只取音轨):AAC 家族先直解,fragmented MP4(B站 DASH 等)走
+ *  fMP4→ADTS 转封装(pure/fmp4-to-adts)再解。mkv/webm 是 matroska 容器,
+ *  纯 JS 不解,指引外部转封装。 */
+export const VIDEO_IMPORT_EXTS = ["mp4", "m4v", "mov"] as const;
 
 /** 任意方向线性重采样(降采样与 @shared/resampleLinear 同式,升采样补插值)。 */
 function resampleTo16k(input: Float32Array, srcRate: number): Float32Array {
@@ -42,7 +46,27 @@ function mixToMono(channels: Float32Array[]): Float32Array {
 export async function decodeAudioTo16kMono(bytes: Uint8Array, ext: string): Promise<Float32Array> {
   const e = ext.toLowerCase().replace(/^\./, "");
   if (!(AUDIO_IMPORT_EXTS as readonly string[]).includes(e)) {
-    throw new Error(`暂不支持 .${e} 音频(支持 ${AUDIO_IMPORT_EXTS.join("/")})`);
+    throw new Error(`暂不支持 .${e} 音视频(音频支持 ${AUDIO_IMPORT_EXTS.join("/")};视频支持 ${VIDEO_IMPORT_EXTS.join("/")};mkv/webm 请先转成 mp4)`);
+  }
+
+  // AAC 家族(m4a/aac + mp4 系视频容器):先按传统 mp4 直解;
+  // B站等 DASH 源是 fragmented MP4(moof 分片,无样本表),直解必空
+  // → 失败时 fMP4→ADTS 转封装(pure/fmp4-to-adts)再走裸 AAC 流解码。
+  const asM4a = e === "mp4" || e === "m4v" || e === "mov" || e === "m4a" || e === "aac";
+  if (asM4a) {
+    let r: { channelData: Float32Array[]; sampleRate: number };
+    try {
+      r = await decodeWithAudioDecode(bytes);
+    } catch (directErr) {
+      try {
+        const { fmp4ToAdts } = await import("../pure/fmp4-to-adts.js");
+        const adts = fmp4ToAdts(bytes);
+        r = await decodeWithAudioDecode(adts);
+      } catch {
+        throw directErr;
+      }
+    }
+    return resampleTo16k(mixToMono(r.channelData), r.sampleRate);
   }
 
   let channelData: Float32Array[];

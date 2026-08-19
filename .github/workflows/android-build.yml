@@ -50,8 +50,11 @@ jobs:
           npm --version
           PKG_V="${PKG_VERSION#v}" node -e "const fs=require('fs');fs.writeFileSync('dist/mobile/package.json',JSON.stringify({name:'lookatstudy-mobile',version:process.env.PKG_V,description:'LookatStudy Termux portable bundle (server.cjs + web frontend)',repository:{type:'git',url:'git+https://github.com/Kaiji-Z/LookatStudy.git'}},null,2))"
           cat dist/mobile/package.json
-          # 同版本已在 npm(attach 重跑场景)则跳过发布,继续走资产挂载
-          if ! cd dist/mobile && npm publish --access public; then
+          # 同版本已在 npm(attach 重跑场景)则跳过发布,继续走资产挂载。
+          # 注意 cd 要单独一行:if ! cd … && npm publish 会被 bash 解析成 (! cd) && publish,
+          # cd 成功取反成 false 后 publish 整条被短路,v0.14.0 曾因此静默跳发。
+          cd dist/mobile
+          if ! npm publish --access public; then
             npm view "lookatstudy-mobile@${PKG_V}" version >/dev/null 2>&1 \
               && echo "lookatstudy-mobile@${PKG_V} already on npm, continue to attach" \
               || exit 1

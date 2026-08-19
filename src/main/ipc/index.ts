@@ -600,7 +600,8 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
         { kind: "folder", path: resolved },
         { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
       );
-      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      const planKind = planStore.findByCourse(r.courseId)?.kind;
+      const packable = !!planKind && planKind !== "folder";
       return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
     });
 
@@ -624,7 +625,8 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
         { kind: "github", url: repoUrl },
         { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
       );
-      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      const planKind = planStore.findByCourse(r.courseId)?.kind;
+      const packable = !!planKind && planKind !== "folder";
       return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
     });
 
@@ -648,7 +650,8 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
         { kind: "url", url },
         { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
       );
-      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      const planKind = planStore.findByCourse(r.courseId)?.kind;
+      const packable = !!planKind && planKind !== "folder";
       return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
     });
     return { jobId };
@@ -671,7 +674,8 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
         { kind: "text", name: payload.name, text: payload.text },
         { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
       );
-      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      const planKind = planStore.findByCourse(r.courseId)?.kind;
+      const packable = !!planKind && planKind !== "folder";
       return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
     });
     return { jobId };
@@ -706,7 +710,8 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
         { kind: "epub", fileName, bytes },
         { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
       );
-      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      const planKind = planStore.findByCourse(r.courseId)?.kind;
+      const packable = !!planKind && planKind !== "folder";
       return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
     });
     return { jobId };
@@ -740,7 +745,8 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
         { kind: "audio", files: payload },
         { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort, dataDir: deps.dataDir },
       );
-      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      const planKind = planStore.findByCourse(r.courseId)?.kind;
+      const packable = !!planKind && planKind !== "folder";
       return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
     });
     return { jobId };
@@ -770,7 +776,8 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
         { kind: "plan", plan },
         { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
       );
-      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      const planKind = planStore.findByCourse(r.courseId)?.kind;
+      const packable = !!planKind && planKind !== "folder";
       return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
     });
     return { jobId };
@@ -799,7 +806,7 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
     importCancelRequested = false;
     const shouldAbort = () => importCancelRequested;
     const send = (msg: string) => emitter?.send("import:progress", msg);
-    send(`课程包:${plan.kind === "github" ? `${plan.github?.owner}/${plan.github?.repo}` : plan.folder?.absPath ?? "(本地)"}`);
+    send(`课程包:${plan.kind === "github" ? `${plan.github?.owner}/${plan.github?.repo}` : plan.courseTitle ?? plan.kind}`);
 
     runImportJob(jobId, async () => {
       // 包导入:存一份到本机 plans(成为本机的复用方案),再走编排器
@@ -808,7 +815,8 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
         { kind: "plan", plan },
         { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
       );
-      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      const planKind = planStore.findByCourse(r.courseId)?.kind;
+      const packable = !!planKind && planKind !== "folder";
       return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
     });
     return { jobId };
@@ -820,11 +828,15 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
   ): Promise<ExportPackResult | null> => {
     const plan = planStore.findByCourse(courseId);
     if (!plan) throw new Error("这门课没有可导出的导入方案(旧版本导入的课程)");
-    if (plan.kind !== "github" || !plan.github) {
+    if (plan.kind === "folder") {
       throw new Error("本地文件夹导入的课程不支持导出课程包(包含本机私有路径)");
     }
     const { serializePlan } = await import("../services/pure/import-plan.js");
-    const fileName = `${plan.github.owner}-${plan.github.repo}.lookatstudy-pack.json`;
+    // github 沿用 owner-repo 命名;url/text/epub/audio 用课程标题(docCache 让包自包含)
+    const base = plan.kind === "github" && plan.github
+      ? `${plan.github.owner}-${plan.github.repo}`
+      : (plan.courseTitle ?? plan.courseId ?? "course").replace(/[\/:*?"<>|#\s]+/g, "-").slice(0, 60) || "course";
+    const fileName = `${base}.lookatstudy-pack.json`;
     const content = serializePlan(plan);
     if (deps.ui === "web") {
       // web 模式:内容直接回传,渲染层用浏览器下载落盘

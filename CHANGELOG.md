@@ -14,6 +14,15 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Changed
+- **语音输入重塑为飞书式「按住说话 + 复查后发送」** —— 此前听写只是输入框角落的小麦克风按钮,录音按键小、识别文本直接落输入框。现在点工具栏麦克风,**整个输入卡片切换成「按住说话」大按钮**(手机/电脑同一交互):按住即录(浮层显示音量与计时),松开自动转录,**识别全文进入可编辑的复查浮层**——改一两个字再点发送,或取消重录;「切回键盘」随时返回打字输入。识别文本自成一条消息,不再并入输入框草稿。
+- **听写静音加固(治 Whisper「字幕::::」幻觉)** —— 整段没检出人声(麦克风未接/静音设备)直接提示"没听到声音",不再把纯静音喂给模型;编码前裁掉首尾静音段,减少幻觉诱因并加快本地转写。
+
+### Removed
+- 设置项「静音后自动发送」:语音文本现在一律先进复查浮层人工确认,该开关失去语义,连同默认值一并移除(数据库旧值无害残留)。
+
 ## [0.13.0] - 2026-08-19
 
 ### Added

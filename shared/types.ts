@@ -894,9 +894,8 @@ export type SettingKey =
   | "asr_engine"
   | "azure_stt_api_key"
   | "azure_stt_region"
-  // 听写 UX:静音自动停(默认开)/静音后自动发送(默认关)
+  // 听写 UX:静音自动停(默认开);v0.14 飞书式复查浮层落地后 auto-send 已废
   | "asr_auto_stop"
-  | "asr_auto_send"
   // Groq LLM preset 早已使用(设置页经 as 断言写入);入 union 让听写档零断言读取
   | "groq_api_key";
 

@@ -2,47 +2,46 @@
  * useAsrInput —— 语音输入(质量优先管线,v0.13)的渲染层状态机。
  *
  * 采集链:getUserMedia → AudioContext(优先请求 16kHz;不支持时线性降采样)
- * → ScriptProcessor(4096 帧)→ 全量缓冲 + RMS 静音检测。停录(点击/松开 PTT/
- * 静音自动停)后整段编 WAV(shared/speech-wav)→ 一次 api.asrTranscribe → 全文
- * 经 onFinal 交调用方(写入输入框)。main 侧按 asr_engine 路由 local Whisper /
- * groq / azure —— partial 实时字幕已随流式会话退役(质量换流式,用户拍板)。
+ * → ScriptProcessor(4096 帧)→ 全量缓冲 + 逐块 RMS。停录(松开「按住说话」/
+ * 静音自动停)后:无入声守卫(整段没说过话 → no-speech,不喂模型,治 Whisper
+ * 静音幻觉)→ 首尾静音裁剪(audio-trim)→ 整段编 WAV(shared/speech-wav)
+ * → 一次 api.asrTranscribe → 全文经 onFinal 交调用方(v0.14 飞书式:进复查
+ * 浮层,不直接落输入框)。main 侧按 asr_engine 路由 local Whisper / groq /
+ * azure —— partial 实时字幕已随流式会话退役(质量换流式,用户拍板)。
  *
- * PTT:press() 按下 400ms 即录、release() 松开即停;快点击(<400ms)仍走
- * click-toggle。ScriptProcessor 是 deprecated API 但零构建复杂度,v1 务实选择。
+ * v0.14 交互(飞书式):大按钮 pointerdown → beginHold(立即起录,不再有
+ * 400ms 点击判定);pointerup/leave/cancel → endHold。起录在飞(getUserMedia
+ * 未落定)时松开,起录完成即收尾。ScriptProcessor 是 deprecated API 但零构建
+ * 复杂度,v1 务实选择。
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { encodeWavPcm16, resampleLinear } from "@shared/speech-wav";
 
+import { trimSilenceEdges } from "./audio-trim";
 import { createSilenceDetector, type SilenceDetector } from "./silence-detector";
 
 const TARGET_RATE = 16000;
-/** PTT 判定阈值:按住超过此时长 = 按住说话;更短 = 点击切换 */
-export const PTT_HOLD_MS = 400;
 
 export function useAsrInput(
   onFinal: (text: string) => void,
-  opts: { locale?: string; autoStop?: boolean; onAutoStopped?: () => void } = {},
+  opts: { locale?: string; autoStop?: boolean } = {},
 ): {
   listening: boolean;
   /** 停录后等转录(本地 Whisper 数秒 / 云端 <1s) */
   transcribing: boolean;
   /** 0..1 近似音量(录音动画) */
   level: number;
-  /** 启动失败原因(model-missing/mic-unavailable 时调用方引导) */
+  /** 启动失败原因(mic-unavailable 等;调用方引导) */
   startError: string | null;
-  /** 转录失败原因(main 侧结构化 reason;调用方 toast 引导) */
+  /** 转录失败原因(main 侧结构化 reason 或渲染层 no-speech;调用方引导) */
   transcribeError: string | null;
   clearTranscribeError: () => void;
-  /** 点击切换:开始录音 */
-  start: () => void;
-  /** 停录并转录(finalize) */
-  stop: () => void;
-  /** PTT:按下(400ms 后起录);与 start/stop 互斥使用由内部状态保证 */
-  press: () => void;
-  /** PTT:松开(在录则停;未到 400ms 视为点击 → toggle) */
-  release: () => void;
+  /** 按住说话:按下即起录 */
+  beginHold: () => void;
+  /** 按住说话:松开收尾(在录则停录转录;起录在飞则到点即停;未在录空转) */
+  endHold: () => void;
 } {
   const [listening, setListening] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -54,7 +53,8 @@ export function useAsrInput(
   const streamRef = useRef<MediaStream | null>(null);
   const nodeRef = useRef<ScriptProcessorNode | null>(null);
   const chunksRef = useRef<Float32Array[]>([]);
-  const chunksLenRef = useRef(0);
+  /** 与 chunksRef 同步推进的逐块 RMS(首尾裁剪用) */
+  const chunkRmsRef = useRef<number[]>([]);
   const aliveRef = useRef(false);
   const detectorRef = useRef<SilenceDetector | null>(null);
   const levelSmoothRef = useRef(0);
@@ -63,13 +63,10 @@ export function useAsrInput(
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
-  // PTT 状态
-  const pttArmedRef = useRef(false);
-  const pttTimerRef = useRef<number | null>(null);
-  /** start() 的异步段在飞(getUserMedia/AudioContext 未落定) */
+  /** beginHold 的异步段在飞(getUserMedia/AudioContext 未落定) */
   const startInFlightRef = useRef(false);
-  /** PTT 起录在飞时松开 → 起录完成立即停 */
-  const pttStopWhenLiveRef = useRef(false);
+  /** 起录在飞时松开 → 起录完成立即停 */
+  const stopWhenLiveRef = useRef(false);
 
   const teardown = useCallback(() => {
     aliveRef.current = false;
@@ -80,23 +77,34 @@ export function useAsrInput(
     void ctxRef.current?.close().catch(() => {});
     ctxRef.current = null;
     chunksRef.current = [];
-    chunksLenRef.current = 0;
+    chunkRmsRef.current = [];
     detectorRef.current = null;
     setLevel(0);
   }, []);
 
   const finalize = useCallback(() => {
-    // 先取音频再 teardown(teardown 会清缓冲)
+    // 先取音频与语音统计再 teardown(teardown 会清缓冲)
     const chunks = chunksRef.current;
+    const rmsList = chunkRmsRef.current;
+    const hadSpeech = detectorRef.current?.hadSpeech() ?? false;
     chunksRef.current = [];
+    chunkRmsRef.current = [];
     let n = 0;
     for (const c of chunks) n += c.length;
     teardown();
     setListening(false);
     if (n === 0) return;
-    const merged = new Float32Array(n);
+    // 无入声守卫:整段没检出有效语音就不喂模型(静音段是 Whisper 幻觉的经典诱因)
+    if (!hadSpeech) {
+      setTranscribeError("no-speech");
+      return;
+    }
+    const kept = trimSilenceEdges(chunks, rmsList);
+    let m = 0;
+    for (const c of kept) m += c.length;
+    const merged = new Float32Array(m);
     let o = 0;
-    for (const c of chunks) {
+    for (const c of kept) {
       merged.set(c, o);
       o += c.length;
     }
@@ -106,11 +114,8 @@ export function useAsrInput(
     void window.api
       .asrTranscribe(wav, optsRef.current.locale)
       .then((r) => {
-        if (r.ok) {
-          if (r.text) finalRef.current(r.text);
-        } else {
-          setTranscribeError(r.reason);
-        }
+        if (r.ok) finalRef.current(r.text);
+        else setTranscribeError(r.reason);
       })
       .catch(() => setTranscribeError("asr-failed"))
       .finally(() => setTranscribing(false));
@@ -121,11 +126,8 @@ export function useAsrInput(
     finalize();
   }, [finalize]);
 
-  const start = useCallback(() => {
-    if (aliveRef.current) {
-      stop();
-      return;
-    }
+  const beginHold = useCallback(() => {
+    if (aliveRef.current || startInFlightRef.current) return;
     setStartError(null);
     startInFlightRef.current = true;
     void (async () => {
@@ -159,11 +161,11 @@ export function useAsrInput(
           // 线性降采样到 16k(设备上下文不是 16k 时)
           const out = ratio === 1 ? new Float32Array(input) : resampleLinear(input, ratio);
           chunksRef.current.push(out);
-          chunksLenRef.current += out.length;
-          // RMS 音量(平滑,驱动动画)+ 静音检测
+          // RMS 音量(平滑,驱动动画)+ 静音检测 + 逐块统计(首尾裁剪用)
           let sum = 0;
           for (let i = 0; i < out.length; i++) sum += out[i]! * out[i]!;
           const rms = Math.sqrt(sum / out.length);
+          chunkRmsRef.current.push(rms);
           levelSmoothRef.current = levelSmoothRef.current * 0.7 + rms * 0.3;
           setLevel(Math.min(1, levelSmoothRef.current * 8));
           const decision = detectorRef.current?.feed(rms, performance.now());
@@ -177,9 +179,9 @@ export function useAsrInput(
         proc.connect(mute);
         mute.connect(ctx.destination);
         setListening(true);
-        if (pttStopWhenLiveRef.current) {
-          // PTT 松开发生在起录在飞期间:立即收尾
-          pttStopWhenLiveRef.current = false;
+        if (stopWhenLiveRef.current) {
+          // 松开发生在起录在飞期间:立即收尾
+          stopWhenLiveRef.current = false;
           finalize();
         }
       } catch (e) {
@@ -190,36 +192,15 @@ export function useAsrInput(
         startInFlightRef.current = false;
       }
     })();
-  }, [stop, teardown, finalize]);
+  }, [teardown, finalize]);
 
-  const press = useCallback(() => {
-    if (pttArmedRef.current) return;
-    pttArmedRef.current = true;
-    pttTimerRef.current = window.setTimeout(() => {
-      pttTimerRef.current = null;
-      if (!aliveRef.current) start();
-    }, PTT_HOLD_MS);
-  }, [start]);
-
-  const release = useCallback(() => {
-    if (!pttArmedRef.current) return;
-    pttArmedRef.current = false;
-    if (pttTimerRef.current != null) {
-      // 未到 400ms:点击语义 → toggle
-      window.clearTimeout(pttTimerRef.current);
-      pttTimerRef.current = null;
-      if (aliveRef.current) stop();
-      else start();
-      return;
-    }
-    // 按住说话:在录则停(转录);起录在飞则标记到点即停
+  const endHold = useCallback(() => {
     if (aliveRef.current) stop();
-    else if (startInFlightRef.current) pttStopWhenLiveRef.current = true;
-  }, [start, stop]);
+    else if (startInFlightRef.current) stopWhenLiveRef.current = true;
+  }, [stop]);
 
   useEffect(
     () => () => {
-      if (pttTimerRef.current != null) window.clearTimeout(pttTimerRef.current);
       if (aliveRef.current) teardown();
     },
     [teardown],
@@ -232,9 +213,7 @@ export function useAsrInput(
     startError,
     transcribeError,
     clearTranscribeError: () => setTranscribeError(null),
-    start,
-    stop,
-    press,
-    release,
+    beginHold,
+    endHold,
   };
 }

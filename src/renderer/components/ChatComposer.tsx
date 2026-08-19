@@ -6,11 +6,13 @@
  *   - 附件:📎按钮/粘贴/拖拽收图(走 vision)与文本文件(内联正文),缩略图栏可删
  *   - 底部工具栏(工具栏后撤原则,caption 调):思考强度 · 上下文用量表 · 模型切换
  *   - 上下文数据自取 agent:getContextUsage(与实发同源),本地叠加草稿估算
+ * v0.14 语音输入改飞书式:🎤 点击切语音模式(整卡换「按住说话」大按钮 +
+ * VoicePanel 复查浮层),「切回键盘」返回打字;识别文本不再直接落输入框。
  *
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X, Mic, Loader2 } from "lucide-react";
+import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X, Mic, Keyboard } from "lucide-react";
 import type { Soul, StarterPrompt, HumanFrictionCategory, ChatAttachmentInput, ContextUsageInfo } from "@shared/types";
 import { checkAttachmentFile, ATTACHMENT_LIMITS } from "@shared/attachment-intake";
 import { estimateTokens } from "@shared/token-estimate";
@@ -20,6 +22,7 @@ import { useAsrInput } from "../lib/useAsrInput.js";
 import { ModelPicker } from "./ModelPicker.js";
 import { ContextMeter } from "./ContextMeter.js";
 import { EffortPicker } from "./EffortPicker.js";
+import { VoicePanel, type VoicePanelView } from "./VoicePanel.js";
 
 /** soul 名 → i18n key(短标签,显示在药丸里)。 */
 const SOUL_LABEL_KEY: Record<string, string> = {
@@ -112,56 +115,76 @@ export function ChatComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepthRef = useRef(0);
 
-  // v0.13 语音输入(质量优先管线):停录 → 整段转录 → 全文追加进输入框
-  // (已有内容则空格衔接);开了"静音后自动发送"则直接发。PTT 按住 400ms 即录。
+  // v0.14 语音输入(飞书式):工具栏 🎤 点击切换语音模式 —— 输入卡片整体换成
+  // 「按住说话」大按钮;按住录音(浮层:音量+计时),松开转录,识别全文进可编辑
+  // 复查浮层,改完点发送;「切回键盘」返回打字输入。不直接落输入框,也不并草稿。
   const [asrAutoStop, setAsrAutoStop] = useState(true);
-  const asrAutoSendRef = useRef(false);
   useEffect(() => {
     void api.getSetting("asr_auto_stop").then((v) => setAsrAutoStop(v !== "0"));
-    const sync = () => {
-      void api.getSetting("asr_auto_send").then((v) => {
-        asrAutoSendRef.current = v === "1";
-      });
-    };
-    sync();
-    window.addEventListener("llm-config-changed", sync);
-    return () => window.removeEventListener("llm-config-changed", sync);
   }, []);
+  const [voiceMode, setVoiceMode] = useState(false);
+  /** 复查浮层的识别文本(可编辑) */
+  const [voiceText, setVoiceText] = useState("");
+  /** 复查浮层在位(转录成功回调过;空文本也进复查,手改/重录随用户) */
+  const [voiceReview, setVoiceReview] = useState(false);
+  /** 浮层错误文案(已翻译;no-speech 守卫/密钥缺失等引导) */
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const asr = useAsrInput(
     (text) => {
-      const prev = inputRef.current;
-      const merged = prev.trim() ? `${prev} ${text}` : text;
-      if (asrAutoSendRef.current) {
-        inputRef.current = "";
-        setInput("");
-        sendTextNow(merged);
-      } else {
-        inputRef.current = merged;
-        setInput(merged);
-      }
+      setVoiceText(text);
+      setVoiceReview(true);
     },
     { locale: uiLang, autoStop: asrAutoStop },
   );
+  const asrError = asr.startError ?? asr.transcribeError;
   useEffect(() => {
-    const err = asr.startError ?? asr.transcribeError;
-    if (!err) return;
+    if (!asrError) return;
     const key =
-      err === "model-missing"
-        ? "chat.speech.asr_model_missing"
-        : err === "engine-unavailable"
-          ? "chat.speech.engine_unavailable"
-          : err === "groq-key-missing"
-            ? "chat.speech.groq_key_missing"
-            : err === "azure-key-missing"
-              ? "chat.speech.azure_stt_key_missing"
-              : err === "azure-region-missing"
-                ? "chat.speech.azure_stt_region_missing"
-                : err === "mic-unavailable"
-                  ? "chat.speech.asr_start_fail"
-                  : "chat.speech.asr_failed";
-    setNotice(t(key));
+      asrError === "no-speech"
+        ? "chat.speech.no_speech"
+        : asrError === "model-missing"
+          ? "chat.speech.asr_model_missing"
+          : asrError === "engine-unavailable"
+            ? "chat.speech.engine_unavailable"
+            : asrError === "groq-key-missing"
+              ? "chat.speech.groq_key_missing"
+              : asrError === "azure-key-missing"
+                ? "chat.speech.azure_stt_key_missing"
+                : asrError === "azure-region-missing"
+                  ? "chat.speech.azure_stt_region_missing"
+                  : asrError === "mic-unavailable"
+                    ? "chat.speech.asr_start_fail"
+                    : "chat.speech.asr_failed";
+    setVoiceError(t(key));
     asr.clearTranscribeError();
-  }, [asr.startError, asr.transcribeError, asr, t]);
+  }, [asrError, asr, t]);
+
+  /** 语音模式浮层视图:idle=只有大按钮(浮层不出现) */
+  const voiceView: VoicePanelView | "idle" = voiceError
+    ? "error"
+    : asr.listening
+      ? "recording"
+      : asr.transcribing
+        ? "transcribing"
+        : voiceReview
+          ? "review"
+          : "idle";
+  const resetVoiceState = useCallback(() => {
+    setVoiceText("");
+    setVoiceReview(false);
+    setVoiceError(null);
+  }, []);
+  const exitVoiceMode = useCallback(() => {
+    setVoiceMode(false);
+    resetVoiceState();
+  }, [resetVoiceState]);
+  /** 复查浮层「发送」:语音文本自成一条消息(不并输入框草稿),发完回键盘模式 */
+  const handleVoiceSend = () => {
+    const trimmed = voiceText.trim();
+    if (!trimmed || streaming || !nodeId) return;
+    onSend(trimmed);
+    exitVoiceMode();
+  };
 
   // 外部插入文字(哪里不会点哪里:右栏选中→注入提问)。每次 insertText 变化时追加到输入框。
   useEffect(() => {
@@ -305,11 +328,6 @@ export function ChatComposer({
     [attachments.length, ctxInfo?.visionCapable, t],
   );
 
-  const inputRef = useRef("");
-  useEffect(() => {
-    inputRef.current = input;
-  }, [input]);
-
   const sendTextNow = (raw: string) => {
     const trimmed = raw.trim();
     if (streaming || !nodeId) return;
@@ -385,8 +403,9 @@ export function ChatComposer({
     <div className="px-5 pb-4 pt-1 shrink-0" data-testid="composer">
       {/* 巩固选择:只在对话开始后(App 传非空 starterPrompts)才出现 = 语境前零决策税。
           4 个正交的"一瞥→懂"路径(精加工/具体化/检索/困惑处置)。单行药丸排列(省空间,
-          不过度遮挡对话区);hint 走 data-tooltip(GlobalTooltip),hover 才显示。 */}
-      {starterPrompts.length > 0 && nodeId && (
+          不过度遮挡对话区);hint 走 data-tooltip(GlobalTooltip),hover 才显示。
+          语音模式下隐藏(输入区已被「按住说话」接管,减少同屏决策)。 */}
+      {!voiceMode && starterPrompts.length > 0 && nodeId && (
         <div className="flex items-center gap-1.5 overflow-x-auto pb-2" data-testid="starter-prompts">
           {starterPrompts.map((p, i) => (
             <button
@@ -404,9 +423,11 @@ export function ChatComposer({
       )}
 
       {/* 输入区:一个圆角胶囊容器(claude.ai 风)。
-          内部:风格药丸行 + 附件栏 + textarea + 发送钮 + 底部工具栏。 */}
+          文本模式:风格药丸行 + 附件栏 + textarea + 发送钮 + 底部工具栏。
+          语音模式(飞书式,v0.14):整卡换成「语音输入」头行 + 按住说话大按钮,
+          录音/转录/复查浮层(VoicePanel)锚在卡片上方弹出。 */}
       <div
-        className={`rounded-2xl transition-colors px-3 pt-2 pb-1.5 ${
+        className={`relative rounded-2xl transition-colors px-3 pt-2 pb-1.5 ${
           dragActive ? "bg-accent/10 ring-1 ring-accent" : "bg-ink/[0.05] focus-within:bg-ink/[0.07]"
         }`}
         onDragEnter={onDragEnter}
@@ -417,6 +438,64 @@ export function ChatComposer({
         onDrop={onDrop}
         data-testid="composer-card"
       >
+        {voiceMode ? (
+          <>
+            {voiceView !== "idle" && (
+              <VoicePanel
+                view={voiceView}
+                level={asr.level}
+                text={voiceText}
+                onTextChange={setVoiceText}
+                onSend={handleVoiceSend}
+                onRerecord={resetVoiceState}
+                errorMessage={voiceError}
+                sendDisabled={streaming || !nodeId || !voiceText.trim()}
+              />
+            )}
+            {/* 头行:语音模式标识 + 切回键盘 */}
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="flex items-center gap-1.5 text-label text-ink-muted font-medium">
+                <Mic className="w-3.5 h-3.5 text-accent" />
+                {t("chat.speech.dictation")}
+              </span>
+              <button
+                type="button"
+                onClick={exitVoiceMode}
+                data-tooltip={t("chat.speech.back_to_keyboard")}
+                aria-label={t("chat.speech.back_to_keyboard")}
+                data-testid="voice-keyboard-toggle"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06] transition-colors"
+              >
+                <Keyboard className="w-3.5 h-3.5" />
+                <span>{t("chat.speech.keyboard")}</span>
+              </button>
+            </div>
+            {/* 按住说话大按钮:按住期间不卸载(指针抬起的目标必须稳定),只有文案与
+                按下态变化;浮层在卡片上方,不遮挡按钮本身。 */}
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                asr.beginHold();
+              }}
+              onPointerUp={asr.endHold}
+              onPointerLeave={asr.endHold}
+              onPointerCancel={asr.endHold}
+              onContextMenu={(e) => e.preventDefault()}
+              disabled={!nodeId || voiceView !== "idle"}
+              data-testid={asr.listening ? "voice-hold-btn-active" : "voice-hold-btn"}
+              className={`w-full py-5 rounded-xl text-lead font-bold flex items-center justify-center gap-2 transition-all touch-none select-none disabled:opacity-40 ${
+                asr.listening
+                  ? "bg-accent/25 text-accent scale-[0.99]"
+                  : "bg-accent/10 text-accent hover:bg-accent/20 active:bg-accent/25 active:scale-[0.99]"
+              }`}
+            >
+              <Mic className="w-5 h-5" />
+              {asr.listening ? t("chat.speech.release_to_stop") : t("chat.speech.hold_to_talk")}
+            </button>
+          </>
+        ) : (
+          <>
         {/* 风格药丸:"风格:" 标签 + 三个教学人设药丸(图标+名字),hover 显示完整说明 */}
         {souls.length > 0 && (
           <div className="flex items-center gap-1 overflow-x-auto mb-1" data-testid="soul-picker">
@@ -547,57 +626,20 @@ export function ChatComposer({
 
         {/* v0.10 底部工具栏:左=附件入口;右=思考强度·上下文·模型(工具栏后撤,caption 调)。 */}
         <div className="flex flex-wrap items-center justify-between gap-x-0.5 gap-y-1 mt-0.5">
+          {/* 🎤 = 语音模式开关(飞书式):点击后整卡切「按住说话」,不在此按钮上录 */}
           <button
             type="button"
-            onPointerDown={(e) => { e.preventDefault(); asr.press(); }}
-            onPointerUp={() => asr.release()}
-            onPointerLeave={() => asr.release()}
-            onClick={(e) => {
-              // 真鼠标点击会先走 pointerdown/up(含 PTT/点击判定),e.detail>0 直接忽略;
-              // detail=0 是键盘 Enter/Space 或自动化 .click() → 走开关
-              if (e.detail === 0) {
-                if (asr.listening) asr.stop();
-                else asr.start();
-              }
+            onClick={() => {
+              resetVoiceState();
+              setVoiceMode(true);
             }}
-            disabled={asr.transcribing}
-            data-tooltip={
-              asr.listening
-                ? t("chat.speech.dictation_stop")
-                : asr.transcribing
-                  ? t("chat.speech.transcribing")
-                  : t("chat.speech.dictation_ptt")
-            }
-            aria-label={
-              asr.listening
-                ? t("chat.speech.dictation_stop")
-                : t("chat.speech.dictation_ptt")
-            }
-            data-testid={
-              asr.listening
-                ? "composer-mic-active"
-                : asr.transcribing
-                  ? "composer-mic-busy"
-                  : "composer-mic"
-            }
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-caption font-medium transition-colors disabled:opacity-50 ${
-              asr.listening ? "text-warning" : "text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06]"
-            }`}
+            disabled={!nodeId}
+            data-tooltip={t("chat.speech.dictation")}
+            aria-label={t("chat.speech.dictation")}
+            data-testid="composer-mic"
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-caption font-medium text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06] transition-colors disabled:opacity-50"
           >
-            {asr.transcribing ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Mic className={`w-3.5 h-3.5 ${asr.listening ? "animate-pulse" : ""}`} />
-            )}
-            {asr.listening && (
-              <span className="w-10 h-1 rounded-full bg-ink/[0.08] overflow-hidden" data-testid="asr-level">
-                <span
-                  className="block h-full bg-warning transition-[width] duration-100"
-                  style={{ width: `${Math.round(Math.min(1, asr.level) * 100)}%` }}
-                />
-              </span>
-            )}
-            {asr.transcribing && <span className="max-w-24 truncate">{t("chat.speech.transcribing")}</span>}
+            <Mic className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
@@ -626,6 +668,8 @@ export function ChatComposer({
             <ModelPicker onGotoSettings={onGotoSettings} />
           </div>
         </div>
+          </>
+        )}
       </div>
     </div>
   );

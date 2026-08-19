@@ -111,7 +111,7 @@ install_voice() {
     tar -xzf voice.tgz --strip-components=1 -C "$APP_DIR/node_modules"
     rm -f voice.tgz
     ok "语音引擎就位(npm 镜像): $APP_DIR/node_modules/sherpa-onnx-node"
-    info "语音模型(朗读约 430MB + 听写约 200MB)在应用内下载: 设置 → 语音能力"
+    info "语音模型在应用内按需下载(设置 → 语音能力):朗读本地档约 430MB;听写建议云档(Groq/Azure),本地 Whisper 约 360MB~1GB"
     info "装完模型重启服务生效: bash ~/lookatstudy/start.sh"
     return 0
   fi
@@ -304,19 +304,11 @@ case "$(getprop ro.product.manufacturer 2>/dev/null | tr '[:upper:]' '[:lower:]'
     ;;
 esac
 
-# ── 6.5 语音引擎(Termux 专属交叉编译包,可选) ────────────────
-# 引擎包 ~12MB 一次性下载;语音模型(约 630MB)由用户在应用内按需下载。
-if [ "$1" = "--voice" ] || [ -d "$APP_DIR/node_modules/sherpa-onnx-node" ]; then
-  install_voice || true
-else
-  echo ''
-  info "可选:Termux 语音朗读/听写(引擎包约 12MB,语音模型在应用内另下)。"
-  read -r -p "[*] 现在安装吗?[y/N] " ans </dev/tty 2>/dev/null || ans="n"
-  case "$ans" in
-    y|Y) install_voice || true ;;
-    *) info "跳过(以后可: bash install-termux.sh --voice)" ;;
-  esac
-fi
+# ── 6.5 语音引擎(Termux 专属交叉编译包,默认安装) ────────────
+# 引擎包 ~12MB 一次到位(相对 Node+系统升级的体量可忽略;语音朗读/听写默认能力)。
+# 全程零交互:失败不阻断安装(朗读在线档/听写云档不依赖本地引擎),重跑安装命令即补装。
+# 兼容旧写法:--voice 参数仍被接受(现为默认,传不传一样)。
+install_voice || true
 
 # ── 7. 启动 + 打印访问链接 ───────────────────────────────────
 info "启动 LookatStudy..."

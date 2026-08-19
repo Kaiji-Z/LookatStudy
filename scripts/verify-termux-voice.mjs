@@ -3,7 +3,7 @@
  *
  * 守什么:
  *  - 构建脚本/工作流/安装器三者的资产名一致(lookatstudy-termux-voice.tar.gz)
- *  - 安装器:install_voice 存在、四个启动点全部注入 LD_LIBRARY_PATH、语音步骤可交互且 --voice 直装
+ *  - 安装器:install_voice 存在且默认安装(全程零交互,失败不阻断)、四个启动点全部注入 LD_LIBRARY_PATH
  *  - 工作流:tag/dispatch 触发、NDK 版本与构建脚本探测路径一致、attach 步骤存在
  *  - 构建脚本:node 语法可解析、关键配方在场(-z undefs / $ORIGIN / 软链还原 / ELF 验证)
  *
@@ -59,8 +59,8 @@ console.log("T3 安装器:语音段 + 四启动点 LD_LIBRARY_PATH");
 {
   const sh = read("scripts/install-termux.sh");
   assert.ok(/install_voice\(\)/.test(sh), "install_voice 函数");
-  assert.ok(/bash install-termux\.sh --voice|--voice.*install_voice|"\$1" = "--voice"/.test(sh), "--voice 直装入口");
-  assert.ok(/read .*ans/.test(sh), "交互询问");
+  assert.ok(/install_voice \|\| true/.test(sh), "语音引擎默认安装(失败不阻断)");
+  assert.ok(!/read -r/.test(sh), "安装全程零交互(无 read 提问)");
   const hits = sh.match(/LD_LIBRARY_PATH=/g) ?? [];
   // start_service + start.sh + boot + bashrc = 4 处注入
   assert.ok(hits.length >= 4, `启动点注入不足: ${hits.length}/4`);

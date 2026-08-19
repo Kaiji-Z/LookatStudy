@@ -14,6 +14,11 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Changed
+- **Termux 语音引擎改为默认安装,安装全程零交互** —— 引擎包约 12MB,相对 Node 与系统升级的体量可忽略,不再可选/不再中途提问(y/N 一并移除);失败不阻断安装(朗读在线档/听写云档不依赖本地引擎),重跑安装命令即补装。`--voice` 参数仍被接受(传不传一样)。连带修正两处误导文案:安装器内的语音模型大小提示还是旧引擎时代数字(听写 200MB → 实为云档建议/本地 360MB~1GB);界面"引擎未就位"提示教用户跑不落盘的 `bash install-termux.sh --voice`。
+
 ## [0.14.0] - 2026-08-19
 
 ### Changed

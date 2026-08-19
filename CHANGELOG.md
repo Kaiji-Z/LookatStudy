@@ -16,6 +16,12 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **导入结构设计能看到正文了** —— Step 4 课程结构设计此前只喂每个文件的标题大纲,两个都叫 "Setup" 的文件模型无从区分内容。现在 `FileOutline` 携带 `bodyPreview`(正文前 ~300 字摘录,跳标题/围栏代码/纯符号行,链接留文字图片丢弃),随大纲一并进结构设计 prompt(截 200 字)——语义分组与章节归属判断的质量地基。计划快照与课程包同步携带(每文件 +300 字,旧快照缺字段自动兼容)。
+
+### Changed
+- **懒生成层 LLM 调用统一导入管线纪律** —— 单课摘要+KC 提取、章节摘要、world 分类、课程重组共 8 处调用此前是裸 `generateText`:无输出上限(截断无迹可查)、无看门狗(挂起无界)、思考不受控(默认思考的模型单课能等数分钟)。现在全部走 `buildImportModel` + `generateTextWithTimeout`:思考压 fast/low、家族感知输出上限、活性看门狗,与导入步骤同款;JSON 解析层补上平衡块抽取(对象/数组泛化),模型在 JSON 前后多说两句不再整批作废。KC 提取质量驱动的 BKT 掌握度因此获得可预期的延迟与成功率。
+
 ### Fixed
 - **Termux 安装器防 npmmirror 同步滞后拿到旧版** —— 刚发版的头几分钟,镜像的 `latest` 可能仍指向上一个版本,此前安装/更新会静默下载旧包。现在解析到镜像版本落后于 GitHub 最新 release 时自动改走 GitHub 回退链(`releases/latest/download` 永远指向最新);GitHub 探测失败(网络不可达)则信任镜像,不因 GitHub 问题惩罚国内直连的镜像主源。探测用一次 HEAD 读重定向目标里的 tag,不碰 api.github.com。
 - **文档同步** —— 英文 README 手机章节的 "Nothing goes through npm" 已过时(便携包/语音引擎包主源现为 npm 镜像),重写并补上语音引擎默认安装;英文 README 测试套件计数 74→89;中文 README 补齐缺失的手机安装章节;`android/README.md` 下载源描述与安装器头注释同步双源现状。

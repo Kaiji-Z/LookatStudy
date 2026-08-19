@@ -23,7 +23,7 @@ import { join } from "node:path";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
-import { designSectionsResilient, extractJsonBlock } from "../src/main/services/import-llm-service.ts";
+import { designSectionsResilient, extractJsonBlock, extractJsonBlockAny, buildStructureDesignPrompt } from "../src/main/services/import-llm-service.ts";
 import { runSmartImport, planIdOf } from "../src/main/services/import-job-service.ts";
 import { createPlanStore } from "../src/main/services/import-plan-store.ts";
 
@@ -228,6 +228,50 @@ await test("T11 JSON 后带尾巴/前面带废话 → 抽取平衡块救回(实�
   assert.equal(r3.length, 1, "字符串内大括号不影响平衡扫描");
   const r4 = await designSectionsResilient("r", infos(["xx1.md"]), [], [], { call: async () => "完全不是 JSON" });
   assert.equal(r4.length, 1, "纯垃圾在单文件批走兜底一课(不抛)");
+});
+
+await test("T12 结构设计 prompt 携带正文预览(preview 字段)——Step 4 语义分组依据", async () => {
+  const prompt = buildStructureDesignPrompt("# readme", [
+    {
+      file: "lesson/setup-db.md",
+      role: "original",
+      h1: "Setup",
+      preview: "数据库连接池的初始化参数与超时配置讲解。",
+      totalChars: 5000,
+      headings: [{ level: 2, title: "连接参数", chars: 2000 }],
+    },
+    {
+      file: "lesson/setup-env.md",
+      role: "original",
+      h1: "Setup",
+      totalChars: 800,
+      headings: [],
+    },
+  ]);
+  assert.ok(prompt.includes('"preview": "数据库连接池的初始化参数与超时配置讲解。"'), "T12: 有预览的文件渲染 preview 字段");
+  assert.ok(prompt.includes('"preview": ""'), "T12: 无预览的文件渲染空 preview(不缺字段)");
+  assert.ok(prompt.includes("正文开头摘录"), "T12: prompt 解释 preview 含义");
+});
+
+await test("T13 preview 超 200 字截断进 prompt(防 prompt 膨胀)", async () => {
+  const long = "长".repeat(500);
+  const prompt = buildStructureDesignPrompt("# r", [{ file: "a.md", role: "original", h1: "A", preview: long, totalChars: 1, headings: [] }]);
+  assert.ok(prompt.includes(`"preview": "${"长".repeat(200)}"`), "T13: prompt 内 preview 截到 200 字");
+});
+
+await test("T14 extractJsonBlockAny: 数组泛化(对象/数组起始都认,前后废话都救)", async () => {
+  const arr = JSON.stringify([{ nodeId: "id1", world: "study" }, { nodeId: "id2", world: "practice" }]);
+  assert.equal(extractJsonBlockAny(arr), arr, "T14: 纯数组原样");
+  assert.equal(extractJsonBlockAny("分类结果如下:\n" + arr + "\n以上。"), arr, "T14: 废话+数组+尾巴 → 抽数组");
+  const obj = JSON.stringify({ sections: [] });
+  assert.equal(extractJsonBlockAny("前言" + obj + "后记"), obj, "T14: 废话+对象+尾巴 → 抽对象");
+  // 数组先于对象出现 → 取数组
+  const both = arr + obj;
+  assert.equal(extractJsonBlockAny(both), arr, "T14: 最早出现的块优先");
+  // 字符串内的括号不影响
+  const tricky = JSON.stringify([{ note: "含]括号" }]);
+  assert.equal(extractJsonBlockAny("前" + tricky + "后"), tricky, "T14: 字符串内括号不影响平衡扫描");
+  assert.equal(extractJsonBlockAny("没有任何 JSON"), "没有任何 JSON", "T14: 无 JSON 返回原文(让 JSON.parse 报原错)");
 });
 
 

@@ -20,6 +20,8 @@ import {
   httpsGet,
   fetchRepoInventory,
   fetchFileOutlines,
+  extractBodyPreview,
+  extractOutlineWithCharCounts,
 } from "../src/main/services/pure/repo-fetcher.ts";
 
 // === T1: extractInternalLinks 提取 .md 和 .ipynb 链接 ===
@@ -346,6 +348,70 @@ console.log("=== 多模态图片引用解析(repo-fetcher): 通过 ✅ ===");
     assert.ok(!/无法拉取/.test(threw ?? ""), `C6: 不应误报无法拉取 README: ${threw}`);
     console.log("✓ C6 fetchRepoInventory 拉取中取消: 报'已取消'不误报");
   }
+}
+
+// === P 系列: extractBodyPreview 正文预览(Step 4 语义分组依据) ===
+
+// P1: 常规 markdown——标题行/围栏代码/纯符号行不进预览,正文行空格连接
+{
+  const md = [
+    "# 梯度下降",            // H1 跳
+    "",                       // 空行跳
+    "---",                    // 分隔线跳
+    "梯度下降是迭代优化算法,沿负梯度方向更新参数。",
+    "> 引用里的内容也算正文。", // 引用前缀剥掉,内容保留
+    "## 收敛性",              // H2 跳
+    "|---|---|",              // 表格分隔行跳
+    "```python",
+    "loss = fn(x)",           // 围栏内跳
+    "```",
+    "参见 [随机梯度下降](./sgd.md) 一节。", // 链接只留文字
+    "![示意图](./fig.png)",   // 图片整体丢弃
+  ].join("\n");
+  const p = extractBodyPreview(md);
+  assert.strictEqual(
+    p,
+    "梯度下降是迭代优化算法,沿负梯度方向更新参数。 引用里的内容也算正文。 参见 随机梯度下降 一节。",
+    `P1: 预览应跳标题/围栏/符号行并降噪链接图片,实际: ${JSON.stringify(p)}`,
+  );
+  console.log("✓ P1 extractBodyPreview: 跳标题/围栏/符号行 + 链接留文字 + 图片丢弃");
+}
+
+// P2: 长文本截断到 maxChars(默认 300),单行无换行
+{
+  const long = "深度学习基础。".repeat(200); // 1400 字
+  const p = extractBodyPreview(long);
+  assert.strictEqual(p.length, 300, `P2: 默认截 300,实际 ${p.length}`);
+  assert.ok(!p.includes("\n"), "P2: 预览是单行");
+  const p100 = extractBodyPreview(long, 100);
+  assert.strictEqual(p100.length, 100, "P2: maxChars 参数生效");
+  console.log("✓ P2 extractBodyPreview: 截断到 maxChars + 单行输出");
+}
+
+// P3: 纯代码文件(markdown = docstring + 围栏代码) → 预览 = docstring 文字
+{
+  const codeMd = "nanoGPT 是一个极简的 GPT 训练实现,讲解注意力机制。\n\n```python\nimport torch\nmodel = GPT()\n```\n";
+  const p = extractBodyPreview(codeMd);
+  assert.strictEqual(p, "nanoGPT 是一个极简的 GPT 训练实现,讲解注意力机制。", `P3: ${JSON.stringify(p)}`);
+  console.log("✓ P3 代码文件: docstring 进预览,围栏代码不进");
+}
+
+// P4: 全围栏代码 → 空预览(不炸)
+{
+  const p = extractBodyPreview("```\nprint(1)\n```\n");
+  assert.strictEqual(p, "", "P4: 纯代码空预览");
+  assert.strictEqual(extractBodyPreview(""), "", "P4: 空文本空预览");
+  console.log("✓ P4 空预览: 纯代码/空文本返回空串");
+}
+
+// P5: CRLF 换行不炸 + outline 集成(bodyPreview 字段存在且与独立函数一致)
+{
+  const md = "# 标题\r\n\r\n正文第一段。\r\n## 小节\r\n第二段内容。\r\n";
+  const ol = extractOutlineWithCharCounts(md, "a.md");
+  assert.ok(typeof ol.bodyPreview === "string", "P5: outline 带 bodyPreview 字段");
+  assert.strictEqual(ol.bodyPreview, "正文第一段。 第二段内容。", `P5: ${JSON.stringify(ol.bodyPreview)}`);
+  assert.strictEqual(ol.bodyPreview, extractBodyPreview(md), "P5: 与独立函数一致");
+  console.log("✓ P5 outline 集成: bodyPreview 字段随大纲产出(CRLF 安全)");
 }
 
 console.log("=== 翻译语言检测(repo-fetcher): 通过 ✅ ===");

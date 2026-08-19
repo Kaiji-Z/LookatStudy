@@ -4,6 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { routeImportUrl, normalizeUrlIdentity } from "../src/main/services/pure/url-route.ts";
+import { extractArxivTitle } from "../src/main/services/url-import-service.ts";
 
 let passed = 0;
 const test = (name, fn) => {
@@ -55,6 +56,21 @@ test("T6 身份归一:去 hash/去尾斜杠,保留 query", () => {
   assert.equal(normalizeUrlIdentity("https://a.com/x/#section"), "https://a.com/x");
   assert.equal(normalizeUrlIdentity("https://a.com/x/"), "https://a.com/x");
   assert.equal(normalizeUrlIdentity("https://a.com/x?p=1"), "https://a.com/x?p=1");
+});
+
+test("T7 arXiv 标题抽取:meta 优先/<title> 剥 [id]/实体解码/退化形状(真实事故回归)", () => {
+  // 真实 abs 页形状:citation_title meta + <title> 带 [id] 前缀
+  const real = `<html><head><meta name="citation_title" content="Attention Is All You Need" />
+<title>[1706.03762] Attention Is All You Need</title></head><body></body></html>`;
+  assert.equal(extractArxivTitle(real), "Attention Is All You Need", "citation_title 优先");
+  // 事故回归:旧贪婪正则在这形状下把标题抓成最后一个字符("d"/"k")
+  const titleOnly = `<title>[1706.03762] Attention Is All You Need</title>`;
+  assert.equal(extractArxivTitle(titleOnly), "Attention Is All You Need", "<title> 剥 [id] 前缀");
+  // 镜像/降级形状:标题只剩 arXiv 字样 → null(调用方用 ID 当标题)
+  assert.equal(extractArxivTitle(`<title>arXiv: 1706.03762</title>`), null);
+  assert.equal(extractArxivTitle(`<html></html>`), null);
+  // 实体解码 + 多空格折叠
+  assert.equal(extractArxivTitle(`<meta name="citation_title" content="A &amp; B &lt;C&gt;  D" />`), "A & B <C> D");
 });
 
 console.log(`\n${passed} passed`);

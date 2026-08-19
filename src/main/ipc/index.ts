@@ -712,6 +712,40 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
     return { jobId };
   });
 
+  // 本地音频导入(播客/讲座,多文件=多集):electron 无参调用 → 原生多选;web 传 base64 数组。
+  // 转录在 Step1 内联(本地 Whisper 分段转写,缺模型自动下载,可取消)。
+  handle("import:audio", async (_e, files?: { fileName: string; contentBase64: string }[]): Promise<ImportJobHandle | null> => {
+    let payload: { fileName: string; bytes: Uint8Array }[];
+    if (files?.length) {
+      payload = files.map((f) => ({ fileName: f.fileName, bytes: new Uint8Array(Buffer.from(f.contentBase64, "base64")) }));
+    } else if (deps.ui === "web") {
+      throw new Error("web 模式需要传入音频文件内容");
+    } else {
+      const picked = await deps.dialog.pickContentFiles([{ name: "音频", extensions: ["wav", "mp3", "m4a", "flac", "aac", "ogg", "opus"] }]);
+      if (!picked || picked.length === 0) return null;
+      payload = picked;
+    }
+    const totalBytes = payload.reduce((n, f) => n + f.bytes.length, 0);
+    if (totalBytes > 200 * 1024 * 1024) throw new Error("音频总量超过 200MB 上限,请分批导入");
+
+    if (importRunning) throw new Error("已有导入任务在进行中，请等它结束或先取消");
+    const jobId = randomUUID();
+    importRunning = true;
+    importCancelRequested = false;
+    const shouldAbort = () => importCancelRequested;
+    const send = (msg: string) => emitter?.send("import:progress", msg);
+
+    runImportJob(jobId, async () => {
+      const r = await runSmartImport(
+        { kind: "audio", files: payload },
+        { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort, dataDir: deps.dataDir },
+      );
+      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
+    });
+    return { jobId };
+  });
+
   // 请求取消进行中的后台导入（拉取阶段生效，写库前零残留）
   handle("import:cancel", async (): Promise<boolean> => {
     if (!importRunning) return false;

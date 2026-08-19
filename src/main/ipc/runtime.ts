@@ -27,6 +27,10 @@ export interface RuntimeDialog {
   /** 选一个内容文件(epub 等),返回文件名+原始字节;null = 用户取消。
    *  web 模式不用它——渲染层 <input type=file> 读内容传 base64。 */
   pickContentFile(filters: { name: string; extensions: string[] }[]): Promise<{ fileName: string; bytes: Uint8Array } | null>;
+  /** 多选内容文件(音频导入:多文件=多集播客)。空数组/null = 用户取消。 */
+  pickContentFiles(filters: { name: string; extensions: string[] }[]): Promise<{ fileName: string; bytes: Uint8Array }[]>;
+  /** 多选内容文件(音频导入:多文件=多集播客)。空数组/null = 用户取消。 */
+  pickContentFiles(filters: { name: string; extensions: string[] }[]): Promise<{ fileName: string; bytes: Uint8Array }[]>;
 }
 
 export interface RuntimeDeps {

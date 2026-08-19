@@ -59,6 +59,9 @@ const stubDialog: RuntimeDialog = {
   async pickContentFile() {
     throw new Error("serve 模式不支持原生文件选择对话框(传入文件内容参数)");
   },
+  async pickContentFiles() {
+    throw new Error("serve 模式不支持原生文件选择对话框(传入文件内容参数)");
+  },
 };
 
 function loadOrCreateToken(dataDir: string): string {

@@ -18,6 +18,7 @@ export const API_CHANNELS: Record<string, string> = {
   importUrl: "import:url",
   importText: "import:text",
   importEpub: "import:epub",
+  importAudio: "import:audio",
   importCancel: "import:cancel",
   importResume: "import:resume",
   importPack: "import:importPack",

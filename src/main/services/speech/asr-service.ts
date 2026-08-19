@@ -158,3 +158,49 @@ export async function transcribeAudio(
     }
   });
 }
+
+export interface LongTranscribeOpts {
+  /** 分段时长(秒,默认 60):段间释放本地队列,听写请求不被整小时转录饿死 */
+  chunkSeconds?: number;
+  onProgress?: (done: number, total: number) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * 长音频文件转录(导入用,只走本地 Whisper 档):16k 单声道 PCM 按 ~60s 分段,
+ * 每段单独入 runLocal 队列(与听写公平交错),段间响应取消。整段失败如实抛错。
+ * 前置:调用方保证 entry 已就绪(缺模型由导入层 ensureSpeechModel 兜)。
+ */
+export async function transcribePcmChunked(
+  dataDir: string,
+  settings: Record<string, string | null>,
+  samples: Float32Array,
+  locale: string | undefined,
+  opts: LongTranscribeOpts = {},
+): Promise<{ text: string; chunks: number }> {
+  if (!isSpeechEngineLoadable()) {
+    throw new Error("当前平台不支持本地语音引擎,无法转录音频(Termux 手机端暂不支持)");
+  }
+  const entry = pickLocalWhisperEntry(dataDir, settings);
+  if (!entry) {
+    throw new Error("本地听写模型未就绪——请到「设置 → 语音模型」下载 Whisper,或用导入面板的重试");
+  }
+  const { planAudioChunks, joinTranscriptChunks } = await import("./pure/audio-segments.js");
+  const bounds = planAudioChunks(samples.length, 16000, opts.chunkSeconds ?? 60);
+  const total = bounds.length - 1;
+  const recognizer = await getWhisperRecognizer(dataDir, entry, localeToWhisperLang(locale));
+  const texts: string[] = [];
+  for (let i = 0; i < total; i++) {
+    if (opts.signal?.aborted) throw new Error("导入已取消");
+    const seg = samples.subarray(bounds[i], bounds[i + 1]);
+    const text = await runLocal(async () => {
+      const stream = recognizer.createStream();
+      stream.acceptWaveform({ sampleRate: 16000, samples: seg });
+      const result = await recognizer.decodeAsync(stream);
+      return (result.text ?? "").trim();
+    });
+    texts.push(text);
+    opts.onProgress?.(i + 1, total);
+  }
+  return { text: normalizeChineseScript(joinTranscriptChunks(texts), locale), chunks: total };
+}

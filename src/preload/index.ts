@@ -36,6 +36,8 @@ const api = {
     ipcRenderer.invoke("import:text", payload)) as ApiExpose["importText"],
   importEpub: ((epub?: { fileName: string; contentBase64: string }) =>
     ipcRenderer.invoke("import:epub", epub)) as ApiExpose["importEpub"],
+  importAudio: ((files?: { fileName: string; contentBase64: string }[]) =>
+    ipcRenderer.invoke("import:audio", files)) as ApiExpose["importAudio"],
   importCancel: (() =>
     ipcRenderer.invoke("import:cancel")) as ApiExpose["importCancel"],
   importResume: ((planId: string) =>

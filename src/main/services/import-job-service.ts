@@ -47,11 +47,20 @@ import {
   type PlanIdentity,
 } from "./pure/import-plan.js";
 import { routeImportUrl, normalizeUrlIdentity } from "./pure/url-route.js";
-import { prepareSingleDoc } from "./pure/text-chunk.js";
+import { prepareSingleDoc, chunkHeadinglessText } from "./pure/text-chunk.js";
 import { fetchArticleMarkdown, fetchArxivMarkdown } from "./url-import-service.js";
 import { parseEpub } from "../lib/epub-parser.js";
+import { decodeAudioTo16kMono, AUDIO_IMPORT_EXTS } from "./speech/audio-file-decode.js";
+import { readSettingsMap } from "./agent/llm-client.js";
 
 type Db = SQLJsDatabase<typeof schema>;
+
+/** 音频文件的转录编排(decode + 模型就绪 + transcribePcmChunked)。 */
+export type AudioTranscribeFn = (
+  bytes: Uint8Array,
+  fileName: string,
+  ctx: { dataDir: string; settings: Record<string, string | null>; signal?: AbortSignal; send: (msg: string) => void },
+) => Promise<string>;
 
 export type ImportSpec =
   | { kind: "github"; url: string }
@@ -62,6 +71,8 @@ export type ImportSpec =
   | { kind: "text"; name?: string; text: string }
   /** 电子书(内容哈希做身份,重打包不换课程) */
   | { kind: "epub"; fileName: string; bytes: Uint8Array }
+  /** 本地音频(播客/讲座,本地 Whisper 转写;多文件=多集,身份=各文件字节哈希) */
+  | { kind: "audio"; files: { fileName: string; bytes: Uint8Array }[] }
   | { kind: "plan"; plan: ImportPlan };
 
 export interface RunImportDeps {
@@ -71,9 +82,13 @@ export interface RunImportDeps {
   onProgress: (msg: string) => void;
   shouldAbort: () => boolean;
   fetchFn?: typeof fetch;
+  /** 本地模型目录(音频转录的 Whisper 模型;IPC 层注入 userData) */
+  dataDir?: string;
   /** 测试注入桩(生产不传走真 LLM 服务) */
   classify?: typeof classifyFileRoles;
   design?: typeof designCourseStructure;
+  /** 音频转录桩(verify 注入;生产走 decode+ensureModel+transcribePcmChunked) */
+  transcribeAudioFile?: AudioTranscribeFn;
 }
 
 export interface SmartImportResult {
@@ -177,9 +192,10 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     let docsMap: Map<string, string> | null = null;
     let standaloneImages: { path: string; alt: string }[] = [];
     let localTranslationLangs: { code: string; name: string }[] | null = null;
-    /** url/text/epub 的身份哈希(text=原文 sha1;epub=章节内容哈希) */
+    /** url/text/epub/audio 的身份哈希(text=原文 sha1;epub=章节内容哈希;audio=文件字节哈希聚合) */
     let textSha: string | null = null;
     let epubSha: string | null = null;
+    let audioSha: string | null = null;
 
     if (spec.kind === "github" || (spec.kind === "plan" && spec.plan.kind === "github" && spec.plan.github)) {
       const url = spec.kind === "github" ? spec.url : `https://github.com/${spec.plan.github!.owner}/${spec.plan.github!.repo}`;
@@ -222,10 +238,10 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       standaloneImages = inv.standaloneImages.map((img) => ({ path: img.path, alt: img.altText }));
       localTranslationLangs = inv.translationLangs.map((code) => ({ code, name: code }));
     } else if (
-      spec.kind === "url" || spec.kind === "text" || spec.kind === "epub"
-      || (spec.kind === "plan" && (spec.plan.kind === "url" || spec.plan.kind === "text" || spec.plan.kind === "epub"))
+      spec.kind === "url" || spec.kind === "text" || spec.kind === "epub" || spec.kind === "audio"
+      || (spec.kind === "plan" && (spec.plan.kind === "url" || spec.plan.kind === "text" || spec.plan.kind === "epub" || spec.plan.kind === "audio"))
     ) {
-      // ── 虚拟文档源:url(文章/arXiv) / text(粘贴) / epub(章节) ──
+      // ── 虚拟文档源:url(文章/arXiv) / text(粘贴) / epub(章节) / audio(转写) ──
       // 与 github(CDN 现拉)/folder(磁盘现扫)不同,这类源的内容无法事后重取
       // → Step1 产物连同正文一起进 plan.docCache,断点续跑({kind:"plan"})靠缓存。
       const resume = spec.kind === "plan" ? spec.plan : null;
@@ -263,6 +279,25 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         entries = parts.map((p) => [p.path, p.content] as [string, string]);
         displayName = name;
         textSha = createHash("sha1").update(spec.text, "utf8").digest("hex");
+      } else if (spec.kind === "audio") {
+        // 多文件=多集播客:每集一个虚拟目录,Step 4 自然按集成章
+        const settings = readSettingsMap(db);
+        if (!deps.dataDir) throw new Error("导入环境缺少数据目录,无法转录音频");
+        const transcribe = deps.transcribeAudioFile ?? defaultAudioTranscribe;
+        const fileHashes: string[] = [];
+        for (const f of spec.files) {
+          send(`处理 ${f.fileName}…`);
+          const text = await transcribe(f.bytes, f.fileName, {
+            dataDir: deps.dataDir, settings, signal: cancelCtl.signal, send,
+          });
+          const stem = (f.fileName.replace(/\.[^.]+$/, "").replace(/\s+/g, "-").slice(0, 40)) || "audio";
+          for (const part of chunkHeadinglessText(text, stem)) {
+            entries.push([`${stem}/${part.path}`, part.content] as [string, string]);
+          }
+          if (!displayName) displayName = spec.files.length > 1 ? `${stem} 等 ${spec.files.length} 个音频` : stem;
+          fileHashes.push(createHash("sha1").update(f.bytes).digest("hex"));
+        }
+        audioSha = createHash("sha1").update([...fileHashes].sort().join("\n"), "utf8").digest("hex");
       } else {
         // {kind:"epub"} 或 docCache 被清空的 plan
         const bytes = spec.kind === "epub" ? spec.bytes : null;
@@ -278,11 +313,12 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       fileList = docsToDiscoveredFiles(entries.map(([path]) => ({ path })));
       fullTree = entries.map(([path]) => path);
       branch = "";
-      // 身份哈希:text=原文 sha1(每次现算,续跑从 plan 取);epub=章节内容哈希(重打包不换身份)
+      // 身份哈希:text=原文 sha1;epub=章节内容哈希;audio=各文件字节哈希的聚合
       if (!textSha && spec.kind === "plan" && spec.plan.kind === "text" && spec.plan.text) textSha = spec.plan.text.sha1;
       if (!epubSha && (spec.kind === "epub" || (spec.kind === "plan" && spec.plan.kind === "epub"))) {
         epubSha = computeContentHash(docsMap);
       }
+      if (!audioSha && spec.kind === "plan" && spec.plan.kind === "audio" && spec.plan.audio) audioSha = spec.plan.audio.sha1;
       const firstH1 = entries[0]?.[1].match(/^#\s+(.+)$/m)?.[1]?.trim();
       repoName = displayName ?? firstH1 ?? "导入内容";
       readmeMd = `# ${repoName}\n\n${(entries[0]?.[1] ?? "").slice(0, 2000)}`;
@@ -299,6 +335,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     else if (folderPath) identity = { kind: "folder", folder: { absPath: folderPath } };
     else if (repoUrl) identity = { kind: "url", url: { url: normalizeUrlIdentity(repoUrl) } };
     else if (textSha) identity = { kind: "text", text: { sha1: textSha } };
+    else if (audioSha) identity = { kind: "audio", audio: { sha1: audioSha } };
     else identity = { kind: "epub", epub: { sha1: epubSha! } };
 
     let plan: ImportPlan | null = spec.kind === "plan" ? spec.plan : store.findByIdentity(identity);
@@ -320,6 +357,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         if (identity.kind === "url" && identity.url) plan!.url = identity.url;
         if (identity.kind === "text" && identity.text) plan!.text = identity.text;
         if (identity.kind === "epub" && identity.epub) plan!.epub = identity.epub;
+        if (identity.kind === "audio" && identity.audio) plan!.audio = identity.audio;
         if (docsMap) plan!.docCache = Object.fromEntries(docsMap);
       }
       plan!.updatedAt = now();
@@ -339,6 +377,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         ...(identity.kind === "url" && identity.url ? { url: identity.url } : {}),
         ...(identity.kind === "text" && identity.text ? { text: identity.text } : {}),
         ...(identity.kind === "epub" && identity.epub ? { epub: identity.epub } : {}),
+        ...(identity.kind === "audio" && identity.audio ? { audio: identity.audio } : {}),
         treeHash,
         createdAt: now(),
         updatedAt: now(),
@@ -355,7 +394,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     // → 整体重走 AI(bestEffort 是给路径漂移设计的,路径不变时它会静默保留旧结构)。
     // github/folder 维持原语义:结构尽力保留(零 LLM 仍是默认),分类过滤到仍存在的文件。
     if (plan && !hashMatch) {
-      const virtualKind = plan.kind === "url" || plan.kind === "text" || plan.kind === "epub";
+      const virtualKind = plan.kind === "url" || plan.kind === "text" || plan.kind === "epub" || plan.kind === "audio";
       if (virtualKind) {
         send("⚠ 内容与方案快照不一致(正文已更新),重新走 AI 流程");
         plan.classification = undefined;
@@ -503,3 +542,42 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     clearInterval(cancelPoll);
   }
 }
+
+/**
+ * 生产环境的音频转录:解码 → 模型就绪(缺则自动下载 Whisper Turbo,可取消)
+ * → 分段转录(60s/段,进度滚动,段间响应取消)。verify 通过 deps.transcribeAudioFile
+ * 注入桩绕开本地引擎,不触本函数。
+ */
+const defaultAudioTranscribe: AudioTranscribeFn = async (bytes, fileName, ctx) => {
+  const ext = (fileName.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "").trim();
+  if (!(AUDIO_IMPORT_EXTS as readonly string[]).includes(ext)) {
+    throw new Error(`暂不支持 .${ext} 音频(支持 ${AUDIO_IMPORT_EXTS.join("/")})`);
+  }
+  const samples = await decodeAudioTo16kMono(bytes, ext);
+  const minutes = Math.max(1, Math.round(samples.length / 16000 / 60));
+  ctx.send(`转录 ${fileName}(约 ${minutes} 分钟)…`);
+
+  const { pickLocalWhisperEntry, transcribePcmChunked } = await import("./speech/asr-service.js");
+  let entry = pickLocalWhisperEntry(ctx.dataDir, ctx.settings);
+  if (!entry) {
+    const { isSpeechEngineLoadable } = await import("./speech/speech-engine.js");
+    if (!isSpeechEngineLoadable()) {
+      throw new Error("当前平台不支持本地语音引擎,无法转录音频(Termux 手机端暂不支持)");
+    }
+    const { SPEECH_MODELS_MANIFEST } = await import("./speech/speech-model-manifest.js");
+    const turbo = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === "asr-whisper-turbo");
+    if (!turbo) throw new Error("语音模型清单里找不到 asr-whisper-turbo");
+    ctx.send("本地听写模型未就绪,自动下载 Whisper Turbo(约 1GB,期间可取消)…");
+    const { ensureSpeechModel } = await import("./speech/speech-model-service.js");
+    await ensureSpeechModel(ctx.dataDir, turbo, {}, ctx.signal);
+    entry = pickLocalWhisperEntry(ctx.dataDir, ctx.settings);
+    if (!entry) throw new Error("语音模型下载完成但未就绪,请到「设置 → 语音」检查");
+  }
+
+  const r = await transcribePcmChunked(ctx.dataDir, ctx.settings, samples, undefined, {
+    signal: ctx.signal,
+    onProgress: (done, total) => ctx.send(`转录 ${fileName} ${done}/${total} 段`),
+  });
+  if (!r.text.trim()) throw new Error(`${fileName} 没有转写出任何内容(可能整段无人声)`);
+  return r.text;
+};

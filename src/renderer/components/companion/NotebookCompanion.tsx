@@ -55,6 +55,7 @@ export function NotebookCompanion({ nodeId }: { nodeId: string | null }) {
         </div>
       )}
       <Mascot
+        form={snap.form}
         expression={snap.state.expression}
         pose={snap.state.pose}
         viseme={mouth.viseme}

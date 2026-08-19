@@ -24,6 +24,9 @@ export interface RuntimeDialog {
   openPack(): Promise<{ fileName: string; content: string } | null>;
   /** 保存课程包文本。返回给用户看的结果(路径或下载提示);null = 取消 */
   savePack(defaultName: string, content: string): Promise<string | null>;
+  /** 选一个内容文件(epub 等),返回文件名+原始字节;null = 用户取消。
+   *  web 模式不用它——渲染层 <input type=file> 读内容传 base64。 */
+  pickContentFile(filters: { name: string; extensions: string[] }[]): Promise<{ fileName: string; bytes: Uint8Array } | null>;
 }
 
 export interface RuntimeDeps {

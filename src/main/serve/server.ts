@@ -56,6 +56,9 @@ const stubDialog: RuntimeDialog = {
   async savePack() {
     throw new Error("serve 模式不支持原生保存对话框(内容会回传给浏览器下载)");
   },
+  async pickContentFile() {
+    throw new Error("serve 模式不支持原生文件选择对话框(传入文件内容参数)");
+  },
 };
 
 function loadOrCreateToken(dataDir: string): string {

@@ -1512,4 +1512,23 @@ export async function fetchImageAsDataUrl(
   }
 }
 
+/**
+ * 通用二进制下载(arXiv PDF 等):注入 fetchFn(undici 跟随重定向),带取消与
+ * 大小上限。fetchImageAsDataUrl 的泛化——那个只管 CDN 图片且吞错,这个要把
+ * 失败原因如实抛给用户。
+ */
+export async function downloadToBuffer(
+  url: string,
+  fetchFn: typeof fetch,
+  opts: { signal?: AbortSignal; maxBytes?: number; headers?: Record<string, string> } = {},
+): Promise<Buffer> {
+  const maxBytes = opts.maxBytes ?? 64 * 1024 * 1024;
+  const r = await fetchFn(url, { signal: opts.signal, headers: opts.headers });
+  if (!r.ok) throw new Error(`下载失败(HTTP ${r.status}):${url}`);
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (buf.length === 0) throw new Error(`下载内容为空:${url}`);
+  if (buf.length > maxBytes) throw new Error(`文件超过 ${Math.round(maxBytes / 1024 / 1024)}MB 上限,放弃导入`);
+  return buf;
+}
+
 

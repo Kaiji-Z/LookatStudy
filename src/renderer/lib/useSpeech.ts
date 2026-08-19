@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { SpeechTtsAudioEvent } from "@shared/speech-types";
+import { connectSpeechSource } from "./speech-analyser.js";
 
 export interface SpeechSentenceInfo {
   index: number;
@@ -72,7 +73,8 @@ export function useSpeech(): {
     playingRef.current = true;
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(ctx.destination);
+    // 经共享 AnalyserNode 直通扬声器(伴学伙伴口型读它;异常时内部退回直连,朗读不受影响)
+    connectSpeechSource(ctx, src);
     src.onended = () => {
       playedRef.current += 1;
       playNext();

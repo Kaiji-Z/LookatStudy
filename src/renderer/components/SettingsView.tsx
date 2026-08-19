@@ -457,6 +457,14 @@ export function SettingsView() {
           </div>
         </section>
 
+        {/* ========== 伴学伙伴 ========== */}
+        <section>
+          <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.companion")}</h3>
+          <div className="surface-card overflow-hidden">
+            <CompanionContent />
+          </div>
+        </section>
+
         {/* ========== 外观与语言 ========== */}
         <section>
           <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.appearance")}</h3>
@@ -806,6 +814,40 @@ function MemoryContent() {
       <div className="flex-1 min-w-0">
         <div className="text-body font-medium text-ink-strong">{t("settings.memory.toggle")}</div>
         <div className="text-label text-ink-muted">{t("settings.memory.toggle.desc")}</div>
+      </div>
+    </div>
+  );
+}
+
+/** 伴学伙伴开关:读写 companion_enabled(默认开)。关 → 两处栖息地都不渲染(回滚等价)。 */
+function CompanionContent() {
+  const t = useLang();
+  const [enabled, setEnabled] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.getSetting("companion_enabled").then((v) => {
+      setEnabled(v !== "false" && v !== "0");
+      setLoaded(true);
+    });
+  }, []);
+
+  const handleToggle = async () => {
+    const next = !enabled;
+    setEnabled(next);
+    await api.setSetting("companion_enabled", String(next));
+    // bus 侧重读设置(与 llm-config-changed 同一模式)
+    window.dispatchEvent(new Event("companion-config-changed"));
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <div className="px-4 py-3.5 flex items-center gap-3">
+      <Toggle checked={enabled} onChange={handleToggle} label={t("settings.companion.toggle")} testid="companion-toggle" />
+      <div className="flex-1 min-w-0">
+        <div className="text-body font-medium text-ink-strong">{t("settings.companion.toggle")}</div>
+        <div className="text-label text-ink-muted">{t("settings.companion.toggle.desc")}</div>
       </div>
     </div>
   );

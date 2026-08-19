@@ -11,6 +11,7 @@ import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { CourseSearchPanel } from "./CourseSearchPanel.js";
+import { RailCompanion } from "./companion/RailCompanion.js";
 import {
   computeBalloonLayout,
   balloonSegmentToPath,
@@ -260,6 +261,9 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
           </div>
         )}
       </div>
+
+      {/* 伴学伙伴(天空守望形态,仅地图面板;导入面板没有天空场景) */}
+      {panel === "map" && <RailCompanion />}
 
       {/* 滑动内容区(透明,天空由 nav 层 canvas 提供)。全高,tab/标题悬浮其上。 */}
       <div className="absolute inset-0 overflow-hidden z-10">

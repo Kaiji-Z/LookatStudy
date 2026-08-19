@@ -12,7 +12,9 @@ import { parseGithubUrl } from "./import-plan.js";
 export type UrlRoute =
   | { kind: "github"; url: string }
   | { kind: "url"; flavor: "arxiv"; url: string; arxivId: string; pdfUrl: string }
-  | { kind: "url"; flavor: "article"; url: string };
+  | { kind: "url"; flavor: "article"; url: string }
+  /** 视频链接:B站纯 JS 直连;YouTube/抖音/其他站走 yt-dlp(字幕优先) */
+  | { kind: "video"; source: "bilibili" | "ytdlp"; url: string };
 
 /** arXiv 论文 ID:新式 2401.12345[v2] / 旧式 cs.CL/24010000 / hep-th/9901001 */
 const ARXIV_ID = /^[a-z.-]+\/\d{7}$|^\d{4}\.\d{4,5}(v\d+)?$/i;
@@ -54,6 +56,19 @@ export function routeImportUrl(raw: string): UrlRoute | null {
     // arxiv 域名但路径不像论文页 → 当普通文章抓(如列表页)
   }
 
+  // 视频链接:B站(bilibili.com/b23.tv,路径带 BV/av 号或 /video/)与
+  // YouTube(youtube.com/watch|shorts, youtu.be)——转写课程的主力来源
+  const path = parsed.pathname;
+  if (host === "bilibili.com" || host === "b23.tv") {
+    if (/(BV[a-zA-Z0-9]+|av\d+)/i.test(path) || host === "b23.tv" || path.startsWith("/video/")) {
+      return { kind: "video", source: "bilibili", url: parsed.toString() };
+    }
+  }
+  if (host === "youtube.com" || host === "youtu.be" || host === "m.youtube.com") {
+    if (host === "youtu.be" || path === "/watch" || path.startsWith("/shorts/") || path.startsWith("/live/")) {
+      return { kind: "video", source: "ytdlp", url: parsed.toString() };
+    }
+  }
   return { kind: "url", flavor: "article", url: parsed.toString() };
 }
 

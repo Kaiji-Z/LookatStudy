@@ -73,6 +73,8 @@ export type ImportSpec =
   | { kind: "epub"; fileName: string; bytes: Uint8Array }
   /** 本地音频(播客/讲座,本地 Whisper 转写;多文件=多集,身份=各文件字节哈希) */
   | { kind: "audio"; files: { fileName: string; bytes: Uint8Array }[] }
+  /** 视频链接(B站直连 / YouTube 等走 yt-dlp 字幕优先;转写复用本地 Whisper) */
+  | { kind: "video"; url: string }
   | { kind: "plan"; plan: ImportPlan };
 
 export interface RunImportDeps {
@@ -89,6 +91,8 @@ export interface RunImportDeps {
   design?: typeof designCourseStructure;
   /** 音频转录桩(verify 注入;生产走 decode+ensureModel+transcribePcmChunked) */
   transcribeAudioFile?: AudioTranscribeFn;
+  /** 视频获取桩(verify 注入;生产走 B站直连/yt-dlp) */
+  fetchVideo?: (url: string, ctx: { send: (msg: string) => void; signal?: AbortSignal }) => Promise<{ source: "subtitle" | "audio"; title: string; text?: string; bytes?: Uint8Array; ext?: string }>;
 }
 
 export interface SmartImportResult {
@@ -238,8 +242,8 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       standaloneImages = inv.standaloneImages.map((img) => ({ path: img.path, alt: img.altText }));
       localTranslationLangs = inv.translationLangs.map((code) => ({ code, name: code }));
     } else if (
-      spec.kind === "url" || spec.kind === "text" || spec.kind === "epub" || spec.kind === "audio"
-      || (spec.kind === "plan" && (spec.plan.kind === "url" || spec.plan.kind === "text" || spec.plan.kind === "epub" || spec.plan.kind === "audio"))
+      spec.kind === "url" || spec.kind === "text" || spec.kind === "epub" || spec.kind === "audio" || spec.kind === "video"
+      || (spec.kind === "plan" && (spec.plan.kind === "url" || spec.plan.kind === "text" || spec.plan.kind === "epub" || spec.plan.kind === "audio" || spec.plan.kind === "video"))
     ) {
       // ── 虚拟文档源:url(文章/arXiv) / text(粘贴) / epub(章节) / audio(转写) ──
       // 与 github(CDN 现拉)/folder(磁盘现扫)不同,这类源的内容无法事后重取
@@ -249,6 +253,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       let displayName: string | null = null;
       repoUrl = null;
       if (resume?.kind === "url" && resume.url) repoUrl = resume.url.url;
+      if (resume?.kind === "video" && resume.video) repoUrl = resume.video.url;
 
       if (resume?.docCache && Object.keys(resume.docCache).length > 0) {
         entries = Object.entries(resume.docCache);
@@ -259,6 +264,10 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         if (route.kind === "github") {
           // GitHub 链接 → 既有仓库导入路径(智能 URL 框的路由结果)
           return await runSmartImport({ kind: "github", url: route.url }, deps);
+        }
+        if (route.kind === "video") {
+          // 视频链接 → video spec(IPC 层已分流;直接调本函数时递归走正路)
+          return await runSmartImport({ kind: "video", url: route.url }, deps);
         }
         if (route.flavor === "arxiv") {
           const { title, markdown } = await fetchArxivMarkdown(route.arxivId, route.pdfUrl, route.url, fetchFn, send, cancelCtl.signal);
@@ -279,6 +288,43 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         entries = parts.map((p) => [p.path, p.content] as [string, string]);
         displayName = name;
         textSha = createHash("sha1").update(spec.text, "utf8").digest("hex");
+      } else if (spec.kind === "video") {
+        const route = routeImportUrl(spec.url);
+        if (route?.kind !== "video") throw new Error("不是可识别的视频链接(B站/YouTube,或安装 yt-dlp 后支持更多站点)");
+        const fetchVideo = deps.fetchVideo ?? (async (u: string, ctx: { send: (m: string) => void; signal?: AbortSignal }) => {
+          const { fetchBilibiliAudio, fetchViaYtDlp } = await import("./video-import-service.js");
+          if (!deps.dataDir) throw new Error("导入环境缺少数据目录,无法获取视频");
+          return route.source === "bilibili"
+            ? fetchBilibiliAudio(u, fetchFn, ctx.send, ctx.signal)
+            : fetchViaYtDlp(u, deps.dataDir, ctx.send, ctx.signal);
+        });
+        const fetched = await fetchVideo(spec.url, { send, signal: cancelCtl.signal });
+        // 统一成宽松形状(真 VideoFetchResult 与 verify 桩都满足)
+        const v = fetched as { source: string; title: string; text?: string; bytes?: Uint8Array; ext?: string };
+        displayName = v.title;
+        repoUrl = spec.url;
+        if (v.source === "subtitle" && v.text) {
+          // 有字幕:零转写零模型,直接分段成课
+          send("使用视频字幕成文(零转写)…");
+          const stem = v.title.replace(/\s+/g, "-").slice(0, 40) || "video";
+          for (const part of chunkHeadinglessText(v.text, stem)) {
+            entries.push([part.path, part.content] as [string, string]);
+          }
+        } else if (v.bytes) {
+          // 无字幕:走音频转写全套(与 {kind:"audio"} 同款,模型自动下载可取消)
+          const ext = v.ext ?? "m4a";
+          const fileName = `${(v.title.replace(/\s+/g, "-").slice(0, 40) || "video")}.${ext}`;
+          const settings = readSettingsMap(db);
+          const transcribe = deps.transcribeAudioFile ?? defaultAudioTranscribe;
+          if (!deps.dataDir && !deps.transcribeAudioFile) throw new Error("导入环境缺少数据目录,无法转录视频音轨");
+          const text = await transcribe(v.bytes, fileName, { dataDir: deps.dataDir ?? "", settings, signal: cancelCtl.signal, send });
+          const stem = fileName.replace(/\.[^.]+$/, "");
+          for (const part of chunkHeadinglessText(text, stem)) {
+            entries.push([part.path, part.content] as [string, string]);
+          }
+        } else {
+          throw new Error("视频获取结果异常(既无字幕也无音轨)");
+        }
       } else if (spec.kind === "audio") {
         // 多文件=多集播客:每集一个虚拟目录,Step 4 自然按集成章
         const settings = readSettingsMap(db);
@@ -333,7 +379,9 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     let identity: PlanIdentity;
     if (gh) identity = { kind: "github", github: gh };
     else if (folderPath) identity = { kind: "folder", folder: { absPath: folderPath } };
-    else if (repoUrl) identity = { kind: "url", url: { url: normalizeUrlIdentity(repoUrl) } };
+    else if (spec.kind === "video" || (spec.kind === "plan" && spec.plan.kind === "video")) {
+      identity = { kind: "video", video: { url: normalizeUrlIdentity(repoUrl ?? "") } };
+    } else if (repoUrl) identity = { kind: "url", url: { url: normalizeUrlIdentity(repoUrl) } };
     else if (textSha) identity = { kind: "text", text: { sha1: textSha } };
     else if (audioSha) identity = { kind: "audio", audio: { sha1: audioSha } };
     else identity = { kind: "epub", epub: { sha1: epubSha! } };
@@ -358,6 +406,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         if (identity.kind === "text" && identity.text) plan!.text = identity.text;
         if (identity.kind === "epub" && identity.epub) plan!.epub = identity.epub;
         if (identity.kind === "audio" && identity.audio) plan!.audio = identity.audio;
+        if (identity.kind === "video" && identity.video) plan!.video = identity.video;
         if (docsMap) plan!.docCache = Object.fromEntries(docsMap);
       }
       plan!.updatedAt = now();
@@ -378,6 +427,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         ...(identity.kind === "text" && identity.text ? { text: identity.text } : {}),
         ...(identity.kind === "epub" && identity.epub ? { epub: identity.epub } : {}),
         ...(identity.kind === "audio" && identity.audio ? { audio: identity.audio } : {}),
+        ...(identity.kind === "video" && identity.video ? { video: identity.video } : {}),
         treeHash,
         createdAt: now(),
         updatedAt: now(),
@@ -394,7 +444,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     // → 整体重走 AI(bestEffort 是给路径漂移设计的,路径不变时它会静默保留旧结构)。
     // github/folder 维持原语义:结构尽力保留(零 LLM 仍是默认),分类过滤到仍存在的文件。
     if (plan && !hashMatch) {
-      const virtualKind = plan.kind === "url" || plan.kind === "text" || plan.kind === "epub" || plan.kind === "audio";
+      const virtualKind = plan.kind === "url" || plan.kind === "text" || plan.kind === "epub" || plan.kind === "audio" || plan.kind === "video";
       if (virtualKind) {
         send("⚠ 内容与方案快照不一致(正文已更新),重新走 AI 流程");
         plan.classification = undefined;

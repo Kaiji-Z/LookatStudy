@@ -712,18 +712,36 @@ export interface ApiExpose {
   ensureSpeechModel(id: SpeechModelIdT): Promise<SpeechModelStatusT[]>;
   /** 删除语音模型释放磁盘(同时停朗读、失效引擎) */
   deleteSpeechModel(id: SpeechModelIdT): Promise<void>;
-  /** 朗读一段消息文本(逐句 speech:ttsAudio → speech:ttsDone;模型未下载返回结构化 reason) */
-  ttsSpeak(text: string, messageId: string): Promise<{ ok: true; sentences: number } | { ok: false; reason: "engine-unavailable" | "model-missing" | "empty-text" }>;
+  /** 朗读一段消息文本(逐句 speech:ttsAudio → speech:ttsDone;模型未下载返回结构化 reason)。
+   * v0.13:三档引擎(edge 默认/azure BYO/local 离线);edge 抖动自动落 local(fellBackTo);
+   * firstUse=首次用 edge 档(渲染层一次性披露"经微软在线服务") */
+  ttsSpeak(text: string, messageId: string): Promise<
+    | {
+        ok: true;
+        sentences: number;
+        engine: "edge" | "azure" | "local";
+        fellBackTo?: "local";
+        firstUse?: boolean;
+      }
+    | {
+        ok: false;
+        reason:
+          | "engine-unavailable"
+          | "model-missing"
+          | "empty-text"
+          | "azure-key-missing"
+          | "azure-region-missing"
+          | "edge-failed";
+      }
+  >;
   /** 停止当前朗读(幂等) */
   ttsStop(): Promise<void>;
-  /** 开始语音输入会话(建识别流;模型未下载返回结构化 reason) */
-  asrStart(): Promise<{ ok: true } | { ok: false; reason: string }>;
-  /** 喂 16kHz 单声道 PCM 块(约 250ms 批;partial 经 speech:asrPartial 事件推送) */
-  asrFeed(samples: Float32Array): Promise<void>;
-  /** 结束并收尾,返回识别全文 */
-  asrStop(): Promise<{ text: string }>;
-  /** 丢弃会话(取消,不要结果) */
-  asrCancel(): Promise<void>;
+  /** 听写:渲染层录完整段 WAV(16kHz 单声道),一次调用换全文(v0.13 质量优先,
+   *  local=Whisper 离线自带标点 / groq 复用 LLM key / azure STT BYO)。locale 用于语言提示 */
+  asrTranscribe(
+    wavBytes: ArrayBuffer,
+    locale?: string,
+  ): Promise<{ ok: true; text: string } | { ok: false; reason: string; detail?: string }>;
 
   /** XP 状态（今日经验值 + 每日目标 + 达成百分比） */
   getXpStatus(): Promise<XpStatus>;
@@ -861,7 +879,26 @@ export type SettingKey =
   // v0.10: 思考强度(空串=自动;"fast"=尽量关思考;"deep"=尽量开思考)
   | "reasoning_effort"
   // 语言偏好:导入时自动按此偏好选翻译 (en / zh-CN / zh-TW)
-  | "pref_lang";
+  | "pref_lang"
+  // v0.13 语音三档:edge(默认)/azure/local 的引擎与音色语速
+  | "tts_engine"
+  | "tts_voice_edge"
+  | "tts_sid_local"
+  | "tts_speed"
+  | "azure_tts_voice"
+  | "azure_tts_api_key"
+  | "azure_tts_region"
+  // edge 档首次使用已披露(在线服务告知,一次性)
+  | "tts_edge_disclosed"
+  // v0.13 听写三档:local(Whisper 离线,默认)/groq(复用 LLM preset key)/azure STT
+  | "asr_engine"
+  | "azure_stt_api_key"
+  | "azure_stt_region"
+  // 听写 UX:静音自动停(默认开)/静音后自动发送(默认关)
+  | "asr_auto_stop"
+  | "asr_auto_send"
+  // Groq LLM preset 早已使用(设置页经 as 断言写入);入 union 让听写档零断言读取
+  | "groq_api_key";
 
 /* ---------- IPC 事件（main → renderer，单向推送） ---------- */
 
@@ -909,6 +946,4 @@ export interface IpcEvents {
   "speech:ttsError": (e: SpeechTtsErrorEventT) => void;
   /** 模型下载进度 */
   "speech:modelProgress": (e: SpeechDownloadProgressT) => void;
-  /** 语音输入实时部分结果 */
-  "speech:asrPartial": (e: { text: string }) => void;
 }

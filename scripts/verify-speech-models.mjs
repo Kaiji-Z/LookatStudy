@@ -133,7 +133,7 @@ console.log("T5 归档候选 URL:直连先行 + 代理链拼接序");
 // ---------------------------------------------------------------------------
 console.log("T6 变体挑选:int8 偏好优先");
 {
-  const asr = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === "asr-zipformer");
+  const asr = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === "asr-whisper-small");
   const files = new Set([
     ...asr.variants.int8.files,
     ...asr.variants.fp32.files,
@@ -141,7 +141,7 @@ console.log("T6 变体挑选:int8 偏好优先");
   assert.equal(pickVariant(asr, files), "int8", "双全 → int8");
   const fp32Only = new Set(asr.variants.fp32.files);
   assert.equal(pickVariant(asr, fp32Only), "fp32", "仅 fp32 → fp32");
-  const partial = new Set(asr.variants.int8.files.slice(0, 3));
+  const partial = new Set(asr.variants.int8.files.slice(0, 2));
   assert.equal(pickVariant(asr, partial), null, "残缺 → 未就绪");
   const empty = new Set();
   assert.equal(pickVariant(asr, empty), null, "空 → 未就绪");

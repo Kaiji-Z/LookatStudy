@@ -20,9 +20,12 @@ export interface SpeechSentenceInfo {
 export function useSpeech(): {
   speakingMessageId: string | null;
   speakingSentence: SpeechSentenceInfo | null;
-  /** 最近一次朗读失败原因("model-missing"|"engine-unavailable"|null;渲染层按类型引导) */
+  /** 最近一次朗读失败原因("model-missing"|"engine-unavailable"|…;渲染层按类型引导) */
   failReason: string | null;
   clearFailReason: () => void;
+  /** 首次用 edge 在线档(main 回执 firstUse;渲染层一次性披露后 clear) */
+  onlineNotice: boolean;
+  clearOnlineNotice: () => void;
   /** 点击朗读/再点同一条=停(切换语义在调用方) */
   speak: (messageId: string, text: string) => void;
   stop: () => void;
@@ -30,6 +33,7 @@ export function useSpeech(): {
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [speakingSentence, setSpeakingSentence] = useState<SpeechSentenceInfo | null>(null);
   const [failReason, setFailReason] = useState<string | null>(null);
+  const [onlineNotice, setOnlineNotice] = useState(false);
 
   const ctxRef = useRef<AudioContext | null>(null);
   const buffersRef = useRef<AudioBuffer[]>([]);
@@ -120,10 +124,12 @@ export function useSpeech(): {
       void window.api
         .ttsSpeak(text, messageId)
         .then((r) => {
-          if (!r.ok) {
-            stopLocal();
-            if (r.reason !== "empty-text") setFailReason(r.reason);
+          if (r.ok) {
+            if (r.firstUse) setOnlineNotice(true);
+            return;
           }
+          stopLocal();
+          if (r.reason !== "empty-text") setFailReason(r.reason);
         })
         .catch(() => stopLocal());
     },
@@ -162,6 +168,8 @@ export function useSpeech(): {
     speakingSentence,
     failReason,
     clearFailReason: () => setFailReason(null),
+    onlineNotice,
+    clearOnlineNotice: () => setOnlineNotice(false),
     speak,
     stop,
   };

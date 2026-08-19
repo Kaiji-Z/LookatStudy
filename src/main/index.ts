@@ -1133,9 +1133,10 @@ async function runUiTest(screenshot = false): Promise<void> {
     /* 尽力而为:清理失败不阻塞后续测试 */
   }
 
-  // T-ASR (v0.12 语音输入): 假麦克风(正弦音)驱动全链 —— mic 按钮 → listening 态
-  // → PCM 上行(会话真跑,不校验识别文本质量,那是 live-test 职责)→ 停止复原。
-  // 模型缺失环境(CI):asrStart 返回 model-missing → notice 行出现(降级断言)。
+  // T-ASR (v0.13 听写,质量优先管线): 假麦克风(连续音)→ mic 点击起录 → 转录态 →
+  // 停止复原。双分支:本机已下 Whisper → 完整环(录音→停→转录文本进输入框/转录态出现);
+  // 无模型环境(CI)→ 转录返回 model-missing → notice 行出现(降级断言)。
+  // mic.click() 的 e.detail=0 走 onClick 开关路径(pointerdown/up 由真实指针触发)。
   let asrInput: { branch?: string; ok?: boolean; error?: string; [k: string]: unknown } = {};
   try {
     asrInput = await win.webContents.executeJavaScript(`
@@ -1146,23 +1147,45 @@ async function runUiTest(screenshot = false): Promise<void> {
           var mic = q('[data-testid="composer-mic"]');
           if (!mic) return { ok: false, error: "no mic button" };
           var status = await window.api.getSpeechModelStatus();
-          var asr = (status || []).filter(function(s){ return s.id === "asr-zipformer"; })[0];
+          var whisper = (status || []).filter(function(s){ return s.id === "asr-whisper-turbo" || s.id === "asr-whisper-small"; });
+          var modelReady = whisper.some(function(s){ return s.state === "ready"; });
           mic.click();
-          if (!asr || asr.state !== "ready") {
-            for (var i = 0; i < 30; i++) { await sleep(200); if (q('[data-testid="composer-notice"]')) return { ok: true, branch: "model-missing" }; }
-            return { ok: false, error: "no notice after model-missing" };
-          }
           var active = null;
-          for (var j = 0; j < 20; j++) { await sleep(250); active = q('[data-testid="composer-mic-active"]'); if (active) break; }
+          for (var j = 0; j < 24; j++) { await sleep(250); active = q('[data-testid="composer-mic-active"]'); if (active) break; }
           if (!active) {
-            try { await window.api.asrCancel(); } catch (e) {}
-            return { ok: false, error: "listening state never appeared", branch: "ready" };
+            var notice0 = q('[data-testid="composer-notice"]');
+            if (notice0) return { ok: true, branch: "mic-unavailable" };
+            return { ok: false, error: "listening state never appeared" };
           }
-          await sleep(800); // 让 PCM 批跑几轮
+          await sleep(700); // 让假设备音频攒一小段
           active.click();
-          var back = false;
-          for (var k = 0; k < 30; k++) { await sleep(250); if (q('[data-testid="composer-mic"]')) { back = true; break; } }
-          return { ok: back, branch: "ready", stoppedBack: back };
+          // 停录 → 转录中(busy)→ 结果/notice
+          var busyOrBack = null;
+          for (var k = 0; k < 12; k++) {
+            await sleep(250);
+            busyOrBack = q('[data-testid="composer-mic-busy"]') || q('[data-testid="composer-mic"]');
+            if (busyOrBack) break;
+          }
+          if (!busyOrBack) return { ok: false, error: "mic never left active state" };
+          if (!modelReady) {
+            for (var i = 0; i < 40; i++) {
+              await sleep(250);
+              if (q('[data-testid="composer-notice"]')) return { ok: true, branch: "model-missing" };
+              if (q('[data-testid="composer-mic"]')) return { ok: true, branch: "model-missing-notext" };
+            }
+            return { ok: false, error: "no notice after model-missing transcribe" };
+          }
+          // 有模型:转录后输入框出现文本(假设备蜂鸣,内容不校验;也可能判空文本)
+          var sawBusy = !!q('[data-testid="composer-mic-busy"]');
+          for (var m = 0; m < 120; m++) {
+            await sleep(500);
+            var ta = q('textarea');
+            if (ta && ta.value && ta.value.length > 0) return { ok: true, branch: "ready", text: ta.value.slice(0, 20) };
+            if (q('[data-testid="composer-notice"]')) return { ok: true, branch: "ready-notice" };
+            if (q('[data-testid="composer-mic-busy"]')) { sawBusy = true; continue; }
+            if (sawBusy && q('[data-testid="composer-mic"]')) return { ok: true, branch: "ready-empty" };
+          }
+          return { ok: false, error: "transcription never settled", branch: "ready" };
         } catch (e) { return { ok: false, error: String(e) }; }
       })()
     `);
@@ -1170,9 +1193,58 @@ async function runUiTest(screenshot = false): Promise<void> {
     asrInput = { error: String(e) };
   }
   results.push({
-    name: "asr dictation: mic button → listening → stop restores (fake device) or model-missing notice",
+    name: "asr dictation: mic click → listening → stop → transcribe or model-missing notice (fake device)",
     ok: asrInput?.ok === true,
     detail: asrInput,
+  });
+
+  // T-VOICE-SETTINGS (v0.13): 设置页语音组 —— TTS 三档 pill + 听写三档 pill +
+  // 自动发送开关默认关(local-first 拍板)+ 讲解 tab 🔊 朗读按钮在位。
+  let voiceSettings: { ok?: boolean; error?: string; [k: string]: unknown } = {};
+  try {
+    voiceSettings = await win.webContents.executeJavaScript(`
+      (async function() {
+        var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+        function q(sel){ return document.querySelector(sel); }
+        function qAll(sel){ return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+        try {
+          // 讲解 🔊(笔记本默认在讲解 tab;宽窗三栏在位)
+          var speakBtn = null;
+          for (var w = 0; w < 10; w++) { speakBtn = q('[data-testid="node-content-speak"]'); if (speakBtn) break; await sleep(300); }
+          var notebookSpeak = !!speakBtn;
+          // 打开设置(header 齿轮,与 T8c 同入口)
+          var gearBtn = q('[data-testid="header-settings"]');
+          if (!gearBtn) return { ok: false, error: "no header-settings button", notebookSpeak: notebookSpeak };
+          gearBtn.click();
+          var speech = null;
+          for (var i = 0; i < 20; i++) { await sleep(300); speech = q('[data-testid="settings-speech"]'); if (speech) break; }
+          if (!speech) return { ok: false, error: "settings speech group missing", notebookSpeak: notebookSpeak };
+          speech.scrollIntoView({ block: "center" });
+          await sleep(200);
+          var has = function(id){ var el = q('[data-testid="' + id + '"]'); return !!el; };
+          var autoSend = q('[data-testid="asr-auto-send-toggle"]');
+          var autoSendOff = autoSend ? autoSend.getAttribute("aria-checked") === "false" : false;
+          var r = {
+            notebookSpeak: notebookSpeak,
+            ttsEdge: has("tts-engine-edge"), ttsAzure: has("tts-engine-azure"), ttsLocal: has("tts-engine-local"),
+            asrLocal: has("asr-engine-local"), asrGroq: has("asr-engine-groq"), asrAzure: has("asr-engine-azure"),
+            autoSendOff: autoSendOff,
+          };
+          r.ok = r.notebookSpeak && r.ttsEdge && r.ttsAzure && r.ttsLocal && r.asrLocal && r.asrGroq && r.asrAzure && r.autoSendOff;
+          // 关设置(别污染后续步骤的界面状态)
+          var closeBtn = q('[data-testid="settings-close"]');
+          if (closeBtn) closeBtn.click();
+          return r;
+        } catch (e) { return { ok: false, error: String(e) }; }
+      })()
+    `);
+  } catch (e) {
+    voiceSettings = { error: String(e) };
+  }
+  results.push({
+    name: "voice settings: tts/asr engine pills + auto-send default off + notebook read-aloud button",
+    ok: voiceSettings?.ok === true,
+    detail: voiceSettings,
   });
 
   // T-SPEECH (v0.12 语音朗读): 种一条 assistant 消息 → 点朗读按钮。

@@ -5,9 +5,9 @@
  * `userData/speech-models/{modelId}/`(local-first:无云端、离线推理)。
  */
 
-export type SpeechModelId = "tts-kokoro" | "asr-zipformer";
+export type SpeechModelId = "tts-kokoro" | "asr-whisper-turbo" | "asr-whisper-small";
 
-export type SpeechEngineKind = "kokoro" | "zipformer-transducer";
+export type SpeechEngineKind = "kokoro" | "whisper";
 
 /** 模型下载源之一:ModelScope 逐文件镜像(免解压,CN 友好) */
 export interface SpeechSourceModelscope {
@@ -94,13 +94,15 @@ export interface SpeechDownloadProgress {
   currentFile?: string;
 }
 
-/** speech:ttsAudio 事件体:一个句子的完整 WAV(16-bit PCM 单声道) */
+/** speech:ttsAudio 事件体:一个句子的完整音频(v0.13 起三档引擎 —— wav=local/azure,mp3=edge) */
 export interface SpeechTtsAudioEvent {
   messageId: string;
   sentenceIndex: number;
   sentenceTotal: number;
   wavBytes: ArrayBuffer;
   sampleRate: number;
+  /** v0.13:音频容器(edge=audio/mpeg;缺省视为 audio/wav 兼容 v0.12) */
+  mime?: "audio/wav" | "audio/mpeg";
 }
 
 /** speech:ttsDone 事件体 */

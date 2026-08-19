@@ -149,14 +149,8 @@ const api = {
     ipcRenderer.invoke("speech:ttsSpeak", text, messageId)) as ApiExpose["ttsSpeak"],
   ttsStop: (() =>
     ipcRenderer.invoke("speech:ttsStop")) as ApiExpose["ttsStop"],
-  asrStart: (() =>
-    ipcRenderer.invoke("speech:asrStart")) as ApiExpose["asrStart"],
-  asrFeed: ((samples: Float32Array) =>
-    ipcRenderer.invoke("speech:asrFeed", samples)) as ApiExpose["asrFeed"],
-  asrStop: (() =>
-    ipcRenderer.invoke("speech:asrStop")) as ApiExpose["asrStop"],
-  asrCancel: (() =>
-    ipcRenderer.invoke("speech:asrCancel")) as ApiExpose["asrCancel"],
+  asrTranscribe: ((wavBytes: ArrayBuffer, locale?: string) =>
+    ipcRenderer.invoke("speech:asrTranscribe", wavBytes, locale)) as ApiExpose["asrTranscribe"],
   getAttachmentDataUrl: ((file: string) =>
     ipcRenderer.invoke("attachment:getDataUrl", file)) as ApiExpose["getAttachmentDataUrl"],
   isAgentReady: (() =>

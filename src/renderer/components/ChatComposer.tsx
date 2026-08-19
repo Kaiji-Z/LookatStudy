@@ -10,7 +10,7 @@
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X, Mic } from "lucide-react";
+import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X, Mic, Loader2 } from "lucide-react";
 import type { Soul, StarterPrompt, HumanFrictionCategory, ChatAttachmentInput, ContextUsageInfo } from "@shared/types";
 import { checkAttachmentFile, ATTACHMENT_LIMITS } from "@shared/attachment-intake";
 import { estimateTokens } from "@shared/token-estimate";
@@ -112,20 +112,56 @@ export function ChatComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepthRef = useRef(0);
 
-  // v0.12 语音输入:结束的识别全文追加进输入框(已有内容则空格衔接)
-  const asr = useAsrInput((text) => {
-    setInput((prev) => (prev.trim() ? `${prev} ${text}` : text));
-  });
+  // v0.13 语音输入(质量优先管线):停录 → 整段转录 → 全文追加进输入框
+  // (已有内容则空格衔接);开了"静音后自动发送"则直接发。PTT 按住 400ms 即录。
+  const [asrAutoStop, setAsrAutoStop] = useState(true);
+  const asrAutoSendRef = useRef(false);
   useEffect(() => {
-    if (!asr.startError) return;
+    void api.getSetting("asr_auto_stop").then((v) => setAsrAutoStop(v !== "0"));
+    const sync = () => {
+      void api.getSetting("asr_auto_send").then((v) => {
+        asrAutoSendRef.current = v === "1";
+      });
+    };
+    sync();
+    window.addEventListener("llm-config-changed", sync);
+    return () => window.removeEventListener("llm-config-changed", sync);
+  }, []);
+  const asr = useAsrInput(
+    (text) => {
+      const prev = inputRef.current;
+      const merged = prev.trim() ? `${prev} ${text}` : text;
+      if (asrAutoSendRef.current) {
+        inputRef.current = "";
+        setInput("");
+        sendTextNow(merged);
+      } else {
+        inputRef.current = merged;
+        setInput(merged);
+      }
+    },
+    { locale: uiLang, autoStop: asrAutoStop },
+  );
+  useEffect(() => {
+    const err = asr.startError ?? asr.transcribeError;
+    if (!err) return;
     const key =
-      asr.startError === "model-missing"
+      err === "model-missing"
         ? "chat.speech.asr_model_missing"
-        : asr.startError === "engine-unavailable"
+        : err === "engine-unavailable"
           ? "chat.speech.engine_unavailable"
-          : "chat.speech.asr_start_fail";
+          : err === "groq-key-missing"
+            ? "chat.speech.groq_key_missing"
+            : err === "azure-key-missing"
+              ? "chat.speech.azure_stt_key_missing"
+              : err === "azure-region-missing"
+                ? "chat.speech.azure_stt_region_missing"
+                : err === "mic-unavailable"
+                  ? "chat.speech.asr_start_fail"
+                  : "chat.speech.asr_failed";
     setNotice(t(key));
-  }, [asr.startError, t]);
+    asr.clearTranscribeError();
+  }, [asr.startError, asr.transcribeError, asr, t]);
 
   // 外部插入文字(哪里不会点哪里:右栏选中→注入提问)。每次 insertText 变化时追加到输入框。
   useEffect(() => {
@@ -269,8 +305,13 @@ export function ChatComposer({
     [attachments.length, ctxInfo?.visionCapable, t],
   );
 
-  const handleSend = () => {
-    const trimmed = input.trim();
+  const inputRef = useRef("");
+  useEffect(() => {
+    inputRef.current = input;
+  }, [input]);
+
+  const sendTextNow = (raw: string) => {
+    const trimmed = raw.trim();
     if (streaming || !nodeId) return;
     if (!trimmed && attachments.length === 0) return;
     // 纯附件发送:补一句默认话术,LLM/气泡都有可读文本
@@ -289,6 +330,7 @@ export function ChatComposer({
     // objectURL 不在此 revoke:乐观消息(AttachmentView)还在引用它,unmount 统一回收
     setAttachments([]);
   };
+  const handleSend = () => sendTextNow(input);
 
   // starter 选择:发消息;带 frictionCategory 的("我没太懂")额外记一条 friction。
   const handleStarterPick = (p: StarterPrompt) => {
@@ -507,18 +549,55 @@ export function ChatComposer({
         <div className="flex flex-wrap items-center justify-between gap-x-0.5 gap-y-1 mt-0.5">
           <button
             type="button"
-            onClick={asr.listening ? asr.stop : asr.start}
-            data-tooltip={asr.listening ? t("chat.speech.dictation_stop") : t("chat.speech.dictation")}
-            aria-label={asr.listening ? t("chat.speech.dictation_stop") : t("chat.speech.dictation")}
-            data-testid={asr.listening ? "composer-mic-active" : "composer-mic"}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-caption font-medium transition-colors ${
-              asr.listening ? "text-warning animate-pulse" : "text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06]"
+            onPointerDown={(e) => { e.preventDefault(); asr.press(); }}
+            onPointerUp={() => asr.release()}
+            onPointerLeave={() => asr.release()}
+            onClick={(e) => {
+              // 真鼠标点击会先走 pointerdown/up(含 PTT/点击判定),e.detail>0 直接忽略;
+              // detail=0 是键盘 Enter/Space 或自动化 .click() → 走开关
+              if (e.detail === 0) {
+                if (asr.listening) asr.stop();
+                else asr.start();
+              }
+            }}
+            disabled={asr.transcribing}
+            data-tooltip={
+              asr.listening
+                ? t("chat.speech.dictation_stop")
+                : asr.transcribing
+                  ? t("chat.speech.transcribing")
+                  : t("chat.speech.dictation_ptt")
+            }
+            aria-label={
+              asr.listening
+                ? t("chat.speech.dictation_stop")
+                : t("chat.speech.dictation_ptt")
+            }
+            data-testid={
+              asr.listening
+                ? "composer-mic-active"
+                : asr.transcribing
+                  ? "composer-mic-busy"
+                  : "composer-mic"
+            }
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-caption font-medium transition-colors disabled:opacity-50 ${
+              asr.listening ? "text-warning" : "text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06]"
             }`}
           >
-            <Mic className="w-3.5 h-3.5" />
-            {asr.listening && asr.partial && (
-              <span className="max-w-40 truncate" data-testid="asr-partial">{asr.partial}</span>
+            {asr.transcribing ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Mic className={`w-3.5 h-3.5 ${asr.listening ? "animate-pulse" : ""}`} />
             )}
+            {asr.listening && (
+              <span className="w-10 h-1 rounded-full bg-ink/[0.08] overflow-hidden" data-testid="asr-level">
+                <span
+                  className="block h-full bg-warning transition-[width] duration-100"
+                  style={{ width: `${Math.round(Math.min(1, asr.level) * 100)}%` }}
+                />
+              </span>
+            )}
+            {asr.transcribing && <span className="max-w-24 truncate">{t("chat.speech.transcribing")}</span>}
           </button>
           <button
             type="button"

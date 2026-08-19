@@ -88,12 +88,7 @@ import {
 import { deleteSpeechModel } from "../services/speech/speech-model-service.js";
 import type { SpeechModelId } from "@shared/speech-types";
 import { invalidateSpeechEngines } from "../services/speech/speech-engine.js";
-import {
-  startAsrSession,
-  feedAsrSamples,
-  stopAsrSession,
-  abandonAsrSession,
-} from "../services/speech/asr-service.js";
+import { transcribeAudio } from "../services/speech/asr-service.js";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
 import {
   getProgress as getProgressService,
@@ -117,7 +112,7 @@ import {
 import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory, handleAgentChatThread, abortAgentChatThread } from "../services/agent/agent-engine.js";
 import { getContextUsage } from "../services/agent/context-usage.js";
 import { readAttachmentDataUrl } from "../services/attachment-store.js";
-import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels, resolveLlm } from "../services/agent/llm-client.js";
+import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels, resolveLlm, readSettingsMap } from "../services/agent/llm-client.js";
 import { gatherConsolidationWindow, consolidate, defaultLlmConsolidate, getConsolidationWatermark, setConsolidationWatermark } from "../services/memory-service.js";
 import { PROVIDER_PRESETS } from "../services/agent/llm-presets.js";
 // 自定义 Provider
@@ -1365,20 +1360,28 @@ export function registerSpeechHandlers(deps: RuntimeDeps): void {
   });
 
   handle("speech:ttsSpeak", async (_e, text: string, messageId: string) => {
-    return speakMessage(emit, deps.dataDir, messageId, text);
+    const settings = readSettingsMap(getDb());
+    const result = await speakMessage(emit, deps.dataDir, settings, messageId, text);
+    // edge 档首次使用:回执带 firstUse(渲染层一次性披露),落 disclosed 标记
+    if (result.ok && result.engine === "edge" && settings.tts_edge_disclosed !== "1") {
+      const db = getDb();
+      db.insert(settingsTable)
+        .values({ key: "tts_edge_disclosed", value: "1", isSecret: false })
+        .onConflictDoUpdate({ target: settingsTable.key, set: { value: "1" } })
+        .run();
+      markDirty();
+      return { ...result, firstUse: true };
+    }
+    return result;
   });
 
   handle("speech:ttsStop", async () => {
     stopSpeaking();
   });
 
-  handle("speech:asrStart", async () => startAsrSession(deps.dataDir));
-  handle("speech:asrFeed", async (_e, samples: Float32Array) => {
-    emit("speech:asrPartial", { text: feedAsrSamples(samples) });
-  });
-  handle("speech:asrStop", async () => ({ text: stopAsrSession() }));
-  handle("speech:asrCancel", async () => {
-    abandonAsrSession();
+  handle("speech:asrTranscribe", async (_e, wavBytes: ArrayBuffer, locale?: string) => {
+    const settings = readSettingsMap(getDb());
+    return transcribeAudio(deps.dataDir, settings, wavBytes, locale);
   });
 }
 

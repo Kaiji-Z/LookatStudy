@@ -1,40 +1,75 @@
 /**
- * useAsrInput —— 语音输入(麦克风水 → 16kHz PCM 批 → asrFeed)的渲染层状态机。
+ * useAsrInput —— 语音输入(质量优先管线,v0.13)的渲染层状态机。
  *
- * 采集链:getUserMedia → AudioContext(优先请求 16kHz;设备不支持时线性降采样)
- * → ScriptProcessor(4096 帧)→ 攒 ~250ms 批 → api.asrFeed。
- * ScriptProcessor 是 deprecated API 但零构建复杂度(AudioWorklet 需要独立文件 +
- * CSP blob: 许可),v1 务实选择;采集是轻操作(拷贝+降采样),主线程可承受。
+ * 采集链:getUserMedia → AudioContext(优先请求 16kHz;不支持时线性降采样)
+ * → ScriptProcessor(4096 帧)→ 全量缓冲 + RMS 静音检测。停录(点击/松开 PTT/
+ * 静音自动停)后整段编 WAV(shared/speech-wav)→ 一次 api.asrTranscribe → 全文
+ * 经 onFinal 交调用方(写入输入框)。main 侧按 asr_engine 路由 local Whisper /
+ * groq / azure —— partial 实时字幕已随流式会话退役(质量换流式,用户拍板)。
  *
- * 实时性:partial 经 speech:asrPartial 事件回流(与 feed 往返同拍);
- * 结束:asrStop 收尾返回全文,通过 onFinal 交给调用方(写入输入框)。
+ * PTT:press() 按下 400ms 即录、release() 松开即停;快点击(<400ms)仍走
+ * click-toggle。ScriptProcessor 是 deprecated API 但零构建复杂度,v1 务实选择。
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const TARGET_RATE = 16000;
-const BATCH_SECONDS = 0.25;
+import { encodeWavPcm16, resampleLinear } from "@shared/speech-wav";
 
-export function useAsrInput(onFinal: (text: string) => void): {
+import { createSilenceDetector, type SilenceDetector } from "./silence-detector";
+
+const TARGET_RATE = 16000;
+/** PTT 判定阈值:按住超过此时长 = 按住说话;更短 = 点击切换 */
+export const PTT_HOLD_MS = 400;
+
+export function useAsrInput(
+  onFinal: (text: string) => void,
+  opts: { locale?: string; autoStop?: boolean; onAutoStopped?: () => void } = {},
+): {
   listening: boolean;
-  partial: string;
-  /** 启动失败原因(model-missing 时调用方引导去设置页) */
+  /** 停录后等转录(本地 Whisper 数秒 / 云端 <1s) */
+  transcribing: boolean;
+  /** 0..1 近似音量(录音动画) */
+  level: number;
+  /** 启动失败原因(model-missing/mic-unavailable 时调用方引导) */
   startError: string | null;
+  /** 转录失败原因(main 侧结构化 reason;调用方 toast 引导) */
+  transcribeError: string | null;
+  clearTranscribeError: () => void;
+  /** 点击切换:开始录音 */
   start: () => void;
+  /** 停录并转录(finalize) */
   stop: () => void;
+  /** PTT:按下(400ms 后起录);与 start/stop 互斥使用由内部状态保证 */
+  press: () => void;
+  /** PTT:松开(在录则停;未到 400ms 视为点击 → toggle) */
+  release: () => void;
 } {
   const [listening, setListening] = useState(false);
-  const [partial, setPartial] = useState("");
+  const [transcribing, setTranscribing] = useState(false);
+  const [level, setLevel] = useState(0);
   const [startError, setStartError] = useState<string | null>(null);
+  const [transcribeError, setTranscribeError] = useState<string | null>(null);
 
   const ctxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const nodeRef = useRef<ScriptProcessorNode | null>(null);
-  const pendingRef = useRef<Float32Array[]>([]);
-  const pendingLenRef = useRef(0);
+  const chunksRef = useRef<Float32Array[]>([]);
+  const chunksLenRef = useRef(0);
   const aliveRef = useRef(false);
+  const detectorRef = useRef<SilenceDetector | null>(null);
+  const levelSmoothRef = useRef(0);
   const finalRef = useRef(onFinal);
   finalRef.current = onFinal;
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
+
+  // PTT 状态
+  const pttArmedRef = useRef(false);
+  const pttTimerRef = useRef<number | null>(null);
+  /** start() 的异步段在飞(getUserMedia/AudioContext 未落定) */
+  const startInFlightRef = useRef(false);
+  /** PTT 起录在飞时松开 → 起录完成立即停 */
+  const pttStopWhenLiveRef = useRef(false);
 
   const teardown = useCallback(() => {
     aliveRef.current = false;
@@ -44,22 +79,47 @@ export function useAsrInput(onFinal: (text: string) => void): {
     streamRef.current = null;
     void ctxRef.current?.close().catch(() => {});
     ctxRef.current = null;
-    pendingRef.current = [];
-    pendingLenRef.current = 0;
+    chunksRef.current = [];
+    chunksLenRef.current = 0;
+    detectorRef.current = null;
+    setLevel(0);
   }, []);
+
+  const finalize = useCallback(() => {
+    // 先取音频再 teardown(teardown 会清缓冲)
+    const chunks = chunksRef.current;
+    chunksRef.current = [];
+    let n = 0;
+    for (const c of chunks) n += c.length;
+    teardown();
+    setListening(false);
+    if (n === 0) return;
+    const merged = new Float32Array(n);
+    let o = 0;
+    for (const c of chunks) {
+      merged.set(c, o);
+      o += c.length;
+    }
+    const wav = encodeWavPcm16(merged, TARGET_RATE);
+    setTranscribing(true);
+    setTranscribeError(null);
+    void window.api
+      .asrTranscribe(wav, optsRef.current.locale)
+      .then((r) => {
+        if (r.ok) {
+          if (r.text) finalRef.current(r.text);
+        } else {
+          setTranscribeError(r.reason);
+        }
+      })
+      .catch(() => setTranscribeError("asr-failed"))
+      .finally(() => setTranscribing(false));
+  }, [teardown]);
 
   const stop = useCallback(() => {
     if (!aliveRef.current) return;
-    teardown();
-    setListening(false);
-    void window.api
-      .asrStop()
-      .then((r) => {
-        if (r.text) finalRef.current(r.text);
-      })
-      .catch(() => {});
-    setPartial("");
-  }, [teardown]);
+    finalize();
+  }, [finalize]);
 
   const start = useCallback(() => {
     if (aliveRef.current) {
@@ -67,17 +127,11 @@ export function useAsrInput(onFinal: (text: string) => void): {
       return;
     }
     setStartError(null);
-    setPartial("");
+    startInFlightRef.current = true;
     void (async () => {
       try {
-        const st = await window.api.asrStart();
-        if (!st.ok) {
-          setStartError(st.reason);
-          return;
-        }
         // 不安全上下文(LAN http 等)getUserMedia 不可用 —— 按启动失败处理
         if (navigator.mediaDevices?.getUserMedia == null) {
-          await window.api.asrCancel().catch(() => {});
           setStartError("mic-unavailable");
           return;
         }
@@ -94,6 +148,7 @@ export function useAsrInput(onFinal: (text: string) => void): {
         ctxRef.current = ctx;
         streamRef.current = media;
         aliveRef.current = true;
+        detectorRef.current = createSilenceDetector({ autoStop: optsRef.current.autoStop !== false });
         const src = ctx.createMediaStreamSource(media);
         const proc = ctx.createScriptProcessor(4096, 1, 1);
         nodeRef.current = proc;
@@ -102,16 +157,17 @@ export function useAsrInput(onFinal: (text: string) => void): {
           if (!aliveRef.current) return;
           const input = ev.inputBuffer.getChannelData(0);
           // 线性降采样到 16k(设备上下文不是 16k 时)
-          const out =
-            ratio === 1 ? new Float32Array(input) : resampleLinear(input, ratio);
-          pendingRef.current.push(out);
-          pendingLenRef.current += out.length;
-          if (pendingLenRef.current >= TARGET_RATE * BATCH_SECONDS) {
-            const merged = mergeChunks(pendingRef.current);
-            pendingRef.current = [];
-            pendingLenRef.current = 0;
-            void window.api.asrFeed(merged).catch(() => {});
-          }
+          const out = ratio === 1 ? new Float32Array(input) : resampleLinear(input, ratio);
+          chunksRef.current.push(out);
+          chunksLenRef.current += out.length;
+          // RMS 音量(平滑,驱动动画)+ 静音检测
+          let sum = 0;
+          for (let i = 0; i < out.length; i++) sum += out[i]! * out[i]!;
+          const rms = Math.sqrt(sum / out.length);
+          levelSmoothRef.current = levelSmoothRef.current * 0.7 + rms * 0.3;
+          setLevel(Math.min(1, levelSmoothRef.current * 8));
+          const decision = detectorRef.current?.feed(rms, performance.now());
+          if (decision === "auto-stop" && aliveRef.current) finalize();
         };
         src.connect(proc);
         // ScriptProcessor 需要接 destination 才跑(onaudioprocess 驱动);
@@ -121,57 +177,64 @@ export function useAsrInput(onFinal: (text: string) => void): {
         proc.connect(mute);
         mute.connect(ctx.destination);
         setListening(true);
+        if (pttStopWhenLiveRef.current) {
+          // PTT 松开发生在起录在飞期间:立即收尾
+          pttStopWhenLiveRef.current = false;
+          finalize();
+        }
       } catch (e) {
         teardown();
-        await window.api.asrCancel().catch(() => {});
         setListening(false);
         setStartError(e instanceof Error ? e.message : String(e));
+      } finally {
+        startInFlightRef.current = false;
       }
     })();
-  }, [stop, teardown]);
+  }, [stop, teardown, finalize]);
 
-  useEffect(() => {
-    const off = window.api.on("speech:asrPartial", (e: { text: string }) => {
-      setPartial(e.text);
-    });
-    return () => {
-      off();
-    };
-  }, []);
+  const press = useCallback(() => {
+    if (pttArmedRef.current) return;
+    pttArmedRef.current = true;
+    pttTimerRef.current = window.setTimeout(() => {
+      pttTimerRef.current = null;
+      if (!aliveRef.current) start();
+    }, PTT_HOLD_MS);
+  }, [start]);
 
-  useEffect(() => () => {
-    if (aliveRef.current) {
-      teardown();
-      void window.api.asrCancel().catch(() => {});
+  const release = useCallback(() => {
+    if (!pttArmedRef.current) return;
+    pttArmedRef.current = false;
+    if (pttTimerRef.current != null) {
+      // 未到 400ms:点击语义 → toggle
+      window.clearTimeout(pttTimerRef.current);
+      pttTimerRef.current = null;
+      if (aliveRef.current) stop();
+      else start();
+      return;
     }
-  }, [teardown]);
+    // 按住说话:在录则停(转录);起录在飞则标记到点即停
+    if (aliveRef.current) stop();
+    else if (startInFlightRef.current) pttStopWhenLiveRef.current = true;
+  }, [start, stop]);
 
-  return { listening, partial, startError, start, stop };
-}
+  useEffect(
+    () => () => {
+      if (pttTimerRef.current != null) window.clearTimeout(pttTimerRef.current);
+      if (aliveRef.current) teardown();
+    },
+    [teardown],
+  );
 
-/** 线性插值降采样(input@ctxRate → 16k)。ratio = ctxRate/targetRate > 1。 */
-export function resampleLinear(input: Float32Array, ratio: number): Float32Array {
-  const outLen = Math.floor(input.length / ratio);
-  const out = new Float32Array(outLen);
-  for (let i = 0; i < outLen; i++) {
-    const pos = i * ratio;
-    const i0 = Math.floor(pos);
-    const frac = pos - i0;
-    const a = input[i0] ?? 0;
-    const b = input[i0 + 1] ?? a;
-    out[i] = a + (b - a) * frac;
-  }
-  return out;
-}
-
-function mergeChunks(chunks: Float32Array[]): Float32Array {
-  let n = 0;
-  for (const c of chunks) n += c.length;
-  const out = new Float32Array(n);
-  let o = 0;
-  for (const c of chunks) {
-    out.set(c, o);
-    o += c.length;
-  }
-  return out;
+  return {
+    listening,
+    transcribing,
+    level,
+    startError,
+    transcribeError,
+    clearTranscribeError: () => setTranscribeError(null),
+    start,
+    stop,
+    press,
+    release,
+  };
 }

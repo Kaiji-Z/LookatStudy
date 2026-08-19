@@ -93,4 +93,47 @@ declare module "sherpa-onnx-node" {
     getResult(stream: OnlineStream): OnlineRecognizerResult;
     release?(): void;
   }
+
+  export interface OfflineWhisperConfig {
+    encoder: string;
+    decoder: string;
+    /** 语言提示("zh"/"en";缺省=自动检测) */
+    language?: string;
+    task?: "transcribe";
+    tailPaddings?: number;
+  }
+
+  export interface OfflineRecognizerConfig {
+    featConfig: {
+      sampleRate: number;
+      featureDim: number;
+    };
+    modelConfig: {
+      whisper: OfflineWhisperConfig;
+      tokens: string;
+      numThreads?: number;
+      provider?: "cpu";
+      debug?: boolean;
+    };
+  }
+
+  export interface OfflineRecognizerResult {
+    text: string;
+    lang?: string;
+  }
+
+  /** 非流式识别流:v0.13 本地听写(Whisper)整段喂入 → decodeAsync → 结果 */
+  export class OfflineStream {
+    acceptWaveform(opts: { sampleRate: number; samples: Float32Array }): void;
+  }
+
+  export class OfflineRecognizer {
+    constructor(config: OfflineRecognizerConfig);
+    static createAsync(config: OfflineRecognizerConfig): Promise<OfflineRecognizer>;
+    createStream(): OfflineStream;
+    /** 非阻塞解码(whisper turbo int8 一段 10s 音频 CPU 数秒,不能走同步 decode) */
+    decodeAsync(stream: OfflineStream): Promise<OfflineRecognizerResult>;
+    getResult(stream: OfflineStream): OfflineRecognizerResult;
+    release?(): void;
+  }
 }

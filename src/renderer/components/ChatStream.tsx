@@ -76,11 +76,24 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       const key =
         speech.failReason === "engine-unavailable"
           ? "chat.speech.engine_unavailable"
-          : "chat.speech.model_missing";
+          : speech.failReason === "azure-key-missing"
+            ? "chat.speech.azure_key_missing"
+            : speech.failReason === "azure-region-missing"
+              ? "chat.speech.azure_region_missing"
+              : speech.failReason === "edge-failed"
+                ? "chat.speech.edge_failed"
+                : "chat.speech.model_missing";
       toast.show(t(key), { severity: "warning" });
       speech.clearFailReason();
     }
   }, [speech.failReason, toast, t, speech]);
+  // edge 档首次使用:一次性披露"朗读经微软在线服务"(local-first 知情)
+  useEffect(() => {
+    if (speech.onlineNotice) {
+      toast.show(t("chat.speech.edge_disclosed"), { severity: "info" });
+      speech.clearOnlineNotice();
+    }
+  }, [speech.onlineNotice, toast, t, speech]);
   // 内联 quiz 产物答题 → 触发 mastery 更新(本地评分,自动建+应用 update_mastery 提案)
   const handleQuizAnswered = useCallback(
     (q: { prompt: string; kc?: string }, _idx: number, correct: boolean) => {

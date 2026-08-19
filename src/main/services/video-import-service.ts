@@ -3,6 +3,8 @@
  *
  * 路由策略(url-route 判 source):
  *   bilibili → 本服务直连(免登录,POC 实测:nav/view/playurl 全通)
+ *     多分P 整季:URL 不带 ?p= → 导入全部分P(每P一段音轨,逐段转写后各成虚拟
+ *     文档,Step4 按集分章);带 ?p=N → 只导该集。maxPages 上限防病态合集。
  *   youtube/抖音/其他视频站 → yt-dlp(用户自装;**字幕优先**:有 CC/自动字幕
  *   直接出文本零转写,无字幕才抓音轨转录)。未装 yt-dlp 抛带安装指引的错。
  * 网络层走注入 fetchFn(job-service 已挂取消 signal);yt-dlp 用 spawn + abort kill。
@@ -17,15 +19,18 @@ import { parseSubtitleToText } from "./pure/subtitle-parse.js";
 
 export type VideoFetchResult =
   | { source: "subtitle"; title: string; text: string }
-  | { source: "audio"; title: string; bytes: Uint8Array; ext: string };
+  | { source: "audio"; title: string; bytes: Uint8Array; ext: string }
+  /** 多分P整季:每P一段音轨(单P/显式 ?p=N 时仍返回 audio 形状,管线零改动) */
+  | { source: "audio-multi"; title: string; parts: { title: string; bytes: Uint8Array; ext: string }[] };
 
 const BILI_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 LookatStudy/0.1",
   Referer: "https://www.bilibili.com/",
 };
 
-/** 从 B站 URL 提取 BV/av 号与分P(b23.tv 短链由 fetchFn 跟随重定向展开)。 */
-export function parseBilibiliId(url: string): { bvid?: string; aid?: number; page: number } | null {
+/** 从 B站 URL 提取 BV/av 号与分P(b23.tv 短链由 fetchFn 跟随重定向展开)。
+ *  page=undefined 表示 URL 未带 ?p= —— 多分P 视频导入整季;带 ?p=N 只导该集。 */
+export function parseBilibiliId(url: string): { bvid?: string; aid?: number; page?: number } | null {
   const u = url.match(/bilibili\.com\/(?:video\/)?(?:BV[a-zA-Z0-9]+|av\d+)/i) ? url : null;
   const m = u?.match(/(BV[a-zA-Z0-9]+|av(\d+))/i);
   if (!m) return null;
@@ -33,16 +38,18 @@ export function parseBilibiliId(url: string): { bvid?: string; aid?: number; pag
   return {
     bvid: m[1]!.toLowerCase().startsWith("bv") ? m[1] : undefined,
     aid: m[2] ? Number(m[2]) : undefined,
-    page: pm ? Math.max(1, Number(pm[1])) : 1,
+    page: pm ? Math.max(1, Number(pm[1])) : undefined,
   };
 }
 
-/** B站直连:view(cid/标题/分P) → wbi 签名 playurl → 最低码率 DASH 音轨字节。 */
+/** B站直连:view(cid/标题/分P列表) → wbi 签名 playurl(逐P) → 最低码率 DASH 音轨。
+ *  单P 或显式 ?p=N 返回 audio;多分P且未指定页返回 audio-multi(maxPages 默认 200 封顶)。 */
 export async function fetchBilibiliAudio(
   url: string,
   fetchFn: typeof fetch,
   onProgress?: (msg: string) => void,
   signal?: AbortSignal,
+  opts?: { maxPages?: number },
 ): Promise<VideoFetchResult> {
   onProgress?.("解析 B站视频信息…");
   let parsed = parseBilibiliId(url);
@@ -59,25 +66,49 @@ export async function fetchBilibiliAudio(
   if (viewResp.code !== 0) throw new Error(`B站视频信息获取失败: ${viewResp.message}`);
   const viewData = viewResp.data ?? {};
   const title = String(viewData.title ?? "B站视频");
-  const pages = (viewData.pages ?? []) as { cid: number }[];
-  const page = pages.length > 0 ? pages[Math.min(parsed.page, pages.length) - 1] : null;
-  const cid = Number(page?.cid ?? viewData.cid ?? 0);
+  const pages = (viewData.pages ?? []) as { cid: number; page?: number; part?: string }[];
+  const maxPages = Math.max(1, opts?.maxPages ?? 200);
+  // 分P显示名:多P 时 "P{n} {分P标题}"(无分P标题用合集主标题),单P 即主标题
+  const partName = (i: number) => `P${pages[i]?.page ?? i + 1} ${(pages[i]?.part ?? title).trim()}`.trim();
 
-  onProgress?.(`下载音轨: ${title}${pages.length > 1 ? `(P${parsed.page})` : ""}…`);
+  // 目标分P:显式 ?p=N → 该集;未指定且多分P → 整季(≤maxPages);其余 → 唯一集
+  let targets: { cid: number; name: string }[];
+  if (parsed.page !== undefined) {
+    const idx = pages.length > 0 ? Math.min(parsed.page, pages.length) - 1 : -1;
+    targets = [{ cid: Number(idx >= 0 ? pages[idx]!.cid : viewData.cid ?? 0), name: pages.length > 1 ? partName(idx) : title }];
+  } else if (pages.length > 1) {
+    if (pages.length > maxPages) onProgress?.(`共 ${pages.length} 个分P,导入前 ${maxPages} 集(需要更多可用 ?p=N 分批导入)`);
+    targets = pages.slice(0, maxPages).map((pg, i) => ({ cid: Number(pg.cid), name: partName(i) }));
+  } else {
+    targets = [{ cid: Number(viewData.cid ?? 0), name: title }];
+  }
+
+  // wbi 签名材料(nav 取 img/sub_key)整季共用一次
   const nav = (await (await fetchFn("https://api.bilibili.com/x/web-interface/nav", { signal, headers: BILI_HEADERS })).json()) as BiliJson;
   const wbiImg = ((nav.data ?? {}).wbi_img ?? {}) as { img_url: string; sub_url: string };
   const { imgKey, subKey } = extractKeysFromNavUrl(wbiImg.img_url, wbiImg.sub_url);
+  const mixinKey = getMixinKey(imgKey, subKey);
   const idKey = parsed.bvid ? "bvid" : "aid";
   const idVal = parsed.bvid ?? parsed.aid ?? "";
-  const query = encWbi({ [idKey]: idVal, cid, fnval: 80, fnver: 0, qn: 16 }, getMixinKey(imgKey, subKey));
-  const pu = (await (await fetchFn(`https://api.bilibili.com/x/player/playurl?${query}`, { signal, headers: BILI_HEADERS })).json()) as BiliJson;
-  if (pu.code !== 0) throw new Error(`B站播放地址获取失败: ${pu.message}(可能需要登录或为付费内容)`);
-  const dash = ((pu.data ?? {}).dash ?? {}) as { audio?: { id: number; bandwidth: number; baseUrl: string }[] };
-  const auds = dash.audio ?? [];
-  if (auds.length === 0) throw new Error("B站未返回音轨(纯视频或版权限制)");
-  const pick = auds.slice().sort((a, b) => a.bandwidth - b.bandwidth)[0]!;
-  const bytes = await downloadToBuffer(pick.baseUrl, fetchFn, { signal, maxBytes: 200 * 1024 * 1024, headers: BILI_HEADERS });
-  return { source: "audio", title, bytes, ext: "m4a" };
+
+  const parts: { title: string; bytes: Uint8Array; ext: string }[] = [];
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i]!;
+    onProgress?.(targets.length > 1 ? `下载音轨(${i + 1}/${targets.length}): ${t.name}…` : `下载音轨: ${t.name}…`);
+    const query = encWbi({ [idKey]: idVal, cid: t.cid, fnval: 80, fnver: 0, qn: 16 }, mixinKey);
+    const pu = (await (await fetchFn(`https://api.bilibili.com/x/player/playurl?${query}`, { signal, headers: BILI_HEADERS })).json()) as BiliJson;
+    if (pu.code !== 0) throw new Error(`B站播放地址获取失败(${t.name}): ${pu.message}(可能需要登录或为付费内容)`);
+    const dash = ((pu.data ?? {}).dash ?? {}) as { audio?: { id: number; bandwidth: number; baseUrl: string }[] };
+    const auds = dash.audio ?? [];
+    if (auds.length === 0) throw new Error(`B站未返回音轨(${t.name}:纯视频或版权限制)`);
+    const pick = auds.slice().sort((a, b) => a.bandwidth - b.bandwidth)[0]!;
+    const bytes = await downloadToBuffer(pick.baseUrl, fetchFn, { signal, maxBytes: 200 * 1024 * 1024, headers: BILI_HEADERS });
+    parts.push({ title: t.name, bytes, ext: "m4a" });
+    if (signal?.aborted) break;
+  }
+  if (parts.length === 0) throw new Error("没有下载到任何分P音轨");
+  if (parts.length === 1) return { source: "audio", title, bytes: parts[0]!.bytes, ext: parts[0]!.ext };
+  return { source: "audio-multi", title, parts };
 }
 
 let ytdlpCache: string | null | undefined;

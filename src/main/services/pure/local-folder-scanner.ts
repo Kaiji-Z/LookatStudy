@@ -27,7 +27,7 @@ export interface ScannedDoc {
   /** 语言(zh/en/other),用于去重 */
   lang: "zh" | "en" | "other";
   /** 文件类型 */
-  kind: "txt" | "md" | "html" | "pdf" | "ipynb" | "rst" | "rmd" | "org" | "adoc" | "code" | "pptx" | "epub";
+  kind: "txt" | "md" | "html" | "pdf" | "ipynb" | "rst" | "rmd" | "org" | "adoc" | "code" | "pptx" | "epub" | "docx";
 }
 
 /** 扫描到的图片资源(独立图片文件 / markdown 引用 / PDF 页面渲染图) */
@@ -61,6 +61,7 @@ const EXT_KIND: Record<string, ScannedDoc["kind"]> = {
   pdf: "pdf",
   pptx: "pptx",
   epub: "epub",
+  docx: "docx",
   ipynb: "ipynb",
   rst: "rst",
   rmd: "rmd",
@@ -547,6 +548,12 @@ async function readFileWithKind(absPath: string, kind: ScannedDoc["kind"]): Prom
     const buf = await readFile(absPath);
     const { parsePptx } = await import("../../lib/pptx-parser.js");
     return (await parsePptx(buf)).markdown;
+  }
+  if (kind === "docx") {
+    // .docx → officeparser AST → markdown(Word Heading 样式保真为 ##,管线按标题拆课)
+    const buf = await readFile(absPath);
+    const { parseDocx } = await import("../../lib/docx-parser.js");
+    return parseDocx(buf);
   }
   if (kind === "epub") {
     // .epub → lib/epub-parser 解章节 → 压平成一个 markdown(章标题降为 ##,

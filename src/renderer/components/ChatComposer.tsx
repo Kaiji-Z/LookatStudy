@@ -12,6 +12,7 @@
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { companionSetListening } from "../lib/companion/bus.ts";
 import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X, Mic, Keyboard } from "lucide-react";
 import type { Soul, StarterPrompt, HumanFrictionCategory, ChatAttachmentInput, ContextUsageInfo } from "@shared/types";
 import { checkAttachmentFile, ATTACHMENT_LIMITS } from "@shared/attachment-intake";
@@ -123,6 +124,11 @@ export function ChatComposer({
     void api.getSetting("asr_auto_stop").then((v) => setAsrAutoStop(v !== "0"));
   }, []);
   const [voiceMode, setVoiceMode] = useState(false);
+  // 伴学伙伴:语音模式 → 侧耳倾听形态(卸载/切回键盘复位)
+  useEffect(() => {
+    companionSetListening(voiceMode);
+    return () => companionSetListening(false);
+  }, [voiceMode]);
   /** 复查浮层的识别文本(可编辑) */
   const [voiceText, setVoiceText] = useState("");
   /** 复查浮层在位(转录成功回调过;空文本也进复查,手改/重录随用户) */

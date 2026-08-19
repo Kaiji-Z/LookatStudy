@@ -63,6 +63,7 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 ```
 
 - **Left (MapRail)**: Duolingo-style skill map. A node is a *session group*: clicking it filters the middle pane's threads by `focus_node_id`. Node states: locked / available / in_progress / mastered. Collapsible (`Ctrl+B`).
+- **伴学伙伴小焰 (companion, v0.16)**: R-06×R-03 cel 风格 SVG 悬浮守护机,双栖息地——左栏地图天空守望(`RailCompanion`,仅 map 面板)+右栏笔记本右下角导师/桌宠(`NotebookCompanion`,选中节点时)。全动作反馈经 `lib/companion/bus.ts` 全局店(订阅 celebration 总线 + `state:changed` + 用户活动;ContentTab/ChatComposer/App 分别喂 talking/listening/streaming 旗标);**朗读口型同步**:`useSpeech` 播放链经 `speech-analyser.ts` 共享 AnalyserNode 直通(异常退回直连),`use-mouth.ts` rAF 读频谱→`companion-core.ts` 六档母音 viseme(closed/A/E/I/O/U,响度+频谱质心,量化防抖)。胸口能量核=今日 XP 充能;设置 `companion_enabled` 开关(默认开);纯渲染层零 IPC 协议改动;reduced-motion 退静态;点击只落涂色区不挡地图球/选区。
 - **Middle (chat)**: `ThreadSwitcher` (Chrome-style horizontal tabs, one thread per tab) + `ChatStream` (parts rendering) + `ChatComposer` (input + 教学人设 soul 药丸 + starter prompts + 附件📎/粘贴/拖拽 + 底部工具栏:思考强度 · 上下文用量表 · 模型切换). `Ctrl+K` opens the command palette; `Ctrl+Tab` cycles threads.
 - **Right (NotebookPanel)**: 康奈尔笔记法三区(讲解/笔记)+ **黑板 tab**(v0.12:对话最新重产物 concept_map/diagram/compare_table/code_walkthrough 的大画布,流式中出现新重产物自动切到该 tab,App `canvasArtifact`+`forceTab` 联动;画布=CanvasStage 纯 transform pan/zoom,contain 适屏自适应容器,缩放锚定手势中点,双击适屏↔100%,四产物 canvas 裸内容变体经 ArtifactRenderer variant 透传,放大弹窗同引擎)。讲解 tab 显示节点 markdown + 支持选区画线(`✏️ 加笔记`)+ 标题旁 🔊 整课朗读按钮(v0.13,切节点自动停)。笔记 tab 三区:🗺️理解区(AI 产物:概念图/对比表/流程图/代码讲解)、✏️笔记区(用户画线 user_note,带溯源跳转)、📝练习区(quiz + last_result 答题记录)。画线用 `highlightText.ts` 的文本搜索方案(不依赖 DOM offset 稳定性)。
 - **Responsive tiers (v0.11, `lib/paneTiers.ts` + `useWindowTier`)**: T1 ≥1240 三栏共存;T2 920~1239 双栏(中栏+一侧,侧栏互斥——显示左则隐右,默认右侧);T3 <920 单栏(默认对话,对话流卡片模式:每 AI 回合一卡+scroll-snap 邻近吸附「一幕一屏」)+ 单行窄标题栏(51px:左 XP 紧凑数字 / 中居中分段切换器 课程/导师/黑板 / 右设置;三栏名即教室隐喻 i18n `pane.*`)+ 内容区水平滑屏切换(纯函数 swipeTarget,横向>60px 主导;data-noswipe 区域豁免)+ 左栏选球自动切到对话栏。拉宽自动弹回(进 T1 三栏全恢复,T3→T2 承接当前侧);窄化自动收。中栏宽 clamp(480,36vw,800);笔记本内容居中封顶 960;T3 地图全宽(物理岛按新墙宽自动重建);窗口 minWidth 560。
@@ -81,11 +82,11 @@ npm run serve             # dev serve: esbuild server bundle only + serve dist/r
 npm run build:mobile      # 便携包 dist/mobile/: server.cjs 单文件 + web 前端 + install-termux.sh(Termux 手机端)
 node scripts/build-termux-voice.mjs  # Termux 语音引擎包(NDK 交叉编译,~12MB;CI termux-voice.yml 同源)
 
-npm run verify:core       # 98 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
+npm run verify:core       # 99 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 41 DOM assertions incl. a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + seed bilingual 🌐 switcher + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue + exam answering integrity (option display order matches grading, click correct text → 3/3, long prompt stays in viewport) + voice tiers (mic click→voice mode→hold→release→review/error panel→back to keyboard, 设置页语音按钮组(朗读 Edge/本地/自定义,听写 本地/自定义)+ whisper 模型下拉 + 讲解 🔊))
+npm run ui-test           # real-GUI verification (headless Electron, 43 DOM assertions incl. companion dual-habitat (rail sky-watch after course pick + notebook mentor while node selected) + a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + seed bilingual 🌐 switcher + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue + exam answering integrity (option display order matches grading, click correct text → 3/3, long prompt stays in viewport) + voice tiers (mic click→voice mode→hold→release→review/error panel→back to keyboard, 设置页语音按钮组(朗读 Edge/本地/自定义,听写 本地/自定义)+ whisper 模型下拉 + 讲解 🔊))
 npm run lint              # oxlint
 npm run shots             # capture README screenshots → docs/screenshots/ (headless window, temp DB, real .env LLM; GPU stays ON for capturePage)
 npx tsc --noEmit                       # typecheck renderer
@@ -110,7 +111,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z` — `package.yml` (3-OS matrix) and `android-build.yml` both auto-trigger on `v*`. **Neither creates the Release**: their attach steps (`gh release upload`) fail with `release not found` until the Release object exists. So right after pushing the tag, run `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <file>` (notes drafted per human-writing + check_prose, English first). If the attach jobs already failed, `gh run rerun <id> --failed` after creating the release — builds are cached, only attach re-runs.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 98 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
+5. `ci.yml` runs oxlint + both typechecks + 99 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -211,11 +212,12 @@ Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),
 `useThreads` (node-bound thread CRUD + soft-delete undo), `useCanvas` (canvas
 item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription),
 `useFocusTrap` (drawer/modal focus-trap + restore for a11y),
-`usePrefersReducedMotion` (a11y 双轨:响应式检测系统减少动效偏好,所有动效分支入口)。
+`usePrefersReducedMotion` (a11y 双轨:响应式检测系统减少动效偏好,所有动效分支入口),
+`useSpeechMouth` (伴学伙伴口型:rAF 读朗读 AnalyserNode→量化母音档,档变才重渲染)。
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (97 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (99 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

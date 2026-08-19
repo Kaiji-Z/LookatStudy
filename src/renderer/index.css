@@ -917,3 +917,64 @@ html.light ::-webkit-scrollbar-thumb:hover {
   }
   /* 天空 canvas:skyCanvas.ts 检测 reduced-motion 后只画单帧(不跑连续 rAF) */
 }
+
+/* ============ 伴学伙伴 Companion(cp-) ============
+ * reduced-motion 由上方全局规则兜底;Mascot 组件的 JS 生命循环
+ * (眨眼/瞳孔追踪)自行检测 usePrefersReducedMotion 关闭。 */
+/* 点击只落在角色涂色区(SVG 透明角落不挡宿主交互——地图球/正文选区) */
+.cp-mascot { pointer-events: none; cursor: default; }
+.cp-mascot * { pointer-events: visiblePainted; }
+
+/* 悬浮生命:整机缓浮 + 地影反相 + 尾焰闪烁 + 天线辉光 */
+.cp-bot { transform-box: fill-box; transform-origin: 50% 90%; animation: cp-bob 3.4s ease-in-out infinite alternate; }
+@keyframes cp-bob { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+.cp-shadow { transform-box: fill-box; transform-origin: center; animation: cp-shadow 3.4s ease-in-out infinite alternate; }
+@keyframes cp-shadow { from { transform: scaleX(1); opacity: 0.35; } to { transform: scaleX(0.86); opacity: 0.26; } }
+.cp-thrust { transform-box: fill-box; transform-origin: center; animation: cp-flick 0.38s ease-in-out infinite alternate; }
+@keyframes cp-flick { from { transform: scaleY(1); } to { transform: scaleY(0.72); } }
+.cp-ant-glow { animation: cp-glow 2.2s ease-in-out infinite; }
+@keyframes cp-glow { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.4; } }
+
+/* 姿势:hop(庆祝跳)/punch(答对冲拳)/oops(答错摊手鼓励)/lean(思考·倾听)/doze(打盹) */
+.cp-pose-hop .cp-bot { animation: cp-hop 0.9s cubic-bezier(0.3, 1.4, 0.5, 1) 1, cp-bob 3.4s ease-in-out 0.95s infinite alternate; }
+@keyframes cp-hop {
+  0% { transform: none; }
+  18% { transform: translateY(2px) scale(1.05, 0.92); }
+  45% { transform: translateY(-16px) scale(0.96, 1.07); }
+  75% { transform: translateY(0) scale(1.04, 0.95); }
+  100% { transform: none; }
+}
+.cp-pose-punch .cp-armR { transform-box: fill-box; transform-origin: 30% 20%; animation: cp-punch 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) 1; }
+@keyframes cp-punch { 0% { transform: rotate(0deg); } 35% { transform: rotate(-72deg); } 100% { transform: rotate(0deg); } }
+.cp-pose-punch .cp-bot { animation: cp-tilt 0.5s ease-out 1, cp-bob 3.4s ease-in-out 0.55s infinite alternate; }
+@keyframes cp-tilt { 0% { transform: none; } 30% { transform: rotate(-4deg); } 100% { transform: none; } }
+.cp-pose-oops .cp-head { transform-box: fill-box; transform-origin: 50% 95%; animation: cp-oops-head 0.8s ease-in-out 1; }
+.cp-pose-oops .cp-armL { transform-box: fill-box; transform-origin: 70% 15%; animation: cp-oops-armL 0.8s ease-in-out 1; }
+.cp-pose-oops .cp-armR { transform-box: fill-box; transform-origin: 30% 15%; animation: cp-oops-armR 0.8s ease-in-out 1; }
+@keyframes cp-oops-head { 0%, 100% { transform: rotate(0deg); } 40% { transform: rotate(6deg); } 70% { transform: rotate(3deg); } }
+@keyframes cp-oops-armL { 0%, 100% { transform: rotate(0deg); } 40% { transform: rotate(24deg); } }
+@keyframes cp-oops-armR { 0%, 100% { transform: rotate(0deg); } 40% { transform: rotate(-24deg); } }
+.cp-pose-lean-left .cp-bot { transform: rotate(-5deg) translateX(-3px); animation: none; }
+.cp-pose-lean-right .cp-bot { transform: rotate(5deg); animation: none; }
+.cp-pose-doze .cp-bot { transform: translateY(4px) rotate(2.5deg); animation: cp-breath 4.5s ease-in-out infinite alternate; }
+@keyframes cp-breath {
+  from { transform: translateY(4px) rotate(2.5deg) scale(1, 1); }
+  to { transform: translateY(5px) rotate(2.5deg) scale(1.015, 0.985); }
+}
+
+/* 表情附属动画:汗滴/声波/zzz */
+.cp-sweat { animation: cp-drip 1.1s ease-in-out infinite; }
+@keyframes cp-drip { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+.cp-waves path { animation: cp-wave 1s ease-in-out infinite; }
+.cp-waves path:nth-child(2) { animation-delay: 0.15s; }
+.cp-waves path:nth-child(3) { animation-delay: 0.3s; }
+@keyframes cp-wave { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+.cp-zzz path { animation: cp-z 2.4s ease-in-out infinite; }
+.cp-zzz path:nth-child(2) { animation-delay: 0.8s; }
+.cp-zzz path:nth-child(3) { animation-delay: 1.6s; }
+@keyframes cp-z { 0% { opacity: 0; transform: translate(2px, 2px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(-3px, -6px); } }
+
+/* 口型弹性 + 问候气泡 */
+.cp-mouth { transition: transform 0.06s linear; }
+.cp-bubble { animation: cp-bubble-in 0.18s cubic-bezier(0.3, 1.4, 0.5, 1) 1; }
+@keyframes cp-bubble-in { from { opacity: 0; transform: translateY(4px) scale(0.9); } to { opacity: 1; transform: none; } }

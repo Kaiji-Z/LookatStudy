@@ -36,6 +36,7 @@ import { t2SideFromT3, swipeTarget, type T2Side, type T3Pane } from "./lib/paneT
 import { useFocusTrap } from "./lib/useFocusTrap.js";
 import { CelebrationLayer } from "./components/CelebrationLayer.js";
 import { celebrate } from "./lib/celebration.js";
+import { companionSetStreaming } from "./lib/companion/bus.ts";
 
 /**
  * v0.2 三栏布局(M1 重构):
@@ -170,6 +171,11 @@ export default function App() {
   // AI 输出语言 = 界面语言(用户偏好什么界面就偏好什么输出),不是课程 🌐 显示语言
   const uiLang = useLangValue();
   const chat = useChatStream(thread.activeId, uiLang);
+
+  // 伴学伙伴:AI 流式回答中 → 托腮思考形态(伙伴看着你学习)
+  useEffect(() => {
+    companionSetStreaming(chat.streaming);
+  }, [chat.streaming]);
 
   // 哪里不会点哪里:右栏选中文字 → 注入聊天框。用自增 key 触发 ChatComposer 的 effect(同一段话连点两次也要触发)。
   const [quoteText, setQuoteText] = useState<string>("");

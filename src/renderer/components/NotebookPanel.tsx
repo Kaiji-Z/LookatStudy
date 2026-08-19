@@ -28,6 +28,8 @@ import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, Messa
 import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
 import { useToast } from "./Toast.js";
+import { NotebookCompanion } from "./companion/NotebookCompanion.js";
+import { companionSetTalking } from "../lib/companion/bus.ts";
 
 export type NotebookTab = "content" | "notes" | "board";
 
@@ -127,7 +129,7 @@ export function NotebookPanel({
 
   return (
     <div
-      className="h-full flex flex-col bg-surface-2"
+      className="relative h-full flex flex-col bg-surface-2"
       data-testid="notebook-panel"
     >
       {/* 标签栏:与左栏 MapRail tab 同一语言(等分胶囊容器 + brand/20 高亮 +
@@ -225,6 +227,9 @@ export function NotebookPanel({
           </>
         )}
       </div>
+
+      {/* 伴学伙伴(导师/桌宠形态):选中节点学习中栖在右下角,朗读时对口型 */}
+      <NotebookCompanion nodeId={selectedNode?.id ?? null} />
     </div>
   );
 }
@@ -281,6 +286,12 @@ function ContentTab({
       speechStopRef.current();
     };
   }, [nodeSpeechId]);
+  // 伴学伙伴:整课朗读状态 → 全局口型/表情信号(两处栖息地同享);
+  // 卸载兜底复位,防组件树拆了旗标还挂着
+  useEffect(() => {
+    companionSetTalking(speech.speakingMessageId !== null && speech.speakingMessageId === nodeSpeechId);
+  }, [speech.speakingMessageId, nodeSpeechId]);
+  useEffect(() => () => companionSetTalking(false), []);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);

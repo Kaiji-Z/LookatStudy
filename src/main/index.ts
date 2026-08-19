@@ -855,6 +855,15 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: { navNodeCount },
   });
 
+  // T2c (companion): 选课自动切地图面板 + 默认开 → 左栏天空守望形态必须在场
+  const railCompanion = await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="rail-companion"]') !== null`,
+  );
+  results.push({
+    name: "companion: rail habitat rendered (map panel, default on)",
+    ok: railCompanion === true,
+  });
+
   // T3: 三栏都在(chat-panel + notebook-panel + map-rail)
   const threePane = await win.webContents.executeJavaScript(`
     document.querySelector('[data-testid="map-rail"]') !== null &&
@@ -1086,6 +1095,15 @@ async function runUiTest(screenshot = false): Promise<void> {
     name: "empty state shows greeting + start-learning button (P1.2/P1.4)",
     ok: startState?.hasEmpty === true && startState?.hasStartBtn === true,
     detail: startState,
+  });
+
+  // T8f (companion): 学习中(节点已选中) → 右栏导师/桌宠栖息地必须在场
+  const notebookCompanion = await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="notebook-companion"]') !== null`,
+  );
+  results.push({
+    name: "companion: notebook habitat rendered (node selected)",
+    ok: notebookCompanion === true,
   });
 
   // T8e (按钮消息展示): 点「开始学习」→ 乐观 user 气泡立刻出现且只显示短动作标签,

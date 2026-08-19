@@ -29,6 +29,11 @@ import {
 } from "../src/main/services/speech/asr-tiers";
 import { createSilenceDetector } from "../src/renderer/lib/silence-detector";
 import { trimSilenceEdges } from "../src/renderer/lib/audio-trim";
+import { speedToOpenaiSpeed } from "../src/main/services/speech/tts-tiers";
+import { openaiTtsUrl } from "../src/main/services/speech/openai-tts-client";
+import { openaiTranscribeUrl } from "../src/main/services/speech/cloud-asr-client";
+import { pickLocalWhisperEntry, transcribeAudio } from "../src/main/services/speech/asr-service";
+import { SPEECH_MODELS_MANIFEST } from "../src/main/services/speech/speech-model-manifest";
 import { decodeWavPcm16, encodeWavPcm16 as encodeWavPcm16Ref } from "../shared/speech-wav.ts";
 import { speakMessage } from "../src/main/services/speech/tts-service";
 
@@ -276,6 +281,99 @@ console.log("T6 speakMessage 降级链:edge 失败 → local 接管(stub 注入)
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+// ---------------------------------------------------------------------------
+console.log("T7 v0.15 自定义语音档:tier 解析 / OpenAI 端点 URL / 语速映射 / custom 行缺失");
+{
+  const tc = resolveTtsTier({ tts_engine: "custom-ab12" });
+  assert.equal(tc.engine, "custom");
+  assert.equal(tc.customProviderId, "custom-ab12");
+  assert.equal(tc.customVoice, null, "未配音色=null");
+  const tc2 = resolveTtsTier({ tts_engine: "custom-ab12", tts_custom_voice: " alloy " });
+  assert.equal(tc2.customVoice, "alloy", "音色 trim");
+  assert.equal(resolveTtsTier({ tts_engine: "azure" }).engine, "azure", "旧库 azure 仍解析");
+  assert.equal(resolveTtsTier({ tts_engine: "edge" }).engine, "edge", "缺省 edge");
+  assert.equal(resolveTtsTier({ tts_engine: "custom-" }).engine, "custom", "裸 custom- 也按 custom 走(行缺失由 provider-missing 守卫)");
+
+  const ac = resolveAsrTier({ asr_engine: "custom-cd34" });
+  assert.equal(ac.engine, "custom");
+  assert.equal(ac.customProviderId, "custom-cd34");
+  assert.equal(resolveAsrTier({ asr_engine: "groq" }).engine, "groq", "旧库 groq 仍解析");
+  assert.equal(resolveAsrTier({ asr_engine: "local" }).engine, "local");
+
+  assert.equal(openaiTtsUrl("https://x.example/v1/"), "https://x.example/v1/audio/speech", "尾斜杠容忍");
+  assert.equal(openaiTranscribeUrl("https://x.example/v1"), "https://x.example/v1/audio/transcriptions");
+  assert.equal(speedToOpenaiSpeed(0.8), "slow");
+  assert.equal(speedToOpenaiSpeed(1.0), "normal");
+  assert.equal(speedToOpenaiSpeed(1.5), "fast");
+
+  // custom 行缺失 → 结构化失败(不静默降级)
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ls-speech-custom-"));
+  try {
+    const rMiss = await speakMessage(
+      () => {},
+      tmp,
+      { tts_engine: "custom-gone" },
+      "m1",
+      "你好。",
+      { custom: null },
+    );
+    assert.ok(!rMiss.ok && rMiss.reason === "custom-provider-missing", "TTS custom 行缺失给结构化失败");
+    const rAsr = await transcribeAudio(tmp, { asr_engine: "custom-gone" }, new ArrayBuffer(44), "zh-CN", null);
+    assert.ok(!rAsr.ok && rAsr.reason === "custom-provider-missing", "ASR custom 行缺失给结构化失败");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  ok("custom 档解析与缺失守卫");
+}
+
+// ---------------------------------------------------------------------------
+console.log("T7b pickLocalWhisperEntry:asr_local_model 优先 / 未就绪回退 turbo / 全无 null");
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ls-pick-"));
+  const mkReady = (id) => {
+    const entry = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === id);
+    const dir = path.join(tmp, "speech-models", id);
+    fs.mkdirSync(dir, { recursive: true });
+    for (const f of entry.variants.int8.files) fs.writeFileSync(path.join(dir, f), "x");
+  };
+  try {
+    assert.equal(pickLocalWhisperEntry(tmp), null, "空目录 → null");
+    mkReady("asr-whisper-small");
+    assert.equal(pickLocalWhisperEntry(tmp).id, "asr-whisper-small", "只有 small → small");
+    assert.equal(
+      pickLocalWhisperEntry(tmp, { asr_local_model: "asr-whisper-small" }).id,
+      "asr-whisper-small",
+      "显式选 small 且就绪 → small",
+    );
+    mkReady("asr-whisper-turbo");
+    assert.equal(pickLocalWhisperEntry(tmp).id, "asr-whisper-turbo", "双就绪无设置 → turbo 优先");
+    assert.equal(
+      pickLocalWhisperEntry(tmp, { asr_local_model: "asr-whisper-small" }).id,
+      "asr-whisper-small",
+      "双就绪显式选 small → small",
+    );
+    // 所选未就绪(只装 turbo,选 small)→ 回退 turbo
+    const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), "ls-pick2-"));
+    try {
+      const dir = path.join(tmp2, "speech-models", "asr-whisper-turbo");
+      fs.mkdirSync(dir, { recursive: true });
+      for (const f of SPEECH_MODELS_MANIFEST.models
+        .find((m) => m.id === "asr-whisper-turbo")
+        .variants.int8.files) fs.writeFileSync(path.join(dir, f), "x");
+      assert.equal(
+        pickLocalWhisperEntry(tmp2, { asr_local_model: "asr-whisper-small" }).id,
+        "asr-whisper-turbo",
+        "所选未就绪 → 回退 turbo",
+      );
+    } finally {
+      fs.rmSync(tmp2, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  ok("whisper 模型选择");
 }
 
 console.log(`\nverify-speech-tiers: ${passed} 组全绿 ✓`);

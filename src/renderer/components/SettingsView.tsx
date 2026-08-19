@@ -1,16 +1,17 @@
 /**
- * 设置页 —— v0.8 重构为分组设置(iOS / Linear 式)。
+ * 设置页 —— v0.8 重构为分组设置(iOS / Linear 式);v0.15 重组为三模型区。
  *
  * 设计语汇:
  *   - 单标题:抽屉头已有"设置 + 关闭",本组件不再重复标题。
- *   - 分组:AI 模型 / AI 看图 / 外观与语言。每组一张 surface-card,卡内用
- *     发丝线(border-t border-faint)分行,避开"每节一张卡平铺无层级"的老问题。
- *   - 行:左侧标签(text-label 粗体)+ 右侧控件;helper 文字在标签下。
- *   - 粘性页脚:保存按钮(仅作用于 AI 模型区)+ hint 说明即时/显式语义。
+ *   - 分组:主模型 / 看图模型 / 语音模型 / 学习者记忆 / 外观与语言。
+ *     三个模型区共用同一套选择范式:内置选项 + 自定义 provider 逃生舱
+ *     (CustomProviderForm,与主模型区的自定义配置同方法)。
+ *   - 卡内用发丝线(border-t border-faint)分行。
+ *   - 粘性页脚:保存按钮(仅作用于主模型区)+ hint 说明即时/显式语义。
  *
  * 功能边界:
- *   - AI 模型区(provider/model/key/test)显式保存 —— 改完点"保存 AI 配置"。
- *   - 主题/界面语言/导入偏好/AI 看图 都是即时存(toggle/pill onChange 即写)。
+ *   - 主模型区(provider/model/key/test)显式保存 —— 改完点"保存 AI 配置"。
+ *   - 看图覆盖/语音设置/主题/语言/导入偏好 即时存。
  *   - 图片下载:永久开启(无 UI 开关,后端 flag 默认 true)。
  *   - 每日目标:已移除(改由顶栏"今日能量"展示 todayXp,无配置项)。
  *
@@ -21,6 +22,7 @@ import { Plus, RotateCw, CheckCircle2, XCircle, Wrench, Check } from "lucide-rea
 import { api } from "../lib/api.js";
 import type { ProviderPresetInfo, CustomProvider } from "@shared/types";
 import { ConfirmCard } from "./ConfirmCard.js";
+import { CustomProviderForm } from "./CustomProviderForm.js";
 import { useTheme, type ThemeMode } from "../lib/useTheme.js";
 import { useLang, setLang, getLang } from "../lib/i18n.js";
 
@@ -52,15 +54,8 @@ export function SettingsView() {
   const [testResult, setTestResult] = useState<{ ok: boolean; detail: string; errorKind?: string } | null>(null);
   const [saved, setSaved] = useState(false);
 
-  // 自定义 provider 表单态
+  // 自定义 provider 表单显隐(字段态在 CustomProviderForm 内部)
   const [showCustomForm, setShowCustomForm] = useState(false);
-  const [customLabel, setCustomLabel] = useState("");
-  const [customProtocol, setCustomProtocol] = useState<"openai-compatible" | "anthropic" | "google">("openai-compatible");
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const [customApiKey, setCustomApiKey] = useState("");
-  const [customModel, setCustomModel] = useState("");
-  const [customTesting, setCustomTesting] = useState(false);
-  const [customTestResult, setCustomTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
   const [discoveredModels, setDiscoveredModels] = useState<{ id: string; label: string; contextWindow: number | null }[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
@@ -171,52 +166,15 @@ export function SettingsView() {
     }
   };
 
-  const handleTestCustom = async () => {
-    if (!customBaseUrl.trim() || !customModel.trim() || customTesting) return;
-    setCustomTesting(true);
-    setCustomTestResult(null);
-    try {
-      const r = await api.testCustomProvider({
-        label: customLabel || t("settings.custom.test_label"),
-        protocol: customProtocol,
-        baseUrl: customBaseUrl.trim(),
-        apiKey: customApiKey.trim() || undefined,
-        defaultModel: customModel.trim(),
-      });
-      setCustomTestResult({ ok: r.ok, detail: r.detail });
-    } catch (e) {
-      setCustomTestResult({ ok: false, detail: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setCustomTesting(false);
-    }
-  };
-
-  const handleSaveCustom = async () => {
-    if (!customLabel.trim() || !customBaseUrl.trim() || !customModel.trim()) return;
-    try {
-      const created = await api.createCustomProvider({
-        label: customLabel.trim(),
-        protocol: customProtocol,
-        baseUrl: customBaseUrl.trim(),
-        apiKey: customApiKey.trim() || undefined,
-        defaultModel: customModel.trim(),
-      });
-      await api.setSetting("active_provider", created.id);
-      await api.setSetting("active_model", created.defaultModel);
-      setActiveProvider(created.id);
-      setActiveModel(created.defaultModel);
-      setCustomLabel("");
-      setCustomBaseUrl("");
-      setCustomApiKey("");
-      setCustomModel("");
-      setCustomProtocol("openai-compatible");
-      setCustomTestResult(null);
-      setShowCustomForm(false);
-      await load();
-      window.dispatchEvent(new Event("llm-config-changed"));
-    } catch {
-      /* 忽略 */
-    }
+  /** 主模型区:新建自定义 provider 保存 → 设为当前主模型并刷新(与旧内联表单同语义) */
+  const handleCustomSaved = async (created: CustomProvider) => {
+    await api.setSetting("active_provider", created.id);
+    await api.setSetting("active_model", created.defaultModel);
+    setActiveProvider(created.id);
+    setActiveModel(created.defaultModel);
+    setShowCustomForm(false);
+    await load();
+    window.dispatchEvent(new Event("llm-config-changed"));
   };
 
   const handleDeleteCustom = async (id: string) => {
@@ -294,7 +252,7 @@ export function SettingsView() {
                     {p.label}
                   </button>
                 ))}
-                {customProviders.map((c) => (
+                {customProviders.filter((c) => c.kind === "llm").map((c) => (
                   <button
                     key={c.id}
                     onClick={() => handleProviderChange(c.id)}
@@ -319,34 +277,15 @@ export function SettingsView() {
               </div>
             </div>
 
-            {/* 自定义 provider 表单(扁平,无嵌套卡;bg-surface-1 + 顶发丝线区隔) */}
+            {/* 自定义 provider 表单(v0.15 抽共享组件,三模型区同方法) */}
             {showCustomForm && (
-              <div className="px-4 py-3.5 bg-surface-1 border-t border-[var(--border-faint)] space-y-2.5" data-testid="custom-provider-form">
-                <div className="text-label font-bold text-ink-strong">{t("settings.custom.form_title")}</div>
-                <div className="flex gap-2">
-                  <input type="text" value={customLabel} onChange={(e) => setCustomLabel(e.target.value)} placeholder={t("settings.custom.label_ph")} data-testid="custom-label" className={`${fieldCls} flex-1 px-2.5 py-1.5`} />
-                  <select value={customProtocol} onChange={(e) => setCustomProtocol(e.target.value as "openai-compatible" | "anthropic" | "google")} data-testid="custom-protocol" className={`${fieldCls} px-2 py-1.5`}>
-                    <option value="openai-compatible">{t("settings.proto.openai")}</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="google">Google</option>
-                  </select>
-                </div>
-                <input type="text" value={customBaseUrl} onChange={(e) => setCustomBaseUrl(e.target.value)} placeholder={t("settings.custom.baseurl_ph")} data-testid="custom-baseurl" className={`${fieldCls} w-full px-2.5 py-1.5 font-mono`} />
-                <div className="flex gap-2">
-                  <input type="text" value={customModel} onChange={(e) => setCustomModel(e.target.value)} placeholder={t("settings.custom.model_ph")} data-testid="custom-model" className={`${fieldCls} flex-1 px-2.5 py-1.5 font-mono`} />
-                  <input type="password" value={customApiKey} onChange={(e) => setCustomApiKey(e.target.value)} placeholder={t("settings.custom.apikey_ph")} data-testid="custom-apikey" className={`${fieldCls} flex-1 px-2.5 py-1.5`} />
-                </div>
-                {customTestResult && (
-                  <div className={`text-label rounded p-2 inline-flex items-start gap-1.5 ${customTestResult.ok ? "bg-brand/10 text-brand" : "bg-warning/10 text-warning"}`}>
-                    {customTestResult.ok ? <CheckCircle2 className="w-4 h-4 mt-px shrink-0" aria-hidden="true" /> : <XCircle className="w-4 h-4 mt-px shrink-0" aria-hidden="true" />}
-                    <span className="break-words">{customTestResult.detail}</span>
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <button onClick={handleTestCustom} disabled={!customBaseUrl.trim() || !customModel.trim() || customTesting} data-testid="custom-test" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">{customTesting ? t("settings.testing") : t("settings.test")}</button>
-                  <button onClick={handleSaveCustom} disabled={!customLabel.trim() || !customBaseUrl.trim() || !customModel.trim()} data-testid="custom-save" className="btn-3d-brand px-3 py-1.5 text-label disabled:opacity-40">{t("settings.custom.save")}</button>
-                  <button onClick={() => setShowCustomForm(false)} className="text-label text-ink-muted hover:text-ink-strong px-3 py-1.5 transition-colors">{t("action.cancel")}</button>
-                </div>
+              <div className="px-4 py-3.5 bg-surface-1 border-t border-[var(--border-faint)]">
+                <CustomProviderForm
+                  kind="llm"
+                  testPrefix="custom"
+                  onSaved={(p) => void handleCustomSaved(p)}
+                  onCancel={() => setShowCustomForm(false)}
+                />
               </div>
             )}
 
@@ -489,7 +428,7 @@ export function SettingsView() {
           </div>
         </section>
 
-        {/* ========== 组 2:AI 看图 ========== */}
+        {/* ========== 模型区 2:看图模型 ========== */}
         <section>
           <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.vision")}</h3>
           <div className="surface-card overflow-hidden">
@@ -502,7 +441,15 @@ export function SettingsView() {
           </div>
         </section>
 
-        {/* ========== 组 2.5:学习者记忆 ========== */}
+        {/* ========== 模型区 3:语音模型 ========== */}
+        <section>
+          <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.speech")}</h3>
+          <div className="surface-card overflow-hidden">
+            <SpeechContent />
+          </div>
+        </section>
+
+        {/* ========== 学习者记忆 ========== */}
         <section>
           <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.memory")}</h3>
           <div className="surface-card overflow-hidden">
@@ -510,15 +457,7 @@ export function SettingsView() {
           </div>
         </section>
 
-        {/* ========== 组 2.7:语音能力(v0.12) ========== */}
-        <section>
-          <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.speech.title")}</h3>
-          <div className="surface-card overflow-hidden">
-            <SpeechContent />
-          </div>
-        </section>
-
-        {/* ========== 组 3:外观与语言 ========== */}
+        {/* ========== 外观与语言 ========== */}
         <section>
           <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.appearance")}</h3>
           <div className="surface-card overflow-hidden">
@@ -647,7 +586,9 @@ function ImportPrefButtons() {
 }
 
 /**
- * AI 看图内容(只渲染开关行 + vision 覆盖;卡片/标题由父组提供)。
+ * AI 看图内容(v0.15 两选项:复用主模型 / 自定义)。
+ * 自定义 = CustomProviderForm(kind=vision),保存即写 vision 覆盖设置;
+ * 旧库的预设覆盖(如 glm)仍生效,展示为"旧配置"并可停止覆盖。
  * 图片下载已改为永久开启(无开关);此处只管 vision。
  */
 function MultimodalContent({
@@ -665,17 +606,18 @@ function MultimodalContent({
   const [enabled, setEnabled] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [overrideProvider, setOverrideProvider] = useState<string>("");
-  const [overrideModel, setOverrideModel] = useState<string>("");
+  const [showForm, setShowForm] = useState(false);
+  const [visionTesting, setVisionTesting] = useState(false);
+  const [visionTestResult, setVisionTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
 
   useEffect(() => {
     Promise.all([
       api.getSetting("flag_multimodal_import"),
       api.getSetting("vision_provider_override"),
       api.getSetting("vision_model_override"),
-    ]).then(([flag, prov, model]) => {
+    ]).then(([flag, prov]) => {
       setEnabled(flag === "true");
       setOverrideProvider(prov ?? "");
-      setOverrideModel(model ?? "");
       setLoaded(true);
     });
   }, []);
@@ -686,17 +628,23 @@ function MultimodalContent({
     await api.setSetting("flag_multimodal_import", String(next));
   };
 
-  const handleSaveOverride = async () => {
-    await api.setSetting("vision_provider_override", overrideProvider);
-    await api.setSetting("vision_model_override", overrideModel);
+  /** 覆盖自定义保存:provider 行 + 模型一起写入(vision 模型=provider 的 defaultModel) */
+  const handleCustomSaved = async (created: CustomProvider) => {
+    await api.setSetting("vision_provider_override", created.id);
+    await api.setSetting("vision_model_override", created.defaultModel);
+    setOverrideProvider(created.id);
+    setShowForm(false);
   };
 
-  /** 测识图覆盖:先保存当前选择再测(测的就是生效链路:覆盖优先,缺省回落主模型) */
-  const [visionTesting, setVisionTesting] = useState(false);
-  const [visionTestResult, setVisionTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const handleStopOverride = async () => {
+    await api.setSetting("vision_provider_override", "");
+    await api.setSetting("vision_model_override", "");
+    setOverrideProvider("");
+  };
+
+  /** 测识图覆盖:测的就是生效链路(覆盖优先,缺省回落主模型) */
   const handleTestOverride = async () => {
     if (visionTesting) return;
-    await handleSaveOverride();
     setVisionTesting(true);
     setVisionTestResult(null);
     try {
@@ -709,12 +657,15 @@ function MultimodalContent({
     }
   };
 
-  const overridePreset = overrideProvider && !overrideProvider.startsWith("custom-")
+  const visionCustoms = customProviders.filter((c) => c.kind === "vision");
+  const overrideCustom = overrideProvider.startsWith("custom-")
+    ? visionCustoms.find((c) => c.id === overrideProvider)
+    : null;
+  // 旧库:覆盖指向预设 provider(v0.15 前的 UI 可选预设)—— 仍生效,展示为旧配置
+  const overrideLegacyPreset = overrideProvider && !overrideProvider.startsWith("custom-")
     ? presets.find((p) => p.id === overrideProvider)
     : null;
-  const overrideCustom = overrideProvider.startsWith("custom-")
-    ? customProviders.find((c) => c.id === overrideProvider)
-    : null;
+  const mode: "reuse" | "custom" = overrideProvider ? "custom" : "reuse";
 
   if (!loaded) return null;
 
@@ -739,7 +690,7 @@ function MultimodalContent({
                 : t("settings.multimodal.hint_preset")}
             </div>
           </div>
-          {/* Vision 模型覆盖 */}
+          {/* 看图模型来源:复用主模型 / 自定义(v0.15 两选项) */}
           <div className="bg-ink/5 rounded-lg p-3">
             <div className="text-label font-medium text-ink-muted mb-2">
               {t("settings.multimodal.override_title")}
@@ -747,85 +698,74 @@ function MultimodalContent({
             <div className="text-caption text-ink-muted mb-2">
               {t("settings.multimodal.override_bridge_hint")}
             </div>
-            <div className="flex flex-col gap-2">
-              <select
-                value={overrideProvider}
-                onChange={(e) => {
-                  setOverrideProvider(e.target.value);
-                  const pid = e.target.value;
-                  if (pid.startsWith("custom-")) {
-                    const cp = customProviders.find((c) => c.id === pid);
-                    setOverrideModel(cp?.defaultModel ?? "");
-                  } else {
-                    const p = presets.find((pr) => pr.id === pid);
-                    setOverrideModel(p?.defaultModel ?? "");
-                  }
-                }}
-                className={`${fieldCls} w-full px-3 py-2`}
-              >
-                <option value="">{t("settings.multimodal.no_override")}</option>
-                <optgroup label={t("settings.multimodal.group_preset")}>
-                  {presets.map((p) => (
-                    <option key={p.id} value={p.id}>{p.label}</option>
-                  ))}
-                </optgroup>
-                {customProviders.length > 0 && (
-                  <optgroup label={t("settings.multimodal.group_custom")}>
-                    {customProviders.map((c) => (
-                      <option key={c.id} value={c.id}>{c.label}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-              {overrideProvider && (
-                <>
-                  {(overridePreset?.models.length ?? 0) > 0 ? (
-                    <select
-                      value={overrideModel}
-                      onChange={(e) => setOverrideModel(e.target.value)}
-                      className={`${fieldCls} w-full px-3 py-2`}
-                    >
-                      {overridePreset!.models.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}{(m.capabilities ?? []).includes("vision") ? ` · ${t("settings.multimodal.vision_capable")}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      value={overrideModel}
-                      onChange={(e) => setOverrideModel(e.target.value)}
-                      placeholder={overrideCustom?.defaultModel ?? t("settings.custom.model_ph")}
-                      className={`${fieldCls} w-full px-3 py-2`}
-                    />
-                  )}
-                  <div className="flex flex-wrap items-center gap-2 self-start">
-                    <button
-                      onClick={handleSaveOverride}
-                      data-testid="vision-override-save"
-                      className="btn-3d-brand px-4 py-1.5 text-label"
-                    >
-                      {t("settings.multimodal.save_override")}
-                    </button>
-                    <button
-                      onClick={() => void handleTestOverride()}
-                      disabled={visionTesting}
-                      data-testid="vision-override-test"
-                      className="btn-3d-neutral px-4 py-1.5 text-label disabled:opacity-50"
-                    >
-                      {visionTesting ? t("settings.testing") : t("settings.multimodal.test_override")}
-                    </button>
-                    {visionTestResult && (
-                      <span className={`text-label inline-flex items-center gap-1 ${visionTestResult.ok ? "text-brand" : "text-warning"}`}>
-                        {visionTestResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
-                        {visionTestResult.detail}
-                      </span>
-                    )}
-                  </div>
-                </>
-              )}
+            <div className="flex gap-2 mb-2" data-testid="vision-mode">
+              {(["reuse", "custom"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    if (m === "reuse" && mode === "custom") void handleStopOverride();
+                    if (m === "custom" && mode === "reuse") setShowForm(true);
+                  }}
+                  data-testid={`vision-mode-${m}`}
+                  aria-pressed={mode === m}
+                  className={`px-3 py-1.5 rounded-lg text-label font-medium transition-colors ${
+                    mode === m ? pillActiveCls : pillInactiveCls
+                  }`}
+                >
+                  {t(`settings.multimodal.mode_${m}`)}
+                </button>
+              ))}
             </div>
+
+            {mode === "custom" && !overrideCustom && overrideLegacyPreset && (
+              <div className="text-label text-ink-muted">
+                {t("settings.multimodal.legacy_preset", { label: overrideLegacyPreset.label })}
+              </div>
+            )}
+
+            {mode === "custom" && overrideCustom && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-label">
+                  <Wrench className="w-3.5 h-3.5 text-ink-faint shrink-0" aria-hidden="true" />
+                  <span className="font-medium text-ink-strong">{overrideCustom.label}</span>
+                  <code className="text-ink-faint font-mono break-all">{overrideCustom.defaultModel}</code>
+                  <span className="text-ink-faint truncate">{overrideCustom.baseUrl}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => void handleTestOverride()}
+                    disabled={visionTesting}
+                    data-testid="vision-override-test"
+                    className="btn-3d-neutral px-4 py-1.5 text-label disabled:opacity-50"
+                  >
+                    {visionTesting ? t("settings.testing") : t("settings.multimodal.test_override")}
+                  </button>
+                  <button onClick={() => setShowForm((s) => !s)} className="text-label text-accent hover:underline">
+                    {t("settings.multimodal.replace_custom")}
+                  </button>
+                  <button onClick={() => void handleStopOverride()} className="text-label text-ink-muted hover:text-ink-strong">
+                    {t("settings.multimodal.stop_override")}
+                  </button>
+                  {visionTestResult && (
+                    <span className={`text-label inline-flex items-center gap-1 ${visionTestResult.ok ? "text-brand" : "text-warning"}`}>
+                      {visionTestResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
+                      {visionTestResult.detail}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {mode === "custom" && showForm && (
+              <CustomProviderForm
+                kind="vision"
+                testPrefix="vision-custom"
+                titleKey="settings.custom.form_title_vision"
+                modelPhKey="settings.custom.model_ph_vision"
+                onSaved={(p) => void handleCustomSaved(p)}
+                onCancel={() => setShowForm(false)}
+              />
+            )}
           </div>
       </div>
     </>
@@ -899,7 +839,12 @@ function Toggle({
 }
 
 
-/* ---------- v0.12 语音能力:模型下载/删除/状态;v0.13 三档 TTS 引擎 ---------- */
+/* ---------- v0.15 语音模型:朗读(Edge/本地/自定义) + 听写(本地/自定义) ----------
+ * 与主模型区同范式:内置选项 + 自定义 provider 逃生舱(CustomProviderForm)。
+ * 引擎值 = 内置 id 或 custom-<id>(active_provider 式);azure/groq 为旧库遗留,
+ * 后端仍解析,UI 只显示"(旧配置,仍生效)"禁用项,不再提供新入口。
+ * 模型管理融入上下文:kokoro 行在 朗读·本地离线 下方;所选 Whisper 行在
+ * 听写·本地离线 下方(独立"模型管理"列表已取消)。 */
 
 interface SpeechModelRow {
   id: string;
@@ -908,7 +853,7 @@ interface SpeechModelRow {
   totalBytes: number;
 }
 
-/** Edge/Azure 共用音色表(ShortName 同格式);local 用 kokoro sid */
+/** Edge 音色表(ShortName);本地档用 kokoro sid,自定义档音色是自由文本 */
 const TTS_VOICE_OPTIONS = [
   { id: "zh-CN-XiaoxiaoNeural", label: "zh-CN · 晓晓(女)" },
   { id: "zh-CN-XiaoyiNeural", label: "zh-CN · 晓伊(女)" },
@@ -940,69 +885,56 @@ function SpeechContent() {
   const [prog, setProg] = useState<{ id: string; pct: number; label: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  // v0.13 三档 TTS 设置
-  const [engine, setEngine] = useState<"edge" | "azure" | "local">("edge");
+  // v0.15 引擎值:内置 id("edge"/"local")或 "custom-<id>";旧库可能残留 azure
+  const [engine, setEngine] = useState<string>("edge");
   const [voiceEdge, setVoiceEdge] = useState("zh-CN-XiaoxiaoNeural");
-  const [voiceAzure, setVoiceAzure] = useState("zh-CN-XiaoxiaoNeural");
   const [sidLocal, setSidLocal] = useState("48");
   const [speed, setSpeed] = useState("1.0");
-  const [azureKey, setAzureKey] = useState("");
-  const [azureRegion, setAzureRegion] = useState("");
-  const [keyMasked, setKeyMasked] = useState(false);
-
-  // v0.13 听写三档 + UX 开关
-  const [asrEngine, setAsrEngine] = useState<"local" | "groq" | "azure">("local");
-  const [sttKey, setSttKey] = useState("");
-  const [sttRegion, setSttRegion] = useState("");
-  const [sttKeyMasked, setSttKeyMasked] = useState(false);
-  const [groqReady, setGroqReady] = useState(false);
+  const [customVoice, setCustomVoice] = useState("");
+  // 听写:"local" 或 "custom-<id>";旧库可能残留 groq/azure
+  const [asrEngine, setAsrEngine] = useState<string>("local");
+  const [asrLocalModel, setAsrLocalModel] = useState("asr-whisper-turbo");
   const [asrAutoStop, setAsrAutoStop] = useState(true);
+
+  // 自定义 provider(tts/asr 分区)+ 表单/测试态
+  const [customs, setCustoms] = useState<CustomProvider[]>([]);
+  const [showTtsForm, setShowTtsForm] = useState(false);
+  const [showAsrForm, setShowAsrForm] = useState(false);
+  const [ttsTesting, setTtsTesting] = useState(false);
+  const [ttsTestResult, setTtsTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [asrTesting, setAsrTesting] = useState(false);
+  const [asrTestResult, setAsrTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [confirmDelCustom, setConfirmDelCustom] = useState<string | null>(null);
+
+  const refreshCustoms = useCallback(() => {
+    void api
+      .listCustomProviders()
+      .then((all) => setCustoms(all.filter((c) => c.kind === "tts" || c.kind === "asr")))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     void Promise.all([
       api.getSetting("tts_engine"),
       api.getSetting("tts_voice_edge"),
-      api.getSetting("azure_tts_voice"),
       api.getSetting("tts_sid_local"),
       api.getSetting("tts_speed"),
-      api.getSetting("azure_tts_region"),
-      api.getSetting("azure_tts_api_key"),
+      api.getSetting("tts_custom_voice"),
       api.getSetting("asr_engine"),
-      api.getSetting("azure_stt_region"),
-      api.getSetting("azure_stt_api_key"),
-      api.getSetting("groq_api_key"),
+      api.getSetting("asr_local_model"),
       api.getSetting("asr_auto_stop"),
-    ]).then(([e, ve, va, sid, sp, region, key, ae, sttRegionRaw, sttKeyRaw, groqKeyRaw, autoStopRaw]) => {
-      if (e === "azure" || e === "local") setEngine(e);
+    ]).then(([e, ve, sid, sp, cv, ae, alm, autoStopRaw]) => {
+      if (e) setEngine(e);
       if (ve) setVoiceEdge(ve);
-      if (va) setVoiceAzure(va);
       if (sid) setSidLocal(sid);
       if (sp) setSpeed(sp);
-      if (region) setAzureRegion(region);
-      if (key) {
-        setKeyMasked(true);
-        setAzureKey("");
-      }
-      if (ae === "groq" || ae === "azure") setAsrEngine(ae);
-      if (sttRegionRaw) setSttRegion(sttRegionRaw);
-      if (sttKeyRaw) {
-        setSttKeyMasked(true);
-        setSttKey("");
-      }
-      setGroqReady(!!groqKeyRaw);
+      if (cv) setCustomVoice(cv);
+      if (ae) setAsrEngine(ae);
+      if (alm === "asr-whisper-turbo" || alm === "asr-whisper-small") setAsrLocalModel(alm);
       setAsrAutoStop(autoStopRaw !== "0");
     });
-  }, []);
-
-  const saveEngine = (next: "edge" | "azure" | "local") => {
-    setEngine(next);
-    void api.setSetting("tts_engine", next);
-  };
-
-  const saveAsrEngine = (next: "local" | "groq" | "azure") => {
-    setAsrEngine(next);
-    void api.setSetting("asr_engine", next);
-  };
+    refreshCustoms();
+  }, [refreshCustoms]);
 
   const refresh = useCallback(() => {
     void window.api
@@ -1057,66 +989,227 @@ function SpeechContent() {
       ? t("settings.speech.model.tts")
       : id === "asr-whisper-turbo"
         ? t("settings.speech.model.asr_turbo")
-        : id === "asr-whisper-small"
-          ? t("settings.speech.model.asr_small")
-          : t("settings.speech.model.asr");
+        : t("settings.speech.model.asr_small");
   const licenseOf = (id: string) =>
     id.startsWith("asr-whisper") ? t("settings.speech.license_mit") : t("settings.speech.license");
   const stateLabel = (state: string) =>
     state === "ready" ? t("settings.speech.state.ready") : state === "error" ? t("settings.speech.state.error") : t("settings.speech.state.absent");
+  const rowState = (id: string) => rows.find((m) => m.id === id)?.state ?? "absent";
 
-  const voiceValue = engine === "azure" ? voiceAzure : voiceEdge;
-  const setVoiceValue = (v: string) => {
-    if (engine === "azure") {
-      setVoiceAzure(v);
-      void api.setSetting("azure_tts_voice", v);
-    } else {
-      setVoiceEdge(v);
-      void api.setSetting("tts_voice_edge", v);
+  const saveEngine = (next: string) => {
+    setEngine(next);
+    setTtsTestResult(null);
+    void api.setSetting("tts_engine", next);
+  };
+  const saveAsrEngine = (next: string) => {
+    setAsrEngine(next);
+    setAsrTestResult(null);
+    void api.setSetting("asr_engine", next);
+  };
+
+  const ttsCustoms = customs.filter((c) => c.kind === "tts");
+  const asrCustoms = customs.filter((c) => c.kind === "asr");
+  const activeTtsCustom = engine.startsWith("custom-") ? ttsCustoms.find((c) => c.id === engine) ?? null : null;
+  const activeAsrCustom = asrEngine.startsWith("custom-") ? asrCustoms.find((c) => c.id === asrEngine) ?? null : null;
+  const ttsLegacy = engine === "azure";
+
+  const testTtsCustom = async () => {
+    if (!activeTtsCustom || ttsTesting) return;
+    setTtsTesting(true);
+    setTtsTestResult(null);
+    try {
+      setTtsTestResult(await api.testCustomTts({ providerId: activeTtsCustom.id }));
+    } catch (e) {
+      setTtsTestResult({ ok: false, detail: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTtsTesting(false);
+    }
+  };
+  const testAsrCustom = async () => {
+    if (!activeAsrCustom || asrTesting) return;
+    setAsrTesting(true);
+    setAsrTestResult(null);
+    try {
+      setAsrTestResult(await api.testCustomAsr({ providerId: activeAsrCustom.id }));
+    } catch (e) {
+      setAsrTestResult({ ok: false, detail: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setAsrTesting(false);
     }
   };
 
-  return (
-    <div className="p-4 space-y-3" data-testid="settings-speech">
-      <p className="text-label text-ink-muted">{t("settings.speech.desc")}</p>
+  /** 删自定义 provider:若正被用,回落内置档(朗读=edge,听写=local) */
+  const deleteCustom = async (id: string, which: "tts" | "asr") => {
+    setConfirmDelCustom(null);
+    try {
+      await api.deleteCustomProvider(id);
+      if (which === "tts" && engine === id) saveEngine("edge");
+      if (which === "asr" && asrEngine === id) saveAsrEngine("local");
+      refreshCustoms();
+    } catch {
+      /* 忽略 */
+    }
+  };
 
-      {/* 引擎三选一 */}
-      <div className={rowCls(false)}>
-        <div className="text-label font-medium text-ink-strong mb-2">{t("settings.speech.tts_engine")}</div>
-        <div className="flex gap-2 flex-wrap">
-          {([
-            { id: "edge" as const, label: t("settings.speech.engine.edge") },
-            { id: "azure" as const, label: t("settings.speech.engine.azure") },
-            { id: "local" as const, label: t("settings.speech.engine.local") },
-          ]).map(({ id, label }) => (
-            <button
-              key={id}
-              onClick={() => saveEngine(id)}
-              data-testid={`tts-engine-${id}`}
-              aria-pressed={engine === id}
-              className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${engine === id ? pillActiveCls : pillInactiveCls}`}
-            >
-              {label}
-            </button>
-          ))}
+  /** 模型管理行(下载/进度/两步删除),嵌入所选档位下方 */
+  const modelRow = (id: string) => {
+    const m = rows.find((r) => r.id === id);
+    const state = m?.state ?? "absent";
+    return (
+      <div key={id} className="flex items-center gap-3 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <div className="text-label font-medium text-ink-strong truncate">{labelOf(id)}</div>
+          <div className="text-caption text-ink-muted">
+            {stateLabel(state)} · {licenseOf(id)}
+          </div>
+          {busy === id && prog?.id === id && (
+            <div className="mt-1.5 h-1.5 rounded-full bg-ink/[0.08] overflow-hidden" data-testid={`speech-dl-bar-${id}`}>
+              <div className="h-full bg-brand transition-all" style={{ width: `${prog.pct}%` }} />
+            </div>
+          )}
+          {busy === id && prog?.id === id && (
+            <div className="text-caption text-ink-faint mt-0.5" data-testid={`speech-dl-pct-${id}`}>
+              {prog.pct}%{prog.label ? ` · ${prog.label}` : ""}
+            </div>
+          )}
         </div>
-        <p className="text-label text-ink-muted mt-2">
-          {engine === "edge"
-            ? t("settings.speech.engine.edge_note")
-            : engine === "azure"
-              ? t("settings.speech.engine.azure_note")
-              : t("settings.speech.engine.local_note")}
-        </p>
+        {state === "ready" ? (
+          confirmDelete === id ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-caption text-warning">{t("settings.speech.confirm_del")}</span>
+              <button onClick={() => remove(id)} className="text-label text-warning hover:underline" data-testid={`speech-del-confirm-${id}`}>
+                {t("settings.speech.delete")}
+              </button>
+              <button onClick={() => setConfirmDelete(null)} className="text-label text-ink-muted hover:text-ink-strong">
+                {t("action.cancel")}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(id)}
+              disabled={busy === id}
+              className="text-label text-ink-muted hover:text-warning disabled:opacity-40"
+              data-testid={`speech-del-${id}`}
+            >
+              {t("settings.speech.delete")}
+            </button>
+          )
+        ) : (
+          <button
+            onClick={() => download(id)}
+            disabled={busy != null || state === "downloading"}
+            className="btn-3d-brand px-3 py-1 text-label disabled:opacity-40"
+            data-testid={`speech-dl-${id}`}
+          >
+            {busy === id || state === "downloading" ? t("settings.speech.downloading") : t("settings.speech.download")}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  /** 自定义 provider 摘要行(名字/模型/端点 + 测试/删除) */
+  const customSummary = (
+    c: CustomProvider,
+    which: "tts" | "asr",
+    testing: boolean,
+    result: { ok: boolean; detail: string } | null,
+    onTest: () => void,
+  ) => (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2 text-label">
+        <Wrench className="w-3.5 h-3.5 text-ink-faint shrink-0" aria-hidden="true" />
+        <span className="font-medium text-ink-strong">{c.label}</span>
+        <code className="text-ink-faint font-mono break-all">{c.defaultModel}</code>
+        <span className="text-ink-faint truncate">{c.baseUrl}</span>
+        {c.hasApiKey && (
+          <span className="text-brand shrink-0 inline-flex items-center gap-0.5">
+            <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+            {t("settings.speech.key_saved")}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={() => void onTest()} disabled={testing} className="btn-3d-neutral px-3 py-1 text-label disabled:opacity-40" data-testid={`${which}-custom-test`}>
+          {testing ? t("settings.testing") : t("settings.test")}
+        </button>
+        {confirmDelCustom === c.id ? (
+          <>
+            <span className="text-caption text-warning">{t("settings.speech.confirm_del_custom")}</span>
+            <button onClick={() => void deleteCustom(c.id, which)} className="text-label text-warning hover:underline" data-testid={`${which}-custom-del-confirm`}>
+              {t("settings.speech.delete")}
+            </button>
+            <button onClick={() => setConfirmDelCustom(null)} className="text-label text-ink-muted hover:text-ink-strong">
+              {t("action.cancel")}
+            </button>
+          </>
+        ) : (
+          <button onClick={() => setConfirmDelCustom(c.id)} className="text-label text-ink-muted hover:text-warning" data-testid={`${which}-custom-del`}>
+            {t("settings.speech.delete")}
+          </button>
+        )}
+        {result && (
+          <span className={`text-label inline-flex items-center gap-1 ${result.ok ? "text-brand" : "text-warning"}`}>
+            {result.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
+            {result.detail}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div data-testid="settings-speech">
+      {/* ===== 朗读 ===== */}
+      <div className={rowCls(false)}>
+        <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.speech.tts_title")}</div>
+        <div className="flex items-center gap-2">
+          <select
+            value={engine === "edge" || engine === "local" || engine === "azure" || engine.startsWith("custom-") ? engine : "edge"}
+            onChange={(e) => saveEngine(e.target.value)}
+            data-testid="tts-engine-select"
+            className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+          >
+            <option value="edge">{t("settings.speech.engine.edge")}</option>
+            <option value="local">
+              {t("settings.speech.engine.local")}
+              {rowState("tts-kokoro") !== "ready" ? ` · ${t("settings.speech.state.absent")}` : ""}
+            </option>
+            {ttsCustoms.map((c) => (
+              <option key={c.id} value={c.id}>
+                {t("settings.speech.engine.custom_opt", { label: c.label })}
+              </option>
+            ))}
+            {ttsLegacy && (
+              <option value="azure" disabled>
+                {t("settings.speech.engine.azure")} · {t("settings.speech.legacy")}
+              </option>
+            )}
+          </select>
+          <button
+            onClick={() => setShowTtsForm((s) => !s)}
+            data-testid="add-tts-custom"
+            className="px-3 py-1.5 rounded-lg text-label whitespace-nowrap inline-flex items-center gap-1 border border-dashed border-[var(--border)] text-ink-muted hover:border-ink-muted hover:text-ink-strong transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+            {t("settings.speech.add_custom")}
+          </button>
+        </div>
+        {engine === "edge" && (
+          <p className="text-label text-ink-muted mt-2">{t("settings.speech.engine.edge_note")}</p>
+        )}
       </div>
 
-      {/* 音色(azure 复用 Edge 同名 Neural 音色) */}
-      {engine !== "local" && (
+      {engine === "edge" && (
         <div className={rowCls(false)}>
           <div className="flex items-center gap-2">
             <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.voice")}</span>
             <select
-              value={voiceValue}
-              onChange={(e) => setVoiceValue(e.target.value)}
+              value={voiceEdge}
+              onChange={(e) => {
+                setVoiceEdge(e.target.value);
+                void api.setSetting("tts_voice_edge", e.target.value);
+              }}
               data-testid="tts-voice-select"
               className={`${fieldCls} flex-1 px-2.5 py-1.5`}
             >
@@ -1127,249 +1220,206 @@ function SpeechContent() {
           </div>
         </div>
       )}
+
       {engine === "local" && (
-        <div className={rowCls(false)}>
-          <div className="flex items-center gap-2">
-            <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.voice")}</span>
-            <select
-              value={sidLocal}
-              onChange={(e) => {
-                setSidLocal(e.target.value);
-                void api.setSetting("tts_sid_local", e.target.value);
-              }}
-              data-testid="tts-sid-select"
-              className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-            >
-              {TTS_LOCAL_SID_OPTIONS.map((v) => (
-                <option key={v.sid} value={v.sid}>{v.label}</option>
-              ))}
-            </select>
+        <>
+          <div className={rowCls(false)}>
+            <div className="flex items-center gap-2">
+              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.voice")}</span>
+              <select
+                value={sidLocal}
+                onChange={(e) => {
+                  setSidLocal(e.target.value);
+                  void api.setSetting("tts_sid_local", e.target.value);
+                }}
+                data-testid="tts-sid-select"
+                className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+              >
+                {TTS_LOCAL_SID_OPTIONS.map((v) => (
+                  <option key={v.sid} value={v.sid}>{v.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
+          <div className={rowCls(false)}>{modelRow("tts-kokoro")}</div>
+        </>
+      )}
+
+      {activeTtsCustom && (
+        <>
+          <div className={rowCls(false)}>{customSummary(activeTtsCustom, "tts", ttsTesting, ttsTestResult, testTtsCustom)}</div>
+          <div className={rowCls(false)}>
+            <div className="flex items-center gap-2">
+              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.voice")}</span>
+              <input
+                type="text"
+                value={customVoice}
+                onChange={(e) => setCustomVoice(e.target.value)}
+                onBlur={() => void api.setSetting("tts_custom_voice", customVoice.trim())}
+                placeholder={t("settings.speech.custom_voice_ph")}
+                data-testid="tts-custom-voice"
+                className={`${fieldCls} flex-1 px-2.5 py-1.5 font-mono`}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {showTtsForm && (
+        <div className={rowCls(false)}>
+          <CustomProviderForm
+            kind="tts"
+            showProtocol={false}
+            testPrefix="tts-custom"
+            titleKey="settings.custom.form_title_tts"
+            modelPhKey="settings.custom.model_ph_tts"
+            testOverride={(i) => api.testCustomTts({ baseUrl: i.baseUrl, apiKey: i.apiKey || undefined, model: i.model })}
+            onSaved={(p) => {
+              saveEngine(p.id);
+              setShowTtsForm(false);
+              refreshCustoms();
+            }}
+            onCancel={() => setShowTtsForm(false)}
+          />
         </div>
       )}
 
-      {/* 语速(三档共用) */}
-      <div className={rowCls(false)}>
+      <div className={rowCls(true)}>
         <div className="flex items-center gap-2">
           <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.speed")}</span>
           <input
             type="range"
-            min={0.5}
-            max={2}
-            step={0.05}
-            value={Number(speed)}
+            min="0.5"
+            max="2"
+            step="0.05"
+            value={speed}
             onChange={(e) => setSpeed(e.target.value)}
             onPointerUp={() => void api.setSetting("tts_speed", speed)}
             onKeyUp={() => void api.setSetting("tts_speed", speed)}
             data-testid="tts-speed-range"
-            className="flex-1 accent-brand"
+            className="flex-1 accent-[var(--brand)]"
           />
-          <span className="text-label text-ink-muted w-10 text-right" data-testid="tts-speed-value">{Number(speed).toFixed(2)}×</span>
+          <span className="text-label text-ink-muted tabular-nums w-10 text-right" data-testid="tts-speed-value">
+            {Number(speed).toFixed(2)}x
+          </span>
         </div>
       </div>
 
-      {/* azure 凭据 */}
-      {engine === "azure" && (
-        <>
-          <div className={rowCls(false)}>
-            <div className="flex items-center gap-2">
-              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.azure_key")}</span>
-              <div className="flex-1 flex items-center gap-2">
-                {keyMasked && azureKey === "" && (
-                  <span className="text-label text-brand shrink-0">✓</span>
-                )}
-                <input
-                  type="password"
-                  value={azureKey}
-                  onChange={(e) => setAzureKey(e.target.value)}
-                  onBlur={() => {
-                    if (azureKey.trim()) {
-                      void api.setSetting("azure_tts_api_key", azureKey.trim());
-                      setKeyMasked(true);
-                      setAzureKey("");
-                    }
-                  }}
-                  placeholder={keyMasked ? t("settings.key.overwrite_ph") : t("settings.key.paste_ph")}
-                  data-testid="azure-tts-key-input"
-                  className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-                />
-              </div>
-            </div>
-          </div>
-          <div className={rowCls(true)}>
-            <div className="flex items-center gap-2">
-              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.azure_region")}</span>
-              <input
-                type="text"
-                value={azureRegion}
-                onChange={(e) => setAzureRegion(e.target.value)}
-                onBlur={() => void api.setSetting("azure_tts_region", azureRegion.trim())}
-                placeholder="eastus"
-                data-testid="azure-tts-region-input"
-                className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-              />
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* 听写引擎三选一(v0.13:质量优先,local=Whisper 离线) */}
-      <div className={rowCls(false)}>
-        <div className="text-label font-medium text-ink-strong mb-2">{t("settings.speech.asr_engine")}</div>
-        <div className="flex gap-2 flex-wrap">
-          {([
-            { id: "local" as const, label: t("settings.speech.asr_engine.local") },
-            { id: "groq" as const, label: t("settings.speech.asr_engine.groq") },
-            { id: "azure" as const, label: t("settings.speech.asr_engine.azure") },
-          ]).map(({ id, label }) => (
-            <button
-              key={id}
-              onClick={() => saveAsrEngine(id)}
-              data-testid={`asr-engine-${id}`}
-              aria-pressed={asrEngine === id}
-              className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${asrEngine === id ? pillActiveCls : pillInactiveCls}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <p className="text-label text-ink-muted mt-2">
-          {asrEngine === "local"
-            ? t("settings.speech.asr_engine.local_note")
-            : asrEngine === "groq"
-              ? groqReady
-                ? t("settings.speech.asr_engine.groq_ready")
-                : t("settings.speech.asr_engine.groq_note")
-              : t("settings.speech.asr_engine.azure_note")}
-        </p>
-      </div>
-
-      {/* azure STT 凭据 */}
-      {asrEngine === "azure" && (
-        <>
-          <div className={rowCls(false)}>
-            <div className="flex items-center gap-2">
-              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.azure_key")}</span>
-              <div className="flex-1 flex items-center gap-2">
-                {sttKeyMasked && sttKey === "" && <span className="text-label text-brand shrink-0">✓</span>}
-                <input
-                  type="password"
-                  value={sttKey}
-                  onChange={(e) => setSttKey(e.target.value)}
-                  onBlur={() => {
-                    if (sttKey.trim()) {
-                      void api.setSetting("azure_stt_api_key", sttKey.trim());
-                      setSttKeyMasked(true);
-                      setSttKey("");
-                    }
-                  }}
-                  placeholder={sttKeyMasked ? t("settings.key.overwrite_ph") : t("settings.key.paste_ph")}
-                  data-testid="azure-stt-key-input"
-                  className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-                />
-              </div>
-            </div>
-          </div>
-          <div className={rowCls(false)}>
-            <div className="flex items-center gap-2">
-              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.azure_region")}</span>
-              <input
-                type="text"
-                value={sttRegion}
-                onChange={(e) => setSttRegion(e.target.value)}
-                onBlur={() => void api.setSetting("azure_stt_region", sttRegion.trim())}
-                placeholder="eastus"
-                data-testid="azure-stt-region-input"
-                className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-              />
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* 听写 UX 开关(v0.14 飞书式:语音文本先进复查浮层再发送,auto-send 已废) */}
-      <div className={rowCls(false)}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-label font-medium text-ink-strong">{t("settings.speech.asr_auto_stop")}</div>
+      {/* ===== 听写 ===== */}
+      <div className={rowCls(true)}>
+        <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.speech.asr_title")}</div>
+        <div className="flex items-center gap-2">
+          <select
+            value={asrEngine === "local" || asrEngine === "groq" || asrEngine === "azure" || asrEngine.startsWith("custom-") ? asrEngine : "local"}
+            onChange={(e) => saveAsrEngine(e.target.value)}
+            data-testid="asr-engine-select"
+            className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+          >
+            <option value="local">{t("settings.speech.asr_engine.local")}</option>
+            {asrCustoms.map((c) => (
+              <option key={c.id} value={c.id}>
+                {t("settings.speech.engine.custom_opt", { label: c.label })}
+              </option>
+            ))}
+            {asrEngine === "groq" && (
+              <option value="groq" disabled>
+                Groq · {t("settings.speech.legacy")}
+              </option>
+            )}
+            {asrEngine === "azure" && (
+              <option value="azure" disabled>
+                Azure · {t("settings.speech.legacy")}
+              </option>
+            )}
+          </select>
           <button
-            onClick={() => {
+            onClick={() => setShowAsrForm((s) => !s)}
+            data-testid="add-asr-custom"
+            className="px-3 py-1.5 rounded-lg text-label whitespace-nowrap inline-flex items-center gap-1 border border-dashed border-[var(--border)] text-ink-muted hover:border-ink-muted hover:text-ink-strong transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+            {t("settings.speech.add_custom")}
+          </button>
+        </div>
+        {asrEngine === "local" ? (
+          <p className="text-label text-ink-muted mt-2">{t("settings.speech.asr_engine.local_note")}</p>
+        ) : (
+          asrEngine.startsWith("custom-") && (
+            <p className="text-label text-ink-muted mt-2">{t("settings.speech.asr_engine.custom_note")}</p>
+          )
+        )}
+      </div>
+
+      {asrEngine === "local" && (
+        <>
+          <div className={rowCls(false)}>
+            <div className="flex items-center gap-2">
+              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.model")}</span>
+              <select
+                value={asrLocalModel}
+                onChange={(e) => {
+                  setAsrLocalModel(e.target.value);
+                  void api.setSetting("asr_local_model", e.target.value);
+                }}
+                data-testid="asr-model-select"
+                className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+              >
+                {(["asr-whisper-turbo", "asr-whisper-small"] as const).map((id) => (
+                  <option key={id} value={id}>
+                    {labelOf(id)} · {stateLabel(rowState(id))}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className={rowCls(false)}>{modelRow(asrLocalModel)}</div>
+        </>
+      )}
+
+      {activeAsrCustom && <div className={rowCls(false)}>{customSummary(activeAsrCustom, "asr", asrTesting, asrTestResult, testAsrCustom)}</div>}
+
+      {showAsrForm && (
+        <div className={rowCls(false)}>
+          <CustomProviderForm
+            kind="asr"
+            showProtocol={false}
+            testPrefix="asr-custom"
+            titleKey="settings.custom.form_title_asr"
+            modelPhKey="settings.custom.model_ph_asr"
+            testOverride={(i) => api.testCustomAsr({ baseUrl: i.baseUrl, apiKey: i.apiKey || undefined, model: i.model })}
+            onSaved={(p) => {
+              saveAsrEngine(p.id);
+              setShowAsrForm(false);
+              refreshCustoms();
+            }}
+            onCancel={() => setShowAsrForm(false)}
+          />
+        </div>
+      )}
+
+      {/* 听写 UX:静音自动停(v0.14 飞书式复查浮层,auto-send 已废) */}
+      <div className={rowCls(true)}>
+        <div className="flex items-center gap-3">
+          <Toggle
+            checked={asrAutoStop}
+            onChange={() => {
               const next = !asrAutoStop;
               setAsrAutoStop(next);
               void api.setSetting("asr_auto_stop", next ? "1" : "0");
             }}
-            role="switch"
-            aria-checked={asrAutoStop}
-            data-testid="asr-auto-stop-toggle"
-            className={`relative w-10 h-6 rounded-full transition-colors ${asrAutoStop ? "bg-brand" : "bg-ink/[0.15]"}`}
-          >
-            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${asrAutoStop ? "left-[18px]" : "left-0.5"}`} />
-          </button>
+            label={t("settings.speech.asr_auto_stop")}
+            testid="asr-auto-stop-toggle"
+          />
+          <div className="text-body font-medium text-ink-strong">{t("settings.speech.asr_auto_stop")}</div>
         </div>
         <p className="text-label text-ink-muted mt-2">{t("settings.speech.asr_ux_note")}</p>
       </div>
 
-      {/* 模型管理:local TTS 档才需要 kokoro;ASR 模型常驻列表 */}
       {err && (
-        <div className="text-label text-warning break-all" role="alert">
+        <div className="px-4 py-3 text-label text-warning break-all" role="alert">
           {err === "engine-unavailable" ? t("chat.speech.engine_unavailable") : err}
         </div>
       )}
-      {rows
-        .filter((m) => m.id !== "tts-kokoro" || engine === "local")
-        .map((m) => (
-        <div key={m.id} className="flex items-center gap-3 flex-wrap">
-          <div className="min-w-0 flex-1">
-            <div className="text-label font-medium text-ink-strong truncate">{labelOf(m.id)}</div>
-            <div className="text-caption text-ink-muted">
-              {stateLabel(m.state)} · {licenseOf(m.id)}
-            </div>
-            {busy === m.id && prog?.id === m.id && (
-              <div className="mt-1.5 h-1.5 rounded-full bg-ink/[0.08] overflow-hidden" data-testid={`speech-dl-bar-${m.id}`}>
-                <div className="h-full bg-brand transition-all" style={{ width: `${prog.pct}%` }} />
-              </div>
-            )}
-            {busy === m.id && prog?.id === m.id && (
-              <div className="text-caption text-ink-muted mt-0.5" data-testid={`speech-dl-pct-${m.id}`}>
-                {prog.pct}% {prog.label}
-              </div>
-            )}
-          </div>
-          {m.state === "ready" ? (
-            confirmDelete === m.id ? (
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => remove(m.id)}
-                  className="px-3 py-1.5 rounded-xl text-label font-bold bg-warning text-white"
-                  data-testid={`speech-del-confirm-${m.id}`}
-                >
-                  {t("action.confirm")}
-                </button>
-                <button onClick={() => setConfirmDelete(null)} className="px-3 py-1.5 rounded-xl text-label font-bold bg-ink/[0.08] text-ink">
-                  {t("action.cancel")}
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirmDelete(m.id)}
-                disabled={busy !== null}
-                className="px-3 py-1.5 rounded-xl text-label font-bold bg-ink/[0.08] text-ink hover:bg-ink/[0.12] disabled:opacity-40"
-                data-testid={`speech-del-${m.id}`}
-              >
-                {t("settings.speech.delete")}
-              </button>
-            )
-          ) : (
-            <button
-              onClick={() => download(m.id)}
-              disabled={busy !== null}
-              className="btn-3d-brand px-3 py-1.5 text-label"
-              data-testid={`speech-dl-${m.id}`}
-            >
-              {busy === m.id ? `${prog?.pct ?? 0}%` : t("settings.speech.download")}
-            </button>
-          )}
-        </div>
-      ))}
     </div>
   );
 }

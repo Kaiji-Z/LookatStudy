@@ -14,6 +14,7 @@ import { customProviders } from "../db/schema.js";
 import type {
   CustomProvider,
   CustomProviderInput,
+  CustomProviderKind,
   ProviderModelInfo,
 } from "@shared/types";
 
@@ -36,6 +37,7 @@ function rowToCustomProvider(row: typeof customProviders.$inferSelect): CustomPr
   return {
     id: row.id,
     label: row.label,
+    kind: (row.kind as CustomProviderKind) ?? "llm",
     protocol: row.protocol,
     baseUrl: row.baseUrl,
     defaultModel: row.defaultModel,
@@ -45,6 +47,7 @@ function rowToCustomProvider(row: typeof customProviders.$inferSelect): CustomPr
   };
 }
 
+/** 全量列表(渲染层按 kind 分区过滤;主模型区=llm,看图=vision,朗读=tts,听写=asr) */
 export function listCustomProviders(db: Db): CustomProvider[] {
   return db.select().from(customProviders).all().map(rowToCustomProvider);
 }
@@ -65,6 +68,7 @@ export function createCustomProvider(
     .values({
       id,
       label: input.label,
+      kind: input.kind ?? "llm",
       protocol: input.protocol,
       baseUrl: input.baseUrl,
       apiKey: input.apiKey ?? null,
@@ -85,6 +89,7 @@ export function updateCustomProvider(
   if (!existing) throw new Error(`自定义 provider 不存在: ${id}`);
   const patch: Partial<typeof customProviders.$inferInsert> = {};
   if (input.label !== undefined) patch.label = input.label;
+  if (input.kind !== undefined) patch.kind = input.kind;
   if (input.protocol !== undefined) patch.protocol = input.protocol;
   if (input.baseUrl !== undefined) patch.baseUrl = input.baseUrl;
   if (input.apiKey !== undefined) patch.apiKey = input.apiKey || null;
@@ -100,16 +105,17 @@ export function deleteCustomProvider(db: Db, id: string): void {
 }
 
 /**
- * 取自定义 provider 的完整配置（含 apiKey 明文，给 llm-client 用，不暴露给渲染层）。
+ * 取自定义 provider 的完整配置（含 apiKey 明文，给 llm-client/speech 用，不暴露给渲染层）。
  */
 export function getCustomProviderRaw(
   db: Db,
   id: string,
-): { id: string; protocol: string; baseUrl: string; apiKey: string | null; defaultModel: string } | null {
+): { id: string; kind: CustomProviderKind; protocol: string; baseUrl: string; apiKey: string | null; defaultModel: string } | null {
   const row = db.select().from(customProviders).where(eq(customProviders.id, id)).get();
   if (!row) return null;
   return {
     id: row.id,
+    kind: (row.kind as CustomProviderKind) ?? "llm",
     protocol: row.protocol,
     baseUrl: row.baseUrl,
     apiKey: row.apiKey,

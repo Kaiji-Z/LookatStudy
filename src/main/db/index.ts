@@ -177,6 +177,8 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("exercises", "kc_title", "TEXT");
   // 仓库原文语言 (LLM Step 2 判断)
   addColumnIfMissing("courses", "source_lang", "TEXT");
+  // v0.15 三模型区:custom_providers 分用途(llm/vision/tts/asr),老行默认 llm
+  addColumnIfMissing("custom_providers", "kind", "TEXT NOT NULL DEFAULT 'llm'");
   // 学习者记忆:friction_pattern 课程隔离(方案2);NULL=跨课程(如 global 风格)
   addColumnIfMissing("memory", "course_id", "TEXT");
   // course_id 列加完后再建索引(不能放 schema.sql——旧库迁移时列还没加,建索引会崩)

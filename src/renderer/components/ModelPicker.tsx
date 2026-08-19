@@ -70,13 +70,15 @@ export function ModelPicker({ onGotoSettings }: ModelPickerProps) {
       for (const p of presets) {
         if (usable.has(p.id)) pushGroup(p.id, p.label, p.models);
       }
-      for (const c of customs as CustomProvider[]) {
+      // v0.15 分区:主模型快切只列 kind=llm 的自定义(vision/tts/asr 在各自设置区管)
+      const llmCustoms = (customs as CustomProvider[]).filter((c) => c.kind === "llm");
+      for (const c of llmCustoms) {
         pushGroup(c.id, c.label, c.models);
       }
       // 当前模型不在任何清单(手输/发现来的):补一行保证芯条与菜单永远能显示当前值
       const activeModelId = model ?? "";
       if (activeModelId && !modelRows.some((r) => r.providerId === cur && r.modelId === activeModelId)) {
-        const label = presets.find((p) => p.id === cur)?.label ?? customs.find((c) => c.id === cur)?.label ?? cur;
+        const label = presets.find((p) => p.id === cur)?.label ?? llmCustoms.find((c) => c.id === cur)?.label ?? cur;
         modelRows.unshift({
           providerId: cur,
           providerLabel: label,

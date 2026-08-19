@@ -84,11 +84,14 @@ import {
   speakMessage,
   speechModelsStatusSnapshot,
   stopSpeaking,
+  type CustomTtsConfig,
 } from "../services/speech/tts-service.js";
 import { deleteSpeechModel } from "../services/speech/speech-model-service.js";
 import type { SpeechModelId } from "@shared/speech-types";
 import { invalidateSpeechEngines } from "../services/speech/speech-engine.js";
-import { transcribeAudio } from "../services/speech/asr-service.js";
+import { transcribeAudio, type CustomAsrConfig } from "../services/speech/asr-service.js";
+import { synthesizeOpenaiTts } from "../services/speech/openai-tts-client.js";
+import { getCustomProviderRaw } from "../services/custom-provider-service.js";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
 import {
   getProgress as getProgressService,
@@ -1361,7 +1364,15 @@ export function registerSpeechHandlers(deps: RuntimeDeps): void {
 
   handle("speech:ttsSpeak", async (_e, text: string, messageId: string) => {
     const settings = readSettingsMap(getDb());
-    const result = await speakMessage(emit, deps.dataDir, settings, messageId, text);
+    // custom 档:provider 行解析在此(db 不进 tts-service),行缺失时 speakMessage 给结构化失败
+    let custom: CustomTtsConfig | null = null;
+    if (settings.tts_engine?.startsWith("custom-")) {
+      const row = getCustomProviderRaw(getDb(), settings.tts_engine);
+      custom = row
+        ? { baseUrl: row.baseUrl, apiKey: row.apiKey, model: row.defaultModel, voice: settings.tts_custom_voice?.trim() || null }
+        : null;
+    }
+    const result = await speakMessage(emit, deps.dataDir, settings, messageId, text, { custom });
     // edge 档首次使用:回执带 firstUse(渲染层一次性披露),落 disclosed 标记
     if (result.ok && result.engine === "edge" && settings.tts_edge_disclosed !== "1") {
       const db = getDb();
@@ -1381,7 +1392,61 @@ export function registerSpeechHandlers(deps: RuntimeDeps): void {
 
   handle("speech:asrTranscribe", async (_e, wavBytes: ArrayBuffer, locale?: string) => {
     const settings = readSettingsMap(getDb());
-    return transcribeAudio(deps.dataDir, settings, wavBytes, locale);
+    let custom: CustomAsrConfig | null = null;
+    if (settings.asr_engine?.startsWith("custom-")) {
+      const row = getCustomProviderRaw(getDb(), settings.asr_engine);
+      custom = row ? { baseUrl: row.baseUrl, apiKey: row.apiKey, model: row.defaultModel } : null;
+    }
+    return transcribeAudio(deps.dataDir, settings, wavBytes, locale, custom);
+  });
+
+  // v0.15 设置页自定义语音 provider 的测试按钮:
+  // TTS = 真实合成一句验音频字节;ASR = 带 key GET {base}/models 探活(401/403=密钥错,
+  // 其余非 2xx 提示"端点未提供列表",诚实不装绿)。providerId 优先(密钥不回传渲染层)
+  handle("speech:testCustomTts", async (_e, input: { providerId?: string; baseUrl?: string; apiKey?: string; model?: string; voice?: string }) => {
+    let baseUrl = input.baseUrl ?? "";
+    let apiKey = input.apiKey ?? null;
+    let model = input.model ?? "";
+    let voice = input.voice ?? null;
+    if (input.providerId) {
+      const row = getCustomProviderRaw(getDb(), input.providerId);
+      if (!row) return { ok: false, detail: "provider 不存在" };
+      baseUrl = row.baseUrl;
+      apiKey = row.apiKey;
+      model = row.defaultModel;
+      voice = readSettingsMap(getDb()).tts_custom_voice?.trim() || null;
+    }
+    if (!baseUrl || !model) return { ok: false, detail: "缺 baseUrl/模型" };
+    try {
+      const buf = await synthesizeOpenaiTts({ baseUrl, apiKey, model, voice, text: "你好" });
+      return { ok: buf.length > 0, detail: buf.length > 0 ? `${buf.length}B` : "empty" };
+    } catch (e) {
+      return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  handle("speech:testCustomAsr", async (_e, input: { providerId?: string; baseUrl?: string; apiKey?: string; model?: string }) => {
+    let baseUrl = input.baseUrl ?? "";
+    let apiKey = input.apiKey ?? null;
+    if (input.providerId) {
+      const row = getCustomProviderRaw(getDb(), input.providerId);
+      if (!row) return { ok: false, detail: "provider 不存在" };
+      baseUrl = row.baseUrl;
+      apiKey = row.apiKey;
+    }
+    if (!baseUrl) return { ok: false, detail: "缺 baseUrl" };
+    const url = `${baseUrl.replace(/\/+$/, "")}/models`;
+    const headers: Record<string, string> = {};
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    try {
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
+      if (res.ok) return { ok: true, detail: String(res.status) };
+      if (res.status === 401 || res.status === 403) return { ok: false, detail: `HTTP ${res.status}(密钥无效)` };
+      // 端点存在但不提供模型列表:只能确认 URL 可达,不装绿
+      return { ok: false, detail: `HTTP ${res.status}(端点可达,未提供模型列表;保存后实际说一句验证)` };
+    } catch (e) {
+      return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+    }
   });
 }
 

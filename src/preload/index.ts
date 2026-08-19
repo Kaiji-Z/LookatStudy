@@ -151,6 +151,10 @@ const api = {
     ipcRenderer.invoke("speech:ttsStop")) as ApiExpose["ttsStop"],
   asrTranscribe: ((wavBytes: ArrayBuffer, locale?: string) =>
     ipcRenderer.invoke("speech:asrTranscribe", wavBytes, locale)) as ApiExpose["asrTranscribe"],
+  testCustomTts: ((input: { providerId?: string; baseUrl?: string; apiKey?: string; model?: string; voice?: string }) =>
+    ipcRenderer.invoke("speech:testCustomTts", input)) as ApiExpose["testCustomTts"],
+  testCustomAsr: ((input: { providerId?: string; baseUrl?: string; apiKey?: string; model?: string }) =>
+    ipcRenderer.invoke("speech:testCustomAsr", input)) as ApiExpose["testCustomAsr"],
   getAttachmentDataUrl: ((file: string) =>
     ipcRenderer.invoke("attachment:getDataUrl", file)) as ApiExpose["getAttachmentDataUrl"],
   isAgentReady: (() =>

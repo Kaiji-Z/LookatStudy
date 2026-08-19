@@ -213,6 +213,8 @@ CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category);
 CREATE TABLE IF NOT EXISTS custom_providers (
   id TEXT PRIMARY KEY,               -- 'custom-' + uuid，也作为 active_provider 的值
   label TEXT NOT NULL,               -- 用户起的名字，如 "智谱 CodingPlan CN"
+  kind TEXT NOT NULL DEFAULT 'llm'   -- 用途分区：主模型/看图/朗读/听写（v0.15 前的行全部是 llm）
+    CHECK (kind IN ('llm', 'vision', 'tts', 'asr')),
   protocol TEXT NOT NULL DEFAULT 'openai-compatible'
     CHECK (protocol IN ('openai-compatible', 'anthropic', 'google')),
   base_url TEXT NOT NULL,            -- 如 https://api.z.ai/api/coding/paas/v4

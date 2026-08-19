@@ -1,12 +1,13 @@
 /**
  * 听写转录编排(v0.13 质量优先版)—— 渲染层录完整段 WAV,一次调用换全文。
  *
- * 路由:asr_engine 设置 → local(Whisper 离线,自带标点;turbo 优先,small 兜底)
- * / groq(whisper-large-v3-turbo,复用 LLM preset key)/ azure STT(BYO key)。
+ * 路由(v0.15):asr_engine 设置 → local(Whisper 离线,自带标点;asr_local_model
+ * 指定,缺省 turbo 优先)/ custom-<id>(自定义 provider,OpenAI 兼容
+ * /audio/transcriptions)。groq/azure 是旧取值,后端仍解析,UI 不再提供。
  * 流式会话(asrStart/asrFeed/asrStop)随 zipformer 一起退役:partial 换质量,用户拍板。
  *
- * 服务 db-free:settings 由 IPC 层注入。本地档串行化(turbo 解码吃满 CPU,
- * 并发两段只会互相拖慢);云端档天然并发安全。
+ * 服务 db-free:settings 由 IPC 层注入(custom provider 行也由 IPC 层解析注入)。
+ * 本地档串行化(turbo 解码吃满 CPU,并发两段只会互相拖慢);云端档天然并发安全。
  */
 
 import type { SpeechModelEntry } from "@shared/speech-types";
@@ -16,7 +17,7 @@ import { SPEECH_MODELS_MANIFEST } from "./speech-model-manifest";
 import { getWhisperRecognizer, isSpeechEngineLoadable } from "./speech-engine";
 import { readSpeechModelStatus } from "./speech-model-service";
 import { asrCloudMissing, localeToBcp47, localeToWhisperLang, resolveAsrTier } from "./asr-tiers";
-import { azureSttTranscribe, groqTranscribe } from "./cloud-asr-client";
+import { azureSttTranscribe, groqTranscribe, openaiTranscribe } from "./cloud-asr-client";
 
 export type TranscribeFailReason =
   | "engine-unavailable"
@@ -24,6 +25,7 @@ export type TranscribeFailReason =
   | "groq-key-missing"
   | "azure-key-missing"
   | "azure-region-missing"
+  | "custom-provider-missing"
   | "bad-audio"
   | "asr-failed";
 
@@ -31,9 +33,27 @@ export type TranscribeResult =
   | { ok: true; text: string }
   | { ok: false; reason: TranscribeFailReason; detail?: string };
 
-/** 本地档用哪个 whisper 模型(turbo 就绪优先,其次 small;都不就绪 null) */
-export function pickLocalWhisperEntry(dataDir: string): SpeechModelEntry | null {
-  for (const id of ["asr-whisper-turbo", "asr-whisper-small"] as const) {
+/** custom 听写档的已解析配置(IPC 层查 custom_providers 行后注入;verify 也可注入) */
+export interface CustomAsrConfig {
+  baseUrl: string;
+  apiKey: string | null;
+  model: string;
+}
+
+/**
+ * 本地档用哪个 whisper 模型:settings.asr_local_model 指定且就绪 → 用它;
+ * 未指定/所指未就绪 → turbo 就绪优先,其次 small;都不就绪 null。
+ */
+export function pickLocalWhisperEntry(
+  dataDir: string,
+  settings?: Record<string, string | null>,
+): SpeechModelEntry | null {
+  let order: Array<"asr-whisper-turbo" | "asr-whisper-small"> = ["asr-whisper-turbo", "asr-whisper-small"];
+  const preferred = settings?.asr_local_model;
+  if (preferred === "asr-whisper-turbo" || preferred === "asr-whisper-small") {
+    order = [preferred, ...order.filter((id) => id !== preferred)];
+  }
+  for (const id of order) {
     const entry = SPEECH_MODELS_MANIFEST.models.find((m) => m.id === id);
     if (entry && readSpeechModelStatus(dataDir, entry).state === "ready") return entry;
   }
@@ -72,8 +92,25 @@ export async function transcribeAudio(
   settings: Record<string, string | null>,
   wavBytes: ArrayBuffer,
   locale?: string,
+  custom?: CustomAsrConfig | null,
 ): Promise<TranscribeResult> {
   const cfg = resolveAsrTier(settings);
+
+  if (cfg.engine === "custom") {
+    if (!custom) return { ok: false, reason: "custom-provider-missing" };
+    try {
+      const text = await openaiTranscribe({
+        baseUrl: custom.baseUrl,
+        apiKey: custom.apiKey,
+        model: custom.model,
+        wav: wavBytes,
+        language: localeToBcp47(locale),
+      });
+      return { ok: true, text: normalizeChineseScript(text, locale) };
+    } catch (e) {
+      return { ok: false, reason: "asr-failed", detail: e instanceof Error ? e.message : String(e) };
+    }
+  }
 
   if (cfg.engine === "groq" || cfg.engine === "azure") {
     const missing = asrCloudMissing(cfg);
@@ -94,7 +131,7 @@ export async function transcribeAudio(
 
   // local 档
   if (!isSpeechEngineLoadable()) return { ok: false, reason: "engine-unavailable" };
-  const entry = pickLocalWhisperEntry(dataDir);
+  const entry = pickLocalWhisperEntry(dataDir, settings);
   if (!entry) return { ok: false, reason: "model-missing" };
   return runLocal(async () => {
     let samples: Float32Array;

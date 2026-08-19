@@ -268,6 +268,12 @@ export const customProviders = sqliteTable("custom_providers", {
   id: text("id").primaryKey(),
   /** 用户起的名字，如"智谱 CodingPlan CN" */
   label: text("label").notNull(),
+  /** 用途分区：主模型 / 看图覆盖 / 朗读 / 听写（v0.15 前的行全部是 llm） */
+  kind: text("kind", {
+    enum: ["llm", "vision", "tts", "asr"],
+  })
+    .notNull()
+    .default("llm"),
   /** 协议：openai-compatible（默认，覆盖 90% 场景）/ anthropic / google */
   protocol: text("protocol", {
     enum: ["openai-compatible", "anthropic", "google"],

@@ -1209,8 +1209,8 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: asrInput,
   });
 
-  // T-VOICE-SETTINGS (v0.14): 设置页语音组 —— TTS 三档 pill + 听写三档 pill +
-  // 讲解 tab 🔊 朗读按钮在位(飞书式复查浮层落地后 auto-send 开关已废,不再断言)。
+  // T-VOICE-SETTINGS (v0.15): 语音模型区 —— 朗读/听写 provider 下拉 + 自定义入口 +
+  // 本地 whisper 模型下拉 + 讲解 tab 🔊(pill 范式已退役;新库无 azure/groq 旧值项)。
   let voiceSettings: { ok?: boolean; error?: string; [k: string]: unknown } = {};
   try {
     voiceSettings = await win.webContents.executeJavaScript(`
@@ -1233,12 +1233,18 @@ async function runUiTest(screenshot = false): Promise<void> {
           speech.scrollIntoView({ block: "center" });
           await sleep(200);
           var has = function(id){ var el = q('[data-testid="' + id + '"]'); return !!el; };
+          var ttsSel = q('[data-testid="tts-engine-select"]');
+          var ttsOptions = ttsSel ? ttsSel.options.length : 0;
+          var asrSel = q('[data-testid="asr-engine-select"]');
           var r = {
             notebookSpeak: notebookSpeak,
-            ttsEdge: has("tts-engine-edge"), ttsAzure: has("tts-engine-azure"), ttsLocal: has("tts-engine-local"),
-            asrLocal: has("asr-engine-local"), asrGroq: has("asr-engine-groq"), asrAzure: has("asr-engine-azure"),
+            ttsSelect: !!ttsSel, ttsBuiltinOptions: ttsOptions >= 2,
+            asrSelect: !!asrSel,
+            asrModelSelect: has("asr-model-select"),
+            addTtsCustom: has("add-tts-custom"), addAsrCustom: has("add-asr-custom"),
+            legacyPillGone: !q('[data-testid="tts-engine-edge"]'),
           };
-          r.ok = r.notebookSpeak && r.ttsEdge && r.ttsAzure && r.ttsLocal && r.asrLocal && r.asrGroq && r.asrAzure;
+          r.ok = r.notebookSpeak && r.ttsSelect && r.ttsBuiltinOptions && r.asrSelect && r.asrModelSelect && r.addTtsCustom && r.addAsrCustom && r.legacyPillGone;
           // 关设置(别污染后续步骤的界面状态)
           var closeBtn = q('[data-testid="settings-close"]');
           if (closeBtn) closeBtn.click();
@@ -1250,7 +1256,7 @@ async function runUiTest(screenshot = false): Promise<void> {
     voiceSettings = { error: String(e) };
   }
   results.push({
-    name: "voice settings: tts/asr engine pills + notebook read-aloud button",
+    name: "voice settings: provider selects + custom entries + whisper model select + notebook read-aloud",
     ok: voiceSettings?.ok === true,
     detail: voiceSettings,
   });

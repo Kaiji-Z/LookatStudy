@@ -57,14 +57,15 @@ await test("T1 text 源课程包 round-trip:serialize→parse→零网络重建(
 });
 
 await test("T2 exportPack 守卫(源码级):folder 拒绝,新 kind 放行", () => {
-  const src = readFileSync(new URL("../src/main/ipc/index.ts", import.meta.url), "utf8");
+  // 归一化行尾:Windows autocrlf checkout 出 CRLF,跨行字符串断言不能写死 \n
+  const src = readFileSync(new URL("../src/main/ipc/index.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.ok(src.includes('if (plan.kind === "folder") {\n      throw new Error("本地文件夹导入的课程不支持导出课程包'), "folder 仍被拒绝");
   assert.ok(!src.includes('plan.kind !== "github" || !plan.github'), "github-only 限制已移除");
   assert.ok(src.includes("docCache 让包自包含"), "新源命名分支存在");
 });
 
 await test("T3 packable 判定(源码级):folder 之外均可导", () => {
-  const src = readFileSync(new URL("../src/main/ipc/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/main/ipc/index.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.ok(src.includes('planKind !== "folder"'), "packable 按 kind!=\"folder\" 判定");
 });
 

@@ -291,6 +291,16 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       } else if (spec.kind === "video") {
         const route = routeImportUrl(spec.url);
         if (route?.kind !== "video") throw new Error("不是可识别的视频链接(B站/YouTube,或安装 yt-dlp 后支持更多站点)");
+        repoUrl = spec.url;
+        // 整季重导的 Step1 现拉 = 重新下载 + 逐段转写,代价过高(视频内容基本不变):
+        // 同身份已有快照且带正文缓存 → 直接从缓存恢复(课程包导入同款语义),
+        // 后续 hashMatch 对比缓存内容 → Steps 2-4 全复用,零拉流零转写。
+        const priorPlan = store.findByIdentity({ kind: "video", video: { url: normalizeUrlIdentity(spec.url) } });
+        if (priorPlan?.docCache && Object.keys(priorPlan.docCache).length > 0) {
+          entries = Object.entries(priorPlan.docCache);
+          displayName = priorPlan.courseTitle ?? null;
+          send(`✓ 该视频已导入过,从快照恢复(${entries.length} 个文档,零转写)`);
+        } else {
         const fetchVideo = deps.fetchVideo ?? (async (u: string, ctx: { send: (m: string) => void; signal?: AbortSignal }) => {
           const { fetchBilibiliAudio, fetchViaYtDlp } = await import("./video-import-service.js");
           if (!deps.dataDir) throw new Error("导入环境缺少数据目录,无法获取视频");
@@ -300,7 +310,10 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         });
         const fetched = await fetchVideo(spec.url, { send, signal: cancelCtl.signal });
         // 统一成宽松形状(真 VideoFetchResult 与 verify 桩都满足)
-        const v = fetched as { source: string; title: string; text?: string; bytes?: Uint8Array; ext?: string };
+        const v = fetched as {
+          source: string; title: string; text?: string; bytes?: Uint8Array; ext?: string;
+          parts?: { title: string; bytes: Uint8Array; ext?: string }[];
+        };
         displayName = v.title;
         repoUrl = spec.url;
         if (v.source === "subtitle" && v.text) {
@@ -309,6 +322,21 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
           const stem = v.title.replace(/\s+/g, "-").slice(0, 40) || "video";
           for (const part of chunkHeadinglessText(v.text, stem)) {
             entries.push([part.path, part.content] as [string, string]);
+          }
+        } else if (v.parts && v.parts.length > 0) {
+          // 多分P整季:逐段转写,每P各自成虚拟文档(Step4 按集分章,同多集播客)
+          const settings = readSettingsMap(db);
+          const transcribe = deps.transcribeAudioFile ?? defaultAudioTranscribe;
+          if (!deps.dataDir && !deps.transcribeAudioFile) throw new Error("导入环境缺少数据目录,无法转录视频音轨");
+          for (let i = 0; i < v.parts.length; i++) {
+            const p = v.parts[i]!;
+            send(`转写分P(${i + 1}/${v.parts.length}): ${p.title}…`);
+            const fileName = `${(p.title.replace(/\s+/g, "-").slice(0, 40) || `P${i + 1}`)}.${p.ext ?? "m4a"}`;
+            const text = await transcribe(p.bytes, fileName, { dataDir: deps.dataDir ?? "", settings, signal: cancelCtl.signal, send });
+            const stem = fileName.replace(/\.[^.]+$/, "");
+            for (const part of chunkHeadinglessText(text, stem)) {
+              entries.push([part.path, part.content] as [string, string]);
+            }
           }
         } else if (v.bytes) {
           // 无字幕:走音频转写全套(与 {kind:"audio"} 同款,模型自动下载可取消)
@@ -325,6 +353,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         } else {
           throw new Error("视频获取结果异常(既无字幕也无音轨)");
         }
+        } // end 首次导入(无快照可恢复)
       } else if (spec.kind === "audio") {
         // 多文件=多集播客:每集一个虚拟目录,Step 4 自然按集成章
         const settings = readSettingsMap(db);

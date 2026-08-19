@@ -41,9 +41,10 @@ test("T1 视频路由:B站(BV/av/分P)/YouTube(watch/shorts/youtu.be)", () => {
   assert.equal(routeImportUrl("https://example.com/post")?.kind, "url");
 });
 
-test("T2 parseBilibiliId:BV/av/?p= 提取", () => {
+test("T2 parseBilibiliId:BV/av/?p= 提取(无 ?p= → page=undefined=整季)", () => {
   assert.deepEqual(parseBilibiliId("https://www.bilibili.com/video/BV1GJ411x7h7?p=3"), { bvid: "BV1GJ411x7h7", aid: undefined, page: 3 });
-  assert.deepEqual(parseBilibiliId("https://www.bilibili.com/video/av170001"), { bvid: undefined, aid: 170001, page: 1 });
+  assert.deepEqual(parseBilibiliId("https://www.bilibili.com/video/BV1GJ411x7h7"), { bvid: "BV1GJ411x7h7", aid: undefined, page: undefined }, "不带 ?p= 导整季");
+  assert.deepEqual(parseBilibiliId("https://www.bilibili.com/video/av170001"), { bvid: undefined, aid: 170001, page: undefined });
   assert.equal(parseBilibiliId("https://example.com/x"), null);
 });
 
@@ -110,6 +111,37 @@ await test("T6 视频管线(音频路径):走转写桩(生产=Whisper),标题成
   const lessons = deps.db.select().from(contentNodes).where(eq(contentNodes.courseId, r.courseId)).all().filter((n) => n.type === "lesson");
   assert.ok(lessons.length >= 2);
   assert.ok((lessons[0]?.sourcePath ?? "").startsWith("深度学习公开课"), `stem 来自标题: ${lessons[0]?.sourcePath}`);
+});
+
+await test("T8 多分P整季:audio-multi 逐段转写,每P独立虚拟文档,docCache 复用零二次转写", async () => {
+  const sqljs = new SQL.Database(); sqljs.run(schemaSql);
+  let transcribed = 0;
+  const seenFiles = [];
+  const deps = {
+    db: drizzle(sqljs, { schema }),
+    store: createPlanStore(mkdtempSync(join(tmpdir(), "ls-video3-"))),
+    markDirty: () => {}, onProgress: () => {}, shouldAbort: () => false,
+    fetchVideo: async () => ({ source: "audio-multi", title: "机器学习课程", parts: [
+      { title: "P1 梯度下降", bytes: new Uint8Array(10), ext: "m4a" },
+      { title: "P2 反向传播", bytes: new Uint8Array(10), ext: "m4a" },
+    ] }),
+    transcribeAudioFile: async (_b, fileName) => { transcribed++; seenFiles.push(fileName); return `${fileName} 的整季转写文本。`.repeat(400); },
+  };
+  const url = "https://www.bilibili.com/video/BV1multiP";
+  const r = await runSmartImport({ kind: "video", url }, deps);
+  assert.equal(transcribed, 2, "两个分P各转写一次");
+  assert.ok(seenFiles[0]?.startsWith("P1-梯度下降"), `分P标题成转写文件名: ${seenFiles[0]}`);
+  assert.ok(seenFiles[1]?.startsWith("P2-反向传播"), `分P标题成转写文件名: ${seenFiles[1]}`);
+  const lessons = deps.db.select().from(contentNodes).where(eq(contentNodes.courseId, r.courseId)).all().filter((n) => n.type === "lesson");
+  assert.ok(lessons.length >= 2, `每P至少一课,实际 ${lessons.length}`);
+  const plan = deps.store.load(r.planId);
+  const paths = Object.keys(plan.docCache ?? {});
+  assert.ok(paths.some((p) => p.startsWith("P1-")) && paths.some((p) => p.startsWith("P2-")), `docCache 按分P落盘: ${paths.join(",")}`);
+  // 同 URL 再导:docCache 命中,零拉流零转写,全复用
+  const sqljs2 = new SQL.Database(); sqljs2.run(schemaSql);
+  const r2 = await runSmartImport({ kind: "video", url }, { ...deps, db: drizzle(sqljs2, { schema }) });
+  assert.equal(r2.reused, true, "整季课程同 URL 复用");
+  assert.equal(transcribed, 2, "复用不触发二次转写");
 });
 
 await test("T7 fMP4→ADTS 转封装:esds 提 ASC/trun 样本表/多 moof/头字段向量", () => {

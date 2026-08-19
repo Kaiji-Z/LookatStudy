@@ -8,7 +8,7 @@
 import type { ContentNode, Progress, Course } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { useState, useEffect, useRef, type CSSProperties } from "react";
-import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package } from "lucide-react";
+import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { CourseSearchPanel } from "./CourseSearchPanel.js";
 import {
@@ -347,12 +347,13 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
 /* ---------- 导入面板(原 CourseDrawer 内容,内联) ---------- */
 function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse, onCoursesChanged }: { courses: Course[]; selectedCourseId: string | null; onSelectCourse: (id: string) => void; onDeleteCourse: (id: string, title: string, rect: DOMRect) => void; onCoursesChanged: () => void; }) {
   const t = useLang();
-  const [tab, setTab] = useState<"url" | "markdown" | "folder" | "epub" | "pack">("url");
+  const [tab, setTab] = useState<"url" | "markdown" | "folder" | "epub" | "audio" | "pack">("url");
   const [showImport, setShowImport] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
   const [folderPath, setFolderPath] = useState("");
   const packFileRef = useRef<HTMLInputElement | null>(null);
   const epubFileRef = useRef<HTMLInputElement | null>(null);
+  const audioFileRef = useRef<HTMLInputElement | null>(null);
   const [mdText, setMdText] = useState("");
   const [repoName, setRepoName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -514,6 +515,36 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+  const handleImportAudio = async () => {
+    if (busy) return;
+    setError(null); setSuccess(null); setProgressSteps([]);
+    if (!isDesktopApp) {
+      audioFileRef.current?.click();
+      return;
+    }
+    const job = await api.importAudio().catch((e) => { setError(e instanceof Error ? e.message : String(e)); return null; });
+    if (!job) return; // 用户取消了文件选择
+    setBusy(true);
+  };
+  const handleAudioFilesChosen = async (files: FileList | null | undefined) => {
+    if (!files || files.length === 0 || busy) return;
+    setError(null); setSuccess(null); setProgressSteps([]);
+    try {
+      const payload: { fileName: string; contentBase64: string }[] = [];
+      for (const file of Array.from(files)) {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < buf.length; i += 0x8000) {
+          bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+        }
+        payload.push({ fileName: file.name, contentBase64: btoa(bin) });
+      }
+      const job = await api.importAudio(payload);
+      if (job) setBusy(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const handleResume = async (planId: string) => {
     if (busy) return;
     setError(null); setProgressSteps([]);
@@ -653,7 +684,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
             ) : (
               <>
                 <div className="@container flex gap-1 p-1 bg-white/5 rounded-lg">
-                  {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }, { k: "epub" as const, label: t("import.tab.epub"), icon: BookOpen }, { k: "pack" as const, label: t("import.tab.pack"), icon: Package }]).map(({ k, label, icon: Icon }) => (
+                  {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }, { k: "epub" as const, label: t("import.tab.epub"), icon: BookOpen }, { k: "audio" as const, label: t("import.tab.audio"), icon: Mic }, { k: "pack" as const, label: t("import.tab.pack"), icon: Package }]).map(({ k, label, icon: Icon }) => (
                     <button key={k} onClick={() => setTab(k)} className={`min-w-0 flex-1 flex items-center justify-center gap-0.5 py-1.5 px-0.5 rounded-md font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
                       <Icon className="w-3 h-3 shrink-0" />
                       <span className="whitespace-nowrap" style={{ fontSize: "clamp(0.75rem, 4cqi, 0.875rem)" }}>{label}</span>
@@ -695,6 +726,18 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
                       />
                     )}
                     <button onClick={handleImportEpub} disabled={busy} data-testid="import-epub-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.epub")}</button>
+                  </section>
+                ) : tab === "audio" ? (
+                  <section className="space-y-2" data-testid="import-audio-section">
+                    <p className="text-caption text-white/50 leading-relaxed">{t("import.audio.desc")}</p>
+                    {!isDesktopApp && (
+                      <input
+                        ref={audioFileRef} type="file" multiple accept=".wav,.mp3,.m4a,.flac,.aac,.ogg,.opus,audio/*" className="hidden"
+                        data-testid="import-audio-file"
+                        onChange={(e) => { void handleAudioFilesChosen(e.target.files); e.currentTarget.value = ""; }}
+                      />
+                    )}
+                    <button onClick={handleImportAudio} disabled={busy} data-testid="import-audio-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.audio")}</button>
                   </section>
                 ) : (
                   <section className="space-y-2" data-testid="import-pack-section">

@@ -63,6 +63,19 @@ export function setupIpc(mainWindow: BrowserWindow | null): void {
           bytes: new Uint8Array(readFileSync(filePath)),
         };
       },
+      async pickContentFiles(filters) {
+        const picked = await dialog.showOpenDialog(mainWindow!, {
+          properties: ["openFile", "multiSelections"],
+          title: "选择要导入的文件(可多选)",
+          filters,
+        });
+        if (picked.canceled) return [];
+        const { readFileSync } = await import("node:fs");
+        return picked.filePaths.map((filePath) => ({
+          fileName: filePath.split(/[\/]/).pop() ?? "file",
+          bytes: new Uint8Array(readFileSync(filePath)),
+        }));
+      },
     },
   });
 

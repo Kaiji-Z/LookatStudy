@@ -503,6 +503,9 @@ export interface ApiExpose {
   /** EPUB 电子书导入（后台任务）:Electron 无参调用弹原生选择框(取消返回 null);
    * web 模式传 {fileName, contentBase64}(渲染层 <input type=file> 读内容) */
   importEpub(epub?: { fileName: string; contentBase64: string }): Promise<ImportJobHandle | null>;
+  /** 本地音频导入(后台任务,多文件=多集):本地 Whisper 分段转写成课,缺模型自动下载。
+   * Electron 无参调用弹原生多选框(取消返回 null);web 模式传 base64 数组 */
+  importAudio(files?: { fileName: string; contentBase64: string }[]): Promise<ImportJobHandle | null>;
   /** 请求取消进行中的后台导入（拉取阶段生效，写库前零残留）。返回是否有任务在跑 */
   importCancel(): Promise<boolean>;
   /** 从断点重试:带上次落盘的导入方案快照续跑(已完成步骤零重烧)。快照不存在时抛错 */

@@ -79,6 +79,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.rel.outputs.tag }}"
+          # 并发竞态兜底:release 不存在就建壳(与 package.yml 同款)
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "LookatStudy $TAG" --notes ""
           gh release upload "$TAG" .termux-build/lookatstudy-termux-voice.tar.gz --clobber
           gh release view "$TAG" --json assets --jq '.assets[].name'
 
@@ -91,4 +94,9 @@ jobs:
           npm install -g npm@latest >/dev/null
           npm --version
           cd .termux-build/stage/sherpa-onnx-node
-          npm publish --access public
+          # 同版本已在 npm(重跑场景)则跳过发布,工作流保持绿
+          if ! npm publish --access public; then
+            npm view "lookatstudy-termux-voice@$(node -p "require('./package.json').version")" version >/dev/null 2>&1 \
+              && echo "lookatstudy-termux-voice already on npm, skip publish" \
+              || exit 1
+          fi

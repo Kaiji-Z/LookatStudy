@@ -50,7 +50,12 @@ jobs:
           npm --version
           PKG_V="${PKG_VERSION#v}" node -e "const fs=require('fs');fs.writeFileSync('dist/mobile/package.json',JSON.stringify({name:'lookatstudy-mobile',version:process.env.PKG_V,description:'LookatStudy Termux portable bundle (server.cjs + web frontend)',repository:{type:'git',url:'git+https://github.com/Kaiji-Z/LookatStudy.git'}},null,2))"
           cat dist/mobile/package.json
-          cd dist/mobile && npm publish --access public
+          # 同版本已在 npm(attach 重跑场景)则跳过发布,继续走资产挂载
+          if ! cd dist/mobile && npm publish --access public; then
+            npm view "lookatstudy-mobile@${PKG_V}" version >/dev/null 2>&1 \
+              && echo "lookatstudy-mobile@${PKG_V} already on npm, continue to attach" \
+              || exit 1
+          fi
 
       # 引导器的一行安装命令 curl 它执行(独立资产,免解压 zip)
       - name: Stage standalone installer
@@ -110,4 +115,9 @@ jobs:
       - name: Attach mobile assets to the GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ inputs.release_tag || github.ref_name }}" assets/lookatstudy-mobile-zip/lookatstudy-mobile.zip assets/lookatstudy-mobile-zip/install-termux.sh assets/LookatStudy-launcher-apk/LookatStudy-launcher.apk --repo "$GITHUB_REPOSITORY" --clobber
+        run: |
+          TAG="${{ inputs.release_tag || github.ref_name }}"
+          # 并发竞态兜底:release 不存在就建壳(与 package.yml 同款)
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "LookatStudy $TAG" --notes ""
+          gh release upload "$TAG" assets/lookatstudy-mobile-zip/lookatstudy-mobile.zip assets/lookatstudy-mobile-zip/install-termux.sh assets/LookatStudy-launcher-apk/LookatStudy-launcher.apk --repo "$GITHUB_REPOSITORY" --clobber

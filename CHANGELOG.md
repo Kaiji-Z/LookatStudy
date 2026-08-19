@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.13.0] - 2026-08-19
 
 ### Added
 - **朗读三档引擎(默认换 Edge 在线音色)** —— 此前本地 Kokoro 音色被实测嫌"怪"(TTS 模型小,表现力有限)。现在朗读默认走 **Edge 在线通道**(微软 Edge 朗读,免费、无需密钥、产品级中文音色:晓晓/云希/辽宁晓北等 9 个精选),另有两档可切:**Azure**(自带密钥,官方通道,F0 层每月 50 万字符免费)与**本地离线**(原 Kokoro,下载后完全离线)。Edge 抖动时若本地模型就绪会**自动降级**继续读完(不打断学习);首次使用 Edge 一次性告知"文本经微软在线服务"(local-first 知情)。设置页语音能力组新增:引擎切换、音色下拉(Edge/Azure 共用 Neural 名册,本地为 8 个 kokoro 音色)、语速滑条、Azure 密钥/区域。句级缓存键扩为 引擎+音色+语速+文本,三档互不串味;Edge 档在 Termux 免装引擎包即可用(纯 JS,无原生依赖)。Windows 实测坑:Node 默认 DNS 顺序会让 Edge 端点握手重置,进程内调 ipv4first 修复。

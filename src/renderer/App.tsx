@@ -21,6 +21,7 @@ import { useCanvas } from "./lib/useCanvas.js";
 import { useFontSize } from "./lib/useFontSize.js";
 import { ChatStream, extractArtifacts } from "./components/ChatStream.js";
 import { ChatComposer } from "./components/ChatComposer.js";
+import { ChatCompanion } from "./components/companion/ChatCompanion.js";
 import { ExamView } from "./components/ExamView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 // ReviewPanel component no longer used — SelfRatingCard is imported by NotebookPanel directly
@@ -873,7 +874,7 @@ export default function App() {
                 右栏隐藏时 flex:1 撑满。 */}
             {showChat && (
             <div
-              className="flex flex-col h-full bg-surface-1 shrink-0 min-w-0 motion-safe:transition-[width] motion-safe:duration-200"
+              className="relative flex flex-col h-full bg-surface-1 shrink-0 min-w-0 motion-safe:transition-[width] motion-safe:duration-200"
               style={
                 tier === 3
                   ? { flex: 1 } // 单栏档:对话占满
@@ -1008,6 +1009,9 @@ export default function App() {
               />
                 </>
               )}
+              {/* 伙伴第三栖息地:右栏(笔记本)不可见时现身对话栏——导师跟着学习者换栏。
+                  考试关底/未选课不出现(考试界面零干扰红线)。 */}
+              {selectedCourseId && selectedNode?.type !== "exam" && !showRight && <ChatCompanion />}
             </div>
             )}
 

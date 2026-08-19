@@ -16,7 +16,10 @@ import {
   companionReducer,
   initialCompanionState,
   isCompanionEnabled,
+  micArcScale,
+  smoothMic,
 } from "./companion-core.ts";
+import { formIdFromSetting, type CompanionFormId } from "./forms-index.ts";
 
 export interface CompanionSnapshot {
   state: CompanionState;
@@ -28,6 +31,8 @@ export interface CompanionSnapshot {
   enabled: boolean;
   /** 设置是否已加载(避免误渲染后闪隐) */
   enabledLoaded: boolean;
+  /** 当前形象(默认小焰;设置页可换) */
+  form: CompanionFormId;
 }
 
 let state: CompanionState = initialCompanionState(Date.now());
@@ -36,10 +41,13 @@ let streakLit = false;
 let streakTimer: ReturnType<typeof setTimeout> | null = null;
 let enabled = true;
 let enabledLoaded = false;
+let form = formIdFromSetting(null);
 let installed = false;
 let snapshot: CompanionSnapshot | null = null;
 const listeners = new Set<() => void>();
-let lastActivitySent = 0;
+
+/* 听写麦克风包络(ref 级,不进 React 状态——渲染层 rAF 读) */
+let micSmoothed = 0;
 
 function rebuild(): void {
   snapshot = {
@@ -48,6 +56,7 @@ function rebuild(): void {
     streakLit,
     enabled,
     enabledLoaded,
+    form,
   };
   for (const l of listeners) l();
 }
@@ -68,6 +77,13 @@ async function reloadEnabled(): Promise<void> {
     enabled = true;
   }
   enabledLoaded = true;
+  try {
+    const f = await window.api?.getSetting("companion_form");
+    const nextForm = formIdFromSetting(typeof f === "string" ? f : null);
+    if (nextForm !== form) form = nextForm;
+  } catch {
+    /* 形象读取失败保持现状 */
+  }
   rebuild();
 }
 
@@ -110,16 +126,32 @@ function install(): void {
     /* web/测试环境无 api:伙伴退化为纯本地反应 */
   }
 
-  // 用户活动 → 入睡计时基准(节流 1s,reducer 活动事件本身廉价但不必每键一发)
-  const onAct = () => {
-    const now = Date.now();
-    if (state.sleeping || now - lastActivitySent > 1000) {
-      lastActivitySent = now;
-      dispatch({ type: "activity", now });
-    }
-  };
-  window.addEventListener("pointerdown", onAct, { passive: true });
-  window.addEventListener("keydown", onAct, { passive: true });
+  // Bongo Cat 式真实输入反馈:
+  //   键击 → 双臂交替按压(逐键,长按 repeat 不刷屏)
+  //   点击 → 按点击半区定向按压一侧臂
+  //   两者都更新活动/唤醒(见 reducer press)
+  let nextSide: -1 | 1 = 1;
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.repeat) return;
+      const side = nextSide;
+      nextSide = nextSide === 1 ? -1 : 1;
+      dispatch({ type: "press", side, now: Date.now() });
+    },
+    { passive: true },
+  );
+  window.addEventListener(
+    "pointerdown",
+    (e) => {
+      dispatch({ type: "press", side: e.clientX < window.innerWidth / 2 ? -1 : 1, now: Date.now() });
+    },
+    { passive: true },
+  );
+
+  // 窗口失焦 → 短阈值打盹;回归 → 唤醒+打招呼(「你回来了」)
+  window.addEventListener("blur", () => dispatch({ type: "focus", on: false, now: Date.now() }));
+  window.addEventListener("focus", () => dispatch({ type: "focus", on: true, now: Date.now() }));
 
   // 设置开关变更(设置页 dispatch)
   window.addEventListener("companion-config-changed", () => {
@@ -154,7 +186,7 @@ export function subscribeCompanion(l: () => void): () => void {
 /** useSyncExternalStore 快照(引用稳定,未变化不换对象)。 */
 export function getCompanionSnapshot(): CompanionSnapshot {
   if (!snapshot) {
-    snapshot = { state, energyRatio, streakLit, enabled, enabledLoaded };
+    snapshot = { state, energyRatio, streakLit, enabled, enabledLoaded, form };
   }
   return snapshot;
 }
@@ -179,4 +211,23 @@ export function companionSetListening(on: boolean): void {
 /** AI 流式回答中(App 的 chat.streaming → 托腮思考)。 */
 export function companionSetStreaming(on: boolean): void {
   dispatch({ type: "streaming", on, now: Date.now() });
+}
+
+/** 用户发出消息(ChatComposer 提交 → 出拳送出)。 */
+export function companionSend(): void {
+  dispatch({ type: "send", now: Date.now() });
+}
+
+/**
+ * 听写实时音量(useAsrInput 的 RMS 回调 → 这里只写 ref,零重渲染)。
+ * 渲染端用 getCompanionMicArc 在 rAF 里读量化档。
+ */
+export function companionMicLevel(v: number): void {
+  const raw = Math.min(1, Math.max(0, v));
+  micSmoothed = smoothMic(micSmoothed, raw);
+}
+
+/** 声波弧幅度(4 档量化;0=无声波)。 */
+export function getCompanionMicArc(): number {
+  return micArcScale(micSmoothed);
 }

@@ -36,6 +36,7 @@ export type CompanionPose =
   | "oops"
   | "lean-left"
   | "lean-right"
+  | "typing"
   | "doze";
 
 export interface CompanionState {
@@ -51,6 +52,16 @@ export interface CompanionState {
   sleeping: boolean;
   /** 最近一次用户活动时刻(ms)——空闲入睡的基准 */
   lastActivity: number;
+  /** Bongo Cat 式打字反应:最近键击在 TYPE_IDLE_MS 内为 true */
+  typing: boolean;
+  /** 键击序号(每次 press +1,Mascot 用它重触臂部按压动画) */
+  keySeq: number;
+  /** 最近一次按压的臂侧:-1=左 / 1=右(交替/点击定位) */
+  keySide: -1 | 1;
+  /** 最近一次按压时刻(ms)——typing 过期基准 */
+  lastPress: number;
+  /** 窗口聚焦(失焦→短阈值打盹;回归→唤醒+打招呼) */
+  windowFocused: boolean;
 }
 
 export type CompanionEvent =
@@ -60,6 +71,9 @@ export type CompanionEvent =
   | { type: "listening"; on: boolean; now: number }
   | { type: "streaming"; on: boolean; now: number }
   | { type: "activity"; now: number }
+  | { type: "press"; side: -1 | 1; now: number }
+  | { type: "send"; now: number }
+  | { type: "focus"; on: boolean; now: number }
   | { type: "tick"; now: number };
 
 export interface CelebrationReaction {
@@ -70,6 +84,12 @@ export interface CelebrationReaction {
 
 /** 空闲多久入睡(3 分钟;朗读/听写中永不睡) */
 export const SLEEP_AFTER_MS = 180_000;
+
+/** 打字反应空闲过期(Bongo Cat:停键 1.2s 收手) */
+export const TYPE_IDLE_MS = 1_200;
+
+/** 窗口失焦后多久打盹(人回来一眼就醒,不用等 3 分钟) */
+export const BLUR_SLEEP_MS = 4_000;
 
 /** 庆祝 kind → 伙伴反应。数值=保持时长,经验值(短反馈 600-1100ms 不打断节奏)。 */
 export function expressionForCelebration(kind: CelebrationKind): CelebrationReaction {
@@ -107,6 +127,11 @@ export function initialCompanionState(now = 0): CompanionState {
     streaming: false,
     sleeping: false,
     lastActivity: now,
+    typing: false,
+    keySeq: 0,
+    keySide: 1,
+    lastPress: 0,
+    windowFocused: true,
   };
 }
 
@@ -123,6 +148,7 @@ function basePoseOf(s: CompanionState): CompanionPose {
   if (s.listening) return "lean-right";
   if (s.streaming) return "lean-left";
   if (s.sleeping) return "doze";
+  if (s.typing) return "typing";
   return "float";
 }
 
@@ -182,12 +208,60 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
       }
       return next;
     }
+    case "press": {
+      // Bongo Cat 式逐键:每次键击/点击都交替/定向按压一只臂,唤醒入睡
+      const next: CompanionState = {
+        ...s,
+        sleeping: false,
+        typing: true,
+        keySeq: s.keySeq + 1,
+        keySide: ev.side,
+        lastPress: ev.now,
+        lastActivity: ev.now,
+      };
+      if (next.until === null || next.until <= ev.now) {
+        next.expression = baseExpressionOf(next);
+        next.pose = basePoseOf(next);
+        next.until = null;
+      }
+      return next;
+    }
+    case "send":
+      // 用户发出消息:出拳把消息"送出去"(短反应,不抢流式的托腮思考)
+      return {
+        ...s,
+        sleeping: false,
+        lastActivity: ev.now,
+        expression: "happy",
+        pose: "punch",
+        until: ev.now + 700,
+      };
+    case "focus": {
+      if (ev.on === s.windowFocused) return s;
+      if (!ev.on) return { ...s, windowFocused: false };
+      // 回归:唤醒 + 打个招呼(你回来了!)
+      return {
+        ...s,
+        windowFocused: true,
+        sleeping: false,
+        lastActivity: ev.now,
+        expression: "happy",
+        pose: "hop",
+        until: ev.now + 900,
+      };
+    }
     case "tick": {
-      const sleeping = !s.talking && !s.listening && ev.now - s.lastActivity >= SLEEP_AFTER_MS;
+      const typing = s.typing && ev.now - s.lastPress <= TYPE_IDLE_MS;
+      const sleepAfter = s.windowFocused ? SLEEP_AFTER_MS : BLUR_SLEEP_MS;
+      const sleeping = !s.talking && !s.listening && ev.now - s.lastActivity >= sleepAfter;
       const expired = s.until !== null && ev.now > s.until;
-      if (s.sleeping === sleeping && !expired) return s;
-      const next: CompanionState = { ...s, sleeping };
-      if (expired || (sleeping && s.expression !== "sleeping")) {
+      if (s.sleeping === sleeping && s.typing === typing && !expired) return s;
+      const next: CompanionState = { ...s, typing, sleeping };
+      if (
+        expired
+        || (sleeping && s.expression !== "sleeping")
+        || (typing !== s.typing && (s.until === null || expired))
+      ) {
         next.expression = baseExpressionOf(next);
         next.pose = basePoseOf(next);
         next.until = null;
@@ -275,6 +349,43 @@ export function gazeFromPointer(px: number, py: number, cx: number, cy: number, 
 
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+/* ---------------- 闲置视线漫游 ---------------- */
+
+/**
+ * 指针静止 4s+ 时,视线定时漂到确定性的"随机"点(活体感,不是死盯屏)。
+ * mulberry32 风格 LCG:同种子同值(测试要求),输出钳制在 ±0.75(不翻白眼)。
+ */
+export function wanderTarget(seed: number): Gaze {
+  let t = (seed + 0x6d2b79f5) | 0;
+  const step = () => {
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296; // [0,1)
+  };
+  const x = step() * 2 - 1;
+  const y = step() * 2 - 1;
+  return clampGaze(x * 0.75, y * 0.75);
+}
+
+/* ---------------- 麦克风包络(听写声波弧) ---------------- */
+
+/**
+ * VU 表惯例包络:起音快(0.55)/释放慢(0.12)——声音瞬间顶起来,
+ * 停话后缓缓落下。渲染层再过 micArcScale 量化,双保险防抖。
+ */
+export function smoothMic(prev: number, raw: number): number {
+  const k = raw > prev ? 0.55 : 0.12;
+  return prev + (raw - prev) * k;
+}
+
+/** 声波弧幅度 4 档量化(0/0.35/0.7/1):连续值直连 DOM 必抖。 */
+export function micArcScale(level: number): number {
+  if (level <= 0.02) return 0;
+  if (level < 0.2) return 0.35;
+  if (level < 0.55) return 0.7;
+  return 1;
 }
 
 /* ---------------- 设置门控 ---------------- */

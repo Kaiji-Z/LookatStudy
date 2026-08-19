@@ -1970,6 +1970,57 @@ async function runUiTest(screenshot = false): Promise<void> {
     await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-chat"]').click()`);
     await waitForPane((st) => !st.rail && st.chat && !st.nb);
     const narrowChat = await waitFits('[data-testid="chat-panel"]');
+    // T20d (companion v2): T3 对话栏 = 伙伴第三栖息地(右栏不可见时现身);
+    // 逐键反应(Bongo Cat 式):合成 keydown → 机体进入 cp-pose-typing
+    const t3Companion = await win.webContents
+      .executeJavaScript(`document.querySelector('[data-testid="chat-companion"]') !== null`)
+      .catch(() => null);
+    const t3Typing = await win.webContents
+      .executeJavaScript(
+        `
+      (async function() {
+        var m = document.querySelector('[data-testid="chat-companion-mascot"]');
+        if (!m) return { mascot: false };
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }));
+        await new Promise(function(r) { setTimeout(r, 240); });
+        m = document.querySelector('[data-testid="chat-companion-mascot"]');
+        var cls = m ? String(m.getAttribute('class')) : '';
+        return { mascot: true, typing: cls.indexOf('cp-pose-typing') >= 0, cls: cls.slice(0, 80) };
+      })()
+    `,
+      )
+      .catch(() => null);
+    results.push({
+      name: "companion v2: chat habitat in T3 (notebook hidden) + Bongo-Cat typing reaction",
+      ok: t3Companion === true && t3Typing?.mascot === true && t3Typing?.typing === true,
+      detail: { t3Companion, t3Typing },
+    });
+    // T20e (companion v2): 形象切换 — 写 companion_form=frost + 广播 → 机体 data-form
+    // 即时变 frost;断言后切回 ember(状态卫生:不污染下游与真实用户首选项)
+    const formSwitch = await win.webContents
+      .executeJavaScript(
+        `
+      (async function() {
+        await window.api.setSetting("companion_form", "frost");
+        window.dispatchEvent(new Event("companion-config-changed"));
+        var frost = false;
+        for (var i = 0; i < 30; i++) {
+          await new Promise(function(r) { setTimeout(r, 100); });
+          var el = document.querySelector('[data-testid="chat-companion-mascot"]');
+          if (el && el.getAttribute("data-form") === "frost") { frost = true; break; }
+        }
+        await window.api.setSetting("companion_form", "ember");
+        window.dispatchEvent(new Event("companion-config-changed"));
+        return { frost: frost };
+      })()
+    `,
+      )
+      .catch(() => null);
+    results.push({
+      name: "companion v2: form switch live-swaps mascot (frost) via settings event",
+      ok: formSwitch?.frost === true,
+      detail: formSwitch,
+    });
     {
       const dbg = await win.webContents.executeJavaScript(`
         (function() {

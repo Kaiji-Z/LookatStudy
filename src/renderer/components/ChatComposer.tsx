@@ -12,7 +12,7 @@
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { companionSetListening } from "../lib/companion/bus.ts";
+import { companionSend, companionSetListening } from "../lib/companion/bus.ts";
 import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X, Mic, Keyboard } from "lucide-react";
 import type { Soul, StarterPrompt, HumanFrictionCategory, ChatAttachmentInput, ContextUsageInfo } from "@shared/types";
 import { checkAttachmentFile, ATTACHMENT_LIMITS } from "@shared/attachment-intake";
@@ -177,6 +177,12 @@ export function ChatComposer({
         : voiceReview
           ? "review"
           : "idle";
+  /** 统一发送出口:先让伙伴出拳送出(Bongo Cat 式输入反馈的一部分)。 */
+  const emitSend: typeof onSend = (text, displayText, attachments) => {
+    companionSend();
+    onSend(text, displayText, attachments);
+  };
+
   const resetVoiceState = useCallback(() => {
     setVoiceText("");
     setVoiceReview(false);
@@ -190,7 +196,7 @@ export function ChatComposer({
   const handleVoiceSend = () => {
     const trimmed = voiceText.trim();
     if (!trimmed || streaming || !nodeId) return;
-    onSend(trimmed);
+    emitSend(trimmed);
     exitVoiceMode();
   };
 
@@ -351,7 +357,7 @@ export function ChatComposer({
       // 乐观消息的本地预览(main 忽略此字段)
       ...(a.kind === "image" && a.previewUrl ? { previewUrl: a.previewUrl } : {}),
     }));
-    onSend(text, undefined, payload.length > 0 ? payload : undefined);
+    emitSend(text, undefined, payload.length > 0 ? payload : undefined);
     setInput("");
     // objectURL 不在此 revoke:乐观消息(AttachmentView)还在引用它,unmount 统一回收
     setAttachments([]);
@@ -361,7 +367,7 @@ export function ChatComposer({
   // starter 选择:发消息;带 frictionCategory 的("我没太懂")额外记一条 friction。
   const handleStarterPick = (p: StarterPrompt) => {
     if (streaming) return;
-    onSend(p.message, p.label); // 气泡只显示按钮文字,不显示完整提示词
+    emitSend(p.message, p.label); // 气泡只显示按钮文字,不显示完整提示词
     if (p.frictionCategory) onLogFriction?.(p.frictionCategory, null);
   };
 

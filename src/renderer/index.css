@@ -978,3 +978,19 @@ html.light ::-webkit-scrollbar-thumb:hover {
 .cp-mouth { transition: transform 0.06s linear; }
 .cp-bubble { animation: cp-bubble-in 0.18s cubic-bezier(0.3, 1.4, 0.5, 1) 1; }
 @keyframes cp-bubble-in { from { opacity: 0; transform: translateY(4px) scale(0.9); } to { opacity: 1; transform: none; } }
+
+/* ---- v2 动效升级 ---- */
+/* 打字姿势(Bongo Cat 式待击):双臂对称向外微抬,随时拍下;逐键按压由 WAAPI additive 叠加 */
+.cp-pose-typing .cp-armL { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(12deg); }
+.cp-pose-typing .cp-armR { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(-12deg); }
+/* 天线滞后弹簧:相位落后整机悬浮 0.35s,移动时天线「拖尾」 */
+.cp-antenna { transform-box: fill-box; transform-origin: 80% 96%; animation: cp-ant-sway 3.4s ease-in-out -0.35s infinite alternate; }
+@keyframes cp-ant-sway { from { transform: rotate(-2deg); } to { transform: rotate(2deg); } }
+/* 表情切换弹跳:五官组按表情 key 重挂载,0.16s 缩放弹入盖住硬切 */
+.cp-face-pop { transform-box: fill-box; transform-origin: center; animation: cp-pop 0.16s cubic-bezier(0.2, 1.6, 0.4, 1) 1; }
+@keyframes cp-pop { from { transform: scale(0.9); } to { transform: scale(1); } }
+/* 朗读说话:头部随口型微弹(整机 bob 之外的次级运动) */
+.cp-expr-talking .cp-head { transform-box: fill-box; transform-origin: 50% 100%; animation: cp-talk-bob 0.55s ease-in-out infinite alternate; }
+@keyframes cp-talk-bob { from { transform: translateY(0); } to { transform: translateY(-1.4px); } }
+/* 听写声波弧:初态隐藏,首帧由 rAF 按麦克风包络点亮/缩放 */
+.cp-waves-wrap { opacity: 0; }

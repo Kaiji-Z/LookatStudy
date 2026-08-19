@@ -18,6 +18,10 @@
  * 密钥边界:key 输入框 password 类型;保存只走 setSetting,渲染层永不留全量 key。
  */
 import { useEffect, useState, useCallback } from "react";
+import { useSyncExternalStore } from "react";
+import { getCompanionSnapshot, subscribeCompanion } from "../lib/companion/bus.ts";
+import { COMPANION_FORM_IDS } from "../lib/companion/forms-index.js";
+import { Mascot } from "./companion/Mascot.js";
 import { Plus, RotateCw, CheckCircle2, XCircle, Wrench, Check } from "lucide-react";
 import { api } from "../lib/api.js";
 import type { ProviderPresetInfo, CustomProvider } from "@shared/types";
@@ -819,11 +823,16 @@ function MemoryContent() {
   );
 }
 
-/** 伴学伙伴开关:读写 companion_enabled(默认开)。关 → 两处栖息地都不渲染(回滚等价)。 */
+/**
+ * 伴学伙伴:开关(companion_enabled,默认开)+ 形象选择器(companion_form)。
+ * 选择卡用真 Mascot 实时预览(换肤即所见);切换写设置 + 广播
+ * companion-config-changed,bus 重读 → 三处栖息地即时换形象。
+ */
 function CompanionContent() {
   const t = useLang();
   const [enabled, setEnabled] = useState(true);
   const [loaded, setLoaded] = useState(false);
+  const snap = useSyncExternalStore(subscribeCompanion, getCompanionSnapshot);
 
   useEffect(() => {
     api.getSetting("companion_enabled").then((v) => {
@@ -840,15 +849,53 @@ function CompanionContent() {
     window.dispatchEvent(new Event("companion-config-changed"));
   };
 
+  const pickForm = async (id: string) => {
+    if (id === snap.form) return;
+    await api.setSetting("companion_form", id);
+    window.dispatchEvent(new Event("companion-config-changed"));
+  };
+
   if (!loaded) return null;
 
   return (
-    <div className="px-4 py-3.5 flex items-center gap-3">
-      <Toggle checked={enabled} onChange={handleToggle} label={t("settings.companion.toggle")} testid="companion-toggle" />
-      <div className="flex-1 min-w-0">
-        <div className="text-body font-medium text-ink-strong">{t("settings.companion.toggle")}</div>
-        <div className="text-label text-ink-muted">{t("settings.companion.toggle.desc")}</div>
+    <div className="px-4 py-3.5 flex flex-col gap-4">
+      <div className="flex items-center gap-3">
+        <Toggle checked={enabled} onChange={handleToggle} label={t("settings.companion.toggle")} testid="companion-toggle" />
+        <div className="flex-1 min-w-0">
+          <div className="text-body font-medium text-ink-strong">{t("settings.companion.toggle")}</div>
+          <div className="text-label text-ink-muted">{t("settings.companion.toggle.desc")}</div>
+        </div>
       </div>
+      {enabled && (
+        <div>
+          <div className="text-label text-ink-muted mb-2">{t("settings.companion.form")}</div>
+          <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label={t("settings.companion.form")}>
+            {COMPANION_FORM_IDS.map((id) => {
+              const selected = snap.form === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  data-testid={`companion-form-${id}`}
+                  onClick={() => { void pickForm(id); }}
+                  className={`flex flex-col items-center gap-0.5 rounded-xl p-1.5 border motion-safe:transition-colors
+                    ${selected
+                      ? "border-[var(--accent)] bg-surface-2 shadow-card"
+                      : "border-[var(--border-faint)] hover:bg-surface-2"}`}
+                  title={t(`companion.form.${id}.desc`)}
+                >
+                  <Mascot form={id} expression="happy" pose="float" size={64} />
+                  <span className={`text-label ${selected ? "text-ink-strong font-medium" : "text-ink-muted"}`}>
+                    {t(`companion.form.${id}.name`)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

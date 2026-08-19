@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { encodeWavPcm16, resampleLinear } from "@shared/speech-wav";
 
 import { trimSilenceEdges } from "./audio-trim";
+import { companionMicLevel } from "./companion/bus";
 import { createSilenceDetector, type SilenceDetector } from "./silence-detector";
 
 const TARGET_RATE = 16000;
@@ -168,6 +169,8 @@ export function useAsrInput(
           chunkRmsRef.current.push(rms);
           levelSmoothRef.current = levelSmoothRef.current * 0.7 + rms * 0.3;
           setLevel(Math.min(1, levelSmoothRef.current * 8));
+          // 伴学伙伴听写声波弧随真实音量起伏(bus 内再包络+量化,写 ref 零重渲染)
+          companionMicLevel(Math.min(1, levelSmoothRef.current * 8));
           const decision = detectorRef.current?.feed(rms, performance.now());
           if (decision === "auto-stop" && aliveRef.current) finalize();
         };

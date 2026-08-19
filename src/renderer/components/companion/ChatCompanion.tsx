@@ -1,9 +1,10 @@
 /**
- * RailCompanion —— 左栏(MapRail)天空里的守望形态。
+ * ChatCompanion —— 中栏(对话)的小伙伴形态,第三栖息地。
  *
- * 常驻课程地图右上方天空:注视指针、全事件表情反应(庆祝/连击/入睡)、
- * 朗读时同步口型(读共享分析节点)。pointer-events 只落在角色涂色区,
- * 不挡地图球的点击(角色是天空居民,不是路障)。
+ * 只在右栏笔记本不可见时现身(T1 手动收起右栏 / T2 显示了左栏 / T3 对话单栏):
+ * 导师总得在场——屏幕换到哪栏,伙伴就跟到哪栏。悬浮在对话流右上角的留白区
+ * (气泡左对齐、右侧多为空白),64px 小号 + pointer-events 限涂色区,不挡消息。
+ * 未选课程 / 考试关底时不出现(考试界面零干扰是完整性的红线)。
  */
 import { useSyncExternalStore } from "react";
 
@@ -17,7 +18,7 @@ import { useLang } from "../../lib/i18n.js";
 
 import { Mascot } from "./Mascot.tsx";
 
-export function RailCompanion() {
+export function ChatCompanion() {
   const t = useLang();
   const snap = useSyncExternalStore(subscribeCompanion, getCompanionSnapshot);
   const mouth = useSpeechMouth(snap.state.talking);
@@ -26,8 +27,8 @@ export function RailCompanion() {
 
   return (
     <div
-      className="absolute right-1 top-[200px] z-20"
-      data-testid="rail-companion"
+      className="absolute right-1.5 top-14 z-20"
+      data-testid="chat-companion"
     >
       <Mascot
         form={snap.form}
@@ -37,13 +38,13 @@ export function RailCompanion() {
         openScale={mouth.open}
         energyRatio={snap.energyRatio}
         streakLit={snap.streakLit}
-        size={84}
+        size={64}
         interactive
         ariaLabel={t("companion.name")}
         onPoke={companionPoke}
         keySeq={snap.state.keySeq}
         keySide={snap.state.keySide}
-        testid="rail-companion-mascot"
+        testid="chat-companion-mascot"
       />
     </div>
   );

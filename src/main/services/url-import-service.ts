@@ -30,6 +30,24 @@ export async function fetchArticleMarkdown(
   return article;
 }
 
+/** arXiv abs 页抽标题(纯函数,verify 直测):citation_title meta 优先(arXiv 页
+ *  必带,最可靠),<title> 剥 "[1706.03762]" 前缀兜底。都拿不到返回 null(调用方
+ *  用 "arXiv {id}" 当标题)。此前的贪婪正则 `[^<]*\]?\s*([^<]+)` 会回溯到只剩
+ *  最后一个字符(真实事故:标题抓成 "d")。 */
+export function extractArxivTitle(html: string): string | null {
+  const decode = (s: string) => s
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'");
+  const meta = html.match(/<meta\s+name="citation_title"\s+content="([^"]*)"/i)?.[1] ?? "";
+  if (meta.trim()) return decode(meta.trim().replace(/\s+/g, " "));
+  const t = (html.match(/<title>([^<]*)<\/title>/i)?.[1] ?? "")
+    .replace(/\[[^\]]*\]/g, "") // 剥 [1706.03762] 前缀(含无空格变体)
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t || /arxiv/i.test(t)) return null;
+  return decode(t);
+}
+
 /** 抓 arXiv:abs 页拿标题(尽力而为,失败用 ID 当标题)+ pdf 页拿正文。 */
 export async function fetchArxivMarkdown(
   arxivId: string,
@@ -44,13 +62,7 @@ export async function fetchArxivMarkdown(
     const absResp = await fetchFn(absUrl, { signal, headers: UA_HEADERS });
     if (absResp.ok) {
       const html = await absResp.text();
-      // <title>[2401.12345] Paper Title</title>
-      const m = html.match(/<title>[^<]*\]?\s*([^<]+)<\/title>/i);
-      if (m?.[1]) {
-        const t = m[1].trim().replace(/\s+/g, " ");
-        if (t && !/arxiv/i.test(t)) title = t;
-        else if (m[1].includes("]")) title = m[1].split("]").pop()!.trim() || title;
-      }
+      title = extractArxivTitle(html) ?? title;
     }
   } catch {
     /* 标题尽力而为,不影响正文 */

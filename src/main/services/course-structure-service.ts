@@ -6,13 +6,18 @@
  *   2. generateLessonSummaries: LLM 为每个 section 生成中文摘要
  *
  * 安全：LLM 返回 JSON 后，我们验证所有 lessonId 在 DB 里真实存在才落库。
+ *
+ * LLM 调用纪律(与导入管线同源):全部走 import-llm-service 的 buildImportModel
+ * + generateTextWithTimeout——思考压 fast/low、家族感知输出上限、活性看门狗、
+ * JSON 块抽取。此前这里是裸 generateText:无上限(截断无迹可查)、无看门狗
+ * (挂起无界)、思考不受控(GLM 默认思考单课能等数分钟)。
  */
 import { eq } from "drizzle-orm";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
-import { generateText } from "ai";
 import * as schema from "../db/schema.js";
 import { contentNodes, courses, progress as progressTable } from "../db/schema.js";
 import { resolveLlm } from "./agent/llm-client.js";
+import { buildImportModel, generateTextWithTimeout, extractJsonBlock, extractJsonBlockAny } from "./import-llm-service.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -35,13 +40,22 @@ export function parseLessonSummaryKc(
 ): { summary: string; summaryEn?: string; knowledgePoints?: { title: string; description: string }[] } | null {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   if (!cleaned) return null;
-  // 纯文本容错（旧式 LLM 输出）：当摘要用，KC 留待下次重试
+  // 纯文本容错（旧式 LLM 输出）：当摘要用，KC 留待下次重试。
+  // 只看首字符——正文里带花括号的纯文本摘要不能被误抽成"JSON"。
   if (!cleaned.startsWith("{")) return { summary: cleaned };
   let obj: unknown;
   try {
     obj = JSON.parse(cleaned);
   } catch {
-    return null; // 坏 JSON：不缓存垃圾
+    // 以 { 开头但解析失败:JSON 后面可能拖了说明文字(实测 CodingPlan 会多说两句),
+    // 抽第一个平衡 {...} 再试一次;抽不出(真截断)才判垃圾
+    const block = extractJsonBlock(cleaned);
+    if (block === cleaned) return null; // 坏 JSON：不缓存垃圾
+    try {
+      obj = JSON.parse(block);
+    } catch {
+      return null;
+    }
   }
   if (!obj || typeof obj !== "object") return null;
   const o = obj as Record<string, unknown>;
@@ -70,6 +84,7 @@ export async function generateLessonSummary(db: Db, nodeId: string, markDirty?: 
   if (node.summary && node.knowledgePoints) return node.summary;
 
   const llm = resolveLlm(db);
+  const im = buildImportModel(llm);
   const course = db.select().from(courses).where(eq(courses.id, node.courseId)).get();
   const content = node.content ?? "";
   if (content.trim().length < 20) return null; // 内容太短不生成
@@ -94,8 +109,8 @@ ${content.slice(0, 800)}
 严格返回 JSON 对象,不要加 markdown 代码块标记:
 { "summary": "1-2 句中文摘要", "summaryEn": "1-2 sentence English summary", "knowledgePoints": [{"title": "知识组件名", "description": "理解这意味着什么"}] }`;
 
-  const result = await generateText({ model: llm.languageModel, prompt });
-  const parsed = parseLessonSummaryKc(result.text);
+  const text = await generateTextWithTimeout(im.model, prompt, { providerOptions: im.providerOptions, maxOutputTokens: im.maxOutputTokens });
+  const parsed = parseLessonSummaryKc(text);
   if (!parsed?.summary) return null;
 
   // 摘要(中+英) + KC 一起落库（立即 markDirty 落盘, 不是内存缓存; 齐备后读取永不再调 LLM）
@@ -128,6 +143,7 @@ export async function generateLessonSummaryEn(
   if (content.trim().length < 20 && node.summary.trim().length < 10) return null;
 
   const llm = resolveLlm(db);
+  const im = buildImportModel(llm);
   const prompt = `把下面的课程摘要翻成地道的英文学习摘要。保持 1-2 句、信息量一致,直接给英文文本,不要解释、不要引号。
 
 课程摘要(中文):
@@ -137,8 +153,8 @@ ${node.summary}
 ${content.slice(0, 400)}`;
 
   try {
-    const result = await generateText({ model: llm.languageModel, prompt });
-    const en = result.text.replace(/^[\s"“]+|[\s"”]+$/g, "").trim();
+    const en = (await generateTextWithTimeout(im.model, prompt, { providerOptions: im.providerOptions, maxOutputTokens: im.maxOutputTokens }))
+      .replace(/^[\s"“]+|[\s"”]+$/g, "").trim();
     if (!en || en.length < 8) return null;
     db.update(contentNodes).set({ summaryEn: en }).where(eq(contentNodes.id, nodeId)).run();
     markDirty?.();
@@ -158,6 +174,7 @@ export async function generateLessonSummaries(
   courseId: string,
 ): Promise<{ sectionsUpdated: number; lessonsUpdated: number }> {
   const llm = resolveLlm(db);
+  const im = buildImportModel(llm);
   const course = db.select().from(courses).where(eq(courses.id, courseId)).get();
   if (!course) throw new Error(`课程不存在: ${courseId}`);
 
@@ -199,8 +216,8 @@ ${lessonTitles}
 }`;
 
     try {
-      const result = await generateText({ model: llm.languageModel, prompt: sectionPrompt });
-      const cleaned = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      const text = await generateTextWithTimeout(im.model, sectionPrompt, { providerOptions: im.providerOptions, maxOutputTokens: im.maxOutputTokens });
+      const cleaned = extractJsonBlock(text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim());
       const parsed = JSON.parse(cleaned);
       const summary = typeof parsed.summary === "string" ? parsed.summary : "";
       const prereq = typeof parsed.prerequisites === "string" ? parsed.prerequisites : "";
@@ -244,8 +261,8 @@ ${lessonInputs}
 ]`;
 
       try {
-        const result = await generateText({ model: llm.languageModel, prompt: lessonPrompt });
-        const cleaned = result.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+        const text = await generateTextWithTimeout(im.model, lessonPrompt, { providerOptions: im.providerOptions, maxOutputTokens: im.maxOutputTokens });
+        const cleaned = extractJsonBlockAny(text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim());
         const arr = JSON.parse(cleaned) as Array<{ id: string; summary: string; summaryEn?: string; knowledgePoints?: Array<{ title: string; description: string }> }>;
         for (const item of arr) {
           if (typeof item.id === "string" && typeof item.summary === "string" && item.summary.trim()) {
@@ -307,6 +324,7 @@ export async function analyzeCourseStructure(
   onProgress?: (msg: string) => void,
 ): Promise<StructureProposal> {
   const llm = resolveLlm(db);
+  const im = buildImportModel(llm);
 
   // 取课程所有 lesson 节点（section 节点不喂给 LLM，它会重新分组）
   const course = db.select().from(courses).where(eq(courses.id, courseId)).get();
@@ -338,8 +356,8 @@ export async function analyzeCourseStructure(
     const prompt = buildStructurePrompt(
       course?.title ?? "(未知课程)", course?.description ?? "", lessonInputs,
     );
-    const result = await generateText({ model: llm.languageModel, prompt });
-    const proposal = parseStructureResult(result.text, lessons.map((l) => l.id));
+    const text = await generateTextWithTimeout(im.model, prompt, { providerOptions: im.providerOptions, maxOutputTokens: im.maxOutputTokens });
+    const proposal = parseStructureResult(text, lessons.map((l) => l.id));
     return proposal;
   }
 
@@ -354,8 +372,8 @@ export async function analyzeCourseStructure(
     const prompt = buildStructurePrompt(
       `${courseTitle}（第 ${chunkNum}/${totalChunks} 部分）`, courseDesc, chunk,
     );
-    const result = await generateText({ model: llm.languageModel, prompt });
-    const proposal = parseStructureResult(result.text, chunk.map((l) => l.id));
+    const text = await generateTextWithTimeout(im.model, prompt, { providerOptions: im.providerOptions, maxOutputTokens: im.maxOutputTokens });
+    const proposal = parseStructureResult(text, chunk.map((l) => l.id));
     allSections.push(...proposal.sections);
     allSkipped.push(...proposal.skippedNodeIds);
   }
@@ -525,6 +543,7 @@ export async function classifyWorldsOnly(
   onProgress?: (msg: string) => void,
 ): Promise<WorldClassification[]> {
   const llm = resolveLlm(db);
+  const im = buildImportModel(llm);
   const course = db.select().from(courses).where(eq(courses.id, courseId)).get();
   const lessons = db
     .select()
@@ -549,8 +568,8 @@ export async function classifyWorldsOnly(
   if (inputs.length <= CHUNK_SIZE) {
     onProgress?.(`AI 分类中（${inputs.length} 课）…`);
     const prompt = buildWorldOnlyPrompt(course?.title ?? "(未知课程)", inputs);
-    const result = await generateText({ model: llm.languageModel, prompt });
-    allResults.push(...parseWorldOnlyResult(result.text, lessons.map((l) => l.id)));
+    const text = await generateTextWithTimeout(im.model, prompt, { providerOptions: im.providerOptions, maxOutputTokens: im.maxOutputTokens });
+    allResults.push(...parseWorldOnlyResult(text, lessons.map((l) => l.id)));
     return allResults;
   }
 
@@ -560,8 +579,8 @@ export async function classifyWorldsOnly(
     const totalChunks = Math.ceil(inputs.length / CHUNK_SIZE);
     onProgress?.(`AI 分类中（第 ${chunkNum}/${totalChunks} 批，${chunk.length} 课）…`);
     const prompt = buildWorldOnlyPrompt(course?.title ?? "(未知课程)", chunk);
-    const result = await generateText({ model: llm.languageModel, prompt });
-    allResults.push(...parseWorldOnlyResult(result.text, chunk.map((c) => c.id)));
+    const text = await generateTextWithTimeout(im.model, prompt, { providerOptions: im.providerOptions, maxOutputTokens: im.maxOutputTokens });
+    allResults.push(...parseWorldOnlyResult(text, chunk.map((c) => c.id)));
   }
 
   return allResults;
@@ -743,7 +762,16 @@ function parseWorldOnlyResult(raw: string, validIds: string[]): WorldClassificat
   try {
     arr = JSON.parse(cleaned);
   } catch (e) {
-    throw new Error(`LLM world 分类 JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`);
+    // JSON 前后拖了说明文字(实测 CodingPlan 会多说两句):抽平衡块(数组感知)再试
+    const block = extractJsonBlockAny(cleaned);
+    if (block === cleaned) {
+      throw new Error(`LLM world 分类 JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    try {
+      arr = JSON.parse(block);
+    } catch (e2) {
+      throw new Error(`LLM world 分类 JSON 解析失败: ${e2 instanceof Error ? e2.message : String(e2)}`);
+    }
   }
 
   if (!Array.isArray(arr)) {
@@ -829,9 +857,20 @@ function parseStructureResult(
   try {
     obj = JSON.parse(cleaned);
   } catch (e) {
-    throw new Error(
-      `LLM 返回的 JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`,
-    );
+    // JSON 前后拖了说明文字:抽平衡块再试;真截断才抛
+    const block = extractJsonBlockAny(cleaned);
+    if (block === cleaned) {
+      throw new Error(
+        `LLM 返回的 JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    try {
+      obj = JSON.parse(block);
+    } catch (e2) {
+      throw new Error(
+        `LLM 返回的 JSON 解析失败: ${e2 instanceof Error ? e2.message : String(e2)}`,
+      );
+    }
   }
 
   if (!Array.isArray(obj.sections)) {

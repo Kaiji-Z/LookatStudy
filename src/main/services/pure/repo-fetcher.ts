@@ -1298,6 +1298,9 @@ export interface FileOutline {
   totalChars: number;
   /** H2/H3 标题列表（不含正文）+ 每段字符数（到下一个同级或更高级标题） */
   headings: { level: number; title: string; chars: number }[];
+  /** 正文开头摘录(前 ~300 字符,跳标题/围栏代码/纯符号行)——Step 4 语义分组依据。
+   *  标题同名不同物的文件(两个都叫 "Setup")靠它区分内容主题。 */
+  bodyPreview?: string;
 }
 
 /**
@@ -1345,6 +1348,38 @@ export async function fetchFileOutlines(
 }
 
 /**
+ * 提取正文开头摘录(供 Step 4 结构设计做语义分组)。
+ *
+ * 规则:
+ *   - 跳过标题行(#/##/###)、代码围栏内容、空行、纯符号行(分隔线/表格线)
+ *   - 行内 markdown 降噪:图片整体丢弃、`[文字](链接)` 只留文字、剥引用前缀 ">"
+ *   - 行以空格连接成单行(进 prompt 的 JSON 块不能带换行),空白折叠
+ *   - 攒够 maxChars 即停(长文件不读完,零浪费)
+ * 纯函数,可 verify 直测。
+ */
+export function extractBodyPreview(text: string, maxChars = 300): string {
+  const lines = text.split(/\r?\n/);
+  let inCodeFence = false;
+  let buf = "";
+  for (const rawLine of lines) {
+    if (buf.length >= maxChars) break;
+    if (/^(\s*)(```|~~~)/.test(rawLine)) { inCodeFence = !inCodeFence; continue; }
+    if (inCodeFence) continue;
+    if (/^#{1,6}\s/.test(rawLine)) continue; // 标题行(h1-h6 都跳)
+    let line = rawLine
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // 图片整体丢弃
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // 链接只留文字
+      .replace(/^>\s?/, "") // 引用前缀剥掉
+      .replace(/\s+/g, " ")
+      .trim();
+    // 纯符号行:分隔线 / 表格分隔行 / 残留裸表格线
+    if (!line || /^(-{3,}|\*{3,}|_{3,})$/.test(line) || /^\|?[\s:|-]+\|?$/.test(line)) continue;
+    buf += (buf ? " " : "") + line;
+  }
+  return buf.slice(0, maxChars);
+}
+
+/**
  * 从 markdown 文本提取 H1/H2/H3 标题 + 每段字符数。
  * 字符数 = 该标题行到下一个同级或更高级标题之间的字符数。
  * H2 边界：下一个 H1/H2；H3 边界：下一个 H1/H2/H3。
@@ -1389,7 +1424,7 @@ export function extractOutlineWithCharCounts(text: string, filePath: string): Fi
   if (!h1 && filePath.endsWith(".ipynb")) {
     h1 = filePath.split("/").pop()?.replace(/\.ipynb$/i, "") ?? filePath;
   }
-  return { h1: h1 || (filePath.split("/").pop() ?? filePath), totalChars, headings };
+  return { h1: h1 || (filePath.split("/").pop() ?? filePath), totalChars, headings, bodyPreview: extractBodyPreview(text) };
 }
 
 /**

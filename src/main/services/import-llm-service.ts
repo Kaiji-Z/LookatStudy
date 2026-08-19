@@ -634,7 +634,7 @@ export async function designCourseStructure(
   const llm = resolveLlm(db);
   const im = buildImportModel(llm);
 
-  // 构建文件+大纲信息（含字符数，供 LLM 做长文件拆分决策）
+  // 构建文件+大纲信息（含字符数 + 正文预览，供 LLM 做长文件拆分与语义分组决策）
   const allFiles = [...originalFiles, ...practiceFiles];
   const fileInfos = allFiles.map((p) => {
     const ol = outlines.get(p);
@@ -643,6 +643,7 @@ export async function designCourseStructure(
       file: p,
       role: isPractice ? "practice" : "original",
       h1: ol?.h1 ?? "",
+      preview: ol?.bodyPreview ?? "",
       totalChars: ol?.totalChars ?? 0,
       headings: ol?.headings ?? [],
     };
@@ -688,6 +689,8 @@ export interface StructureFileInfo {
   file: string;
   role: string;
   h1: string;
+  /** 正文开头摘录(≤200 字进 prompt)——同名标题不同物的文件靠它区分内容主题 */
+  preview?: string;
   totalChars: number;
   headings: { level: number; title: string; chars: number }[];
 }
@@ -737,7 +740,7 @@ export async function designSectionsResilient(
 
 export function buildStructureDesignPrompt(
   readmeMd: string,
-  fileInfos: { file: string; role: string; h1: string; totalChars: number; headings: { level: number; title: string; chars: number }[] }[],
+  fileInfos: StructureFileInfo[],
   standaloneImages: { path: string; alt: string }[] = [],
 ): string {
   const readmeExcerpt = readmeMd.slice(0, 4000);
@@ -749,6 +752,7 @@ export function buildStructureDesignPrompt(
     "file": "${f.file}",
     "role": "${f.role}",
     "h1": "${f.h1}",
+    "preview": "${(f.preview ?? "").slice(0, 200)}",
     "totalChars": ${f.totalChars},
     "headlines":
 ${headingsStr}
@@ -799,7 +803,7 @@ ${headingsStr}
 
 ${readmeSection}
 
-文件标题大纲（totalChars = 文件总字数，每个标题后 [字数] = 该段字数）:
+文件标题大纲（totalChars = 文件总字数，每个标题后 [字数] = 该段字数; preview = 正文开头摘录，用于判断文件的内容主题——标题相同的不同文件靠它区分; preview 为空 = 正文为空或纯代码）:
 [
 ${fileList}
 ]
@@ -839,38 +843,64 @@ export class StructureParseError extends Error {}
  * 字符串感知(跳过引号内的大括号),扫描失败返回原文让 JSON.parse 报原错。
  */
 export function extractJsonBlock(raw: string): string {
-  const scanBalanced = (start: number): number => {
-    let depth = 0;
-    let inStr = false;
-    let esc = false;
-    for (let i = start; i < raw.length; i++) {
-      const ch = raw[i]!;
-      if (inStr) {
-        if (esc) esc = false;
-        else if (ch === "\\") esc = true;
-        else if (ch === '"') inStr = false;
-        continue;
-      }
-      if (ch === '"') inStr = true;
-      else if (ch === "{") depth++;
-      else if (ch === "}") {
-        depth--;
-        if (depth === 0) return i + 1;
-      }
-    }
-    return -1;
-  };
   const first = raw.indexOf("{");
   if (first >= 0) {
-    const end = scanBalanced(first);
+    const end = scanBalancedBlock(raw, "{", "}", first);
     if (end > 0) return raw.slice(first, end);
   }
   const last = raw.lastIndexOf("{");
   if (last >= 0 && last !== first) {
-    const end = scanBalanced(last);
+    const end = scanBalancedBlock(raw, "{", "}", last);
     if (end > 0) return raw.slice(last, end);
   }
   return raw;
+}
+
+/**
+ * extractJsonBlock 的数组泛化:同时接受 {...} 与 [...] 起始的 JSON 块
+ * (world 分类等任务返回 JSON 数组)。取文本中最早出现的 { 或 [,字符串感知
+ * 平衡扫描;失败回退同字符最后一次出现;都失败返回原文让 JSON.parse 报原错。
+ */
+export function extractJsonBlockAny(raw: string): string {
+  const firstObj = raw.indexOf("{");
+  const firstArr = raw.indexOf("[");
+  let start = -1;
+  let open = "{";
+  let close = "}";
+  if (firstObj >= 0 && (firstArr < 0 || firstObj < firstArr)) start = firstObj;
+  else if (firstArr >= 0) { start = firstArr; open = "["; close = "]"; }
+  if (start < 0) return raw;
+  const end = scanBalancedBlock(raw, open, close, start);
+  if (end > 0) return raw.slice(start, end);
+  const last = raw.lastIndexOf(open);
+  if (last > start) {
+    const end2 = scanBalancedBlock(raw, open, close, last);
+    if (end2 > 0) return raw.slice(last, end2);
+  }
+  return raw;
+}
+
+/** 字符串感知的平衡块扫描:从 from 的 open 字符起,返回配对 close 的下一位置;失配 -1。 */
+function scanBalancedBlock(raw: string, open: string, close: string, from: number): number {
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = from; i < raw.length; i++) {
+    const ch = raw[i]!;
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return -1;
 }
 
 export function parseStructureDesignResult(

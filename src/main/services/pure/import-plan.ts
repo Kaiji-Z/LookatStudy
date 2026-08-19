@@ -5,7 +5,8 @@
  *  1. 断点续跑:导入每个步骤边界把产物快照落盘;失败/重启后从最近快照继续,
  *     不再重烧已完成的 LLM 调用(Step 2 文件分类 + Step 4 结构设计是真金白银)。
  *  2. 课程包:GitHub 来源的 plan 文件原样分享给别人——对方导入同一仓库时
- *     零 LLM、秒过 AI 步骤(正文仍从 CDN 现拉,包里不含任何仓库内容)。
+ *     零 LLM、秒过 AI 步骤(正文仍从 CDN 现拉;outlines 里的 bodyPreview 会
+ *     携带每文件前 ~300 字的正文摘录——结构复用需要,总量 = 文件数×300字,可接受)。
  *
  * 身份与漂移检测:kind + github(owner/repo/branch) 或 folder(absPath) 唯一定位;
  * treeHash = sha1(排序后的 fullTree 路径)。仓库变了 → hash 不匹配 →

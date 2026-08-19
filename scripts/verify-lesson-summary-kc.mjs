@@ -137,4 +137,37 @@ import { parseLessonSummaryKc } from "../src/main/services/course-structure-serv
   console.log("✓ T11 种子英文摘要: 24/24 齐备");
 }
 
+// ── T12: JSON 后拖说明文字(实测 CodingPlan 会多说两句)→ 抽平衡块救回 ──
+{
+  const good = JSON.stringify({
+    summary: "本课讲解梯度下降的直觉。",
+    knowledgePoints: [
+      { title: "负梯度", description: "理解为何沿负梯度下降" },
+      { title: "步长", description: "理解学习率的作用" },
+    ],
+  });
+  const parsed = parseLessonSummaryKc(good + "\n\n以上就是本课摘要,希望对你有帮助。");
+  assert.equal(parsed?.summary, "本课讲解梯度下降的直觉。", "T12: JSON+尾巴解析成功");
+  assert.equal(parsed?.knowledgePoints?.length, 2, "T12: KC 完整");
+  console.log("✓ T12 JSON 拖尾: 抽平衡块救回");
+}
+
+// ── T13: 纯文本摘要里带花括号 → 仍是纯文本容错(不被误抽成 JSON) ──
+{
+  const parsed = parseLessonSummaryKc("本课讲解 Python 字典 {key: value} 的用法与遍历。");
+  assert.equal(parsed?.summary, "本课讲解 Python 字典 {key: value} 的用法与遍历。", "T13: 含花括号的纯文本当摘要");
+  assert.equal(parsed?.knowledgePoints, undefined, "T13: 不产 KC");
+  console.log("✓ T13 花括号纯文本: 仍走摘要容错(首字符不是 { 就不抽)");
+}
+
+// ── T14: LLM 调用纪律静态守卫——懒生成层必须走导入同款封装(防回退到裸 generateText) ──
+{
+  const src = readFileSync(new URL("../src/main/services/course-structure-service.ts", import.meta.url), "utf8");
+  assert.ok(!/\bgenerateText\s*\(/.test(src), "T14: 不允许裸 generateText 调用(无上限/无看门狗/思考不受控)");
+  assert.ok(src.includes("buildImportModel"), "T14: 必须用 buildImportModel(fast 思考档+家族感知上限)");
+  assert.ok((src.match(/generateTextWithTimeout\(/g) ?? []).length >= 8, "T14: 8 个调用点全部走看门狗封装");
+  assert.ok(src.includes("extractJsonBlock"), "T14: parse 层接了 JSON 块抽取");
+  console.log("✓ T14 懒生成层 LLM 纪律: buildImportModel + 看门狗 + JSON 抽取(静态扫描)");
+}
+
 console.log("\n=== ALL LESSON SUMMARY KC TESTS PASSED ✅ ===");

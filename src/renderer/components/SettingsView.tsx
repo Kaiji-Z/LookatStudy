@@ -606,8 +606,6 @@ function MultimodalContent({
   const [enabled, setEnabled] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [overrideProvider, setOverrideProvider] = useState<string>("");
-  /** 自定义区块展开态(点击「自定义」按钮即展开;有覆盖在身也默认展开) */
-  const [expanded, setExpanded] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [visionTesting, setVisionTesting] = useState(false);
   const [visionTestResult, setVisionTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
@@ -620,7 +618,6 @@ function MultimodalContent({
     ]).then(([flag, prov]) => {
       setEnabled(flag === "true");
       setOverrideProvider(prov ?? "");
-      if (prov) setExpanded(true);
       setLoaded(true);
     });
   }, []);
@@ -670,8 +667,6 @@ function MultimodalContent({
   const overrideLegacyPreset = overrideProvider && !overrideProvider.startsWith("custom-")
     ? presets.find((p) => p.id === overrideProvider)
     : null;
-  const mode: "reuse" | "custom" = overrideProvider ? "custom" : "reuse";
-
   if (!loaded) return null;
 
   return (
@@ -695,7 +690,7 @@ function MultimodalContent({
                 : t("settings.multimodal.hint_preset")}
             </div>
           </div>
-          {/* 看图模型来源:复用主模型 / 自定义 —— 按钮组 + 展开块(与语音区同款式) */}
+          {/* 看图模型来源:不配置 = 复用主模型(留空语义),配置窗口直接常显,无切换按钮 */}
           <div className="bg-ink/5 rounded-lg p-3">
             <div className="text-label font-medium text-ink-muted mb-2">
               {t("settings.multimodal.override_title")}
@@ -703,33 +698,7 @@ function MultimodalContent({
             <div className="text-caption text-ink-muted mb-2">
               {t("settings.multimodal.override_bridge_hint")}
             </div>
-            <div className="flex gap-2 flex-wrap" data-testid="vision-mode">
-              <button
-                onClick={() => {
-                  if (mode === "custom") void handleStopOverride();
-                  setExpanded(false);
-                }}
-                data-testid="vision-mode-reuse"
-                aria-pressed={mode === "reuse"}
-                className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${mode === "reuse" ? pillActiveCls : pillInactiveCls}`}
-              >
-                {t("settings.multimodal.mode_reuse")}
-              </button>
-              <button
-                onClick={() => {
-                  setExpanded((s) => !s);
-                  if (!expanded) setShowForm(false);
-                }}
-                data-testid="vision-mode-custom"
-                aria-pressed={mode === "custom"}
-                className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${mode === "custom" ? pillActiveCls : pillInactiveCls}`}
-              >
-                {t("settings.multimodal.mode_custom")}
-              </button>
-            </div>
-
-            {expanded && (
-              <div className="space-y-3 mt-1">
+            <div className="space-y-3 mt-1">
                 {overrideCustom && (
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2 text-label">
@@ -803,8 +772,7 @@ function MultimodalContent({
                     )}
                   </>
                 )}
-              </div>
-            )}
+          </div>
           </div>
       </div>
     </>
@@ -1211,7 +1179,11 @@ function SpeechContent() {
         <div className="text-label font-medium text-ink-strong mb-2">{t("settings.speech.tts_title")}</div>
         <div className="flex gap-2 flex-wrap">
           <button
-            onClick={() => saveEngine("edge")}
+            onClick={() => {
+              saveEngine("edge");
+              setTtsExpanded(false);
+              setShowTtsForm(false);
+            }}
             data-testid="tts-engine-edge"
             aria-pressed={engine === "edge"}
             className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${engine === "edge" ? pillActiveCls : pillInactiveCls}`}
@@ -1219,7 +1191,11 @@ function SpeechContent() {
             {t("settings.speech.engine.edge")}
           </button>
           <button
-            onClick={() => saveEngine("local")}
+            onClick={() => {
+              saveEngine("local");
+              setTtsExpanded(false);
+              setShowTtsForm(false);
+            }}
             data-testid="tts-engine-local"
             aria-pressed={engine === "local"}
             className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${engine === "local" ? pillActiveCls : pillInactiveCls}`}
@@ -1233,8 +1209,10 @@ function SpeechContent() {
               if (!ttsExpanded) setShowTtsForm(false);
             }}
             data-testid="tts-engine-custom"
-            aria-pressed={engine.startsWith("custom-")}
-            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${engine.startsWith("custom-") ? pillActiveCls : pillInactiveCls}`}
+            aria-pressed={engine.startsWith("custom-") || ttsExpanded}
+            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
+              engine.startsWith("custom-") || ttsExpanded ? pillActiveCls : pillInactiveCls
+            }`}
           >
             {t("settings.speech.engine.custom")}
           </button>
@@ -1374,7 +1352,11 @@ function SpeechContent() {
         <div className="text-label font-medium text-ink-strong mb-2">{t("settings.speech.asr_title")}</div>
         <div className="flex gap-2 flex-wrap">
           <button
-            onClick={() => saveAsrEngine("local")}
+            onClick={() => {
+              saveAsrEngine("local");
+              setAsrExpanded(false);
+              setShowAsrForm(false);
+            }}
             data-testid="asr-engine-local"
             aria-pressed={asrEngine === "local"}
             className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${asrEngine === "local" ? pillActiveCls : pillInactiveCls}`}
@@ -1387,8 +1369,10 @@ function SpeechContent() {
               if (!asrExpanded) setShowAsrForm(false);
             }}
             data-testid="asr-engine-custom"
-            aria-pressed={asrEngine.startsWith("custom-")}
-            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${asrEngine.startsWith("custom-") ? pillActiveCls : pillInactiveCls}`}
+            aria-pressed={asrEngine.startsWith("custom-") || asrExpanded}
+            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
+              asrEngine.startsWith("custom-") || asrExpanded ? pillActiveCls : pillInactiveCls
+            }`}
           >
             {t("settings.speech.engine.custom")}
           </button>

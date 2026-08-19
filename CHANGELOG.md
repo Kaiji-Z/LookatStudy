@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.14.0] - 2026-08-19
 
 ### Changed
 - **语音输入重塑为飞书式「按住说话 + 复查后发送」** —— 此前听写只是输入框角落的小麦克风按钮,录音按键小、识别文本直接落输入框。现在点工具栏麦克风,**整个输入卡片切换成「按住说话」大按钮**(手机/电脑同一交互):按住即录(浮层显示音量与计时),松开自动转录,**识别全文进入可编辑的复查浮层**——改一两个字再点发送,或取消重录;「切回键盘」随时返回打字输入。识别文本自成一条消息,不再并入输入框草稿。

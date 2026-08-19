@@ -495,6 +495,14 @@ export interface ApiExpose {
   /** 从 GitHub 仓库导入（后台任务）:analyzeRepo + importAnalyzed 合一，立即返回 jobId。
    * push import:progress + import:done。URL 无效时立即抛错 */
   importGithub(repoUrl: string): Promise<ImportJobHandle>;
+  /** 智能链接导入（后台任务）:github.com→仓库 / arxiv.org→论文 PDF / 其余→网页文章正文。
+   * push import:progress + import:done。链接无法识别时立即抛错 */
+  importUrl(url: string): Promise<ImportJobHandle>;
+  /** 粘贴长文导入（后台任务）:无标题长文按句子边界自动分段成多课。文本为空立即抛错 */
+  importText(payload: { name?: string; text: string }): Promise<ImportJobHandle>;
+  /** EPUB 电子书导入（后台任务）:Electron 无参调用弹原生选择框(取消返回 null);
+   * web 模式传 {fileName, contentBase64}(渲染层 <input type=file> 读内容) */
+  importEpub(epub?: { fileName: string; contentBase64: string }): Promise<ImportJobHandle | null>;
   /** 请求取消进行中的后台导入（拉取阶段生效，写库前零残留）。返回是否有任务在跑 */
   importCancel(): Promise<boolean>;
   /** 从断点重试:带上次落盘的导入方案快照续跑(已完成步骤零重烧)。快照不存在时抛错 */

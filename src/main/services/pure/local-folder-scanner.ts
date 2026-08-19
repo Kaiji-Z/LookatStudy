@@ -27,7 +27,7 @@ export interface ScannedDoc {
   /** 语言(zh/en/other),用于去重 */
   lang: "zh" | "en" | "other";
   /** 文件类型 */
-  kind: "txt" | "md" | "html" | "pdf" | "ipynb" | "rst" | "rmd" | "org" | "adoc" | "code" | "pptx";
+  kind: "txt" | "md" | "html" | "pdf" | "ipynb" | "rst" | "rmd" | "org" | "adoc" | "code" | "pptx" | "epub";
 }
 
 /** 扫描到的图片资源(独立图片文件 / markdown 引用 / PDF 页面渲染图) */
@@ -60,6 +60,7 @@ const EXT_KIND: Record<string, ScannedDoc["kind"]> = {
   htm: "html",
   pdf: "pdf",
   pptx: "pptx",
+  epub: "epub",
   ipynb: "ipynb",
   rst: "rst",
   rmd: "rmd",
@@ -546,6 +547,14 @@ async function readFileWithKind(absPath: string, kind: ScannedDoc["kind"]): Prom
     const buf = await readFile(absPath);
     const { parsePptx } = await import("../../lib/pptx-parser.js");
     return (await parsePptx(buf)).markdown;
+  }
+  if (kind === "epub") {
+    // .epub → lib/epub-parser 解章节 → 压平成一个 markdown(章标题降为 ##,
+    // 管线按 ## anchor 自动每章拆课)。独立入口 import:epub 走"每章一虚拟文件"
+    // 的更细粒度路径,这里只是文件夹路径的兜底(一夹多本书)。
+    const buf = await readFile(absPath);
+    const { parseEpubFlat } = await import("../../lib/epub-parser.js");
+    return parseEpubFlat(buf);
   }
   if (kind === "ipynb") {
     // .ipynb 是 JSON,用 notebook-parser 转成 markdown(markdown cell + code block)

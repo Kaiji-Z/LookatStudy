@@ -30,6 +30,12 @@ const api = {
     ipcRenderer.invoke("import:localFolder", folderPath)) as ApiExpose["importLocalFolder"],
   importGithub: ((repoUrl: string) =>
     ipcRenderer.invoke("import:github", repoUrl)) as ApiExpose["importGithub"],
+  importUrl: ((url: string) =>
+    ipcRenderer.invoke("import:url", url)) as ApiExpose["importUrl"],
+  importText: ((payload: { name?: string; text: string }) =>
+    ipcRenderer.invoke("import:text", payload)) as ApiExpose["importText"],
+  importEpub: ((epub?: { fileName: string; contentBase64: string }) =>
+    ipcRenderer.invoke("import:epub", epub)) as ApiExpose["importEpub"],
   importCancel: (() =>
     ipcRenderer.invoke("import:cancel")) as ApiExpose["importCancel"],
   importResume: ((planId: string) =>

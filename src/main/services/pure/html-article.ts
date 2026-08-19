@@ -1,0 +1,100 @@
+/**
+ * 网页文章正文抽取 —— linkedom DOM + @mozilla/readability + turndown。
+ *
+ * 三层纯 JS(零原生编译,符合 gotcha #8):
+ *   html → linkedom 解析 DOM → readability 抽正文(去导航/侧栏/广告)
+ *        → 图片/链接地址绝对化(相对地址在 CSP 与离线场景都是死链)
+ *        → turndown 转 markdown(保留 h1-h6/代码块/图片/链接)
+ *
+ * 绝对 URL 图片零额外接线:import-pipeline 的 inlineImages 对 http(s) 直接
+ * 透传,CSP img-src 已允许 https:。
+ *
+ * 纯函数(html 字符串进,markdown 出),verify 直测。
+ */
+import { parseHTML } from "linkedom";
+import { Readability } from "@mozilla/readability";
+import TurndownService from "turndown";
+
+export interface ExtractedArticle {
+  title: string;
+  markdown: string;
+}
+
+const turndown = new TurndownService({
+  headingStyle: "atx",
+  codeBlockStyle: "fenced",
+  bulletListMarker: "-",
+});
+
+/** 主进程无 DOM lib:用结构化类型描述"能查/改属性的节点集合",linkedom 节点天然满足。 */
+interface QueryableNode {
+  querySelectorAll(selector: string): Iterable<{
+    getAttribute(name: string): string | null;
+    setAttribute(name: string, value: string): unknown;
+    remove(): unknown;
+  }>;
+}
+
+/** 图片 src 绝对化(相对地址 → 基于 baseUrl 解析);data: 与绝对地址原样保留。 */
+function absolutizeImgs(root: QueryableNode, baseUrl: string): void {
+  if (!baseUrl) return;
+  for (const img of root.querySelectorAll("img")) {
+    const raw = img.getAttribute("src") ?? "";
+    if (!raw || raw.startsWith("data:") || /^https?:/i.test(raw)) continue;
+    try {
+      img.setAttribute("src", new URL(raw, baseUrl).toString());
+    } catch {
+      /* 非法地址保留原样 */
+    }
+  }
+}
+
+/** turndown 的输入类型(避免引用 DOM lib 的 HTMLElement)。 */
+type TurndownInput = Parameters<TurndownService["turndown"]>[0];
+
+/**
+ * 从完整 HTML 抽取文章正文并转 markdown。
+ * readability 判不了正文(非文章页/结构怪异)返回 null——调用方给诚实报错,
+ * 不退回"整页转 markdown"(导航噪声成课,比失败更糟)。
+ */
+export function extractArticle(html: string, baseUrl = ""): ExtractedArticle | null {
+  const { document } = parseHTML(html);
+  const article = new Readability(document).parse();
+  if (!article?.content) return null;
+
+  const contentDoc = parseHTML(`<div id="r">${article.content}</div>`);
+  const root = contentDoc.document.querySelector("#r");
+  if (!root) return null;
+  absolutizeImgs(root as unknown as QueryableNode, baseUrl);
+
+  let body = turndown.turndown(root as unknown as TurndownInput).trim();
+  // readability 通常把主标题从正文剥走(变成 article.title)——补回 H1;
+  // 若正文自带首行 H1 且与标题几乎一致则不重复
+  const title = (article.title ?? "").trim();
+  const firstLine = body.split("\n")[0] ?? "";
+  const alreadyHasTitleH1 = /^#\s+/.test(firstLine) && title && firstLine.slice(2).trim() === title;
+  const md = alreadyHasTitleH1 ? body : `# ${title || "无标题文章"}\n\n${body}`;
+  return { title: title || "无标题文章", markdown: md };
+}
+
+/**
+ * 任意 HTML/XHTML → markdown(epub 章节用,不走 readability——章节本身就是正文)。
+ * @param stripImages epub v1 不解包图片:img 标签整体剥除(文本优先)
+ */
+export function htmlToMarkdown(html: string, opts: { stripImages?: boolean } = {}): string {
+  let { document } = parseHTML(html);
+  // linkedom 对无 <html> 包裹的片段(如裸 <body> 或纯内联标签)会给出空 body ——
+  // 补一层包裹重解析,内容才能挂上。
+  if (!document.body || document.body.childNodes.length === 0) {
+    document = parseHTML(`<html><body>${html}</body></html>`).document;
+  }
+  for (const tag of ["script", "style", "head"]) {
+    for (const el of document.querySelectorAll(tag)) el.remove();
+  }
+  if (opts.stripImages) {
+    for (const el of document.querySelectorAll("img, picture, svg, figure")) el.remove();
+  }
+  const body = document.body;
+  if (!body) return "";
+  return turndown.turndown(body as unknown as TurndownInput).trim();
+}

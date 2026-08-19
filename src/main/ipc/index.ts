@@ -21,6 +21,7 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { createPlanStore } from "../services/import-plan-store.js";
 import { runSmartImport, planIdOf } from "../services/import-job-service.js";
+import { routeImportUrl } from "../services/pure/url-route.js";
 import type {
   ApiExpose,
   ExportPackResult,
@@ -627,6 +628,87 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
       return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
     });
 
+    return { jobId };
+  });
+
+  // 智能链接导入(后台 job):github.com → 仓库路径内部分流;arxiv.org → 论文;
+  // 其余 http(s) → 网页文章正文抽取。用户不需要理解三种来源的区别。
+  handle("import:url", async (_e, url: string): Promise<ImportJobHandle> => {
+    if (!routeImportUrl(url)) throw new Error("无法识别的链接:请粘贴 http(s) 网址或 GitHub 仓库地址");
+
+    if (importRunning) throw new Error("已有导入任务在进行中，请等它结束或先取消");
+    const jobId = randomUUID();
+    importRunning = true;
+    importCancelRequested = false;
+    const shouldAbort = () => importCancelRequested;
+    const send = (msg: string) => emitter?.send("import:progress", msg);
+
+    runImportJob(jobId, async () => {
+      const r = await runSmartImport(
+        { kind: "url", url },
+        { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
+      );
+      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
+    });
+    return { jobId };
+  });
+
+  // 粘贴长文导入(后台 job):无标题时按句子边界自动分段,获得与仓库同级的
+  // 结构设计/断点续跑能力(旧 generateCourseFromMarkdown 通道保留作兼容)
+  handle("import:text", async (_e, payload: { name?: string; text: string }): Promise<ImportJobHandle> => {
+    if (!payload?.text?.trim()) throw new Error("没有可导入的文本内容");
+
+    if (importRunning) throw new Error("已有导入任务在进行中，请等它结束或先取消");
+    const jobId = randomUUID();
+    importRunning = true;
+    importCancelRequested = false;
+    const shouldAbort = () => importCancelRequested;
+    const send = (msg: string) => emitter?.send("import:progress", msg);
+
+    runImportJob(jobId, async () => {
+      const r = await runSmartImport(
+        { kind: "text", name: payload.name, text: payload.text },
+        { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
+      );
+      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
+    });
+    return { jobId };
+  });
+
+  // EPUB 电子书导入(后台 job):electron 无参调用 → 原生文件选择;web 模式
+  // 由渲染层 <input type=file> 读内容传 base64(serve 无原生对话框)
+  handle("import:epub", async (_e, epub?: { fileName: string; contentBase64: string }): Promise<ImportJobHandle | null> => {
+    let fileName: string;
+    let bytes: Uint8Array;
+    if (epub?.contentBase64) {
+      fileName = epub.fileName || "book.epub";
+      bytes = new Uint8Array(Buffer.from(epub.contentBase64, "base64"));
+    } else if (deps.ui === "web") {
+      throw new Error("web 模式需要传入电子书文件内容");
+    } else {
+      const picked = await deps.dialog.pickContentFile([{ name: "EPUB 电子书", extensions: ["epub"] }]);
+      if (!picked) return null;
+      fileName = picked.fileName;
+      bytes = picked.bytes;
+    }
+
+    if (importRunning) throw new Error("已有导入任务在进行中，请等它结束或先取消");
+    const jobId = randomUUID();
+    importRunning = true;
+    importCancelRequested = false;
+    const shouldAbort = () => importCancelRequested;
+    const send = (msg: string) => emitter?.send("import:progress", msg);
+
+    runImportJob(jobId, async () => {
+      const r = await runSmartImport(
+        { kind: "epub", fileName, bytes },
+        { db: getDb(), store: planStore, markDirty, onProgress: send, shouldAbort },
+      );
+      const packable = planStore.findByCourse(r.courseId)?.kind === "github";
+      return { courseId: r.courseId, title: r.title, planId: r.planId, reused: r.reused, packable };
+    });
     return { jobId };
   });
 

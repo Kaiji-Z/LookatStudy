@@ -13,6 +13,7 @@
  * Step1 清点永远现拉(身份/漂移检测需要新鲜 tree,几个请求的成本)。
  */
 import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
 import { executeImport } from "./import-pipeline.js";
@@ -32,23 +33,35 @@ import {
   type FileOutline,
 } from "./pure/repo-fetcher.js";
 import { getPrefLang, resolveImportLang } from "./lang-pref.js";
-import { GithubContentSource, LocalContentSource } from "./content-source.js";
+import { GithubContentSource, LocalContentSource, MemoryContentSource } from "./content-source.js";
 import type { PlanStore } from "./import-plan-store.js";
 import {
   bestEffortStructure,
+  computeContentHash,
   computeTreeHash,
   newPlanId,
   parseGithubUrl,
   planMatchesInventory,
   type ImportPlan,
   type PlanClassification,
+  type PlanIdentity,
 } from "./pure/import-plan.js";
+import { routeImportUrl, normalizeUrlIdentity } from "./pure/url-route.js";
+import { prepareSingleDoc } from "./pure/text-chunk.js";
+import { fetchArticleMarkdown, fetchArxivMarkdown } from "./url-import-service.js";
+import { parseEpub } from "../lib/epub-parser.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
 export type ImportSpec =
   | { kind: "github"; url: string }
   | { kind: "folder"; path: string }
+  /** 智能链接:github.com → 仓库路径内部分流;arxiv.org → 论文;其余 → 网页文章 */
+  | { kind: "url"; url: string }
+  /** 粘贴长文(无标题时自动按句子边界分段) */
+  | { kind: "text"; name?: string; text: string }
+  /** 电子书(内容哈希做身份,重打包不换课程) */
+  | { kind: "epub"; fileName: string; bytes: Uint8Array }
   | { kind: "plan"; plan: ImportPlan };
 
 export interface RunImportDeps {
@@ -164,6 +177,9 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
     let docsMap: Map<string, string> | null = null;
     let standaloneImages: { path: string; alt: string }[] = [];
     let localTranslationLangs: { code: string; name: string }[] | null = null;
+    /** url/text/epub 的身份哈希(text=原文 sha1;epub=章节内容哈希) */
+    let textSha: string | null = null;
+    let epubSha: string | null = null;
 
     if (spec.kind === "github" || (spec.kind === "plan" && spec.plan.kind === "github" && spec.plan.github)) {
       const url = spec.kind === "github" ? spec.url : `https://github.com/${spec.plan.github!.owner}/${spec.plan.github!.repo}`;
@@ -205,18 +221,89 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       repoName = path.split(/[\\/]/).pop() ?? "local-course";
       standaloneImages = inv.standaloneImages.map((img) => ({ path: img.path, alt: img.altText }));
       localTranslationLangs = inv.translationLangs.map((code) => ({ code, name: code }));
+    } else if (
+      spec.kind === "url" || spec.kind === "text" || spec.kind === "epub"
+      || (spec.kind === "plan" && (spec.plan.kind === "url" || spec.plan.kind === "text" || spec.plan.kind === "epub"))
+    ) {
+      // ── 虚拟文档源:url(文章/arXiv) / text(粘贴) / epub(章节) ──
+      // 与 github(CDN 现拉)/folder(磁盘现扫)不同,这类源的内容无法事后重取
+      // → Step1 产物连同正文一起进 plan.docCache,断点续跑({kind:"plan"})靠缓存。
+      const resume = spec.kind === "plan" ? spec.plan : null;
+      let entries: [string, string][] = [];
+      let displayName: string | null = null;
+      repoUrl = null;
+      if (resume?.kind === "url" && resume.url) repoUrl = resume.url.url;
+
+      if (resume?.docCache && Object.keys(resume.docCache).length > 0) {
+        entries = Object.entries(resume.docCache);
+        send(`✓ 从快照恢复正文缓存(${entries.length} 个文档)`);
+      } else if (spec.kind === "url") {
+        const route = routeImportUrl(spec.url);
+        if (!route) throw new Error("无法识别的链接:请粘贴 http(s) 网址");
+        if (route.kind === "github") {
+          // GitHub 链接 → 既有仓库导入路径(智能 URL 框的路由结果)
+          return await runSmartImport({ kind: "github", url: route.url }, deps);
+        }
+        if (route.flavor === "arxiv") {
+          const { title, markdown } = await fetchArxivMarkdown(route.arxivId, route.pdfUrl, route.url, fetchFn, send, cancelCtl.signal);
+          entries = prepareSingleDoc(title, markdown, `arxiv-${route.arxivId}`).map((p) => [p.path, p.content] as [string, string]);
+          displayName = title;
+        } else {
+          send("抓取网页正文…");
+          const { title, markdown } = await fetchArticleMarkdown(route.url, fetchFn, cancelCtl.signal);
+          const stem = title.replace(/\s+/g, "-").slice(0, 40) || "article";
+          entries = prepareSingleDoc(title, markdown, stem).map((p) => [p.path, p.content] as [string, string]);
+          displayName = title;
+        }
+        repoUrl = route.url;
+      } else if (spec.kind === "text") {
+        const name = (spec.name ?? "").trim() || "我的笔记";
+        const parts = prepareSingleDoc(name, spec.text, name.replace(/\s+/g, "-").slice(0, 40) || "text");
+        if (parts.length === 0) throw new Error("没有可导入的文本内容");
+        entries = parts.map((p) => [p.path, p.content] as [string, string]);
+        displayName = name;
+        textSha = createHash("sha1").update(spec.text, "utf8").digest("hex");
+      } else {
+        // {kind:"epub"} 或 docCache 被清空的 plan
+        const bytes = spec.kind === "epub" ? spec.bytes : null;
+        if (!bytes) throw new Error("导入方案缺少正文缓存,请重新选择文件导入");
+        send("解析电子书章节…");
+        const book = await parseEpub(bytes);
+        entries = book.chapters.map((c) => [c.path, c.markdown] as [string, string]);
+        displayName = book.title;
+      }
+
+      if (entries.length === 0) throw new Error("没有解析出可导入的内容");
+      docsMap = new Map(entries);
+      fileList = docsToDiscoveredFiles(entries.map(([path]) => ({ path })));
+      fullTree = entries.map(([path]) => path);
+      branch = "";
+      // 身份哈希:text=原文 sha1(每次现算,续跑从 plan 取);epub=章节内容哈希(重打包不换身份)
+      if (!textSha && spec.kind === "plan" && spec.plan.kind === "text" && spec.plan.text) textSha = spec.plan.text.sha1;
+      if (!epubSha && (spec.kind === "epub" || (spec.kind === "plan" && spec.plan.kind === "epub"))) {
+        epubSha = computeContentHash(docsMap);
+      }
+      const firstH1 = entries[0]?.[1].match(/^#\s+(.+)$/m)?.[1]?.trim();
+      repoName = displayName ?? firstH1 ?? "导入内容";
+      readmeMd = `# ${repoName}\n\n${(entries[0]?.[1] ?? "").slice(0, 2000)}`;
+      send(`✓ ${repoName}:${entries.length} 个文档`);
     } else {
       throw new Error("导入方案格式不完整(缺少来源信息)");
     }
 
     // ───────────────────────── 快照决策 ─────────────────────────
-    const treeHash = computeTreeHash(fullTree);
-    const identity = gh
-      ? { kind: "github" as const, github: gh }
-      : { kind: "folder" as const, folder: { absPath: folderPath! } };
+    // github/folder 漂移看路径集合;url/text/epub 改内容不改路径,漂移必须看正文
+    const treeHash = gh || folderPath ? computeTreeHash(fullTree) : computeContentHash(docsMap!);
+    let identity: PlanIdentity;
+    if (gh) identity = { kind: "github", github: gh };
+    else if (folderPath) identity = { kind: "folder", folder: { absPath: folderPath } };
+    else if (repoUrl) identity = { kind: "url", url: { url: normalizeUrlIdentity(repoUrl) } };
+    else if (textSha) identity = { kind: "text", text: { sha1: textSha } };
+    else identity = { kind: "epub", epub: { sha1: epubSha! } };
 
     let plan: ImportPlan | null = spec.kind === "plan" ? spec.plan : store.findByIdentity(identity);
-    let hashMatch = plan ? planMatchesInventory(plan, identity, fullTree) : false;
+    // url/text/epub 用内容哈希比对(路径不变内容会变);github/folder 用路径集合哈希
+    let hashMatch = plan ? planMatchesInventory(plan, identity, fullTree, gh || folderPath ? undefined : treeHash) : false;
     let reused = false;
 
     const now = () => new Date().toISOString();
@@ -228,6 +315,13 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       plan!.branch = branch;
       if (gh) plan!.github = { owner: gh.owner, repo: gh.repo, branch };
       if (folderPath) plan!.folder = { absPath: folderPath };
+      if (!gh && !folderPath) {
+        // 虚拟文档源:身份 + 正文缓存(断点续跑的正文来源)
+        if (identity.kind === "url" && identity.url) plan!.url = identity.url;
+        if (identity.kind === "text" && identity.text) plan!.text = identity.text;
+        if (identity.kind === "epub" && identity.epub) plan!.epub = identity.epub;
+        if (docsMap) plan!.docCache = Object.fromEntries(docsMap);
+      }
       plan!.updatedAt = now();
       store.save(plan!);
       // 落盘审计:console.error 已被主进程重定向进 lookatstudy-import.log,
@@ -239,9 +333,12 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       plan = {
         formatVersion: 1,
         planId: newPlanId(),
-        kind: gh ? "github" : "folder",
+        kind: identity.kind,
         ...(gh ? { github: { owner: gh.owner, repo: gh.repo, branch } } : {}),
         ...(folderPath ? { folder: { absPath: folderPath } } : {}),
+        ...(identity.kind === "url" && identity.url ? { url: identity.url } : {}),
+        ...(identity.kind === "text" && identity.text ? { text: identity.text } : {}),
+        ...(identity.kind === "epub" && identity.epub ? { epub: identity.epub } : {}),
         treeHash,
         createdAt: now(),
         updatedAt: now(),
@@ -254,9 +351,19 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       savePlan();
     }
 
-    // 内容漂移:结构尽力保留(零 LLM 仍是默认),分类过滤到仍存在的文件
+    // 内容漂移:url/text/epub 这些"改内容不改路径"的源,哈希不匹配 = 正文变了
+    // → 整体重走 AI(bestEffort 是给路径漂移设计的,路径不变时它会静默保留旧结构)。
+    // github/folder 维持原语义:结构尽力保留(零 LLM 仍是默认),分类过滤到仍存在的文件。
     if (plan && !hashMatch) {
-      if (plan.structure) {
+      const virtualKind = plan.kind === "url" || plan.kind === "text" || plan.kind === "epub";
+      if (virtualKind) {
+        send("⚠ 内容与方案快照不一致(正文已更新),重新走 AI 流程");
+        plan.classification = undefined;
+        plan.outlines = undefined;
+        plan.structure = undefined;
+        plan.reachedStep = 1;
+        savePlan();
+      } else if (plan.structure) {
         const be = bestEffortStructure(plan.structure, fullTree);
         if (be) {
           send(`⚠ 仓库内容与方案快照不一致:保留结构,丢弃 ${be.dropped} 节引用已消失文件的课`);
@@ -353,7 +460,9 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       // ───────────────────────── Step 5: 拉正文 + 落库(原两阶段管线) ─────────────────────────
       const source = gh
         ? new GithubContentSource(gh.owner, gh.repo, branch, fetchFn)
-        : new LocalContentSource(folderPath!, docsMap!);
+        : folderPath
+          ? new LocalContentSource(folderPath, docsMap!)
+          : new MemoryContentSource(docsMap!);
       const translationFilesMap = selectedLang
         ? new Map([[selectedLang, roles.translations.get(selectedLang) ?? []]])
         : null;

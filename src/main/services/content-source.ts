@@ -1,9 +1,12 @@
 /**
  * 内容源接口 —— 抽象"取文件内容/图片"的来源，让 executeImport 不关心数据来自
- * GitHub CDN 还是本地磁盘。
+ * GitHub CDN 还是本地磁盘还是内存里的虚拟文件。
  *
  * - GithubContentSource: 通过 CDN 拉取（fetchSingleFileContent + fetchImageAsDataUrl）
  * - LocalContentSource: 从 scanFolder 已扫描的缓存读文件，图片从磁盘读
+ * - MemoryContentSource: 纯内存虚拟文件(url 文章/粘贴文本/epub 章节)——
+ *   图片一律 null:网页文章的图是绝对 URL,import-pipeline 的 inlineImages
+ *   对 http(s) 直接透传,根本不会走到 ContentSource
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -89,5 +92,26 @@ export class LocalContentSource implements ContentSource {
 
   getImageFallbackUrl(_path: string): string | null {
     return null; // 本地无 CDN fallback，保留原 src
+  }
+}
+
+/**
+ * 内存内容源:url 文章 / 粘贴文本 / epub 章节 / 音频转写稿等"虚拟文件"用。
+ * Step5 的正文全部来自内存 Map;图片不处理(绝对 URL 在 inlineImages 已透传,
+ * 相对路径图片在这类来源里本就不存在)。
+ */
+export class MemoryContentSource implements ContentSource {
+  constructor(private docs: Map<string, string>) {}
+
+  async getFile(path: string): Promise<string | null> {
+    return this.docs.get(path) ?? null;
+  }
+
+  async getImageDataUrl(_path: string): Promise<string | null> {
+    return null;
+  }
+
+  getImageFallbackUrl(_path: string): string | null {
+    return null;
   }
 }

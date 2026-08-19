@@ -347,11 +347,12 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
 /* ---------- 导入面板(原 CourseDrawer 内容,内联) ---------- */
 function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse, onCoursesChanged }: { courses: Course[]; selectedCourseId: string | null; onSelectCourse: (id: string) => void; onDeleteCourse: (id: string, title: string, rect: DOMRect) => void; onCoursesChanged: () => void; }) {
   const t = useLang();
-  const [tab, setTab] = useState<"url" | "markdown" | "folder" | "pack">("url");
+  const [tab, setTab] = useState<"url" | "markdown" | "folder" | "epub" | "pack">("url");
   const [showImport, setShowImport] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
   const [folderPath, setFolderPath] = useState("");
   const packFileRef = useRef<HTMLInputElement | null>(null);
+  const epubFileRef = useRef<HTMLInputElement | null>(null);
   const [mdText, setMdText] = useState("");
   const [repoName, setRepoName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -422,22 +423,53 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
     if (!repoUrl.trim() || busy) return;
     setError(null); setSuccess(null); setProgressSteps([]);
     try {
-      // 后台 job：main 跑 analyze + import 全管线，进度推 import:progress，
-      // 结束推 import:done（下面的监听收尾）。期间可继续浏览其他课程。
-      await api.importGithub(repoUrl.trim());
+      // 智能链接(后台 job):github.com→仓库 / arxiv.org→论文 / 其余→网页文章,
+      // 路由在主进程完成,进度推 import:progress,结束推 import:done。
+      await api.importUrl(repoUrl.trim());
       setBusy(true);
     } catch (e) {
-      setError(e instanceof Error ? `${e.message}${t("import.error.network")}` : String(e));
+      setError(e instanceof Error ? e.message : String(e));
     }
   };
   const handleImportMd = async () => {
-    if (!mdText.trim() || !repoName.trim() || busy) return;
-    setBusy(true); setError(null); setSuccess(null);
+    if (!mdText.trim() || busy) return;
+    setError(null); setSuccess(null); setProgressSteps([]);
     try {
-      const course = await api.generateCourseFromMarkdown(mdText.trim(), repoName.trim());
-      setSuccess(`${t("import.success.md")}: ${course.title}`);
-      setTimeout(() => { onCoursesChanged(); onSelectCourse(course.id); }, 800);
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+      // 粘贴长文(后台 job):无标题长文按句子边界自动分段,获得与仓库导入同级的
+      // 结构设计/进度/断点续跑(旧同步通道 generateCourseFromMarkdown 保留作兼容)
+      await api.importText({ name: repoName.trim() || undefined, text: mdText.trim() });
+      setBusy(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const handleImportEpub = async () => {
+    if (busy) return;
+    setError(null); setSuccess(null); setProgressSteps([]);
+    if (!isDesktopApp) {
+      // web 模式:浏览器文件选择器读内容转 base64 传给服务端
+      epubFileRef.current?.click();
+      return;
+    }
+    const job = await api.importEpub().catch((e) => { setError(e instanceof Error ? e.message : String(e)); return null; });
+    if (!job) return; // 用户取消了文件选择对话框
+    setBusy(true);
+  };
+  const handleEpubFileChosen = async (file: File | null | undefined) => {
+    if (!file || busy) return;
+    setError(null); setSuccess(null); setProgressSteps([]);
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      // base64:serve 的 WS JSON 桥不传二进制
+      let bin = "";
+      for (let i = 0; i < buf.length; i += 0x8000) {
+        bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      }
+      const job = await api.importEpub({ fileName: file.name, contentBase64: btoa(bin) });
+      if (job) setBusy(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   };
   const handleImportFolder = async () => {
     if (busy) return;
@@ -621,23 +653,24 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
             ) : (
               <>
                 <div className="@container flex gap-1 p-1 bg-white/5 rounded-lg">
-                  {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }, { k: "pack" as const, label: t("import.tab.pack"), icon: Package }]).map(({ k, label, icon: Icon }) => (
-                    <button key={k} onClick={() => setTab(k)} className={`min-w-0 flex-1 flex items-center justify-center gap-1 py-1.5 px-0.5 rounded-md font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
+                  {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }, { k: "epub" as const, label: t("import.tab.epub"), icon: BookOpen }, { k: "pack" as const, label: t("import.tab.pack"), icon: Package }]).map(({ k, label, icon: Icon }) => (
+                    <button key={k} onClick={() => setTab(k)} className={`min-w-0 flex-1 flex items-center justify-center gap-0.5 py-1.5 px-0.5 rounded-md font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
                       <Icon className="w-3 h-3 shrink-0" />
-                      <span className="whitespace-nowrap" style={{ fontSize: "clamp(0.75rem, 4.4cqi, 0.875rem)" }}>{label}</span>
+                      <span className="whitespace-nowrap" style={{ fontSize: "clamp(0.75rem, 4cqi, 0.875rem)" }}>{label}</span>
                     </button>
                   ))}
                 </div>
                 {tab === "url" ? (
                   <section className="space-y-2" data-testid="import-url-section">
-                    <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/owner/repo" data-testid="repo-url-input" className="w-full bg-black/25 text-white placeholder:text-white/35 text-body rounded-lg px-3 py-2 border border-white/15 focus:border-brand focus:outline-none transition-colors" />
+                    <input type="text" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder={t("import.url.placeholder")} data-testid="repo-url-input" className="w-full bg-black/25 text-white placeholder:text-white/35 text-body rounded-lg px-3 py-2 border border-white/15 focus:border-brand focus:outline-none transition-colors" />
+                    <p className="text-caption text-white/45 leading-relaxed">{t("import.url.desc")}</p>
                     <button onClick={handleImportUrl} disabled={!repoUrl.trim() || busy} data-testid="import-url-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.url")}</button>
                   </section>
                 ) : tab === "markdown" ? (
                   <section className="space-y-2" data-testid="import-md-section">
                     <input type="text" value={repoName} onChange={(e) => setRepoName(e.target.value)} placeholder={t("import.placeholder.name")} data-testid="md-name-input" className="w-full bg-black/25 text-white placeholder:text-white/35 text-body rounded-lg px-3 py-2 border border-white/15 focus:border-brand focus:outline-none transition-colors" />
                     <textarea value={mdText} onChange={(e) => setMdText(e.target.value)} placeholder={t("import.placeholder.md")} data-testid="md-text-input" rows={4} className="w-full bg-black/25 text-white placeholder:text-white/35 text-body rounded-lg px-3 py-2 border border-white/15 focus:border-brand focus:outline-none transition-colors resize-none" />
-                    <button onClick={handleImportMd} disabled={!mdText.trim() || !repoName.trim() || busy} data-testid="import-md-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.md")}</button>
+                    <button onClick={handleImportMd} disabled={!mdText.trim() || busy} data-testid="import-md-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.md")}</button>
                   </section>
                 ) : tab === "folder" ? (
                   <section className="space-y-2" data-testid="import-folder-section">
@@ -650,6 +683,18 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
                       />
                     )}
                     <button onClick={handleImportFolder} disabled={busy || (!isDesktopApp && !folderPath.trim())} data-testid="import-folder-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.folder")}</button>
+                  </section>
+                ) : tab === "epub" ? (
+                  <section className="space-y-2" data-testid="import-epub-section">
+                    <p className="text-caption text-white/50 leading-relaxed">{t("import.epub.desc")}</p>
+                    {!isDesktopApp && (
+                      <input
+                        ref={epubFileRef} type="file" accept=".epub,application/epub+zip" className="hidden"
+                        data-testid="import-epub-file"
+                        onChange={(e) => { void handleEpubFileChosen(e.target.files?.[0]); e.currentTarget.value = ""; }}
+                      />
+                    )}
+                    <button onClick={handleImportEpub} disabled={busy} data-testid="import-epub-btn" className="btn-3d-brand w-full px-3 py-2 text-body disabled:opacity-40">{t("import.btn.epub")}</button>
                   </section>
                 ) : (
                   <section className="space-y-2" data-testid="import-pack-section">

@@ -53,10 +53,17 @@ export interface PlanClassification {
 export interface ImportPlan {
   formatVersion: number;
   planId: string;
-  kind: "github" | "folder";
+  /** v2 起 kind 扩展:github | folder | url(网页文章/arXiv) | text(粘贴) | epub */
+  kind: "github" | "folder" | "url" | "text" | "epub";
   github?: { owner: string; repo: string; branch: string };
   folder?: { absPath: string };
-  /** sha1(sorted fullTree paths)——仓库漂移检测 */
+  /** url 源身份:归一化 URL */
+  url?: { url: string };
+  /** text 源身份:原始文本 sha1 */
+  text?: { sha1: string };
+  /** epub 源身份:章节内容哈希(重打包不换身份,内容变了才算漂移) */
+  epub?: { sha1: string };
+  /** 漂移检测哈希:github/folder = 路径集合;url/text/epub = 路径+内容(这些源改内容不改路径) */
   treeHash: string;
   createdAt: string;
   updatedAt: string;
@@ -71,6 +78,9 @@ export interface ImportPlan {
   fullTree: string[];
   /** github 清点解析出的分支(正文拉取用) */
   branch: string;
+  /** url/text/epub 的正文缓存:这类源无法像 github(CDN)/folder(磁盘)那样现拉,
+   *  断点续跑({kind:"plan"})靠它拿回 Steps 2-5 需要的内容 */
+  docCache?: Record<string, string>;
   // ── Step 2 产物(LLM) ──
   classification?: PlanClassification;
   // ── Step 3 产物(无 LLM,但 CDN/磁盘重扫要时间) ──
@@ -85,6 +95,16 @@ export function computeTreeHash(fullTree: string[]): string {
   return createHash("sha1").update(joined, "utf8").digest("hex");
 }
 
+/** 内容树哈希:url/text/epub 用——这些源改内容不改路径,漂移必须看正文。
+ *  epub 重打包(zip 元数据变)内容不变 → 哈希不变 → 不误伤复用。 */
+export function computeContentHash(docs: Iterable<[string, string]>): string {
+  const joined = [...docs]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([p, c]) => `${p}\n${createHash("sha1").update(c, "utf8").digest("hex")}`)
+    .join("\n");
+  return createHash("sha1").update(joined, "utf8").digest("hex");
+}
+
 export function newPlanId(): string {
   return randomUUID();
 }
@@ -94,13 +114,15 @@ export function serializePlan(plan: ImportPlan): string {
   return JSON.stringify(plan);
 }
 
+const PLAN_KINDS = new Set(["github", "folder", "url", "text", "epub"]);
+
 /** 解析 + 版本守卫:格式不对/坏 JSON 返回 null(调用方按"没有可用快照"处理,不崩)。 */
 export function parsePlan(raw: string): ImportPlan | null {
   try {
     const o = JSON.parse(raw) as ImportPlan;
     if (!o || typeof o !== "object") return null;
     if (o.formatVersion !== IMPORT_PLAN_FORMAT_VERSION) return null;
-    if (typeof o.planId !== "string" || (o.kind !== "github" && o.kind !== "folder")) return null;
+    if (typeof o.planId !== "string" || !PLAN_KINDS.has(o.kind)) return null;
     if (!Array.isArray(o.fullTree) || typeof o.treeHash !== "string") return null;
     return o;
   } catch {
@@ -110,25 +132,40 @@ export function parsePlan(raw: string): ImportPlan | null {
 
 /** 导入源身份。branch 不参与身份(清点时解析实际分支),treeHash 决定内容一致与否。 */
 export interface PlanIdentity {
-  kind: "github" | "folder";
+  kind: "github" | "folder" | "url" | "text" | "epub";
   github?: { owner: string; repo: string };
   folder?: { absPath: string };
+  url?: { url: string };
+  text?: { sha1: string };
+  epub?: { sha1: string };
 }
 
-/** 身份键:同 kind + github(owner/repo) 或 folder(absPath) 视为同一导入源。 */
+/** 身份键:同 kind + github(owner/repo) / folder(absPath) / url(归一化) / text|epub(内容哈希) 视为同一导入源。 */
 export function planIdentityKey(plan: PlanIdentity): string {
   if (plan.kind === "github" && plan.github) {
     return `github:${plan.github.owner.toLowerCase()}/${plan.github.repo.toLowerCase()}`;
   }
   if (plan.kind === "folder" && plan.folder) return `folder:${plan.folder.absPath}`;
+  if (plan.kind === "url" && plan.url) return `url:${plan.url.url}`;
+  if (plan.kind === "text" && plan.text) return `text:${plan.text.sha1}`;
+  if (plan.kind === "epub" && plan.epub) return `epub:${plan.epub.sha1}`;
   return "unknown";
 }
 
-/** 当前清点与 plan 是否同一内容态:身份一致 + treeHash 一致。 */
-export function planMatchesInventory(plan: ImportPlan, identity: PlanIdentity, fullTree: string[]): boolean {
+/** 当前清点与 plan 是否同一内容态:身份一致 + treeHash 一致。
+ *  github/folder 传 fullTree(路径集合哈希);url/text/epub 这些"改内容不改路径"
+ *  的源必须传 contentHash(调用方已按 computeContentHash 算好)——否则内容漂移
+ *  会被漏检,静默复用旧结构。 */
+export function planMatchesInventory(
+  plan: ImportPlan,
+  identity: PlanIdentity,
+  fullTree: string[],
+  contentHash?: string,
+): boolean {
   const a = planIdentityKey(plan);
   const b = planIdentityKey(identity);
-  return a === b && a !== "unknown" && plan.treeHash === computeTreeHash(fullTree);
+  if (a !== b || a === "unknown") return false;
+  return plan.treeHash === (contentHash ?? computeTreeHash(fullTree));
 }
 
 /**

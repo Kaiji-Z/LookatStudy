@@ -606,6 +606,8 @@ function MultimodalContent({
   const [enabled, setEnabled] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [overrideProvider, setOverrideProvider] = useState<string>("");
+  /** 自定义区块展开态(点击「自定义」按钮即展开;有覆盖在身也默认展开) */
+  const [expanded, setExpanded] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [visionTesting, setVisionTesting] = useState(false);
   const [visionTestResult, setVisionTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
@@ -618,6 +620,7 @@ function MultimodalContent({
     ]).then(([flag, prov]) => {
       setEnabled(flag === "true");
       setOverrideProvider(prov ?? "");
+      if (prov) setExpanded(true);
       setLoaded(true);
     });
   }, []);
@@ -640,6 +643,7 @@ function MultimodalContent({
     await api.setSetting("vision_provider_override", "");
     await api.setSetting("vision_model_override", "");
     setOverrideProvider("");
+    setShowForm(false);
   };
 
   /** 测识图覆盖:测的就是生效链路(覆盖优先,缺省回落主模型) */
@@ -658,8 +662,9 @@ function MultimodalContent({
   };
 
   const visionCustoms = customProviders.filter((c) => c.kind === "vision");
+  // 全表查(不限 kind):v0.15 前建的覆盖指向 kind=llm 的行,不能因分区丢了摘要
   const overrideCustom = overrideProvider.startsWith("custom-")
-    ? visionCustoms.find((c) => c.id === overrideProvider)
+    ? customProviders.find((c) => c.id === overrideProvider)
     : null;
   // 旧库:覆盖指向预设 provider(v0.15 前的 UI 可选预设)—— 仍生效,展示为旧配置
   const overrideLegacyPreset = overrideProvider && !overrideProvider.startsWith("custom-")
@@ -690,7 +695,7 @@ function MultimodalContent({
                 : t("settings.multimodal.hint_preset")}
             </div>
           </div>
-          {/* 看图模型来源:复用主模型 / 自定义(v0.15 两选项) */}
+          {/* 看图模型来源:复用主模型 / 自定义 —— 按钮组 + 展开块(与语音区同款式) */}
           <div className="bg-ink/5 rounded-lg p-3">
             <div className="text-label font-medium text-ink-muted mb-2">
               {t("settings.multimodal.override_title")}
@@ -698,73 +703,107 @@ function MultimodalContent({
             <div className="text-caption text-ink-muted mb-2">
               {t("settings.multimodal.override_bridge_hint")}
             </div>
-            <div className="flex gap-2 mb-2" data-testid="vision-mode">
-              {(["reuse", "custom"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => {
-                    if (m === "reuse" && mode === "custom") void handleStopOverride();
-                    if (m === "custom" && mode === "reuse") setShowForm(true);
-                  }}
-                  data-testid={`vision-mode-${m}`}
-                  aria-pressed={mode === m}
-                  className={`px-3 py-1.5 rounded-lg text-label font-medium transition-colors ${
-                    mode === m ? pillActiveCls : pillInactiveCls
-                  }`}
-                >
-                  {t(`settings.multimodal.mode_${m}`)}
-                </button>
-              ))}
+            <div className="flex gap-2 flex-wrap" data-testid="vision-mode">
+              <button
+                onClick={() => {
+                  if (mode === "custom") void handleStopOverride();
+                  setExpanded(false);
+                }}
+                data-testid="vision-mode-reuse"
+                aria-pressed={mode === "reuse"}
+                className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${mode === "reuse" ? pillActiveCls : pillInactiveCls}`}
+              >
+                {t("settings.multimodal.mode_reuse")}
+              </button>
+              <button
+                onClick={() => {
+                  setExpanded((s) => !s);
+                  if (!expanded) setShowForm(false);
+                }}
+                data-testid="vision-mode-custom"
+                aria-pressed={mode === "custom"}
+                className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${mode === "custom" ? pillActiveCls : pillInactiveCls}`}
+              >
+                {t("settings.multimodal.mode_custom")}
+              </button>
             </div>
 
-            {mode === "custom" && !overrideCustom && overrideLegacyPreset && (
-              <div className="text-label text-ink-muted">
-                {t("settings.multimodal.legacy_preset", { label: overrideLegacyPreset.label })}
-              </div>
-            )}
+            {expanded && (
+              <div className="space-y-3 mt-1">
+                {overrideCustom && (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2 text-label">
+                      <Wrench className="w-3.5 h-3.5 text-ink-faint shrink-0" aria-hidden="true" />
+                      <span className="font-medium text-ink-strong">{overrideCustom.label}</span>
+                      <code className="text-ink-faint font-mono break-all">{overrideCustom.defaultModel}</code>
+                      <span className="text-ink-faint truncate">{overrideCustom.baseUrl}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => void handleTestOverride()}
+                        disabled={visionTesting}
+                        data-testid="vision-override-test"
+                        className="btn-3d-neutral px-4 py-1.5 text-label disabled:opacity-50"
+                      >
+                        {visionTesting ? t("settings.testing") : t("settings.multimodal.test_override")}
+                      </button>
+                      <button onClick={() => setShowForm((s) => !s)} className="text-label text-accent hover:underline">
+                        {t("settings.multimodal.replace_custom")}
+                      </button>
+                      <button onClick={() => void handleStopOverride()} className="text-label text-ink-muted hover:text-ink-strong">
+                        {t("settings.multimodal.stop_override")}
+                      </button>
+                      {visionTestResult && (
+                        <span className={`text-label inline-flex items-center gap-1 ${visionTestResult.ok ? "text-brand" : "text-warning"}`}>
+                          {visionTestResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
+                          {visionTestResult.detail}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-            {mode === "custom" && overrideCustom && (
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2 text-label">
-                  <Wrench className="w-3.5 h-3.5 text-ink-faint shrink-0" aria-hidden="true" />
-                  <span className="font-medium text-ink-strong">{overrideCustom.label}</span>
-                  <code className="text-ink-faint font-mono break-all">{overrideCustom.defaultModel}</code>
-                  <span className="text-ink-faint truncate">{overrideCustom.baseUrl}</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => void handleTestOverride()}
-                    disabled={visionTesting}
-                    data-testid="vision-override-test"
-                    className="btn-3d-neutral px-4 py-1.5 text-label disabled:opacity-50"
-                  >
-                    {visionTesting ? t("settings.testing") : t("settings.multimodal.test_override")}
-                  </button>
-                  <button onClick={() => setShowForm((s) => !s)} className="text-label text-accent hover:underline">
-                    {t("settings.multimodal.replace_custom")}
-                  </button>
-                  <button onClick={() => void handleStopOverride()} className="text-label text-ink-muted hover:text-ink-strong">
-                    {t("settings.multimodal.stop_override")}
-                  </button>
-                  {visionTestResult && (
-                    <span className={`text-label inline-flex items-center gap-1 ${visionTestResult.ok ? "text-brand" : "text-warning"}`}>
-                      {visionTestResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
-                      {visionTestResult.detail}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
+                {overrideLegacyPreset && (
+                  <div className="flex flex-wrap items-center gap-2 text-label">
+                    <span className="text-ink-muted">{t("settings.multimodal.legacy_preset", { label: overrideLegacyPreset.label })}</span>
+                    <button onClick={() => void handleStopOverride()} className="text-label text-ink-muted hover:text-ink-strong underline">
+                      {t("settings.multimodal.stop_override")}
+                    </button>
+                  </div>
+                )}
 
-            {mode === "custom" && showForm && (
-              <CustomProviderForm
-                kind="vision"
-                testPrefix="vision-custom"
-                titleKey="settings.custom.form_title_vision"
-                modelPhKey="settings.custom.model_ph_vision"
-                onSaved={(p) => void handleCustomSaved(p)}
-                onCancel={() => setShowForm(false)}
-              />
+                {/* 无覆盖在身:已有 vision 自定义可一键选用;没有则直接出新建表单 */}
+                {!overrideCustom && !overrideLegacyPreset && (
+                  <>
+                    {visionCustoms.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => void handleCustomSaved(c)}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-surface-1 hover:bg-surface-3 transition-colors"
+                        data-testid={`vision-pick-${c.id}`}
+                      >
+                        <span className="text-label font-medium text-ink-strong">{c.label}</span>
+                        <span className="text-label text-ink-faint font-mono break-all ml-2">{c.defaultModel}</span>
+                      </button>
+                    ))}
+                    {(showForm || visionCustoms.length === 0) && (
+                      <CustomProviderForm
+                        kind="vision"
+                        testPrefix="vision-custom"
+                        titleKey="settings.custom.form_title_vision"
+                        modelPhKey="settings.custom.model_ph_vision"
+                        onSaved={(p) => void handleCustomSaved(p)}
+                        onCancel={() => setShowForm(false)}
+                      />
+                    )}
+                    {visionCustoms.length > 0 && (
+                      <button onClick={() => setShowForm((s) => !s)} className="text-label text-accent hover:underline">
+                        {showForm ? t("action.cancel") : t("settings.custom.new")}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             )}
           </div>
       </div>
@@ -896,8 +935,10 @@ function SpeechContent() {
   const [asrLocalModel, setAsrLocalModel] = useState("asr-whisper-turbo");
   const [asrAutoStop, setAsrAutoStop] = useState(true);
 
-  // 自定义 provider(tts/asr 分区)+ 表单/测试态
+  // 自定义 provider(tts/asr 分区)+ 展开块/表单/测试态
   const [customs, setCustoms] = useState<CustomProvider[]>([]);
+  const [ttsExpanded, setTtsExpanded] = useState(false);
+  const [asrExpanded, setAsrExpanded] = useState(false);
   const [showTtsForm, setShowTtsForm] = useState(false);
   const [showAsrForm, setShowAsrForm] = useState(false);
   const [ttsTesting, setTtsTesting] = useState(false);
@@ -990,6 +1031,9 @@ function SpeechContent() {
       : id === "asr-whisper-turbo"
         ? t("settings.speech.model.asr_turbo")
         : t("settings.speech.model.asr_small");
+  /** 模型下拉里的紧凑名(完整名留给管理行,防手机端 select 被长选项撑爆) */
+  const shortLabel = (id: string) =>
+    id === "asr-whisper-turbo" ? t("settings.speech.model.turbo_short") : t("settings.speech.model.small_short");
   const licenseOf = (id: string) =>
     id.startsWith("asr-whisper") ? t("settings.speech.license_mit") : t("settings.speech.license");
   const stateLabel = (state: string) =>
@@ -1012,6 +1056,8 @@ function SpeechContent() {
   const activeTtsCustom = engine.startsWith("custom-") ? ttsCustoms.find((c) => c.id === engine) ?? null : null;
   const activeAsrCustom = asrEngine.startsWith("custom-") ? asrCustoms.find((c) => c.id === asrEngine) ?? null : null;
   const ttsLegacy = engine === "azure";
+  const asrLegacyGroq = asrEngine === "groq";
+  const asrLegacyAzure = asrEngine === "azure";
 
   const testTtsCustom = async () => {
     if (!activeTtsCustom || ttsTesting) return;
@@ -1108,7 +1154,7 @@ function SpeechContent() {
     );
   };
 
-  /** 自定义 provider 摘要行(名字/模型/端点 + 测试/删除) */
+  /** 已启用自定义 provider 的摘要行(名字/模型/端点 + 测试/删除) */
   const customSummary = (
     c: CustomProvider,
     which: "tts" | "asr",
@@ -1160,127 +1206,145 @@ function SpeechContent() {
 
   return (
     <div data-testid="settings-speech">
-      {/* ===== 朗读 ===== */}
+      {/* ===== 朗读:按钮组(Edge 在线 / 本地离线 / 自定义) ===== */}
       <div className={rowCls(false)}>
-        <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.speech.tts_title")}</div>
-        <div className="flex items-center gap-2">
-          <select
-            value={engine === "edge" || engine === "local" || engine === "azure" || engine.startsWith("custom-") ? engine : "edge"}
-            onChange={(e) => saveEngine(e.target.value)}
-            data-testid="tts-engine-select"
-            className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-          >
-            <option value="edge">{t("settings.speech.engine.edge")}</option>
-            <option value="local">
-              {t("settings.speech.engine.local")}
-              {rowState("tts-kokoro") !== "ready" ? ` · ${t("settings.speech.state.absent")}` : ""}
-            </option>
-            {ttsCustoms.map((c) => (
-              <option key={c.id} value={c.id}>
-                {t("settings.speech.engine.custom_opt", { label: c.label })}
-              </option>
-            ))}
-            {ttsLegacy && (
-              <option value="azure" disabled>
-                {t("settings.speech.engine.azure")} · {t("settings.speech.legacy")}
-              </option>
-            )}
-          </select>
+        <div className="text-label font-medium text-ink-strong mb-2">{t("settings.speech.tts_title")}</div>
+        <div className="flex gap-2 flex-wrap">
           <button
-            onClick={() => setShowTtsForm((s) => !s)}
-            data-testid="add-tts-custom"
-            className="px-3 py-1.5 rounded-lg text-label whitespace-nowrap inline-flex items-center gap-1 border border-dashed border-[var(--border)] text-ink-muted hover:border-ink-muted hover:text-ink-strong transition-colors"
+            onClick={() => saveEngine("edge")}
+            data-testid="tts-engine-edge"
+            aria-pressed={engine === "edge"}
+            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${engine === "edge" ? pillActiveCls : pillInactiveCls}`}
           >
-            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-            {t("settings.speech.add_custom")}
+            {t("settings.speech.engine.edge")}
           </button>
+          <button
+            onClick={() => saveEngine("local")}
+            data-testid="tts-engine-local"
+            aria-pressed={engine === "local"}
+            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${engine === "local" ? pillActiveCls : pillInactiveCls}`}
+          >
+            {t("settings.speech.engine.local")}
+            {rowState("tts-kokoro") !== "ready" ? ` · ${t("settings.speech.state.absent")}` : ""}
+          </button>
+          <button
+            onClick={() => {
+              setTtsExpanded((s) => !s);
+              if (!ttsExpanded) setShowTtsForm(false);
+            }}
+            data-testid="tts-engine-custom"
+            aria-pressed={engine.startsWith("custom-")}
+            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${engine.startsWith("custom-") ? pillActiveCls : pillInactiveCls}`}
+          >
+            {t("settings.speech.engine.custom")}
+          </button>
+          {ttsLegacy && (
+            <button
+              disabled
+              data-testid="tts-engine-azure"
+              className="px-4 py-2 rounded-xl text-body font-bold opacity-50 cursor-not-allowed"
+            >
+              Azure · {t("settings.speech.legacy")}
+            </button>
+          )}
         </div>
-        {engine === "edge" && (
-          <p className="text-label text-ink-muted mt-2">{t("settings.speech.engine.edge_note")}</p>
-        )}
+        {engine === "edge" && <p className="text-label text-ink-muted mt-2">{t("settings.speech.engine.edge_note")}</p>}
       </div>
 
       {engine === "edge" && (
         <div className={rowCls(false)}>
-          <div className="flex items-center gap-2">
-            <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.voice")}</span>
-            <select
-              value={voiceEdge}
-              onChange={(e) => {
-                setVoiceEdge(e.target.value);
-                void api.setSetting("tts_voice_edge", e.target.value);
-              }}
-              data-testid="tts-voice-select"
-              className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-            >
-              {TTS_VOICE_OPTIONS.map((v) => (
-                <option key={v.id} value={v.id}>{v.label}</option>
-              ))}
-            </select>
-          </div>
+          <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.speech.voice")}</div>
+          <select
+            value={voiceEdge}
+            onChange={(e) => {
+              setVoiceEdge(e.target.value);
+              void api.setSetting("tts_voice_edge", e.target.value);
+            }}
+            data-testid="tts-voice-select"
+            className={`${fieldCls} w-full min-w-0 px-2.5 py-1.5`}
+          >
+            {TTS_VOICE_OPTIONS.map((v) => (
+              <option key={v.id} value={v.id}>{v.label}</option>
+            ))}
+          </select>
         </div>
       )}
 
       {engine === "local" && (
         <>
           <div className={rowCls(false)}>
-            <div className="flex items-center gap-2">
-              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.voice")}</span>
-              <select
-                value={sidLocal}
-                onChange={(e) => {
-                  setSidLocal(e.target.value);
-                  void api.setSetting("tts_sid_local", e.target.value);
-                }}
-                data-testid="tts-sid-select"
-                className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-              >
-                {TTS_LOCAL_SID_OPTIONS.map((v) => (
-                  <option key={v.sid} value={v.sid}>{v.label}</option>
-                ))}
-              </select>
-            </div>
+            <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.speech.voice")}</div>
+            <select
+              value={sidLocal}
+              onChange={(e) => {
+                setSidLocal(e.target.value);
+                void api.setSetting("tts_sid_local", e.target.value);
+              }}
+              data-testid="tts-sid-select"
+              className={`${fieldCls} w-full min-w-0 px-2.5 py-1.5`}
+            >
+              {TTS_LOCAL_SID_OPTIONS.map((v) => (
+                <option key={v.sid} value={v.sid}>{v.label}</option>
+              ))}
+            </select>
           </div>
           <div className={rowCls(false)}>{modelRow("tts-kokoro")}</div>
         </>
       )}
 
-      {activeTtsCustom && (
-        <>
-          <div className={rowCls(false)}>{customSummary(activeTtsCustom, "tts", ttsTesting, ttsTestResult, testTtsCustom)}</div>
-          <div className={rowCls(false)}>
-            <div className="flex items-center gap-2">
-              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.speech.voice")}</span>
-              <input
-                type="text"
-                value={customVoice}
-                onChange={(e) => setCustomVoice(e.target.value)}
-                onBlur={() => void api.setSetting("tts_custom_voice", customVoice.trim())}
-                placeholder={t("settings.speech.custom_voice_ph")}
-                data-testid="tts-custom-voice"
-                className={`${fieldCls} flex-1 px-2.5 py-1.5 font-mono`}
-              />
-            </div>
-          </div>
-        </>
-      )}
-
-      {showTtsForm && (
+      {/* 朗读·自定义展开块:摘要/选用已有/新建 */}
+      {ttsExpanded && (
         <div className={rowCls(false)}>
-          <CustomProviderForm
-            kind="tts"
-            showProtocol={false}
-            testPrefix="tts-custom"
-            titleKey="settings.custom.form_title_tts"
-            modelPhKey="settings.custom.model_ph_tts"
-            testOverride={(i) => api.testCustomTts({ baseUrl: i.baseUrl, apiKey: i.apiKey || undefined, model: i.model })}
-            onSaved={(p) => {
-              saveEngine(p.id);
-              setShowTtsForm(false);
-              refreshCustoms();
-            }}
-            onCancel={() => setShowTtsForm(false)}
-          />
+          <div className="space-y-3">
+            {activeTtsCustom && customSummary(activeTtsCustom, "tts", ttsTesting, ttsTestResult, testTtsCustom)}
+            {activeTtsCustom && (
+              <div>
+                <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.speech.voice")}</div>
+                <input
+                  type="text"
+                  value={customVoice}
+                  onChange={(e) => setCustomVoice(e.target.value)}
+                  onBlur={() => void api.setSetting("tts_custom_voice", customVoice.trim())}
+                  placeholder={t("settings.speech.custom_voice_ph")}
+                  data-testid="tts-custom-voice"
+                  className={`${fieldCls} w-full min-w-0 px-2.5 py-1.5 font-mono`}
+                />
+              </div>
+            )}
+            {!activeTtsCustom &&
+              ttsCustoms.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => saveEngine(c.id)}
+                  className="w-full text-left px-3 py-2 rounded-lg bg-surface-1 hover:bg-surface-3 transition-colors"
+                  data-testid={`tts-pick-${c.id}`}
+                >
+                  <span className="text-label font-medium text-ink-strong">{c.label}</span>
+                  <span className="text-label text-ink-faint font-mono break-all ml-2">{c.defaultModel}</span>
+                </button>
+              ))}
+            {(showTtsForm || (!activeTtsCustom && ttsCustoms.length === 0)) && (
+              <CustomProviderForm
+                kind="tts"
+                showProtocol={false}
+                testPrefix="tts-custom"
+                titleKey="settings.custom.form_title_tts"
+                modelPhKey="settings.custom.model_ph_tts"
+                testOverride={(i) => api.testCustomTts({ baseUrl: i.baseUrl, apiKey: i.apiKey || undefined, model: i.model })}
+                onSaved={(p) => {
+                  saveEngine(p.id);
+                  setShowTtsForm(false);
+                  refreshCustoms();
+                }}
+                onCancel={() => setShowTtsForm(false)}
+              />
+            )}
+            {(activeTtsCustom || ttsCustoms.length > 0) && (
+              <button onClick={() => setShowTtsForm((s) => !s)} className="text-label text-accent hover:underline">
+                {showTtsForm ? t("action.cancel") : t("settings.custom.new")}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1297,7 +1361,7 @@ function SpeechContent() {
             onPointerUp={() => void api.setSetting("tts_speed", speed)}
             onKeyUp={() => void api.setSetting("tts_speed", speed)}
             data-testid="tts-speed-range"
-            className="flex-1 accent-[var(--brand)]"
+            className="flex-1 min-w-0 accent-[var(--brand)]"
           />
           <span className="text-label text-ink-muted tabular-nums w-10 text-right" data-testid="tts-speed-value">
             {Number(speed).toFixed(2)}x
@@ -1305,41 +1369,47 @@ function SpeechContent() {
         </div>
       </div>
 
-      {/* ===== 听写 ===== */}
+      {/* ===== 听写:按钮组(本地离线 / 自定义) ===== */}
       <div className={rowCls(true)}>
-        <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.speech.asr_title")}</div>
-        <div className="flex items-center gap-2">
-          <select
-            value={asrEngine === "local" || asrEngine === "groq" || asrEngine === "azure" || asrEngine.startsWith("custom-") ? asrEngine : "local"}
-            onChange={(e) => saveAsrEngine(e.target.value)}
-            data-testid="asr-engine-select"
-            className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-          >
-            <option value="local">{t("settings.speech.asr_engine.local")}</option>
-            {asrCustoms.map((c) => (
-              <option key={c.id} value={c.id}>
-                {t("settings.speech.engine.custom_opt", { label: c.label })}
-              </option>
-            ))}
-            {asrEngine === "groq" && (
-              <option value="groq" disabled>
-                Groq · {t("settings.speech.legacy")}
-              </option>
-            )}
-            {asrEngine === "azure" && (
-              <option value="azure" disabled>
-                Azure · {t("settings.speech.legacy")}
-              </option>
-            )}
-          </select>
+        <div className="text-label font-medium text-ink-strong mb-2">{t("settings.speech.asr_title")}</div>
+        <div className="flex gap-2 flex-wrap">
           <button
-            onClick={() => setShowAsrForm((s) => !s)}
-            data-testid="add-asr-custom"
-            className="px-3 py-1.5 rounded-lg text-label whitespace-nowrap inline-flex items-center gap-1 border border-dashed border-[var(--border)] text-ink-muted hover:border-ink-muted hover:text-ink-strong transition-colors"
+            onClick={() => saveAsrEngine("local")}
+            data-testid="asr-engine-local"
+            aria-pressed={asrEngine === "local"}
+            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${asrEngine === "local" ? pillActiveCls : pillInactiveCls}`}
           >
-            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-            {t("settings.speech.add_custom")}
+            {t("settings.speech.asr_engine.local")}
           </button>
+          <button
+            onClick={() => {
+              setAsrExpanded((s) => !s);
+              if (!asrExpanded) setShowAsrForm(false);
+            }}
+            data-testid="asr-engine-custom"
+            aria-pressed={asrEngine.startsWith("custom-")}
+            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${asrEngine.startsWith("custom-") ? pillActiveCls : pillInactiveCls}`}
+          >
+            {t("settings.speech.engine.custom")}
+          </button>
+          {asrLegacyGroq && (
+            <button
+              disabled
+              data-testid="asr-engine-groq"
+              className="px-4 py-2 rounded-xl text-body font-bold opacity-50 cursor-not-allowed"
+            >
+              Groq · {t("settings.speech.legacy")}
+            </button>
+          )}
+          {asrLegacyAzure && (
+            <button
+              disabled
+              data-testid="asr-engine-azure"
+              className="px-4 py-2 rounded-xl text-body font-bold opacity-50 cursor-not-allowed"
+            >
+              Azure · {t("settings.speech.legacy")}
+            </button>
+          )}
         </div>
         {asrEngine === "local" ? (
           <p className="text-label text-ink-muted mt-2">{t("settings.speech.asr_engine.local_note")}</p>
@@ -1353,47 +1423,66 @@ function SpeechContent() {
       {asrEngine === "local" && (
         <>
           <div className={rowCls(false)}>
-            <div className="flex items-center gap-2">
-              <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.model")}</span>
-              <select
-                value={asrLocalModel}
-                onChange={(e) => {
-                  setAsrLocalModel(e.target.value);
-                  void api.setSetting("asr_local_model", e.target.value);
-                }}
-                data-testid="asr-model-select"
-                className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-              >
-                {(["asr-whisper-turbo", "asr-whisper-small"] as const).map((id) => (
-                  <option key={id} value={id}>
-                    {labelOf(id)} · {stateLabel(rowState(id))}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.model")}</div>
+            <select
+              value={asrLocalModel}
+              onChange={(e) => {
+                setAsrLocalModel(e.target.value);
+                void api.setSetting("asr_local_model", e.target.value);
+              }}
+              data-testid="asr-model-select"
+              className={`${fieldCls} w-full min-w-0 px-2.5 py-1.5`}
+            >
+              {(["asr-whisper-turbo", "asr-whisper-small"] as const).map((id) => (
+                <option key={id} value={id}>
+                  {shortLabel(id)} · {stateLabel(rowState(id))}
+                </option>
+              ))}
+            </select>
           </div>
           <div className={rowCls(false)}>{modelRow(asrLocalModel)}</div>
         </>
       )}
 
-      {activeAsrCustom && <div className={rowCls(false)}>{customSummary(activeAsrCustom, "asr", asrTesting, asrTestResult, testAsrCustom)}</div>}
-
-      {showAsrForm && (
+      {/* 听写·自定义展开块 */}
+      {asrExpanded && (
         <div className={rowCls(false)}>
-          <CustomProviderForm
-            kind="asr"
-            showProtocol={false}
-            testPrefix="asr-custom"
-            titleKey="settings.custom.form_title_asr"
-            modelPhKey="settings.custom.model_ph_asr"
-            testOverride={(i) => api.testCustomAsr({ baseUrl: i.baseUrl, apiKey: i.apiKey || undefined, model: i.model })}
-            onSaved={(p) => {
-              saveAsrEngine(p.id);
-              setShowAsrForm(false);
-              refreshCustoms();
-            }}
-            onCancel={() => setShowAsrForm(false)}
-          />
+          <div className="space-y-3">
+            {activeAsrCustom && customSummary(activeAsrCustom, "asr", asrTesting, asrTestResult, testAsrCustom)}
+            {!activeAsrCustom &&
+              asrCustoms.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => saveAsrEngine(c.id)}
+                  className="w-full text-left px-3 py-2 rounded-lg bg-surface-1 hover:bg-surface-3 transition-colors"
+                  data-testid={`asr-pick-${c.id}`}
+                >
+                  <span className="text-label font-medium text-ink-strong">{c.label}</span>
+                  <span className="text-label text-ink-faint font-mono break-all ml-2">{c.defaultModel}</span>
+                </button>
+              ))}
+            {(showAsrForm || (!activeAsrCustom && asrCustoms.length === 0)) && (
+              <CustomProviderForm
+                kind="asr"
+                showProtocol={false}
+                testPrefix="asr-custom"
+                titleKey="settings.custom.form_title_asr"
+                modelPhKey="settings.custom.model_ph_asr"
+                testOverride={(i) => api.testCustomAsr({ baseUrl: i.baseUrl, apiKey: i.apiKey || undefined, model: i.model })}
+                onSaved={(p) => {
+                  saveAsrEngine(p.id);
+                  setShowAsrForm(false);
+                  refreshCustoms();
+                }}
+                onCancel={() => setShowAsrForm(false)}
+              />
+            )}
+            {(activeAsrCustom || asrCustoms.length > 0) && (
+              <button onClick={() => setShowAsrForm((s) => !s)} className="text-label text-accent hover:underline">
+                {showAsrForm ? t("action.cancel") : t("settings.custom.new")}
+              </button>
+            )}
+          </div>
         </div>
       )}
 

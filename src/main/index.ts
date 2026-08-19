@@ -1209,8 +1209,8 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: asrInput,
   });
 
-  // T-VOICE-SETTINGS (v0.15): 语音模型区 —— 朗读/听写 provider 下拉 + 自定义入口 +
-  // 本地 whisper 模型下拉 + 讲解 tab 🔊(pill 范式已退役;新库无 azure/groq 旧值项)。
+  // T-VOICE-SETTINGS (v0.15): 语音模型区 —— 按钮组(朗读 Edge/本地/自定义,听写 本地/自定义)+
+  // whisper 模型下拉 + 讲解 tab 🔊(provider 下拉已退役;新库无 azure/groq 旧值 pill)。
   let voiceSettings: { ok?: boolean; error?: string; [k: string]: unknown } = {};
   try {
     voiceSettings = await win.webContents.executeJavaScript(`
@@ -1233,18 +1233,15 @@ async function runUiTest(screenshot = false): Promise<void> {
           speech.scrollIntoView({ block: "center" });
           await sleep(200);
           var has = function(id){ var el = q('[data-testid="' + id + '"]'); return !!el; };
-          var ttsSel = q('[data-testid="tts-engine-select"]');
-          var ttsOptions = ttsSel ? ttsSel.options.length : 0;
-          var asrSel = q('[data-testid="asr-engine-select"]');
           var r = {
             notebookSpeak: notebookSpeak,
-            ttsSelect: !!ttsSel, ttsBuiltinOptions: ttsOptions >= 2,
-            asrSelect: !!asrSel,
+            ttsEdge: has("tts-engine-edge"), ttsLocal: has("tts-engine-local"), ttsCustom: has("tts-engine-custom"),
+            asrLocal: has("asr-engine-local"), asrCustom: has("asr-engine-custom"),
             asrModelSelect: has("asr-model-select"),
-            addTtsCustom: has("add-tts-custom"), addAsrCustom: has("add-asr-custom"),
-            legacyPillGone: !q('[data-testid="tts-engine-edge"]'),
+            selectGone: !q('[data-testid="tts-engine-select"]'),
+            legacyGone: !q('[data-testid="tts-engine-azure"]') && !q('[data-testid="asr-engine-groq"]'),
           };
-          r.ok = r.notebookSpeak && r.ttsSelect && r.ttsBuiltinOptions && r.asrSelect && r.asrModelSelect && r.addTtsCustom && r.addAsrCustom && r.legacyPillGone;
+          r.ok = r.notebookSpeak && r.ttsEdge && r.ttsLocal && r.ttsCustom && r.asrLocal && r.asrCustom && r.asrModelSelect && r.selectGone && r.legacyGone;
           // 关设置(别污染后续步骤的界面状态)
           var closeBtn = q('[data-testid="settings-close"]');
           if (closeBtn) closeBtn.click();
@@ -1256,7 +1253,7 @@ async function runUiTest(screenshot = false): Promise<void> {
     voiceSettings = { error: String(e) };
   }
   results.push({
-    name: "voice settings: provider selects + custom entries + whisper model select + notebook read-aloud",
+    name: "voice settings: engine pill groups + custom pills + whisper model select + notebook read-aloud",
     ok: voiceSettings?.ok === true,
     detail: voiceSettings,
   });

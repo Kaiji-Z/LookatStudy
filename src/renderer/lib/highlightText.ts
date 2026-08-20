@@ -579,6 +579,15 @@ export function getReadingRange(): Range | null {
   return readingRange;
 }
 
+/** v10 最近一次新增笔记的画线 mark(伴学"飞来记笔记"的落点;元素引用随滚动自动更新)。 */
+let lastNoteMark: HTMLElement | null = null;
+export function setLastNoteMark(el: HTMLElement | null): void {
+  lastNoteMark = el;
+}
+export function getLastNoteMark(): HTMLElement | null {
+  return lastNoteMark;
+}
+
 /** 闪烁某个持久画线 mark(溯源跳转时用):加粗下划线 + 淡黄背景高亮,1.5s 后恢复。 */
 export function flashMark(mark: HTMLElement): void {
   mark.scrollIntoView({ behavior: "smooth", block: "center" });

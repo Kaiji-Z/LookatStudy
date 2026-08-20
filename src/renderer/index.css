@@ -911,6 +911,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
+  .cp-screen-key, .cp-writing, .cp-pen { animation: none; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
@@ -1065,6 +1066,45 @@ html.light ::-webkit-scrollbar-thumb:hover {
 ::highlight(cp-reading) { background-color: rgba(28, 176, 246, 0.2); }
 /* v7 航灯:左红右绿导航灯(航空惯例),常态慢呼吸,飞行/起飞时急闪交错 */
 .cp-beacons circle { fill: currentColor; opacity: 0.55; }
+/* v10 胸屏键入字符:打字时身体圆屏显示按键,弹入定格 */
+.cp-screen-key {
+  font: 700 15px ui-monospace, "Cascadia Mono", Consolas, monospace;
+  fill: #0e2a38;
+  paint-order: stroke;
+  stroke: rgba(53, 224, 232, 0.85);
+  stroke-width: 2.5px;
+  animation: cp-key-pop 0.18s cubic-bezier(0.2, 1.6, 0.4, 1);
+  pointer-events: none;
+}
+@keyframes cp-key-pop {
+  0% { opacity: 0; transform: scale(0.4); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.cp-screen-key { transform-box: fill-box; transform-origin: center; }
+
+/* v10 记笔记道具:本笔弹入,笔尖伏案写划 */
+.cp-writing {
+  animation: cp-notebook-in 0.28s cubic-bezier(0.2, 1.4, 0.4, 1);
+  pointer-events: none;
+}
+@keyframes cp-notebook-in {
+  0% { opacity: 0; transform: translateY(10px) scale(0.7); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.cp-writing { transform-box: fill-box; transform-origin: 50% 100%; }
+.cp-pen {
+  animation: cp-scribble 0.42s ease-in-out infinite alternate;
+  transform-box: fill-box;
+  transform-origin: 50% 90%;
+}
+@keyframes cp-scribble {
+  from { transform: rotate(0deg) translate(0, 0); }
+  to { transform: rotate(-5deg) translate(-1.5px, 1px); }
+}
+
+/* v10 肩甲(R-06 式宽肩,全形态共享) */
+.cp-shoulders { pointer-events: none; }
+
 .cp-beacon-l { color: #ff4b4b; animation: cp-beacon 2.6s ease-in-out infinite; }
 .cp-beacon-r { color: #58cc02; animation: cp-beacon 2.6s ease-in-out 1.3s infinite; }
 .cp-pose-flying .cp-beacon-l, .cp-takeoff .cp-beacon-l { animation-duration: 0.62s; }

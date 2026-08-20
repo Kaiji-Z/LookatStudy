@@ -6,7 +6,7 @@
  * 口型=花瓣/叶片的有机母音。调性:苔绿×奶白屏,呼吸般的圆。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags } from "./shared.js";
+import { Arms, Face, FaceExtras, GroundShadow, faceFlags , Shoulders } from "./shared.js";
 import { coarseViseme, type Viseme } from "../../../lib/companion/companion-core.js";
 
 export const MOSS: FormPalette = {
@@ -87,6 +87,7 @@ export function MossArt({ uid, refs, expression, viseme, openScale, energyRatio,
         </g>
         <path d="M88,158 Q100,152 112,158 L106,171 Q100,174 94,171 Z" fill="#3A4A34" stroke={OUT} strokeWidth="4" strokeLinejoin="round" />
 
+        <Shoulders fill={LEAF} fillDark={LEAF_D} out={OUT} />
         <Arms refs={refs} armFill={LEAF_D} out={OUT} />
 
         {/* 圆滚躯干 + cel 错位暗面 + 种子核 */}

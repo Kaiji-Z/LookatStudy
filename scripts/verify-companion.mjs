@@ -38,7 +38,11 @@ import {
   micArcScale,
   mouthOpenScale,
   visemeFromFormants,
-  readingAnchorPos,
+  readingTailAnchor,
+  glideTo,
+  nextRoamPane,
+  CRUISE_OP,
+  CRUISE_ROAM,
   smoothMic,
   wanderTarget,
   zoneDrift,
@@ -253,6 +257,19 @@ console.log("✓ T6 设置门控:仅显式 false/0 关闭");
   assert.strictEqual(st.pose, "lean-right", "T7: 听写姿势优先");
   assert.strictEqual(st.typing, true, "T7: typing 标志不丢(臂动画仍可用)");
 }
+
+// v10 lastKey:键入字符随 press 入状态(胸屏数据源);组合键不上屏
+{
+  let k = initialCompanionState(0);
+  k = companionReducer(k, { type: "press", side: -1, now: 100, key: "a" });
+  assert.equal(k.lastKey, "a", "T7: 打印字符入 lastKey");
+  assert.equal(k.keySeq, 1, "T7: keySeq 递增");
+  k = companionReducer(k, { type: "press", side: 1, now: 120 });
+  assert.equal(k.lastKey, null, "T7: 无字符键(功能/组合)→ null");
+  k = companionReducer(k, { type: "press", side: -1, now: 140, key: "Z" });
+  assert.equal(k.lastKey, "Z", "T7: 新字符覆盖");
+}
+
 console.log("✓ T7 打字反应:逐键交替臂/typing 姿势/超时回落/唤醒/听写优先");
 
 /* ---------- T8 窗口失焦打盹 / 聚焦唤醒 ---------- */
@@ -374,40 +391,56 @@ console.log("✓ T12 形象注册表:5 形态唯一/回退安全/注册表·壳�
   const core = await import("../src/renderer/lib/companion/companion-core.ts");
   const { ZONE_RETURN_MS, VEIL_AFTER_MS, NOTE_HOLD_MS, desiredZone, veilDecision } = core;
   let s = initialCompanionState(0);
-  assert.equal(s.zone, "rail", "T13: 初始在左栏老家");
   assert.equal(s.mode, "front", "T13: 初始前台");
+  // v10:初始 roam(闲时跨栏游走)
+  assert.equal(s.zone, "roam", "T13: v10 初始=roam 游走态");
 
-  // 输入框聚焦 → 落中栏;失焦后等 ZONE_RETURN_MS → tick 回老家
+  // 输入框聚焦 → chat;失焦等 ZONE_RETURN_MS → 回 roam
   s = companionReducer(s, { type: "zoneFocus", on: true, now: 1000 });
-  assert.equal(s.zone, "chat", "T13: 聚焦输入框 → 中栏宠物世界");
-  assert.equal(desiredZone(s, 1200), "chat", "T13: 聚焦闩在 → 意图停留");
+  s = companionReducer(s, { type: "tick", now: 1010 });
+  assert.equal(s.zone, "chat", "T13: 聚焦输入框 → 中栏(即时跟进)");
   s = companionReducer(s, { type: "zoneFocus", on: false, now: 2000 });
-  assert.equal(s.zone, "chat", "T13: 失焦瞬间不抖走(等返回窗口)");
+  assert.equal(s.zone, "chat", "T13: 失焦瞬间不抖走(等驻留窗)");
   s = companionReducer(s, { type: "tick", now: 2000 + ZONE_RETURN_MS - 10 });
-  assert.equal(s.zone, "chat", "T13: 返回窗口内仍在");
+  assert.equal(s.zone, "chat", "T13: 驻留窗内仍在");
   s = companionReducer(s, { type: "tick", now: 2000 + ZONE_RETURN_MS + 60 });
-  assert.equal(s.zone, "rail", "T13: 窗口过 → 回左栏");
+  assert.equal(s.zone, "roam", "T13: 窗口过 → 回 roam 游走");
 
-  // 朗读 → 右栏助教;聚焦输入框优先于朗读
+  // v10 最新动作优先:先朗读(notebook)后聚焦(chat)→ 跟最新的;
+  // 聚焦释放后朗读已停 → 回 roam(不再有固定优先级)
   s = companionReducer(s, { type: "talking", on: true, now: 4000 });
+  s = companionReducer(s, { type: "tick", now: 4010 });
   assert.equal(s.zone, "notebook", "T13: 朗读 → 右栏助教世界");
   s = companionReducer(s, { type: "zoneFocus", on: true, now: 4100 });
-  assert.equal(s.zone, "chat", "T13: 聚焦输入框 > 朗读(宠物优先)");
-  s = companionReducer(s, { type: "zoneFocus", on: false, now: 4200 });
-  s = companionReducer(s, { type: "tick", now: 4200 + ZONE_RETURN_MS + 60 });
-  assert.equal(s.zone, "notebook", "T13: 输入框释放后朗读仍续 → 回右栏");
-  s = companionReducer(s, { type: "talking", on: false, now: 9000 });
+  s = companionReducer(s, { type: "tick", now: 4110 });
+  assert.equal(s.zone, "chat", "T13: 边朗读边聚焦 → 跟最新动作(聚焦)");
+  // 反过来:聚焦中开始朗读(更新) → notebook 赢
+  s = companionReducer(s, { type: "talking", on: true, now: 4400 });
+  s = companionReducer(s, { type: "tick", now: 4410 });
+  assert.equal(s.zone, "notebook", "T13: 聚焦中开朗读(更新) → 跟朗读");
+  s = companionReducer(s, { type: "talking", on: false, now: 5000 });
+  s = companionReducer(s, { type: "tick", now: 5100 });
+  assert.equal(s.zone, "chat", "T13: 朗读停但聚焦还在 → 回 chat");
+  s = companionReducer(s, { type: "zoneFocus", on: false, now: 9000 });
   s = companionReducer(s, { type: "tick", now: 9000 + ZONE_RETURN_MS + 60 });
-  assert.equal(s.zone, "rail", "T13: 朗读结束 → 回左栏");
+  assert.equal(s.zone, "roam", "T13: 全部操作结束 → roam");
 
-  // 划线记笔记 → 右栏 + writing 姿势 + 短暂钉住
+  // 划线记笔记 → 右栏 + writing 姿势 + 短暂钉住(信号带到期)
   s = companionReducer(s, { type: "zoneNote", now: 20000 });
+  s = companionReducer(s, { type: "tick", now: 20010 });
   assert.equal(s.zone, "notebook", "T13: 划线 → 右栏");
   assert.equal(s.pose, "writing", "T13: 记笔记姿势");
   assert.equal(desiredZone(s, 20000 + NOTE_HOLD_MS - 100), "notebook", "T13: 钉住期内意图在右栏");
   s = companionReducer(s, { type: "tick", now: 20000 + NOTE_HOLD_MS + 100 });
+  assert.equal(desiredZone(s, 20000 + NOTE_HOLD_MS + 200), "roam", "T13: note 信号到期 → roam 意图");
   s = companionReducer(s, { type: "tick", now: 20000 + NOTE_HOLD_MS + ZONE_RETURN_MS + 100 });
-  assert.equal(s.zone, "rail", "T13: 记完笔记回家");
+  assert.equal(s.zone, "roam", "T13: 记完笔记开始游走");
+
+  // 导入监工:importing 钉左栏(优先于一切信号)
+  s = companionReducer(s, { type: "talking", on: true, now: 30000 });
+  s = companionReducer(s, { type: "importing", on: true, now: 30100 });
+  s = companionReducer(s, { type: "tick", now: 30110 });
+  assert.equal(s.zone, "rail", "T13: 导入监工钉左栏(压过朗读)");
 
   // 纱帘:空闲 VEIL_AFTER_MS 后入帘;滚动加速;点击唤醒;任务中豁免
   s = initialCompanionState(0);
@@ -489,7 +522,7 @@ console.log("✓ T12 形象注册表:5 形态唯一/回退安全/注册表·壳�
     assert.equal(g2.expression, "happy", "T13: 慢放=开心不生气");
   }
 }
-console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚焦>朗读)/记笔记钉住/纱帘判定/被拍晕眩");
+console.log("✓ T13 v10 zone 状态机:最新动作优先/roam 游走态/记笔记钉住/导入监工/纱帘判定/被拍晕眩");
 
 /* ---------- T14 飞行物理纯函数 + 稳定性仿真 ---------- */
 {
@@ -658,41 +691,78 @@ console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚�
 }
 console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性有界/跨引擎碰撞解算/倾角");
 
-/* ---------- T14b v5/v6 栏内世界:朗读跟句锚点 + 锚点漂浮 ---------- */
+/* ---------- T14b v10 朗读句尾锚点 + 栏内漂浮 ---------- */
 {
-  // readingAnchorPos:句子右侧优先(指左);右侧放不下换左侧(指右);y 钳制在面板内
-  const panel = { left: 0, right: 400, top: 0, bottom: 800 };
-  const size = 88;
-  const mid = readingAnchorPos({ left: 100, right: 300, top: 350, bottom: 370 }, panel, size);
-  assert.equal(mid.side, "left", "T14b: 右侧放得下 → 生物站句右,指向左");
-  assert.ok(
-    Math.abs(mid.x - (300 + size / 2 + 14)) < 0.01 && Math.abs(mid.y - 360) < 0.01,
-    `T14b: 右侧锚点=句末+半身+边距, y=句中线(实测 ${mid.x.toFixed(1)},${mid.y.toFixed(1)})`,
-  );
-  const edge = readingAnchorPos({ left: 340, right: 398, top: 100, bottom: 120 }, panel, size);
-  assert.equal(edge.side, "right", "T14b: 右侧超出面板 → 换到句左,指向右");
-  assert.ok(Math.abs(edge.x - (340 - size / 2 - 14)) < 0.01, "T14b: 左侧锚点=句首-半身-边距");
-  const top = readingAnchorPos({ left: 100, right: 300, top: -40, bottom: -20 }, panel, size);
-  assert.ok(top.y >= panel.top + size / 2 + 8 - 0.01, `T14b: 句在面板顶外 → y 钳回安全带(实测 y=${top.y.toFixed(1)})`);
-  const bottom = readingAnchorPos({ left: 100, right: 300, top: 900, bottom: 920 }, panel, size);
-  assert.ok(bottom.y <= panel.bottom - size / 2 - 8 + 0.01, `T14b: 句在面板底外 → y 钳回(实测 y=${bottom.y.toFixed(1)})`);
+  // readingTailAnchor:句尾右下(默认)/窄屏句尾正下/贴底行右侧——全程钳在面板内
+  const panel = { left: 0, right: 600, top: 0, bottom: 800 };
+  const size = 120;
+  const mid = readingTailAnchor({ left: 100, right: 300, top: 350, bottom: 370 }, panel, size);
+  assert.ok(mid.x > 300 && mid.y > 370, `T14b: 宽屏=句尾右下(实测 ${mid.x.toFixed(0)},${mid.y.toFixed(0)})`);
+  assert.equal(mid.side, "left", "T14b: 生物在字右/下 → 指左");
+  // 窄屏:行满宽(句尾≈面板右缘) → x 钳回面板内,y 在行下方
+  const narrow = { left: 0, right: 320, top: 0, bottom: 800 };
+  const n = readingTailAnchor({ left: 10, right: 315, top: 200, bottom: 220 }, narrow, size);
+  assert.ok(n.x + size / 2 <= narrow.right, `T14b: 窄屏不出面板右缘(实测 x=${n.x.toFixed(0)})`);
+  assert.ok(n.y > 220, "T14b: 窄屏退让=句尾正下方");
+  assert.ok(n.x >= narrow.left + size / 2 && n.x <= narrow.right - size / 2, "T14b: x 全程在面板内");
+  assert.ok(n.y >= narrow.top + size / 2 && n.y <= narrow.bottom - size / 2, "T14b: y 全程在面板内");
+  // 末行贴面板底 → 该行右侧垂直居中(仍不出面板)
+  const b = readingTailAnchor({ left: 20, right: 260, top: 760, bottom: 785 }, panel, size);
+  assert.ok(b.y + size / 2 <= panel.bottom, `T14b: 贴底行不出面板底(实测 y=${b.y.toFixed(0)})`);
+  assert.ok(b.x > 260, "T14b: 贴底退让=行右侧");
+  // 不遮字:锚点在句尾矩形右/下方(左边界例外仍有 x≥句右)
+  assert.ok(mid.x - size / 2 >= 300 - 8, "T14b: 锚点横向不压句尾字(≤8px 贴角)");
 
-  // zoneDrift:确定性 + 有界(chat 幅度大于 notebook;不撞正文)
+  // zoneDrift:确定性 + 有界(保留断言)
   const a = zoneDrift("chat", 12345);
-  const b = zoneDrift("chat", 12345);
-  assert.deepEqual(a, b, "T14b: 漂移确定性(同刻同值)");
-  let cx = 0, cy = 0, nx = 0, ny = 0;
+  const b2 = zoneDrift("chat", 12345);
+  assert.deepEqual(a, b2, "T14b: 漂移确定性(同刻同值)");
+  let cx = 0, cy = 0;
   for (let t = 0; t < 20000; t += 137) {
     const c = zoneDrift("chat", t);
-    const n = zoneDrift("notebook", t);
     cx = Math.max(cx, Math.abs(c.x)); cy = Math.max(cy, Math.abs(c.y));
-    nx = Math.max(nx, Math.abs(n.x)); ny = Math.max(ny, Math.abs(n.y));
   }
-  assert.ok(cx <= 11 && cy <= 5, `T14b: chat 漂移有界(|x|≤11,|y|≤5,实测 ${cx.toFixed(1)}/${cy.toFixed(1)})`);
-  assert.ok(nx <= 5 && ny <= 4, `T14b: notebook 漂移更收敛(|x|≤5,|y|≤4,实测 ${nx.toFixed(1)}/${ny.toFixed(1)})`);
-  assert.ok(cx > nx, "T14b: chat 幅度大于 notebook(输入框上空开阔,讲解栏旁收敛)");
+  assert.ok(cx <= 11 && cy <= 5, `T14b: chat 漂移有界(实测 ${cx.toFixed(1)}/${cy.toFixed(1)})`);
 }
-console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 + 锚点漂浮确定性/有界");
+console.log("✓ T14b v10 朗读句尾锚点(右下/窄屏正下/贴底行右)+锚点漂浮确定性有界");
+
+/* ---------- T19 v10 连续移动:限速滑翔 + roam 栏调度 ---------- */
+{
+  // glideTo:近距指数收敛;远距封顶巡航(跨栏不闪现)
+  const near = glideTo({ x: 0, y: 0 }, { x: 10, y: 0 }, 16, CRUISE_OP);
+  assert.ok(near.x > 0 && near.x < 10, `T19: 近距平滑趋近(实测 ${near.x.toFixed(2)})`);
+  const far = glideTo({ x: 0, y: 0 }, { x: 2000, y: 0 }, 16, CRUISE_ROAM);
+  assert.ok(far.x <= CRUISE_ROAM * 16 + 1e-9, `T19: 远距封顶巡航速度(实测 ${far.x.toFixed(2)} ≤ ${(CRUISE_ROAM * 16).toFixed(2)})`);
+  assert.ok(far.x > 0, "T19: 封顶仍前进");
+  const diag = glideTo({ x: 0, y: 0 }, { x: 300, y: -400 }, 16, CRUISE_OP);
+  const dd = Math.hypot(diag.x, diag.y);
+  assert.ok(dd <= CRUISE_OP * 16 + 1e-9, `T19: 斜向同样限幅(实测 ${dd.toFixed(2)})`);
+
+  // nextRoamPane:同桶不动/首桶稳定/跨栏率合理/不可用栏跳过
+  const all = ["rail", "chat", "notebook"];
+  assert.equal(nextRoamPane("chat", 0, all), "chat", "T19: 首桶稳定(启动不立刻跨栏)");
+  assert.equal(nextRoamPane("chat", 7, ["chat", "notebook"]), nextRoamPane("chat", 7, ["chat", "notebook"]), "T19: 同参确定性");
+  assert.equal(nextRoamPane("rail", 5, ["chat"]), "chat", "T19: 当前栏不可用 → 落到在场栏");
+  let crossed = 0;
+  let pane = "rail";
+  for (let bkt = 1; bkt <= 400; bkt++) {
+    const next = nextRoamPane(pane, bkt, all);
+    if (next !== pane) crossed++;
+    pane = next;
+  }
+  assert.ok(crossed > 40 && crossed < 240, `T19: 跨栏率 ~30%(实测 ${crossed}/400)`);
+  // 相邻栏偏好:跨栏只跨一步(环形)
+  let pane2 = "rail";
+  for (let bkt = 1; bkt <= 200; bkt++) {
+    const next = nextRoamPane(pane2, bkt, all);
+    if (next !== pane2) {
+      const dist = Math.min(Math.abs(all.indexOf(next) - all.indexOf(pane2)), 3 - Math.abs(all.indexOf(next) - all.indexOf(pane2)));
+      assert.equal(dist, 1, "T19: 跨栏=相邻一步(rail→chat→notebook 环)");
+    }
+    pane2 = next;
+  }
+}
+console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(首桶稳定/跨栏率/相邻偏好)");
 
 /* ---------- T15 v3 接线守卫(源码级:单例/触发点/注册表) ---------- */
 {
@@ -746,12 +816,19 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
   assert.ok(creature.includes("getReadingRange") && creature.includes("wanderInPanel"), "T15: Range 跟句 + 右栏面板徘徊");
   assert.ok(read("lib/highlightText.ts").includes("highlights") && read("lib/highlightText.ts").includes("getReadingRange"), "T15: 朗读高亮=CSS Custom Highlight API(零 DOM 改动)");
   assert.ok(css.includes("::highlight(cp-reading)") && css.includes('[data-zone="rail"] .cp-shadow { display: none; }'), "T15: highlight CSS + 左栏飞行无影");
-  assert.ok(creature.includes('eff === "rail" && !railOk'), "T15: 手机端家不在场回退在场的栏(不消失)");
+  assert.ok(creature.includes("nextRoamPane(roamRef.current.pane, bucket, avail)") && creature.includes("ROAM_BUCKET_MS"), "T15: v10 roam 跨栏调度(时间桶+留/跨栏)");
+  assert.ok(creature.includes("glideTo(cur") && creature.includes("CRUISE_ROAM") && creature.includes("CRUISE_OP"), "T15: v10 限速滑翔(跨栏/跟操作不闪现)");
+  assert.ok(creature.includes("zone === \"roam\""), "T15: v10 roam 分支(闲时游走/锚缺失回退在场栏)");
   assert.ok(creature.includes("cp-takeoff"), "T15: 起飞动效(蓄力弹射+喷焰增强)");
   assert.ok(
-    mascotV4.includes("52 : -52") && mascotV4.includes("scale(1.045, 0.93)") && mascotV4.includes("cubic-bezier(0.2, 1.5, 0.4, 1)"),
-    "T15: 打字反馈加强(大幅拍臂 ±52° + 整机弹跳 + 回弹过冲)",
+    mascotV4.includes("-44 : 44") && mascotV4.includes("scale(1.045, 0.93)") && mascotV4.includes("cubic-bezier(0.2, 1.5, 0.4, 1)"),
+    "T15: v10 打字=敲自己身体(臂内收 ±44° + 整机弹跳 + 回弹过冲)",
   );
+  assert.ok(
+    mascotV4.includes("cp-screen-key") && mascotV4.includes("screenKey") && mascotV4.includes("cp-writing") && mascotV4.includes("cp-pen"),
+    "T15: v10 胸屏显示按键字符 + 记笔记本笔道具",
+  );
+  assert.ok(creature.includes("screenKey={snap.state.typing ? snap.state.lastKey"), "T15: 生物把键入字符喂给胸屏");
   // v6 接线:朗读句级跟随(播放序 + karaoke 高亮 + 跟句指向 + 🔊 sticky)
   const useSpeechSrc = read("lib/useSpeech.ts");
   assert.ok(
@@ -775,8 +852,8 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
     "T15: 🔊 朗读按钮 sticky 悬浮讲解视口右上(不随正文滚走)",
   );
   assert.ok(
-    creature.includes(".cp-reading-mark") && creature.includes("readingAnchorPos") && creature.includes('"point"'),
-    "T15: 伴学跟句(读 .cp-reading-mark + readingAnchorPos + 指向姿势)",
+    creature.includes("getReadingRange") && creature.includes("readingTailAnchor") && creature.includes('"point"'),
+    "T15: 伴学跟句(Range 句尾 + readingTailAnchor 右下锚 + 指向姿势)",
   );
   assert.ok(
     /\.cp-pose-point \.cp-armL[^}]*rotate\(92deg\)/.test(css) && /\.cp-pose-pointr \.cp-armR[^}]*rotate\(-92deg\)/.test(css),
@@ -817,7 +894,7 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
     app.includes("<CompanionCreature courseId=") && !app.includes("worldReady"),
     "T15: v9 伴学常驻(无课程也挂载,worldReady 门控移除)",
   );
-  assert.ok(creature.includes("freeRoam"), "T15: 空态/两栏锚点全缺 → 整窗游走兜底(不隐匿)");
+  assert.ok(creature.includes("window.innerWidth - 8"), "T15: 空态/两栏锚点全缺 → 整窗游走兜底(不隐匿)");
   assert.ok(read("lib/highlightText.ts").includes("matchSentenceAligned") && read("lib/highlightText.ts").includes("canonicalSpeechIndex"), "T15: v9 整句对齐匹配(规范化+句界扩展)");
   assert.ok(
     notebook.includes("groupSentenceChunks(speechSentences)") && read("components/ChatStream.tsx").includes("groupSentenceChunks(sentences)"),
@@ -844,6 +921,19 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
   for (const f of ["frost", "moss", "astro", "ink"]) {
     assert.ok(read(`components/companion/forms/${f}.tsx`).includes("coarseViseme("), `T15: ${f} 形态口型 coarseViseme 降级`);
   }
+  // v10 新交互接线
+  assert.ok(
+    read("components/companion/forms/shared.tsx").includes("export function Shoulders"),
+    "T15: 肩甲组件(R-06 式宽肩,共享骨骼)",
+  );
+  for (const f of ["ember", "frost", "moss", "astro", "ink"]) {
+    assert.ok(read(`components/companion/forms/${f}.tsx`).includes("<Shoulders "), `T15: ${f} 形态挂肩甲`);
+  }
+  assert.ok(
+    read("lib/highlightText.ts").includes("setLastNoteMark") && notebook.includes("setLastNoteMark") && creature.includes("getLastNoteMark"),
+    "T15: 记笔记落点通道(画线 mark 登记 → 生物飞到线旁)",
+  );
+  assert.ok(css.includes("cp-screen-key") && css.includes("cp-scribble") && css.includes("cp-notebook-in"), "T15: 胸屏字符/本笔/弹入 CSS");
 }
 console.log("✓ T15 v3 接线守卫:单例挂载/三触发点/左栏注册表/物理碰撞源级咬合");
 

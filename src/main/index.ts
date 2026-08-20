@@ -912,8 +912,9 @@ async function runUiTest(screenshot = false): Promise<void> {
     .executeJavaScript(`(window.__cpErr && window.__cpErr.slice(0, 5)) || []`)
     .catch(() => []);
   results.push({
-    name: "companion v3: single creature alive in rail home zone (map panel, default on)",
-    ok: railCompanion === "rail" && !!railPos && railPos.y > 60,
+    name: "companion v10: creature alive at course pick (roam pane, position written)",
+    // v10 闲时=roam 跨栏游走:栖身栏由时间桶决定(任意栏都合法),只要求在场+位置已写
+    ok: ["rail", "chat", "notebook"].includes(railCompanion) && !!railPos && railPos.y > 60,
     detail: { zone: railCompanion, pos: railPos, errors: railErrors },
   });
 

@@ -7,7 +7,7 @@
  * 月亮越圆:新月→满月)。口型=暖白星月母音。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags } from "./shared.js";
+import { Arms, Face, FaceExtras, GroundShadow, faceFlags , Shoulders } from "./shared.js";
 import { coarseViseme, type Viseme } from "../../../lib/companion/companion-core.js";
 
 export const ASTRO: FormPalette = {
@@ -97,6 +97,7 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
         </g>
         <path d="M88,158 L112,158 L106,171 L94,171 Z" fill="#2A2248" stroke={OUT} strokeWidth="4" strokeLinejoin="round" />
 
+        <Shoulders fill={VIOLET} fillDark={VIOLET_D} out={OUT} />
         <Arms refs={refs} armFill={VIOLET_D} out={OUT} />
 
         {/* 修长舱体 + cel 错位暗面 + 月相核 */}

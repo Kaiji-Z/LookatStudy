@@ -6,7 +6,7 @@
  * (今日 XP 充能) + 金色 streak 火苗。口型=圆角母音块。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags } from "./shared.js";
+import { Arms, Face, FaceExtras, GroundShadow, faceFlags, BevelPlate } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const EMBER: FormPalette = {
@@ -50,6 +50,9 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
         <clipPath id={`${uid}-body`}><rect x="64" y="110" width="72" height="50" rx="16" /></clipPath>
         <clipPath id={`${uid}-helm`}><rect x="46" y="30" width="108" height="78" rx="20" /></clipPath>
         <clipPath id={`${uid}-scr`}><rect x="64" y="54" width="72" height="34" rx="8" /></clipPath>
+        <clipPath id={`${uid}-podL`}><rect x="36" y="60" width="12" height="24" rx="6" /></clipPath>
+        <clipPath id={`${uid}-podR`}><rect x="152" y="60" width="12" height="24" rx="6" /></clipPath>
+        <clipPath id={`${uid}-bezel`}><rect x="58" y="48" width="84" height="46" rx="12" /></clipPath>
         <clipPath id={`${uid}-core`}>
           <rect x="84" y={151 - Math.round(energyRatio * 32)} width="32" height={Math.max(0, Math.round(energyRatio * 32) + 1)} />
         </clipPath>
@@ -64,6 +67,9 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
           <ellipse cx="100" cy="176" rx="7" ry="5" fill={streakLit ? GOLD : SCREEN} />
         </g>
         <path d="M88,158 L112,158 L106,171 L94,171 Z" fill="#3A3440" stroke={OUT} strokeWidth="4" strokeLinejoin="round" />
+        <path d="M100,160 v8" stroke={OUT} strokeWidth="2.5" strokeLinecap="round" />
+        <circle cx="92" cy="164" r="1.5" fill={OUT} opacity="0.6" />
+        <circle cx="108" cy="164" r="1.5" fill={OUT} opacity="0.6" />
 
         <Arms refs={refs} armFill={CORAL_D} out={OUT} />
 
@@ -74,6 +80,9 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
             <rect x="64" y="110" width="72" height="50" rx="16" fill={CORAL} transform="translate(-4 -4)" />
           </g>
           <rect x="64" y="110" width="72" height="50" rx="16" fill="none" stroke={OUT} strokeWidth="5" />
+          <BevelPlate id={`${uid}-body`} x={64} y={110} w={72} h={50} t={5} />
+          {/* 侧通气缝 + 裙甲 seam(机械细节) */}
+          <path d="M68,146 h9 M68,151 h9 M123,146 h9 M123,151 h9" stroke={OUT} strokeWidth="2.2" strokeLinecap="round" opacity="0.55" />
           <circle cx="100" cy="135" r="16.5" fill={BEZEL} stroke={OUT} strokeWidth="4.5" />
           <circle cx="100" cy="135" r="12" fill={SCREEN_D} />
           <g clipPath={`url(#${uid}-core)`}>
@@ -93,6 +102,8 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
           </g>
           <rect x="36" y="60" width="12" height="24" rx="6" fill={SCREEN_D} stroke={OUT} strokeWidth="4" />
           <rect x="152" y="60" width="12" height="24" rx="6" fill={SCREEN_D} stroke={OUT} strokeWidth="4" />
+          <BevelPlate id={`${uid}-podL`} x={36} y={60} w={12} h={24} t={3} />
+          <BevelPlate id={`${uid}-podR`} x={152} y={60} w={12} h={24} t={3} />
 
           {/* 头盔 + cel 暗面 + 额头 glare(R-06 签名) */}
           <g clipPath={`url(#${uid}-helm)`}>
@@ -100,11 +111,16 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
             <rect x="46" y="30" width="108" height="78" rx="20" fill={CORAL} transform="translate(-5 -5)" />
           </g>
           <rect x="46" y="30" width="108" height="78" rx="20" fill="none" stroke={OUT} strokeWidth="5" />
+          <BevelPlate id={`${uid}-helm`} x={46} y={30} w={108} h={78} t={5} />
+          <circle cx="52" cy="100" r="2" fill={OUT} opacity="0.5" />
+          <circle cx="148" cy="100" r="2" fill={OUT} opacity="0.5" />
+          <path d="M132,49 h8 M132,53 h8" stroke={OUT} strokeWidth="2" strokeLinecap="round" opacity="0.55" />
           <rect x="58" y="37" width="46" height="9" rx="4.5" fill="#FFFFFF" opacity="0.92" />
           <rect x="110" y="37" width="18" height="9" rx="4.5" fill="#FFFFFF" opacity="0.55" />
 
           {/* 屏框 + 屏幕 + 玻璃暗带(R-03) + 光泽 */}
           <rect x="58" y="48" width="84" height="46" rx="12" fill={BEZEL} stroke={OUT} strokeWidth="4.5" />
+          <BevelPlate id={`${uid}-bezel`} x={58} y={48} w={84} h={46} t={4} inverted />
           <rect x="64" y="54" width="72" height="34" rx="8" fill={SCREEN} />
           <g clipPath={`url(#${uid}-scr)`}>
             <rect x="64" y="54" width="72" height="34" fill={SCREEN_D} transform="translate(0 15)" />

@@ -37,6 +37,7 @@ import {
   lerp,
   micArcScale,
   mouthOpenScale,
+  visemeFromFormants,
   readingAnchorPos,
   smoothMic,
   wanderTarget,
@@ -165,7 +166,14 @@ assert.strictEqual(computeViseme(0.5, 2200), "A");
 assert.strictEqual(mouthOpenScale("closed", 0.9), 0);
 assert.strictEqual(mouthOpenScale("A", 0.33), 0.25);
 assert.strictEqual(mouthOpenScale("A", 1.5), 1);
-console.log("✓ T3 viseme:静音闭嘴 + 质心/响度六档 + 开口度 5 档量化");
+// v7 共振峰元音三角直测:五锚点各自的近邻域 + 静音门限
+assert.strictEqual(visemeFromFormants(750, 1500, 0.5), "A", "T3: F1 高+F2 中 → A");
+assert.strictEqual(visemeFromFormants(450, 2100, 0.5), "E", "T3: F1 中+F2 高 → E");
+assert.strictEqual(visemeFromFormants(280, 2400, 0.5), "I", "T3: F1 低+F2 高 → I");
+assert.strictEqual(visemeFromFormants(450, 900, 0.5), "O", "T3: F1 中+F2 低 → O");
+assert.strictEqual(visemeFromFormants(280, 800, 0.5), "U", "T3: F1 低+F2 低 → U");
+assert.strictEqual(visemeFromFormants(750, 1500, 0.03), "closed", "T3: 共振峰法静音门限");
+console.log("✓ T3 viseme:静音闭嘴 + 质心/响度六档 + 开口度 5 档量化 + 共振峰元音三角");
 
 /* ---------- T4 audioToMouth:合成 Analyser 数据 ---------- */
 // 常数时域 200 → level = |200-128|/128 = 0.5625
@@ -175,13 +183,17 @@ const fdA = new Uint8Array(512); fdA[21] = 200; // bin21 = 984.375Hz
 const m = audioToMouth(td, fdA, 48000, 1024);
 assert.ok(Math.abs(m.level - 0.5625) < 1e-9, `T4: level=${m.level}`);
 assert.ok(Math.abs(m.centroidHz - 984.375) < 1e-6, `T4: centroid=${m.centroidHz}`);
-assert.strictEqual(m.viseme, "A");
-// 单峰低频 bin5 = 234.375Hz → O
+// v7 共振峰法:单峰 984Hz 落 F2 段低区(f1 回退 400) → 后圆唇档 O
+assert.strictEqual(m.viseme, "O");
+// 单峰低频 bin5 = 234.375Hz → F1 低 + f2 回退 → 闭后圆唇 U
 const fdO = new Uint8Array(512); fdO[5] = 255;
-assert.strictEqual(audioToMouth(td, fdO, 48000, 1024).viseme, "O");
-// 单峰高频 bin64 = 3000Hz → E(响)
+assert.strictEqual(audioToMouth(td, fdO, 48000, 1024).viseme, "U");
+// 单峰高频 bin64 = 3000Hz → F2 顶格 → 闭前展唇 I
 const fdE = new Uint8Array(512); fdE[64] = 200;
-assert.strictEqual(audioToMouth(td, fdE, 48000, 1024).viseme, "E");
+assert.strictEqual(audioToMouth(td, fdE, 48000, 1024).viseme, "I");
+// 双峰(F1=703Hz + F2=1500Hz,真实元音都是双峰) → 开口 A
+const fdV = new Uint8Array(512); fdV[15] = 220; fdV[32] = 200;
+assert.strictEqual(audioToMouth(td, fdV, 48000, 1024).viseme, "A", "T4: 双峰 F1 高+F2 中 → A");
 // 全零频域 → 质心 0 → 闭嘴路径不 NaN
 const m0 = audioToMouth(new Uint8Array(128).fill(128), new Uint8Array(512), 48000, 1024);
 assert.strictEqual(m0.level, 0);
@@ -729,7 +741,9 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
   assert.ok(creature.includes('data-testid="composer-card"'), "T15: chat 锚定输入卡(composer-card)");
   assert.ok(!creature.includes("clipPath"), "T15: v6 已撤 peek 裁剪(无 clipPath)");
   assert.ok(creature.includes("zoneDrift"), "T15: 栏内锚点漂浮接线");
-  assert.ok(creature.includes("chat: 76") && creature.includes("notebook: 88"), "T15: v5 体型(chat 放大/notebook 看口型)");
+  assert.ok(creature.includes("rail: 60") && creature.includes("chat: 84") && creature.includes("notebook: 108"), "T15: v7 近大远小体型(左远 60/中 84/右近 108)");
+  assert.ok(creature.includes('eff === "rail" && !railOk'), "T15: 手机端家不在场回退在场的栏(不消失)");
+  assert.ok(creature.includes("cp-takeoff"), "T15: 起飞动效(蓄力弹射+喷焰增强)");
   assert.ok(
     mascotV4.includes("52 : -52") && mascotV4.includes("scale(1.045, 0.93)") && mascotV4.includes("cubic-bezier(0.2, 1.5, 0.4, 1)"),
     "T15: 打字反馈加强(大幅拍臂 ±52° + 整机弹跳 + 回弹过冲)",
@@ -765,6 +779,11 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
     "T15: 指臂方向正确(armL +92° 左伸 / armR -92° 右伸;符号反=手臂横穿藏头后,实测踩过)",
   );
   assert.ok(css.includes("cp-reading-mark"), "T15: 朗读句高亮 CSS 存在");
+  // v7 接线:共振峰口型 + 航灯 + 块面伪 3D
+  assert.ok(read("lib/companion/companion-core.ts").includes("visemeFromFormants"), "T15: 共振峰元音三角口型");
+  assert.ok(css.includes("cp-beacon") && css.includes("cp-takeoff"), "T15: 航灯+起飞 CSS");
+  assert.ok(read("components/companion/forms/shared.tsx").includes("BevelPlate") && read("components/companion/forms/ember.tsx").includes("BevelPlate"), "T15: 块面伪 3D 倒角套件+应用");
+  assert.ok(mascotV4.includes("cp-beacons") && mascotV4.includes("transition"), "T15: 航灯壳层+尺寸过渡动画");
   // v6 chat karaoke:中栏对话消息朗读同样高亮+跟句
   const chatStream = read("components/ChatStream.tsx");
   assert.ok(

@@ -36,17 +36,36 @@ export function useSpeechMouth(active: boolean): MouthFrame {
     const fd = new Uint8Array(SPEECH_FFT_SIZE / 2);
     let raf = 0;
     let lastKey = "";
+    // 共振峰判位灵敏,相邻元音可能逐帧抖动:候选 viseme 须连续 2 帧确认才切换
+    // (闭嘴立即切,张嘴要稳)。coarticulation 的廉价近似。
+    let cand: Viseme | null = null;
+    let candStreak = 0;
     const loop = () => {
       const an = getActiveSpeechAnalyser();
       if (an) {
         an.getByteTimeDomainData(td);
         an.getByteFrequencyData(fd);
         const r = audioToMouth(td, fd, an.context.sampleRate, an.fftSize);
-        const open = mouthOpenScale(r.viseme, r.level);
-        const key = r.viseme + ":" + open;
+        let vis = r.viseme;
+        if (vis !== lastKey.split(":")[0]) {
+          if (vis === "closed" || vis === cand) {
+            if (vis === cand) candStreak++;
+          } else {
+            cand = vis;
+            candStreak = 1;
+          }
+          if (!(vis === "closed") && !(vis === cand && candStreak >= 2)) {
+            vis = (lastKey.split(":")[0] as Viseme) || "closed";
+          }
+        } else {
+          cand = null;
+          candStreak = 0;
+        }
+        const open = mouthOpenScale(vis, r.level);
+        const key = vis + ":" + open;
         if (key !== lastKey) {
           lastKey = key;
-          setFrame({ viseme: r.viseme, open });
+          setFrame({ viseme: vis, open });
         }
       }
       raf = requestAnimationFrame(loop);

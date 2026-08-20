@@ -207,12 +207,16 @@ export function Mascot({
   return (
     <svg
       viewBox="0 0 200 200"
-      width={size}
-      height={size}
       className={`cp-mascot cp-form-${formId} cp-pose-${pose} cp-expr-${expression}`}
       data-testid={testid}
       data-form={formId}
-      style={interactive ? { touchAction: "none", cursor: onGrab ? "grab" : "pointer" } : undefined}
+      style={{
+        width: size,
+        height: size,
+        // v7 近大远小:跨栏换挡时尺寸弹性过渡,飞行途中自然"变大/变小"
+        transition: "width 0.9s cubic-bezier(0.3, 1.3, 0.4, 1), height 0.9s cubic-bezier(0.3, 1.3, 0.4, 1)",
+        ...(interactive ? { touchAction: "none", cursor: onGrab ? ("grab" as const) : ("pointer" as const) } : {}),
+      }}
       {...(interactive
         ? {
             role: "button",
@@ -228,6 +232,11 @@ export function Mascot({
           }
         : { "aria-hidden": true })}
     >
+      {/* v7 航灯:左红右绿导航灯(航空惯例),常态低频呼吸、飞行/起飞时加速闪烁 */}
+      <g className="cp-beacons" aria-hidden="true">
+        <circle cx="52" cy="86" r="3" className="cp-beacon-l" />
+        <circle cx="148" cy="86" r="3" className="cp-beacon-r" />
+      </g>
       {/* 喷焰:飞行姿势点亮的推进器粒子(壳层渲染,全形态共享) */}
       <g className="cp-thruster" aria-hidden="true">
         <circle cx="78" cy="150" r="3.2" />

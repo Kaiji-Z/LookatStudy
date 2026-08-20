@@ -894,14 +894,26 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
     if (locale) {
       const { getNodeTranslation } = await import("../services/translation-service.js");
       const trans = getNodeTranslation(db, nodeId, locale);
-      if (trans?.content) return trans.content;
+      // v8:读取口净化(围栏平衡/剥危险标签,幂等)。翻译内容从未走过 CDN 管线的
+      // sanitizeTranslatedMarkdown,畸形翻译(AI for beginners 的断行链接等)直接
+      // 喂 react-markdown 会崩进 ErrorBoundary(重试重挂又好,下一句再炸)。
+      if (trans?.content) {
+        const { sanitizeTranslatedMarkdown } = await import("../services/pure/repo-fetcher.js");
+        return sanitizeTranslatedMarkdown(trans.content);
+      }
     }
     const node = db
       .select({ content: contentNodes.content })
       .from(contentNodes)
       .where(eq(contentNodes.id, nodeId))
       .get();
-    return node?.content ?? null;
+    // v8:原文同样过净化(用户实测 AI for beginners 原文也崩)——围栏平衡/剥危险标签,
+    // 幂等;原文管线漏网的畸形 markdown 在读取口兜底。
+    if (node?.content) {
+      const { sanitizeTranslatedMarkdown } = await import("../services/pure/repo-fetcher.js");
+      return sanitizeTranslatedMarkdown(node.content);
+    }
+    return null;
   });
 
   // 取节点摘要(懒生成:DB 没有则实时生成 lesson 摘要并缓存;section 用结构化时的摘要)。

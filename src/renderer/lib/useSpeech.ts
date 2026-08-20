@@ -10,6 +10,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { companionSetTalking } from "./companion/bus.ts";
+
 import type { SpeechTtsAudioEvent } from "@shared/speech-types";
 import { connectSpeechSource } from "./speech-analyser.js";
 
@@ -164,6 +166,12 @@ export function useSpeech(): {
   }, [finishIfDrained, playNext, stopLocal]);
 
   useEffect(() => stopLocal, [stopLocal]); // 卸载兜底
+
+  // 伴学 talking 信号(v3 下沉到引擎层):speakingMessageId 即朗读事实——
+  // 谁在放谁发事件,同一次渲染必达(旧法在组件层按节点 id 对比,曾静默失效)。
+  useEffect(() => {
+    companionSetTalking(speakingMessageId !== null);
+  }, [speakingMessageId]);
 
   return {
     speakingMessageId,

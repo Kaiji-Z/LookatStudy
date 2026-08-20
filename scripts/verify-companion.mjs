@@ -354,4 +354,143 @@ console.log("✓ T11 麦克风:attack快/release慢/收敛 + 声波弧 4 档量�
 }
 console.log("✓ T12 形象注册表:5 形态唯一/回退安全/注册表·壳·设置·bus 源级咬合");
 
+/* ---------- T13 v3 单生物:zone 状态机 + 纱帘 ---------- */
+{
+  const core = await import("../src/renderer/lib/companion/companion-core.ts");
+  const { ZONE_RETURN_MS, VEIL_AFTER_MS, NOTE_HOLD_MS, desiredZone, veilDecision } = core;
+  let s = initialCompanionState(0);
+  assert.equal(s.zone, "rail", "T13: 初始在左栏老家");
+  assert.equal(s.mode, "front", "T13: 初始前台");
+
+  // 输入框聚焦 → 落中栏;失焦后等 ZONE_RETURN_MS → tick 回老家
+  s = companionReducer(s, { type: "zoneFocus", on: true, now: 1000 });
+  assert.equal(s.zone, "chat", "T13: 聚焦输入框 → 中栏宠物世界");
+  assert.equal(desiredZone(s, 1200), "chat", "T13: 聚焦闩在 → 意图停留");
+  s = companionReducer(s, { type: "zoneFocus", on: false, now: 2000 });
+  assert.equal(s.zone, "chat", "T13: 失焦瞬间不抖走(等返回窗口)");
+  s = companionReducer(s, { type: "tick", now: 2000 + ZONE_RETURN_MS - 10 });
+  assert.equal(s.zone, "chat", "T13: 返回窗口内仍在");
+  s = companionReducer(s, { type: "tick", now: 2000 + ZONE_RETURN_MS + 60 });
+  assert.equal(s.zone, "rail", "T13: 窗口过 → 回左栏");
+
+  // 朗读 → 右栏助教;聚焦输入框优先于朗读
+  s = companionReducer(s, { type: "talking", on: true, now: 4000 });
+  assert.equal(s.zone, "notebook", "T13: 朗读 → 右栏助教世界");
+  s = companionReducer(s, { type: "zoneFocus", on: true, now: 4100 });
+  assert.equal(s.zone, "chat", "T13: 聚焦输入框 > 朗读(宠物优先)");
+  s = companionReducer(s, { type: "zoneFocus", on: false, now: 4200 });
+  s = companionReducer(s, { type: "tick", now: 4200 + ZONE_RETURN_MS + 60 });
+  assert.equal(s.zone, "notebook", "T13: 输入框释放后朗读仍续 → 回右栏");
+  s = companionReducer(s, { type: "talking", on: false, now: 9000 });
+  s = companionReducer(s, { type: "tick", now: 9000 + ZONE_RETURN_MS + 60 });
+  assert.equal(s.zone, "rail", "T13: 朗读结束 → 回左栏");
+
+  // 划线记笔记 → 右栏 + writing 姿势 + 短暂钉住
+  s = companionReducer(s, { type: "zoneNote", now: 20000 });
+  assert.equal(s.zone, "notebook", "T13: 划线 → 右栏");
+  assert.equal(s.pose, "writing", "T13: 记笔记姿势");
+  assert.equal(desiredZone(s, 20000 + NOTE_HOLD_MS - 100), "notebook", "T13: 钉住期内意图在右栏");
+  s = companionReducer(s, { type: "tick", now: 20000 + NOTE_HOLD_MS + 100 });
+  s = companionReducer(s, { type: "tick", now: 20000 + NOTE_HOLD_MS + ZONE_RETURN_MS + 100 });
+  assert.equal(s.zone, "rail", "T13: 记完笔记回家");
+
+  // 纱帘:空闲 VEIL_AFTER_MS 后入帘;滚动加速;点击唤醒;任务中豁免
+  s = initialCompanionState(0);
+  s = companionReducer(s, { type: "activity", now: 0 });
+  assert.equal(veilDecision(s, VEIL_AFTER_MS - 1), false, "T13: 空闲未满不入帘");
+  s = companionReducer(s, { type: "tick", now: VEIL_AFTER_MS + 100 });
+  assert.equal(s.mode, "veil", "T13: 空闲满 → 纱帘后");
+  s = companionReducer(s, { type: "poke", now: VEIL_AFTER_MS + 200 });
+  assert.equal(s.mode, "front", "T13: 点击唤醒回前台");
+  s = initialCompanionState(0);
+  s = companionReducer(s, { type: "activity", now: 0 });
+  s = companionReducer(s, { type: "scroll", now: 3000 });
+  // 滚动进行中(1600ms 宽限窗内)且无交互已过 2500ms → 入帘
+  s = companionReducer(s, { type: "tick", now: 3000 + 1500 });
+  assert.equal(s.mode, "veil", "T13: 滚动中且无交互 → 加速入帘");
+  s = initialCompanionState(0);
+  s = companionReducer(s, { type: "talking", on: true, now: 0 });
+  s = companionReducer(s, { type: "scroll", now: 100 });
+  s = companionReducer(s, { type: "tick", now: 999999 });
+  assert.equal(veilDecision(s, 999999), false, "T13: 朗读中永不入帘");
+
+  // 被球拍中:surprised 晕眩短反应
+  s = companionReducer(initialCompanionState(0), { type: "swat", now: 500 });
+  assert.equal(s.expression, "surprised", "T13: 被拍 → 惊吓表情");
+  assert.equal(s.pose, "flying", "T13: 被拍 → 飞行翻滚姿势");
+}
+console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚焦>朗读)/记笔记钉住/纱帘判定/被拍晕眩");
+
+/* ---------- T14 飞行物理纯函数 ---------- */
+{
+  const {
+    bankAngle,
+    cruiseTarget,
+    crossImpulse,
+    flightForce,
+    SWAT_IMPULSE,
+  } = await import("../src/renderer/lib/companion/companion-flight.ts");
+
+  // 悬浮力:重力补偿(静止悬停 = fy 恰好抵消 mass×0.001)
+  const f0 = flightForce({ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, 2);
+  assert.ok(Math.abs(f0.fy - 2 * 0.001) < 1e-9, "T14: 静止悬停 = 精确重力补偿");
+  // 偏离目标 → 拉回方向;速度 → 阻尼反推
+  const f1 = flightForce({ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 100, y: 0 }, 1);
+  assert.ok(f1.fx > 0, "T14: 偏左 → 向右拉");
+  const f2 = flightForce({ x: 0, y: 0 }, { x: 8, y: 0 }, { x: 0, y: 0 }, 1);
+  assert.ok(f2.fx < 0, "T14: 向右冲 → 阻尼反推");
+  // 加速度上限(防瞬移)
+  const f3 = flightForce({ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 1e6, y: 1e6 }, 1);
+  assert.ok(f3.fx <= 0.42 + 1e-9 && f3.fy - 0.001 <= 0.42 + 1e-9, "T14: 控制器加速度钳制");
+
+  // 巡航点:确定性 + 有界 + 围绕基点
+  const a = cruiseTarget({ x: 100, y: 100 }, 3, 5000);
+  const b2 = cruiseTarget({ x: 100, y: 100 }, 3, 5000);
+  assert.deepEqual(a, b2, "T14: 巡航确定性");
+  const c = cruiseTarget({ x: 100, y: 100 }, 3, 123456);
+  assert.ok(Math.abs(c.x - 100) <= 34.1 && Math.abs(c.y - 100) <= 34 * 0.55 + 4.1, "T14: 巡逻幅值有界");
+
+  // 跨引擎碰撞:分离时 null;重叠时法线朝伴学、接近才有冲量
+  assert.equal(crossImpulse(0, 0, 0, 0, 10, 100, 0, 0, 0, 10), null, "T14: 不重叠不碰");
+  const hit = crossImpulse(0, 0, 5, 0, 10, 8, 0, 0, 0, 10);
+  assert.ok(hit, "T14: 重叠出解");
+  assert.ok(hit.nx < 0, "T14: 法线从球指向伴学");
+  assert.ok(hit.hitSpeed > SWAT_IMPULSE, "T14: 快球 = 重拍");
+  assert.ok(hit.dvx < 0, "T14: 伴学被弹开");
+  assert.ok(hit.bfx > 0, "T14: 球受等大反向力");
+  const part = crossImpulse(0, 0, -5, 0, 10, 8, 0, 0, 0, 10);
+  assert.ok(part && part.hitSpeed <= 0, "T14: 分离中不算击中");
+  const slow = crossImpulse(0, 0, 0.5, 0, 10, 8, 0, 0, 0, 10);
+  assert.ok(slow && slow.hitSpeed < SWAT_IMPULSE, "T14: 慢碰不算拍");
+
+  // 倾角:静止归零,横速侧倾
+  assert.equal(bankAngle(0, 0), 0, "T14: 静止无倾角");
+  assert.ok(bankAngle(6, 0) > 0 && bankAngle(-6, 0) < 0, "T14: 倾角随横向速度");
+}
+console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性有界/跨引擎碰撞解算/倾角");
+
+/* ---------- T15 v3 接线守卫(源码级:单例/触发点/注册表) ---------- */
+{
+  const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
+  const app = read("App.tsx");
+  const creature = read("components/companion/CompanionCreature.tsx");
+  const bus = read("lib/companion/bus.ts");
+  const mapRail = read("components/MapRail.tsx");
+  const composer = read("components/ChatComposer.tsx");
+  const notebook = read("components/NotebookPanel.tsx");
+
+  assert.ok(app.includes("CompanionCreature") && !app.includes("ChatCompanion"), "T15: App 只挂单生物,旧栖息地摘除");
+  assert.ok((app.match(/<CompanionCreature /g) ?? []).length === 1, "T15: 全应用恰好一只");
+  assert.ok(!mapRail.includes("RailCompanion") && !notebook.includes("NotebookCompanion"), "T15: 栏内分身已删");
+  assert.ok(creature.includes('data-testid="companion-creature"') && creature.includes("data-zone"), "T15: 生物带 zone 语义(测试锚)");
+  assert.ok(creature.includes("createFlightWorld") && creature.includes("BallProbe"), "T15: 生物接飞行物理+球探针");
+  assert.ok(bus.includes("companionZoneFocus") && bus.includes("companionNote") && bus.includes("getRailWorld"), "T15: bus 提供 zone 命令+世界注册表");
+  assert.ok(composer.includes("companionZoneFocus(true)") && composer.includes("companionZoneFocus(false)"), "T15: 输入框聚焦/失焦接线");
+  assert.ok(notebook.includes("companionNote()"), "T15: 划线记笔记接线");
+  assert.ok(mapRail.includes("companionRailRegister") && mapRail.includes('visible: panel === "map"'), "T15: 左栏世界注册(岛+可见性)");
+  assert.ok(bus.includes('fire("companion-zone-focus"') && bus.includes('fire("companion-rail-register"'), "T15: 组件→bus 触发全部走 window 事件(防打包双实例)");
+  assert.ok(read("lib/companion/companion-flight.ts").includes("crossImpulse"), "T15: 跨引擎碰撞存在");
+}
+console.log("✓ T15 v3 接线守卫:单例挂载/三触发点/左栏注册表/物理碰撞源级咬合");
+
 console.log("\nverify-companion: ALL PASS");

@@ -20,6 +20,7 @@ import {
   smoothMic,
 } from "./companion-core.ts";
 import { formIdFromSetting, type CompanionFormId } from "./forms-index.ts";
+import type { SectionIsland } from "../mapPhysics.js";
 
 export interface CompanionSnapshot {
   state: CompanionState;
@@ -153,9 +154,65 @@ function install(): void {
   window.addEventListener("blur", () => dispatch({ type: "focus", on: false, now: Date.now() }));
   window.addEventListener("focus", () => dispatch({ type: "focus", on: true, now: Date.now() }));
 
+  // 滚动 = 用户在阅读:不唤醒,催他入纱帘(冒泡捕获各 pane 的内部滚动容器)
+  window.addEventListener(
+    "scroll",
+    () => dispatch({ type: "scroll", now: Date.now() }),
+    { passive: true, capture: true },
+  );
+
   // 设置开关变更(设置页 dispatch)
   window.addEventListener("companion-config-changed", () => {
     void reloadEnabled();
+  });
+
+  // ---- 组件→bus 触发统一走 window 事件(与 companion-config-changed 同款) ----
+  // 为什么不用直接函数调用:渲染层各组件对 bus 的 import 可能被打包器解析成
+  // 不同模块实例(Windows junction 双盘路径曾让 vite 产出双实例——组件调进副本,
+  // Creature 订阅正主,触发全丢)。window 事件天然单例,对任何打包路径免疫。
+  window.addEventListener("companion-zone-focus", (e) => {
+    dispatch({ type: "zoneFocus", on: !!detailOf(e), now: Date.now() });
+  });
+  window.addEventListener("companion-talking", (e) => {
+    dispatch({ type: "talking", on: !!detailOf(e), now: Date.now() });
+  });
+  window.addEventListener("companion-listening", (e) => {
+    dispatch({ type: "listening", on: !!detailOf(e), now: Date.now() });
+  });
+  window.addEventListener("companion-streaming", (e) => {
+    dispatch({ type: "streaming", on: !!detailOf(e), now: Date.now() });
+  });
+  window.addEventListener("companion-send", () => {
+    dispatch({ type: "send", now: Date.now() });
+  });
+  window.addEventListener("companion-note", () => {
+    dispatch({ type: "zoneNote", now: Date.now() });
+  });
+  window.addEventListener("companion-poke", () => {
+    dispatch({ type: "poke", now: Date.now() });
+  });
+  window.addEventListener("companion-swat", () => {
+    dispatch({ type: "swat", now: Date.now() });
+  });
+  window.addEventListener("companion-mic-level", (e) => {
+    const v = Number(detailOf(e));
+    if (Number.isFinite(v)) applyMic(v);
+  });
+  // 左栏世界注册表(MapRail 写,Creature 读):同样走事件,写进正主实例
+  window.addEventListener("companion-rail-register", (e) => {
+    const d = detailOf(e) as { sectionId: string; island: SectionIsland; container: HTMLElement } | undefined;
+    if (d?.sectionId) railWorld.sections.set(d.sectionId, { island: d.island, container: d.container });
+  });
+  window.addEventListener("companion-rail-unregister", (e) => {
+    const d = detailOf(e) as { sectionId: string } | undefined;
+    if (d?.sectionId) railWorld.sections.delete(d.sectionId);
+  });
+  window.addEventListener("companion-rail-world", (e) => {
+    const d = detailOf(e) as Partial<Pick<RailWorld, "nav" | "visible" | "weather">> | undefined;
+    if (!d) return;
+    if ("nav" in d) railWorld.nav = d.nav ?? null;
+    if ("visible" in d) railWorld.visible = !!d.visible;
+    if ("weather" in d) railWorld.weather = d.weather ?? "clear";
   });
 
   // 到期回落/空闲入睡的慢时钟(500ms;reducer 无变化时不发通知)
@@ -191,43 +248,110 @@ export function getCompanionSnapshot(): CompanionSnapshot {
   return snapshot;
 }
 
-/* ---------------- 命令入口(组件调用) ---------------- */
+/* ---------------- 命令入口(组件调用→window 事件→正主实例) ---------------- */
+
+/** 事件 detail 取值助手(防畸形事件)。 */
+function detailOf(e: Event): unknown {
+  return (e as CustomEvent<unknown>).detail;
+}
+function fire(name: string, detail?: unknown): void {
+  try {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  } catch {
+    /* 伙伴是纯装饰层,广播失败不许影响宿主 */
+  }
+}
 
 /** 戳一下伙伴(点击互动)。 */
 export function companionPoke(): void {
-  dispatch({ type: "poke", now: Date.now() });
+  fire("companion-poke");
 }
 
 /** 朗读状态(NotebookPanel 的 ContentTab 用,绑 🔊 整课朗读)。 */
 export function companionSetTalking(on: boolean): void {
-  dispatch({ type: "talking", on, now: Date.now() });
+  fire("companion-talking", on);
 }
 
 /** 听写模式(ChatComposer 的 voiceMode)。 */
 export function companionSetListening(on: boolean): void {
-  dispatch({ type: "listening", on, now: Date.now() });
+  fire("companion-listening", on);
 }
 
 /** AI 流式回答中(App 的 chat.streaming → 托腮思考)。 */
 export function companionSetStreaming(on: boolean): void {
-  dispatch({ type: "streaming", on, now: Date.now() });
+  fire("companion-streaming", on);
 }
 
 /** 用户发出消息(ChatComposer 提交 → 出拳送出)。 */
 export function companionSend(): void {
-  dispatch({ type: "send", now: Date.now() });
+  fire("companion-send");
 }
 
 /**
- * 听写实时音量(useAsrInput 的 RMS 回调 → 这里只写 ref,零重渲染)。
- * 渲染端用 getCompanionMicArc 在 rAF 里读量化档。
+ * 声波弧幅度(4 档量化;0=无声波)。(平滑在正主实例的 applyMic 里做,
+ * 广播入口是上方的 companionMicLevel。)
  */
-export function companionMicLevel(v: number): void {
-  const raw = Math.min(1, Math.max(0, v));
-  micSmoothed = smoothMic(micSmoothed, raw);
-}
-
-/** 声波弧幅度(4 档量化;0=无声波)。 */
 export function getCompanionMicArc(): number {
   return micArcScale(micSmoothed);
+}
+
+/* ---------------- v3 单生物:zone 命令 + 左栏世界注册表 ---------------- */
+
+/** 对话输入框聚焦/失焦(ChatComposer onFocus/onBlur → 落框栖息/回老家)。 */
+export function companionZoneFocus(on: boolean): void {
+  fire("companion-zone-focus", on);
+}
+
+/** 用户划线加笔记(NotebookPanel 保存 user_note → 飞右栏记笔记)。 */
+export function companionNote(): void {
+  fire("companion-note");
+}
+
+/** 被球拍中(渲染循环物理判定 → 晕眩表情)。 */
+export function companionSwat(): void {
+  fire("companion-swat");
+}
+
+/** 听写实时音量:同样走事件(高频,CustomEvent 同步派发,开销可忽略)。 */
+export function companionMicLevel(v: number): void {
+  fire("companion-mic-level", Math.min(1, Math.max(0, v)));
+}
+
+/** 平滑/量化在正主实例内完成(监听器直调,不再回播事件防环)。 */
+function applyMic(v: number): void {
+  micSmoothed = smoothMic(micSmoothed, Math.min(1, Math.max(0, v)));
+}
+
+/** MapRail → 左栏世界注册(section 岛 + 路径容器)。 */
+export function companionRailRegister(sectionId: string, island: SectionIsland, container: HTMLElement): void {
+  fire("companion-rail-register", { sectionId, island, container });
+}
+
+/** MapRail → section 岛注销(物理效应卸载)。 */
+export function companionRailUnregister(sectionId: string): void {
+  fire("companion-rail-unregister", { sectionId });
+}
+
+/** MapRail → 左栏世界补丁(nav 元素/地图可见性/天气)。 */
+export function companionRailWorld(patch: Partial<Pick<RailWorld, "nav" | "visible" | "weather">>): void {
+  fire("companion-rail-world", patch);
+}
+
+/** 左栏世界注册表(ref 级,渲染循环直读,不进 React 状态)。
+ *  MapRail 经事件装配:nav 元素 / 地图面板可见性 / 天气 / 各 section 岛 + 容器。
+ *  CompanionCreature 的 rAF 从这里取球位置做跨引擎碰撞。
+ *  注意:只保证与 bus 正主实例同视图——Creature 与 install() 同实例,安全。 */
+export interface RailWorld {
+  nav: HTMLElement | null;
+  /** 地图面板当前可见(切到导入面板时 false → 生物隐匿)。 */
+  visible: boolean;
+  weather: string;
+  /** sectionId → 岛 + 该岛的路径容器(球岛坐标 → 视口的换算源)。 */
+  sections: Map<string, { island: SectionIsland; container: HTMLElement }>;
+}
+
+const railWorld: RailWorld = { nav: null, visible: false, weather: "clear", sections: new Map() };
+
+export function getRailWorld(): RailWorld {
+  return railWorld;
 }

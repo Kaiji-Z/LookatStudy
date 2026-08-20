@@ -994,3 +994,24 @@ html.light ::-webkit-scrollbar-thumb:hover {
 @keyframes cp-talk-bob { from { transform: translateY(0); } to { transform: translateY(-1.4px); } }
 /* 听写声波弧:初态隐藏,首帧由 rAF 按麦克风包络点亮/缩放 */
 .cp-waves-wrap { opacity: 0; }
+
+/* ---- v3 单生物(跨栏连续行动) ---- */
+/* 根层覆盖层:点击只落在角色涂色区(svg 默认 visiblePainted),不挡底下的 UI */
+.cp-creature { pointer-events: none; transition: opacity 0.45s ease; }
+.cp-creature > svg { pointer-events: visiblePainted; }
+/* 纱帘后(待机隐匿):半透明+轻模糊,像躲在透明纱帘后面;点击即唤醒 */
+.cp-veil { opacity: 0.3; filter: blur(1px) saturate(0.72); transition: opacity 0.6s ease, filter 0.6s ease; }
+/* 飞行姿势(跨栏 transit / 被拍翻滚恢复):双臂后掠,倾角由包装层 rotate 负责 */
+.cp-pose-flying .cp-armL { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(26deg); }
+.cp-pose-flying .cp-armR { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(-26deg); }
+/* 记笔记姿势:右臂快速小幅书写运动(划线加笔记触发) */
+.cp-pose-writing .cp-armR { transform-box: fill-box; transform-origin: 50% 12%; animation: cp-write 0.42s ease-in-out infinite; }
+@keyframes cp-write {
+  0% { transform: rotate(-4deg) translateY(0); }
+  50% { transform: rotate(8deg) translateY(-1.5px); }
+  100% { transform: rotate(-4deg) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cp-pose-writing .cp-armR { animation: none; transform: rotate(2deg); }
+  .cp-veil { filter: none; }
+}

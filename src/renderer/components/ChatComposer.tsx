@@ -12,7 +12,7 @@
  * 未配 key 时显示引导(去设置)。
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { companionSend, companionSetListening } from "../lib/companion/bus.ts";
+import { companionSend, companionSetListening, companionZoneFocus } from "../lib/companion/bus.ts";
 import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X, Mic, Keyboard } from "lucide-react";
 import type { Soul, StarterPrompt, HumanFrictionCategory, ChatAttachmentInput, ContextUsageInfo } from "@shared/types";
 import { checkAttachmentFile, ATTACHMENT_LIMITS } from "@shared/attachment-intake";
@@ -601,6 +601,8 @@ export function ChatComposer({
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onFocus={() => companionZoneFocus(true)}
+            onBlur={() => companionZoneFocus(false)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();

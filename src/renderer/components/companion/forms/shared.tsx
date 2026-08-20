@@ -52,6 +52,7 @@ export function faceFlags(e: CompanionExpression) {
     listening: e === "listening",
     encourage: e === "encourage",
     proud: e === "proud",
+    surprised: e === "surprised",
   };
 }
 
@@ -98,11 +99,11 @@ export function Face({
           </>
         ) : (
           <>
-            <rect x="76" y={flags.listening ? "61" : "62"} width="16" height={flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
-            <rect x="108" y={flags.listening ? "61" : "62"} width="16" height={flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
+            <rect x={flags.surprised ? "75" : "76"} y={flags.surprised ? "59" : flags.listening ? "61" : "62"} width={flags.surprised ? "18" : "16"} height={flags.surprised ? "17" : flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
+            <rect x={flags.surprised ? "107" : "108"} y={flags.surprised ? "59" : flags.listening ? "61" : "62"} width={flags.surprised ? "18" : "16"} height={flags.surprised ? "17" : flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
             <g ref={refs.pupils} className="cp-pupils">
-              <rect x="82" y="66" width="4.5" height="5.5" rx="1.5" fill={p.pupil} />
-              <rect x="114" y="66" width="4.5" height="5.5" rx="1.5" fill={p.pupil} />
+              <rect x="82" y={flags.surprised ? "64" : "66"} width="4.5" height="5.5" rx="1.5" fill={p.pupil} />
+              <rect x="114" y={flags.surprised ? "64" : "66"} width="4.5" height="5.5" rx="1.5" fill={p.pupil} />
             </g>
           </>
         )}

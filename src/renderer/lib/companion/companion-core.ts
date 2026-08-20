@@ -27,6 +27,7 @@ export type CompanionExpression =
   | "thinking"
   | "listening"
   | "talking"
+  | "surprised"
   | "sleeping";
 
 export type CompanionPose =
@@ -37,7 +38,14 @@ export type CompanionPose =
   | "lean-left"
   | "lean-right"
   | "typing"
-  | "doze";
+  | "doze"
+  | "flying"
+  | "writing";
+
+/** 伙伴所在的世界维度:左栏原生物理世界 / 中栏宠物世界 / 右栏助教世界。 */
+export type CompanionZone = "rail" | "chat" | "notebook";
+/** 前台 = 完全在场;纱帘后 = 半透明隐匿待机(可点击唤醒)。 */
+export type CompanionMode = "front" | "veil";
 
 export interface CompanionState {
   /** 当前渲染表情(活动反应或 base) */
@@ -62,6 +70,18 @@ export interface CompanionState {
   lastPress: number;
   /** 窗口聚焦(失焦→短阈值打盹;回归→唤醒+打招呼) */
   windowFocused: boolean;
+  /** 所在世界维度(v3 单生物:一只,跨栏连续行动) */
+  zone: CompanionZone;
+  /** 前台/纱帘后 */
+  mode: CompanionMode;
+  /** 对话输入框聚焦(中栏宠物世界的触发闩) */
+  composerFocused: boolean;
+  /** 进入当前 zone 的时刻(zone 返回计时的基准) */
+  zoneSince: number;
+  /** 记笔记动作的保持截止(划线触发,短暂把他钉在右栏) */
+  lastNoteUntil: number;
+  /** 最近一次滚动时刻(滚动=用户在阅读,不唤醒,反而催他入纱帘) */
+  lastScroll: number;
 }
 
 export type CompanionEvent =
@@ -74,6 +94,10 @@ export type CompanionEvent =
   | { type: "press"; side: -1 | 1; now: number }
   | { type: "send"; now: number }
   | { type: "focus"; on: boolean; now: number }
+  | { type: "zoneFocus"; on: boolean; now: number }
+  | { type: "zoneNote"; now: number }
+  | { type: "scroll"; now: number }
+  | { type: "swat"; now: number }
   | { type: "tick"; now: number };
 
 export interface CelebrationReaction {
@@ -90,6 +114,22 @@ export const TYPE_IDLE_MS = 1_200;
 
 /** 窗口失焦后多久打盹(人回来一眼就醒,不用等 3 分钟) */
 export const BLUR_SLEEP_MS = 4_000;
+
+/** 触发消失(失焦输入框/朗读结束)后多久飞回左栏老家 */
+export const ZONE_RETURN_MS = 3_500;
+
+/** 无交互活动多久躲进纱帘(待机隐匿) */
+export const VEIL_AFTER_MS = 9_000;
+
+/** 滚动进行中(用户在阅读)时,无交互多久就入纱帘(比纯空闲快) */
+export const VEIL_SCROLL_GRACE_MS = 1_600;
+export const VEIL_SCROLL_AFTER_MS = 2_500;
+
+/** 到线记笔记动作的保持时长 */
+export const NOTE_HOLD_MS = 2_200;
+
+/** 被球拍中后的晕眩时长(自由翻滚,控制器断开) */
+export const SWAT_DIZZY_MS = 900;
 
 /** 庆祝 kind → 伙伴反应。数值=保持时长,经验值(短反馈 600-1100ms 不打断节奏)。 */
 export function expressionForCelebration(kind: CelebrationKind): CelebrationReaction {
@@ -132,7 +172,32 @@ export function initialCompanionState(now = 0): CompanionState {
     keySide: 1,
     lastPress: 0,
     windowFocused: true,
+    zone: "rail",
+    mode: "front",
+    composerFocused: false,
+    zoneSince: now,
+    lastNoteUntil: 0,
+    lastScroll: 0,
   };
+}
+
+/**
+ * 当前意图指向的世界(优先级:输入框聚焦 > 朗读/记笔记 > 回左栏老家)。
+ * 与 state.zone 分离:zone 是"已经飞到",desired 是"应该去"——
+ * 回老家要等 ZONE_RETURN_MS(别让他刚落输入框又抖走),进中/右栏则立即。
+ */
+export function desiredZone(s: CompanionState, now: number): CompanionZone {
+  if (s.composerFocused) return "chat";
+  if (s.talking || now < s.lastNoteUntil) return "notebook";
+  return "rail";
+}
+
+/** 纱帘判定:无交互且不在任务中 → 隐匿待机;滚动中(阅读)更快入帘。 */
+export function veilDecision(s: CompanionState, now: number): boolean {
+  if (s.composerFocused || s.talking || s.listening || s.streaming) return false;
+  const idle = now - s.lastActivity;
+  const scrolling = now - s.lastScroll < VEIL_SCROLL_GRACE_MS;
+  return idle > VEIL_AFTER_MS || (scrolling && idle > VEIL_SCROLL_AFTER_MS);
 }
 
 /** 无活动反应时的 base 表情(优先级:听写 > 朗读 > 流式 > 睡觉 > 待机)。 */
@@ -168,10 +233,12 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
       };
     }
     case "poke":
+      // 戳他=从纱帘后唤醒到前台 + 打招呼
       return {
         ...s,
         sleeping: false,
         lastActivity: ev.now,
+        mode: "front",
         expression: "happy",
         pose: "hop",
         until: ev.now + 900,
@@ -185,7 +252,17 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
       if (ev.type === "streaming") next.streaming = ev.on;
       // 语音相关标志翻转都算用户在场
       next.lastActivity = ev.now;
+      next.mode = "front";
       if (ev.on) next.sleeping = false;
+      // 朗读开 = 助教上岗(右栏);输入框仍聚焦时宠物身份优先,不动
+      if (ev.type === "talking" && ev.on && !next.composerFocused && next.zone !== "notebook") {
+        next.zone = "notebook";
+        next.zoneSince = ev.now;
+      }
+      // 朗读结束 = 返回窗口起点(释放起算,不吃在栏时间)
+      if (ev.type === "talking" && !ev.on && next.zone === "notebook" && !next.composerFocused) {
+        next.zoneSince = ev.now;
+      }
       // 无活动反应(或已过期)时立即重算 base——标志切换即时反映,不依赖 tick 时序
       if (next.until === null || next.until <= ev.now) {
         next.expression = baseExpressionOf(next);
@@ -232,9 +309,58 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         ...s,
         sleeping: false,
         lastActivity: ev.now,
+        mode: "front",
         expression: "happy",
         pose: "punch",
         until: ev.now + 700,
+      };
+    case "zoneFocus": {
+      // 输入框聚焦/失焦:聚焦=落上输入框(中栏宠物世界),失焦=闩松开(tick 收尾回家)
+      const next: CompanionState = {
+        ...s,
+        composerFocused: ev.on,
+        lastActivity: ev.now,
+        mode: "front",
+      };
+      if (ev.on && next.zone !== "chat") {
+        next.zone = "chat";
+        next.zoneSince = ev.now;
+      }
+      // 释放时机 = 返回窗口的起点(别从进栏时刻起算,那会吃掉在栏时间)
+      if (!ev.on && next.zone === "chat") next.zoneSince = ev.now;
+      return next;
+    }
+    case "zoneNote": {
+      // 用户划线加笔记:飞去右栏(助教世界)做记笔记动作,短暂钉住
+      const next: CompanionState = {
+        ...s,
+        sleeping: false,
+        lastActivity: ev.now,
+        mode: "front",
+      };
+      if (next.zone !== "notebook") {
+        next.zone = "notebook";
+        next.zoneSince = ev.now;
+      }
+      next.lastNoteUntil = ev.now + NOTE_HOLD_MS;
+      next.expression = "base";
+      next.pose = "writing";
+      next.until = next.lastNoteUntil;
+      return next;
+    }
+    case "scroll":
+      // 滚动不唤醒(阅读是被动行为),只推进纱帘判定
+      return s.lastScroll === ev.now ? s : { ...s, lastScroll: ev.now };
+    case "swat":
+      // 被球拍中:晕眩惊吓(自由翻滚由物理层负责,这里只管表情)
+      return {
+        ...s,
+        sleeping: false,
+        mode: "front",
+        lastActivity: ev.now,
+        expression: "surprised",
+        pose: "flying",
+        until: ev.now + SWAT_DIZZY_MS,
       };
     case "focus": {
       if (ev.on === s.windowFocused) return s;
@@ -255,12 +381,32 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
       const sleepAfter = s.windowFocused ? SLEEP_AFTER_MS : BLUR_SLEEP_MS;
       const sleeping = !s.talking && !s.listening && ev.now - s.lastActivity >= sleepAfter;
       const expired = s.until !== null && ev.now > s.until;
-      if (s.sleeping === sleeping && s.typing === typing && !expired) return s;
-      const next: CompanionState = { ...s, typing, sleeping };
+      // zone 演进:进中/右栏立即(desired != rail),回老家要等 ZONE_RETURN_MS
+      const want = desiredZone(s, ev.now);
+      let zone = s.zone;
+      let zoneSince = s.zoneSince;
+      if (want !== s.zone) {
+        if (want !== "rail") {
+          zone = want;
+          zoneSince = ev.now;
+        } else if (ev.now - s.zoneSince >= ZONE_RETURN_MS) {
+          zone = "rail";
+          zoneSince = ev.now;
+        }
+      } else {
+        zoneSince = ev.now;
+      }
+      const mode = veilDecision(s, ev.now) ? "veil" : "front";
+      if (
+        s.sleeping === sleeping && s.typing === typing && !expired
+        && zone === s.zone && mode === s.mode
+      ) return s;
+      const next: CompanionState = { ...s, typing, sleeping, zone, zoneSince, mode };
       if (
         expired
         || (sleeping && s.expression !== "sleeping")
         || (typing !== s.typing && (s.until === null || expired))
+        || (zone !== s.zone && (next.until === null || expired))
       ) {
         next.expression = baseExpressionOf(next);
         next.pose = basePoseOf(next);

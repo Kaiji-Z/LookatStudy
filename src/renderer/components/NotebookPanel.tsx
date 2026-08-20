@@ -28,8 +28,7 @@ import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, Messa
 import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
 import { useToast } from "./Toast.js";
-import { NotebookCompanion } from "./companion/NotebookCompanion.js";
-import { companionSetTalking } from "../lib/companion/bus.ts";
+import { companionNote } from "../lib/companion/bus.ts";
 
 export type NotebookTab = "content" | "notes" | "board";
 
@@ -227,9 +226,8 @@ export function NotebookPanel({
           </>
         )}
       </div>
-
-      {/* 伴学伙伴(导师/桌宠形态):选中节点学习中栖在右下角,朗读时对口型 */}
-      <NotebookCompanion nodeId={selectedNode?.id ?? null} />
+      {/* v3 伴学单生物:右栏助教形态由根层 CompanionCreature 负责(朗读口型+记笔记),
+          不再在栏内分身。 */}
     </div>
   );
 }
@@ -286,12 +284,9 @@ function ContentTab({
       speechStopRef.current();
     };
   }, [nodeSpeechId]);
-  // 伴学伙伴:整课朗读状态 → 全局口型/表情信号(两处栖息地同享);
-  // 卸载兜底复位,防组件树拆了旗标还挂着
-  useEffect(() => {
-    companionSetTalking(speech.speakingMessageId !== null && speech.speakingMessageId === nodeSpeechId);
-  }, [speech.speakingMessageId, nodeSpeechId]);
-  useEffect(() => () => companionSetTalking(false), []);
+  // 伴学 talking 信号(v3)下沉到 useSpeech 引擎层(见 useSpeech.ts):
+  // 谁的 speakingMessageId 谁发事件,不再按节点 id 对比(旧法在某些实例
+  // 状态下静默失效——朗读在放,信号没发)。
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -465,6 +460,8 @@ function ContentTab({
       startOffset: quoteBtn.offsets?.start,
       endOffset: quoteBtn.offsets?.end,
     });
+    // v3 伴学:用户划线记笔记 → 生物飞来右栏做记笔记动作
+    companionNote();
     setQuoteBtn(null);
     window.getSelection()?.removeAllRanges();
   }, [quoteBtn, onSaveContentNote, selectedNode]);

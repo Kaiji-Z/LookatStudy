@@ -11,7 +11,7 @@ import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { CourseSearchPanel } from "./CourseSearchPanel.js";
-import { RailCompanion } from "./companion/RailCompanion.js";
+import { companionRailRegister, companionRailUnregister, companionRailWorld } from "../lib/companion/bus.ts";
 import {
   computeBalloonLayout,
   balloonSegmentToPath,
@@ -107,6 +107,19 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
   const [skyKey, setSkyKey] = useState<string | null>(null);
   useEffect(() => { setSkyKey(pickPreset(props.courseId)); }, [props.courseId]);
   const skyPreset: SkyPreset | null = skyKey ? PRESETS[skyKey] ?? null : null;
+
+  // v3 伴学单生物:左栏世界注册表(生物的 rAF 读这里拿家坐标/可见性/天气)。
+  // 走事件写进 bus 正主实例(防打包双实例)。
+  useEffect(() => {
+    companionRailWorld({
+      nav: navRef.current,
+      visible: panel === "map",
+      weather: skyPreset?.weather ?? "clear",
+    });
+    return () => {
+      companionRailWorld({ visible: false, nav: null });
+    };
+  }, [panel, skyPreset, navRef]);
 
   /** 课程搜索面板(全栏 overlay):开启时覆盖左栏,点行跳转后自动关闭。 */
   const [searchOpen, setSearchOpen] = useState(false);
@@ -262,8 +275,8 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
         )}
       </div>
 
-      {/* 伴学伙伴(天空守望形态,仅地图面板;导入面板没有天空场景) */}
-      {panel === "map" && <RailCompanion />}
+      {/* v3 伴学单生物不再栖在栏内(CompanionCreature 根层跨栏覆盖层),
+          这里只维护左栏世界注册表(nav/可见性/天气/岛),见上方 useEffect。 */}
 
       {/* 滑动内容区(透明,天空由 nav 层 canvas 提供)。全高,tab/标题悬浮其上。 */}
       <div className="absolute inset-0 overflow-hidden z-10">
@@ -998,6 +1011,9 @@ function MapSection({
       nextKnot,
     });
     islandRef.current = island;
+    // v3 伴学单生物:把岛登记进左栏世界注册表(CompanionCreature 的 rAF
+    // 从这里取球做跨引擎碰撞——球拍他/他撞球都是真实物理);事件写进正主实例
+    companionRailRegister(section.id, island, container);
     // 考试绳结圆点:校准到实测位(末段无下一段路牌则连圆点带绳一起隐藏)
     const nextKnotEl = container.querySelector<SVGCircleElement>("[data-next-knot]");
     if (nextKnotEl) {
@@ -1129,6 +1145,7 @@ function MapSection({
         });
       }
       liveWidthRef.current = containerW;
+      companionRailUnregister(section.id);
       island.dispose();
       islandRef.current = null;
       // 清残留 transform:球回布局原位(React 渲染的 left/top 本来就在那;

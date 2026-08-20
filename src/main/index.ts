@@ -855,13 +855,14 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: { navNodeCount },
   });
 
-  // T2c (companion): 选课自动切地图面板 + 默认开 → 左栏天空守望形态必须在场
+  // T2c (companion v3): 选课 + 默认开 → 单生物在场且在左栏原生物理世界(zone=rail)
   const railCompanion = await win.webContents.executeJavaScript(
-    `document.querySelector('[data-testid="rail-companion"]') !== null`,
+    `(() => { const el = document.querySelector('[data-testid="companion-creature"]'); return el ? el.dataset.zone : null; })()`,
   );
   results.push({
-    name: "companion: rail habitat rendered (map panel, default on)",
-    ok: railCompanion === true,
+    name: "companion v3: single creature alive in rail home zone (map panel, default on)",
+    ok: railCompanion === "rail",
+    detail: { zone: railCompanion },
   });
 
   // T3: 三栏都在(chat-panel + notebook-panel + map-rail)
@@ -1079,6 +1080,52 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: linkage,
   });
 
+  // T8c2 (companion v3): 聚焦输入框 → 单生物飞来中栏(data-zone=chat)
+  // + 逐键反应(Bongo Cat 式):合成 keydown → 机体进入 cp-pose-typing。
+  // 必须在 keyless 冷启动之前跑(keyless 时 composer 是无 key 卡,没有 textarea)。
+  // headless 窗口可能没有 OS 焦点:Chromium 对失焦文档不派发真实 focus 事件
+  // (element.focus() 只改 activeElement)——先 win.focus() 给焦点,真实链路才走得到。
+  win.focus();
+  win.webContents.focus();
+  const chatZoneTyping = await win.webContents
+    .executeJavaScript(
+      `
+    (async function() {
+      var input = document.querySelector('[data-testid="chat-input"]');
+      if (!input) return { ok: false, err: "no-input" };
+      var dis = input.disabled;
+      input.focus();
+      var ae = document.activeElement === input;
+      var hf = document.hasFocus();
+      var samples = [];
+      for (var i = 0; i < 12; i++) {
+        await new Promise(function(r) { setTimeout(r, 100); });
+        var c = document.querySelector('[data-testid="companion-creature"]');
+        samples.push(c ? c.dataset.zone : "none");
+        if (c && c.dataset.zone === "chat") break;
+      }
+      var c = document.querySelector('[data-testid="companion-creature"]');
+      var zone = c ? c.dataset.zone : null;
+      // 等跨栏飞行姿势窗(~950ms)结束再敲键:否则 cp-pose-flying 压过 typing
+      await new Promise(function(r) { setTimeout(r, 1100); });
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }));
+      await new Promise(function(r) { setTimeout(r, 240); });
+      var m = document.querySelector('[data-testid="companion-mascot"]');
+      var cls = m ? String(m.getAttribute('class')) : '';
+      // 释放聚焦闩(blur 事件在无 OS 焦点的 headless 下可能不派发,事件兜底)
+      input.blur();
+      window.dispatchEvent(new CustomEvent("companion-zone-focus", { detail: false }));
+      return { ok: zone === "chat" && cls.indexOf('cp-pose-typing') >= 0, zone: zone, disabled: dis, focused: ae, hasFocus: hf, samples: samples.join(","), cls: cls.slice(0, 90) };
+    })()
+  `,
+    )
+    .catch(() => null);
+  results.push({
+    name: "companion v3: composer focus flies creature to chat zone + Bongo-Cat typing reaction",
+    ok: chatZoneTyping?.ok === true,
+    detail: chatZoneTyping,
+  });
+
   // T8d (P1 启动沉浸): 选中节点后,空会话显示问候 + 开始学习按钮(agentReady=true 路径)
   const startState = await win.webContents.executeJavaScript(`
     (function() {
@@ -1097,12 +1144,13 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: startState,
   });
 
-  // T8f (companion): 学习中(节点已选中) → 右栏导师/桌宠栖息地必须在场
+  // T8f (companion v3): 学习中(节点已选中) → 单生物仍在场(单例连续体,不论在哪
+  // 个世界都不消失;此刻默认在左栏老家)
   const notebookCompanion = await win.webContents.executeJavaScript(
-    `document.querySelector('[data-testid="notebook-companion"]') !== null`,
+    `document.querySelector('[data-testid="companion-creature"]') !== null`,
   );
   results.push({
-    name: "companion: notebook habitat rendered (node selected)",
+    name: "companion v3: single creature persists while node selected",
     ok: notebookCompanion === true,
   });
 
@@ -1353,6 +1401,9 @@ async function runUiTest(screenshot = false): Promise<void> {
             }
             var speakBtn = q('[data-testid="speech-speak-btn"]');
             if (!speakBtn) return { ok: false, error: "no speak button" };
+            // 探针:陷阱监听 app 自身发出的 talking 事件(隔离 ContentTab 接线 vs 总线)
+            var talkingSeen = [];
+            window.addEventListener("companion-talking", function(ev) { talkingSeen.push(String(ev.detail)); });
             var status = await window.api.getSpeechModelStatus();
             var tts = (status || []).filter(function(s){ return s.id === "tts-kokoro"; })[0];
             if (!tts || tts.state !== "ready") {
@@ -1364,14 +1415,30 @@ async function runUiTest(screenshot = false): Promise<void> {
             speakBtn.click();
             var stopBtn = null;
             for (var j = 0; j < 240; j++) { await sleep(250); stopBtn = q('[data-testid="speech-stop-btn"]'); if (stopBtn) break; }
+            // companion v3:朗读中(talking)→ 单生物飞去右栏助教世界(zone=notebook)。
+            // 先等一拍(tick 500ms + 飞行),读 zone + 表情类(cp-expr-talking 证 talking 标志);
+            // 真实链路没走通时手动派发同款事件隔离断点(总线 vs ContentTab 接线)。
+            await sleep(900);
+            var nbZone = null;
+            var cc = document.querySelector('[data-testid="companion-creature"]');
+            if (cc) nbZone = cc.dataset.zone;
+            var mm = document.querySelector('[data-testid="companion-mascot"]');
+            var exprTalking = mm ? String(mm.getAttribute('class')).indexOf('cp-expr-talking') >= 0 : null;
+            var manualZone = null;
+            if (nbZone !== "notebook") {
+              window.dispatchEvent(new CustomEvent("companion-talking", { detail: true }));
+              await sleep(700);
+              var cc2 = document.querySelector('[data-testid="companion-creature"]');
+              manualZone = cc2 ? cc2.dataset.zone : null;
+            }
             if (!stopBtn) {
               try { await window.api.ttsStop(); } catch (e) {}
-              return { ok: false, error: "stop button never appeared (60s)", branch: "ready" };
+              return { ok: false, error: "stop button never appeared (60s)", branch: "ready", nbZone: nbZone };
             }
             stopBtn.click();
             var back = false;
             for (var k = 0; k < 40; k++) { await sleep(250); if (q('[data-testid="speech-speak-btn"]')) { back = true; break; } }
-            return { ok: back, branch: "ready", stoppedBack: back };
+            return { ok: back, branch: "ready", stoppedBack: back, nbZone: nbZone, exprTalking: exprTalking, manualZone: manualZone, talkingEvents: talkingSeen.join(",") };
           } catch (e) { return { ok: false, error: String(e) }; }
         })()
       `);
@@ -1393,6 +1460,14 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: speechLoop?.ok === true,
     detail: speechLoop,
   });
+  // companion v3:ready 分支(真朗读)时,朗读中单生物必须在右栏助教世界
+  if (speechLoop?.branch === "ready") {
+    results.push({
+      name: "companion v3: talking sends creature to notebook zone (TA world)",
+      ok: speechLoop.nbZone === "notebook",
+      detail: { nbZone: speechLoop.nbZone },
+    });
+  }
 
 
   // 原 🤔 卡点 toggle+表单已撤(friction 折进"我没太懂"巩固选择)。
@@ -1970,32 +2045,17 @@ async function runUiTest(screenshot = false): Promise<void> {
     await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-chat"]').click()`);
     await waitForPane((st) => !st.rail && st.chat && !st.nb);
     const narrowChat = await waitFits('[data-testid="chat-panel"]');
-    // T20d (companion v2): T3 对话栏 = 伙伴第三栖息地(右栏不可见时现身);
-    // 逐键反应(Bongo Cat 式):合成 keydown → 机体进入 cp-pose-typing
-    const t3Companion = await win.webContents
-      .executeJavaScript(`document.querySelector('[data-testid="chat-companion"]') !== null`)
-      .catch(() => null);
+    // T20d (companion v3): T3 单栏切换 = 单生物连续体不消失(组件仍在场,
+    // 随栏可见性自适应显隐);zone+typing 的行为断言在 keyless 之前已覆盖
     const t3Typing = await win.webContents
-      .executeJavaScript(
-        `
-      (async function() {
-        var m = document.querySelector('[data-testid="chat-companion-mascot"]');
-        if (!m) return { mascot: false };
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }));
-        await new Promise(function(r) { setTimeout(r, 240); });
-        m = document.querySelector('[data-testid="chat-companion-mascot"]');
-        var cls = m ? String(m.getAttribute('class')) : '';
-        return { mascot: true, typing: cls.indexOf('cp-pose-typing') >= 0, cls: cls.slice(0, 80) };
-      })()
-    `,
-      )
+      .executeJavaScript(`document.querySelector('[data-testid="companion-creature"]') !== null`)
       .catch(() => null);
     results.push({
-      name: "companion v2: chat habitat in T3 (notebook hidden) + Bongo-Cat typing reaction",
-      ok: t3Companion === true && t3Typing?.mascot === true && t3Typing?.typing === true,
-      detail: { t3Companion, t3Typing },
+      name: "companion v3: single creature persists across T3 pane switching",
+      ok: t3Typing === true,
+      detail: { present: t3Typing },
     });
-    // T20e (companion v2): 形象切换 — 写 companion_form=frost + 广播 → 机体 data-form
+    // T20e (companion v3): 形象切换 — 写 companion_form=frost + 广播 → 机体 data-form
     // 即时变 frost;断言后切回 ember(状态卫生:不污染下游与真实用户首选项)
     const formSwitch = await win.webContents
       .executeJavaScript(
@@ -2006,7 +2066,7 @@ async function runUiTest(screenshot = false): Promise<void> {
         var frost = false;
         for (var i = 0; i < 30; i++) {
           await new Promise(function(r) { setTimeout(r, 100); });
-          var el = document.querySelector('[data-testid="chat-companion-mascot"]');
+          var el = document.querySelector('[data-testid="companion-mascot"]');
           if (el && el.getAttribute("data-form") === "frost") { frost = true; break; }
         }
         await window.api.setSetting("companion_form", "ember");
@@ -2017,7 +2077,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       )
       .catch(() => null);
     results.push({
-      name: "companion v2: form switch live-swaps mascot (frost) via settings event",
+      name: "companion v3: form switch live-swaps creature mascot (frost) via settings event",
       ok: formSwitch?.frost === true,
       detail: formSwitch,
     });

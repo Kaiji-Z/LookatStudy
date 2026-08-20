@@ -21,7 +21,7 @@ import { useCanvas } from "./lib/useCanvas.js";
 import { useFontSize } from "./lib/useFontSize.js";
 import { ChatStream, extractArtifacts } from "./components/ChatStream.js";
 import { ChatComposer } from "./components/ChatComposer.js";
-import { ChatCompanion } from "./components/companion/ChatCompanion.js";
+import { CompanionCreature } from "./components/companion/CompanionCreature.js";
 import { ExamView } from "./components/ExamView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 // ReviewPanel component no longer used — SelfRatingCard is imported by NotebookPanel directly
@@ -1009,9 +1009,7 @@ export default function App() {
               />
                 </>
               )}
-              {/* 伙伴第三栖息地:右栏(笔记本)不可见时现身对话栏——导师跟着学习者换栏。
-                  考试关底/未选课不出现(考试界面零干扰红线)。 */}
-              {selectedCourseId && selectedNode?.type !== "exam" && !showRight && <ChatCompanion />}
+              {/* v3 单生物:伙伴不再各栏分身,由根层 CompanionCreature 跨栏连续行动 */}
             </div>
             )}
 
@@ -1141,6 +1139,8 @@ export default function App() {
       <GlobalTooltip />
       {/* Phase 0:庆祝渲染层(粒子爆发/高光时刻,reduced-motion 自动降级)。根级 fixed,z-[60]。 */}
       <CelebrationLayer />
+      {/* v3 伴学单生物:全应用唯一一只,跨栏连续行动(左=原生物理世界/中=宠物/右=助教)。 */}
+      <CompanionCreature worldReady={!!selectedCourseId} />
     </div>
   );
 }

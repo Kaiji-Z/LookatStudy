@@ -8,7 +8,7 @@
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
 import { Arms, Face, FaceExtras, GroundShadow, faceFlags } from "./shared.js";
-import type { Viseme } from "../../../lib/companion/companion-core.js";
+import { coarseViseme, type Viseme } from "../../../lib/companion/companion-core.js";
 
 export const INK: FormPalette = {
   out: "#2F2A22",
@@ -56,7 +56,7 @@ function InkCore({ energyRatio, streakLit }: { energyRatio: number; streakLit: b
 }
 
 function inkMouth(v: Viseme, p: FormPalette) {
-  switch (v) {
+  switch (coarseViseme(v)) {
     case "A":
       return <path d="M91,77 Q100,74.5 109,77 Q111,86 100,89.5 Q89,86 91,77 Z M96,79.5 Q100,81.5 104,79.5 Q103,84 100,85.5 Q97,84 96,79.5 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":

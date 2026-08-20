@@ -58,8 +58,9 @@ export function faceFlags(e: CompanionExpression) {
 }
 
 /**
- * 口型宽度调制(v3 细化):同一开口度下横向收放——展唇音(E/I)横宽、
+ * 口型宽度调制(v3 细化):同一开口度下横向收放——展唇音(E/I/SS)横宽、
  * 圆唇音(O/U)收窄,母音之间的形状差从"只有高度"升级为"高×宽"。
+ * v9 辅音:SS 齿擦最宽、L 舌尖自然宽、FV 咬唇微收。
  */
 const MOUTH_WIDTH: Record<Viseme, number> = {
   closed: 1,
@@ -68,6 +69,9 @@ const MOUTH_WIDTH: Record<Viseme, number> = {
   I: 1.26,
   O: 0.9,
   U: 0.84,
+  SS: 1.18,
+  L: 1.0,
+  FV: 0.96,
 };
 
 /**

@@ -94,6 +94,22 @@ export interface SpeechDownloadProgress {
   currentFile?: string;
 }
 
+/**
+ * 口型 viseme 词表(v9 九形,Preston Blair 动画嘴型表子集):
+ * closed=闭唇(b/p/m/静音) A/E/I/O/U=元音(共振峰定位) SS=齿擦(s/x/sh/z/c/zh/ch/j/q)
+ * L=舌尖(d/t/n/l/th) FV=咬唇(f/v/h)。主进程(剧本路径)与渲染层(DSP 路径)共用,
+ * 两侧独立产生该词表的值,renderer 不做转换。
+ */
+export type SpeechViseme = "closed" | "A" | "E" | "I" | "O" | "U" | "SS" | "L" | "FV";
+
+/** 一条口型 cue:t/dur 单位毫秒(相对该句音频起点);level=开口度 0..1。 */
+export interface SpeechVisemeCue {
+  t: number;
+  dur: number;
+  viseme: SpeechViseme;
+  level: number;
+}
+
 /** speech:ttsAudio 事件体:一个句子的完整音频(v0.13 起三档引擎 —— wav=local/azure,mp3=edge) */
 export interface SpeechTtsAudioEvent {
   messageId: string;
@@ -103,6 +119,12 @@ export interface SpeechTtsAudioEvent {
   sampleRate: number;
   /** v0.13:音频容器(edge=audio/mpeg;缺省视为 audio/wav 兼容 v0.12) */
   mime?: "audio/wav" | "audio/mpeg";
+  /**
+   * v9 剧本口型 cue(edge 档词边界+拼音声母映射,主进程产生)。
+   * 有则渲染层直接按播放时钟回放;无则渲染层用句音频离线 DSP 分析兜底
+   * (本地/自定义档没有引擎词时序,DSP 全引擎通用)。
+   */
+  visemeCues?: SpeechVisemeCue[];
 }
 
 /** speech:ttsDone 事件体 */

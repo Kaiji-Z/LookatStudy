@@ -7,7 +7,7 @@
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
 import { Arms, Face, FaceExtras, GroundShadow, faceFlags } from "./shared.js";
-import type { Viseme } from "../../../lib/companion/companion-core.js";
+import { coarseViseme, type Viseme } from "../../../lib/companion/companion-core.js";
 
 export const MOSS: FormPalette = {
   out: "#2A3326",
@@ -51,7 +51,7 @@ function SeedCore({ energyRatio }: { energyRatio: number }) {
 }
 
 function mossMouth(v: Viseme, p: FormPalette) {
-  switch (v) {
+  switch (coarseViseme(v)) {
     case "A":
       return <path d="M92,77 Q100,74 108,77 Q110,86 100,89 Q90,86 92,77 Z M96,79 Q100,81 104,79 Q103,83 100,84.5 Q97,83 96,79 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":

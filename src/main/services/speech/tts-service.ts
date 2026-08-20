@@ -16,6 +16,7 @@
 import type {
   SpeechDownloadProgress,
   SpeechTtsAudioEvent,
+  SpeechVisemeCue,
   SpeechTtsDoneEvent,
   SpeechTtsErrorEvent,
 } from "@shared/speech-types";
@@ -32,10 +33,13 @@ import {
 import {
   bufferToArrayBuffer,
   readCachedAudio,
+  readCachedVisemeCues,
   ttsCacheKey,
   writeCachedAudio,
+  writeCachedVisemeCues,
   type TtsAudioMime,
 } from "./tts-cache";
+import { buildVisemeCues } from "./viseme-script";
 import { encodeWavPcm16 } from "./wav-codec";
 import {
   azureTtsMissing,
@@ -85,6 +89,8 @@ interface SynthOut {
   bytes: ArrayBuffer;
   mime: TtsAudioMime;
   sampleRate: number;
+  /** v9 剧本口型 cue(edge 档词时序+拼音;其余档 undefined → 渲染层 DSP 兜底) */
+  visemeCues?: SpeechVisemeCue[];
 }
 
 function localModelReady(dataDir: string): boolean {
@@ -114,16 +120,22 @@ async function synthSentence(
   });
   const mime: TtsAudioMime = isMp3 ? "audio/mpeg" : "audio/wav";
   const cached = readCachedAudio(dataDir, key, mime);
-  if (cached) return { bytes: cached, mime, sampleRate: 24000 };
+  if (cached) {
+    const cues = readCachedVisemeCues(dataDir, key);
+    return { bytes: cached, mime, sampleRate: 24000, ...(cues ? { visemeCues: cues } : {}) };
+  }
 
   if (engine === "edge") {
-    const mp3 = await synthesizeEdgeMp3(sentence, {
+    const { mp3, wordCues } = await synthesizeEdgeMp3(sentence, {
       voice: cfg.voice,
       rate: speedToRatePercent(cfg.speed),
     });
     const bytes = bufferToArrayBuffer(mp3);
     await writeCachedAudio(dataDir, key, mime, bytes);
-    return { bytes, mime, sampleRate: 24000 };
+    // v9 剧本口型:词时序(引擎真值)+ 拼音声母 → 逐 viseme cue,随缓存落盘
+    const visemeCues = buildVisemeCues(wordCues);
+    if (visemeCues.length > 0) await writeCachedVisemeCues(dataDir, key, visemeCues);
+    return { bytes, mime, sampleRate: 24000, ...(visemeCues.length > 0 ? { visemeCues } : {}) };
   }
   if (engine === "custom") {
     if (!opts.custom) throw new Error("custom tts provider not resolved");
@@ -246,6 +258,7 @@ export async function speakMessage(
         wavBytes: out.bytes,
         sampleRate: out.sampleRate,
         mime: out.mime,
+        ...(out.visemeCues ? { visemeCues: out.visemeCues } : {}),
       };
       emit("speech:ttsAudio", payload);
     }

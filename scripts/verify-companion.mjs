@@ -802,33 +802,184 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
     creature.includes('[data-testid="chat-stream"]'),
     "T15: 伴学跟句覆盖中栏(mark 所在面板链含 chat-stream)",
   );
+  // v9 接线:离线口型时间轴(播放时钟查表)+ 剧本口型(edge 词时序)+ 常驻 + 整句对齐
+  assert.ok(
+    useSpeechSrc.includes("analyzeVisemeTimeline") && useSpeechSrc.includes("setActivePlayback") && useSpeechSrc.includes("cuesToTimeline") && useSpeechSrc.includes("startedAtCtxTime: ctx.currentTime"),
+    "T15: useSpeech 解码后建口型时间轴(剧本 cue 优先/DSP 兜底)+ 起播登记活动播放(带播放时钟零点)",
+  );
+  const useMouth = read("lib/companion/use-mouth.ts");
+  assert.ok(
+    useMouth.includes("getActivePlayback") && useMouth.includes("visemeAt"),
+    "T15: use-mouth 时间轴优先(ctx.currentTime 播放时钟查表)",
+  );
+  assert.ok(read("lib/speech-analyser.ts").includes("ActiveSpeechPlayback"), "T15: 活动播放登记所(时间轴+起播时刻+兜底分析器)");
+  assert.ok(
+    app.includes("<CompanionCreature courseId=") && !app.includes("worldReady"),
+    "T15: v9 伴学常驻(无课程也挂载,worldReady 门控移除)",
+  );
+  assert.ok(creature.includes("freeRoam"), "T15: 空态/两栏锚点全缺 → 整窗游走兜底(不隐匿)");
+  assert.ok(read("lib/highlightText.ts").includes("matchSentenceAligned") && read("lib/highlightText.ts").includes("canonicalSpeechIndex"), "T15: v9 整句对齐匹配(规范化+句界扩展)");
+  const edgeClient = readFileSync(new URL("../src/main/services/speech/edge-tts-client.ts", import.meta.url), "utf8");
+  assert.ok(edgeClient.includes("saveSubtitles: true") && edgeClient.includes("wordCues"), "T15: edge 档开逐词边界(WordBoundary sidecar)");
+  const ttsService = readFileSync(new URL("../src/main/services/speech/tts-service.ts", import.meta.url), "utf8");
+  assert.ok(
+    ttsService.includes("buildVisemeCues") && ttsService.includes("readCachedVisemeCues") && ttsService.includes("visemeCues: out.visemeCues"),
+    "T15: tts-service 剧本口型接线(词时序→拼音声母 cue,随缓存落盘,事件携带)",
+  );
+  const speechTypes = readFileSync(new URL("../shared/speech-types.ts", import.meta.url), "utf8");
+  assert.ok(speechTypes.includes("export type SpeechViseme"), "T15: SpeechViseme 九形词表(main/renderer 同一真源)");
+  const emberForm = read("components/companion/forms/ember.tsx");
+  assert.ok(
+    emberForm.includes('case "SS"') && emberForm.includes('case "L"') && emberForm.includes('case "FV"'),
+    "T15: ember 辅音口型艺术(齿擦/舌尖/咬唇)",
+  );
+  for (const f of ["frost", "moss", "astro", "ink"]) {
+    assert.ok(read(`components/companion/forms/${f}.tsx`).includes("coarseViseme("), `T15: ${f} 形态口型 coarseViseme 降级`);
+  }
 }
 console.log("✓ T15 v3 接线守卫:单例挂载/三触发点/左栏注册表/物理碰撞源级咬合");
 
-/* ---------- T16 朗读句顺序匹配(纯:token 序列 + 单调游标) ---------- */
+/* ---------- T16 v9 朗读句对齐(规范化整句 + 句界扩展 + 单调游标) ---------- */
 {
-  const { matchSentenceTokens } = await import("../src/renderer/lib/highlightText.ts");
-  // 散文整句(中文常态:单 token)= 带游标 indexOf
-  const m0 = matchSentenceTokens("欢迎使用。这是一个平台。", ["欢迎使用。"], 0);
-  assert.ok(m0 && m0.start === 0 && m0.end === 5, "T16: 单 token 精确命中");
-  // 跨段落:朗读文本有 \n,DOM textContent 段落之间无分隔 → token 序列带间隔命中
-  const dom1 = "标题正文第一句。";
-  const m1 = matchSentenceTokens(dom1, ["标题", "正文第一句。"], 0);
-  assert.ok(m1 && m1.start === 0 && m1.end === 8, `T16: 跨段落 token 序列命中全句(实测 ${JSON.stringify(m1)})`);
-  // 行内代码:朗读剥掉代码,DOM 有 → token 之间允许间隔,span 覆盖含代码
-  const dom2 = "使用 bar() 方法。";
-  const m2 = matchSentenceTokens(dom2, ["使用", "方法。"], 0);
-  assert.ok(m2 && m2.start === 0 && m2.end === 12, `T16: 行内代码间隔跨接(实测 ${JSON.stringify(m2)})`);
-  // 单调游标:重复文本不回跳(第二句从第一句之后找)
-  const dom3 = "好的。再次好的。";
-  const a3 = matchSentenceTokens(dom3, ["好的。"], 0);
-  const b3 = a3 ? matchSentenceTokens(dom3, ["好的。"], a3.end) : null;
-  assert.ok(a3 && b3 && a3.start === 0 && b3.start === 5, `T16: 游标单调防重复回跳(实测 ${a3 && a3.start}→${b3 && b3.start})`);
-  // 找不到 → null;跨度异常(误命中极远重复)→ null
-  assert.equal(matchSentenceTokens("没有目标。", ["别的句子。"], 0), null, "T16: 未命中返回 null");
+  const { matchSentenceAligned, canonicalSpeechIndex } = await import("../src/renderer/lib/highlightText.ts");
+  // 规范化:标点/全半角/空白全滤,全角字母→半角,小写
+  const ci = canonicalSpeechIndex("ＡＢ。 x!");
+  assert.equal(ci.canon, "abx", `T16: 规范串=文字字符全角归一半角(${ci.canon})`);
+  assert.deepEqual(ci.map, [0, 1, 4], "T16: 规范位→原文下标映射正确");
+
+  // ① 标点/引号差异归零 + 句界扩展:句首对齐,句末吃标点+闭引号
+  const dom1 = "他说：“你好，世界！”然后走了。";
+  const m1 = matchSentenceAligned(dom1, "他说:\"你好,世界!\"", 0);
+  assert.ok(m1, "T16: 全半角标点差异句仍命中");
+  assert.equal(dom1.slice(m1.start, m1.end), "他说：“你好，世界！”", `T16: 高亮覆盖完整可见句含句末标点+闭引号(实测 ${JSON.stringify(dom1.slice(m1.start, m1.end))})`);
+
+  // ② 句首开引号回吃:不再从句中开始
+  const dom2 = "「引言」开始了。";
+  const m2 = matchSentenceAligned(dom2, "引言开始了", 0);
+  assert.equal(dom2.slice(m2.start, m2.end), "「引言」开始了。", `T16: 句首「被吃进高亮(实测 ${JSON.stringify(dom2.slice(m2.start, m2.end))})`);
+
+  // ③ 行内代码间隔:朗读剥代码,DOM 有 → span 跨接覆盖
+  const dom3 = "使用 bar() 方法。";
+  const m3 = matchSentenceAligned(dom3, "使用 方法", 0);
+  assert.equal(dom3.slice(m3.start, m3.end), "使用 bar() 方法。", `T16: 行内代码间隔跨接(实测 ${JSON.stringify(dom3.slice(m3.start, m3.end))})`);
+
+  // ④ 单调游标:重复文本不回跳
+  const dom4 = "好的。再次好的。";
+  const a4 = matchSentenceAligned(dom4, "好的", 0);
+  const b4 = a4 ? matchSentenceAligned(dom4, "好的", a4.end) : null;
+  assert.ok(a4 && b4 && a4.start === 0 && b4.start === 5, `T16: 游标单调(实测 ${a4 && a4.start}→${b4 && b4.start})`);
+
+  // ⑤ 未命中/跨度异常 → null
+  assert.equal(matchSentenceAligned("没有目标。", "别的句子", 0), null, "T16: 未命中返回 null");
   const far = "开头。" + "x".repeat(300) + "结尾。中间还有结尾。";
-  assert.equal(matchSentenceTokens(far, ["开头。", "结尾。"], 0), null, "T16: 跨度异常判失败(误命中保护)");
+  assert.equal(matchSentenceAligned(far, "开头 结尾", 0), null, "T16: 跨度异常判失败(误命中保护)");
 }
-console.log("✓ T16 朗读句顺序匹配:跨段落/行内代码间隔/游标单调/跨度保护");
+console.log("✓ T16 v9 朗读句对齐:规范化(全半角/标点/引号)+句界扩展+游标单调+跨度保护");
+
+/* ---------- T17 v9 离线口型时间轴(FFT + 帧判类 + 查表) ---------- */
+{
+  const { analyzeVisemeTimeline, visemeAt, cuesToTimeline, classifyVisemeFrame } = await import("../src/renderer/lib/companion/viseme-timeline.ts");
+  const VOWELS = new Set(["A", "E", "I", "O", "U"]);
+
+  // 帧判类单元:静音闭 / 高频占比高=齿擦 / 弱高频+低响度=咬唇 / 浊音起音舌位区=舌尖
+  assert.equal(classifyVisemeFrame({ level: 0.02, f1: 500, f2: 1500, hfRatio: 0.1 }, "A"), "closed", "T17: 静音→闭");
+  assert.equal(classifyVisemeFrame({ level: 0.7, f1: 600, f2: 1500, hfRatio: 0.5 }, "A"), "SS", "T17: 高频占比高→齿擦 SS");
+  assert.equal(classifyVisemeFrame({ level: 0.3, f1: 500, f2: 1500, hfRatio: 0.2 }, "A"), "FV", "T17: 弱高频+低响度→咬唇 FV");
+  assert.equal(classifyVisemeFrame({ level: 0.6, f1: 400, f2: 2000, hfRatio: 0.05 }, "closed"), "L", "T17: 浊音起音+舌位 F2→舌尖 L");
+
+  // 静音 PCM:全闭 + 时长正确
+  const sr = 16000;
+  const sil = new Float32Array(sr);
+  const tl0 = analyzeVisemeTimeline(sil, sr);
+  assert.ok(tl0.cues.length >= 1 && tl0.cues.every((c) => c.viseme === "closed"), "T17: 静音全闭");
+  assert.ok(Math.abs(tl0.duration - 1) < 1e-6, "T17: 时长=len/sr");
+
+  // 元音正弦(F1 频段单频):出现母音 cue(共振峰判位)
+  const vow = new Float32Array(sr);
+  for (let i = 0; i < vow.length; i++) vow[i] = 0.5 * Math.sin((2 * Math.PI * 500 * i) / sr);
+  const tl1 = analyzeVisemeTimeline(vow, sr);
+  assert.ok(
+    tl1.cues.some((c) => VOWELS.has(c.viseme)),
+    `T17: 500Hz 浊音→母音帧(实测 ${JSON.stringify(tl1.cues.map((c) => c.viseme))})`,
+  );
+
+  // 类白噪(LCG 宽带):出现齿擦 cue
+  let seed = 12345;
+  const noi = new Float32Array(sr);
+  for (let i = 0; i < noi.length; i++) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    noi[i] = ((seed % 2000) / 1000 - 1) * 0.5;
+  }
+  const tl2 = analyzeVisemeTimeline(noi, sr);
+  assert.ok(
+    tl2.cues.some((c) => c.viseme === "SS"),
+    `T17: 宽带噪声→齿擦帧(实测 ${JSON.stringify(tl2.cues.map((c) => c.viseme))})`,
+  );
+
+  // 连续性:cue 无缝无叠、句首句尾闭
+  for (const tl of [tl1, tl2]) {
+    assert.equal(tl.cues[0].viseme, "closed", "T17: 句首闭(起音准备)");
+    assert.equal(tl.cues[tl.cues.length - 1].viseme, "closed", "T17: 句尾闭(收口)");
+    for (let i = 1; i < tl.cues.length; i++) {
+      assert.ok(Math.abs(tl.cues[i - 1].t + tl.cues[i - 1].dur - tl.cues[i].t) < 1e-6, "T17: cue 无缝衔接");
+    }
+  }
+
+  // 剧本 cue(毫秒)→ 时间轴(秒):间隙补闭 + 相邻合并 + 查表
+  const tl3 = cuesToTimeline([
+    { t: 0, dur: 100, viseme: "closed", level: 0 },
+    { t: 100, dur: 150, viseme: "A", level: 0.8 },
+    { t: 250, dur: 150, viseme: "A", level: 0.9 },
+    { t: 500, dur: 200, viseme: "SS", level: 0.4 },
+  ]);
+  assert.equal(tl3.duration, 0.7, "T17: cuesToTimeline 总时长");
+  assert.equal(tl3.cues.filter((c) => c.viseme === "A").length, 1, "T17: 相邻同 viseme 合并");
+  assert.equal(tl3.cues[tl3.cues.length - 2].viseme, "closed", "T17: 词间间隙(400-500ms)补闭");
+  assert.equal(visemeAt(tl3, 0.05)?.viseme, "closed", "T17: 查表 0.05s=闭");
+  assert.equal(visemeAt(tl3, 0.3)?.viseme, "A", "T17: 查表 0.3s=A");
+  assert.equal(visemeAt(tl3, 0.55)?.viseme, "SS", "T17: 查表 0.55s=SS");
+  assert.equal(visemeAt(tl3, 0.9), null, "T17: 超界 null(调用方闭嘴)");
+  assert.equal(visemeAt(tl3, -0.1), null, "T17: 负时间 null");
+}
+console.log("✓ T17 v9 离线口型时间轴:帧判类(闭/SS/FV/L/母音)+连续性+查表");
+
+/* ---------- T18 v9 剧本口型(词时序+拼音声母 → viseme cue) ---------- */
+{
+  const { buildVisemeCues } = await import("../src/main/services/speech/viseme-script.ts");
+  // zh:你好世界 → n=L / h=FV / sh=SS / j=SS;时序连续覆盖 [0,1200]
+  const cues = buildVisemeCues([
+    { text: "你好", start: 0, end: 600 },
+    { text: "世界", start: 600, end: 1200 },
+  ]);
+  assert.ok(cues.length > 0, "T18: zh 词 cue 产出");
+  assert.equal(cues[0].viseme, "L", `T18: 你(nǐ)声母→舌尖(实测 ${cues[0].viseme})`);
+  const visemes = new Set(cues.map((c) => c.viseme));
+  assert.ok(visemes.has("FV"), "T18: 好(hǎo)声母→咬唇");
+  assert.ok(visemes.has("SS"), "T18: 世(shì)/界(jiè)声母→齿擦");
+  assert.ok([...visemes].some((v) => ["A", "E", "I", "O", "U"].includes(v)), "T18: 韵母→母音");
+  for (let i = 1; i < cues.length; i++) {
+    assert.ok(Math.abs(cues[i - 1].t + cues[i - 1].dur - cues[i].t) < 1, "T18: cue 时序连续(词内按权重分配)");
+  }
+  const lastCue = cues[cues.length - 1];
+  assert.ok(Math.abs(lastCue.t + lastCue.dur - 1200) < 1, "T18: 覆盖到词 cue 终点");
+
+  // en:the → th=L 起音 + e=E 母音
+  const en = buildVisemeCues([{ text: "the", start: 0, end: 300 }]);
+  assert.equal(en[0].viseme, "L", `T18: en th→舌尖(实测 ${en[0].viseme})`);
+
+  // 纯标点词 → 闭;词间间隙 → 闭;空输入 → []
+  assert.deepEqual(
+    buildVisemeCues([{ text: "。", start: 0, end: 200 }]).map((c) => c.viseme),
+    ["closed"],
+    "T18: 纯标点 cue→闭嘴",
+  );
+  const gap = buildVisemeCues([
+    { text: "好", start: 0, end: 300 },
+    { text: "的", start: 500, end: 800 },
+  ]);
+  assert.ok(gap.some((c) => c.viseme === "closed" && c.t >= 300 && c.t < 500), "T18: 词间间隙补闭");
+  assert.deepEqual(buildVisemeCues([]), [], "T18: 空词 cue→空(调用方落 DSP)");
+}
+console.log("✓ T18 v9 剧本口型:拼音声母→辅音 viseme/拉丁词首规则/标点闭/间隙闭/时序连续");
 
 console.log("\nverify-companion: ALL PASS");

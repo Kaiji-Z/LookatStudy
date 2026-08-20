@@ -13,7 +13,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { companionSetTalking } from "./companion/bus.ts";
 
 import type { SpeechTtsAudioEvent } from "@shared/speech-types";
-import { connectSpeechSource } from "./speech-analyser.js";
+import { connectSpeechSource, getSpeechAnalyser, setActivePlayback } from "./speech-analyser.js";
+import { analyzeVisemeTimeline, cuesToTimeline, type VisemeTimeline } from "./companion/viseme-timeline.js";
 
 export interface SpeechSentenceInfo {
   index: number;
@@ -48,6 +49,9 @@ export function useSpeech(): {
    *  合成快于收听时全部到达一起竞争,数组按完成序进队 = 播放乱序
    *  (实测:课文的最后一句插在第二句后面念出来)。只按 nextSeq 顺序消费。 */
   const pendingRef = useRef<Map<number, AudioBuffer>>(new Map());
+  /** v9 口型时间轴池:与音频池同键(sentenceIndex)。剧本 cue(引擎下发)优先,
+   *  无 cue 的句子在解码后做离线 DSP 分析——全引擎都有嘴型可查。 */
+  const timelinesRef = useRef<Map<number, VisemeTimeline>>(new Map());
   /** 下一个该播的句序(播放序权威值) */
   const nextSeqRef = useRef(0);
   const playingRef = useRef(false);
@@ -85,18 +89,27 @@ export function useSpeech(): {
       finishIfDrained();
       return;
     }
-    pendingRef.current.delete(nextSeqRef.current);
+    const seq = nextSeqRef.current;
+    pendingRef.current.delete(seq);
     playingRef.current = true;
     // v6 播放序:正在念的句 = nextSeq(按序消费的权威值,与解码完成序解耦)
-    setPlayingSentence({ index: nextSeqRef.current, total: totalRef.current });
+    setPlayingSentence({ index: seq, total: totalRef.current });
     nextSeqRef.current += 1;
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    // 经共享 AnalyserNode 直通扬声器(伴学伙伴口型读它;异常时内部退回直连,朗读不受影响)
+    // 经共享 AnalyserNode 直通扬声器(口型兜底读它;异常时内部退回直连,朗读不受影响)
     connectSpeechSource(ctx, src);
+    // v9 口型主路径:登记活动播放(时间轴+起播时刻),播放时钟查表零延迟
+    setActivePlayback({
+      ctx,
+      timeline: timelinesRef.current.get(seq) ?? null,
+      startedAtCtxTime: ctx.currentTime,
+      analyser: getSpeechAnalyser(ctx),
+    });
     src.onended = () => {
       playedRef.current += 1;
       playingRef.current = false;
+      setActivePlayback(null); // 句间自然闭嘴;下一句 pump 重新登记
       pump();
     };
     sourcesRef.current.push(src);
@@ -114,6 +127,8 @@ export function useSpeech(): {
     }
     sourcesRef.current = [];
     pendingRef.current.clear();
+    timelinesRef.current.clear();
+    setActivePlayback(null);
     playingRef.current = false;
     receivedRef.current = 0;
     playedRef.current = 0;
@@ -180,6 +195,16 @@ export function useSpeech(): {
         (buf) => {
           if (e.messageId !== activeIdRef.current) return; // 停了:丢弃迟到块
           pendingRef.current.set(e.sentenceIndex, buf);
+          // v9 口型时间轴:引擎剧本 cue 优先(edge 档词边界+拼音声母,main 下发);
+          // 无 cue(本地/自定义档)→ 对解码出的 PCM 做离线 FFT 分析(~几毫秒/句)。
+          try {
+            const tl = e.visemeCues?.length
+              ? cuesToTimeline(e.visemeCues)
+              : analyzeVisemeTimeline(mixdownMono(buf), buf.sampleRate);
+            if (tl) timelinesRef.current.set(e.sentenceIndex, tl);
+          } catch {
+            /* 分析失败只是没时间轴,播放与兜底口型不受影响 */
+          }
           pump();
         },
         () => {
@@ -231,4 +256,14 @@ export function useSpeech(): {
     speak,
     stop,
   };
+}
+
+/** 多声道 → 单声道混合(DSP 口型分析只看混合能量,立体声无额外信息)。 */
+function mixdownMono(buf: AudioBuffer): Float32Array {
+  if (buf.numberOfChannels === 1) return buf.getChannelData(0);
+  const a = buf.getChannelData(0);
+  const b = buf.getChannelData(1);
+  const out = new Float32Array(a.length);
+  for (let i = 0; i < a.length; i++) out[i] = (a[i]! + b[i]!) / 2;
+  return out;
 }

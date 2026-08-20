@@ -54,6 +54,7 @@
     "opencc-js": "^1.4.1",
     "pdf-parse": "^1.1.4",
     "pdfjs-dist": "^4.10.38",
+    "pinyin-pro": "^3.29.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^9.0.1",

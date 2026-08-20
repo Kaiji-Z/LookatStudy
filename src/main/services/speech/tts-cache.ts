@@ -11,6 +11,8 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 
+import type { SpeechVisemeCue } from "@shared/speech-types";
+
 export const SPEECH_CACHE_LIMIT_BYTES = 200 * 1024 * 1024;
 
 export function speechCacheDir(dataDir: string): string {
@@ -72,6 +74,35 @@ export function readCachedAudio(dataDir: string, key: string, mime: TtsAudioMime
     return bufferToArrayBuffer(buf);
   } catch {
     return null;
+  }
+}
+
+/**
+ * v9 剧本口型 cue 缓存({key}.cues.json,与音频同键)。
+ * edge 档合成时带词时序生成的 cue 随音频一起落盘——缓存命中(重读同句)
+ * 也能秒回剧本口型,不落 DSP 兜底。cue 缺失/畸形返回 null,只影响口型路径。
+ */
+export function readCachedVisemeCues(dataDir: string, key: string): SpeechVisemeCue[] | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(speechCacheDir(dataDir), `${key}.cues.json`), "utf-8"));
+    return Array.isArray(raw) && raw.length > 0 ? (raw as SpeechVisemeCue[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeCachedVisemeCues(
+  dataDir: string,
+  key: string,
+  cues: SpeechVisemeCue[],
+): Promise<void> {
+  if (cues.length === 0) return;
+  try {
+    const dir = speechCacheDir(dataDir);
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(path.join(dir, `${key}.cues.json`), JSON.stringify(cues));
+  } catch {
+    /* cue 缓存写失败无碍(下次重合成) */
   }
 }
 

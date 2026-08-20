@@ -1148,7 +1148,7 @@ export default function App() {
       {/* Phase 0:庆祝渲染层(粒子爆发/高光时刻,reduced-motion 自动降级)。根级 fixed,z-[60]。 */}
       <CelebrationLayer />
       {/* v3 伴学单生物:全应用唯一一只,跨栏连续行动(左=原生物理世界/中=宠物/右=助教)。 */}
-      <CompanionCreature worldReady={!!selectedCourseId} courseId={selectedCourseId} />
+      <CompanionCreature courseId={selectedCourseId} />
     </div>
   );
 }

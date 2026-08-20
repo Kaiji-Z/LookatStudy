@@ -140,7 +140,7 @@ export function resolveLlm(db: Db): ResolvedLlm {
         protocol,
         baseUrl: raw.baseUrl,
         defaultModel: raw.defaultModel,
-        models: [{ id: model, label: model, capabilities: visionCapable ? ["chat", "vision"] : ["chat"] }],
+        models: [{ id: model, label: model, contextWindow: null, capabilities: visionCapable ? ["chat", "vision"] : ["chat"] }],
         apiKeySetting: "(custom)",
         keyUrl: "",
       },

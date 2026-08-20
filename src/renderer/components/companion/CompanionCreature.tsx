@@ -208,7 +208,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   }, []);
 
   useEffect(() => {
-    if (!snap.enabled) return;
+    if (!snap.enabledLoaded || !snap.enabled) return;
     const wrap = wrapRef.current;
     if (!wrap) return;
 
@@ -450,7 +450,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       flightRef.current?.dispose();
       flightRef.current = null;
     };
-  }, [snap.enabled, reduced]);
+  }, [snap.enabledLoaded, snap.enabled, reduced]);
 
   if (!snap.enabledLoaded || !snap.enabled) return null;
 

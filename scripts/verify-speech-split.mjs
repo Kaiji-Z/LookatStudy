@@ -15,6 +15,8 @@ import assert from "node:assert";
 import {
   normalizeSpeechText,
   splitSentences,
+  endsWithSentenceEnd,
+  groupSentenceChunks,
 } from "../shared/speech-text.ts";
 
 // === T1: markdown 净化 ===
@@ -124,3 +126,32 @@ import {
 }
 
 console.log("\n=== ALL SPEECH TEXT TESTS PASSED ✅ ===");
+
+
+// ---- v9 TTS 块 ≠ 显示句:句终点判定 + 显示句分组 ----
+{
+  // 句终点:终止标点/ASCII 句点(剥闭合符);软标点断开的块不是句终点
+  assert.equal(endsWithSentenceEnd("你好。"), true, "v9: 。结尾=句终点");
+  assert.equal(endsWithSentenceEnd("他说：“怎么样？”"), true, "v9: 闭合引号剥掉后仍是句终点");
+  assert.equal(endsWithSentenceEnd("Done!"), true, "v9: ! 结尾=句终点");
+  assert.equal(endsWithSentenceEnd("It works."), true, "v9: ASCII 句点=句终点");
+  assert.equal(endsWithSentenceEnd("在软标点处被断开，"), false, "v9: 逗号结尾=强制断句块,非句终点");
+  assert.equal(endsWithSentenceEnd("后面这半句还没结"), false, "v9: flush 尾块无标点=非句终点");
+  assert.equal(endsWithSentenceEnd("pi is 3.14"), false, "v9: 小数点不是句终点");
+  assert.equal(endsWithSentenceEnd(""), true, "v9: 空块=句终点(防御)");
+
+  // 分组:未完句块与后续块并组;句终点块自闭一组
+  const g1 = groupSentenceChunks(["前半句没有结束，", "后半句结束了。", "新句子。"]);
+  assert.deepEqual(g1, [{ start: 0, end: 1 }, { start: 2, end: 2 }], "v9: 强制断句块并入同显示句");
+
+  // 集成:超长无终止标点文本 → 多个 TTS 块,但显示上是一个句组
+  const long = "这是一句完全没有终止标点的很长很长的话".repeat(12) + "，尾段也一直不停，最后才画上句号。";
+  const { sentences } = splitSentences(long, { flush: true });
+  assert.ok(sentences.length >= 2, "v9: 超长文本被切成多个 TTS 块");
+  assert.ok(sentences.slice(0, -1).every((c) => !endsWithSentenceEnd(c)), "v9: 中间块都不是句终点");
+  const g2 = groupSentenceChunks(sentences);
+  assert.equal(g2.length, 1, `v9: 显示层合并为一个句组(块数 ${sentences.length})`);
+  assert.equal(g2[0].start, 0);
+  assert.equal(g2[0].end, sentences.length - 1);
+}
+console.log("✓ v9 TTS块≠显示句:endsWithSentenceEnd/groupSentenceChunks(强制断句块并组)");

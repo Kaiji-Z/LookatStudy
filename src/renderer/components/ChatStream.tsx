@@ -26,7 +26,7 @@ import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor } from "../lib/highlightText.js";
-import { splitSentences, normalizeSpeechText } from "@shared/speech-text";
+import { splitSentences, normalizeSpeechText, groupSentenceChunks } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
@@ -540,6 +540,8 @@ function MessageRowV2({
     () => (msg.role === "assistant" && speakableText ? splitSentences(normalizeSpeechText(speakableText), { flush: true }).sentences : []),
     [msg.role, speakableText],
   );
+  // v9 显示句组:TTS 块(超长强制断句)≠显示句,未完句的块与后续块并组,高亮整组
+  const groups = useMemo(() => groupSentenceChunks(sentences), [sentences]);
   const readingIdx = isSpeakingThis && playingSentence != null ? playingSentence.index : null;
   // 当前播放句高亮 + 出视野才居中跟随(与讲解区同款 ±48px 容差)
   useEffect(() => {
@@ -549,7 +551,9 @@ function MessageRowV2({
       clearReadingMark(root);
       return;
     }
-    const sentence = sentences[readingIdx]!;
+    const group = groups.find((g) => readingIdx >= g.start && readingIdx <= g.end);
+    if (!group) return;
+    const sentence = sentences.slice(group.start, group.end + 1).join(" ");
     if (readingIdx === 0) resetReadingCursor(root); // 新一轮朗读从第 0 句起,游标归零
     const timer = setTimeout(() => {
       // within 限定正文 text part:思考块/工具产物渲染了文字但朗读不读,
@@ -565,8 +569,8 @@ function MessageRowV2({
       }
     }, 30);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sentences 是 useMemo 稳定引用
-  }, [readingIdx, sentences]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sentences/groups 是 useMemo 稳定引用
+  }, [readingIdx, sentences, groups]);
   useEffect(() => {
     if (readingIdx == null && msgRef.current) clearReadingMark(msgRef.current);
   }, [readingIdx]);

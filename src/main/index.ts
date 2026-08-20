@@ -642,6 +642,9 @@ async function runUiTest(screenshot = false): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // 隐藏窗口默认后台节流会暂停 rAF——伴学位置探针会读到冻死的 transform(v9 实测
+      // 假红:坐标分钟级不变但零错误)。关掉节流,隐藏窗口里动画循环照跑。
+      backgroundThrottling: false,
     },
   });
   setupIpc(win);
@@ -827,6 +830,38 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: emptyStart,
   });
 
+  // T0a (伴学 v9 常驻): 无课程空态 creature 已在场且 rAF 循环活着——
+  // transform 由 rAF 写入(左上角卡死 bug 的回归探针:effect 首跑时 ref 未挂,
+  // deps 不变则 rAF 永不启动,creature 停在 DOM 默认 0,0)。
+  const emptyCreature = await win.webContents.executeJavaScript(`
+    (async function() {
+      window.__cpErr = [];
+      window.addEventListener("error", function(e) { window.__cpErr.push(String(e.message).slice(0, 200)); });
+      function sample() {
+        var el = document.querySelector('[data-testid="companion-creature"]');
+        if (!el) return null;
+        var t = el.style.transform || "";
+        if (t.indexOf("translate3d(") !== 0) return null;
+        var body = t.slice(12);
+        var xs = body.slice(0, body.indexOf("px"));
+        var rest = body.slice(body.indexOf("px") + 3);
+        var ys = rest.slice(0, rest.indexOf("px"));
+        var x = parseFloat(xs), y = parseFloat(ys);
+        return (isNaN(x) || isNaN(y)) ? null : { x: x, y: y };
+      }
+      var a = sample();
+      await new Promise(function(r){ setTimeout(r, 1200); });
+      var b = sample();
+      return { a: a, b: b, moved: !!(a && b && (Math.abs(a.x-b.x) > 2 || Math.abs(a.y-b.y) > 2)) };
+    })()
+  `).catch(() => null);
+  results.push({
+    name: "companion v9: always-on at empty state (rAF loop alive, not stuck at 0,0)",
+    // 首采样为 null 合法(设置异步加载完 creature 才首次渲染);判据=终态在场+不在原点+在动
+    ok: !!emptyCreature?.b && (emptyCreature.moved || Math.abs(emptyCreature.b.y) > 60),
+    detail: emptyCreature,
+  });
+
   // T0b (手动选课): 点课程行 → 不跳界面地加载该课,自动切地图面板 + 节点渲染。
   const picked = await selectFirstCourse();
   results.push({
@@ -859,10 +894,27 @@ async function runUiTest(screenshot = false): Promise<void> {
   const railCompanion = await win.webContents.executeJavaScript(
     `(() => { const el = document.querySelector('[data-testid="companion-creature"]'); return el ? el.dataset.zone : null; })()`,
   );
+  const railPos = await win.webContents.executeJavaScript(`
+    (function() {
+      var el = document.querySelector('[data-testid="companion-creature"]');
+      if (!el) return null;
+      var t = el.style.transform || "";
+      if (t.indexOf("translate3d(") !== 0) return null;
+      var body = t.slice(12);
+      var xs = body.slice(0, body.indexOf("px"));
+      var rest = body.slice(body.indexOf("px") + 3);
+      var ys = rest.slice(0, rest.indexOf("px"));
+      var x = parseFloat(xs), y = parseFloat(ys);
+      return (isNaN(x) || isNaN(y)) ? null : { x: x, y: y };
+    })()
+  `).catch(() => null);
+  const railErrors = await win.webContents
+    .executeJavaScript(`(window.__cpErr && window.__cpErr.slice(0, 5)) || []`)
+    .catch(() => []);
   results.push({
     name: "companion v3: single creature alive in rail home zone (map panel, default on)",
-    ok: railCompanion === "rail",
-    detail: { zone: railCompanion },
+    ok: railCompanion === "rail" && !!railPos && railPos.y > 60,
+    detail: { zone: railCompanion, pos: railPos, errors: railErrors },
   });
 
   // T3: 三栏都在(chat-panel + notebook-panel + map-rail)

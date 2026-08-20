@@ -819,6 +819,14 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
   );
   assert.ok(creature.includes("freeRoam"), "T15: 空态/两栏锚点全缺 → 整窗游走兜底(不隐匿)");
   assert.ok(read("lib/highlightText.ts").includes("matchSentenceAligned") && read("lib/highlightText.ts").includes("canonicalSpeechIndex"), "T15: v9 整句对齐匹配(规范化+句界扩展)");
+  assert.ok(
+    notebook.includes("groupSentenceChunks(speechSentences)") && read("components/ChatStream.tsx").includes("groupSentenceChunks(sentences)"),
+    "T15: v9 karaoke 按 TTS 块并显示句组高亮(强制断句不在句中断开)",
+  );
+  assert.ok(
+    creature.includes("[snap.enabledLoaded, snap.enabled, reduced]"),
+    "T15: rAF effect deps 含 enabledLoaded(首跑 ref 未挂时靠它重跑,否则左上角卡死)",
+  );
   const edgeClient = readFileSync(new URL("../src/main/services/speech/edge-tts-client.ts", import.meta.url), "utf8");
   assert.ok(edgeClient.includes("saveSubtitles: true") && edgeClient.includes("wordCues"), "T15: edge 档开逐词边界(WordBoundary sidecar)");
   const ttsService = readFileSync(new URL("../src/main/services/speech/tts-service.ts", import.meta.url), "utf8");

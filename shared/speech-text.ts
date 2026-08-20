@@ -11,9 +11,9 @@
  */
 
 /** 终止标点(出现即成句,连续终止/右引号并吞进句尾) */
-const HARD = new Set(["。", "!", "?", "!", "?", ";", ";", "…"]);
+const HARD = new Set(["。", "!", "?", "！", "？", ";", "；", "…"]);
 /** 软标点(超长兜底断句位) */
-const SOFT = new Set([",", ",", "、", ":", ":", ";", " ", "\n", "\t"]);
+const SOFT = new Set([",", "，", "、", ":", "：", " ", "\n", "\t"]);
 /** 句尾可并吞的右闭合符 */
 const CLOSERS = new Set(["”", '"', "」", "』", "》", ")", "】", "])".slice(0, 1)]);
 
@@ -108,4 +108,33 @@ export function splitSentences(
   const rest = text.slice(start).trim();
   if (flush && rest) out.push(rest);
   return { sentences: out, rest: flush ? "" : rest };
+}
+
+/**
+ * v9 块是否结束于"真句子终点"(剥尾部闭合符后是终止标点/ASCII 句点)。
+ * 超长强制断句(maxBuffer 软标点兜底)产出的块**不以**句终点结尾——
+ * TTS 分块 ≠ 显示句:渲染层 karaoke 用 groupSentenceChunks 把这类块
+ * 与后续块并成一个显示句组,高亮整组,不在一句中间断开。
+ */
+export function endsWithSentenceEnd(chunk: string): boolean {
+  const t = chunk.trimEnd();
+  if (!t) return true;
+  let i = t.length - 1;
+  while (i >= 0 && CLOSERS.has(t[i]!)) i--;
+  if (i < 0) return true;
+  const ch = t[i]!;
+  return HARD.has(ch) || ch === ".";
+}
+
+/** TTS 分块序列 → 显示句组(每组合成一个真句子):[start,end] 闭区间块下标。 */
+export function groupSentenceChunks(sentences: string[]): Array<{ start: number; end: number }> {
+  const groups: Array<{ start: number; end: number }> = [];
+  let i = 0;
+  while (i < sentences.length) {
+    let j = i;
+    while (j + 1 < sentences.length && !endsWithSentenceEnd(sentences[j]!)) j++;
+    groups.push({ start: i, end: j });
+    i = j + 1;
+  }
+  return groups;
 }

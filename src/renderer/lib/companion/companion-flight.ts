@@ -19,10 +19,14 @@ export const COMPANION_RADIUS = 22;
 /** 伴学/球质量比:球 density 0.001×πr²≈2.5;伴学要轻得多(被拍就飞)。 */
 const COMPANION_DENSITY = 0.00035;
 
-/* PD 参数(px/step² 单位的目标加速度,再乘质量成力) */
+/* PD 参数(px/step² 单位的目标加速度;换算成 Matter 力时除以 dt²) */
 const SPRING = 0.012; // 每偏移 px 产生 0.012 px/step² 拉回
-const DAMP = 0.09; // 速度阻尼(px/step 每 px/step²)
-const MAX_ACCEL = 0.42; // 控制器加速度上限(翻滚恢复不至于瞬移)
+const DAMP = 0.12; // 速度阻尼(px/step 每 px/step²)
+const MAX_ACCEL = 0.3; // 控制器加速度上限(优雅加速,不瞬移)
+/** Matter 引擎力换算基准 dt(ms):Δv = F/m × dt²,控制器力按此归一 */
+const DT_REF = 16.667;
+/** 速度钳制(px/step):防单位错/极端冲量把生物打进穿透态 */
+export const MAX_FLIGHT_SPEED = 12;
 /** 被拍晕眩阈值(单次冲量 px/step):低于=轻碰,高于=真被拍飞(晕眩+翻滚) */
 export const SWAT_IMPULSE = 3.2;
 
@@ -64,17 +68,24 @@ export function cruiseTarget(
 
 /**
  * PD 悬浮力(纯):重力补偿 + 弹簧 + 阻尼 + 加速度上限。
- * Matter 0.19 引力:每步 force += mass × gravity.y × 0.001 → 补偿项 = mass×0.001。
+ * 单位陷阱(实测炸过):Matter 的力换算 Δv = F/m × dt²(dt≈16.7ms → dt²≈278),
+ * 控制器加速度是 px/step² 语义 → 换算成力必须除以 dt²,否则等效放大 ~278 倍,
+ * 弹簧变炸弹(速度 40+px/step、钉墙抖动=渲染层"瞬移")。
+ * 重力补偿例外:引擎引力本身以 force = mass × g.y × scale(0.001) 施加,
+ * 补偿力必须同量纲 = mass × 0.001(不除 dt²)。
  */
 export function flightForce(
   pos: FlightTarget,
   vel: FlightTarget,
   target: FlightTarget,
   mass: number,
+  dtMs = DT_REF,
 ): { fx: number; fy: number } {
+  const dt2 = Math.max(64, dtMs * dtMs);
   const ax = clamp((target.x - pos.x) * SPRING - vel.x * DAMP, MAX_ACCEL);
   const ay = clamp((target.y - pos.y) * SPRING - vel.y * DAMP, MAX_ACCEL);
-  return { fx: ax * mass, fy: (ay + 0.001) * mass };
+  // 注意 y 正方向向下:重力补偿必须为**负**(向上)——写反=重力加倍,生物沉底
+  return { fx: (ax * mass) / dt2, fy: (ay * mass) / dt2 - mass * 0.001 };
 }
 
 function clamp(v: number, lim: number): number {
@@ -205,30 +216,56 @@ export function createFlightWorld(opts: {
           { x: body.velocity.x, y: body.velocity.y },
           target,
           body.mass,
+          dtMs,
         );
         Body.applyForce(body, body.position, { x: f.fx, y: f.fy });
         // 姿态回正:角度弹簧(不是硬 setAngle——被撞的旋转要自然衰减)
         Body.setAngularVelocity(body, body.angularVelocity - body.angle * 0.06 - body.angularVelocity * 0.08);
       }
 
-      // 跨引擎球碰撞:轻碰=弹开;重拍=晕眩(短反应交给 core 的 swat 事件)
+      // 速度钳制:任何路径(单位错/极端碰撞/墙弹)都不许把生物加速到穿透态
+      {
+        const v = body.velocity;
+        const sp = Math.hypot(v.x, v.y);
+        if (sp > MAX_FLIGHT_SPEED) {
+          Body.setVelocity(body, { x: (v.x / sp) * MAX_FLIGHT_SPEED, y: (v.y / sp) * MAX_FLIGHT_SPEED });
+        }
+      }
+
+      // 跨引擎球碰撞:轻碰=弹开;重拍=晕眩(短反应交给 core 的 swat 事件)。
+      // 多球同时重叠时(穿越球链)先把位移/冲量**合成后统一钳制**——
+      // 逐球各推 6px 会叠加成瞬移。
       let maxHit = 0;
+      let pushX = 0;
+      let pushY = 0;
+      let kickX = 0;
+      let kickY = 0;
       for (const b of balls) {
         const hit = crossImpulse(
           body.position.x, body.position.y, body.velocity.x, body.velocity.y, r,
           b.x, b.y, b.vx, b.vy, b.r,
         );
         if (!hit) continue;
-        Body.setPosition(body, {
-          x: body.position.x + hit.nx * Math.min(6, hit.dvx),
-          y: body.position.y + hit.ny * Math.min(6, hit.dvy),
-        });
-        Body.setVelocity(body, {
-          x: body.velocity.x + hit.dvx * 0.9,
-          y: body.velocity.y + hit.dvy * 0.9,
-        });
+        pushX += hit.nx * Math.min(4, hit.dvx);
+        pushY += hit.ny * Math.min(4, hit.dvy);
+        kickX += hit.dvx * 0.9;
+        kickY += hit.dvy * 0.9;
         if (!b.isStatic) b.push(hit.bfx, hit.bfy);
         if (hit.hitSpeed > maxHit) maxHit = hit.hitSpeed;
+      }
+      const pushMag = Math.hypot(pushX, pushY);
+      if (pushMag > 4) {
+        pushX = (pushX / pushMag) * 4;
+        pushY = (pushY / pushMag) * 4;
+      }
+      const kickMag = Math.hypot(kickX, kickY);
+      if (kickMag > 7) {
+        kickX = (kickX / kickMag) * 7;
+        kickY = (kickY / kickMag) * 7;
+      }
+      if (pushMag > 0 || kickMag > 0) {
+        Body.setPosition(body, { x: body.position.x + pushX, y: body.position.y + pushY });
+        Body.setVelocity(body, { x: body.velocity.x + kickX, y: body.velocity.y + kickY });
       }
       if (maxHit >= SWAT_IMPULSE && !dizzy) {
         dizzyUntil = tMs + 900;

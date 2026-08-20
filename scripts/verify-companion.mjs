@@ -421,27 +421,70 @@ console.log("✓ T12 形象注册表:5 形态唯一/回退安全/注册表·壳�
 }
 console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚焦>朗读)/记笔记钉住/纱帘判定/被拍晕眩");
 
-/* ---------- T14 飞行物理纯函数 ---------- */
+/* ---------- T14 飞行物理纯函数 + 稳定性仿真 ---------- */
 {
   const {
     bankAngle,
+    createFlightWorld,
     cruiseTarget,
     crossImpulse,
     flightForce,
     SWAT_IMPULSE,
   } = await import("../src/renderer/lib/companion/companion-flight.ts");
 
-  // 悬浮力:重力补偿(静止悬停 = fy 恰好抵消 mass×0.001)
+  // 悬浮力:重力补偿——Matter y 正方向向下,补偿力必须为**负**;
+  // 写正=重力加倍,生物沉底趴住(实测炸过)
   const f0 = flightForce({ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, 2);
-  assert.ok(Math.abs(f0.fy - 2 * 0.001) < 1e-9, "T14: 静止悬停 = 精确重力补偿");
+  assert.ok(Math.abs(f0.fy + 2 * 0.001) < 1e-9, "T14: 静止悬停 = 精确负向重力补偿");
   // 偏离目标 → 拉回方向;速度 → 阻尼反推
   const f1 = flightForce({ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 100, y: 0 }, 1);
   assert.ok(f1.fx > 0, "T14: 偏左 → 向右拉");
   const f2 = flightForce({ x: 0, y: 0 }, { x: 8, y: 0 }, { x: 0, y: 0 }, 1);
   assert.ok(f2.fx < 0, "T14: 向右冲 → 阻尼反推");
-  // 加速度上限(防瞬移)
-  const f3 = flightForce({ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 1e6, y: 1e6 }, 1);
-  assert.ok(f3.fx <= 0.42 + 1e-9 && f3.fy - 0.001 <= 0.42 + 1e-9, "T14: 控制器加速度钳制");
+  // 力单位换算:Matter Δv = F/m × dt²(dt²≈278)——控制器加速度(px/step²)
+  // 换算成力必须除以 dt²;忘除=弹簧放大 278 倍 → 40+px/step 钉墙抖动
+  // (渲染层"瞬移",实测炸过)
+  const f3 = flightForce({ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 1e6, y: 0 }, 1);
+  assert.ok(f3.fx > 0 && f3.fx < 0.01, "T14: 控制器力按 dt² 归一(非裸加速度)");
+
+  // 稳定性仿真(300×800 世界巡航 240 帧):连续性(无瞬移)+ 真悬浮(不沉底)
+  {
+    const W = 300, H = 800;
+    const world = createFlightWorld({ width: W, height: H });
+    let prev = { ...world.body.position };
+    let maxStep = 0;
+    for (let i = 0; i < 240; i++) {
+      world.step(16.7, { x: W * 0.6, y: 150 }, [], i * 16.7);
+      const p = world.body.position;
+      maxStep = Math.max(maxStep, Math.hypot(p.x - prev.x, p.y - prev.y));
+      prev = { x: p.x, y: p.y };
+    }
+    const p = world.body.position;
+    assert.ok(maxStep < 15, `T14: 巡航连续性(实测 maxStep=${maxStep.toFixed(1)}px/帧 < 15,瞬移即红)`);
+    assert.ok(
+      Math.abs(p.x - W * 0.6) < 70 && Math.abs(p.y - 150) < 70,
+      `T14: 巡航真悬浮在巡航点(实测=(${p.x.toFixed(0)},${p.y.toFixed(0)}),沉底/漂走即红)`,
+    );
+    world.dispose();
+  }
+  // 穿球链:三球横排 400 帧,无 >15px 瞬移(多球合成钳制)
+  {
+    const W = 300, H = 800;
+    const world = createFlightWorld({ width: W, height: H });
+    const balls = [0.45, 0.6, 0.75].map((k) => ({
+      x: W * k, y: 150, vx: 0, vy: 0, r: 28, isStatic: false, push: () => {},
+    }));
+    let prev = { ...world.body.position };
+    let jumps = 0;
+    for (let i = 0; i < 400; i++) {
+      world.step(16.7, { x: W * 0.6, y: 150 }, balls, i * 16.7);
+      const p = world.body.position;
+      if (Math.hypot(p.x - prev.x, p.y - prev.y) > 15) jumps++;
+      prev = { x: p.x, y: p.y };
+    }
+    assert.ok(jumps === 0, `T14: 穿球链无瞬移(实测 jumps=${jumps})`);
+    world.dispose();
+  }
 
   // 巡航点:确定性 + 有界 + 围绕基点
   const a = cruiseTarget({ x: 100, y: 100 }, 3, 5000);

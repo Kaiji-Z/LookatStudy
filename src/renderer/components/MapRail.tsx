@@ -687,9 +687,9 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
               </div>
             ) : (
               <>
-                <div className="@container flex gap-1 p-1 bg-white/5 rounded-lg">
+                <div className="@container flex flex-wrap gap-1 p-1 bg-white/5 rounded-lg">
                   {([ { k: "url" as const, label: t("import.tab.url"), icon: LinkIcon }, { k: "markdown" as const, label: t("import.tab.md"), icon: FileText }, { k: "folder" as const, label: t("import.tab.folder"), icon: FolderDown }, { k: "epub" as const, label: t("import.tab.epub"), icon: BookOpen }, { k: "audio" as const, label: t("import.tab.audio"), icon: Mic }, { k: "pack" as const, label: t("import.tab.pack"), icon: Package }]).map(({ k, label, icon: Icon }) => (
-                    <button key={k} onClick={() => setTab(k)} className={`min-w-0 flex-1 flex items-center justify-center gap-0.5 py-1.5 px-0.5 rounded-md font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
+                    <button key={k} onClick={() => setTab(k)} className={`min-w-[72px] flex-1 flex items-center justify-center gap-0.5 py-1.5 px-0.5 rounded-md font-bold transition-colors ${tab === k ? "bg-brand/15 text-brand" : "text-white/50 hover:text-white/80"}`}>
                       <Icon className="w-3 h-3 shrink-0" />
                       <span className="whitespace-nowrap" style={{ fontSize: "clamp(0.75rem, 4cqi, 0.875rem)" }}>{label}</span>
                     </button>

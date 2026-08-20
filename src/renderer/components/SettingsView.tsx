@@ -717,7 +717,7 @@ function MultimodalContent({
                       <Wrench className="w-3.5 h-3.5 text-ink-faint shrink-0" aria-hidden="true" />
                       <span className="font-medium text-ink-strong">{overrideCustom.label}</span>
                       <code className="text-ink-faint font-mono break-all">{overrideCustom.defaultModel}</code>
-                      <span className="text-ink-faint truncate">{overrideCustom.baseUrl}</span>
+                      <span className="text-ink-faint break-all min-w-0">{overrideCustom.baseUrl}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
@@ -1224,7 +1224,7 @@ function SpeechContent() {
         <Wrench className="w-3.5 h-3.5 text-ink-faint shrink-0" aria-hidden="true" />
         <span className="font-medium text-ink-strong">{c.label}</span>
         <code className="text-ink-faint font-mono break-all">{c.defaultModel}</code>
-        <span className="text-ink-faint truncate">{c.baseUrl}</span>
+        <span className="text-ink-faint break-all min-w-0">{c.baseUrl}</span>
         {c.hasApiKey && (
           <span className="text-brand shrink-0 inline-flex items-center gap-0.5">
             <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />

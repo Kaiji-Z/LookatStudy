@@ -1021,6 +1021,20 @@ html.light ::-webkit-scrollbar-thumb:hover {
 /* 转圈姿势(poke 花样):整机原地旋转一圈(内组转,不碰包装层的物理倾角) */
 .cp-pose-spin .cp-bot { transform-box: fill-box; transform-origin: 50% 60%; animation: cp-spin 0.75s cubic-bezier(0.45, 0.1, 0.3, 1) 1; }
 @keyframes cp-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+/* 朗读指句姿势(v6):生物站在句子旁边,抬起一侧手臂水平指向文字。
+   armL 转约 -92°(顺 y 向下坐标系逆时针)= 手臂抬平指向屏幕左;armR 对称指右。 */
+.cp-pose-point .cp-armL { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(-92deg); }
+.cp-pose-point .cp-bot { transform-box: fill-box; transform-origin: 50% 62%; transform: rotate(-3deg); }
+.cp-pose-pointr .cp-armR { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(92deg); }
+.cp-pose-pointr .cp-bot { transform-box: fill-box; transform-origin: 50% 62%; transform: rotate(3deg); }
+/* 朗读句高亮(karaoke):accent 蓝轻底,不遮字;跨行句子逐行都着色(clone)。 */
+.cp-reading-mark {
+  background-color: rgba(28, 176, 246, 0.16);
+  border-radius: 4px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: background-color 0.25s ease;
+}
 /* 星星眼(考试通过/连击):高频闪烁,喜悦感翻倍 */
 .cp-star-tw { transform-box: fill-box; transform-origin: center; animation: cp-star-tw 0.62s ease-in-out infinite alternate; }
 @keyframes cp-star-tw { from { transform: scale(0.82); opacity: 0.75; } to { transform: scale(1.12); opacity: 1; } }

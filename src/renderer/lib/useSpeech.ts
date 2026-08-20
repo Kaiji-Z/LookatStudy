@@ -23,6 +23,9 @@ export interface SpeechSentenceInfo {
 export function useSpeech(): {
   speakingMessageId: string | null;
   speakingSentence: SpeechSentenceInfo | null;
+  /** v6 当前**正在播放**的句(按播放序,非到达序——合成快于收听,到达序会超前)。
+   *  朗读句级跟随(讲解区 karaoke 高亮/伴学指句)用它;进度显示用 speakingSentence。 */
+  playingSentence: SpeechSentenceInfo | null;
   /** 最近一次朗读失败原因("model-missing"|"engine-unavailable"|…;渲染层按类型引导) */
   failReason: string | null;
   clearFailReason: () => void;
@@ -35,6 +38,7 @@ export function useSpeech(): {
 } {
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [speakingSentence, setSpeakingSentence] = useState<SpeechSentenceInfo | null>(null);
+  const [playingSentence, setPlayingSentence] = useState<SpeechSentenceInfo | null>(null);
   const [failReason, setFailReason] = useState<string | null>(null);
   const [onlineNotice, setOnlineNotice] = useState(false);
 
@@ -46,6 +50,9 @@ export function useSpeech(): {
   const playedRef = useRef(0);
   const doneRef = useRef(false);
   const activeIdRef = useRef<string | null>(null);
+  /** 已起播的缓冲条数(播放序);总句数随 ttsAudio 到达刷新 */
+  const startedRef = useRef(0);
+  const totalRef = useRef(0);
 
   const ensureCtx = () => {
     if (!ctxRef.current) {
@@ -61,6 +68,7 @@ export function useSpeech(): {
       activeIdRef.current = null;
       setSpeakingMessageId(null);
       setSpeakingSentence(null);
+      setPlayingSentence(null);
     }
   }, []);
 
@@ -73,6 +81,10 @@ export function useSpeech(): {
       return;
     }
     playingRef.current = true;
+    // v6 播放序:第 startedRef 条缓冲开始起播 → 它就是"正在念"的句子。
+    // 缓冲 FIFO 顺序 = main 侧合成顺序 = 句序,与到达序解耦(合成超前不超前都准)。
+    setPlayingSentence({ index: startedRef.current, total: totalRef.current });
+    startedRef.current += 1;
     const src = ctx.createBufferSource();
     src.buffer = buf;
     // 经共享 AnalyserNode 直通扬声器(伴学伙伴口型读它;异常时内部退回直连,朗读不受影响)
@@ -101,8 +113,11 @@ export function useSpeech(): {
     playedRef.current = 0;
     doneRef.current = false;
     activeIdRef.current = null;
+    startedRef.current = 0;
+    totalRef.current = 0;
     setSpeakingMessageId(null);
     setSpeakingSentence(null);
+    setPlayingSentence(null);
   }, []);
 
   const stop = useCallback(() => {
@@ -122,6 +137,8 @@ export function useSpeech(): {
       receivedRef.current = 0;
       playedRef.current = 0;
       doneRef.current = false;
+      startedRef.current = 0;
+      totalRef.current = 0;
       setSpeakingMessageId(messageId);
       setSpeakingSentence({ index: 0, total: 0 });
       ensureCtx();
@@ -145,6 +162,7 @@ export function useSpeech(): {
       if (e.messageId !== activeIdRef.current) return;
       const ctx = ensureCtx();
       receivedRef.current += 1;
+      totalRef.current = e.sentenceTotal;
       setSpeakingSentence({ index: e.sentenceIndex, total: e.sentenceTotal });
       void ctx.decodeAudioData(e.wavBytes).then((buf) => {
         if (e.messageId !== activeIdRef.current) return; // 停了:丢弃迟到块
@@ -176,6 +194,7 @@ export function useSpeech(): {
   return {
     speakingMessageId,
     speakingSentence,
+    playingSentence,
     failReason,
     clearFailReason: () => setFailReason(null),
     onlineNotice,

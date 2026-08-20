@@ -43,7 +43,9 @@ export type CompanionPose =
   | "flying"
   | "writing"
   | "wave"
-  | "spin";
+  | "spin"
+  | "point"
+  | "pointr";
 
 /** 伙伴所在的世界维度:左栏原生物理世界 / 中栏宠物世界 / 右栏助教世界。 */
 export type CompanionZone = "rail" | "chat" | "notebook";
@@ -659,21 +661,7 @@ export function micArcScale(level: number): number {
   return 1;
 }
 
-/* ---------------- 栏内锚点世界(v5) ---------------- */
-
-/** chat 世界"探出输入框"最多藏掉的底部百分比:腿脚隐进卡片后面,手臂全露在外面拍键。 */
-export const PEEK_CLIP_MAX = 34;
-
-/**
- * chat 世界裁剪:生物下半身藏进输入卡后面(视觉=被卡片挡住,实现=clip-path)。
- * centerY/size=生物中心与边长,edgeY=卡片上缘的视口 y。藏多少 = 底边低于上缘的部分;
- * 完全在上缘之上 → 0(飞行途中自然不裁);封顶 PEEK_CLIP_MAX 保头和手臂永远可见。
- */
-export function peekClipPct(centerY: number, size: number, edgeY: number): number {
-  const hidden = centerY + size / 2 - edgeY;
-  if (hidden <= 0) return 0;
-  return Math.min(PEEK_CLIP_MAX, (hidden / size) * 100);
-}
+/* ---------------- 栏内锚点世界(v5/v6) ---------------- */
 
 /**
  * chat/notebook 世界的锚点漂浮(慢利萨茹):他不是钉死的,在小范围内轻轻游动。
@@ -687,6 +675,32 @@ export function zoneDrift(zone: "chat" | "notebook", tMs: number): { x: number; 
     };
   }
   return { x: Math.sin(tMs / 2300) * 5, y: Math.sin(tMs / 1500) * 4 };
+}
+
+/** 朗读跟句:生物边距(离句末的水平空隙)。 */
+export const READING_MARGIN = 14;
+
+/**
+ * 朗读跟句锚点:生物贴着当前朗读句旁边站,指住这行字。
+ * 优先站在句子右侧(指向左);右侧放不下(超出讲解面板)时换到左侧(指向右)。
+ * y 跟随句中线,并钳制在面板纵向安全带内(别贴边/别出面板)。
+ * 返回 side=手指的方向(生物在右 → 指左 "left")。
+ */
+export function readingAnchorPos(
+  mark: { left: number; right: number; top: number; bottom: number },
+  panel: { left: number; right: number; top: number; bottom: number },
+  size: number,
+): { x: number; y: number; side: "left" | "right" } {
+  const half = size / 2;
+  const cy = (mark.top + mark.bottom) / 2;
+  const yMin = panel.top + half + 8;
+  const yMax = Math.max(yMin, panel.bottom - half - 8);
+  const y = Math.min(Math.max(cy, yMin), yMax);
+  const rightX = mark.right + half + READING_MARGIN;
+  if (rightX <= panel.right - 6) {
+    return { x: rightX, y, side: "left" };
+  }
+  return { x: mark.left - half - READING_MARGIN, y, side: "right" };
 }
 
 /* ---------------- 设置门控 ---------------- */

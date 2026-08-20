@@ -25,7 +25,6 @@ import {
   SLEEP_AFTER_MS,
   SWAT_DIZZY_MS,
   TYPE_IDLE_MS,
-  PEEK_CLIP_MAX,
   audioToMouth,
   baseExpressionOf,
   clampGaze,
@@ -38,7 +37,7 @@ import {
   lerp,
   micArcScale,
   mouthOpenScale,
-  peekClipPct,
+  readingAnchorPos,
   smoothMic,
   wanderTarget,
   zoneDrift,
@@ -647,17 +646,24 @@ console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚�
 }
 console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性有界/跨引擎碰撞解算/倾角");
 
-/* ---------- T14b v5 栏内世界:peek 裁剪 + 锚点漂浮 ---------- */
+/* ---------- T14b v5/v6 栏内世界:朗读跟句锚点 + 锚点漂浮 ---------- */
 {
-  // peekClipPct:完全在卡片上缘之上(飞行途中) → 0;骑在边上 → 按几何算;深潜 → 封顶
-  assert.equal(peekClipPct(100, 76, 200), 0, "T14b: 底边在上缘之上不裁剪");
-  assert.equal(peekClipPct(100, 76, 138), 0, "T14b: 底边恰好齐上缘不裁剪");
-  const mid = peekClipPct(100, 76, 120); // 底边 138,藏 18 → 18/76 ≈ 23.7%
-  assert.ok(Math.abs(mid - (18 / 76) * 100) < 0.01, `T14b: 骑边按几何裁剪(实测 ${mid.toFixed(2)}%)`);
-  assert.ok(mid > 0 && mid < PEEK_CLIP_MAX, "T14b: 部分隐藏在 0..MAX 之间");
-  const deep = peekClipPct(500, 76, 100); // 深潜到卡里
-  assert.equal(deep, PEEK_CLIP_MAX, `T14b: 深潜封顶 ${PEEK_CLIP_MAX}%(头和手臂永远可见)`);
-  assert.ok(PEEK_CLIP_MAX <= 34, "T14b: 封顶不超过 34%(手臂在 viewBox 60-75% 高度,必须露出来拍键)");
+  // readingAnchorPos:句子右侧优先(指左);右侧放不下换左侧(指右);y 钳制在面板内
+  const panel = { left: 0, right: 400, top: 0, bottom: 800 };
+  const size = 88;
+  const mid = readingAnchorPos({ left: 100, right: 300, top: 350, bottom: 370 }, panel, size);
+  assert.equal(mid.side, "left", "T14b: 右侧放得下 → 生物站句右,指向左");
+  assert.ok(
+    Math.abs(mid.x - (300 + size / 2 + 14)) < 0.01 && Math.abs(mid.y - 360) < 0.01,
+    `T14b: 右侧锚点=句末+半身+边距, y=句中线(实测 ${mid.x.toFixed(1)},${mid.y.toFixed(1)})`,
+  );
+  const edge = readingAnchorPos({ left: 340, right: 398, top: 100, bottom: 120 }, panel, size);
+  assert.equal(edge.side, "right", "T14b: 右侧超出面板 → 换到句左,指向右");
+  assert.ok(Math.abs(edge.x - (340 - size / 2 - 14)) < 0.01, "T14b: 左侧锚点=句首-半身-边距");
+  const top = readingAnchorPos({ left: 100, right: 300, top: -40, bottom: -20 }, panel, size);
+  assert.ok(top.y >= panel.top + size / 2 + 8 - 0.01, `T14b: 句在面板顶外 → y 钳回安全带(实测 y=${top.y.toFixed(1)})`);
+  const bottom = readingAnchorPos({ left: 100, right: 300, top: 900, bottom: 920 }, panel, size);
+  assert.ok(bottom.y <= panel.bottom - size / 2 - 8 + 0.01, `T14b: 句在面板底外 → y 钳回(实测 y=${bottom.y.toFixed(1)})`);
 
   // zoneDrift:确定性 + 有界(chat 幅度大于 notebook;不撞正文)
   const a = zoneDrift("chat", 12345);
@@ -674,7 +680,7 @@ console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性
   assert.ok(nx <= 5 && ny <= 4, `T14b: notebook 漂移更收敛(|x|≤5,|y|≤4,实测 ${nx.toFixed(1)}/${ny.toFixed(1)})`);
   assert.ok(cx > nx, "T14b: chat 幅度大于 notebook(输入框上空开阔,讲解栏旁收敛)");
 }
-console.log("✓ T14b v5 栏内世界:peek 裁剪几何/封顶 + 锚点漂浮确定性/有界");
+console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 + 锚点漂浮确定性/有界");
 
 /* ---------- T15 v3 接线守卫(源码级:单例/触发点/注册表) ---------- */
 {
@@ -719,16 +725,36 @@ console.log("✓ T14b v5 栏内世界:peek 裁剪几何/封顶 + 锚点漂浮确
     css.includes("cp-pose-wave") && css.includes("cp-pose-spin") && css.includes("cp-star-tw") && css.includes("cp-sleep-breath"),
     "T15: 挥手/转圈/星星眼闪烁/睡眠呼吸 CSS 存在",
   );
-  // v5 接线:chat 半身藏卡后 + 栏内漂浮 + 打字反馈加强(拍臂+整机弹跳)
-  assert.ok(
-    creature.includes('data-testid="composer-card"') && creature.includes("peekClipPct") && creature.includes("clipPath"),
-    "T15: chat 锚定输入卡上缘 + peek 裁剪接线",
-  );
+  // v5 接线:栏内漂浮 + 打字反馈加强(拍臂+整机弹跳);v6 撤 peek 改纯漂浮
+  assert.ok(creature.includes('data-testid="composer-card"'), "T15: chat 锚定输入卡(composer-card)");
+  assert.ok(!creature.includes("clipPath"), "T15: v6 已撤 peek 裁剪(无 clipPath)");
   assert.ok(creature.includes("zoneDrift"), "T15: 栏内锚点漂浮接线");
   assert.ok(creature.includes("chat: 76") && creature.includes("notebook: 88"), "T15: v5 体型(chat 放大/notebook 看口型)");
   assert.ok(
     mascotV4.includes("52 : -52") && mascotV4.includes("scale(1.045, 0.93)") && mascotV4.includes("cubic-bezier(0.2, 1.5, 0.4, 1)"),
     "T15: 打字反馈加强(大幅拍臂 ±52° + 整机弹跳 + 回弹过冲)",
+  );
+  // v6 接线:朗读句级跟随(播放序 + karaoke 高亮 + 跟句指向 + 🔊 sticky)
+  const useSpeechSrc = read("lib/useSpeech.ts");
+  assert.ok(
+    useSpeechSrc.includes("playingSentence") && useSpeechSrc.includes("setPlayingSentence({ index: startedRef.current"),
+    "T15: useSpeech 暴露播放序 playingSentence(播放起播推进,非到达序)",
+  );
+  assert.ok(
+    notebook.includes("markReadingSentence") && notebook.includes("splitSentences(normalizeSpeechText"),
+    "T15: 讲解区 karaoke 高亮接线(同源切句 + markReadingSentence)",
+  );
+  assert.ok(
+    notebook.includes("sticky top-0") && notebook.includes('"node-content-speak"'),
+    "T15: 🔊 朗读按钮 sticky 悬浮讲解视口右上(不随正文滚走)",
+  );
+  assert.ok(
+    creature.includes(".cp-reading-mark") && creature.includes("readingAnchorPos") && creature.includes('"point"'),
+    "T15: 伴学跟句(读 .cp-reading-mark + readingAnchorPos + 指向姿势)",
+  );
+  assert.ok(
+    css.includes("cp-pose-point") && css.includes("cp-reading-mark"),
+    "T15: 指向姿势 + 朗读句高亮 CSS 存在",
   );
 }
 console.log("✓ T15 v3 接线守卫:单例挂载/三触发点/左栏注册表/物理碰撞源级咬合");

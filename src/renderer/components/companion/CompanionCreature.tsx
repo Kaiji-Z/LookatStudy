@@ -37,29 +37,40 @@ import {
   type FlightWorld,
 } from "../../lib/companion/companion-flight.ts";
 import { BALL_RADIUS, WIND_STRENGTH, swirlAt, weatherPhysFor } from "../../lib/mapPhysics.js";
+import { peekClipPct, zoneDrift } from "../../lib/companion/companion-core.js";
 import { usePrefersReducedMotion } from "../../lib/usePrefersReducedMotion.js";
 
 import { Mascot } from "./Mascot.tsx";
 
-/** 各世界体型(rail 天空居民最大,chat 宠物最小,notebook 助教居中)。 */
-const SIZE: Record<"rail" | "chat" | "notebook", number> = { rail: 88, chat: 56, notebook: 64 };
+/** 各世界体型(v5:chat 探出输入框半身藏卡后、notebook 放大看口型)。 */
+const SIZE: Record<"rail" | "chat" | "notebook", number> = { rail: 88, chat: 76, notebook: 88 };
 
-/** chat 锚点:composer 卡上缘右侧(避开左侧附件/starter 药丸,不遮文字)。 */
-function chatAnchor(): { x: number; y: number } | null {
+/** 栏内锚点:edgeY 非空 = 生物骑在遮挡物上缘(chat 输入卡),要按它做 peek 裁剪。 */
+type ZoneAnchor = { x: number; y: number; edgeY?: number };
+
+/** chat 锚点:输入卡上缘右侧——身体骑在卡片边上,下半身用 clip 藏进卡后(peek),手留在上面拍键。 */
+function chatAnchor(): ZoneAnchor | null {
+  const card = document.querySelector<HTMLElement>('[data-testid="composer-card"]');
   const el =
+    card ??
     document.querySelector<HTMLElement>('[data-testid="composer"]') ??
     document.querySelector<HTMLElement>('[data-testid="composer-nokey"]');
   if (!el) return null;
   const r = el.getBoundingClientRect();
+  // 卡片在场:中心抬到上缘之上,藏掉的底部 ≈ PEEK_CLIP_MAX(腿脚进卡,头+手臂全露)。
+  // 无卡(nokey 横幅等):老几何悬停,不裁剪。
+  if (card) {
+    return { x: r.right - 78, y: r.top - SIZE.chat * 0.18, edgeY: r.top + 1 };
+  }
   return { x: r.right - 84, y: r.top - 10 };
 }
 
-/** notebook 锚点:面板右上、标签行之下(正文列居中,右上肩是留白)。 */
-function notebookAnchor(): { x: number; y: number } | null {
+/** notebook 锚点:面板右上、标签行之下(正文列居中,右上肩是留白;v5 放大到 88,锚点随之下移)。 */
+function notebookAnchor(): ZoneAnchor | null {
   const el = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]');
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  return { x: r.right - 58, y: r.top + 66 };
+  return { x: r.right - 64, y: r.top + 84 };
 }
 
 export function CompanionCreature({ worldReady, courseId }: { worldReady: boolean; courseId: string | null }) {
@@ -205,6 +216,8 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
       if (!grabbed && ((eff === "chat" && !chatAnchor()) || (eff === "notebook" && !notebookAnchor()))) eff = "rail";
 
       let target: { x: number; y: number } | null = null;
+      /** 本帧 chat 锚点带出的输入卡上缘(peek 裁剪线);null=无卡不裁 */
+      let chatEdge: number | null = null;
 
       if (grabbed) {
         // ── 抓取中:指针就是全世界(任何 zone 都直接拖拽) ──
@@ -306,16 +319,31 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
         flightRef.current = null;
         const anchor = eff === "chat" ? chatAnchor() : notebookAnchor();
         if (anchor) {
+          if (anchor.edgeY != null) chatEdge = anchor.edgeY;
           if (reduced) {
             target = anchor;
             angle = 0;
           } else {
-            const cur = posRef.current ?? anchor;
+            // 栏内漂浮:锚点叠慢利萨茹漂移(他在输入框/讲解栏附近轻轻游动,不是钉死)
+            const d = zoneDrift(eff, now);
+            const ax = anchor.x + d.x;
+            const ay = anchor.y + d.y;
+            const cur = posRef.current ?? { x: ax, y: ay };
             const k = 1 - Math.exp(-dt / 90);
-            target = { x: cur.x + (anchor.x - cur.x) * k, y: cur.y + (anchor.y - cur.y) * k };
-            angle = Math.max(-0.35, Math.min(0.35, (anchor.x - cur.x) * 0.012));
+            target = { x: cur.x + (ax - cur.x) * k, y: cur.y + (ay - cur.y) * k };
+            angle = Math.max(-0.35, Math.min(0.35, (ax - cur.x) * 0.012));
           }
         }
+      }
+
+      // chat 世界 peek 裁剪:下半身藏进输入卡后面(clip 同时裁掉命中区,不挡卡内按钮)。
+      // 抓取/飞行途中(底边还在卡片上缘之上)peekClipPct 自然归零。
+      if (!grabbed && eff === "chat" && target && chatEdge != null) {
+        const w = wrap.offsetWidth || SIZE.chat;
+        const pct = peekClipPct(target.y, w, chatEdge);
+        wrap.style.clipPath = pct > 0 ? `inset(-4% -12% ${pct.toFixed(1)}% -12%)` : "";
+      } else if (wrap.style.clipPath) {
+        wrap.style.clipPath = "";
       }
 
       if (!target) {

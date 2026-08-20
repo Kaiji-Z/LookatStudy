@@ -93,21 +93,36 @@ export function Mascot({
   };
   const rootRef = refs.bot;
 
-  /* 逐键按压(Bongo Cat 式):keySeq 变化 → 该侧手臂 WAAPI 快速按压一下。
-     composite:"add" 与姿势 CSS 变换叠加(typing 前悬姿态上再拍一下);
-     分侧角度:左臂 +26°/右臂 -26°(对称向外拍)。reduced-motion 静默跳过。 */
+  /* 逐键按压(Bongo Cat 式,v5 加强):keySeq 变化 → 该侧手臂大幅拍下(±52°,回弹
+     过冲)+ 整机随拍压弹一下(scale 弹跳)——反馈从"手抖"放大到"全身在敲键盘"。
+     composite:"add" 与姿势 CSS 变换叠加;reduced-motion 静默跳过。 */
   useEffect(() => {
     if (reduced || keySeq <= 0) return;
     const el = keySide === -1 ? refs.armL.current : refs.armR.current;
-    const deg = keySide === -1 ? 26 : -26;
+    const deg = keySide === -1 ? 52 : -52;
     el?.animate(
       [
         { transform: "rotate(0deg)" },
-        { transform: `rotate(${deg}deg)`, offset: 0.4 },
+        { transform: `rotate(${deg}deg)`, offset: 0.38 },
         { transform: "rotate(0deg)" },
       ],
-      { duration: 170, easing: "ease-out", composite: "add" },
+      { duration: 185, easing: "cubic-bezier(0.2, 1.5, 0.4, 1)", composite: "add" },
     );
+    // 整机弹跳:向下轻压再回弹,和拍臂同拍。SVG g 的 transform-origin 默认在
+    // viewBox 原点,必须显式 fill-box + 身体中心,否则从左上角缩放会跑偏。
+    const bot = refs.bot.current;
+    if (bot) {
+      bot.style.transformBox = "fill-box";
+      bot.style.transformOrigin = "50% 62%";
+      bot.animate(
+        [
+          { transform: "translateY(0px) scale(1, 1)" },
+          { transform: "translateY(2.5px) scale(1.045, 0.93)", offset: 0.42 },
+          { transform: "translateY(0px) scale(1, 1)" },
+        ],
+        { duration: 185, easing: "ease-out", composite: "add" },
+      );
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refs 套件随组件存活,仅按压序号驱动
   }, [keySeq, keySide, reduced]);
 

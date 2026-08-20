@@ -659,6 +659,36 @@ export function micArcScale(level: number): number {
   return 1;
 }
 
+/* ---------------- 栏内锚点世界(v5) ---------------- */
+
+/** chat 世界"探出输入框"最多藏掉的底部百分比:腿脚隐进卡片后面,手臂全露在外面拍键。 */
+export const PEEK_CLIP_MAX = 34;
+
+/**
+ * chat 世界裁剪:生物下半身藏进输入卡后面(视觉=被卡片挡住,实现=clip-path)。
+ * centerY/size=生物中心与边长,edgeY=卡片上缘的视口 y。藏多少 = 底边低于上缘的部分;
+ * 完全在上缘之上 → 0(飞行途中自然不裁);封顶 PEEK_CLIP_MAX 保头和手臂永远可见。
+ */
+export function peekClipPct(centerY: number, size: number, edgeY: number): number {
+  const hidden = centerY + size / 2 - edgeY;
+  if (hidden <= 0) return 0;
+  return Math.min(PEEK_CLIP_MAX, (hidden / size) * 100);
+}
+
+/**
+ * chat/notebook 世界的锚点漂浮(慢利萨茹):他不是钉死的,在小范围内轻轻游动。
+ * chat 幅度稍大(输入框上空开阔);notebook 收敛(讲解正文旁别晃眼)。
+ */
+export function zoneDrift(zone: "chat" | "notebook", tMs: number): { x: number; y: number } {
+  if (zone === "chat") {
+    return {
+      x: Math.sin(tMs / 1900) * 9 + Math.sin(tMs / 530) * 1.5,
+      y: Math.sin(tMs / 1300) * 5,
+    };
+  }
+  return { x: Math.sin(tMs / 2300) * 5, y: Math.sin(tMs / 1500) * 4 };
+}
+
 /* ---------------- 设置门控 ---------------- */
 
 /**

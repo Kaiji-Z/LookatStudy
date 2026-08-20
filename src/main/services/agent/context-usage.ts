@@ -28,17 +28,15 @@ export function getContextUsage(db: Db, nodeId: string, locale?: string | null):
   const model = settings.active_model ?? preset?.defaultModel ?? "";
 
   let contextWindow: number | null = null;
-  let visionCapable = true; // 宽松:未知模型默认支持(与 supportsVision 的口径一致)
+  let visionCapable = false;
   if (preset) {
     contextWindow = resolveModelContextWindow(preset.models, model);
     visionCapable = supportsVision(preset, model);
   } else if (providerId.startsWith("custom-")) {
-    // 自定义 provider:窗口来自 modelsJson 里该模型的 contextWindow(设置页可编辑;
-    // OpenRouter 发现时自动带回 context_length,其余家 /models 不含窗口需手填)。
-    // 查不到就 null —— 用量表诚实显示"未知",不做会误导占比的家族猜测。
     const cp = getCustomProvider(db, providerId);
     if (cp) {
       contextWindow = resolveModelContextWindow(cp.models, model);
+      visionCapable = cp.vision || cp.kind === "vision";
     }
   }
 

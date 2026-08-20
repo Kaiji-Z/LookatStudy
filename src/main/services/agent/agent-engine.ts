@@ -37,6 +37,7 @@ import {
   describeImagesViaBridge,
   buildObservationBlock,
   appendObservation,
+  isImageRejectionError,
   type BridgeImage,
 } from "./vision-bridge.js";
 import { isFlagOn } from "../flags.js";
@@ -242,8 +243,7 @@ export async function runAgentTurn(
   // v0.11 看图通道路由(拍在工具注册之前,工具注册要看它):
   //   native = 主模型直看;bridge = 纯文本主模型 + vision 覆盖 → 视觉模型转译;reject = 看不了。
   // 附件注入 / 课文图注入(方案 B)/ attach_node_images 工具三处共用同一判定。
-  const mainVisionCapable =
-    llm.provider.id.startsWith("custom-") || supportsVision(llm.provider, llm.model);
+  const mainVisionCapable = supportsVision(llm.provider, llm.model);
   const routing = visionRouting(mainVisionCapable, getVisionOverride(db) !== null);
 
   // 工具集：只读直接返回，写操作走 proposal
@@ -625,6 +625,18 @@ export async function runAgentTurn(
       content: m.content,
     }));
 
+    // 400 保险丝状态:本轮是否把图片以 file-part 直塞进主调用(native 通道)。
+    // 若服务端以"拒收图片"挂断,首 part 即错时可降级重试(桥接/不喂图),不清空已发内容。
+    const fuse = {
+      nativeInjected: false,
+      /** 直塞前的干净消息快照(降级重建用) */
+      cleanMessages: preparedMessages,
+      /** 被直塞的图片(降级桥接用) */
+      images: [] as BridgeImage[],
+      /** 被改写的 user 消息原文(降级桥接用) */
+      userText: "",
+    };
+
     // v0.10:用户显式上传的图片附件 → 本轮 vision 输入。
     // 不受上面 flag+关键词双门控(那是对"节点配图按需喂"的省 token 门控);用户特意贴的图必须看得见。
     // v0.11 图像桥:主模型纯文本 + 配了 vision 覆盖 → 视觉模型先把图转译成文字(标记为
@@ -683,6 +695,9 @@ export async function runAgentTurn(
                 }
               : m,
           );
+          fuse.nativeInjected = true;
+          fuse.images = attachments.map((a) => ({ mediaType: a.mediaType, base64: a.base64 }));
+          fuse.userText = lastUserMsg.content;
         }
       }
     }
@@ -758,6 +773,9 @@ export async function runAgentTurn(
               ? { role: "user", content: imageParts }
               : m,
           );
+          fuse.nativeInjected = true;
+          fuse.images = collected;
+          fuse.userText = lastUserMsg.content;
         }
       }
     }
@@ -786,56 +804,93 @@ export async function runAgentTurn(
       );
     }
 
-    const result = streamText({
-      model: chatModel,
-      ...(providerOptions ? { providerOptions } : {}),
-      system: `${system}\n\n${nodeContext}${
-        learnerSnapshot ? `\n\n${learnerSnapshot}` : ""
-      }`,
-      messages: preparedMessages,
-      tools,
-      stopWhen: stepCountIs(6),
-      abortSignal,
-    });
-
+    // 400 保险丝:主模型 native 通道拒收图片 → 自动降级重试一次(桥接/不喂图)。
+    // 降级后始终给一条可见提示,让用户知道图片通道切换了。
+    let attemptMessages = preparedMessages;
+    let fuseUsed = false;
     let full = "";
     let sawError = false;
-    // 本地累积 parts(main 的持久化用)。与渲染层用同一个纯 accumulatePart,保证形状一致。
     let accParts: ChatMessagePart[] = [];
     const emit = (sp: ChatStreamPart) => {
       events.onPart?.(sp);
       accParts = accumulatePart(accParts, sp);
     };
-    for await (const part of result.fullStream) {
-      if (part.type === "text-delta") {
-        full += part.text;
-        events.onTextDelta?.(part.text);
-        // v0.2 parts 协议：文本增量同时走 onPart（兼容期内 onTextDelta 也保留）
-        emit({ type: "text", text: part.text });
-      } else if (part.type === "reasoning-delta") {
-        // 思考过程增量（extended thinking / reasoning models）
-        emit({ type: "reasoning", text: part.text });
-      } else if (part.type === "tool-input-start") {
-        // 工具开始：渲染层可显示 loading 态
-        emit({ type: "tool-start", toolName: part.toolName });
-      } else if (part.type === "tool-result") {
-        // 工具返回数据 → Generative UI 产物（M2 的 concept_map/quiz 等从这里来）
-        emit({
-          type: "tool-result",
-          toolName: part.toolName,
-          output: part.output,
-        });
-      } else if (part.type === "tool-error") {
-        emit({
-          type: "tool-error",
-          toolName: part.toolName,
-          error: String(part.error ?? "工具执行失败"),
-        });
-      } else if (part.type === "error") {
-        sawError = true;
-        const classified = classifyLlmError(part.error);
-        events.onError?.(classified.detail);
+
+    while (true) {
+      const result = streamText({
+        model: chatModel,
+        ...(providerOptions ? { providerOptions } : {}),
+        system: `${system}\n\n${nodeContext}${
+          learnerSnapshot ? `\n\n${learnerSnapshot}` : ""
+        }`,
+        messages: attemptMessages,
+        tools,
+        stopWhen: stepCountIs(6),
+        abortSignal,
+      });
+
+      let fuseBreak = false;
+      for await (const part of result.fullStream) {
+        if (part.type === "text-delta") {
+          full += part.text;
+          events.onTextDelta?.(part.text);
+          emit({ type: "text", text: part.text });
+        } else if (part.type === "reasoning-delta") {
+          emit({ type: "reasoning", text: part.text });
+        } else if (part.type === "tool-input-start") {
+          emit({ type: "tool-start", toolName: part.toolName });
+        } else if (part.type === "tool-result") {
+          emit({ type: "tool-result", toolName: part.toolName, output: part.output });
+        } else if (part.type === "tool-error") {
+          emit({ type: "tool-error", toolName: part.toolName, error: String(part.error ?? "工具执行失败") });
+        } else if (part.type === "error") {
+          // 400 保险丝:首 part 即错 + 本轮直塞了图片 + 服务端拒收图片 → 降级重试
+          if (fuse.nativeInjected && !fuseUsed && full === "" && accParts.length === 0 && isImageRejectionError(part.error)) {
+            fuseBreak = true;
+            break;
+          }
+          sawError = true;
+          const classified = classifyLlmError(part.error);
+          events.onError?.(classified.detail);
+        }
       }
+      if (!fuseBreak) break;
+
+      // 降级:重建消息,桥接(有 vision 覆盖)或跳过图片
+      const override = getVisionOverride(db);
+      let downgraded = false;
+      if (override && fuse.images.length > 0) {
+        try {
+          const outLang = resolveOutputLang(locale);
+          const { description, visionModel } = await describeImagesViaBridge(
+            db, fuse.images, fuse.userText, outLang, abortSignal,
+          );
+          const bridged = appendObservation(fuse.userText, buildObservationBlock(description, visionModel, outLang));
+          attemptMessages = fuse.cleanMessages.map((m) =>
+            m.role === "user" && m.content === fuse.userText ? { role: "user" as const, content: bridged } : m,
+          );
+          const zh = (locale ?? "zh-CN").startsWith("zh");
+          const notice = zh
+            ? "（图片通道自动切换：主模型拒收图片，已改为视觉模型转译。）\n\n"
+            : "（Image channel auto-switched: main model rejected images, now using vision model transcription.）\n\n";
+          full = notice;
+          emit({ type: "text", text: notice });
+          downgraded = true;
+        } catch {
+          // 桥也失败:跳过图片(不报错,已经有一次失败了)
+        }
+      }
+      if (!downgraded) {
+        attemptMessages = fuse.cleanMessages;
+        const zh = (locale ?? "zh-CN").startsWith("zh");
+        const notice = zh
+          ? "（图片通道自动切换：主模型拒收图片，本轮已跳过图片。）\n\n"
+          : "（Image channel auto-switched: main model rejected images, images skipped this turn.）\n\n";
+        full = notice;
+        emit({ type: "text", text: notice });
+      }
+      fuseUsed = true;
+      fuse.nativeInjected = false;
     }
     // 被中断：不报错，返回已收到的部分
     if (abortSignal?.aborted) {

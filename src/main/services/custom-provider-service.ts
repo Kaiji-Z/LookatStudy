@@ -43,6 +43,7 @@ function rowToCustomProvider(row: typeof customProviders.$inferSelect): CustomPr
     defaultModel: row.defaultModel,
     models,
     hasApiKey: !!row.apiKey,
+    vision: row.vision ?? false,
     createdAt: row.createdAt,
   };
 }
@@ -74,6 +75,7 @@ export function createCustomProvider(
       apiKey: input.apiKey ?? null,
       defaultModel: input.defaultModel,
       modelsJson,
+      vision: input.vision ?? false,
     })
     .run();
   const row = db.select().from(customProviders).where(eq(customProviders.id, id)).get()!;
@@ -95,6 +97,7 @@ export function updateCustomProvider(
   if (input.apiKey !== undefined) patch.apiKey = input.apiKey || null;
   if (input.defaultModel !== undefined) patch.defaultModel = input.defaultModel;
   if (input.models !== undefined) patch.modelsJson = JSON.stringify(input.models);
+  if (input.vision !== undefined) patch.vision = input.vision;
   db.update(customProviders).set(patch).where(eq(customProviders.id, id)).run();
   const row = db.select().from(customProviders).where(eq(customProviders.id, id)).get()!;
   return rowToCustomProvider(row);
@@ -110,7 +113,7 @@ export function deleteCustomProvider(db: Db, id: string): void {
 export function getCustomProviderRaw(
   db: Db,
   id: string,
-): { id: string; kind: CustomProviderKind; protocol: string; baseUrl: string; apiKey: string | null; defaultModel: string } | null {
+): { id: string; kind: CustomProviderKind; protocol: string; baseUrl: string; apiKey: string | null; defaultModel: string; vision: boolean } | null {
   const row = db.select().from(customProviders).where(eq(customProviders.id, id)).get();
   if (!row) return null;
   return {
@@ -120,5 +123,6 @@ export function getCustomProviderRaw(
     baseUrl: row.baseUrl,
     apiKey: row.apiKey,
     defaultModel: row.defaultModel,
+    vision: row.vision ?? false,
   };
 }

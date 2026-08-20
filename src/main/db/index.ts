@@ -179,6 +179,7 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("courses", "source_lang", "TEXT");
   // v0.15 三模型区:custom_providers 分用途(llm/vision/tts/asr),老行默认 llm
   addColumnIfMissing("custom_providers", "kind", "TEXT NOT NULL DEFAULT 'llm'");
+  addColumnIfMissing("custom_providers", "vision", "INTEGER NOT NULL DEFAULT 0");
   // 学习者记忆:friction_pattern 课程隔离(方案2);NULL=跨课程(如 global 风格)
   addColumnIfMissing("memory", "course_id", "TEXT");
   // course_id 列加完后再建索引(不能放 schema.sql——旧库迁移时列还没加,建索引会崩)

@@ -69,6 +69,16 @@ export function SettingsView() {
   const [customWindowSaving, setCustomWindowSaving] = useState(false);
   const theme = useTheme();
 
+  const handleToggleVision = async (vision: boolean) => {
+    if (!activeCustomProvider) return;
+    try {
+      await api.updateCustomProvider(activeCustomProvider.id, { vision });
+      await load();
+    } catch {
+      /* 保存失败静默(下次打开仍显示旧值) */
+    }
+  };
+
   const handleDiscoverModels = async () => {
     setDiscovering(true);
     setDiscoverError(null);
@@ -413,6 +423,18 @@ export function SettingsView() {
                     </button>
                   </div>
                   <div className="text-caption text-ink-faint mt-1">{t("settings.custom.windowHint")}</div>
+                </div>
+                <div className={rowCls(true)}>
+                  <label className="inline-flex items-center gap-2 text-label cursor-pointer select-none" data-testid="custom-vision-toggle">
+                    <input
+                      type="checkbox"
+                      checked={activeCustomProvider.vision}
+                      onChange={(e) => void handleToggleVision(e.target.checked)}
+                      className="w-4 h-4 rounded accent-brand"
+                    />
+                    <span className="text-ink-strong">{t("settings.custom.vision")}</span>
+                    <span className="text-ink-faint">{t("settings.custom.visionHint")}</span>
+                  </label>
                 </div>
                 <div className={rowCls(true)}>
                   <div className="flex items-center gap-3">

@@ -288,6 +288,8 @@ export const customProviders = sqliteTable("custom_providers", {
   defaultModel: text("default_model").notNull(),
   /** 可选模型列表 JSON（用户手填或测试连接回填） */
   modelsJson: text("models_json"),
+  /** 支持看图（多模态）：1=支持，0=不支持（kind=llm 行；kind=vision 天生支持） */
+  vision: integer("vision", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

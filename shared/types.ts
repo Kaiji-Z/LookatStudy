@@ -235,6 +235,8 @@ export interface CustomProvider {
   models: ProviderModelInfo[];
   /** 是否需要 API key（本地模型如 Ollama 不需要） */
   hasApiKey: boolean;
+  /** 支持看图（多模态）：kind=llm 行由用户手动勾选；kind=vision 天生支持 */
+  vision: boolean;
   createdAt: string;
 }
 
@@ -247,6 +249,8 @@ export interface CustomProviderInput {
   apiKey?: string;
   defaultModel: string;
   models?: ProviderModelInfo[];
+  /** 支持看图（多模态），仅 kind=llm 有意义 */
+  vision?: boolean;
 }
 
 /* ---------- v0.10 Composer:附件 / 上下文表 / 思考强度 ---------- */

@@ -14,6 +14,7 @@ import {
   getProviderPreset,
   resolveProviderConfig,
 } from "../src/main/services/agent/llm-presets.ts";
+import { supportsVision } from "../src/main/services/agent/llm-client.ts";
 
 // T1: 预设里有核心 provider
 const ids = PROVIDER_PRESETS.map((p) => p.id);
@@ -100,5 +101,42 @@ console.log(`✓ T9 未知 provider → ready=false：${unknown.missing}`);
 assert.ok(getProviderPreset("glm"), "T10: getProviderPreset(glm) 命中");
 assert.strictEqual(getProviderPreset("nonexistent"), undefined);
 console.log(`✓ T10 getProviderPreset 查找正确`);
+
+// T11: supportsVision 保守默认（未知模型 → false）
+console.log("T11 supportsVision 保守默认");
+const glmPreset = getProviderPreset("glm");
+assert.strictEqual(supportsVision(glmPreset, "glm-5.2"), false, "glm-5.2 无 vision capability → false");
+assert.strictEqual(supportsVision(glmPreset, "glm-4.7-flash"), false, "glm-4.7-flash 无 vision → false");
+assert.strictEqual(supportsVision(glmPreset, "some-unknown-model-xyz"), false, "未知模型保守默认 → false");
+assert.strictEqual(supportsVision(glmPreset, "glm-4-flash"), false, "glm-4-flash 无 vision → false");
+console.log("  ✓ 无 vision capability 的模型正确返回 false");
+
+// T12: supportsVision 查 capabilities 含 vision → true
+console.log("T12 supportsVision 有 vision capability → true");
+const openaiPreset = getProviderPreset("openai");
+if (openaiPreset) {
+  const gpt4o = openaiPreset.models.find((m) => m.id === "gpt-4o");
+  if (gpt4o?.capabilities?.includes("vision")) {
+    assert.strictEqual(supportsVision(openaiPreset, "gpt-4o"), true, "gpt-4o 有 vision → true");
+    console.log("  ✓ gpt-4o 有 vision → true");
+  } else {
+    console.log("  ⚠ gpt-4o 模型条目未标记 vision,跳过");
+  }
+} else {
+  console.log("  ⚠ openai 预设不存在,跳过");
+}
+
+// T13: 合成 custom provider 能力（supportsVision 通过 models 条目查）
+console.log("T13 合成 custom provider 能力");
+// 模拟 resolveLlm 里 custom provider 的 models 合成:vision 开关 → 条目含/不含 vision capability
+const customVisionOn = { id: "custom-test", label: "test", protocol: "openai-compatible", defaultModel: "my-model", models: [{ id: "my-model", label: "my-model", capabilities: ["chat", "vision"] }], apiKeySetting: "(custom)", keyUrl: "" };
+const customVisionOff = { id: "custom-test", label: "test", protocol: "openai-compatible", defaultModel: "my-model", models: [{ id: "my-model", label: "my-model", capabilities: ["chat"] }], apiKeySetting: "(custom)", keyUrl: "" };
+assert.strictEqual(supportsVision(customVisionOn, "my-model"), true, "vision 开关开 → capabilities 含 vision → true");
+assert.strictEqual(supportsVision(customVisionOff, "my-model"), false, "vision 开关关 → 只含 chat → false");
+// 模型 id 不匹配（用户切换了 active_model 但 custom 行未相应更新 models 条目）
+// 保守默认:找不到条目 → false（旧行为:宽返回 true 导致 400）
+const customEmpty = { id: "custom-test", label: "test", protocol: "openai-compatible", defaultModel: "my-model", models: [], apiKeySetting: "(custom)", keyUrl: "" };
+assert.strictEqual(supportsVision(customEmpty, "other-model"), false, "空 models + 不匹配的 model → 保守 false");
+console.log("  ✓ 合成能力正确");
 
 console.log("\n=== ALL LLM PRESET TESTS PASSED ✅ ===");

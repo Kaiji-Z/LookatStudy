@@ -395,7 +395,16 @@ function wrapRangeWithElement(range: Range, el: HTMLElement): HTMLElement | null
 export const READING_MARK_CLASS = "cp-reading-mark";
 
 /** 清除朗读句高亮(unwrap + normalize 恢复 DOM;句切换/停止/卸载时调)。 */
+export const READING_HIGHLIGHT_NAME = "cp-reading";
+
 export function clearReadingMark(container: HTMLElement): void {
+  const cssLike = CSS as unknown as { highlights?: Map<string, unknown> };
+  try {
+    cssLike.highlights?.delete(READING_HIGHLIGHT_NAME);
+  } catch {
+    /* 无 Highlight API 的环境 */
+  }
+  readingRange = null;
   container.querySelectorAll(`.${READING_MARK_CLASS}`).forEach((m) => {
     const parent = m.parentNode;
     if (parent) {
@@ -459,7 +468,7 @@ export function markReadingSentence(
   container: HTMLElement,
   sentence: string,
   opts?: { within?: string },
-): HTMLElement | null {
+): Range | null {
   clearReadingMark(container);
   const trimmed = sentence.trim();
   if (!trimmed) return null;
@@ -475,9 +484,29 @@ export function markReadingSentence(
   readingCursors.set(container, m.end);
   const range = offsetsToRange(model, m.start, m.end);
   if (!range) return null;
+  // v8:CSS Custom Highlight API 注册式高亮(零 DOM 改动)。
+  // 旧 span 包裹会改写 React 管理的 DOM,朗读逐句 setState → ReactMarkdown
+  // 重渲染 reconcile 撞上外来节点 → ErrorBoundary"渲染失败"(重试又好,下一句再炸)。
+  // ::highlight() 伪元素直接给 Range 上色,React 完全无感;不支持的环境回退 span。
+  const cssLike = CSS as unknown as { highlights?: Map<string, unknown> };
+  if (typeof Highlight !== "undefined" && cssLike.highlights) {
+    try {
+      cssLike.highlights.set(READING_HIGHLIGHT_NAME, new Highlight(range));
+      readingRange = range;
+      return range;
+    } catch {
+      /* fall through to span fallback */
+    }
+  }
   const span = document.createElement("span");
   span.className = READING_MARK_CLASS;
-  return wrapRangeWithElement(range, span);
+  return wrapRangeWithElement(range, span) ? range : null;
+}
+
+/** v8 当前朗读句的 Range(伴学 rAF 逐帧取 rect 跟句;Range 随 DOM/滚动自动更新)。 */
+let readingRange: Range | null = null;
+export function getReadingRange(): Range | null {
+  return readingRange;
 }
 
 /** 闪烁某个持久画线 mark(溯源跳转时用):加粗下划线 + 淡黄背景高亮,1.5s 后恢复。 */

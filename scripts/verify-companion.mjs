@@ -741,7 +741,11 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
   assert.ok(creature.includes('data-testid="composer-card"'), "T15: chat 锚定输入卡(composer-card)");
   assert.ok(!creature.includes("clipPath"), "T15: v6 已撤 peek 裁剪(无 clipPath)");
   assert.ok(creature.includes("zoneDrift"), "T15: 栏内锚点漂浮接线");
-  assert.ok(creature.includes("rail: 60") && creature.includes("chat: 84") && creature.includes("notebook: 108"), "T15: v7 近大远小体型(左远 60/中 84/右近 108)");
+  assert.ok(creature.includes("rail: 76") && creature.includes("chat: 96") && creature.includes("notebook: 120"), "T15: v8 近大远小体型(左远 76/中 96/右近 120)");
+  assert.ok(!creature.includes("crownBadge={"), "T15: v8 已按要求去掉皇冠徽标");
+  assert.ok(creature.includes("getReadingRange") && creature.includes("wanderInPanel"), "T15: Range 跟句 + 右栏面板徘徊");
+  assert.ok(read("lib/highlightText.ts").includes("highlights") && read("lib/highlightText.ts").includes("getReadingRange"), "T15: 朗读高亮=CSS Custom Highlight API(零 DOM 改动)");
+  assert.ok(css.includes("::highlight(cp-reading)") && css.includes('[data-zone="rail"] .cp-shadow { display: none; }'), "T15: highlight CSS + 左栏飞行无影");
   assert.ok(creature.includes('eff === "rail" && !railOk'), "T15: 手机端家不在场回退在场的栏(不消失)");
   assert.ok(creature.includes("cp-takeoff"), "T15: 起飞动效(蓄力弹射+喷焰增强)");
   assert.ok(

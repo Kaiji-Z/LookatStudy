@@ -554,8 +554,9 @@ function MessageRowV2({
     const timer = setTimeout(() => {
       // within 限定正文 text part:思考块/工具产物渲染了文字但朗读不读,
       // 搜进去会把高亮标到没在念的文字上(推理常复述正文措辞,极容易误命中)。
-      const el = markReadingSentence(root, sentence, { within: '[data-testid="part-text"]' });
-      if (!el) return;
+      const rg = markReadingSentence(root, sentence, { within: '[data-testid="part-text"]' });
+      if (!rg) return;
+      const el = rg.startContainer.parentElement ?? (rg.startContainer as HTMLElement);
       const r = el.getBoundingClientRect();
       const scroller = root.closest(".overflow-y-auto");
       const sr = scroller?.getBoundingClientRect();

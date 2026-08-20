@@ -723,6 +723,30 @@ export function zoneDrift(zone: "chat" | "notebook", tMs: number): { x: number; 
   return { x: Math.sin(tMs / 2300) * 5, y: Math.sin(tMs / 1500) * 4 };
 }
 
+/**
+ * v8 右栏徘徊:讲解面板右侧空白带的确定性游弋(慢利萨茹,双频不同步=永不重样)。
+ * x 走右侧宽带(留出正文列),y 避开顶部标签/朗读按钮安全带与底缘。
+ */
+export function wanderInPanel(
+  panel: { left: number; right: number; top: number; bottom: number },
+  size: number,
+  tMs: number,
+): { x: number; y: number } {
+  const half = size / 2;
+  const xR = panel.right - half - 14;
+  const xL = Math.max(panel.left + half + 14, panel.right - half * 2.6);
+  const xMid = (xR + xL) / 2;
+  const xAmp = Math.max(0, (xR - xL) / 2);
+  const yTop = panel.top + 96 + half;
+  const yBot = panel.bottom - half - 16;
+  const yMid = (yTop + yBot) / 2;
+  const yAmp = Math.max(0, (yBot - yTop) / 2);
+  return {
+    x: xMid + Math.sin(tMs / 5200) * xAmp + Math.sin(tMs / 1700) * (xAmp * 0.22),
+    y: yMid + Math.sin(tMs / 3900) * yAmp,
+  };
+}
+
 /** 朗读跟句:生物边距(离句末的水平空隙)。 */
 export const READING_MARGIN = 14;
 

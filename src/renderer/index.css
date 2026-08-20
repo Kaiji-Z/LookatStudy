@@ -1055,6 +1055,14 @@ html.light ::-webkit-scrollbar-thumb:hover {
 }
 /* 喷焰:飞行姿势点亮的推进器粒子(壳层渲染,全形态共享) */
 .cp-thruster { opacity: 0; }
+/* v8 左栏飞行:天空无地面 → 无落地影;喷焰=钢铁侠推进(更长更亮+脉动) */
+[data-zone="rail"] .cp-shadow { display: none; }
+.cp-pose-flying .cp-thruster circle { r: 5.5; }
+.cp-pose-flying .cp-thruster circle:nth-child(2) { r: 7; }
+.cp-pose-flying .cp-thruster { filter: drop-shadow(0 0 6px rgba(53, 224, 232, 0.8)); animation: cp-thruster-pulse 0.28s ease-in-out infinite alternate; }
+@keyframes cp-thruster-pulse { from { opacity: 0.85; } to { opacity: 1; } }
+/* v8 朗读句高亮(CSS Custom Highlight API,零 DOM 改动) */
+::highlight(cp-reading) { background-color: rgba(28, 176, 246, 0.2); }
 /* v7 航灯:左红右绿导航灯(航空惯例),常态慢呼吸,飞行/起飞时急闪交错 */
 .cp-beacons circle { fill: currentColor; opacity: 0.55; }
 .cp-beacon-l { color: #ff4b4b; animation: cp-beacon 2.6s ease-in-out infinite; }

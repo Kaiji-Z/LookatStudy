@@ -37,7 +37,8 @@ import {
   type FlightWorld,
 } from "../../lib/companion/companion-flight.ts";
 import { BALL_RADIUS, WIND_STRENGTH, swirlAt, weatherPhysFor } from "../../lib/mapPhysics.js";
-import { readingAnchorPos, zoneDrift } from "../../lib/companion/companion-core.js";
+import { readingAnchorPos, zoneDrift, wanderInPanel } from "../../lib/companion/companion-core.js";
+import { getReadingRange } from "../../lib/highlightText.js";
 import { usePrefersReducedMotion } from "../../lib/usePrefersReducedMotion.js";
 
 import { Mascot } from "./Mascot.tsx";
@@ -45,7 +46,7 @@ import { Mascot } from "./Mascot.tsx";
 /** 各世界体型(v5 放大:chat 76 / notebook 88 看清口型;rail 天空居民不变)。 */
 // v7 近大远小:左栏=远距离(小),中栏=中距离,右栏=近距离(最大,看清口型细节)。
 // 跨栏时 Mascot 尺寸带过渡动画(CSS width/height transition),飞行途中就是"变大/变小"本身。
-const SIZE: Record<"rail" | "chat" | "notebook", number> = { rail: 60, chat: 84, notebook: 108 };
+const SIZE: Record<"rail" | "chat" | "notebook", number> = { rail: 76, chat: 96, notebook: 120 };
 
 /** 栏内锚点(视口坐标)。 */
 type ZoneAnchor = { x: number; y: number };
@@ -80,6 +81,9 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
   /** v6 朗读跟句:正在指句时非 null。side=手指方向(left=生物在句右指左);
    *  pane=mark 所在栏(决定体型:chat 76/notebook 88)。rAF 写 ref,变化才 setState。 */
   const [reading, setReading] = useState<{ side: "left" | "right"; pane: "chat" | "notebook" } | null>(null);
+  /** v8 实际栖身栏(rAF 写 ref 变化才 setState):手机回退家/景深尺寸按它,不只看 zone 状态机 */
+  const [dispZone, setDispZone] = useState<"rail" | "chat" | "notebook">("rail");
+  const dispZoneRef = useRef<"rail" | "chat" | "notebook">("rail");
   const readingRef = useRef<{ side: "left" | "right"; pane: "chat" | "notebook" } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const flightRef = useRef<FlightWorld | null>(null);
@@ -339,17 +343,19 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
         // v6 朗读跟句:有 karaoke 高亮句(讲解区/中栏对话消息均可)时,锚点被句子
         // 实时位置接管(贴着那句站,指住它;scroll 时 rect 随 .cp-reading-mark 元素
         // 自动更新)。clamp 面板取 mark 所在的 pane —— 讲解面板或对话流,两边同款。
-        const readMark = document.querySelector<HTMLElement>(".cp-reading-mark");
+        const readRange = getReadingRange();
+        const readMarkEl = readRange ? (readRange.startContainer.parentElement ?? null) : null;
+        const readMark = readMarkEl && readRange ? { el: readMarkEl, rect: readRange.getBoundingClientRect() } : null;
         const anchor = readMark
           ? null
           : eff === "chat"
             ? chatAnchor()
             : notebookAnchor();
         if (readMark) {
-          const panel = readMark.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]');
-          const pr = panel?.getBoundingClientRect();
-          const mr = readMark.getBoundingClientRect();
-          const zoneSize = readMark.closest('[data-testid="chat-stream"]') ? SIZE.chat : SIZE.notebook;
+          const host = readMark.el.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]');
+          const pr = host?.getBoundingClientRect();
+          const mr = readMark.rect;
+          const zoneSize = host?.closest('[data-testid="chat-stream"]') ? SIZE.chat : SIZE.notebook;
           if (pr && mr.width > 0) {
             const pos = readingAnchorPos(mr, pr, zoneSize);
             const pane: "chat" | "notebook" = zoneSize === SIZE.chat ? "chat" : "notebook";
@@ -378,8 +384,20 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
             if (reduced) {
               target = anchor;
               angle = 0;
+            } else if (eff === "notebook") {
+              // v8 右栏徘徊:在讲解面板的右侧空白带里确定性游弋(像住在文章里,
+              // 随时可以和内容互动),避开顶部标签/按钮安全带
+              const panel = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]');
+              const pr = panel?.getBoundingClientRect();
+              const w = pr ? wanderInPanel({ left: pr.left, right: pr.right, top: pr.top, bottom: pr.bottom }, SIZE.notebook, now) : null;
+              const ax = w ? w.x : anchor.x;
+              const ay = w ? w.y : anchor.y;
+              const cur = posRef.current ?? { x: ax, y: ay };
+              const k = 1 - Math.exp(-dt / 90);
+              target = { x: cur.x + (ax - cur.x) * k, y: cur.y + (ay - cur.y) * k };
+              angle = Math.max(-0.3, Math.min(0.3, (ax - cur.x) * 0.01));
             } else {
-              // 栏内漂浮:锚点叠慢利萨茹漂移(他在输入框/讲解栏附近轻轻游动,不是钉死)
+              // 栏内漂浮:锚点叠慢利萨茹漂移(他在输入框附近轻轻游动,不是钉死)
               const d = zoneDrift(eff, now);
               const ax = anchor.x + d.x;
               const ay = anchor.y + d.y;
@@ -390,6 +408,11 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
             }
           }
         }
+      }
+
+      if (dispZoneRef.current !== eff) {
+        dispZoneRef.current = eff;
+        setDispZone(eff);
       }
 
       if (!target) {
@@ -424,7 +447,7 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
         ? "pointr"
         : snap.state.pose;
   // 跟句时体型随 mark 所在栏(中栏对话 76/讲解栏 88),否则随 zone
-  const mascotSize = reading ? SIZE[reading.pane] : SIZE[zone];
+  const mascotSize = reading ? SIZE[reading.pane] : SIZE[dispZone];
   return (
     <div
       ref={wrapRef}
@@ -451,7 +474,6 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
             companionGrab(true);
           }
         }}
-        crownBadge={snap.crowned}
         haloBadge={snap.halo}
         testid="companion-mascot"
         keySeq={snap.state.keySeq}

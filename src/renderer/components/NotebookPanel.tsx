@@ -386,8 +386,9 @@ function ContentTab({
     if (readingIdx === 0) resetReadingCursor(prose); // 新一轮朗读从第 0 句起,游标归零
     // 等 ReactMarkdown 渲染完(content 刚到/语言切换重挂)再定位
     const timer = setTimeout(() => {
-      const el = markReadingSentence(prose, sentence);
-      if (!el) return;
+      const rg = markReadingSentence(prose, sentence);
+      if (!rg) return;
+      const el = rg.startContainer.parentElement ?? (rg.startContainer as HTMLElement);
       // 视野外才滚动(避免逐句连续跳);平滑居中
       const r = el.getBoundingClientRect();
       const scroller = prose.closest(".overflow-y-auto");

@@ -43,7 +43,9 @@ import { usePrefersReducedMotion } from "../../lib/usePrefersReducedMotion.js";
 import { Mascot } from "./Mascot.tsx";
 
 /** 各世界体型(v5 放大:chat 76 / notebook 88 看清口型;rail 天空居民不变)。 */
-const SIZE: Record<"rail" | "chat" | "notebook", number> = { rail: 88, chat: 76, notebook: 88 };
+// v7 近大远小:左栏=远距离(小),中栏=中距离,右栏=近距离(最大,看清口型细节)。
+// 跨栏时 Mascot 尺寸带过渡动画(CSS width/height transition),飞行途中就是"变大/变小"本身。
+const SIZE: Record<"rail" | "chat" | "notebook", number> = { rail: 60, chat: 84, notebook: 108 };
 
 /** 栏内锚点(视口坐标)。 */
 type ZoneAnchor = { x: number; y: number };
@@ -100,6 +102,18 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
     zoneRef.current = zone;
     if (reduced) return;
     setInTransit(true);
+    // v7 起飞:压缩蓄力→弹射 stretch(WAAPI additive),喷焰增强 class 同步 600ms
+    wrapRef.current?.animate?.(
+      [
+        { transform: "scale(1, 1)" },
+        { transform: "scale(1.08, 0.86)", offset: 0.3 },
+        { transform: "scale(0.96, 1.1)", offset: 0.65 },
+        { transform: "scale(1, 1)" },
+      ],
+      { duration: 620, easing: "cubic-bezier(0.2, 1.4, 0.4, 1)", composite: "add" },
+    );
+    wrapRef.current?.classList.add("cp-takeoff");
+    setTimeout(() => wrapRef.current?.classList.remove("cp-takeoff"), 650);
     const timers = [
       setTimeout(() => setInTransit(false), 950),
       setTimeout(() => {
@@ -215,6 +229,12 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
       // 目标世界的锚点不在场(T3 换栏等)→ 退回 rail;rail 也不在 → 隐匿
       let eff: "rail" | "chat" | "notebook" = st.zone;
       if (!grabbed && ((eff === "chat" && !chatAnchor()) || (eff === "notebook" && !notebookAnchor()))) eff = "rail";
+      // v7 手机端修复:家(左栏)不在场时不消失——T3 切栏会卸载地图,退到当前
+      // 在场的栏栖身(对话优先),切回地图自然回老家。修复"切页后 bot 消失要刷新"。
+      if (!grabbed && eff === "rail" && !railOk) {
+        if (chatAnchor()) eff = "chat";
+        else if (notebookAnchor()) eff = "notebook";
+      }
 
       let target: { x: number; y: number } | null = null;
 

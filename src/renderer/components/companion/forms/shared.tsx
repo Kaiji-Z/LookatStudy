@@ -196,6 +196,21 @@ export function GroundShadow({ tint = "rgba(20,16,28,0.35)" }: { tint?: string }
 }
 
 /** 白手套手臂(共享锚位:姿势 CSS/逐键 WAAPI 对全家族零改动)。 */
+/** 块面伪 3D 倒角板(R-06 blk 风):底色板上叠左上受光棱 + 右下背光棱,硬边零渐变。
+ *  inverted=true 反转棱向(凹槽感:屏幕/嵌板内退缩)。t=棱厚;clip 需与板同形(调用方在 defs 里备好)。 */
+export function BevelPlate({ id, x, y, w, h, t = 5, inverted = false }: {
+  id: string; x: number; y: number; w: number; h: number; t?: number; inverted?: boolean;
+}) {
+  const light = inverted ? "rgba(8,16,30,0.55)" : "rgba(255,255,255,0.5)";
+  const dark = inverted ? "rgba(255,255,255,0.3)" : "rgba(20,16,28,0.42)";
+  return (
+    <g clipPath={`url(#${id})`}>
+      <path d={`M${x},${y} H${x + w} V${y + t} H${x + t} V${y + h} H${x} Z`} fill={light} />
+      <path d={`M${x + w - t},${y} H${x + w} V${y + h} H${x} V${y + h - t} H${x + w - t} Z`} fill={dark} />
+    </g>
+  );
+}
+
 export function Arms({
   refs,
   armFill,

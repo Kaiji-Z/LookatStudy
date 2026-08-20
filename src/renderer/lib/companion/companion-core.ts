@@ -544,14 +544,46 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
   }
 }
 
-/* ---------------- 口型:viseme ---------------- */
+/* ---------------- 口型:viseme(共振峰法,v7) ---------------- */
 
 /** viseme 判定门限(经验值,中文 TTS 频谱实测校准区间)。 */
 export const VISEME_LEVEL_GATE = 0.06;
 export const VISEME_CENTROID_LOW = 900;
 export const VISEME_CENTROID_HIGH = 2200;
 
-/** 响度+频谱质心 → 母音形状(海报化六档)。 */
+/** F1/F2 共振峰频段(Hz):第一共振峰≈开口度,第二共振峰≈舌位前后(圆/展唇)。 */
+export const FORMANT_F1_BAND = { lo: 180, hi: 900 };
+export const FORMANT_F2_BAND = { lo: 900, hi: 3200 };
+
+/**
+ * 共振峰 → 母音(声学元音三角,viseme 最佳实践):按 F1/F2 与五个元音锚点的
+ * 最近邻判位。坐标归一:F2 700..2500Hz → x(低=圆唇侧),F1 220..900Hz → y(高=开口)。
+ * 锚点取普通话声学元音图的近似:A(开·中前) E(半开·前) I(闭·前展) O(半闭·后圆) U(闭·后圆)。
+ */
+export function visemeFromFormants(f1: number, f2: number, level: number): Viseme {
+  if (level <= VISEME_LEVEL_GATE) return "closed";
+  const x = Math.min(1, Math.max(0, (f2 - 700) / 1800));
+  const y = Math.min(1, Math.max(0, (f1 - 220) / 680));
+  const anchors: Array<[Viseme, number, number]> = [
+    ["A", 0.42, 0.95],
+    ["E", 0.78, 0.55],
+    ["I", 0.95, 0.18],
+    ["O", 0.12, 0.45],
+    ["U", 0.03, 0.12],
+  ];
+  let best: Viseme = "A";
+  let bestD = Infinity;
+  for (const [v, ax, ay] of anchors) {
+    const d = (x - ax) * (x - ax) + (y - ay) * (y - ay);
+    if (d < bestD) {
+      bestD = d;
+      best = v;
+    }
+  }
+  return best;
+}
+
+/** 响度+频谱质心 → 母音形状(海报化六档;v7 起主路径是共振峰法,此函数保留作回退)。 */
 export function computeViseme(level: number, centroidHz: number): Viseme {
   if (level <= VISEME_LEVEL_GATE) return "closed";
   if (centroidHz < VISEME_CENTROID_LOW) return level < 0.35 ? "U" : "O";
@@ -567,19 +599,19 @@ export function mouthOpenScale(viseme: Viseme, level: number): number {
 }
 
 /**
- * AnalyserNode 原始数据 → { level, centroidHz, viseme }。
+ * AnalyserNode 原始数据 → { level, centroidHz, f1, f2, viseme }。
  *
  * level: 时域字节(128=零点)平均偏差归一 —— 响度。
- * centroid: 频域幅度加权平均频率 —— 元音共振峰分布的廉价代理
- *   (低质心=圆唇 A/O/U 家族,高质心=展唇 I/E 家族),与响度一起构成母音分档。
- * 全零输入安全:level=0、质心=0 → closed,无 NaN。
+ * F1/F2: 共振峰频段的幅度加权质心(v7,元音判位主路径);全零频段回退典型值。
+ * centroid: 频域幅度加权平均频率(整体质心,保留作诊断/回退)。
+ * 全零输入安全:level=0 → closed,无 NaN。
  */
 export function audioToMouth(
   timeData: Uint8Array,
   freqData: Uint8Array,
   sampleRate: number,
   fftSize: number,
-): { level: number; centroidHz: number; viseme: Viseme } {
+): { level: number; centroidHz: number; f1: number; f2: number; viseme: Viseme } {
   let sum = 0;
   for (let i = 0; i < timeData.length; i++) {
     sum += Math.abs(timeData[i]! - 128);
@@ -588,15 +620,29 @@ export function audioToMouth(
 
   let magSum = 0;
   let weighted = 0;
+  let m1 = 0;
+  let w1 = 0;
+  let m2 = 0;
+  let w2 = 0;
   const binHz = sampleRate / fftSize;
   for (let i = 0; i < freqData.length; i++) {
+    const freq = i * binHz;
     const m = freqData[i]! / 255;
     if (m <= 0) continue;
     magSum += m;
-    weighted += m * i * binHz;
+    weighted += m * freq;
+    if (freq >= FORMANT_F1_BAND.lo && freq < FORMANT_F1_BAND.hi) {
+      m1 += m;
+      w1 += m * freq;
+    } else if (freq >= FORMANT_F2_BAND.lo && freq < FORMANT_F2_BAND.hi) {
+      m2 += m;
+      w2 += m * freq;
+    }
   }
   const centroidHz = magSum > 0 ? weighted / magSum : 0;
-  return { level, centroidHz, viseme: computeViseme(level, centroidHz) };
+  const f1 = m1 > 0 ? w1 / m1 : 400;
+  const f2 = m2 > 0 ? w2 / m2 : 800;
+  return { level, centroidHz, f1, f2, viseme: visemeFromFormants(f1, f2, level) };
 }
 
 /* ---------------- 视线几何 ---------------- */

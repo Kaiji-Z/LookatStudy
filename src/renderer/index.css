@@ -1055,6 +1055,16 @@ html.light ::-webkit-scrollbar-thumb:hover {
 }
 /* 喷焰:飞行姿势点亮的推进器粒子(壳层渲染,全形态共享) */
 .cp-thruster { opacity: 0; }
+/* v7 航灯:左红右绿导航灯(航空惯例),常态慢呼吸,飞行/起飞时急闪交错 */
+.cp-beacons circle { fill: currentColor; opacity: 0.55; }
+.cp-beacon-l { color: #ff4b4b; animation: cp-beacon 2.6s ease-in-out infinite; }
+.cp-beacon-r { color: #58cc02; animation: cp-beacon 2.6s ease-in-out 1.3s infinite; }
+.cp-pose-flying .cp-beacon-l, .cp-takeoff .cp-beacon-l { animation-duration: 0.62s; }
+.cp-pose-flying .cp-beacon-r, .cp-takeoff .cp-beacon-r { animation-duration: 0.62s; }
+@keyframes cp-beacon { 0%, 100% { opacity: 0.18; } 50% { opacity: 1; } }
+/* v7 起飞喷焰增强:蓄力弹射窗口里喷焰更长更亮 */
+.cp-takeoff .cp-thruster { opacity: 1; }
+.cp-takeoff .cp-thruster circle { animation-duration: 0.12s; r: 6; }
 .cp-pose-flying .cp-thruster { opacity: 1; }
 .cp-thruster circle { fill: #ffc800; }
 .cp-thruster circle:nth-child(2) { fill: #ff9a3d; }
@@ -1088,6 +1098,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
   .cp-expr-sleeping .cp-bot { animation: none; }
   .cp-veil { filter: none; }
   .cp-thruster, .cp-pose-flying .cp-thruster { opacity: 0; }
+  .cp-beacons circle { animation: none; opacity: 0.35; }
   .cp-pose-flying .cp-thruster circle { animation: none; }
   .cp-halo, .cp-crown-badge, .cp-grabbed .cp-bot, .cp-shiver, .cp-huffy { animation: none; }
 }

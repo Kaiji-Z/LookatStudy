@@ -190,6 +190,39 @@ export function bankAngle(vx: number, vy: number): number {
   return clamp(vx * 0.06, 0.5);
 }
 
+/**
+ * 挑待机空地(纯):在高度中部带(y∈[0.35h,0.65h])按 5×3 候选网格选
+ * **离所有球最远**的点(净空最大化),同分按 seed 轮转的候选顺序先到先得
+ * (确定性)。球滚动/新增后调用方周期重选即可。
+ */
+export function pickPerchBase(
+  w: number,
+  h: number,
+  balls: { x: number; y: number; r: number }[],
+  seed = 0,
+): FlightTarget {
+  const cols = [0.14, 0.32, 0.5, 0.68, 0.86];
+  const rows = [0.38, 0.5, 0.62];
+  const start = ((seed % 15) + 15) % 15;
+  let best: FlightTarget = { x: w * 0.5, y: h * 0.5 };
+  let bestClear = -Infinity;
+  for (let k = 0; k < 15; k++) {
+    const i = (start + k) % 15;
+    const cx = w * cols[i % 5]!;
+    const cy = h * rows[Math.floor(i / 5)]!;
+    let clear = Infinity;
+    for (const b of balls) {
+      const d = Math.hypot(cx - b.x, cy - b.y) - b.r;
+      if (d < clear) clear = d;
+    }
+    if (clear > bestClear + 1e-9) {
+      bestClear = clear;
+      best = { x: cx, y: cy };
+    }
+  }
+  return best;
+}
+
 export interface FlightWorld {
   /** 同步伴学刚体(调用方每帧读 position/angle 渲染)。 */
   readonly body: Matter.Body;

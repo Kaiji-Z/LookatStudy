@@ -40,7 +40,9 @@ export type CompanionPose =
   | "typing"
   | "doze"
   | "flying"
-  | "writing";
+  | "writing"
+  | "wave"
+  | "spin";
 
 /** 伙伴所在的世界维度:左栏原生物理世界 / 中栏宠物世界 / 右栏助教世界。 */
 export type CompanionZone = "rail" | "chat" | "notebook";
@@ -82,6 +84,8 @@ export interface CompanionState {
   lastNoteUntil: number;
   /** 最近一次滚动时刻(滚动=用户在阅读,不唤醒,反而催他入纱帘) */
   lastScroll: number;
+  /** 戳击序号(poke 反应花样轮换:跳跳/挥手/转圈) */
+  pokeSeq: number;
 }
 
 export type CompanionEvent =
@@ -178,6 +182,7 @@ export function initialCompanionState(now = 0): CompanionState {
     zoneSince: now,
     lastNoteUntil: 0,
     lastScroll: 0,
+    pokeSeq: 0,
   };
 }
 
@@ -232,17 +237,23 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         until: ev.now + r.holdMs,
       };
     }
-    case "poke":
-      // 戳他=从纱帘后唤醒到前台 + 打招呼
+    case "poke": {
+      // 戳他=从纱帘后唤醒到前台 + 打招呼;反应花样轮换(跳跳/挥手/转圈)
+      const POKE_POSES: CompanionPose[] = ["hop", "wave", "spin"];
+      const POKE_HOLD: Record<string, number> = { hop: 900, wave: 1100, spin: 800 };
+      const seq = s.pokeSeq + 1;
+      const pose = POKE_POSES[seq % POKE_POSES.length]!;
       return {
         ...s,
         sleeping: false,
         lastActivity: ev.now,
         mode: "front",
+        pokeSeq: seq,
         expression: "happy",
-        pose: "hop",
-        until: ev.now + 900,
+        pose,
+        until: ev.now + (POKE_HOLD[pose] ?? 900),
       };
+    }
     case "talking":
     case "listening":
     case "streaming": {
@@ -365,15 +376,16 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
     case "focus": {
       if (ev.on === s.windowFocused) return s;
       if (!ev.on) return { ...s, windowFocused: false };
-      // 回归:唤醒 + 打个招呼(你回来了!)
+      // 回归:唤醒 + 挥手打招呼(你回来了!)
       return {
         ...s,
         windowFocused: true,
         sleeping: false,
         lastActivity: ev.now,
+        mode: "front",
         expression: "happy",
-        pose: "hop",
-        until: ev.now + 900,
+        pose: "wave",
+        until: ev.now + 1100,
       };
     }
     case "tick": {

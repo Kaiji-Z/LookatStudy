@@ -253,11 +253,11 @@ console.log("✓ T7 打字反应:逐键交替臂/typing 姿势/超时回落/唤�
   st = companionReducer(st, { type: "tick", now: 10000 + BLUR_SLEEP_MS + 1 });
   assert.strictEqual(st.sleeping, true, "T8: 失焦后短阈值入睡");
   assert.strictEqual(st.expression, "sleeping");
-  // 聚焦回归:唤醒 + 打招呼(happy hop 短反应)
+  // 聚焦回归:唤醒 + 挥手打招呼(happy wave 短反应)
   st = companionReducer(st, { type: "focus", on: true, now: 20000 });
   assert.strictEqual(st.sleeping, false, "T8: 聚焦唤醒");
   assert.strictEqual(st.expression, "happy", "T8: 回归打招呼");
-  assert.strictEqual(st.pose, "hop");
+  assert.strictEqual(st.pose, "wave");
   assert.ok(st.until !== null && st.until > 20000, "T8: 打招呼带保持时长");
   // 重复 focus 事件(已聚焦)不反复触发反应
   const before = st.until;
@@ -418,6 +418,18 @@ console.log("✓ T12 形象注册表:5 形态唯一/回退安全/注册表·壳�
   s = companionReducer(initialCompanionState(0), { type: "swat", now: 500 });
   assert.equal(s.expression, "surprised", "T13: 被拍 → 惊吓表情");
   assert.equal(s.pose, "flying", "T13: 被拍 → 飞行翻滚姿势");
+
+  // poke 反应花样轮换:跳跳 → 挥手 → 转圈 → 回跳跳(确定性循环)
+  {
+    let p = initialCompanionState(0);
+    const poses = [];
+    for (let i = 0; i < 4; i++) {
+      p = companionReducer(p, { type: "poke", now: 1000 + i * 2000 });
+      poses.push(p.pose);
+      assert.equal(p.pokeSeq, i + 1, "T13: pokeSeq 递增");
+    }
+    assert.deepEqual(poses, ["wave", "spin", "hop", "wave"], `T13: poke 花样轮换(实测=${poses.join(",")})`);
+  }
 }
 console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚焦>朗读)/记笔记钉住/纱帘判定/被拍晕眩");
 
@@ -429,8 +441,26 @@ console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚�
     cruiseTarget,
     crossImpulse,
     flightForce,
+    pickPerchBase,
     SWAT_IMPULSE,
   } = await import("../src/renderer/lib/companion/companion-flight.ts");
+
+  // 待机空地挑选:中部带 + 离球最远 + 确定性
+  {
+    const W = 300, H = 800;
+    const empty = pickPerchBase(W, H, [], 0);
+    assert.ok(empty.y >= H * 0.35 && empty.y <= H * 0.65, `T14: 待机点在中部带(实测 y=${empty.y.toFixed(0)})`);
+    assert.ok(empty.x >= W * 0.1 && empty.x <= W * 0.9, "T14: 待机点横向安全区内");
+    // 正中一颗大球 → 待机点必须避开它(净空 ≥ 球径)
+    const ball = { x: W * 0.5, y: H * 0.5, r: 28 };
+    const pick = pickPerchBase(W, H, [ball], 0);
+    const clear = Math.hypot(pick.x - ball.x, pick.y - ball.y) - ball.r;
+    assert.ok(clear >= 55, `T14: 待机空地避开球(实测净空=${clear.toFixed(0)} ≥ 55)`);
+    // 同 seed 确定性;球挪走后能选到球原来位置附近(跟随空地变化)
+    assert.deepEqual(pickPerchBase(W, H, [ball], 0), pick, "T14: 待机挑选确定性");
+    const pick2 = pickPerchBase(W, H, [{ x: W * 0.14, y: H * 0.38, r: 28 }], 0);
+    assert.notDeepEqual(pick2, pick, "T14: 空地变化 → 待机点跟着变");
+  }
 
   // 悬浮力:重力补偿——Matter y 正方向向下,补偿力必须为**负**;
   // 写正=重力加倍,生物沉底趴住(实测炸过)
@@ -579,6 +609,15 @@ console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性
   assert.ok(mapRail.includes("companionRailRegister") && mapRail.includes('visible: panel === "map"'), "T15: 左栏世界注册(岛+可见性)");
   assert.ok(bus.includes('fire("companion-zone-focus"') && bus.includes('fire("companion-rail-register"'), "T15: 组件→bus 触发全部走 window 事件(防打包双实例)");
   assert.ok(read("lib/companion/companion-flight.ts").includes("crossImpulse"), "T15: 跨引擎碰撞存在");
+  // v3 细化接线:中部空地待机 / poke 花样 / 表情动效 CSS
+  assert.ok(creature.includes("pickPerchBase") && creature.includes("perchDueRef"), "T15: 待机点=中部空地周期重选");
+  const coreSrc = read("lib/companion/companion-core.ts");
+  assert.ok(coreSrc.includes("pokeSeq"), "T15: poke 花样轮换状态");
+  const css = read("index.css");
+  assert.ok(
+    css.includes("cp-pose-wave") && css.includes("cp-pose-spin") && css.includes("cp-star-tw") && css.includes("cp-sleep-breath"),
+    "T15: 挥手/转圈/星星眼闪烁/睡眠呼吸 CSS 存在",
+  );
 }
 console.log("✓ T15 v3 接线守卫:单例挂载/三触发点/左栏注册表/物理碰撞源级咬合");
 

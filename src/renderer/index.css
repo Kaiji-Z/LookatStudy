@@ -1011,7 +1011,27 @@ html.light ::-webkit-scrollbar-thumb:hover {
   50% { transform: rotate(8deg) translateY(-1.5px); }
   100% { transform: rotate(-4deg) translateY(0); }
 }
+/* 挥手姿势(打招呼/poke 花样):右臂高举左右摆动 */
+.cp-pose-wave .cp-armR { transform-box: fill-box; transform-origin: 50% 12%; animation: cp-wave-arm 0.38s ease-in-out 3; transform: rotate(-108deg); }
+@keyframes cp-wave-arm {
+  0% { transform: rotate(-96deg); }
+  50% { transform: rotate(-124deg); }
+  100% { transform: rotate(-96deg); }
+}
+/* 转圈姿势(poke 花样):整机原地旋转一圈(内组转,不碰包装层的物理倾角) */
+.cp-pose-spin .cp-bot { transform-box: fill-box; transform-origin: 50% 60%; animation: cp-spin 0.75s cubic-bezier(0.45, 0.1, 0.3, 1) 1; }
+@keyframes cp-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+/* 星星眼(考试通过/连击):高频闪烁,喜悦感翻倍 */
+.cp-star-tw { transform-box: fill-box; transform-origin: center; animation: cp-star-tw 0.62s ease-in-out infinite alternate; }
+@keyframes cp-star-tw { from { transform: scale(0.82); opacity: 0.75; } to { transform: scale(1.12); opacity: 1; } }
+/* 睡眠呼吸:打盹时整机缓缓起伏,不是一张静止贴图 */
+.cp-expr-sleeping .cp-bot { transform-box: fill-box; transform-origin: 50% 100%; animation: cp-sleep-breath 2.8s ease-in-out infinite alternate; }
+@keyframes cp-sleep-breath { from { transform: scale(1, 1); } to { transform: scale(1.015, 0.985); } }
 @media (prefers-reduced-motion: reduce) {
   .cp-pose-writing .cp-armR { animation: none; transform: rotate(2deg); }
+  .cp-pose-wave .cp-armR { animation: none; }
+  .cp-pose-spin .cp-bot { animation: none; }
+  .cp-star-tw { animation: none; }
+  .cp-expr-sleeping .cp-bot { animation: none; }
   .cp-veil { filter: none; }
 }

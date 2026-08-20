@@ -27,6 +27,7 @@ import { useSpeechMouth } from "../../lib/companion/use-mouth.ts";
 import {
   bankAngle,
   createFlightWorld,
+  pickPerchBase,
   type BallProbe,
   type FlightWorld,
 } from "../../lib/companion/companion-flight.ts";
@@ -66,16 +67,35 @@ export function CompanionCreature({ worldReady }: { worldReady: boolean }) {
   const posRef = useRef<{ x: number; y: number } | null>(null);
   const zoneRef = useRef(snap.state.zone);
   const swatLatchRef = useRef(false);
+  /** 左栏待机空地(中部带,周期重选)与下次重选时刻 */
+  const perchRef = useRef<{ x: number; y: number } | null>(null);
+  const perchDueRef = useRef(0);
 
   const zone = snap.state.zone;
-  // zone 变化 → 飞行姿势窗口(物理/锚点目标在 rAF 里切,姿势由 React 换挡)
+  // zone 变化 → 飞行姿势窗口(物理/锚点目标在 rAF 里切,姿势由 React 换挡);
+  // 落栖弹跳:transit 结束踩一下"落地"压缩回弹(WAAPI additive,不碰 rAF 的位移)
   useEffect(() => {
     if (zone === zoneRef.current) return;
     zoneRef.current = zone;
     if (reduced) return;
     setInTransit(true);
-    const t = setTimeout(() => setInTransit(false), 950);
-    return () => clearTimeout(t);
+    const timers = [
+      setTimeout(() => setInTransit(false), 950),
+      setTimeout(() => {
+        const el = wrapRef.current;
+        if (!el || zone === "rail") return;
+        el.animate?.(
+          [
+            { transform: "scale(1, 1)" },
+            { transform: "scale(1.07, 0.88)", offset: 0.42 },
+            { transform: "scale(0.98, 1.03)", offset: 0.72 },
+            { transform: "scale(1, 1)" },
+          ],
+          { duration: 280, easing: "ease-out", composite: "add" },
+        );
+      }, 940),
+    ];
+    return () => { for (const t of timers) clearTimeout(t); };
   }, [zone, reduced]);
 
   useEffect(() => {
@@ -109,14 +129,15 @@ export function CompanionCreature({ worldReady }: { worldReady: boolean }) {
         const w = navRect!.width;
         const h = navRect!.height;
         if (reduced) {
-          // 静态兜底:天空定点
-          target = { x: navRect!.left + w * 0.62, y: navRect!.top + 130 };
+          // 静态兜底:中部定点
+          target = { x: navRect!.left + w * 0.5, y: navRect!.top + h * 0.5 };
           angle = 0;
         } else {
           if (w !== navW || h !== navH) {
             navW = w;
             navH = h;
             flightRef.current?.resize(w, h);
+            perchRef.current = null; // 栏尺寸变了,重选空地
           }
           if (!flightRef.current) {
             flightRef.current = createFlightWorld({ width: w, height: h });
@@ -129,31 +150,33 @@ export function CompanionCreature({ worldReady }: { worldReady: boolean }) {
             }
           }
           const flight = flightRef.current;
-          // 跨引擎球探针:在场岛的球 → rail 局部坐标(拍他/被他撞都真实)
+          // 跨引擎球探针:在场岛的球 → rail 局部坐标(拍他/被他撞都真实)。
+          // 纱帘后也照常采集(挑空地要用),只是不喂给物理(不与球纠缠)。
           const probes: BallProbe[] = [];
-          if (st.mode !== "veil") {
-            for (const { island, container } of rw.sections.values()) {
-              const cr = container.getBoundingClientRect();
-              if (cr.bottom < navRect!.top - 120 || cr.top > navRect!.bottom + 120) continue;
-              const ox = cr.left - navRect!.left;
-              const oy = cr.top - navRect!.top;
-              for (const b of island.balls) {
-                probes.push({
-                  x: ox + b.body.position.x,
-                  y: oy + b.body.position.y,
-                  vx: b.body.velocity.x,
-                  vy: b.body.velocity.y,
-                  r: BALL_RADIUS,
-                  isStatic: b.body.isStatic,
-                  push: (fx, fy) => Matter.Body.applyForce(b.body, b.body.position, { x: fx, y: fy }),
-                });
-              }
+          for (const { island, container } of rw.sections.values()) {
+            const cr = container.getBoundingClientRect();
+            if (cr.bottom < navRect!.top - 120 || cr.top > navRect!.bottom + 120) continue;
+            const ox = cr.left - navRect!.left;
+            const oy = cr.top - navRect!.top;
+            for (const b of island.balls) {
+              probes.push({
+                x: ox + b.body.position.x,
+                y: oy + b.body.position.y,
+                vx: b.body.velocity.x,
+                vy: b.body.velocity.y,
+                r: BALL_RADIUS,
+                isStatic: b.body.isStatic,
+                push: (fx, fy) => Matter.Body.applyForce(b.body, b.body.position, { x: fx, y: fy }),
+              });
             }
           }
-          // 纱帘后 = 收敛到天空静泊点,不与球纠缠;晕眩期控制器断开(step 内处理)
-          const base = st.mode === "veil"
-            ? { x: w * 0.72, y: Math.min(150, h * 0.22) }
-            : { x: w * 0.6, y: 150 };
+          // 待机空地:高度中部带 + 离所有球最远的候选点;每 3s 或栏宽变化时重选
+          // (球滚动/换 section 后空地会变,周期重选跟着挪窝;避让场兜底过渡)。
+          if (!perchRef.current || now > perchDueRef.current) {
+            perchRef.current = pickPerchBase(w, h, probes, Math.floor(now / 1000));
+            perchDueRef.current = now + 3000;
+          }
+          const base = perchRef.current;
           const swatted = flight.step(dt, base, st.mode === "veil" ? [] : probes, now);
           if (swatted && !swatLatchRef.current) companionSwat();
           swatLatchRef.current = swatted || flight.dizzyRemaining(now) > 0;

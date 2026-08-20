@@ -57,6 +57,19 @@ export function faceFlags(e: CompanionExpression) {
 }
 
 /**
+ * 口型宽度调制(v3 细化):同一开口度下横向收放——展唇音(E/I)横宽、
+ * 圆唇音(O/U)收窄,母音之间的形状差从"只有高度"升级为"高×宽"。
+ */
+const MOUTH_WIDTH: Record<Viseme, number> = {
+  closed: 1,
+  A: 1.06,
+  E: 1.2,
+  I: 1.26,
+  O: 0.9,
+  U: 0.84,
+};
+
+/**
  * 屏上脸(共享几何):眨眼 scaleY 作用于眼睛组,瞳孔组吃视线 lerp,
  * 口型组随开口度缩放。表情 key 变化重挂载 → cp-face-pop 弹跳盖住硬切。
  * 口型艺术每款自带(renderMouth)。
@@ -93,10 +106,10 @@ export function Face({
             <path d="M109,71 Q116,62 123,71" fill="none" stroke={p.ink} strokeWidth="4.5" strokeLinecap="round" />
           </>
         ) : flags.star ? (
-          <>
+          <g className="cp-star-tw">
             <path d="M84,60 L86.2,66 L92,68.2 L86.2,70.4 L84,76.4 L81.8,70.4 L76,68.2 L81.8,66 Z" fill={p.crown} stroke={p.crownD} strokeWidth="1.5" />
             <path d="M116,60 L118.2,66 L124,68.2 L118.2,70.4 L116,76.4 L113.8,70.4 L108,68.2 L113.8,66 Z" fill={p.crown} stroke={p.crownD} strokeWidth="1.5" />
-          </>
+          </g>
         ) : (
           <>
             <rect x={flags.surprised ? "75" : "76"} y={flags.surprised ? "59" : flags.listening ? "61" : "62"} width={flags.surprised ? "18" : "16"} height={flags.surprised ? "17" : flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
@@ -113,7 +126,7 @@ export function Face({
         style={{
           transformBox: "fill-box",
           transformOrigin: "center",
-          transform: strokeMouth ? undefined : `scale(${(0.72 + openScale * 0.28).toFixed(3)})`,
+          transform: strokeMouth ? undefined : `scale(${(MOUTH_WIDTH[viseme] * (0.72 + openScale * 0.28)).toFixed(3)}, ${(0.72 + openScale * 0.28).toFixed(3)})`,
         }}
       >
         {renderMouth(viseme, p)}

@@ -37,6 +37,32 @@ function emberMouth(v: Viseme, p: FormPalette) {
       return <path d="M100,76 a7,7.5 0 1 1 -0.01,0 Z" fill={p.ink} />;
     case "U":
       return <path d="M100,76.5 a4.5,7.5 0 1 1 -0.01,0 Z" fill={p.ink} />;
+    case "SS":
+      // 齿擦(s/x/sh 家族):咧开露齿——上牙带 + 暗腔,横向最宽
+      return (
+        <g>
+          <path d="M87,80 h26 a2.6,2.6 0 0 1 2.6,2.6 v1.6 a2.6,2.6 0 0 1 -2.6,2.6 h-26 a2.6,2.6 0 0 1 -2.6,-2.6 v-1.6 a2.6,2.6 0 0 1 2.6,-2.6 Z" fill={p.ink} />
+          <rect x="90" y="80.4" width="7" height="2" rx="1" fill="#FFFFFF" />
+          <rect x="99" y="80.4" width="7" height="2" rx="1" fill="#FFFFFF" opacity="0.9" />
+          <rect x="108" y="80.4" width="4.4" height="2" rx="1" fill="#FFFFFF" opacity="0.75" />
+        </g>
+      );
+    case "L":
+      // 舌尖(d/t/n/l 家族):口腔微开,舌尖顶上齿龈
+      return (
+        <g>
+          <path d="M92,77 h16 a4,4 0 0 1 4,4 v5 a4,4 0 0 1 -4,4 h-16 a4,4 0 0 1 -4,-4 v-5 a4,4 0 0 1 4,-4 Z" fill={p.ink} />
+          <path d="M95.5,84.5 Q100,78.5 104.5,84.5 Q100,87.5 95.5,84.5 Z" fill="#FF9DB0" stroke={p.ink} strokeWidth="1.4" strokeLinejoin="round" />
+        </g>
+      );
+    case "FV":
+      // 咬唇(f/v/h 家族):上牙咬住下唇
+      return (
+        <g>
+          <path d="M93,80.5 Q100,77.5 107,80.5 Q107,86.5 100,87 Q93,86.5 93,80.5 Z" fill="#E8563F" stroke={p.ink} strokeWidth="1.8" strokeLinejoin="round" />
+          <rect x="93.5" y="78.6" width="13" height="3.6" rx="1.8" fill="#FFFFFF" stroke={p.ink} strokeWidth="1.4" />
+        </g>
+      );
     default:
       return <path d="M92,83 Q100,88 108,83" fill="none" stroke={p.ink} strokeWidth="3.5" strokeLinecap="round" />;
   }

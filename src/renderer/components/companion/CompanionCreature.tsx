@@ -73,7 +73,7 @@ function notebookAnchor(): ZoneAnchor | null {
   return { x: r.right - 64, y: r.top + 84 };
 }
 
-export function CompanionCreature({ worldReady, courseId }: { worldReady: boolean; courseId: string | null }) {
+export function CompanionCreature({ courseId }: { courseId: string | null }) {
   const snap = useSyncExternalStore(subscribeCompanion, getCompanionSnapshot);
   const mouth = useSpeechMouth(snap.state.talking);
   const reduced = usePrefersReducedMotion();
@@ -140,7 +140,7 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
 
   // 记忆联动:课程切换后查 friction 卡点 → 把待机空地临时钉到卡点球旁 + 指向反应
   useEffect(() => {
-    if (!worldReady || !courseId) return;
+    if (!courseId) return;
     let alive = true;
     void window.api
       .getDashboard(courseId)
@@ -165,7 +165,7 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
       })
       .catch(() => {});
     return () => { alive = false; };
-  }, [worldReady, courseId]);
+  }, [courseId]);
 
   // 抓取:抓住后全局跟踪指针(不依赖 setPointerCapture,触屏同款);松手算速度
   useEffect(() => {
@@ -208,7 +208,7 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
   }, []);
 
   useEffect(() => {
-    if (!worldReady || !snap.enabled) return;
+    if (!snap.enabled) return;
     const wrap = wrapRef.current;
     if (!wrap) return;
 
@@ -235,9 +235,11 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
       if (!grabbed && ((eff === "chat" && !chatAnchor()) || (eff === "notebook" && !notebookAnchor()))) eff = "rail";
       // v7 手机端修复:家(左栏)不在场时不消失——T3 切栏会卸载地图,退到当前
       // 在场的栏栖身(对话优先),切回地图自然回老家。修复"切页后 bot 消失要刷新"。
+      let freeRoam = false;
       if (!grabbed && eff === "rail" && !railOk) {
         if (chatAnchor()) eff = "chat";
         else if (notebookAnchor()) eff = "notebook";
+        else freeRoam = true; // v9 常驻兜底:无课程/空态(两栏锚点都不在)→整窗游走,绝不隐匿
       }
 
       let target: { x: number; y: number } | null = null;
@@ -338,6 +340,18 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
           target = { x: navRect!.left + p.x, y: navRect!.top + p.y };
           angle = flight.body.angle + bankAngle(flight.body.velocity.x, flight.body.velocity.y);
         }
+      } else if (freeRoam) {
+        // v9 无课程/空态:整个视口是他的世界(顶部避开标题栏,底部留边),慢慢游走
+        flightRef.current = null;
+        const wpt = wanderInPanel(
+          { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 },
+          SIZE.chat,
+          now,
+        );
+        const cur = posRef.current ?? { x: wpt.x, y: wpt.y };
+        const k = 1 - Math.exp(-dt / 140);
+        target = { x: cur.x + (wpt.x - cur.x) * k, y: cur.y + (wpt.y - cur.y) * k };
+        angle = Math.max(-0.25, Math.min(0.25, (wpt.x - cur.x) * 0.008));
       } else if (eff !== "rail") {
         flightRef.current = null;
         // v6 朗读跟句:有 karaoke 高亮句(讲解区/中栏对话消息均可)时,锚点被句子
@@ -410,9 +424,10 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
         }
       }
 
-      if (dispZoneRef.current !== eff) {
-        dispZoneRef.current = eff;
-        setDispZone(eff);
+      const dz = freeRoam ? "chat" : eff;
+      if (dispZoneRef.current !== dz) {
+        dispZoneRef.current = dz;
+        setDispZone(dz);
       }
 
       if (!target) {
@@ -435,9 +450,9 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
       flightRef.current?.dispose();
       flightRef.current = null;
     };
-  }, [worldReady, snap.enabled, reduced]);
+  }, [snap.enabled, reduced]);
 
-  if (!worldReady || !snap.enabledLoaded || !snap.enabled) return null;
+  if (!snap.enabledLoaded || !snap.enabled) return null;
 
   const pose = inTransit
     ? "flying"

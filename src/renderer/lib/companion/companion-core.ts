@@ -6,15 +6,37 @@
  *      产品红线:答错走「鼓励向」(encourage),绝不出现羞辱性反馈。
  *   2. 状态机(companionReducer):优先级 活动反应 > 听写 > 朗读 > 流式 > 睡觉 > 待机;
  *      反应带保持时长(holdMs),到期回落到当前标志位对应的 base 表情。
- *   3. 口型(computeViseme/audioToMouth):朗读音频的响度+频谱质心 → 六档 viseme
- *      (闭/A/E/I/O/U)+ 开口度 5 档量化——「母音形状」而非单纯张嘴。
+ *   3. 口型(computeViseme/audioToMouth):朗读音频的响度+频谱 → viseme
+ *      (v9 九形:六母音+SS 齿擦/L 舌尖/FV 咬唇,见 shared SpeechViseme)
+ *      + 开口度 5 档量化——「母音形状」而非单纯张嘴。
  *
  * DOM/事件接线在 bus.ts(订阅 celebration 总线 + state:changed + 用户活动),
  * 本文件被 verify-companion.mjs 直接 import,改这里必须跑套件。
  */
 import type { CelebrationKind } from "../celebration.js";
+import type { SpeechViseme } from "@shared/speech-types";
 
-export type Viseme = "closed" | "A" | "E" | "I" | "O" | "U";
+/** v9:viseme 词表与主进程剧本路径共用同一真源(shared/speech-types)。 */
+export type Viseme = SpeechViseme;
+/** 只有母音艺术的旧形态(frost/moss/astro/ink)用的降级词表。 */
+export type CoarseViseme = "closed" | "A" | "E" | "I" | "O" | "U";
+
+/**
+ * 辅音 viseme → 最近母音(SS 齿擦≈展唇窄口 I;L 舌尖≈开口 A;FV 咬唇≈闭)。
+ * 旧形态没画辅音嘴型,渲染前先降级——全形态立刻获得 v9 时间轴,艺术后续逐形态补。
+ */
+export function coarseViseme(v: Viseme): CoarseViseme {
+  switch (v) {
+    case "SS":
+      return "I";
+    case "L":
+      return "A";
+    case "FV":
+      return "closed";
+    default:
+      return v;
+  }
+}
 
 export type CompanionExpression =
   | "base"

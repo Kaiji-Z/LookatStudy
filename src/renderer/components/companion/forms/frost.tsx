@@ -7,7 +7,7 @@
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
 import { Arms, Face, FaceExtras, GroundShadow, faceFlags } from "./shared.js";
-import type { Viseme } from "../../../lib/companion/companion-core.js";
+import { coarseViseme, type Viseme } from "../../../lib/companion/companion-core.js";
 
 export const FROST: FormPalette = {
   out: "#232B3A",
@@ -55,7 +55,7 @@ function CrystalCore({ energyRatio, uid }: { energyRatio: number; uid: string })
 }
 
 function frostMouth(v: Viseme, p: FormPalette) {
-  switch (v) {
+  switch (coarseViseme(v)) {
     case "A":
       return <path d="M92,77 L108,77 L113,81 L108,89 L92,89 L87,81 Z M95,80 L105,80 L105,86 L95,86 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":

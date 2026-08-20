@@ -8,7 +8,7 @@
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
 import { Arms, Face, FaceExtras, GroundShadow, faceFlags } from "./shared.js";
-import type { Viseme } from "../../../lib/companion/companion-core.js";
+import { coarseViseme, type Viseme } from "../../../lib/companion/companion-core.js";
 
 export const ASTRO: FormPalette = {
   out: "#221C38",
@@ -51,7 +51,7 @@ function MoonCore({ energyRatio, uid }: { energyRatio: number; uid: string }) {
 }
 
 function astroMouth(v: Viseme, p: FormPalette) {
-  switch (v) {
+  switch (coarseViseme(v)) {
     case "A":
       return <path d="M91,77 h18 a5,5 0 0 1 5,5 v3 a5,5 0 0 1 -5,5 h-18 a5,5 0 0 1 -5,-5 v-3 a5,5 0 0 1 5,-5 Z M95,80.5 h10 v6 h-10 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":

@@ -416,34 +416,105 @@ export function clearReadingMark(container: HTMLElement): void {
 }
 
 /**
- * 朗读句顺序匹配(纯函数,verify 直测):在 domText 的 from 起按序找 token 序列,
- * token 之间允许间隔。间隔正是"读的"与"显示的"差异来源 ——
- *   ①朗读文本有结构空白(\n 段落/列表边界),DOM textContent 段落之间什么都没有;
- *   ②行内代码/围栏代码朗读时被剥掉,DOM 里还在;
- *   ③表格竖线读成空格,DOM 里单元格直接拼接。
- * 单 token(整句无空白,中文散文常态)= 退化为带游标的 indexOf。
- * 跨度 Sanity:token 间隔之和异常大(误命中早期重复文本)判失败。
+ * 朗读句对齐匹配(v9 整句边界,纯函数,verify 直测)。
+ *
+ * v8 及以前按"原句 token 逐一 indexOf"匹配,两类根因让高亮经常落在句子中间:
+ *   ①标点/全半角差异(朗读文本半角逗号 vs DOM 全角、「」引号 markdown 转写)让
+ *     句首 token 匹配失败,起点绑到句中后继 token 上;
+ *   ②游标漂移(前一句匹配终点越过真实句界)直接把当前句起点推到句中。
+ *
+ * v9 方案 = canonical 全文对齐 + 句界扩展:
+ *   ①把 DOM 文本与句子都规范化(只留文字字符,全角→半角,小写,去空白/标点),
+ *     建规范串→原文下标映射,标点差异全部消失;
+ *   ②先整句 indexOf(常态命中,句首必然对齐),失败再 token 间隔匹配
+ *     (间隔吸收行内代码/表格竖线等读显差异);
+ *   ③匹配到的原文区间向前吃开引号(「『(等)、向后吃句末标点加闭引号
+ *     (。!?"』 等)——高亮总是覆盖完整可见句子,不再停在句中。
  */
-export function matchSentenceTokens(
+const WORD_CHAR_RE = /[0-9A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/;
+const OPEN_EDGE = "\u300c\u300e(\uff08[\u3010<\u300a\"'\u201c\u2018";
+const CLOSE_EDGE = "\u3002\u300f\u300d)\uff09]\u3011>\u300b\"'\u201d\u2019!\uff01?\uff1f\u2026,\uff0c\u3001;\uff1b:\uff1a";
+
+/** 单字符规范化:全角→半角、小写;非文字字符返回 null(标点/空白/符号全滤)。 */
+function canonChar(ch: string): string | null {
+  const c = ch.codePointAt(0)!;
+  let s = ch;
+  if (c >= 0xff01 && c <= 0xff5e) s = String.fromCharCode(c - 0xfee0);
+  return WORD_CHAR_RE.test(s) ? s.toLowerCase() : null;
+}
+
+/** 文本 → 规范串 + 规范位→原文本标映射(升序,可二分)。 */
+export function canonicalSpeechIndex(text: string): { canon: string; map: number[] } {
+  let canon = "";
+  const map: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const c = canonChar(text[i]!);
+    if (c !== null) {
+      canon += c;
+      map.push(i);
+    }
+  }
+  return { canon, map };
+}
+
+/** 原文下标 from → 规范串起点(map 中第一个 ≥ from 的位置)。 */
+function canonLowerBound(map: number[], from: number): number {
+  if (from <= 0) return 0;
+  let lo = 0;
+  let hi = map.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (map[mid]! < from) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * 在 domText 的 from 起对齐整句(规范化 + 句界扩展)。纯函数。
+ * 返回原文区间;对不上返回 null。跨度 sanity 防误命中早期重复文本。
+ */
+export function matchSentenceAligned(
   domText: string,
-  tokens: string[],
+  sentence: string,
   from: number,
 ): { start: number; end: number } | null {
-  const toks = tokens.filter((t) => t.length > 0);
-  if (toks.length === 0) return null;
-  const totalLen = toks.reduce((s, t) => s + t.length, 0);
-  let searchFrom = Math.max(0, from);
-  let start = -1;
-  let end = -1;
-  for (const tok of toks) {
-    const idx = domText.indexOf(tok, searchFrom);
-    if (idx < 0) return null;
-    if (start < 0) start = idx;
-    end = idx + tok.length;
-    searchFrom = end;
+  const { canon, map } = canonicalSpeechIndex(domText);
+  const toks = sentence
+    .trim()
+    .split(/\s+/)
+    .map((t) => [...t].map(canonChar).filter(Boolean).join(""))
+    .filter((t) => t.length > 0);
+  if (toks.length === 0 || canon.length === 0) return null;
+
+  const ci = canonLowerBound(map, Math.max(0, from));
+  const full = toks.join("");
+  let s = -1;
+  let e = -1;
+  const hit = canon.indexOf(full, ci);
+  if (hit >= 0) {
+    s = hit;
+    e = hit + full.length - 1;
+  } else {
+    // token 间隔匹配:间隔 = 行内代码/围栏代码(读时剥掉,DOM 里还在)等读显差异
+    let searchFrom = ci;
+    for (const tok of toks) {
+      const idx = canon.indexOf(tok, searchFrom);
+      if (idx < 0) return null;
+      if (s < 0) s = idx;
+      e = idx + tok.length - 1;
+      searchFrom = e + 1;
+    }
+    if (s < 0 || e - s + 1 > full.length * 3 + 40) return null;
   }
-  if (start < 0) return null;
-  if (end - start > totalLen * 4 + 120) return null; // 误命中保护
+  if (e >= map.length || s < 0) return null;
+  let start = map[s]!;
+  let end = map[e]! + 1;
+
+  // 句界扩展:向前吃开引号(不越过上一句终点),向后吃句末标点+闭引号
+  const floor = from > 0 ? from : 0;
+  for (let k = 0; k < 3 && start - 1 >= floor && OPEN_EDGE.includes(domText[start - 1]!); k++) start--;
+  for (let k = 0; k < 4 && end < domText.length && CLOSE_EDGE.includes(domText[end]!); k++) end++;
   return { start, end };
 }
 
@@ -459,8 +530,8 @@ export function resetReadingCursor(container: HTMLElement): void {
  * 在讲解正文/对话消息里定位并高亮**当前正在朗读**的句子,返回高亮元素(未找到返回 null)。
  *
  * 句子文本来自 splitSentences(normalizeSpeechText(content)) —— 与 main 合成侧
- * 同一真源(shared/speech-text 纯函数),句子序=缓冲播放序。匹配 = 句子按空白切
- * token + matchSentenceTokens 顺序匹配 + 单调游标(重复文本不回跳;失败回卷重找一次
+ * 同一真源(shared/speech-text 纯函数),句子序=缓冲播放序。匹配 = matchSentenceAligned
+ * 规范化整句对齐(标点/全半角差异归零)+ 句界扩展(吃开引号/句末标点)+ 单调游标(重复文本不回跳;失败回卷重找一次
  * 自愈内容重挂)。opts.within 限定搜索子树(对话消息限定正文 text part,思考块/
  * 工具产物的文字不参与匹配 —— 它们显示但不朗读)。
  */
@@ -473,12 +544,11 @@ export function markReadingSentence(
   const trimmed = sentence.trim();
   if (!trimmed) return null;
   const model = getTextModel(container, opts?.within);
-  const tokens = trimmed.split(/\s+/);
   const from = readingCursors.get(container) ?? 0;
-  let m = matchSentenceTokens(model.text, tokens, from);
+  let m = matchSentenceAligned(model.text, trimmed, from);
   if (!m && from > 0) {
     // 游标漂移自愈(ReactMarkdown 重挂后 DOM 变了):从头重找一次
-    m = matchSentenceTokens(model.text, tokens, 0);
+    m = matchSentenceAligned(model.text, trimmed, 0);
   }
   if (!m) return null;
   readingCursors.set(container, m.end);

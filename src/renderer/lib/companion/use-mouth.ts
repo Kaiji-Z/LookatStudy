@@ -1,21 +1,24 @@
 /**
- * useSpeechMouth —— 从朗读分析节点实时读母音口型。
+ * useSpeechMouth —— 朗读口型状态(v9 双路径)。
  *
- * active=true 时 rAF 循环读共享 AnalyserNode(时域响度+频域质心 → 六档 viseme +
- * 开口度 5 档量化),量化档变化才 setState——渲染零风暴。active=false 立即闭嘴。
- * 这是「AI 软件式口型」的信号端;渲染端在 Mascot 的 cp-mouth。
+ * 主路径:离线时间轴查表——useSpeech 起播前已备好每句 cue 表(引擎剧本 cue
+ * 优先/句音频 FFT 分析兜底),rAF 用 ctx.currentTime - 起播时刻 查当前帧:
+ * 采样级对齐、无平滑窗延迟、无帧间抖动(实时分析器的三个老大难)。
+ * 兜底路径:时间轴缺失时读活动 AnalyserNode(实时频谱,带 2 帧确认)。
+ * active=false 立即闭嘴。量化档变化才 setState——渲染零风暴。
  */
 import { useEffect, useState } from "react";
 
 import {
   SPEECH_FFT_SIZE,
-  getActiveSpeechAnalyser,
+  getActivePlayback,
 } from "../speech-analyser.js";
 import {
   type Viseme,
   audioToMouth,
   mouthOpenScale,
 } from "./companion-core.ts";
+import { visemeAt } from "./viseme-timeline.js";
 
 export interface MouthFrame {
   viseme: Viseme;
@@ -36,32 +39,46 @@ export function useSpeechMouth(active: boolean): MouthFrame {
     const fd = new Uint8Array(SPEECH_FFT_SIZE / 2);
     let raf = 0;
     let lastKey = "";
-    // 共振峰判位灵敏,相邻元音可能逐帧抖动:候选 viseme 须连续 2 帧确认才切换
-    // (闭嘴立即切,张嘴要稳)。coarticulation 的廉价近似。
+    // 兜底路径专用:共振峰判位灵敏,相邻元音可能逐帧抖动,候选 viseme 须连续
+    // 2 帧确认才切换(闭嘴立即切)。时间轴路径不需要——离线帧已做最短保持。
     let cand: Viseme | null = null;
     let candStreak = 0;
     const loop = () => {
-      const an = getActiveSpeechAnalyser();
-      if (an) {
-        an.getByteTimeDomainData(td);
-        an.getByteFrequencyData(fd);
-        const r = audioToMouth(td, fd, an.context.sampleRate, an.fftSize);
-        let vis = r.viseme;
-        if (vis !== lastKey.split(":")[0]) {
-          if (vis === "closed" || vis === cand) {
-            if (vis === cand) candStreak++;
+      const p = getActivePlayback();
+      if (p) {
+        let vis: Viseme;
+        let level: number;
+        if (p.timeline && p.timeline.cues.length > 0) {
+          const t = Math.max(0, p.ctx.currentTime - p.startedAtCtxTime);
+          const cue = visemeAt(p.timeline, t);
+          vis = cue?.viseme ?? "closed";
+          level = cue?.level ?? 0;
+        } else if (p.analyser) {
+          const an = p.analyser;
+          an.getByteTimeDomainData(td);
+          an.getByteFrequencyData(fd);
+          const r = audioToMouth(td, fd, an.context.sampleRate, an.fftSize);
+          vis = r.viseme;
+          if (vis !== lastKey.split(":")[0]) {
+            if (vis === "closed" || vis === cand) {
+              if (vis === cand) candStreak++;
+            } else {
+              cand = vis;
+              candStreak = 1;
+            }
+            if (!(vis === "closed") && !(vis === cand && candStreak >= 2)) {
+              vis = (lastKey.split(":")[0] as Viseme) || "closed";
+            }
           } else {
-            cand = vis;
-            candStreak = 1;
+            cand = null;
+            candStreak = 0;
           }
-          if (!(vis === "closed") && !(vis === cand && candStreak >= 2)) {
-            vis = (lastKey.split(":")[0] as Viseme) || "closed";
-          }
+          level = r.level;
         } else {
-          cand = null;
-          candStreak = 0;
+          vis = "closed";
+          level = 0;
         }
-        const open = mouthOpenScale(vis, r.level);
+        const open = mouthOpenScale(vis, level);
         const key = vis + ":" + open;
         if (key !== lastKey) {
           lastKey = key;

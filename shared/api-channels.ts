@@ -95,6 +95,7 @@ export const API_CHANNELS: Record<string, string> = {
   consolidateMemory: "consolidate:run",
   getSetting: "settings:get",
   setSetting: "settings:set",
+  companionPetSetClickThrough: "companionPet:setClickThrough",
   getXpStatus: "xp:getStatus",
   exportCourse: "course:export",
   canvasList: "canvas:list",

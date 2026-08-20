@@ -726,6 +726,9 @@ export interface ApiExpose {
   /* 设置 */
   getSetting(key: SettingKey): Promise<string | null>;
   setSetting(key: SettingKey, value: string): Promise<void>;
+  /** v0.11 桌宠:切换桌宠窗点击穿透(true=穿透还原桌面操作,false=可交互生物)。
+   *  渲染层指针热区检测调用;web 运行时无桌宠窗,no-op。 */
+  companionPetSetClickThrough(passThrough: boolean): Promise<void>;
 
   /** 语音模型状态(全部;absent/downloading/ready/error) */
   getSpeechModelStatus(): Promise<SpeechModelStatusT[]>;
@@ -945,6 +948,8 @@ export type SettingKey =
   | "asr_auto_stop"
   // 伴学伙伴可见性(用户设置,非引擎 flag;默认开,仅 "false"/"0" 关闭)
   | "companion_enabled" | "companion_form" | "companion_sfx"
+  // v0.11 桌宠模式:伴学在应用外常驻(透明置顶窗;默认关)
+  | "companion_pet_mode"
   // Groq LLM preset 早已使用(设置页经 as 断言写入);入 union 让听写档零断言读取
   | "groq_api_key";
 

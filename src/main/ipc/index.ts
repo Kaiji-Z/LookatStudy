@@ -1081,7 +1081,7 @@ export function registerStreakHandlers(): void {
 
 /* ---------- 设置 ---------- */
 
-export function registerSettingsHandlers(): void {
+export function registerSettingsHandlers(deps: RuntimeDeps): void {
   handle(
     "settings:get",
     async (_e, key: SettingKey): Promise<string | null> => {
@@ -1110,8 +1110,15 @@ export function registerSettingsHandlers(): void {
         })
         .run();
       markDirty();
+      // v0.11 桌宠:开关落库即同步桌宠窗生命周期(Electron 壳注入 pet 桥;serve 无窗 no-op)
+      if (key === "companion_pet_mode") deps.pet?.sync(value === "1");
     },
   );
+
+  // v0.11 桌宠:渲染层热区检测 → 切换桌宠窗点击穿透(离开热区恢复穿透)
+  handle("companionPet:setClickThrough", (_e, passThrough: boolean) => {
+    deps.pet?.setClickThrough(passThrough);
+  });
 
   // XP 状态（今日 XP + 每日目标 + 达成百分比）
   handle("xp:getStatus", async () => {
@@ -1597,7 +1604,7 @@ export function registerAllHandlers(deps: RuntimeDeps): void {
   registerProgressHandlers();
   registerSrsHandlers();
   registerStreakHandlers();
-  registerSettingsHandlers();
+  registerSettingsHandlers(deps);
   registerSoulHandlers();
   registerAgentHandlers(deps);
   registerM3Handlers();

@@ -7,8 +7,8 @@
  * 笔触(圆头粗描,起收笔圆润)。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags , Shoulders } from "./shared.js";
-import { coarseViseme, type Viseme } from "../../../lib/companion/companion-core.js";
+import { Arms, Face, FaceExtras, GroundShadow, faceFlags , Shoulders, BevelPlate } from "./shared.js";
+import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const INK: FormPalette = {
   out: "#2F2A22",
@@ -56,7 +56,7 @@ function InkCore({ energyRatio, streakLit }: { energyRatio: number; streakLit: b
 }
 
 function inkMouth(v: Viseme, p: FormPalette) {
-  switch (coarseViseme(v)) {
+  switch (v) {
     case "A":
       return <path d="M91,77 Q100,74.5 109,77 Q111,86 100,89.5 Q89,86 91,77 Z M96,79.5 Q100,81.5 104,79.5 Q103,84 100,85.5 Q97,84 96,79.5 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":
@@ -67,6 +67,32 @@ function inkMouth(v: Viseme, p: FormPalette) {
       return <path d="M100,75.5 C105.5,75.5 108,80 108,83 C108,86.6 104.8,89.6 100,89.6 C95.2,89.6 92,86.6 92,83 C92,80 94.5,75.5 100,75.5 Z M100,79.6 C102.6,79.6 104.2,81.1 104.2,83 C104.2,85 102.5,86.2 100,86.2 C97.5,86.2 95.8,85 95.8,83 C95.8,81.1 97.4,79.6 100,79.6 Z" fill={p.ink} fillRule="evenodd" />;
     case "U":
       return <path d="M100,76 C103.2,76 105.2,79.6 105.2,83 C105.2,86.4 103.2,89 100,89 C96.8,89 94.8,86.4 94.8,83 C94.8,79.6 96.8,76 100,76 Z M100,79.6 C101.4,79.6 102.3,81.1 102.3,83 C102.3,85 101.4,86.2 100,86.2 C98.6,86.2 97.7,85 97.7,83 C97.7,81.1 98.6,79.6 100,79.6 Z" fill={p.ink} fillRule="evenodd" />;
+    case "SS":
+      // 齿擦:宽笔锋横抹 + 纸白齿缝(飞白)
+      return (
+        <g>
+          <path d="M88,80.2 Q100,78.6 112,80.2 Q112.6,85.8 100,86.4 Q87.4,85.8 88,80.2 Z" fill={p.ink} />
+          <path d="M91.5,80.8 L96.5,80.5 L95.8,84.6 L92,84.4 Z" fill="#F7F2E6" />
+          <path d="M99,80.4 L104.5,80.4 L104,84.7 L99.4,84.6 Z" fill="#F7F2E6" opacity="0.9" />
+          <path d="M107,80.6 L110.4,80.8 L109.8,84.4 L107.4,84.3 Z" fill="#F7F2E6" opacity="0.72" />
+        </g>
+      );
+    case "L":
+      // 舌尖:笔画开口 + 朱砂舌顶上齿龈
+      return (
+        <g>
+          <path d="M91,77 Q100,74.5 109,77 Q111,86 100,89.5 Q89,86 91,77 Z M96,79.5 Q100,81.5 104,79.5 Q103,84 100,85.5 Q97,84 96,79.5 Z" fill={p.ink} fillRule="evenodd" />
+          <path d="M96.2,85.6 Q100,78.6 103.8,85.6 Q100,87.9 96.2,85.6 Z" fill="#E8543F" stroke={p.ink} strokeWidth="1.3" strokeLinejoin="round" />
+        </g>
+      );
+    case "FV":
+      // 咬唇:墨条上牙咬宣纸下唇
+      return (
+        <g>
+          <path d="M93.5,80.6 Q100,78.2 106.5,80.6 Q107,86.2 100,87 Q93,86.2 93.5,80.6 Z" fill="#DCD2B8" stroke={p.ink} strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M94,79.2 Q100,77.2 106,79.2 L105.4,82.5 Q100,83.6 94.6,82.5 Z" fill="#3A342A" stroke={p.ink} strokeWidth="1.3" strokeLinejoin="round" />
+        </g>
+      );
     default:
       return <path d="M91,81.8 Q100,88.6 109,81.4" fill="none" stroke={p.ink} strokeWidth="4.2" strokeLinecap="round" />;
   }
@@ -102,6 +128,7 @@ export function InkArt({ uid, refs, expression, viseme, openScale, energyRatio, 
             <rect x="62" y="110" width="76" height="50" rx="10" fill={PAPER} transform="translate(-4 -4)" />
           </g>
           <rect x="62" y="110" width="76" height="50" rx="10" fill="none" stroke={OUT} strokeWidth="5" />
+          <BevelPlate id={`${uid}-body`} x={62} y={110} w={76} h={50} t={4} light="rgba(255,255,255,0.5)" dark="rgba(58,52,42,0.32)" />
           <InkCore energyRatio={energyRatio} streakLit={streakLit} />
         </g>
 
@@ -125,6 +152,7 @@ export function InkArt({ uid, refs, expression, viseme, openScale, energyRatio, 
             <path d="M100,30 L100,44" stroke={OUT} strokeWidth="2.6" />
           </g>
           <path d="M54,44 L100,30 L146,44 L150,72 L142,96 L58,96 L50,72 Z" fill="none" stroke={OUT} strokeWidth="5" strokeLinejoin="round" />
+          <BevelPlate id={`${uid}-helm`} x={50} y={30} w={100} h={66} t={4} light="rgba(255,255,255,0.46)" dark="rgba(58,52,42,0.3)" />
           <path d="M62,38 Q90,32 104,36 L98,44 Q74,42 62,46 Z" fill={CINNABAR} opacity="0.85" />
           <path d="M112,36 L124,38 L118,45 L108,44 Z" fill={CINNABAR} opacity="0.45" />
 

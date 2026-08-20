@@ -4,10 +4,12 @@
  */
 import { ipcMain, dialog, app, type BrowserWindow } from "electron";
 import { collectHandlers } from "./index.js";
+import { syncPetWindow, setPetClickThrough } from "../pet-window.js";
 import type { IpcHandlerFn } from "./runtime.js";
 
 export function setupIpc(mainWindow: BrowserWindow | null): void {
   const table = collectHandlers({
+    pet: { sync: syncPetWindow, setClickThrough: setPetClickThrough },
     ui: "electron",
     dataDir: app.getPath("userData"),
     emitter: {

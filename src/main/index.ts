@@ -20,6 +20,7 @@ import { loadEnv, getZaiConfig } from "./services/env.js";
 import { seedBuiltinSouls } from "./services/souls/soul-service.js";
 import { createProposal } from "./services/proposal-service.js";
 import { setStateEmitter } from "./lib/state-emitter.js";
+import { syncPetWindow } from "./pet-window.js";
 import { setExamStatusSender } from "./services/exam-generation-store.js";
 import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems, progress as progressTable, chatMessages, threads as threadsTable, exercises as exercisesTable, examAttempts } from "./db/schema.js";
 import { and, eq, like as like_ } from "drizzle-orm";
@@ -258,6 +259,10 @@ app.whenReady().then(async () => {
   // 考试生成进度:exam-generation-store → 推 "exam:status" 给 renderer(实时进度/完成/失败)。
   setExamStatusSender((payload) => mainWindow?.webContents.send("exam:status", payload));
   console.error("[lookatstudy] window created, IPC registered");
+
+  // v0.11 桌宠:设置开着就常驻(主窗 Creature 在 petMode 下隐身,避免双影)
+  const petModeRow = getDb().select().from(settingsTable).where(eq(settingsTable.key, "companion_pet_mode")).get();
+  if (petModeRow?.value === "1") syncPetWindow(true);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

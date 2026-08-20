@@ -39,6 +39,8 @@ export interface CompanionSnapshot {
   crowned: boolean;
   /** 等级徽标:XP 等级 ≥7 → 金色光环 */
   halo: boolean;
+  /** v0.11 桌宠模式:主窗生物隐身(桌宠透明窗接管),避免双影 */
+  petMode: boolean;
 }
 
 let state: CompanionState = initialCompanionState(Date.now());
@@ -50,6 +52,7 @@ let enabledLoaded = false;
 let form = formIdFromSetting(null);
 let crowned = false;
 let halo = false;
+let petMode = false;
 let installed = false;
 let snapshot: CompanionSnapshot | null = null;
 const listeners = new Set<() => void>();
@@ -67,6 +70,7 @@ function rebuild(): void {
     form,
     crowned,
     halo,
+    petMode,
   };
   for (const l of listeners) l();
 }
@@ -87,6 +91,12 @@ async function reloadEnabled(): Promise<void> {
     enabled = true;
   }
   enabledLoaded = true;
+  try {
+    const p = await window.api?.getSetting("companion_pet_mode");
+    petMode = p === "1";
+  } catch {
+    petMode = false;
+  }
   try {
     const sfx = await window.api?.getSetting("companion_sfx");
     setPetSfxEnabled(!(sfx === "false" || sfx === "0"));
@@ -114,7 +124,13 @@ function install(): void {
 
   // main 状态推送:xp → 能量核重算;streak → 天线火苗
   try {
+    // v11:掌握变化转发(window 事件,Creature 拿去判定"卡点毕业")
     window.api?.on("state:changed", (kind: "xp" | "streak" | "mastery") => {
+      try {
+        window.dispatchEvent(new CustomEvent("companion-state-changed", { detail: kind }));
+      } catch {
+        /* 装饰层失败无碍 */
+      }
       if (kind === "xp") {
         window.api
           .getXpStatus()
@@ -302,7 +318,7 @@ export function subscribeCompanion(l: () => void): () => void {
 /** useSyncExternalStore 快照(引用稳定,未变化不换对象)。 */
 export function getCompanionSnapshot(): CompanionSnapshot {
   if (!snapshot) {
-    snapshot = { state, energyRatio, streakLit, enabled, enabledLoaded, form, crowned, halo };
+    snapshot = { state, energyRatio, streakLit, enabled, enabledLoaded, form, crowned, halo, petMode };
   }
   return snapshot;
 }
@@ -362,6 +378,11 @@ export function companionZoneFocus(on: boolean): void {
 }
 
 /** 用户划线加笔记(NotebookPanel 保存 user_note → 飞右栏记笔记)。 */
+
+/** v11 卡点掌握勾销:掏本打金勾(mastery 从 friction 榜消失时由 Creature 判定触发)。 */
+export function companionNoteTick(): void {
+  dispatch({ type: "noteTick", now: Date.now() });
+}
 export function companionNote(): void {
   fire("companion-note");
 }

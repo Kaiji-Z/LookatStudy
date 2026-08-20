@@ -213,6 +213,8 @@ const api = {
     ipcRenderer.invoke("settings:get", key)) as ApiExpose["getSetting"],
   setSetting: ((key: SettingKey, value: string) =>
     ipcRenderer.invoke("settings:set", key, value)) as ApiExpose["setSetting"],
+  companionPetSetClickThrough: ((passThrough: boolean) =>
+    ipcRenderer.invoke("companionPet:setClickThrough", passThrough)) as ApiExpose["companionPetSetClickThrough"],
   getXpStatus: (() =>
     ipcRenderer.invoke("xp:getStatus")) as ApiExpose["getXpStatus"],
   exportCourse: ((courseId: string, format: "json" | "markdown") =>

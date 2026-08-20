@@ -857,6 +857,7 @@ function CompanionContent() {
   const snap = useSyncExternalStore(subscribeCompanion, getCompanionSnapshot);
 
   const [sfx, setSfx] = useState(true);
+  const [pet, setPet] = useState(false);
 
   useEffect(() => {
     api.getSetting("companion_enabled").then((v) => {
@@ -865,6 +866,9 @@ function CompanionContent() {
     });
     api.getSetting("companion_sfx").then((v) => {
       setSfx(v !== "false" && v !== "0");
+    });
+    api.getSetting("companion_pet_mode").then((v) => {
+      setPet(v === "1");
     });
   }, []);
 
@@ -880,6 +884,14 @@ function CompanionContent() {
     const next = !sfx;
     setSfx(next);
     await api.setSetting("companion_sfx", String(next));
+    window.dispatchEvent(new Event("companion-config-changed"));
+  };
+
+  const handlePetToggle = async () => {
+    const next = !pet;
+    setPet(next);
+    await api.setSetting("companion_pet_mode", next ? "1" : "0");
+    // 主进程 settings:set 钩子开/关桌宠窗;bus 重读让主窗 Creature 隐身/复现
     window.dispatchEvent(new Event("companion-config-changed"));
   };
 
@@ -907,6 +919,13 @@ function CompanionContent() {
           <div className="flex-1 min-w-0">
             <div className="text-body font-medium text-ink-strong">{t("settings.companion.sfx")}</div>
             <div className="text-label text-ink-muted">{t("settings.companion.sfx.desc")}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Toggle checked={pet} onChange={handlePetToggle} label={t("settings.companion.pet")} testid="companion-pet-toggle" />
+          <div className="flex-1 min-w-0">
+            <div className="text-body font-medium text-ink-strong">{t("settings.companion.pet")}</div>
+            <div className="text-label text-ink-muted">{t("settings.companion.pet.desc")}</div>
           </div>
         </div>
         <div>

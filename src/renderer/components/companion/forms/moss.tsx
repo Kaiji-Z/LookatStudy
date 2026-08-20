@@ -6,8 +6,8 @@
  * 口型=花瓣/叶片的有机母音。调性:苔绿×奶白屏,呼吸般的圆。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags , Shoulders } from "./shared.js";
-import { coarseViseme, type Viseme } from "../../../lib/companion/companion-core.js";
+import { Arms, Face, FaceExtras, GroundShadow, faceFlags , Shoulders, BevelPlate } from "./shared.js";
+import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const MOSS: FormPalette = {
   out: "#2A3326",
@@ -51,7 +51,7 @@ function SeedCore({ energyRatio }: { energyRatio: number }) {
 }
 
 function mossMouth(v: Viseme, p: FormPalette) {
-  switch (coarseViseme(v)) {
+  switch (v) {
     case "A":
       return <path d="M92,77 Q100,74 108,77 Q110,86 100,89 Q90,86 92,77 Z M96,79 Q100,81 104,79 Q103,83 100,84.5 Q97,83 96,79 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":
@@ -62,6 +62,33 @@ function mossMouth(v: Viseme, p: FormPalette) {
       return <path d="M100,75.5 C105,75.5 107.5,80 107.5,83 C107.5,86.5 104.5,89.5 100,89.5 C95.5,89.5 92.5,86.5 92.5,83 C92.5,80 95,75.5 100,75.5 Z M100,79.5 C102.5,79.5 104,81 104,83 C104,85 102.3,86.3 100,86.3 C97.7,86.3 96,85 96,83 C96,81 97.5,79.5 100,79.5 Z" fill={p.ink} fillRule="evenodd" />;
     case "U":
       return <path d="M100,76 C103,76 105,79.5 105,83 C105,86.3 103,89 100,89 C97,89 95,86.3 95,83 C95,79.5 97,76 100,76 Z M100,79.5 C101.3,79.5 102.2,81 102.2,83 C102.2,85 101.3,86.3 100,86.3 C98.7,86.3 97.8,85 97.8,83 C97.8,81 98.7,79.5 100,79.5 Z" fill={p.ink} fillRule="evenodd" />;
+    case "SS":
+      // 齿擦:圆润宽槽 + 白牙卵石
+      return (
+        <g>
+          <path d="M88,80 Q100,78 112,80 Q112.5,85.5 100,86 Q87.5,85.5 88,80 Z" fill={p.ink} />
+          <rect x="91" y="80.6" width="6.5" height="2.6" rx="1.3" fill="#FFFFFF" />
+          <rect x="99" y="80.4" width="6.5" height="2.8" rx="1.4" fill="#FFFFFF" opacity="0.9" />
+          <rect x="106.6" y="80.7" width="4.2" height="2.5" rx="1.25" fill="#FFFFFF" opacity="0.75" />
+        </g>
+      );
+    case "L":
+      // 舌尖:圆润开口 + 嫩叶舌顶上齿龈
+      return (
+        <g>
+          <path d="M92,77 Q100,74 108,77 Q110,86 100,89 Q90,86 92,77 Z M96,79 Q100,81 104,79 Q103,83 100,84.5 Q97,83 96,79 Z" fill={p.ink} fillRule="evenodd" />
+          <path d="M96,85.5 Q100,78 104,85.5 Q100,88 96,85.5 Z" fill="#A8E89A" stroke={p.ink} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M98.4,84 Q100,81 101.6,84" fill="none" stroke={p.ink} strokeWidth="1" strokeLinecap="round" />
+        </g>
+      );
+    case "FV":
+      // 咬唇:白牙咬叶片下唇
+      return (
+        <g>
+          <path d="M93.5,80.5 Q100,78 106.5,80.5 Q107,86 100,86.8 Q93,86 93.5,80.5 Z" fill="#57BD74" stroke={p.ink} strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M94,79.2 Q100,77.4 106,79.2 L105.4,82.4 Q100,83.4 94.6,82.4 Z" fill="#FFFFFF" stroke={p.ink} strokeWidth="1.4" strokeLinejoin="round" />
+        </g>
+      );
     default:
       return <path d="M92,82.5 Q100,88.5 108,82.5" fill="none" stroke={p.ink} strokeWidth="3.5" strokeLinecap="round" />;
   }
@@ -97,6 +124,7 @@ export function MossArt({ uid, refs, expression, viseme, openScale, energyRatio,
             <rect x="64" y="110" width="72" height="50" rx="22" fill={LEAF} transform="translate(-4 -4)" />
           </g>
           <rect x="64" y="110" width="72" height="50" rx="22" fill="none" stroke={OUT} strokeWidth="5" />
+          <BevelPlate id={`${uid}-body`} x={64} y={110} w={72} h={50} t={4} light="rgba(255,255,255,0.42)" dark="rgba(38,74,46,0.4)" />
           <SeedCore energyRatio={energyRatio} />
           <circle cx="73" cy="150" r="1.6" fill={OUT} opacity="0.45" />
           <circle cx="127" cy="150" r="1.6" fill={OUT} opacity="0.45" />
@@ -131,6 +159,7 @@ export function MossArt({ uid, refs, expression, viseme, openScale, energyRatio,
             <ellipse cx="100" cy="69" rx="56" ry="42" fill={LEAF} transform="translate(-5 -5)" />
           </g>
           <ellipse cx="100" cy="69" rx="56" ry="42" fill="none" stroke={OUT} strokeWidth="5" />
+          <BevelPlate id={`${uid}-helm`} x={44} y={27} w={112} h={84} t={4} light="rgba(255,255,255,0.36)" dark="rgba(38,74,46,0.36)" />
           <path d="M58,37 Q86,31 104,38 L96,47 Q68,46 58,37 Z" fill="#FFFFFF" opacity="0.88" />
           <circle cx="118" cy="41" r="4" fill="#FFFFFF" opacity="0.55" />
 

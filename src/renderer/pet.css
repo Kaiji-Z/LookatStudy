@@ -1,0 +1,7 @@
+/* v0.11 桌宠窗:全透明画布,生物是唯一可见物(覆盖 index.css 的应用底色)。 */
+html,
+body,
+#root {
+  background: transparent !important;
+  overflow: hidden;
+}

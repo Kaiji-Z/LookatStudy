@@ -911,7 +911,8 @@ html.light ::-webkit-scrollbar-thumb:hover {
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  .cp-screen-key, .cp-writing, .cp-pen { animation: none; }
+  .cp-screen-key, .cp-writing, .cp-pen, .cp-core-lit, .cp-note-tick { animation: none; stroke-dashoffset: 0; }
+  .cp-screen-wave rect { animation: none; transform: scaleY(0.6); }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
@@ -1081,6 +1082,21 @@ html.light ::-webkit-scrollbar-thumb:hover {
   100% { opacity: 1; transform: scale(1); }
 }
 .cp-screen-key { transform-box: fill-box; transform-origin: center; }
+/* v11 听写胸屏波形:五条声纹错相跳动(胸屏是亮底,用深色条) */
+.cp-screen-wave rect {
+  fill: #0e2a38;
+  opacity: 0.88;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cp-wave-bar 0.9s ease-in-out infinite;
+}
+.cp-screen-wave rect:nth-child(2),
+.cp-screen-wave rect:nth-child(4) { animation-delay: 0.13s; }
+.cp-screen-wave rect:nth-child(3) { animation-delay: 0.26s; }
+@keyframes cp-wave-bar {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
 
 /* v10 记笔记道具:本笔弹入,笔尖伏案写划 */
 .cp-writing {
@@ -1100,6 +1116,27 @@ html.light ::-webkit-scrollbar-thumb:hover {
 @keyframes cp-scribble {
   from { transform: rotate(0deg) translate(0, 0); }
   to { transform: rotate(-5deg) translate(-1.5px, 1px); }
+}
+
+/* v11 勾销金勾:一笔划出 */
+.cp-note-tick {
+  stroke-dasharray: 26;
+  stroke-dashoffset: 26;
+  animation: cp-note-tick 0.36s cubic-bezier(0.3, 1.2, 0.4, 1) forwards;
+}
+@keyframes cp-note-tick {
+  to { stroke-dashoffset: 0; }
+}
+
+/* v11 连对点燃:能量核金环呼吸脉动 */
+.cp-core-lit {
+  opacity: 0.85;
+  stroke-dasharray: 8 6;
+  animation: cp-core-lit 0.9s ease-in-out infinite alternate;
+}
+@keyframes cp-core-lit {
+  from { opacity: 0.45; stroke-width: 2.5; }
+  to { opacity: 1; stroke-width: 3.6; }
 }
 
 /* v10 肩甲(R-06 式宽肩,全形态共享) */

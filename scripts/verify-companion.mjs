@@ -901,7 +901,7 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
     "T15: v9 karaoke 按 TTS 块并显示句组高亮(强制断句不在句中断开)",
   );
   assert.ok(
-    creature.includes("[snap.enabledLoaded, snap.enabled, reduced]"),
+    creature.includes("[snap.enabledLoaded, snap.enabled, snap.petMode, reduced]"),
     "T15: rAF effect deps 含 enabledLoaded(首跑 ref 未挂时靠它重跑,否则左上角卡死)",
   );
   const edgeClient = readFileSync(new URL("../src/main/services/speech/edge-tts-client.ts", import.meta.url), "utf8");
@@ -919,7 +919,12 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
     "T15: ember 辅音口型艺术(齿擦/舌尖/咬唇)",
   );
   for (const f of ["frost", "moss", "astro", "ink"]) {
-    assert.ok(read(`components/companion/forms/${f}.tsx`).includes("coarseViseme("), `T15: ${f} 形态口型 coarseViseme 降级`);
+    const fsrc = read(`components/companion/forms/${f}.tsx`);
+    assert.ok(
+      fsrc.includes('case "SS"') && fsrc.includes('case "L"') && fsrc.includes('case "FV"'),
+      `T15: ${f} 辅音口型艺术(齿擦/舌尖/咬唇)`,
+    );
+    assert.ok(!fsrc.includes("coarseViseme"), `T15: ${f} 不再走 coarseViseme 降级`);
   }
   // v10 新交互接线
   assert.ok(
@@ -1079,5 +1084,99 @@ console.log("✓ T17 v9 离线口型时间轴:帧判类(闭/SS/FV/L/母音)+连�
   assert.deepEqual(buildVisemeCues([]), [], "T18: 空词 cue→空(调用方落 DSP)");
 }
 console.log("✓ T18 v9 剧本口型:拼音声母→辅音 viseme/拉丁词首规则/标点闭/间隙闭/时序连续");
+
+/* ---------- T20 v11 目的性游走 + 情绪层 + 记忆闭环 ---------- */
+{
+  const core = await import("../src/renderer/lib/companion/companion-core.ts");
+  const { pickRoamIntent, INTENT_HOLD_MS, companionReducer, initialCompanionState } = core;
+
+  // pickRoamIntent:确定性 + 分布(意图是调味,~2/3 桶照常游走)+ 让位链
+  assert.equal(
+    pickRoamIntent(3, { hasReview: true, hasNext: true, hasFriction: true }),
+    pickRoamIntent(3, { hasReview: true, hasNext: true, hasFriction: true }),
+    "T20: 意图确定性(同桶同果)",
+  );
+  let nullN = 0, reviewN = 0, inspectN = 0, fricN = 0;
+  for (let b = 0; b < 2000; b++) {
+    const k = pickRoamIntent(b, { hasReview: true, hasNext: true, hasFriction: true });
+    if (k === null) nullN++; else if (k === "review") reviewN++; else if (k === "inspect") inspectN++; else fricN++;
+  }
+  assert.ok(nullN > 1200 && nullN < 1500, `T20: 意图占比有界(实测 null=${nullN}/2000)`);
+  assert.ok(reviewN > 0 && inspectN > 0 && fricN > 0, `T20: 三类意图都会出现(实测 r/i/f=${reviewN}/${inspectN}/${fricN})`);
+  for (let b = 0; b < 500; b++) {
+    const k = pickRoamIntent(b, { hasReview: false, hasNext: true, hasFriction: false });
+    assert.ok(k === null || k === "inspect", "T20: 复习缺位只允许打量");
+  }
+  assert.equal(pickRoamIntent(1, { hasReview: false, hasNext: false, hasFriction: false }), null, "T20: 无料可指=null");
+  assert.equal(typeof INTENT_HOLD_MS, "number", "T20: 意图保持时长导出");
+
+  // 情绪层:连对计数;3 连对 flame 得意(盖过单次 correct 普通开心);答错清零
+  let s = initialCompanionState(0);
+  s = companionReducer(s, { type: "celebration", kind: "correct", now: 100 });
+  s = companionReducer(s, { type: "celebration", kind: "correct", now: 200 });
+  assert.equal(s.correctStreak, 2, "T20: 两连对计数");
+  assert.notEqual(s.expression, "flame", "T20: 两连对不点燃");
+  s = companionReducer(s, { type: "celebration", kind: "correct", now: 300 });
+  assert.equal(s.correctStreak, 3, "T20: 三连对");
+  assert.equal(s.expression, "flame", "T20: 三连对=flame 得意");
+  assert.equal(s.pose, "spin", "T20: flame 配转圈");
+  assert.ok(s.until !== null && s.until > 300 + 1500 && s.until <= 300 + 1600, "T20: flame 保持 1600ms");
+  s = companionReducer(s, { type: "celebration", kind: "wrong", now: 400 });
+  assert.equal(s.correctStreak, 0, "T20: 答错清零");
+  s = companionReducer(s, { type: "celebration", kind: "correct", now: 500 });
+  s = companionReducer(s, { type: "celebration", kind: "correct", now: 600 });
+  s = companionReducer(s, { type: "celebration", kind: "correct", now: 700 });
+  assert.equal(s.expression, "flame", "T20: 清零后再三连对重新点燃");
+
+  // 记忆闭环:noteTick=卡点毕业金勾(骄傲+书写姿势+1.9s 窗口)
+  let n = initialCompanionState(0);
+  n = companionReducer(n, { type: "noteTick", now: 1000 });
+  assert.equal(n.expression, "proud", "T20: 勾销=骄傲");
+  assert.equal(n.pose, "writing", "T20: 勾销=书写姿势");
+  assert.equal(n.noteTickUntil, 1000 + 1900, "T20: 金勾窗口 1900ms");
+}
+console.log("✓ T20 v11 意图调度(确定性/占比/让位)+情绪层(3连对 flame)+记忆闭环(noteTick)");
+
+/* ---------- T21 v11 桌宠模式接线守卫(源码级) ---------- */
+{
+  const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
+  const petWin = readFileSync(new URL("../src/main/pet-window.ts", import.meta.url), "utf8");
+  assert.ok(petWin.includes("setIgnoreMouseEvents(passThrough, { forward: passThrough })"), "T21: 桌宠窗穿透切换(forward 保 move)");
+  assert.ok(
+    petWin.includes("skipTaskbar: true") && petWin.includes("focusable: false") && petWin.includes("transparent: true"),
+    "T21: 桌宠窗透明/无任务栏/不抢焦点",
+  );
+  const channels = readFileSync(new URL("../shared/api-channels.ts", import.meta.url), "utf8");
+  assert.ok(channels.includes('companionPetSetClickThrough: "companionPet:setClickThrough"'), "T21: 通道映射");
+  const preload = readFileSync(new URL("../src/preload/index.ts", import.meta.url), "utf8");
+  assert.ok(preload.includes("companionPetSetClickThrough"), "T21: preload 暴露");
+  const ipcSrc = readFileSync(new URL("../src/main/ipc/index.ts", import.meta.url), "utf8");
+  assert.ok(ipcSrc.includes('if (key === "companion_pet_mode") deps.pet?.sync(value === "1")'), "T21: 设置落库→桌宠窗同步");
+  const busSrc = readFileSync(new URL("../src/renderer/lib/companion/bus.ts", import.meta.url), "utf8");
+  assert.ok(busSrc.includes('getSetting("companion_pet_mode")') && busSrc.includes("petMode"), "T21: bus petMode 快照");
+  const creatureSrc = read("components/companion/CompanionCreature.tsx");
+  assert.ok(creatureSrc.includes("snap.petMode) return null"), "T21: 主窗生物在桌宠模式隐身");
+  assert.ok(creatureSrc.includes("pickRoamIntent") && creatureSrc.includes("INTENT_HOLD_MS"), "T21: 目的性游走接线");
+  assert.ok(creatureSrc.includes("companionNoteTick") && creatureSrc.includes("companion-state-changed"), "T21: 卡点毕业金勾触发+掌握监听");
+  const settingsSrc = read("components/SettingsView.tsx");
+  assert.ok(settingsSrc.includes("companion-pet-toggle"), "T21: 设置页桌宠开关");
+  const petComp = read("components/companion/PetCompanion.tsx");
+  assert.ok(petComp.includes("companionPetSetClickThrough(!inside)") && petComp.includes("glideTo"), "T21: 桌宠渲染层热区检测+滑翔");
+  const petHtml = readFileSync(new URL("../src/renderer/pet.html", import.meta.url), "utf8");
+  assert.ok(petHtml.includes("/pet.tsx"), "T21: 桌宠页入口");
+  const viteCfg = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
+  assert.ok(viteCfg.includes("pet: resolve"), "T21: vite 双页输入");
+  // v11 其余接线:听写胸屏波形 + 四形态主题斜面
+  const mascotSrc = read("components/companion/Mascot.tsx");
+  assert.ok(mascotSrc.includes("cp-screen-wave") && mascotSrc.includes("{listening && !screenKey"), "T21: 听写胸屏波形");
+  const cssSrc = readFileSync(new URL("../src/renderer/index.css", import.meta.url), "utf8");
+  assert.ok(cssSrc.includes("cp-wave-bar") && cssSrc.includes(".cp-core-lit") && cssSrc.includes(".cp-note-tick"), "T21: 波形/金环/金勾样式");
+  for (const f of ["frost", "moss", "astro", "ink"]) {
+    assert.ok(read(`components/companion/forms/${f}.tsx`).includes("<BevelPlate"), `T21: ${f} 主题化斜面`);
+  }
+  const nbSrc = read("components/NotebookPanel.tsx");
+  assert.ok(nbSrc.includes("companionNote()"), "T21: 笔记 tab → 掏本动画触发");
+}
+console.log("✓ T21 v11 桌宠接线(穿透切换/协议/bus 隐身/设置开关/双页构建)+波形与斜面守卫");
 
 console.log("\nverify-companion: ALL PASS");

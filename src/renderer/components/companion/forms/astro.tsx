@@ -7,8 +7,8 @@
  * 月亮越圆:新月→满月)。口型=暖白星月母音。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags , Shoulders } from "./shared.js";
-import { coarseViseme, type Viseme } from "../../../lib/companion/companion-core.js";
+import { Arms, Face, FaceExtras, GroundShadow, faceFlags , Shoulders, BevelPlate } from "./shared.js";
+import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const ASTRO: FormPalette = {
   out: "#221C38",
@@ -51,7 +51,7 @@ function MoonCore({ energyRatio, uid }: { energyRatio: number; uid: string }) {
 }
 
 function astroMouth(v: Viseme, p: FormPalette) {
-  switch (coarseViseme(v)) {
+  switch (v) {
     case "A":
       return <path d="M91,77 h18 a5,5 0 0 1 5,5 v3 a5,5 0 0 1 -5,5 h-18 a5,5 0 0 1 -5,-5 v-3 a5,5 0 0 1 5,-5 Z M95,80.5 h10 v6 h-10 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":
@@ -69,6 +69,32 @@ function astroMouth(v: Viseme, p: FormPalette) {
       return (
         <g fill="none">
           <circle cx="100" cy="82.5" r="4.6" stroke={p.ink} strokeWidth="3.6" />
+        </g>
+      );
+    case "SS":
+      // 齿擦:宽暗槽 + 发光白齿(星轨刻度感)
+      return (
+        <g>
+          <path d="M88,80 h24 a2.4,2.4 0 0 1 2.4,2.4 v1.2 a2.4,2.4 0 0 1 -2.4,2.4 h-24 a2.4,2.4 0 0 1 -2.4,-2.4 v-1.2 a2.4,2.4 0 0 1 2.4,-2.4 Z" fill={p.ink} />
+          <rect x="91" y="80.5" width="6" height="2.2" rx="1.1" fill="#FFFFFF" />
+          <rect x="99" y="80.5" width="6" height="2.2" rx="1.1" fill="#FFFFFF" opacity="0.9" />
+          <rect x="107" y="80.5" width="4" height="2.2" rx="1.1" fill="#FFFFFF" opacity="0.72" />
+        </g>
+      );
+    case "L":
+      // 舌尖:开口 + 紫光舌顶上齿龈
+      return (
+        <g>
+          <path d="M91,77 h18 a5,5 0 0 1 5,5 v3 a5,5 0 0 1 -5,5 h-18 a5,5 0 0 1 -5,-5 v-3 a5,5 0 0 1 5,-5 Z M95,80.5 h10 v6 h-10 Z" fill={p.ink} fillRule="evenodd" />
+          <path d="M96,85.5 Q100,78.5 104,85.5 Q100,87.6 96,85.5 Z" fill="#8B7BF0" stroke={p.ink} strokeWidth="1.4" strokeLinejoin="round" />
+        </g>
+      );
+    case "FV":
+      // 咬唇:白牙咬紫罗兰下唇
+      return (
+        <g>
+          <path d="M93.5,80.5 Q100,78 106.5,80.5 Q107,86 100,87 Q93,86 93.5,80.5 Z" fill="#5D4FD1" stroke={p.ink} strokeWidth="1.8" strokeLinejoin="round" />
+          <rect x="94" y="78.8" width="12" height="3.4" rx="1.7" fill="#FFFFFF" stroke={p.ink} strokeWidth="1.4" />
         </g>
       );
     default:
@@ -107,6 +133,7 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
             <rect x="66" y="110" width="68" height="50" rx="20" fill={VIOLET} transform="translate(-4 -4)" />
           </g>
           <rect x="66" y="110" width="68" height="50" rx="20" fill="none" stroke={OUT} strokeWidth="5" />
+          <BevelPlate id={`${uid}-body`} x={66} y={110} w={68} h={50} t={4} light="rgba(196,181,255,0.34)" dark="rgba(10,6,32,0.5)" />
           <MoonCore energyRatio={energyRatio} uid={uid} />
           <circle cx="76" cy="150" r="1.5" fill={OUT} opacity="0.5" />
           <circle cx="124" cy="150" r="1.5" fill={OUT} opacity="0.5" />
@@ -136,6 +163,7 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
             <path d="M94,28 l1.6,3.2 3.4,0.5 -2.5,2.4 0.6,3.4 -3.1,-1.7 -3.1,1.7 0.6,-3.4 -2.5,-2.4 3.4,-0.5 Z" fill="#FFFFFF" opacity="0.85" />
           </g>
           <path d="M48,96 L48,62 Q48,26 100,26 Q152,26 152,62 L152,96 Z" fill="none" stroke={OUT} strokeWidth="5" />
+          <BevelPlate id={`${uid}-helm`} x={48} y={26} w={104} h={70} t={4} light="rgba(196,181,255,0.3)" dark="rgba(10,6,32,0.45)" />
           {/* 银河 glare(斜带) */}
           <path d="M56,40 Q88,28 110,34 L102,44 Q72,40 56,46 Z" fill="#FFFFFF" opacity="0.8" />
 

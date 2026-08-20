@@ -23,6 +23,7 @@ import assert from "node:assert";
 import {
   BLUR_SLEEP_MS,
   SLEEP_AFTER_MS,
+  SWAT_DIZZY_MS,
   TYPE_IDLE_MS,
   audioToMouth,
   baseExpressionOf,
@@ -430,6 +431,49 @@ console.log("✓ T12 形象注册表:5 形态唯一/回退安全/注册表·壳�
     }
     assert.deepEqual(poses, ["wave", "spin", "hop", "wave"], `T13: poke 花样轮换(实测=${poses.join(",")})`);
   }
+
+  // v4 情境反应:考试加油/导入欢呼与鼓励/复习待命/隔天欢迎/卡点指向
+  {
+    let q = initialCompanionState(0);
+    q = companionReducer(q, { type: "examEnter", now: 100 });
+    assert.equal(q.expression, "cheer", "T13: 进考试=加油");
+    q = companionReducer(q, { type: "importing", on: true, now: 200 });
+    assert.equal(q.importing, true, "T13: 导入监工旗");
+    assert.equal(veilDecision(q, 999999), false, "T13: 导入中豁免纱帘");
+    q = companionReducer(q, { type: "importDone", ok: true, now: 300 });
+    assert.equal(q.importing, false, "T13: 导入结束清旗");
+    assert.equal(q.expression, "stars", "T13: 导入成功=星星眼欢呼");
+    q = companionReducer(q, { type: "importDone", ok: false, now: 400 });
+    assert.equal(q.expression, "encourage", "T13: 导入失败=鼓励不嘲讽");
+    q = companionReducer(q, { type: "reviewing", on: true, now: 500 });
+    assert.equal(q.expression, "proud", "T13: 复习开=自豪待命");
+    q = companionReducer(q, { type: "dayWelcome", now: 600 });
+    assert.equal(q.expression, "stars", "T13: 隔天回来=加倍欢迎");
+    q = companionReducer(q, { type: "nodePoint", now: 700 });
+    assert.equal(q.expression, "thinking", "T13: 卡点指向=托腮");
+  }
+
+  // v4 抓取:抓住挣扎/快扔晕眩→鼓脸/慢放温柔
+  {
+    let g = initialCompanionState(0);
+    g = companionReducer(g, { type: "grab", on: true, now: 100 });
+    assert.equal(g.grabbed, true, "T13: 抓住");
+    assert.equal(g.expression, "surprised", "T13: 抓住=挣扎惊吓");
+    // 快扔:晕眩(surprised)→ tick 过期 → 鼓脸余怒(huffy)
+    g = companionReducer(g, { type: "grab", on: false, speed: 8, now: 200 });
+    assert.equal(g.grabbed, false, "T13: 松手");
+    assert.equal(g.expression, "surprised", "T13: 快扔=晕眩翻滚");
+    g = companionReducer(g, { type: "tick", now: 200 + SWAT_DIZZY_MS + 100 });
+    assert.equal(g.expression, "huffy", "T13: 晕眩结束=鼓脸生气");
+    assert.ok(g.until !== null && g.until > 200 + SWAT_DIZZY_MS + 100, "T13: 鼓脸带保持");
+    g = companionReducer(g, { type: "tick", now: 999999 });
+    assert.notEqual(g.expression, "huffy", "T13: 余怒到期回常态");
+    // 慢放:温柔 happy 不生气
+    let g2 = initialCompanionState(0);
+    g2 = companionReducer(g2, { type: "grab", on: true, now: 100 });
+    g2 = companionReducer(g2, { type: "grab", on: false, speed: 1, now: 200 });
+    assert.equal(g2.expression, "happy", "T13: 慢放=开心不生气");
+  }
 }
 console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚焦>朗读)/记笔记钉住/纱帘判定/被拍晕眩");
 
@@ -512,6 +556,18 @@ console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚�
     assert.ok(Number.isFinite(coincident.x) && Number.isFinite(coincident.y), "T14: 球心重合无 NaN");
     const clamped = avoidAccel(60, 0, 22, [ball], -12, 0);
     assert.ok(Math.hypot(clamped.x, clamped.y) <= AVOID_MAX * 2 + 1e-9, "T14: 避让合成钳制");
+  }
+  // 落脚点挑选:最近者优先/超距返回 null/空候选返回 null
+  {
+    const { pickRestSpot } = await import("../src/renderer/lib/companion/companion-flight.ts");
+    const spots = [
+      { x: 100, y: 100 },
+      { x: 180, y: 140 },
+      { x: 40, y: 60 },
+    ];
+    assert.deepEqual(pickRestSpot({ x: 170, y: 140 }, spots, 220), { x: 180, y: 140 }, "T14: 最近落脚点");
+    assert.equal(pickRestSpot({ x: 10, y: 10 }, spots, 50), null, "T14: 超距不落");
+    assert.equal(pickRestSpot({ x: 100, y: 100 }, [], 220), null, "T14: 无候选不落");
   }
   // 避让仿真A:球压巡航点,伴学从远处出发 → 全程保持分离 + 平滑 + 稳定悬停
   {
@@ -611,6 +667,19 @@ console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性
   assert.ok(read("lib/companion/companion-flight.ts").includes("crossImpulse"), "T15: 跨引擎碰撞存在");
   // v3 细化接线:中部空地待机 / poke 花样 / 表情动效 CSS
   assert.ok(creature.includes("pickPerchBase") && creature.includes("perchDueRef"), "T15: 待机点=中部空地周期重选");
+  // v4 接线:情境触发 / 抓取 / 音效 / 徽标 / 天气 / 栖息 / 触屏(app/mapRail 已在上方声明)
+  assert.ok(app.includes("companion-exam-enter") && app.includes("companionReviewing"), "T15: 考试加油+复习待命接线");
+  assert.ok(app.includes('courseId={selectedCourseId}'), "T15: 记忆联动 courseId 传递");
+  assert.ok(mapRail.includes("companionImporting(true)") && mapRail.includes("companionImportDone"), "T15: 导入监工接线");
+  const settingsV4 = read("components/SettingsView.tsx");
+  assert.ok(settingsV4.includes("companion-sfx-toggle") && settingsV4.includes("companion_sfx"), "T15: 宠物音效设置开关");
+  assert.ok(read("lib/companion/pet-sfx.ts").includes("playPetSfx"), "T15: pet-sfx 合成音模块");
+  const mascotV4 = read("components/companion/Mascot.tsx");
+  assert.ok(mascotV4.includes("onGrab") && mascotV4.includes("crownBadge") && mascotV4.includes("cp-thruster"), "T15: 抓取+皇冠+喷焰壳层");
+  assert.ok(mascotV4.includes('touchAction: "none"'), "T15: 触屏抓取支持(touch-action)");
+  assert.ok(creature.includes("grabRef") && creature.includes("throwDizzy") && creature.includes("pickRestSpot"), "T15: 抓取物理/扔出晕眩/落脚栖息");
+  assert.ok(creature.includes("weatherPhysFor") && creature.includes("cp-shiver"), "T15: 天风吹斜+雨中抖水");
+  assert.ok(bus.includes("companion-day-welcome") && bus.includes("getStreak"), "T15: 隔天欢迎(streak 日期)");
   const coreSrc = read("lib/companion/companion-core.ts");
   assert.ok(coreSrc.includes("pokeSeq"), "T15: poke 花样轮换状态");
   const css = read("index.css");

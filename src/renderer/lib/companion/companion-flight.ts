@@ -223,6 +223,27 @@ export function pickPerchBase(
   return best;
 }
 
+/**
+ * 落脚点挑选(纯):最近的绳粒/球顶栖息候选(距离 ≤ maxDist),
+ * 没有合适候选返回 null(继续悬停)。栖息点已带向上偏移,直接可用。
+ */
+export function pickRestSpot(
+  from: FlightTarget,
+  spots: FlightTarget[],
+  maxDist = 220,
+): FlightTarget | null {
+  let best: FlightTarget | null = null;
+  let bestD = maxDist;
+  for (const sp of spots) {
+    const d = Math.hypot(sp.x - from.x, sp.y - from.y);
+    if (d < bestD) {
+      bestD = d;
+      best = { x: sp.x, y: sp.y };
+    }
+  }
+  return best;
+}
+
 export interface FlightWorld {
   /** 同步伴学刚体(调用方每帧读 position/angle 渲染)。 */
   readonly body: Matter.Body;
@@ -231,11 +252,14 @@ export interface FlightWorld {
   /**
    * 每帧步进。
    * target=null(晕眩期/无家)时控制器断开,只受重力+墙。
+   * opts.settle=true(栖息中):巡航游走幅值收到近零,定住休息。
    * 返回本帧是否被拍(hitSpeed ≥ SWAT_IMPULSE)。
    */
-  step(dtMs: number, base: FlightTarget | null, balls: BallProbe[], tMs: number): boolean;
+  step(dtMs: number, base: FlightTarget | null, balls: BallProbe[], tMs: number, opts?: { settle?: boolean }): boolean;
   /** 晕眩剩余时间(ms)。 */
   dizzyRemaining(tMs: number): number;
+  /** 被扔出:外部设定晕眩窗口(控制器断开自由翻滚)。 */
+  throwDizzy(tMs: number): void;
   dispose(): void;
 }
 
@@ -286,13 +310,15 @@ export function createFlightWorld(opts: {
       width = w;
       buildWalls(w, h);
     },
-    step(dtMs, base, balls, tMs) {
+    step(dtMs, base, balls, tMs, opts) {
       const dizzy = tMs < dizzyUntil;
       Engine.update(engine, Math.min(33, Math.max(8, dtMs)));
       let swatted = false;
 
       if (!dizzy && base) {
-        const target = cruiseTarget(base, Math.floor(tMs / 4200), tMs);
+        const target = opts?.settle
+          ? { x: base.x, y: base.y + Math.sin(tMs * 0.0012) * 2 }
+          : cruiseTarget(base, Math.floor(tMs / 4200), tMs);
         const dt2 = Math.max(64, dtMs * dtMs);
         const f = flightForce(
           { x: body.position.x, y: body.position.y },
@@ -369,6 +395,9 @@ export function createFlightWorld(opts: {
     },
     dizzyRemaining(tMs) {
       return Math.max(0, dizzyUntil - tMs);
+    },
+    throwDizzy(tMs) {
+      dizzyUntil = tMs + 900;
     },
     dispose() {
       Composite.clear(engine.world, false);

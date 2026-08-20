@@ -28,6 +28,7 @@ export type CompanionExpression =
   | "listening"
   | "talking"
   | "surprised"
+  | "huffy"
   | "sleeping";
 
 export type CompanionPose =
@@ -86,6 +87,12 @@ export interface CompanionState {
   lastScroll: number;
   /** 戳击序号(poke 反应花样轮换:跳跳/挥手/转圈) */
   pokeSeq: number;
+  /** 课程导入进行中(监工模式:豁免纱帘,守在导入面板旁) */
+  importing: boolean;
+  /** 被用户抓住(挣扎表情,物理由渲染层接管) */
+  grabbed: boolean;
+  /** 被扔出去后的生气截止(晕眩结束→鼓脸) */
+  huffyUntil: number;
 }
 
 export type CompanionEvent =
@@ -102,6 +109,13 @@ export type CompanionEvent =
   | { type: "zoneNote"; now: number }
   | { type: "scroll"; now: number }
   | { type: "swat"; now: number }
+  | { type: "examEnter"; now: number }
+  | { type: "importing"; on: boolean; now: number }
+  | { type: "importDone"; ok: boolean; now: number }
+  | { type: "reviewing"; on: boolean; now: number }
+  | { type: "grab"; on: boolean; speed?: number; now: number }
+  | { type: "nodePoint"; now: number }
+  | { type: "dayWelcome"; now: number }
   | { type: "tick"; now: number };
 
 export interface CelebrationReaction {
@@ -183,6 +197,9 @@ export function initialCompanionState(now = 0): CompanionState {
     lastNoteUntil: 0,
     lastScroll: 0,
     pokeSeq: 0,
+    importing: false,
+    grabbed: false,
+    huffyUntil: 0,
   };
 }
 
@@ -199,7 +216,7 @@ export function desiredZone(s: CompanionState, now: number): CompanionZone {
 
 /** 纱帘判定:无交互且不在任务中 → 隐匿待机;滚动中(阅读)更快入帘。 */
 export function veilDecision(s: CompanionState, now: number): boolean {
-  if (s.composerFocused || s.talking || s.listening || s.streaming) return false;
+  if (s.composerFocused || s.talking || s.listening || s.streaming || s.importing || s.grabbed) return false;
   const idle = now - s.lastActivity;
   const scrolling = now - s.lastScroll < VEIL_SCROLL_GRACE_MS;
   return idle > VEIL_AFTER_MS || (scrolling && idle > VEIL_SCROLL_AFTER_MS);
@@ -388,10 +405,99 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         until: ev.now + 1100,
       };
     }
+    case "examEnter": {
+      // 进考试节点:加油打气(cheer+挥手),之后 tick 自然入纱帘(考试零干扰红线)
+      return {
+        ...s,
+        sleeping: false,
+        mode: "front",
+        lastActivity: ev.now,
+        expression: "cheer",
+        pose: "wave",
+        until: ev.now + 1500,
+      };
+    }
+    case "importing":
+      // 导入监工:进行中豁免纱帘守在面板旁;结束交棒给 importDone 反应
+      return { ...s, importing: ev.on, lastActivity: ev.now, mode: ev.on ? "front" : s.mode };
+    case "importDone": {
+      // 导入结束:成功=星星眼欢呼,失败=鼓励(不嘲讽)
+      const ok = ev.ok;
+      return {
+        ...s,
+        importing: false,
+        sleeping: false,
+        mode: "front",
+        lastActivity: ev.now,
+        expression: ok ? "stars" : "encourage",
+        pose: ok ? "hop" : "oops",
+        until: ev.now + (ok ? 1600 : 1200),
+      };
+    }
+    case "reviewing":
+      // 复习抽屉开:自豪挥手待命(关=无动作)
+      return ev.on
+        ? {
+            ...s,
+            sleeping: false,
+            mode: "front",
+            lastActivity: ev.now,
+            expression: "proud",
+            pose: "wave",
+            until: ev.now + 1100,
+          }
+        : { ...s, lastActivity: ev.now };
+    case "grab": {
+      // 抓住:挣扎(surprised+flying);松手快=扔出(晕眩,之后鼓脸生气),慢=放回
+      if (ev.on) {
+        return {
+          ...s,
+          grabbed: true,
+          sleeping: false,
+          mode: "front",
+          lastActivity: ev.now,
+          expression: "surprised",
+          pose: "flying",
+          until: null,
+        };
+      }
+      const thrown = (ev.speed ?? 0) >= 2.5;
+      return {
+        ...s,
+        grabbed: false,
+        lastActivity: ev.now,
+        expression: thrown ? "surprised" : "happy",
+        pose: thrown ? "flying" : "hop",
+        until: ev.now + (thrown ? SWAT_DIZZY_MS : 800),
+        huffyUntil: thrown ? ev.now + SWAT_DIZZY_MS + 1600 : s.huffyUntil,
+      };
+    }
+    case "dayWelcome":
+      // 隔天回来:星星眼转圈的加倍欢迎(streak 的 lastActiveDate < 今天)
+      return {
+        ...s,
+        sleeping: false,
+        mode: "front",
+        lastActivity: ev.now,
+        expression: "stars",
+        pose: "spin",
+        until: ev.now + 1700,
+      };
+    case "nodePoint":
+      // 记忆联动:飞到昨天卡点旁,托腮"就是这里"的指向反应
+      return {
+        ...s,
+        sleeping: false,
+        mode: "front",
+        lastActivity: ev.now,
+        expression: "thinking",
+        pose: "lean-left",
+        until: ev.now + 2600,
+      };
     case "tick": {
       const typing = s.typing && ev.now - s.lastPress <= TYPE_IDLE_MS;
       const sleepAfter = s.windowFocused ? SLEEP_AFTER_MS : BLUR_SLEEP_MS;
-      const sleeping = !s.talking && !s.listening && ev.now - s.lastActivity >= sleepAfter;
+      const sleeping = !s.talking && !s.listening && !s.grabbed && ev.now - s.lastActivity >= sleepAfter;
       const expired = s.until !== null && ev.now > s.until;
       // zone 演进:进中/右栏立即(desired != rail),回老家要等 ZONE_RETURN_MS
       const want = desiredZone(s, ev.now);
@@ -420,9 +526,16 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         || (typing !== s.typing && (s.until === null || expired))
         || (zone !== s.zone && (next.until === null || expired))
       ) {
-        next.expression = baseExpressionOf(next);
-        next.pose = basePoseOf(next);
-        next.until = null;
+        // 被扔后的余怒:晕眩结束且无别的反应压着 → 鼓脸生气(huffy)
+        if (expired && next.expression === "surprised" && ev.now < s.huffyUntil && !next.grabbed) {
+          next.expression = "huffy";
+          next.pose = "oops";
+          next.until = s.huffyUntil;
+        } else {
+          next.expression = baseExpressionOf(next);
+          next.pose = basePoseOf(next);
+          next.until = null;
+        }
       }
       return next;
     }

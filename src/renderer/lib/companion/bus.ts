@@ -20,6 +20,7 @@ import {
   smoothMic,
 } from "./companion-core.ts";
 import { formIdFromSetting, type CompanionFormId } from "./forms-index.ts";
+import { playPetSfx, setPetSfxEnabled } from "./pet-sfx.ts";
 import type { SectionIsland } from "../mapPhysics.js";
 
 export interface CompanionSnapshot {
@@ -34,6 +35,10 @@ export interface CompanionSnapshot {
   enabledLoaded: boolean;
   /** 当前形象(默认小焰;设置页可换) */
   form: CompanionFormId;
+  /** 等级徽标:XP 等级 ≥3 → 头顶小皇冠(壳层渲染,全形态共享) */
+  crowned: boolean;
+  /** 等级徽标:XP 等级 ≥7 → 金色光环 */
+  halo: boolean;
 }
 
 let state: CompanionState = initialCompanionState(Date.now());
@@ -43,6 +48,8 @@ let streakTimer: ReturnType<typeof setTimeout> | null = null;
 let enabled = true;
 let enabledLoaded = false;
 let form = formIdFromSetting(null);
+let crowned = false;
+let halo = false;
 let installed = false;
 let snapshot: CompanionSnapshot | null = null;
 const listeners = new Set<() => void>();
@@ -58,6 +65,8 @@ function rebuild(): void {
     enabled,
     enabledLoaded,
     form,
+    crowned,
+    halo,
   };
   for (const l of listeners) l();
 }
@@ -78,6 +87,12 @@ async function reloadEnabled(): Promise<void> {
     enabled = true;
   }
   enabledLoaded = true;
+  try {
+    const sfx = await window.api?.getSetting("companion_sfx");
+    setPetSfxEnabled(!(sfx === "false" || sfx === "0"));
+  } catch {
+    setPetSfxEnabled(true);
+  }
   try {
     const f = await window.api?.getSetting("companion_form");
     const nextForm = formIdFromSetting(typeof f === "string" ? f : null);
@@ -105,8 +120,12 @@ function install(): void {
           .getXpStatus()
           .then((x) => {
             const ratio = x.dailyGoal > 0 ? Math.min(1, x.todayXp / x.dailyGoal) : 0;
-            if (ratio !== energyRatio) {
+            const nextCrowned = x.level >= 3;
+            const nextHalo = x.level >= 7;
+            if (ratio !== energyRatio || nextCrowned !== crowned || nextHalo !== halo) {
               energyRatio = ratio;
+              crowned = nextCrowned;
+              halo = nextHalo;
               rebuild();
             }
           })
@@ -183,15 +202,18 @@ function install(): void {
     dispatch({ type: "streaming", on: !!detailOf(e), now: Date.now() });
   });
   window.addEventListener("companion-send", () => {
+    playPetSfx("happy");
     dispatch({ type: "send", now: Date.now() });
   });
   window.addEventListener("companion-note", () => {
     dispatch({ type: "zoneNote", now: Date.now() });
   });
   window.addEventListener("companion-poke", () => {
+    playPetSfx("poke");
     dispatch({ type: "poke", now: Date.now() });
   });
   window.addEventListener("companion-swat", () => {
+    playPetSfx("ouch");
     dispatch({ type: "swat", now: Date.now() });
   });
   window.addEventListener("companion-mic-level", (e) => {
@@ -206,6 +228,29 @@ function install(): void {
   window.addEventListener("companion-rail-unregister", (e) => {
     const d = detailOf(e) as { sectionId: string } | undefined;
     if (d?.sectionId) railWorld.sections.delete(d.sectionId);
+  });
+  window.addEventListener("companion-exam-enter", () => {
+    dispatch({ type: "examEnter", now: Date.now() });
+  });
+  window.addEventListener("companion-importing", (e) => {
+    dispatch({ type: "importing", on: !!detailOf(e), now: Date.now() });
+  });
+  window.addEventListener("companion-import-done", (e) => {
+    dispatch({ type: "importDone", ok: !!detailOf(e), now: Date.now() });
+  });
+  window.addEventListener("companion-reviewing", (e) => {
+    dispatch({ type: "reviewing", on: !!detailOf(e), now: Date.now() });
+  });
+  window.addEventListener("companion-grab", (e) => {
+    const d = detailOf(e) as { on: boolean; speed?: number } | undefined;
+    if (d?.on) playPetSfx("grab");
+    dispatch({ type: "grab", on: !!d?.on, speed: d?.speed, now: Date.now() });
+  });
+  window.addEventListener("companion-node-point", () => {
+    dispatch({ type: "nodePoint", now: Date.now() });
+  });
+  window.addEventListener("companion-day-welcome", () => {
+    dispatch({ type: "dayWelcome", now: Date.now() });
   });
   window.addEventListener("companion-rail-world", (e) => {
     const d = detailOf(e) as Partial<Pick<RailWorld, "nav" | "visible" | "weather">> | undefined;
@@ -225,9 +270,21 @@ function install(): void {
     ?.getXpStatus()
     .then((x) => {
       energyRatio = x.dailyGoal > 0 ? Math.min(1, x.todayXp / x.dailyGoal) : 0;
+      crowned = x.level >= 3;
+      halo = x.level >= 7;
     })
     .catch(() => {})
     .finally(() => rebuild());
+  // 隔天回来:streak 的 lastActiveDate < 今天 → 加倍欢迎(仅一次)
+  window.api
+    ?.getStreak()
+    .then((st) => {
+      const last = st?.lastActiveDate;
+      if (!last) return;
+      const today = new Date().toISOString().slice(0, 10);
+      if (last < today) dispatch({ type: "dayWelcome", now: Date.now() });
+    })
+    .catch(() => {});
   void reloadEnabled();
 }
 
@@ -243,7 +300,7 @@ export function subscribeCompanion(l: () => void): () => void {
 /** useSyncExternalStore 快照(引用稳定,未变化不换对象)。 */
 export function getCompanionSnapshot(): CompanionSnapshot {
   if (!snapshot) {
-    snapshot = { state, energyRatio, streakLit, enabled, enabledLoaded, form };
+    snapshot = { state, energyRatio, streakLit, enabled, enabledLoaded, form, crowned, halo };
   }
   return snapshot;
 }
@@ -330,6 +387,41 @@ export function companionRailRegister(sectionId: string, island: SectionIsland, 
 /** MapRail → section 岛注销(物理效应卸载)。 */
 export function companionRailUnregister(sectionId: string): void {
   fire("companion-rail-unregister", { sectionId });
+}
+
+/** 进考试节点(App 在选中考试节点时) → 加油打气后离场(考试零干扰)。 */
+export function companionExamEnter(): void {
+  fire("companion-exam-enter");
+}
+
+/** 导入任务开始/结束(MapRail 导入面板) → 监工模式。 */
+export function companionImporting(on: boolean): void {
+  fire("companion-importing", on);
+}
+
+/** 导入完成/失败(MapRail import:done) → 欢呼/鼓励。 */
+export function companionImportDone(ok: boolean): void {
+  fire("companion-import-done", ok);
+}
+
+/** 复习抽屉开/关(App isReviewing) → 待命挥手。 */
+export function companionReviewing(on: boolean): void {
+  fire("companion-reviewing", on);
+}
+
+/** 抓住/松手(Mascot pointer;speed=松手时指针速度,快=扔出晕眩)。 */
+export function companionGrab(on: boolean, speed?: number): void {
+  fire("companion-grab", { on, speed });
+}
+
+/** 记忆联动:飞到卡点节点旁(Creature 定位球后触发指向反应)。 */
+export function companionNodePoint(): void {
+  fire("companion-node-point");
+}
+
+/** 落栖音效(Creature 落地弹跳时)。 */
+export function companionLandSfx(): void {
+  playPetSfx("land");
 }
 
 /** MapRail → 左栏世界补丁(nav 元素/地图可见性/天气)。 */

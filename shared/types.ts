@@ -940,7 +940,7 @@ export type SettingKey =
   // 听写 UX:静音自动停(默认开);v0.14 飞书式复查浮层落地后 auto-send 已废
   | "asr_auto_stop"
   // 伴学伙伴可见性(用户设置,非引擎 flag;默认开,仅 "false"/"0" 关闭)
-  | "companion_enabled" | "companion_form"
+  | "companion_enabled" | "companion_form" | "companion_sfx"
   // Groq LLM preset 早已使用(设置页经 as 断言写入);入 union 让听写档零断言读取
   | "groq_api_key";
 

@@ -53,6 +53,7 @@ export function faceFlags(e: CompanionExpression) {
     encourage: e === "encourage",
     proud: e === "proud",
     surprised: e === "surprised",
+    huffy: e === "huffy",
   };
 }
 
@@ -164,6 +165,13 @@ export function FaceExtras({
       )}
       {flags.encourage && (
         <path d="M156,44 C160,50 160,55 156,57 C152,55 152,50 156,44 Z" fill={p.wave} stroke={p.out} strokeWidth="2" className="cp-sweat" />
+      )}
+      {flags.huffy && (
+        /* 鼓脸生气:两颊吹起(被扔出去后飞回来的余怒) */
+        <g className="cp-huffy">
+          <circle cx="66" cy="92" r="7.5" fill={p.wave} opacity="0.5" stroke={p.out} strokeWidth="1.5" />
+          <circle cx="134" cy="92" r="7.5" fill={p.wave} opacity="0.5" stroke={p.out} strokeWidth="1.5" />
+        </g>
       )}
       {flags.sleep && (
         <g className="cp-zzz" stroke={p.ink} strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round">

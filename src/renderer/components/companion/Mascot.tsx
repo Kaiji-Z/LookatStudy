@@ -25,6 +25,8 @@ import {
 } from "../../lib/companion/companion-core.js";
 import { formIdFromSetting } from "../../lib/companion/forms-index.js";
 import { FORM_ART } from "./forms/registry.js";
+import type { PointerEvent as ReactPointerEvent } from "react";
+
 import type { FormRefs } from "./forms/shared.js";
 
 export interface MascotProps {
@@ -44,10 +46,16 @@ export interface MascotProps {
   ariaLabel?: string;
   testid?: string;
   onPoke?: () => void;
+  /** 抓取按下(pointerdown 坐标;触屏/鼠标同款,拖拽扔出由上层接管) */
+  onGrab?: (px: number, py: number) => void;
   /** 键击序号(变化时重触按压动画);0=从不 */
   keySeq?: number;
   /** 最近按压臂侧:-1=左 / 1=右 */
   keySide?: -1 | 1;
+  /** 等级徽标:头顶小皇冠(XP 等级≥3,壳层渲染全形态共享) */
+  crownBadge?: boolean;
+  /** 等级徽标:金色光环(XP 等级≥7) */
+  haloBadge?: boolean;
 }
 
 export function Mascot({
@@ -63,8 +71,11 @@ export function Mascot({
   ariaLabel,
   testid,
   onPoke,
+  onGrab,
   keySeq = 0,
   keySide = 1,
+  crownBadge = false,
+  haloBadge = false,
 }: MascotProps) {
   const raw = useId();
   const uid = "cp" + raw.replace(/[^a-zA-Z0-9]/g, "");
@@ -186,14 +197,33 @@ export function Mascot({
       className={`cp-mascot cp-form-${formId} cp-pose-${pose} cp-expr-${expression}`}
       data-testid={testid}
       data-form={formId}
+      style={interactive ? { touchAction: "none", cursor: onGrab ? "grab" : "pointer" } : undefined}
       {...(interactive
         ? {
             role: "button",
             "aria-label": ariaLabel,
             onClick: onPoke,
+            ...(onGrab
+              ? {
+                  onPointerDown: (e: ReactPointerEvent<SVGSVGElement>) => {
+                    if (e.button === 0) onGrab(e.clientX, e.clientY);
+                  },
+                }
+              : {}),
           }
         : { "aria-hidden": true })}
     >
+      {/* 喷焰:飞行姿势点亮的推进器粒子(壳层渲染,全形态共享) */}
+      <g className="cp-thruster" aria-hidden="true">
+        <circle cx="78" cy="150" r="3.2" />
+        <circle cx="100" cy="158" r="4" />
+        <circle cx="122" cy="150" r="3.2" />
+      </g>
+      {/* 等级徽标:金色光环(高等级)在形态身后,小皇冠在头顶 */}
+      {haloBadge && (
+        <ellipse cx="100" cy="104" rx="86" ry="60" fill="none" stroke="#FFC800" strokeWidth="2.5"
+          opacity="0.4" strokeDasharray="10 7" className="cp-halo" />
+      )}
       <Art
         uid={uid}
         refs={refs}
@@ -203,6 +233,11 @@ export function Mascot({
         energyRatio={energyRatio}
         streakLit={streakLit}
       />
+      {crownBadge && (
+        <g className="cp-crown-badge" aria-hidden="true">
+          <path d="M84,26 L92,36 L100,24 L108,36 L116,26 L114,44 L86,44 Z" fill="#FFC800" stroke="#E8A400" strokeWidth="2" strokeLinejoin="round" />
+        </g>
+      )}
     </svg>
   );
 }

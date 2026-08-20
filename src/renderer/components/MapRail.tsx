@@ -11,7 +11,7 @@ import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { CourseSearchPanel } from "./CourseSearchPanel.js";
-import { companionRailRegister, companionRailUnregister, companionRailWorld } from "../lib/companion/bus.ts";
+import { companionImportDone, companionImporting, companionRailRegister, companionRailUnregister, companionRailWorld } from "../lib/companion/bus.ts";
 import {
   computeBalloonLayout,
   balloonSegmentToPath,
@@ -415,6 +415,9 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
       planId?: string; reused?: boolean; packable?: boolean; courseId?: string;
     }) => {
       setBusy(false);
+      companionImporting(false);
+      // 取消=用户主动,不算失败也不欢呼;只有真完成/真失败才有反应
+      if (!r.cancelled) companionImportDone(r.ok);
       setFailPlanId(r.ok ? null : (r.planId ?? null));
       if (r.ok) {
         setSuccess(`${t("import.success.folder")}: ${r.title ?? ""}${r.reused ? `（${t("import.success.reused")}）` : ""}`);
@@ -444,7 +447,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
       // 智能链接(后台 job):github.com→仓库 / arxiv.org→论文 / 其余→网页文章,
       // 路由在主进程完成,进度推 import:progress,结束推 import:done。
       await api.importUrl(repoUrl.trim());
-      setBusy(true);
+      setBusy(true); companionImporting(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -456,7 +459,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
       // 粘贴长文(后台 job):无标题长文按句子边界自动分段,获得与仓库导入同级的
       // 结构设计/进度/断点续跑(旧同步通道 generateCourseFromMarkdown 保留作兼容)
       await api.importText({ name: repoName.trim() || undefined, text: mdText.trim() });
-      setBusy(true);
+      setBusy(true); companionImporting(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -471,7 +474,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
     }
     const job = await api.importEpub().catch((e) => { setError(e instanceof Error ? e.message : String(e)); return null; });
     if (!job) return; // 用户取消了文件选择对话框
-    setBusy(true);
+    setBusy(true); companionImporting(true);
   };
   const handleEpubFileChosen = async (file: File | null | undefined) => {
     if (!file || busy) return;
@@ -484,7 +487,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
         bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
       }
       const job = await api.importEpub({ fileName: file.name, contentBase64: btoa(bin) });
-      if (job) setBusy(true);
+      if (job) setBusy(true); companionImporting(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -498,7 +501,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
       if (!p) { setError(t("import.folder.pathRequired")); return; }
       try {
         const job = await api.importLocalFolder(p);
-        if (job) setBusy(true);
+        if (job) setBusy(true); companionImporting(true);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -507,7 +510,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
     // 后台 job：选完文件夹立即返回，管线后台跑（完成走 import:done 监听）
     const job = await api.importLocalFolder();
     if (!job) return; // 用户取消了文件夹选择对话框
-    setBusy(true);
+    setBusy(true); companionImporting(true);
   };
   const handleImportPack = async () => {
     if (busy) return;
@@ -519,7 +522,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
     }
     const job = await api.importPack().catch((e) => { setError(e instanceof Error ? e.message : String(e)); return null; });
     if (!job) return; // 用户取消了文件选择对话框(或格式错误已显示)
-    setBusy(true);
+    setBusy(true); companionImporting(true);
   };
   const handlePackFileChosen = async (file: File | null | undefined) => {
     if (!file || busy) return;
@@ -527,7 +530,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
     try {
       const content = await file.text();
       const job = await api.importPack({ fileName: file.name, content });
-      if (job) setBusy(true);
+      if (job) setBusy(true); companionImporting(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -541,7 +544,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
     }
     const job = await api.importAudio().catch((e) => { setError(e instanceof Error ? e.message : String(e)); return null; });
     if (!job) return; // 用户取消了文件选择
-    setBusy(true);
+    setBusy(true); companionImporting(true);
   };
   const handleAudioFilesChosen = async (files: FileList | null | undefined) => {
     if (!files || files.length === 0 || busy) return;
@@ -557,7 +560,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
         payload.push({ fileName: file.name, contentBase64: btoa(bin) });
       }
       const job = await api.importAudio(payload);
-      if (job) setBusy(true);
+      if (job) setBusy(true); companionImporting(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -567,7 +570,7 @@ function ImportPanel({ courses, selectedCourseId, onSelectCourse, onDeleteCourse
     setError(null); setProgressSteps([]);
     try {
       await api.importResume(planId);
-      setBusy(true);
+      setBusy(true); companionImporting(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

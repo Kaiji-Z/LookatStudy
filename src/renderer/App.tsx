@@ -37,7 +37,7 @@ import { t2SideFromT3, swipeTarget, type T2Side, type T3Pane } from "./lib/paneT
 import { useFocusTrap } from "./lib/useFocusTrap.js";
 import { CelebrationLayer } from "./components/CelebrationLayer.js";
 import { celebrate } from "./lib/celebration.js";
-import { companionSetStreaming } from "./lib/companion/bus.ts";
+import { companionReviewing, companionSetStreaming } from "./lib/companion/bus.ts";
 
 /**
  * v0.2 三栏布局(M1 重构):
@@ -766,6 +766,14 @@ export default function App() {
   const [showReviewDrawer, setShowReviewDrawer] = useState(false);
   /** 用户从复习抽屉选了课 → true,讲解底部显示自评卡。正常切节点 → false */
   const [isReviewing, setIsReviewing] = useState(false);
+  // 伴学情境:进考试节点=加油打气(只反应一次,答题中零干扰);复习抽屉开=待命
+  const isExamNode = selectedNode?.type === "exam";
+  useEffect(() => {
+    if (isExamNode) window.dispatchEvent(new CustomEvent("companion-exam-enter"));
+  }, [isExamNode]);
+  useEffect(() => {
+    companionReviewing(isReviewing);
+  }, [isReviewing]);
 
   return (
     <div className="h-[var(--app-height,100vh)] flex flex-col bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
@@ -1140,7 +1148,7 @@ export default function App() {
       {/* Phase 0:庆祝渲染层(粒子爆发/高光时刻,reduced-motion 自动降级)。根级 fixed,z-[60]。 */}
       <CelebrationLayer />
       {/* v3 伴学单生物:全应用唯一一只,跨栏连续行动(左=原生物理世界/中=宠物/右=助教)。 */}
-      <CompanionCreature worldReady={!!selectedCourseId} />
+      <CompanionCreature worldReady={!!selectedCourseId} courseId={selectedCourseId} />
     </div>
   );
 }

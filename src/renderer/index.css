@@ -1027,6 +1027,42 @@ html.light ::-webkit-scrollbar-thumb:hover {
 /* 睡眠呼吸:打盹时整机缓缓起伏,不是一张静止贴图 */
 .cp-expr-sleeping .cp-bot { transform-box: fill-box; transform-origin: 50% 100%; animation: cp-sleep-breath 2.8s ease-in-out infinite alternate; }
 @keyframes cp-sleep-breath { from { transform: scale(1, 1); } to { transform: scale(1.015, 0.985); } }
+/* ---- v4 细化 ---- */
+/* 高度感:离栏底越远阴影越小越淡(--cp-alt 由 Creature rAF 直写,零重渲染) */
+.cp-shadow {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scaleX(calc(0.45 + var(--cp-alt, 1) * 0.55)) scaleY(calc(0.6 + var(--cp-alt, 1) * 0.4));
+  opacity: calc(0.3 + var(--cp-alt, 1) * 0.7);
+  transition: opacity 0.2s linear;
+}
+/* 喷焰:飞行姿势点亮的推进器粒子(壳层渲染,全形态共享) */
+.cp-thruster { opacity: 0; }
+.cp-pose-flying .cp-thruster { opacity: 1; }
+.cp-thruster circle { fill: #ffc800; }
+.cp-thruster circle:nth-child(2) { fill: #ff9a3d; }
+.cp-pose-flying .cp-thruster circle { animation: cp-thruster 0.22s ease-in-out infinite alternate; }
+.cp-pose-flying .cp-thruster circle:nth-child(2) { animation-delay: 0.08s; }
+.cp-pose-flying .cp-thruster circle:nth-child(3) { animation-delay: 0.14s; }
+@keyframes cp-thruster { from { transform: translateY(0) scale(1); opacity: 1; } to { transform: translateY(4px) scale(0.55); opacity: 0.55; } }
+.cp-thruster circle { transform-box: fill-box; transform-origin: center; }
+/* 等级徽标:高等级金光环缓慢旋转;皇冠轻微悬浮 */
+.cp-halo { animation: cp-halo-spin 7s linear infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes cp-halo-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.cp-crown-badge { animation: cp-crown-float 2.4s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+@keyframes cp-crown-float { from { transform: translateY(0); } to { transform: translateY(-1.6px); } }
+/* 抓取中:抓取光标 + 轻微挣扎抖动 */
+.cp-creature > svg { cursor: grab; }
+.cp-grabbed { cursor: grabbing; }
+.cp-grabbed > svg { cursor: grabbing; }
+.cp-grabbed .cp-bot { animation: cp-struggle 0.3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes cp-struggle { from { transform: rotate(-2.5deg); } to { transform: rotate(2.5deg); } }
+/* 雨天抖水:快速横颤 */
+.cp-shiver { animation: cp-shiver 0.09s linear 5; }
+@keyframes cp-shiver { from { margin-left: -2px; } to { margin-left: 2px; } }
+/* 鼓脸生气:两颊一鼓一鼓 */
+.cp-huffy { transform-box: fill-box; transform-origin: center; animation: cp-huffy-puff 0.8s ease-in-out infinite alternate; }
+@keyframes cp-huffy-puff { from { transform: scale(0.85); } to { transform: scale(1.1); } }
 @media (prefers-reduced-motion: reduce) {
   .cp-pose-writing .cp-armR { animation: none; transform: rotate(2deg); }
   .cp-pose-wave .cp-armR { animation: none; }
@@ -1034,4 +1070,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
   .cp-star-tw { animation: none; }
   .cp-expr-sleeping .cp-bot { animation: none; }
   .cp-veil { filter: none; }
+  .cp-thruster, .cp-pose-flying .cp-thruster { opacity: 0; }
+  .cp-pose-flying .cp-thruster circle { animation: none; }
+  .cp-halo, .cp-crown-badge, .cp-grabbed .cp-bot, .cp-shiver, .cp-huffy { animation: none; }
 }

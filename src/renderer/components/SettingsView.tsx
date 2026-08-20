@@ -834,10 +834,15 @@ function CompanionContent() {
   const [loaded, setLoaded] = useState(false);
   const snap = useSyncExternalStore(subscribeCompanion, getCompanionSnapshot);
 
+  const [sfx, setSfx] = useState(true);
+
   useEffect(() => {
     api.getSetting("companion_enabled").then((v) => {
       setEnabled(v !== "false" && v !== "0");
       setLoaded(true);
+    });
+    api.getSetting("companion_sfx").then((v) => {
+      setSfx(v !== "false" && v !== "0");
     });
   }, []);
 
@@ -846,6 +851,13 @@ function CompanionContent() {
     setEnabled(next);
     await api.setSetting("companion_enabled", String(next));
     // bus 侧重读设置(与 llm-config-changed 同一模式)
+    window.dispatchEvent(new Event("companion-config-changed"));
+  };
+
+  const handleSfxToggle = async () => {
+    const next = !sfx;
+    setSfx(next);
+    await api.setSetting("companion_sfx", String(next));
     window.dispatchEvent(new Event("companion-config-changed"));
   };
 
@@ -867,6 +879,14 @@ function CompanionContent() {
         </div>
       </div>
       {enabled && (
+        <>
+        <div className="flex items-center gap-3">
+          <Toggle checked={sfx} onChange={handleSfxToggle} label={t("settings.companion.sfx")} testid="companion-sfx-toggle" />
+          <div className="flex-1 min-w-0">
+            <div className="text-body font-medium text-ink-strong">{t("settings.companion.sfx")}</div>
+            <div className="text-label text-ink-muted">{t("settings.companion.sfx.desc")}</div>
+          </div>
+        </div>
         <div>
           <div className="text-label text-ink-muted mb-2">{t("settings.companion.form")}</div>
           <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label={t("settings.companion.form")}>
@@ -895,6 +915,7 @@ function CompanionContent() {
             })}
           </div>
         </div>
+        </>
       )}
     </div>
   );

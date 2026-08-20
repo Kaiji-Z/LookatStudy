@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS custom_providers (
   api_key TEXT,                      -- 可空（本地模型如 Ollama 不需要 key）
   default_model TEXT NOT NULL,       -- 默认模型 id
   models_json TEXT,                  -- 可选：模型列表 JSON（用户手填或测试连接回填）
+  vision INTEGER NOT NULL DEFAULT 0, -- 支持看图（多模态）：1=支持，0=不支持（针对 kind=llm 的行；kind=vision 天生支持）
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 

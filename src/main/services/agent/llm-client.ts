@@ -130,6 +130,9 @@ export function resolveLlm(db: Db): ResolvedLlm {
     const apiKey = raw.apiKey || "no-key-needed";
     const model = settings.active_model ?? raw.defaultModel;
     const protocol = raw.protocol as ProviderProtocol;
+    // 自定义 provider 的看图能力由行内 vision 开关声明（kind=vision 天生支持）。
+    // 将此能力合成进 models 条目，让 supportsVision 统一查表而非特殊对待 custom-。
+    const visionCapable = raw.vision || raw.kind === "vision";
     return {
       provider: {
         id: raw.id,
@@ -137,7 +140,7 @@ export function resolveLlm(db: Db): ResolvedLlm {
         protocol,
         baseUrl: raw.baseUrl,
         defaultModel: raw.defaultModel,
-        models: [],
+        models: [{ id: model, label: model, capabilities: visionCapable ? ["chat", "vision"] : ["chat"] }],
         apiKeySetting: "(custom)",
         keyUrl: "",
       },
@@ -223,15 +226,9 @@ export function resolveVisionLlm(db: Db): ResolvedLlm {
     }
   }
 
-  // 无覆盖 → 复用主模型
+  // 无覆盖 → 复用主模型（自定义 provider 的能力由 resolveLlm 合成进 models 表，统一查表）
   const main = resolveLlm(db);
 
-  // 自定义 provider:宽松处理(无法可靠检测,默认支持)
-  if (main.provider.id.startsWith("custom-")) {
-    return main;
-  }
-
-  // 预设 provider:检测 vision 能力
   if (!supportsVision(main.provider, main.model)) {
     throw new Error(
       `当前模型 ${main.model} 不支持看图(vision)。请在设置页的"多模态"区配置一个支持 vision 的模型(如 GLM-4V / GPT-4o / Claude / Gemini)。`,
@@ -243,13 +240,14 @@ export function resolveVisionLlm(db: Db): ResolvedLlm {
 /**
  * 检测某 provider + model 是否支持 vision。
  * 规则:预设的 models 列表里该 model 的 capabilities 含 "vision" → 支持。
- * 找不到 model 条目时宽松返回 true(新模型可能还没登记 capabilities)。
+ * 找不到 model 条目时保守返回 false —— 猜"不支持"的代价是桥接/不喂图（可控），
+ * 猜"支持"的代价是直发 file-part 被拒（整轮对话 400 不可逆）。
  */
 export function supportsVision(provider: ProviderPreset, model: string): boolean {
   const modelEntry = provider.models.find(
     (m) => m.id === model || m.id.toLowerCase() === model.toLowerCase(),
   );
-  if (!modelEntry) return true; // 宽松:没登记的模型默认支持(防误拦新模型)
+  if (!modelEntry) return false; // 保守：未知模型默认不支持，配了 vision 覆盖走桥接
   return (modelEntry.capabilities ?? []).includes("vision");
 }
 

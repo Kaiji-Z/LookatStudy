@@ -68,6 +68,19 @@ export function visionRouting(
 }
 
 /**
+ * 检测 LLM 错误是否为"服务端拒收图片"（400 保险丝用）。
+ * 高置信度匹配各 provider 的拒图措辞，宁可漏判不可误判（误判会把正常错误当图片处理）。
+ */
+export function isImageRejectionError(err: unknown): boolean {
+  const s = String(err instanceof Error ? err.message : err).toLowerCase();
+  if (s.includes("content.type is invalid")) return true; // GLM/Zhipu: "messages.content.type is invalid"
+  if (/(not support|does not support|unsupported).{0,40}(image|multimodal|vision)|(image|multimodal|vision).{0,40}(not support|unsupported)/.test(s)) return true;
+  if (s.includes("image") && s.includes("invalid content type")) return true;
+  if (/(不支持|无法处理).{0,12}(图片|图像|视觉|看图)/.test(s) || /(图片|图像).{0,8}不支持/.test(s)) return true;
+  return false;
+}
+
+/**
  * data-url(data:image/png;base64,xxxx)→ { mediaType, base64 }。
  * 形状不对(非 data: 前缀/缺逗号/非 base64/空载荷)返回 null。
  * 课文图两处来源的统一归一化入口:node_assets 的 getAssetDataUrl 与 content 内嵌图

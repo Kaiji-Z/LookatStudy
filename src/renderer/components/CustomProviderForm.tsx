@@ -48,6 +48,7 @@ export function CustomProviderForm({
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
+  const [vision, setVision] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
 
@@ -83,6 +84,7 @@ export function CustomProviderForm({
         baseUrl: baseUrl.trim(),
         apiKey: apiKey.trim() || undefined,
         defaultModel: model.trim(),
+        vision: kind === "llm" ? vision : undefined,
       });
       onSaved(created);
     } catch {
@@ -141,6 +143,19 @@ export function CustomProviderForm({
           className={`${fieldCls} flex-1 px-2.5 py-1.5`}
         />
       </div>
+      {/* 看图能力开关:仅 kind=llm 有效;kind=vision 天生支持 */}
+      {kind === "llm" && (
+        <label className="inline-flex items-center gap-2 text-label cursor-pointer select-none" data-testid={`${testPrefix}-vision`}>
+          <input
+            type="checkbox"
+            checked={vision}
+            onChange={(e) => setVision(e.target.checked)}
+            className="w-4 h-4 rounded accent-brand"
+          />
+          <span className="text-ink-strong">{t("settings.custom.vision")}</span>
+          <span className="text-ink-faint">{t("settings.custom.visionHint")}</span>
+        </label>
+      )}
       {testResult && (
         <div
           className={`text-label rounded p-2 inline-flex items-start gap-1.5 ${

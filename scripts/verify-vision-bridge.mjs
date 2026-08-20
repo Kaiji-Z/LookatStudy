@@ -28,6 +28,7 @@ import {
   bridgeCacheSet,
   bridgeCacheSize,
   clearVisionBridgeCache,
+  isImageRejectionError,
 } from "../src/main/services/agent/vision-bridge.ts";
 
 let pass = 0;
@@ -141,6 +142,26 @@ check("缺逗号 → null", parseDataUrl("data:image/png;base64") === null);
 check("非 base64 载荷 → null", parseDataUrl("data:image/png,RAWTEXT") === null);
 check("空载荷 → null", parseDataUrl("data:image/png;base64,") === null);
 check("空 mediaType → null", parseDataUrl("data:;base64,AAA") === null);
+
+/* ---------- T9 400 保险丝:isImageRejectionError ---------- */
+console.log("T9 isImageRejectionError 拒图错误识别");
+// GLM/Zhipu 风格
+check("content.type is invalid → true", isImageRejectionError(new Error("messages.content.type is invalid, allowed values: ['text']")));
+check("content.type is invalid 字符串 → true", isImageRejectionError("messages.content.type is invalid, allowed values: ['text']"));
+// 不支持图片
+check("does not support image → true", isImageRejectionError(new Error("The model does not support image input")));
+check("unsupported image → true", isImageRejectionError("image input is unsupported for this model"));
+check("image not supported → true", isImageRejectionError("image not supported by this endpoint"));
+// 中文
+check("不支持图片 → true", isImageRejectionError("当前模型不支持图片输入"));
+check("无法处理图像 → true", isImageRejectionError("此模型无法处理图像内容"));
+// 误报对抗:不相关的错误不应触发
+check("空字符串 → false", !isImageRejectionError(""));
+check("普通 HTTP 错误 → false", !isImageRejectionError("Request failed with status code 500"));
+check("API key 错误 → false", !isImageRejectionError("Incorrect API key provided"));
+check("空响应错误 → false", !isImageRejectionError("AI 未返回任何内容"));
+check("rate limit → false", !isImageRejectionError("Rate limit exceeded, please try again later"));
+check("object 错误 → false", !isImageRejectionError({ code: "invalid_request" }));
 
 /* ---------- 汇总 ---------- */
 console.log(`\nvision-bridge: ${pass} passed, ${fail} failed`);

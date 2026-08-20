@@ -20,7 +20,7 @@ import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { SelfRatingCard } from "./ReviewPanel.js";
 import { api } from "../lib/api.js";
-import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark } from "../lib/highlightText.js";
+import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor } from "../lib/highlightText.js";
 import { splitSentences, normalizeSpeechText } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
@@ -383,6 +383,7 @@ function ContentTab({
       return;
     }
     const sentence = speechSentences[readingIdx]!;
+    if (readingIdx === 0) resetReadingCursor(prose); // 新一轮朗读从第 0 句起,游标归零
     // 等 ReactMarkdown 渲染完(content 刚到/语言切换重挂)再定位
     const timer = setTimeout(() => {
       const el = markReadingSentence(prose, sentence);

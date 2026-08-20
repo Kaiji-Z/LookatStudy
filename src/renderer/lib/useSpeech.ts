@@ -43,15 +43,19 @@ export function useSpeech(): {
   const [onlineNotice, setOnlineNotice] = useState(false);
 
   const ctxRef = useRef<AudioContext | null>(null);
-  const buffersRef = useRef<AudioBuffer[]>([]);
+  /** 按句序排队的解码缓冲池:key = main 给的 sentenceIndex。
+   *  不能用数组 FIFO:decodeAudioData 异步完成序 ≈ 句子长度(短句先解完),
+   *  合成快于收听时全部到达一起竞争,数组按完成序进队 = 播放乱序
+   *  (实测:课文的最后一句插在第二句后面念出来)。只按 nextSeq 顺序消费。 */
+  const pendingRef = useRef<Map<number, AudioBuffer>>(new Map());
+  /** 下一个该播的句序(播放序权威值) */
+  const nextSeqRef = useRef(0);
   const playingRef = useRef(false);
   const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const receivedRef = useRef(0);
   const playedRef = useRef(0);
   const doneRef = useRef(false);
   const activeIdRef = useRef<string | null>(null);
-  /** 已起播的缓冲条数(播放序);总句数随 ttsAudio 到达刷新 */
-  const startedRef = useRef(0);
   const totalRef = useRef(0);
 
   const ensureCtx = () => {
@@ -72,26 +76,28 @@ export function useSpeech(): {
     }
   }, []);
 
-  const playNext = useCallback(() => {
+  /** 只按句序消费:下一句已解码 → 起播;未到 → 等它自己的 ttsAudio/decode(不跳句)。 */
+  const pump = useCallback(() => {
     const ctx = ctxRef.current;
-    const buf = buffersRef.current.shift();
-    if (!ctx || !buf) {
-      playingRef.current = false;
+    if (!ctx || playingRef.current) return;
+    const buf = pendingRef.current.get(nextSeqRef.current);
+    if (!buf) {
       finishIfDrained();
       return;
     }
+    pendingRef.current.delete(nextSeqRef.current);
     playingRef.current = true;
-    // v6 播放序:第 startedRef 条缓冲开始起播 → 它就是"正在念"的句子。
-    // 缓冲 FIFO 顺序 = main 侧合成顺序 = 句序,与到达序解耦(合成超前不超前都准)。
-    setPlayingSentence({ index: startedRef.current, total: totalRef.current });
-    startedRef.current += 1;
+    // v6 播放序:正在念的句 = nextSeq(按序消费的权威值,与解码完成序解耦)
+    setPlayingSentence({ index: nextSeqRef.current, total: totalRef.current });
+    nextSeqRef.current += 1;
     const src = ctx.createBufferSource();
     src.buffer = buf;
     // 经共享 AnalyserNode 直通扬声器(伴学伙伴口型读它;异常时内部退回直连,朗读不受影响)
     connectSpeechSource(ctx, src);
     src.onended = () => {
       playedRef.current += 1;
-      playNext();
+      playingRef.current = false;
+      pump();
     };
     sourcesRef.current.push(src);
     src.start();
@@ -107,13 +113,13 @@ export function useSpeech(): {
       }
     }
     sourcesRef.current = [];
-    buffersRef.current = [];
+    pendingRef.current.clear();
     playingRef.current = false;
     receivedRef.current = 0;
     playedRef.current = 0;
     doneRef.current = false;
     activeIdRef.current = null;
-    startedRef.current = 0;
+    nextSeqRef.current = 0;
     totalRef.current = 0;
     setSpeakingMessageId(null);
     setSpeakingSentence(null);
@@ -132,12 +138,16 @@ export function useSpeech(): {
         return;
       }
       stopLocal();
+      // 跨实例互停:讲解区/对话流各持一个 useSpeech,后开的不通知先停的话,
+      // 旧实例的 speakingMessageId 残留 → karaoke 高亮残留 + talking 信号吊死。
+      // window 事件广播(与 companion 总线同款模式),别的实例听见就自行 stopLocal。
+      window.dispatchEvent(new CustomEvent("lookatstudy-speech-start", { detail: messageId }));
       setFailReason(null);
       activeIdRef.current = messageId;
       receivedRef.current = 0;
       playedRef.current = 0;
       doneRef.current = false;
-      startedRef.current = 0;
+      nextSeqRef.current = 0;
       totalRef.current = 0;
       setSpeakingMessageId(messageId);
       setSpeakingSentence({ index: 0, total: 0 });
@@ -164,11 +174,20 @@ export function useSpeech(): {
       receivedRef.current += 1;
       totalRef.current = e.sentenceTotal;
       setSpeakingSentence({ index: e.sentenceIndex, total: e.sentenceTotal });
-      void ctx.decodeAudioData(e.wavBytes).then((buf) => {
-        if (e.messageId !== activeIdRef.current) return; // 停了:丢弃迟到块
-        buffersRef.current.push(buf);
-        if (!playingRef.current) playNext();
-      });
+      // 解码完成序 ≠ 句序(短句先解完):按 sentenceIndex 入池,消费端只按序取。
+      // 坏块(解码失败)计收一个但永不入池 → 该句静默跳过,不卡死排空判定。
+      void ctx.decodeAudioData(e.wavBytes).then(
+        (buf) => {
+          if (e.messageId !== activeIdRef.current) return; // 停了:丢弃迟到块
+          pendingRef.current.set(e.sentenceIndex, buf);
+          pump();
+        },
+        () => {
+          if (e.messageId !== activeIdRef.current) return;
+          receivedRef.current -= 1;
+          pump();
+        },
+      );
     });
     const offDone = window.api.on("speech:ttsDone", (e: { messageId: string }) => {
       if (e.messageId !== activeIdRef.current) return;
@@ -181,9 +200,19 @@ export function useSpeech(): {
       offDone();
       offError();
     };
-  }, [finishIfDrained, playNext, stopLocal]);
+  }, [finishIfDrained, pump, stopLocal]);
 
   useEffect(() => stopLocal, [stopLocal]); // 卸载兜底
+
+  // 跨实例互停(接收侧):别的 useSpeech 实例开了新朗读 → 本实例若还在"读"状态就自行停
+  useEffect(() => {
+    const onOtherStart = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (activeIdRef.current && id !== activeIdRef.current) stopLocal();
+    };
+    window.addEventListener("lookatstudy-speech-start", onOtherStart);
+    return () => window.removeEventListener("lookatstudy-speech-start", onOtherStart);
+  }, [stopLocal]);
 
   // 伴学 talking 信号(v3 下沉到引擎层):speakingMessageId 即朗读事实——
   // 谁在放谁发事件,同一次渲染必达(旧法在组件层按节点 id 对比,曾静默失效)。

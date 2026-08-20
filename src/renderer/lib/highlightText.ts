@@ -314,15 +314,25 @@ function wrapRangeWithMark(range: Range, noteId: string): HTMLElement | null {
   // 确保文字颜色继承父元素,不变成不可见。
   const markStyle =
     "color: inherit; background: transparent; border-bottom: 2px solid rgb(34, 197, 94); padding-bottom: 1px;";
+  const mark = document.createElement("mark");
+  mark.className = "lookatstudy-underline";
+  mark.dataset.noteId = noteId;
+  mark.style.cssText = markStyle;
+  return wrapRangeWithElement(range, mark);
+}
+
+/**
+ * 把一个 Range(可能跨多个文本节点)用指定元素包裹。
+ * 不能用 range.surroundContents(跨元素边界会抛错),改用"拆分文本节点 + 逐节点包裹";
+ * 跨节点时逐节点克隆空壳元素包裹(样式类保留),返回首个包裹元素。
+ * 持久画线(mark)与朗读句高亮(span)共用本算法。
+ */
+function wrapRangeWithElement(range: Range, el: HTMLElement): HTMLElement | null {
   // 快路径:startContainer === endContainer(单节点,不跨边界)
   if (range.startContainer === range.endContainer && range.startContainer.nodeType === Node.TEXT_NODE) {
     try {
-      const mark = document.createElement("mark");
-      mark.className = "lookatstudy-underline";
-      mark.dataset.noteId = noteId;
-      mark.style.cssText = markStyle;
-      range.surroundContents(mark);
-      return mark;
+      range.surroundContents(el);
+      return el;
     } catch {
       /* fall through to slow path */
     }
@@ -347,7 +357,7 @@ function wrapRangeWithMark(range: Range, noteId: string): HTMLElement | null {
     while ((n = walker.nextNode())) textNodes.push(n as Text);
     if (textNodes.length === 0) return null;
 
-    let firstMark: HTMLElement | null = null;
+    let firstWrap: HTMLElement | null = null;
     for (const textNode of textNodes) {
       let toWrap = textNode;
       // 起点节点:把 range 起点之前的部分切掉
@@ -362,18 +372,67 @@ function wrapRangeWithMark(range: Range, noteId: string): HTMLElement | null {
         }
       }
       if (!toWrap.textContent) continue;
-      const mark = document.createElement("mark");
-      mark.className = "lookatstudy-underline";
-      mark.dataset.noteId = noteId;
-      mark.style.cssText = markStyle;
-      toWrap.parentNode?.insertBefore(mark, toWrap);
-      mark.appendChild(toWrap);
-      if (!firstMark) firstMark = mark;
+      const wrap: HTMLElement = firstWrap ? (el.cloneNode(false) as HTMLElement) : el;
+      toWrap.parentNode?.insertBefore(wrap, toWrap);
+      wrap.appendChild(toWrap);
+      if (!firstWrap) firstWrap = wrap;
     }
-    return firstMark;
+    return firstWrap;
   } catch {
     return null;
   }
+}
+
+/* ============================================================
+ * 朗读句高亮(v6 karaoke)
+ * ============================================================ */
+
+export const READING_MARK_CLASS = "cp-reading-mark";
+
+/** 清除朗读句高亮(unwrap + normalize 恢复 DOM;句切换/停止/卸载时调)。 */
+export function clearReadingMark(container: HTMLElement): void {
+  container.querySelectorAll(`.${READING_MARK_CLASS}`).forEach((m) => {
+    const parent = m.parentNode;
+    if (parent) {
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+    }
+  });
+  container.normalize();
+}
+
+/**
+ * 在讲解正文里定位并高亮**当前正在朗读**的句子,返回高亮元素(未找到返回 null)。
+ *
+ * 句子文本来自 splitSentences(normalizeSpeechText(content)) —— 与 main 合成侧
+ * 同一真源(shared/speech-text 纯函数),句子序=缓冲播放序。与渲染 DOM 的差异
+ * 主要在空白与表格竖线,匹配策略与持久画线同款三级兜底:
+ *   精确 indexOf → 空白归一化命中后前 15 字回原文 → 句首 24 字前缀。
+ */
+export function markReadingSentence(container: HTMLElement, sentence: string): HTMLElement | null {
+  clearReadingMark(container);
+  const trimmed = sentence.trim();
+  if (!trimmed) return null;
+  const model = getTextModel(container);
+  let pos = model.text.indexOf(trimmed);
+  if (pos < 0) {
+    const norm = trimmed.replace(/\s+/g, " ");
+    const normHay = model.text.replace(/\s+/g, " ");
+    if (normHay.indexOf(norm) >= 0) {
+      pos = model.text.indexOf(trimmed.slice(0, Math.min(15, trimmed.length)));
+    }
+  }
+  if (pos < 0) {
+    const prefix = trimmed.slice(0, 24);
+    if (prefix.length >= 6) pos = model.text.indexOf(prefix);
+  }
+  if (pos < 0) return null;
+  const end = Math.min(pos + trimmed.length, model.text.length);
+  const range = offsetsToRange(model, pos, end);
+  if (!range) return null;
+  const span = document.createElement("span");
+  span.className = READING_MARK_CLASS;
+  return wrapRangeWithElement(range, span);
 }
 
 /** 闪烁某个持久画线 mark(溯源跳转时用):加粗下划线 + 淡黄背景高亮,1.5s 后恢复。 */

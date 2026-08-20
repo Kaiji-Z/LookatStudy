@@ -37,18 +37,18 @@ import {
   type FlightWorld,
 } from "../../lib/companion/companion-flight.ts";
 import { BALL_RADIUS, WIND_STRENGTH, swirlAt, weatherPhysFor } from "../../lib/mapPhysics.js";
-import { peekClipPct, zoneDrift } from "../../lib/companion/companion-core.js";
+import { readingAnchorPos, zoneDrift } from "../../lib/companion/companion-core.js";
 import { usePrefersReducedMotion } from "../../lib/usePrefersReducedMotion.js";
 
 import { Mascot } from "./Mascot.tsx";
 
-/** 各世界体型(v5:chat 探出输入框半身藏卡后、notebook 放大看口型)。 */
+/** 各世界体型(v5 放大:chat 76 / notebook 88 看清口型;rail 天空居民不变)。 */
 const SIZE: Record<"rail" | "chat" | "notebook", number> = { rail: 88, chat: 76, notebook: 88 };
 
-/** 栏内锚点:edgeY 非空 = 生物骑在遮挡物上缘(chat 输入卡),要按它做 peek 裁剪。 */
-type ZoneAnchor = { x: number; y: number; edgeY?: number };
+/** 栏内锚点(视口坐标)。 */
+type ZoneAnchor = { x: number; y: number };
 
-/** chat 锚点:输入卡上缘右侧——身体骑在卡片边上,下半身用 clip 藏进卡后(peek),手留在上面拍键。 */
+/** chat 锚点:输入卡上缘右侧上空悬浮(v6 撤掉半身藏卡:拍键手臂全程可见,附近轻漂)。 */
 function chatAnchor(): ZoneAnchor | null {
   const card = document.querySelector<HTMLElement>('[data-testid="composer-card"]');
   const el =
@@ -57,15 +57,12 @@ function chatAnchor(): ZoneAnchor | null {
     document.querySelector<HTMLElement>('[data-testid="composer-nokey"]');
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  // 卡片在场:中心抬到上缘之上,藏掉的底部 ≈ PEEK_CLIP_MAX(腿脚进卡,头+手臂全露)。
-  // 无卡(nokey 横幅等):老几何悬停,不裁剪。
-  if (card) {
-    return { x: r.right - 78, y: r.top - SIZE.chat * 0.18, edgeY: r.top + 1 };
-  }
-  return { x: r.right - 84, y: r.top - 10 };
+  // 悬在卡片上缘之上(完整可见),右侧避开文字;无卡(nokey 横幅)同款悬停
+  return { x: r.right - 78, y: r.top - 44 };
 }
 
-/** notebook 锚点:面板右上、标签行之下(正文列居中,右上肩是留白;v5 放大到 88,锚点随之下移)。 */
+/** notebook 锚点:面板右上、标签行之下(正文列居中,右上肩是留白)。朗读跟句时会被
+ *  .cp-reading-mark 实时位置覆盖(见 rAF),这是无朗读时的默认栖位。 */
 function notebookAnchor(): ZoneAnchor | null {
   const el = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]');
   if (!el) return null;
@@ -78,6 +75,9 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
   const mouth = useSpeechMouth(snap.state.talking);
   const reduced = usePrefersReducedMotion();
   const [inTransit, setInTransit] = useState(false);
+  /** v6 朗读跟句:正在指句时非 null(值=手指方向;left=生物在句右指左)。rAF 写 ref,变化才 setState。 */
+  const [pointing, setPointing] = useState<"left" | "right" | null>(null);
+  const pointingRef = useRef<"left" | "right" | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const flightRef = useRef<FlightWorld | null>(null);
   const posRef = useRef<{ x: number; y: number } | null>(null);
@@ -216,8 +216,6 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
       if (!grabbed && ((eff === "chat" && !chatAnchor()) || (eff === "notebook" && !notebookAnchor()))) eff = "rail";
 
       let target: { x: number; y: number } | null = null;
-      /** 本帧 chat 锚点带出的输入卡上缘(peek 裁剪线);null=无卡不裁 */
-      let chatEdge: number | null = null;
 
       if (grabbed) {
         // ── 抓取中:指针就是全世界(任何 zone 都直接拖拽) ──
@@ -317,33 +315,56 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
         }
       } else if (eff !== "rail") {
         flightRef.current = null;
-        const anchor = eff === "chat" ? chatAnchor() : notebookAnchor();
-        if (anchor) {
-          if (anchor.edgeY != null) chatEdge = anchor.edgeY;
-          if (reduced) {
-            target = anchor;
-            angle = 0;
-          } else {
-            // 栏内漂浮:锚点叠慢利萨茹漂移(他在输入框/讲解栏附近轻轻游动,不是钉死)
-            const d = zoneDrift(eff, now);
-            const ax = anchor.x + d.x;
-            const ay = anchor.y + d.y;
-            const cur = posRef.current ?? { x: ax, y: ay };
-            const k = 1 - Math.exp(-dt / 90);
-            target = { x: cur.x + (ax - cur.x) * k, y: cur.y + (ay - cur.y) * k };
-            angle = Math.max(-0.35, Math.min(0.35, (ax - cur.x) * 0.012));
+        // v6 朗读跟句:讲解区有 karaoke 高亮句时,notebook 锚点被句子实时位置接管
+        // (贴着那句站,指住它;scroll 时 rect 随 .cp-reading-mark 元素自动更新)。
+        const readMark = eff === "notebook" ? document.querySelector<HTMLElement>(".cp-reading-mark") : null;
+        const anchor = readMark
+          ? null
+          : eff === "chat"
+            ? chatAnchor()
+            : notebookAnchor();
+        if (readMark) {
+          const panel = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]');
+          const pr = panel?.getBoundingClientRect();
+          const mr = readMark.getBoundingClientRect();
+          if (pr && mr.width > 0) {
+            const pos = readingAnchorPos(mr, pr, SIZE.notebook);
+            if (pointingRef.current !== pos.side) {
+              pointingRef.current = pos.side;
+              setPointing(pos.side);
+            }
+            if (reduced) {
+              target = pos;
+              angle = 0;
+            } else {
+              // 跟句不叠漂移(要稳稳指住);lerp 平滑换句滑动
+              const cur = posRef.current ?? { x: pos.x, y: pos.y };
+              const k = 1 - Math.exp(-dt / 110);
+              target = { x: cur.x + (pos.x - cur.x) * k, y: cur.y + (pos.y - cur.y) * k };
+              angle = pos.side === "left" ? -0.07 : 0.07; // 微倾向所指文字
+            }
+          }
+        } else {
+          if (pointingRef.current !== null) {
+            pointingRef.current = null;
+            setPointing(null);
+          }
+          if (anchor) {
+            if (reduced) {
+              target = anchor;
+              angle = 0;
+            } else {
+              // 栏内漂浮:锚点叠慢利萨茹漂移(他在输入框/讲解栏附近轻轻游动,不是钉死)
+              const d = zoneDrift(eff, now);
+              const ax = anchor.x + d.x;
+              const ay = anchor.y + d.y;
+              const cur = posRef.current ?? { x: ax, y: ay };
+              const k = 1 - Math.exp(-dt / 90);
+              target = { x: cur.x + (ax - cur.x) * k, y: cur.y + (ay - cur.y) * k };
+              angle = Math.max(-0.35, Math.min(0.35, (ax - cur.x) * 0.012));
+            }
           }
         }
-      }
-
-      // chat 世界 peek 裁剪:下半身藏进输入卡后面(clip 同时裁掉命中区,不挡卡内按钮)。
-      // 抓取/飞行途中(底边还在卡片上缘之上)peekClipPct 自然归零。
-      if (!grabbed && eff === "chat" && target && chatEdge != null) {
-        const w = wrap.offsetWidth || SIZE.chat;
-        const pct = peekClipPct(target.y, w, chatEdge);
-        wrap.style.clipPath = pct > 0 ? `inset(-4% -12% ${pct.toFixed(1)}% -12%)` : "";
-      } else if (wrap.style.clipPath) {
-        wrap.style.clipPath = "";
       }
 
       if (!target) {
@@ -370,7 +391,13 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
 
   if (!worldReady || !snap.enabledLoaded || !snap.enabled) return null;
 
-  const pose = inTransit ? "flying" : snap.state.pose;
+  const pose = inTransit
+    ? "flying"
+    : pointing === "left"
+      ? "point"
+      : pointing === "right"
+        ? "pointr"
+        : snap.state.pose;
   return (
     <div
       ref={wrapRef}

@@ -20,7 +20,8 @@ import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { SelfRatingCard } from "./ReviewPanel.js";
 import { api } from "../lib/api.js";
-import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
+import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark } from "../lib/highlightText.js";
+import { splitSentences, normalizeSpeechText } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { CanvasStage } from "./CanvasStage.js";
@@ -363,6 +364,47 @@ function ContentTab({
     return () => window.removeEventListener("lookatstudy-jump-to-note", handler);
   }, []);
 
+  // v6 朗读句级跟随(karaoke):当前**正在播放**的句子(播放序,非合成到达序)在
+  // 讲解正文里定位高亮;句子滚出视野时居中跟随。句子表用与 main 合成侧同一真源
+  // (shared/speech-text 纯函数)从同一份 content 复算,句序=缓冲播放序。
+  const speechSentences = useMemo(
+    () => (content ? splitSentences(normalizeSpeechText(content), { flush: true }).sentences : []),
+    [content],
+  );
+  const readingIdx =
+    speech.speakingMessageId === nodeSpeechId && speech.playingSentence != null
+      ? speech.playingSentence.index
+      : null;
+  useEffect(() => {
+    const prose = proseRef.current;
+    if (!prose) return;
+    if (readingIdx == null || readingIdx < 0 || readingIdx >= speechSentences.length) {
+      clearReadingMark(prose);
+      return;
+    }
+    const sentence = speechSentences[readingIdx]!;
+    // 等 ReactMarkdown 渲染完(content 刚到/语言切换重挂)再定位
+    const timer = setTimeout(() => {
+      const el = markReadingSentence(prose, sentence);
+      if (!el) return;
+      // 视野外才滚动(避免逐句连续跳);平滑居中
+      const r = el.getBoundingClientRect();
+      const scroller = prose.closest(".overflow-y-auto");
+      const sr = scroller?.getBoundingClientRect();
+      if (!sr || r.top < sr.top + 48 || r.bottom > sr.bottom - 48) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 30);
+    return () => clearTimeout(timer);
+    // speechSentences 随 content 重算;readingIdx 驱动逐句切换
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sentences 是 useMemo 稳定引用
+  }, [readingIdx, speechSentences, nodeSpeechId]);
+  // 停止/切节点/卸载:清掉朗读高亮
+  useEffect(() => {
+    if (readingIdx == null && proseRef.current) clearReadingMark(proseRef.current);
+  }, [readingIdx]);
+  useEffect(() => () => { if (proseRef.current) clearReadingMark(proseRef.current); }, []);
+
   // 鼠标松开时检查选区(哪里不会点哪里 + 加到笔记)
   const handleMouseUp = useCallback(() => {
     if (!onQuoteToChat && !onSaveContentNote) return;
@@ -478,18 +520,11 @@ function ContentTab({
   }
   return (
     <div className="p-5 relative" data-testid="node-content" ref={contentRef} onMouseUp={handleMouseUp}>
-      <div className="text-caption font-bold text-brand uppercase tracking-wider mb-1">
-        {selectedNode.type === "section"
-          ? t("notebook.node_type.section")
-          : selectedNode.type === "concept"
-            ? t("notebook.node_type.concept")
-            : t("notebook.node_type.lesson")}
-      </div>
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <h2 className="text-title font-extrabold text-ink-strong tracking-tight" data-testid="node-content-title">
-          {selectedNode.title}
-        </h2>
-        {!loading && !loadError && content && (
+      {/* 整课朗读(v6):sticky 悬浮在讲解视口右上角,不随正文滚动 ——
+          用户翻到后面也能一键停。吸顶行 pointer-events-none,只有按钮本身可点,
+          不挡吸顶行底下的正文选区/点击。 */}
+      {!loading && !loadError && content && (
+        <div className="sticky top-0 z-20 flex justify-end -mt-2 pointer-events-none">
           <button
             onClick={() => speech.speak(nodeSpeechId ?? "content", content)}
             data-tooltip={
@@ -503,10 +538,10 @@ function ContentTab({
                 : t("chat.speech.read_aloud_node")
             }
             data-testid={speech.speakingMessageId === nodeSpeechId ? "node-content-speak-active" : "node-content-speak"}
-            className={`shrink-0 rounded-full p-2 transition-colors ${
+            className={`pointer-events-auto shrink-0 rounded-full p-2 bg-surface-2 shadow-elevated transition-colors ${
               speech.speakingMessageId === nodeSpeechId
-                ? "text-brand bg-brand/10 animate-pulse"
-                : "text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06]"
+                ? "text-brand animate-pulse"
+                : "text-ink-muted hover:text-ink-strong"
             }`}
           >
             {speech.speakingMessageId === nodeSpeechId ? (
@@ -515,7 +550,19 @@ function ContentTab({
               <Volume2 className="w-4 h-4" />
             )}
           </button>
-        )}
+        </div>
+      )}
+      <div className="text-caption font-bold text-brand uppercase tracking-wider mb-1">
+        {selectedNode.type === "section"
+          ? t("notebook.node_type.section")
+          : selectedNode.type === "concept"
+            ? t("notebook.node_type.concept")
+            : t("notebook.node_type.lesson")}
+      </div>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <h2 className="text-title font-extrabold text-ink-strong tracking-tight" data-testid="node-content-title">
+          {selectedNode.title}
+        </h2>
       </div>
       {loading ? (
         <div className="text-body text-ink-muted flex items-center gap-2"><span className="typing-dot w-1.5 h-1.5 bg-brand rounded-full inline-block" />{t("notebook.content.loading")}</div>

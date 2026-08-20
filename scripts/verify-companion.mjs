@@ -753,8 +753,19 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
     "T15: 伴学跟句(读 .cp-reading-mark + readingAnchorPos + 指向姿势)",
   );
   assert.ok(
-    css.includes("cp-pose-point") && css.includes("cp-reading-mark"),
-    "T15: 指向姿势 + 朗读句高亮 CSS 存在",
+    /\.cp-pose-point \.cp-armL[^}]*rotate\(92deg\)/.test(css) && /\.cp-pose-pointr \.cp-armR[^}]*rotate\(-92deg\)/.test(css),
+    "T15: 指臂方向正确(armL +92° 左伸 / armR -92° 右伸;符号反=手臂横穿藏头后,实测踩过)",
+  );
+  assert.ok(css.includes("cp-reading-mark"), "T15: 朗读句高亮 CSS 存在");
+  // v6 chat karaoke:中栏对话消息朗读同样高亮+跟句
+  const chatStream = read("components/ChatStream.tsx");
+  assert.ok(
+    chatStream.includes("markReadingSentence") && chatStream.includes("playingSentence={speech.playingSentence}"),
+    "T15: 对话消息朗读 karaoke 接线(playingSentence 透传 + markReadingSentence)",
+  );
+  assert.ok(
+    creature.includes('[data-testid="chat-stream"]'),
+    "T15: 伴学跟句覆盖中栏(mark 所在面板链含 chat-stream)",
   );
 }
 console.log("✓ T15 v3 接线守卫:单例挂载/三触发点/左栏注册表/物理碰撞源级咬合");

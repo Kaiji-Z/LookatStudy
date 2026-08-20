@@ -6,7 +6,7 @@
  * (今日 XP 充能) + 金色 streak 火苗。口型=圆角母音块。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags, BevelPlate } from "./shared.js";
+import { Arms, Face, FaceExtras, GroundShadow, faceFlags, BevelPlate , Shoulders } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const EMBER: FormPalette = {
@@ -97,6 +97,7 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
         <circle cx="92" cy="164" r="1.5" fill={OUT} opacity="0.6" />
         <circle cx="108" cy="164" r="1.5" fill={OUT} opacity="0.6" />
 
+        <Shoulders fill={CORAL} fillDark={CORAL_D} out={OUT} />
         <Arms refs={refs} armFill={CORAL_D} out={OUT} />
 
         {/* 身体 + cel 错位暗面 + 能量核 */}

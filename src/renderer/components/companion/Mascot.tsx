@@ -52,6 +52,8 @@ export interface MascotProps {
   keySeq?: number;
   /** 最近按压臂侧:-1=左 / 1=右 */
   keySide?: -1 | 1;
+  /** v10 胸屏显示的键入字符(typing 期间由生物传入;null=不显示) */
+  screenKey?: string | null;
   /** 等级徽标:头顶小皇冠(XP 等级≥3,壳层渲染全形态共享) */
   crownBadge?: boolean;
   /** 等级徽标:金色光环(XP 等级≥7) */
@@ -74,6 +76,7 @@ export function Mascot({
   onGrab,
   keySeq = 0,
   keySide = 1,
+  screenKey = null,
   crownBadge = false,
   haloBadge = false,
 }: MascotProps) {
@@ -93,13 +96,14 @@ export function Mascot({
   };
   const rootRef = refs.bot;
 
-  /* 逐键按压(Bongo Cat 式,v5 加强):keySeq 变化 → 该侧手臂大幅拍下(±52°,回弹
-     过冲)+ 整机随拍压弹一下(scale 弹跳)——反馈从"手抖"放大到"全身在敲键盘"。
+  /* 逐键按压(v10 重做):keySeq 变化 → 该侧手臂**向内收**,手套敲自己的
+     胸/腹(像打鼓点跟拍子)+ 整机随拍压弹——从"拍键盘"改成"敲自己身体"。
+     臂向内:armL 负角(顺 y-down 逆时针,手套向 +x 身体中线)/armR 正角。
      composite:"add" 与姿势 CSS 变换叠加;reduced-motion 静默跳过。 */
   useEffect(() => {
     if (reduced || keySeq <= 0) return;
     const el = keySide === -1 ? refs.armL.current : refs.armR.current;
-    const deg = keySide === -1 ? 52 : -52;
+    const deg = keySide === -1 ? -44 : 44;
     el?.animate(
       [
         { transform: "rotate(0deg)" },
@@ -257,6 +261,38 @@ export function Mascot({
         energyRatio={energyRatio}
         streakLit={streakLit}
       />
+      {/* v10 胸屏键入字符:打字时身体圆屏显示用户按的键(keySeq 变化=重挂载弹入) */}
+      {screenKey && (
+        <text
+          key={`k${keySeq}`}
+          x="100"
+          y="140"
+          textAnchor="middle"
+          className="cp-screen-key"
+          aria-hidden="true"
+        >
+          {screenKey === " " ? "␣" : screenKey.toUpperCase()}
+        </text>
+      )}
+      {/* v10 记笔记道具:掏出小本子和笔伏案记录(壳层渲染,pose=writing 期间) */}
+      {pose === "writing" && (
+        <g className="cp-writing" aria-hidden="true">
+          {/* 本子(翻开的小册子,双页) */}
+          <g transform="rotate(-8 100 150)">
+            <path d="M78,140 L99,145 L99,166 L78,161 Z" fill="#F7F3E8" stroke="#2B2530" strokeWidth="3" strokeLinejoin="round" />
+            <path d="M120,140 L99,145 L99,166 L120,161 Z" fill="#EFE8D8" stroke="#2B2530" strokeWidth="3" strokeLinejoin="round" />
+            <path d="M83,146 L95,149 M83,151 L95,154 M83,156 L95,159" stroke="#9AA7B8" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M115,146 L103,149 M115,151 L103,154" stroke="#9AA7B8" strokeWidth="1.6" strokeLinecap="round" />
+          </g>
+          {/* 笔(笔尖朝本页,写划微动) */}
+          <g className="cp-pen" transform="rotate(24 100 128)">
+            <rect x="96" y="106" width="7" height="26" rx="2.5" fill="#FFC568" stroke="#2B2530" strokeWidth="2.6" />
+            <path d="M96,132 L103,132 L99.5,141 Z" fill="#F7F3E8" stroke="#2B2530" strokeWidth="2" strokeLinejoin="round" />
+            <path d="M98.4,138.5 L100.6,138.5 L99.5,141 Z" fill="#173047" />
+            <rect x="95" y="101" width="9" height="6" rx="2" fill="#E8563F" stroke="#2B2530" strokeWidth="2.4" />
+          </g>
+        </g>
+      )}
       {crownBadge && (
         <g className="cp-crown-badge" aria-hidden="true">
           <path d="M84,26 L92,36 L100,24 L108,36 L116,26 L114,44 L86,44 Z" fill="#FFC800" stroke="#E8A400" strokeWidth="2" strokeLinejoin="round" />

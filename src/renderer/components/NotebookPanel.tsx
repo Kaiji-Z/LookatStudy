@@ -20,7 +20,7 @@ import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { SelfRatingCard } from "./ReviewPanel.js";
 import { api } from "../lib/api.js";
-import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor } from "../lib/highlightText.js";
+import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, setLastNoteMark } from "../lib/highlightText.js";
 import { splitSentences, normalizeSpeechText, groupSentenceChunks } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
@@ -510,8 +510,14 @@ function ContentTab({
       startOffset: quoteBtn.offsets?.start,
       endOffset: quoteBtn.offsets?.end,
     });
-    // v3 伴学:用户划线记笔记 → 生物飞来右栏做记笔记动作
+    // v3 伴学:用户划线记笔记 → 生物飞来右栏做记笔记动作;
+    // v10:落点=这条新画线(apply 80ms 防抖后 mark 才上 DOM,稍等再登记)
     companionNote();
+    setTimeout(() => {
+      const marks = proseRef.current?.querySelectorAll("mark.lookatstudy-underline");
+      const last = marks && marks.length > 0 ? (marks[marks.length - 1] as HTMLElement) : null;
+      if (last) setLastNoteMark(last);
+    }, 200);
     setQuoteBtn(null);
     window.getSelection()?.removeAllRanges();
   }, [quoteBtn, onSaveContentNote, selectedNode]);

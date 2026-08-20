@@ -37,8 +37,19 @@ import {
   type FlightWorld,
 } from "../../lib/companion/companion-flight.ts";
 import { BALL_RADIUS, WIND_STRENGTH, swirlAt, weatherPhysFor } from "../../lib/mapPhysics.js";
-import { readingAnchorPos, zoneDrift, wanderInPanel } from "../../lib/companion/companion-core.js";
-import { getReadingRange } from "../../lib/highlightText.js";
+import {
+  type CompanionPane,
+  CRUISE_OP,
+  CRUISE_READ,
+  CRUISE_ROAM,
+  ROAM_BUCKET_MS,
+  glideTo,
+  nextRoamPane,
+  readingTailAnchor,
+  zoneDrift,
+  wanderInPanel,
+} from "../../lib/companion/companion-core.js";
+import { getReadingRange, getLastNoteMark } from "../../lib/highlightText.js";
 import { usePrefersReducedMotion } from "../../lib/usePrefersReducedMotion.js";
 
 import { Mascot } from "./Mascot.tsx";
@@ -97,13 +108,13 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   const grabRef = useRef<{ x: number; y: number; vx: number; vy: number; t: number } | null>(null);
   /** 雨天抖水节流 */
   const nextShiverRef = useRef(0);
+  /** v10 roam 跨栏游走调度:当前栖身栏 + 决策时间桶(桶切换时决定 留/跨栏) */
+  const roamRef = useRef<{ pane: CompanionPane; bucket: number }>({ pane: "rail", bucket: -1 });
 
-  const zone = snap.state.zone;
-  // zone 变化 → 飞行姿势窗口(物理/锚点目标在 rAF 里切,姿势由 React 换挡);
-  // 落栖弹跳:transit 结束"落地"压缩回弹(WAAPI additive)+ 闷响音效
+  // v10 起飞动效挂**实际栖身栏**(dispZone):操作切栏/roam 跨栏都触发翻越感
   useEffect(() => {
-    if (zone === zoneRef.current) return;
-    zoneRef.current = zone;
+    if (dispZone === zoneRef.current) return;
+    zoneRef.current = dispZone;
     if (reduced) return;
     setInTransit(true);
     // v7 起飞:压缩蓄力→弹射 stretch(WAAPI additive),喷焰增强 class 同步 600ms
@@ -122,7 +133,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       setTimeout(() => setInTransit(false), 950),
       setTimeout(() => {
         const el = wrapRef.current;
-        if (!el || zone === "rail") return;
+        if (!el || dispZone === "rail") return;
         companionLandSfx();
         el.animate?.(
           [
@@ -136,7 +147,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       }, 940),
     ];
     return () => { for (const t of timers) clearTimeout(t); };
-  }, [zone, reduced]);
+  }, [dispZone, reduced]);
 
   // 记忆联动:课程切换后查 friction 卡点 → 把待机空地临时钉到卡点球旁 + 指向反应
   useEffect(() => {
@@ -230,19 +241,27 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
 
       // 导入监工:importing 期间即使地图面板隐去也在左栏值守
       const railOk = !!navRect && navRect.width > 40 && (rw.visible || st.importing);
-      // 目标世界的锚点不在场(T3 换栏等)→ 退回 rail;rail 也不在 → 隐匿
-      let eff: "rail" | "chat" | "notebook" = st.zone;
-      if (!grabbed && ((eff === "chat" && !chatAnchor()) || (eff === "notebook" && !notebookAnchor()))) eff = "rail";
-      // v7 手机端修复:家(左栏)不在场时不消失——T3 切栏会卸载地图,退到当前
-      // 在场的栏栖身(对话优先),切回地图自然回老家。修复"切页后 bot 消失要刷新"。
-      let freeRoam = false;
-      if (!grabbed && eff === "rail" && !railOk) {
-        if (chatAnchor()) eff = "chat";
-        else if (notebookAnchor()) eff = "notebook";
-        else freeRoam = true; // v9 常驻兜底:无课程/空态(两栏锚点都不在)→整窗游走,绝不隐匿
+
+      // ── 栏矩形(v10 roam 跨栏游走的地图) ──
+      const chatRect = document.querySelector<HTMLElement>('[data-testid="chat-panel"]')?.getBoundingClientRect() ?? null;
+      const nbRect = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]')?.getBoundingClientRect() ?? null;
+
+      // ── roam 调度:时间桶切换时确定性决定 留/跨栏(在场栏才可选) ──
+      const bucket = Math.floor(now / ROAM_BUCKET_MS);
+      if (roamRef.current.bucket !== bucket) {
+        const avail: CompanionPane[] = [];
+        if (railOk) avail.push("rail");
+        if (chatRect) avail.push("chat");
+        if (nbRect) avail.push("notebook");
+        roamRef.current = { pane: nextRoamPane(roamRef.current.pane, bucket, avail), bucket };
       }
 
+      // ── karaoke 跟句(朗读时的语义位置,最高优先) ──
+      const readRange = getReadingRange();
+      const readMarkEl = readRange ? (readRange.startContainer.parentElement ?? null) : null;
+
       let target: { x: number; y: number } | null = null;
+      let pane: CompanionPane = roamRef.current.pane;
 
       if (grabbed) {
         // ── 抓取中:指针就是全世界(任何 zone 都直接拖拽) ──
@@ -250,184 +269,235 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         flightRef.current = null; // 物理旁路,松手再按 zone 重建
         target = { x: g.x, y: g.y };
         angle = Math.max(-0.5, Math.min(0.5, g.vx * 0.04));
-      } else if (eff === "rail" && railOk) {
-        const w = navRect!.width;
-        const h = navRect!.height;
-        if (reduced) {
-          target = { x: navRect!.left + w * 0.5, y: navRect!.top + h * 0.5 };
-          angle = 0;
-        } else {
-          if (w !== navW || h !== navH) {
-            navW = w;
-            navH = h;
-            flightRef.current?.resize(w, h);
-            perchRef.current = null;
+        pane = dispZoneRef.current;
+      } else if (readMarkEl && readRange) {
+        // v10 句尾右下角跟随:mark = 高亮句最后一行片段(Range.getClientRects 末位
+        // 非零矩形)——生物栖在最后一个字的右下方,指住它;窄屏也全程钳在面板内
+        const host = readMarkEl.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]');
+        const pr = host?.getBoundingClientRect();
+        const rects = readRange.getClientRects();
+        let tail: { left: number; right: number; top: number; bottom: number } | null = null;
+        for (let i = rects.length - 1; i >= 0; i--) {
+          const r = rects[i]!;
+          if (r.width > 1 && r.height > 1) {
+            tail = { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+            break;
           }
-          if (!flightRef.current) {
-            flightRef.current = createFlightWorld({ width: w, height: h });
-            const prev = posRef.current;
-            if (prev) {
-              Matter.Body.setPosition(flightRef.current.body, {
-                x: Math.min(w - 30, Math.max(30, prev.x - navRect!.left)),
-                y: Math.min(h - 30, Math.max(30, prev.y - navRect!.top)),
-              });
-            }
-          }
-          const flight = flightRef.current;
-          // 跨引擎球探针:在场岛的球 → rail 局部坐标(拍他/被他撞都真实)。
-          // 纱帘后也照常采集(挑空地/挑栖息点要用),只是不喂给物理。
-          const probes: BallProbe[] = [];
-          const restSpots: { x: number; y: number }[] = [];
-          for (const { island, container } of rw.sections.values()) {
-            const cr = container.getBoundingClientRect();
-            if (cr.bottom < navRect!.top - 120 || cr.top > navRect!.bottom + 120) continue;
-            const ox = cr.left - navRect!.left;
-            const oy = cr.top - navRect!.top;
-            for (const b of island.balls) {
-              probes.push({
-                x: ox + b.body.position.x,
-                y: oy + b.body.position.y,
-                vx: b.body.velocity.x,
-                vy: b.body.velocity.y,
-                r: BALL_RADIUS,
-                isStatic: b.body.isStatic,
-                push: (fx, fy) => Matter.Body.applyForce(b.body, b.body.position, { x: fx, y: fy }),
-              });
-              restSpots.push({ x: ox + b.body.position.x, y: oy + b.body.position.y - BALL_RADIUS - 20 });
-            }
-            // 绳粒 = 天然的落脚树枝(纱帘栖息候选)
-            for (const link of island.links) {
-              for (const p of link.particles) {
-                restSpots.push({ x: ox + p.position.x, y: oy + p.position.y - 8 });
-              }
-            }
-          }
-          // 待机位:纱帘 → 最近的绳/球顶栖息点(真落下休息);否则中部空地重选
-          let base = perchRef.current;
-          let settle = false;
-          if (st.mode === "veil") {
-            const rest = pickRestSpot({ x: flight.body.position.x, y: flight.body.position.y }, restSpots, 220);
-            if (rest) {
-              base = rest;
-              settle = true;
-            }
-          }
-          if (!base || now > perchDueRef.current) {
-            perchRef.current = pickPerchBase(w, h, probes, Math.floor(now / 1000));
-            perchDueRef.current = now + 3000;
-            base = perchRef.current;
-          }
-          const swatted = flight.step(dt, base, st.mode === "veil" ? [] : probes, now, { settle });
-          if (swatted && !swatLatchRef.current) companionSwat();
-          swatLatchRef.current = swatted || flight.dizzyRemaining(now) > 0;
-          // 天气:风把他吹斜(控制器自然回正=可见的挣扎);雨/暴雨定期抖水
-          if (flight.dizzyRemaining(now) === 0) {
-            const env = weatherPhysFor(rw.weather);
-            if (env.wind >= 0.3) {
-              const m = flight.body.mass;
-              Matter.Body.applyForce(flight.body, flight.body.position, {
-                x: swirlAt(flight.body.position.x, flight.body.position.y, now) * env.wind * WIND_STRENGTH * m * 2.2,
-                y: 0,
-              });
-            }
-            if ((rw.weather === "rain" || rw.weather === "storm") && st.mode !== "veil" && now > nextShiverRef.current) {
-              nextShiverRef.current = now + 6000 + Math.random() * 4000;
-              wrap.classList.add("cp-shiver");
-              setTimeout(() => wrap.classList.remove("cp-shiver"), 460);
-            }
-          }
-          const p = flight.body.position;
-          target = { x: navRect!.left + p.x, y: navRect!.top + p.y };
-          angle = flight.body.angle + bankAngle(flight.body.velocity.x, flight.body.velocity.y);
         }
-      } else if (freeRoam) {
-        // v9 无课程/空态:整个视口是他的世界(顶部避开标题栏,底部留边),慢慢游走
-        flightRef.current = null;
-        const wpt = wanderInPanel(
-          { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 },
-          SIZE.chat,
-          now,
-        );
-        const cur = posRef.current ?? { x: wpt.x, y: wpt.y };
-        const k = 1 - Math.exp(-dt / 140);
-        target = { x: cur.x + (wpt.x - cur.x) * k, y: cur.y + (wpt.y - cur.y) * k };
-        angle = Math.max(-0.25, Math.min(0.25, (wpt.x - cur.x) * 0.008));
-      } else if (eff !== "rail") {
-        flightRef.current = null;
-        // v6 朗读跟句:有 karaoke 高亮句(讲解区/中栏对话消息均可)时,锚点被句子
-        // 实时位置接管(贴着那句站,指住它;scroll 时 rect 随 .cp-reading-mark 元素
-        // 自动更新)。clamp 面板取 mark 所在的 pane —— 讲解面板或对话流,两边同款。
-        const readRange = getReadingRange();
-        const readMarkEl = readRange ? (readRange.startContainer.parentElement ?? null) : null;
-        const readMark = readMarkEl && readRange ? { el: readMarkEl, rect: readRange.getBoundingClientRect() } : null;
-        const anchor = readMark
-          ? null
-          : eff === "chat"
-            ? chatAnchor()
-            : notebookAnchor();
-        if (readMark) {
-          const host = readMark.el.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]');
+        const fb = readRange.getBoundingClientRect();
+        const mark = tail ?? { left: fb.left, right: fb.right, top: fb.top, bottom: fb.bottom };
+        const inChat = !!host?.closest('[data-testid="chat-stream"]');
+        const zoneSize = inChat ? SIZE.chat : SIZE.notebook;
+        pane = inChat ? "chat" : "notebook";
+        if (pr && (tail || fb.width > 0)) {
+          const pos = readingTailAnchor(mark, pr, zoneSize);
+          const next = { side: pos.side, pane };
+          if (readingRef.current?.side !== next.side || readingRef.current?.pane !== next.pane) {
+            readingRef.current = next;
+            setReading(next);
+          }
+          if (reduced) {
+            target = pos;
+            angle = 0;
+          } else {
+            // 限速滑翔跟句:换句/滚动都是看得见的飞行,不闪现
+            const cur = posRef.current ?? { x: pos.x, y: pos.y };
+            target = glideTo(cur, pos, dt, CRUISE_READ, 110);
+            angle = pos.side === "left" ? -0.07 : 0.07; // 微倾向所指文字
+          }
+        }
+      } else {
+        if (readingRef.current !== null) {
+          readingRef.current = null;
+          setReading(null);
+        }
+        // v10 记笔记:pose=writing 期间,锚点=用户刚画的那条线(飞到线旁拿出本笔记录)
+        const noteMark = st.pose === "writing" ? getLastNoteMark() : null;
+        const zone = st.zone;
+        if (noteMark) {
+          const host = noteMark.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]');
           const pr = host?.getBoundingClientRect();
-          const mr = readMark.rect;
-          const zoneSize = host?.closest('[data-testid="chat-stream"]') ? SIZE.chat : SIZE.notebook;
+          const mr = noteMark.getBoundingClientRect();
+          const inChat = !!host?.closest('[data-testid="chat-stream"]');
+          pane = inChat ? "chat" : "notebook";
           if (pr && mr.width > 0) {
-            const pos = readingAnchorPos(mr, pr, zoneSize);
-            const pane: "chat" | "notebook" = zoneSize === SIZE.chat ? "chat" : "notebook";
-            const next = { side: pos.side, pane };
-            if (readingRef.current?.side !== next.side || readingRef.current?.pane !== next.pane) {
-              readingRef.current = next;
-              setReading(next);
-            }
+            const pos = readingTailAnchor(mr, pr, inChat ? SIZE.chat : SIZE.notebook);
+            flightRef.current = null;
             if (reduced) {
               target = pos;
               angle = 0;
             } else {
-              // 跟句不叠漂移(要稳稳指住);lerp 平滑换句滑动
               const cur = posRef.current ?? { x: pos.x, y: pos.y };
-              const k = 1 - Math.exp(-dt / 110);
-              target = { x: cur.x + (pos.x - cur.x) * k, y: cur.y + (pos.y - cur.y) * k };
-              angle = pos.side === "left" ? -0.07 : 0.07; // 微倾向所指文字
+              target = glideTo(cur, pos, dt, CRUISE_OP);
+              angle = 0.08; // 伏案微倾
             }
+          }
+        } else if (zone === "chat" && chatAnchor()) {
+          // ── 操作:输入框聚焦 → 从当前位置限速飞到输入卡上空(叠轻漂移) ──
+          flightRef.current = null;
+          pane = "chat";
+          const a = chatAnchor()!;
+          if (reduced) {
+            target = a;
+            angle = 0;
+          } else {
+            const d = zoneDrift("chat", now);
+            const cur = posRef.current ?? { x: a.x, y: a.y };
+            target = glideTo(cur, { x: a.x + d.x, y: a.y + d.y }, dt, CRUISE_OP);
+            angle = Math.max(-0.35, Math.min(0.35, (target.x - cur.x) * 0.014));
+          }
+        } else if (zone === "notebook" && nbRect) {
+          // ── 操作:朗读/记笔记 → 讲解面板右侧空白带游弋(住在文章里) ──
+          flightRef.current = null;
+          pane = "notebook";
+          if (reduced) {
+            target = notebookAnchor() ?? { x: nbRect.left + nbRect.width / 2, y: nbRect.top + 120 };
+            angle = 0;
+          } else {
+            const w = wanderInPanel(nbRect, SIZE.notebook, now);
+            const cur = posRef.current ?? { x: w.x, y: w.y };
+            target = glideTo(cur, w, dt, CRUISE_OP);
+            angle = Math.max(-0.3, Math.min(0.3, (target.x - cur.x) * 0.012));
+          }
+        } else if (railOk && (zone === "rail" || (zone === "roam" && roamRef.current.pane === "rail"))) {
+          // ── 左栏原生物理世界(导入监工钉守 / roam 游走到左栏) ──
+          const w = navRect!.width;
+          const h = navRect!.height;
+          pane = "rail";
+          if (reduced) {
+            target = { x: navRect!.left + w * 0.5, y: navRect!.top + h * 0.5 };
+            angle = 0;
+          } else {
+            if (w !== navW || h !== navH) {
+              navW = w;
+              navH = h;
+              flightRef.current?.resize(w, h);
+              perchRef.current = null;
+            }
+            if (!flightRef.current) {
+              flightRef.current = createFlightWorld({ width: w, height: h });
+              const prev = posRef.current;
+              if (prev) {
+                Matter.Body.setPosition(flightRef.current.body, {
+                  x: Math.min(w - 30, Math.max(30, prev.x - navRect!.left)),
+                  y: Math.min(h - 30, Math.max(30, prev.y - navRect!.top)),
+                });
+              }
+            }
+            const flight = flightRef.current;
+            // 跨引擎球探针:在场岛的球 → rail 局部坐标(拍他/被他撞都真实)。
+            const probes: BallProbe[] = [];
+            const restSpots: { x: number; y: number }[] = [];
+            for (const { island, container } of rw.sections.values()) {
+              const cr = container.getBoundingClientRect();
+              if (cr.bottom < navRect!.top - 120 || cr.top > navRect!.bottom + 120) continue;
+              const ox = cr.left - navRect!.left;
+              const oy = cr.top - navRect!.top;
+              for (const b of island.balls) {
+                probes.push({
+                  x: ox + b.body.position.x,
+                  y: oy + b.body.position.y,
+                  vx: b.body.velocity.x,
+                  vy: b.body.velocity.y,
+                  r: BALL_RADIUS,
+                  isStatic: b.body.isStatic,
+                  push: (fx, fy) => Matter.Body.applyForce(b.body, b.body.position, { x: fx, y: fy }),
+                });
+                restSpots.push({ x: ox + b.body.position.x, y: oy + b.body.position.y - BALL_RADIUS - 20 });
+              }
+              for (const link of island.links) {
+                for (const p of link.particles) {
+                  restSpots.push({ x: ox + p.position.x, y: oy + p.position.y - 8 });
+                }
+              }
+            }
+            const roaming = zone === "roam";
+            // 待机位:roam 游走 = 利萨茹航点(物理控制器避球跟进);监工 = 中部空地
+            // 周期重选;纱帘 = 最近绳/球顶栖息(仅非 roam:roam 时帘后照常游)
+            let base = perchRef.current;
+            let settle = false;
+            if (roaming) {
+              const wp = wanderInPanel(navRect, SIZE.rail, now);
+              base = { x: wp.x - navRect!.left, y: wp.y - navRect!.top };
+            } else {
+              if (st.mode === "veil") {
+                const rest = pickRestSpot({ x: flight.body.position.x, y: flight.body.position.y }, restSpots, 220);
+                if (rest) {
+                  base = rest;
+                  settle = true;
+                }
+              }
+              if (!base || now > perchDueRef.current) {
+                perchRef.current = pickPerchBase(w, h, probes, Math.floor(now / 1000));
+                perchDueRef.current = now + 3000;
+                base = perchRef.current;
+              }
+            }
+            const swatted = flight.step(dt, base, st.mode === "veil" && !roaming ? [] : probes, now, { settle });
+            if (swatted && !swatLatchRef.current) companionSwat();
+            swatLatchRef.current = swatted || flight.dizzyRemaining(now) > 0;
+            if (flight.dizzyRemaining(now) === 0) {
+              const env = weatherPhysFor(rw.weather);
+              if (env.wind >= 0.3) {
+                const m = flight.body.mass;
+                Matter.Body.applyForce(flight.body, flight.body.position, {
+                  x: swirlAt(flight.body.position.x, flight.body.position.y, now) * env.wind * WIND_STRENGTH * m * 2.2,
+                  y: 0,
+                });
+              }
+              if ((rw.weather === "rain" || rw.weather === "storm") && st.mode !== "veil" && now > nextShiverRef.current) {
+                nextShiverRef.current = now + 6000 + Math.random() * 4000;
+                wrap.classList.add("cp-shiver");
+                setTimeout(() => wrap.classList.remove("cp-shiver"), 460);
+              }
+            }
+            const p = flight.body.position;
+            target = { x: navRect!.left + p.x, y: navRect!.top + p.y };
+            angle = flight.body.angle + bankAngle(flight.body.velocity.x, flight.body.velocity.y);
           }
         } else {
-          if (readingRef.current !== null) {
-            readingRef.current = null;
-            setReading(null);
-          }
-          if (anchor) {
-            if (reduced) {
-              target = anchor;
-              angle = 0;
-            } else if (eff === "notebook") {
-              // v8 右栏徘徊:在讲解面板的右侧空白带里确定性游弋(像住在文章里,
-              // 随时可以和内容互动),避开顶部标签/按钮安全带
-              const panel = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]');
-              const pr = panel?.getBoundingClientRect();
-              const w = pr ? wanderInPanel({ left: pr.left, right: pr.right, top: pr.top, bottom: pr.bottom }, SIZE.notebook, now) : null;
-              const ax = w ? w.x : anchor.x;
-              const ay = w ? w.y : anchor.y;
-              const cur = posRef.current ?? { x: ax, y: ay };
-              const k = 1 - Math.exp(-dt / 90);
-              target = { x: cur.x + (ax - cur.x) * k, y: cur.y + (ay - cur.y) * k };
-              angle = Math.max(-0.3, Math.min(0.3, (ax - cur.x) * 0.01));
-            } else {
-              // 栏内漂浮:锚点叠慢利萨茹漂移(他在输入框附近轻轻游动,不是钉死)
-              const d = zoneDrift(eff, now);
-              const ax = anchor.x + d.x;
-              const ay = anchor.y + d.y;
-              const cur = posRef.current ?? { x: ax, y: ay };
-              const k = 1 - Math.exp(-dt / 90);
-              target = { x: cur.x + (ax - cur.x) * k, y: cur.y + (ay - cur.y) * k };
-              angle = Math.max(-0.35, Math.min(0.35, (ax - cur.x) * 0.012));
-            }
+          // ── roam 跨栏游走(闲时默认):在当前 roam 栏的空白带慢速游弋;
+          //    目标栏不在场(T3 换栏)/无课程 → 在场栏或整窗游走,绝不隐匿 ──
+          flightRef.current = null;
+          const rp = roamRef.current.pane;
+          if (rp === "chat" && chatRect) {
+            pane = "chat";
+            const w = wanderInPanel(chatRect, SIZE.chat, now);
+            const cur = posRef.current ?? { x: w.x, y: w.y };
+            target = glideTo(cur, w, dt, CRUISE_ROAM, 140);
+            angle = Math.max(-0.25, Math.min(0.25, (target.x - cur.x) * 0.01));
+          } else if (rp === "notebook" && nbRect) {
+            pane = "notebook";
+            const w = wanderInPanel(nbRect, SIZE.notebook, now);
+            const cur = posRef.current ?? { x: w.x, y: w.y };
+            target = glideTo(cur, w, dt, CRUISE_ROAM, 140);
+            angle = Math.max(-0.25, Math.min(0.25, (target.x - cur.x) * 0.01));
+          } else if (railOk) {
+            // roam 栏指向 rail 但上一分支没接住(zone 是 chat/notebook 的 T3 回退)
+            // — rail 在场就在 rail 物理世界栖身,下一桶再继续游走
+            pane = "rail";
+            const wp = wanderInPanel(navRect!, SIZE.rail, now);
+            const cur = posRef.current ?? { x: wp.x, y: wp.y };
+            target = glideTo(cur, wp, dt, CRUISE_ROAM, 140);
+            angle = Math.max(-0.25, Math.min(0.25, (target.x - cur.x) * 0.01));
+          } else {
+            // 兜底:整窗游走(无课程空态/两栏皆缺)
+            pane = "chat";
+            const wpt = wanderInPanel(
+              { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 },
+              SIZE.chat,
+              now,
+            );
+            const cur = posRef.current ?? { x: wpt.x, y: wpt.y };
+            target = glideTo(cur, wpt, dt, CRUISE_ROAM, 140);
+            angle = Math.max(-0.25, Math.min(0.25, (target.x - cur.x) * 0.008));
           }
         }
       }
 
-      const dz = freeRoam ? "chat" : eff;
-      if (dispZoneRef.current !== dz) {
-        dispZoneRef.current = dz;
-        setDispZone(dz);
+      if (dispZoneRef.current !== pane) {
+        dispZoneRef.current = pane;
+        setDispZone(pane);
       }
 
       if (!target) {
@@ -436,7 +506,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         return;
       }
       posRef.current = target;
-      const w = wrap.offsetWidth || SIZE[eff === "rail" ? "rail" : eff];
+      const w = wrap.offsetWidth || SIZE[pane];
       wrap.style.transform = `translate3d(${(target.x - w / 2).toFixed(1)}px, ${(target.y - w / 2).toFixed(1)}px, 0) rotate(${(angle * 57.2958).toFixed(1)}deg)`;
       // 高度感:离栏底越远阴影越小越淡(CSS 变量直写,零重渲染)
       if (navRect) {
@@ -468,12 +538,13 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       ref={wrapRef}
       className={`cp-creature fixed left-0 top-0 z-40 will-change-transform ${snap.state.mode === "veil" ? "cp-veil" : ""} ${snap.state.grabbed ? "cp-grabbed" : ""}`}
       data-testid="companion-creature"
-      data-zone={zone}
+      data-zone={snap.state.zone === "roam" ? dispZone : snap.state.zone}
       data-mode={snap.state.mode}
     >
       <Mascot
         form={snap.form}
         expression={snap.state.expression}
+        screenKey={snap.state.typing ? snap.state.lastKey : null}
         pose={pose}
         viseme={mouth.viseme}
         openScale={mouth.open}

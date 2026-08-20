@@ -70,7 +70,16 @@ export type CompanionPose =
   | "pointr";
 
 /** 伙伴所在的世界维度:左栏原生物理世界 / 中栏宠物世界 / 右栏助教世界。 */
-export type CompanionZone = "rail" | "chat" | "notebook";
+export type CompanionZone = "rail" | "chat" | "notebook" | "roam";
+export type CompanionPane = "rail" | "chat" | "notebook";
+
+/**
+ * v10 用户操作信号(最新者优先,双槽):聚焦=chat 槽,朗读/记笔记=notebook 槽,
+ * 各记**激活时刻**。同时活跃时跟最新激活的(用户"边朗读边输入"→跟最新动作);
+ * 各自取消(失焦/朗读停)或到期(note 短钉)后 → 闲时 roam(跨栏游走)。
+ * 双槽而非单对象:talking 覆盖 focus 的单对象会在 talking 结束时把仍在场的
+ * focus 一起丢掉(实测踩过)。
+ */
 /** 前台 = 完全在场;纱帘后 = 半透明隐匿待机(可点击唤醒)。 */
 export type CompanionMode = "front" | "veil";
 
@@ -93,6 +102,8 @@ export interface CompanionState {
   keySeq: number;
   /** 最近一次按压的臂侧:-1=左 / 1=右(交替/点击定位) */
   keySide: -1 | 1;
+  /** v10 最近一次键入的可见字符(胸屏显示;非打印键为 null) */
+  lastKey: string | null;
   /** 最近一次按压时刻(ms)——typing 过期基准 */
   lastPress: number;
   /** 窗口聚焦(失焦→短阈值打盹;回归→唤醒+打招呼) */
@@ -105,6 +116,12 @@ export interface CompanionState {
   composerFocused: boolean;
   /** 进入当前 zone 的时刻(zone 返回计时的基准) */
   zoneSince: number;
+  /** v10 chat 槽激活时刻(聚焦中);null=未聚焦 */
+  zoneChatAt: number | null;
+  /** v10 notebook 槽激活时刻(朗读中/记笔记钉住);null=未激活 */
+  zoneNbAt: number | null;
+  /** v10 notebook 槽到期(note 短钉;0=朗读态不过期) */
+  zoneNbUntil: number;
   /** 记笔记动作的保持截止(划线触发,短暂把他钉在右栏) */
   lastNoteUntil: number;
   /** 最近一次滚动时刻(滚动=用户在阅读,不唤醒,反而催他入纱帘) */
@@ -126,7 +143,7 @@ export type CompanionEvent =
   | { type: "listening"; on: boolean; now: number }
   | { type: "streaming"; on: boolean; now: number }
   | { type: "activity"; now: number }
-  | { type: "press"; side: -1 | 1; now: number }
+  | { type: "press"; side: -1 | 1; now: number; key?: string }
   | { type: "send"; now: number }
   | { type: "focus"; on: boolean; now: number }
   | { type: "zoneFocus"; on: boolean; now: number }
@@ -212,12 +229,16 @@ export function initialCompanionState(now = 0): CompanionState {
     typing: false,
     keySeq: 0,
     keySide: 1,
+    lastKey: null,
     lastPress: 0,
     windowFocused: true,
-    zone: "rail",
+    zone: "roam",
     mode: "front",
     composerFocused: false,
     zoneSince: now,
+    zoneChatAt: null,
+    zoneNbAt: null,
+    zoneNbUntil: 0,
     lastNoteUntil: 0,
     lastScroll: 0,
     pokeSeq: 0,
@@ -228,14 +249,19 @@ export function initialCompanionState(now = 0): CompanionState {
 }
 
 /**
- * 当前意图指向的世界(优先级:输入框聚焦 > 朗读/记笔记 > 回左栏老家)。
+ * 当前意图指向的世界(v10:最新用户操作信号优先;无信号=roam 跨栏游走)。
  * 与 state.zone 分离:zone 是"已经飞到",desired 是"应该去"——
- * 回老家要等 ZONE_RETURN_MS(别让他刚落输入框又抖走),进中/右栏则立即。
+ * 操作目标即时跟进;操作结束回 roam 要等 ZONE_RETURN_MS(别刚落输入框又抖走)。
+ * 导入监工例外:importing 期间钉左栏值守。
  */
 export function desiredZone(s: CompanionState, now: number): CompanionZone {
-  if (s.composerFocused) return "chat";
-  if (s.talking || now < s.lastNoteUntil) return "notebook";
-  return "rail";
+  if (s.importing) return "rail";
+  const nbActive = s.zoneNbAt !== null && (s.zoneNbUntil === 0 || now < s.zoneNbUntil);
+  if (s.zoneChatAt === null && !nbActive) return "roam";
+  if (s.zoneChatAt === null) return "notebook";
+  if (!nbActive) return "chat";
+  // 双槽都在场:跟最新激活的
+  return (s.zoneNbAt ?? 0) > (s.zoneChatAt ?? 0) ? "notebook" : "chat";
 }
 
 /** 纱帘判定:无交互且不在任务中 → 隐匿待机;滚动中(阅读)更快入帘。 */
@@ -306,14 +332,16 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
       next.lastActivity = ev.now;
       next.mode = "front";
       if (ev.on) next.sleeping = false;
-      // 朗读开 = 助教上岗(右栏);输入框仍聚焦时宠物身份优先,不动
-      if (ev.type === "talking" && ev.on && !next.composerFocused && next.zone !== "notebook") {
-        next.zone = "notebook";
-        next.zoneSince = ev.now;
-      }
-      // 朗读结束 = 返回窗口起点(释放起算,不吃在栏时间)
-      if (ev.type === "talking" && !ev.on && next.zone === "notebook" && !next.composerFocused) {
-        next.zoneSince = ev.now;
+      // v10 最新信号:朗读开 = notebook 信号(覆盖更早的聚焦信号);
+      // 朗读停 = 清掉自己的信号(回 roam 的 grace 从此刻起算)
+      if (ev.type === "talking") {
+        if (ev.on) {
+          next.zoneNbAt = ev.now;
+          next.zoneNbUntil = 0; // 朗读态不过期,停了才清
+        } else if (next.zoneNbAt !== null) {
+          next.zoneNbAt = null;
+          next.zoneSince = ev.now;
+        }
       }
       // 无活动反应(或已过期)时立即重算 base——标志切换即时反映,不依赖 tick 时序
       if (next.until === null || next.until <= ev.now) {
@@ -347,6 +375,7 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         keySide: ev.side,
         lastPress: ev.now,
         lastActivity: ev.now,
+        lastKey: ev.key ?? null,
       };
       if (next.until === null || next.until <= ev.now) {
         next.expression = baseExpressionOf(next);
@@ -374,12 +403,12 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         lastActivity: ev.now,
         mode: "front",
       };
-      if (ev.on && next.zone !== "chat") {
-        next.zone = "chat";
+      // v10:聚焦 = chat 槽激活;失焦清槽(回 roam 的 grace 从此刻起算)
+      if (ev.on) next.zoneChatAt = ev.now;
+      else if (next.zoneChatAt !== null) {
+        next.zoneChatAt = null;
         next.zoneSince = ev.now;
       }
-      // 释放时机 = 返回窗口的起点(别从进栏时刻起算,那会吃掉在栏时间)
-      if (!ev.on && next.zone === "chat") next.zoneSince = ev.now;
       return next;
     }
     case "zoneNote": {
@@ -390,10 +419,8 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         lastActivity: ev.now,
         mode: "front",
       };
-      if (next.zone !== "notebook") {
-        next.zone = "notebook";
-        next.zoneSince = ev.now;
-      }
+      next.zoneNbAt = ev.now;
+      next.zoneNbUntil = ev.now + NOTE_HOLD_MS;
       next.lastNoteUntil = ev.now + NOTE_HOLD_MS;
       next.expression = "base";
       next.pose = "writing";
@@ -523,16 +550,17 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
       const sleepAfter = s.windowFocused ? SLEEP_AFTER_MS : BLUR_SLEEP_MS;
       const sleeping = !s.talking && !s.listening && !s.grabbed && ev.now - s.lastActivity >= sleepAfter;
       const expired = s.until !== null && ev.now > s.until;
-      // zone 演进:进中/右栏立即(desired != rail),回老家要等 ZONE_RETURN_MS
+      // zone 演进(v10):操作目标(chat/notebook/rail)即时跟进;
+      // 无信号回 roam 要等 ZONE_RETURN_MS(驻足片刻再开始游走)
       const want = desiredZone(s, ev.now);
       let zone = s.zone;
       let zoneSince = s.zoneSince;
       if (want !== s.zone) {
-        if (want !== "rail") {
+        if (want !== "roam") {
           zone = want;
           zoneSince = ev.now;
         } else if (ev.now - s.zoneSince >= ZONE_RETURN_MS) {
-          zone = "rail";
+          zone = "roam";
           zoneSince = ev.now;
         }
       } else {
@@ -773,26 +801,94 @@ export function wanderInPanel(
 export const READING_MARGIN = 14;
 
 /**
- * 朗读跟句锚点:生物贴着当前朗读句旁边站,指住这行字。
- * 优先站在句子右侧(指向左);右侧放不下(超出讲解面板)时换到左侧(指向右)。
- * y 跟随句中线,并钳制在面板纵向安全带内(别贴边/别出面板)。
- * 返回 side=手指的方向(生物在右 → 指左 "left")。
+ * 朗读跟句锚点(v10:句尾右下角跟随)。mark = 高亮句**最后一行片段**的矩形
+ * (Range.getClientRects() 末位):生物栖在句尾右下方——
+ *   ①不遮朗读文字(永远在最后一个字的下/右侧留白);
+ *   ②窄屏也不出讲解区(x/y 全程钳制在面板内——旧"右侧优先换左侧"方案在窄屏
+ *     会把锚点推到面板外,这是"窄屏朗读时 bot 离开讲解区"的根因)。
+ * 空间不够时的退让次序:右下 → 句尾正下 → 面板右下安全位。
+ * side=手指方向(生物在字的右侧/下方 → 指左 "left")。
  */
-export function readingAnchorPos(
+export function readingTailAnchor(
   mark: { left: number; right: number; top: number; bottom: number },
   panel: { left: number; right: number; top: number; bottom: number },
   size: number,
 ): { x: number; y: number; side: "left" | "right" } {
   const half = size / 2;
-  const cy = (mark.top + mark.bottom) / 2;
-  const yMin = panel.top + half + 8;
-  const yMax = Math.max(yMin, panel.bottom - half - 8);
-  const y = Math.min(Math.max(cy, yMin), yMax);
-  const rightX = mark.right + half + READING_MARGIN;
-  if (rightX <= panel.right - 6) {
-    return { x: rightX, y, side: "left" };
+  const pad = 10;
+  const xMin = panel.left + half + pad;
+  const xMax = panel.right - half - pad;
+  const yMin = panel.top + half + pad;
+  const yMax = panel.bottom - half - pad;
+  // ① 句尾右下(默认:贴住最后一个字的右下角,重叠仅数像素)
+  let x = mark.right + half * 0.88;
+  let y = mark.bottom + half * 0.92;
+  // ② 右侧放不下(窄屏行满宽) → 句尾正下方
+  if (x > xMax) {
+    x = Math.min(Math.max(mark.right - half * 0.55, xMin), xMax);
+    y = mark.bottom + half * 0.92;
   }
-  return { x: mark.left - half - READING_MARGIN, y, side: "right" };
+  // ③ 底部放不下(末行贴面板底) → 该行右侧垂直居中;再不行 → 面板右下安全位
+  if (y > yMax) {
+    y = Math.min(Math.max((mark.top + mark.bottom) / 2, yMin), yMax);
+    if (x > xMax) x = xMax;
+  }
+  // 左边界的最后防线
+  if (x < xMin) x = xMin;
+  return { x, y, side: x > mark.right ? "left" : "right" };
+}
+
+/* ---------------- v10 连续移动(限速滑翔,不闪现) ---------------- */
+
+/** 巡航速度(px/ms):操作响应快、闲时游走慢、朗读跟句居中。 */
+export const CRUISE_OP = 0.85;
+export const CRUISE_ROAM = 0.3;
+export const CRUISE_READ = 0.6;
+
+/**
+ * 限速滑翔(v10 治"闪现"):指数趋近在远距时速度无界(跨栏一瞬到达=闪现感),
+ * 封顶巡航速度后跨栏是一段看得见的飞行;近距仍用指数收敛(平滑落位)。
+ */
+export function glideTo(
+  cur: { x: number; y: number },
+  target: { x: number; y: number },
+  dtMs: number,
+  cruise: number,
+  tau = 90,
+): { x: number; y: number } {
+  const k = 1 - Math.exp(-dtMs / tau);
+  let x = cur.x + (target.x - cur.x) * k;
+  let y = cur.y + (target.y - cur.y) * k;
+  const dx = x - cur.x;
+  const dy = y - cur.y;
+  const d = Math.hypot(dx, dy);
+  const cap = cruise * dtMs;
+  if (d > cap && d > 0) {
+    x = cur.x + (dx / d) * cap;
+    y = cur.y + (dy / d) * cap;
+  }
+  return { x, y };
+}
+
+/** roam 栏驻留周期(ms):每个时间桶决定一次 留/跨栏。 */
+export const ROAM_BUCKET_MS = 6_500;
+
+/**
+ * roam 下一栏(确定性):同桶不动;换桶时 ~30% 跨到相邻栏(环形
+ * rail→chat→notebook→rail,跳过不在场的栏)。纯函数,verify 直测。
+ */
+export function nextRoamPane(cur: CompanionPane, bucket: number, available: CompanionPane[]): CompanionPane {
+  const avail: CompanionPane[] = available.length > 0 ? available : ["rail"];
+  if (!avail.includes(cur)) return avail[0]!;
+  if (bucket <= 0) return cur; // 首桶稳定:启动先栖身初始栏,不立刻跨栏
+  const r = Math.abs(Math.sin(bucket * 12.9898) * 43758.5453) % 1;
+  if (r >= 0.3) return cur;
+  const ring: CompanionPane[] = ["rail", "chat", "notebook"];
+  for (let step = 1; step <= 2; step++) {
+    const next = ring[(ring.indexOf(cur) + step) % 3]!;
+    if (avail.includes(next)) return next;
+  }
+  return cur;
 }
 
 /* ---------------- 设置门控 ---------------- */

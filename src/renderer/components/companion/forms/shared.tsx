@@ -215,6 +215,28 @@ export function BevelPlate({ id, x, y, w, h, t = 5, inverted = false }: {
   );
 }
 
+/**
+ * v10 R-06 式肩甲:宽肩垫盖住臂根(SVG 顺序在 Arms 之前画=垫在臂后,
+ * 臂从肩甲下摆出)。上缘受光条 + 前缘铆钉,cel 硬边;全形态共享骨骼,
+ * 配色由各形态传(frost 冰肩/moss 叶肩…按各自主题色)。
+ */
+export function Shoulders({ fill, fillDark, out }: { fill: string; fillDark: string; out: string }) {
+  return (
+    <g className="cp-shoulders" aria-hidden="true">
+      <path d="M24,116 Q24,94 48,92 L74,92 L74,118 Q50,124 24,116 Z" fill={fillDark} stroke={out} strokeWidth="4.5" strokeLinejoin="round" />
+      <path d="M26,112 Q27,97 49,95.5 L72,95.5 L72,109 Q50,114 26,112 Z" fill={fill} />
+      <path d="M30,99 Q46,95 62,96" stroke="rgba(255,255,255,0.5)" strokeWidth="2.6" strokeLinecap="round" fill="none" />
+      <circle cx="40" cy="109" r="1.7" fill={out} opacity="0.55" />
+      <circle cx="58" cy="110" r="1.7" fill={out} opacity="0.55" />
+      <path d="M176,116 Q176,94 152,92 L126,92 L126,118 Q150,124 176,116 Z" fill={fillDark} stroke={out} strokeWidth="4.5" strokeLinejoin="round" />
+      <path d="M174,112 Q173,97 151,95.5 L128,95.5 L128,109 Q150,114 174,112 Z" fill={fill} />
+      <path d="M170,99 Q154,95 138,96" stroke="rgba(255,255,255,0.5)" strokeWidth="2.6" strokeLinecap="round" fill="none" />
+      <circle cx="160" cy="109" r="1.7" fill={out} opacity="0.55" />
+      <circle cx="142" cy="110" r="1.7" fill={out} opacity="0.55" />
+    </g>
+  );
+}
+
 export function Arms({
   refs,
   armFill,

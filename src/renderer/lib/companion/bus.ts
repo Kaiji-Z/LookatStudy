@@ -157,7 +157,9 @@ function install(): void {
       if (e.repeat) return;
       const side = nextSide;
       nextSide = nextSide === 1 ? -1 : 1;
-      dispatch({ type: "press", side, now: Date.now() });
+      // v10:打印字符随键击上屏(胸屏显示按键);组合键/功能键不上屏
+      const printable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey ? e.key : undefined;
+      dispatch({ type: "press", side, now: Date.now(), key: printable });
     },
     { passive: true },
   );

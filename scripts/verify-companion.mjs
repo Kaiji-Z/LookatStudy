@@ -25,6 +25,7 @@ import {
   SLEEP_AFTER_MS,
   SWAT_DIZZY_MS,
   TYPE_IDLE_MS,
+  PEEK_CLIP_MAX,
   audioToMouth,
   baseExpressionOf,
   clampGaze,
@@ -37,8 +38,10 @@ import {
   lerp,
   micArcScale,
   mouthOpenScale,
+  peekClipPct,
   smoothMic,
   wanderTarget,
+  zoneDrift,
 } from "../src/renderer/lib/companion/companion-core.ts";
 import {
   COMPANION_FORM_IDS,
@@ -644,6 +647,35 @@ console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚�
 }
 console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性有界/跨引擎碰撞解算/倾角");
 
+/* ---------- T14b v5 栏内世界:peek 裁剪 + 锚点漂浮 ---------- */
+{
+  // peekClipPct:完全在卡片上缘之上(飞行途中) → 0;骑在边上 → 按几何算;深潜 → 封顶
+  assert.equal(peekClipPct(100, 76, 200), 0, "T14b: 底边在上缘之上不裁剪");
+  assert.equal(peekClipPct(100, 76, 138), 0, "T14b: 底边恰好齐上缘不裁剪");
+  const mid = peekClipPct(100, 76, 120); // 底边 138,藏 18 → 18/76 ≈ 23.7%
+  assert.ok(Math.abs(mid - (18 / 76) * 100) < 0.01, `T14b: 骑边按几何裁剪(实测 ${mid.toFixed(2)}%)`);
+  assert.ok(mid > 0 && mid < PEEK_CLIP_MAX, "T14b: 部分隐藏在 0..MAX 之间");
+  const deep = peekClipPct(500, 76, 100); // 深潜到卡里
+  assert.equal(deep, PEEK_CLIP_MAX, `T14b: 深潜封顶 ${PEEK_CLIP_MAX}%(头和手臂永远可见)`);
+  assert.ok(PEEK_CLIP_MAX <= 34, "T14b: 封顶不超过 34%(手臂在 viewBox 60-75% 高度,必须露出来拍键)");
+
+  // zoneDrift:确定性 + 有界(chat 幅度大于 notebook;不撞正文)
+  const a = zoneDrift("chat", 12345);
+  const b = zoneDrift("chat", 12345);
+  assert.deepEqual(a, b, "T14b: 漂移确定性(同刻同值)");
+  let cx = 0, cy = 0, nx = 0, ny = 0;
+  for (let t = 0; t < 20000; t += 137) {
+    const c = zoneDrift("chat", t);
+    const n = zoneDrift("notebook", t);
+    cx = Math.max(cx, Math.abs(c.x)); cy = Math.max(cy, Math.abs(c.y));
+    nx = Math.max(nx, Math.abs(n.x)); ny = Math.max(ny, Math.abs(n.y));
+  }
+  assert.ok(cx <= 11 && cy <= 5, `T14b: chat 漂移有界(|x|≤11,|y|≤5,实测 ${cx.toFixed(1)}/${cy.toFixed(1)})`);
+  assert.ok(nx <= 5 && ny <= 4, `T14b: notebook 漂移更收敛(|x|≤5,|y|≤4,实测 ${nx.toFixed(1)}/${ny.toFixed(1)})`);
+  assert.ok(cx > nx, "T14b: chat 幅度大于 notebook(输入框上空开阔,讲解栏旁收敛)");
+}
+console.log("✓ T14b v5 栏内世界:peek 裁剪几何/封顶 + 锚点漂浮确定性/有界");
+
 /* ---------- T15 v3 接线守卫(源码级:单例/触发点/注册表) ---------- */
 {
   const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
@@ -686,6 +718,17 @@ console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性
   assert.ok(
     css.includes("cp-pose-wave") && css.includes("cp-pose-spin") && css.includes("cp-star-tw") && css.includes("cp-sleep-breath"),
     "T15: 挥手/转圈/星星眼闪烁/睡眠呼吸 CSS 存在",
+  );
+  // v5 接线:chat 半身藏卡后 + 栏内漂浮 + 打字反馈加强(拍臂+整机弹跳)
+  assert.ok(
+    creature.includes('data-testid="composer-card"') && creature.includes("peekClipPct") && creature.includes("clipPath"),
+    "T15: chat 锚定输入卡上缘 + peek 裁剪接线",
+  );
+  assert.ok(creature.includes("zoneDrift"), "T15: 栏内锚点漂浮接线");
+  assert.ok(creature.includes("chat: 76") && creature.includes("notebook: 88"), "T15: v5 体型(chat 放大/notebook 看口型)");
+  assert.ok(
+    mascotV4.includes("52 : -52") && mascotV4.includes("scale(1.045, 0.93)") && mascotV4.includes("cubic-bezier(0.2, 1.5, 0.4, 1)"),
+    "T15: 打字反馈加强(大幅拍臂 ±52° + 整机弹跳 + 回弹过冲)",
   );
 }
 console.log("✓ T15 v3 接线守卫:单例挂载/三触发点/左栏注册表/物理碰撞源级咬合");

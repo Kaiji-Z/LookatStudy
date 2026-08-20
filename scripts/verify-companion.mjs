@@ -467,22 +467,68 @@ console.log("✓ T13 单生物 zone 状态机:三重世界往返/优先级(聚�
     );
     world.dispose();
   }
-  // 穿球链:三球横排 400 帧,无 >15px 瞬移(多球合成钳制)
+  // 避让纯函数:域外零推力/方向推离/接近制动增强/重合安全
   {
+    const { avoidAccel, AVOID_MARGIN, AVOID_MAX } = await import("../src/renderer/lib/companion/companion-flight.ts");
+    const ball = { x: 100, y: 0, r: 28 };
+    const far = avoidAccel(300, 0, 22, [ball]);
+    assert.ok(Math.hypot(far.x, far.y) < 1e-9, "T14: 感知域外零避让");
+    const inRange = avoidAccel(90, 0, 22, [ball]);
+    assert.ok(inRange.x < 0, "T14: 避让方向推离球(生物在球左侧 → 推向 -x)");
+    // 正在冲向球(速度朝 +x) → 制动增强
+    const approaching = avoidAccel(90, 0, 22, [ball], 4, 0);
+    assert.ok(approaching.x < inRange.x, "T14: 接近时避让增强(速度感知制动)");
+    const coincident = avoidAccel(100, 0, 22, [ball], 0, 0);
+    assert.ok(Number.isFinite(coincident.x) && Number.isFinite(coincident.y), "T14: 球心重合无 NaN");
+    const clamped = avoidAccel(60, 0, 22, [ball], -12, 0);
+    assert.ok(Math.hypot(clamped.x, clamped.y) <= AVOID_MAX * 2 + 1e-9, "T14: 避让合成钳制");
+  }
+  // 避让仿真A:球压巡航点,伴学从远处出发 → 全程保持分离 + 平滑 + 稳定悬停
+  {
+    const Matter = (await import("matter-js")).default;
     const W = 300, H = 800;
+    const TOUCH = 28 + 22;
     const world = createFlightWorld({ width: W, height: H });
+    Matter.Body.setPosition(world.body, { x: 60, y: 60 });
+    const ball = { x: W * 0.6, y: 150, vx: 0, vy: 0, r: 28, isStatic: true, push: () => {} };
+    let minD = Infinity, maxStep = 0;
+    let prev = { ...world.body.position };
+    for (let i = 0; i < 400; i++) {
+      world.step(16.7, { x: W * 0.6, y: 150 }, [ball], i * 16.7);
+      const p = world.body.position;
+      if (i >= 20) minD = Math.min(minD, Math.hypot(p.x - ball.x, p.y - ball.y));
+      maxStep = Math.max(maxStep, Math.hypot(p.x - prev.x, p.y - prev.y));
+      prev = { x: p.x, y: p.y };
+    }
+    assert.ok(minD >= TOUCH - 2, `T14: 巡航绕开球不主动接触(实测 minD=${minD.toFixed(1)} ≥ touch-2=${TOUCH - 2},穿球即红)`);
+    assert.ok(maxStep < 15, `T14: 避让机动连续(实测 maxStep=${maxStep.toFixed(1)}px/帧)`);
+    const v = world.body.velocity;
+    assert.ok(Math.hypot(v.x, v.y) < 2.5, `T14: 避让后稳定悬停(实测末速=${Math.hypot(v.x, v.y).toFixed(2)}px/step)`);
+    world.dispose();
+  }
+  // 避让仿真B:三球链横档巡航点 → 绕行不穿链(地图布局不被自主行动搅乱)
+  {
+    const Matter = (await import("matter-js")).default;
+    const W = 300, H = 800;
+    const TOUCH = 28 + 22;
+    const world = createFlightWorld({ width: W, height: H });
+    Matter.Body.setPosition(world.body, { x: 60, y: 60 });
     const balls = [0.45, 0.6, 0.75].map((k) => ({
       x: W * k, y: 150, vx: 0, vy: 0, r: 28, isStatic: false, push: () => {},
     }));
+    let minD = Infinity, jumps = 0;
     let prev = { ...world.body.position };
-    let jumps = 0;
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 500; i++) {
       world.step(16.7, { x: W * 0.6, y: 150 }, balls, i * 16.7);
       const p = world.body.position;
+      let d = Infinity;
+      for (const b of balls) d = Math.min(d, Math.hypot(p.x - b.x, p.y - b.y));
+      if (i >= 20) minD = Math.min(minD, d);
       if (Math.hypot(p.x - prev.x, p.y - prev.y) > 15) jumps++;
       prev = { x: p.x, y: p.y };
     }
-    assert.ok(jumps === 0, `T14: 穿球链无瞬移(实测 jumps=${jumps})`);
+    assert.ok(minD >= TOUCH - 2, `T14: 绕开球链不穿行(实测 minD=${minD.toFixed(1)} ≥ ${TOUCH - 2})`);
+    assert.ok(jumps === 0, `T14: 绕行机动无瞬移(实测 jumps=${jumps})`);
     world.dispose();
   }
 

@@ -30,6 +30,55 @@ export const MAX_FLIGHT_SPEED = 12;
 /** 被拍晕眩阈值(单次冲量 px/step):低于=轻碰,高于=真被拍飞(晕眩+翻滚) */
 export const SWAT_IMPULSE = 3.2;
 
+/* 避让转向场:自主巡航绕开球,不主动撞球搅乱地图布局 */
+/** 感知余量(px):接触距(球r+伴学r)之外再留这么宽的提前量开始转向 */
+export const AVOID_MARGIN = 56;
+/** 贴脸最大避让加速度(px/step²):>MAX_ACCEL(0.3) → 近距避让必赢巡航弹簧 */
+export const AVOID_MAX = 0.6;
+
+/**
+ * 避让加速度(纯):感知域内每球沿法线推离,接触=满额、域缘=0 线性衰减;
+ * **速度感知制动**——正在冲向球时(法向速度 vn<0)按接近速度增强推离,
+ * 掐掉动量过头的浅穿;多球合成后钳制。球心重合(d≈0)任选向上,无 NaN。
+ * 晕眩期控制器断开不调用——用户拖球拍他的玩法不受影响。
+ */
+export function avoidAccel(
+  cx: number,
+  cy: number,
+  cr: number,
+  balls: { x: number; y: number; r: number }[],
+  vx = 0,
+  vy = 0,
+): { x: number; y: number } {
+  let ax = 0;
+  let ay = 0;
+  for (const b of balls) {
+    const dx = cx - b.x;
+    const dy = cy - b.y;
+    const d = Math.hypot(dx, dy);
+    const touch = b.r + cr;
+    const range = touch + AVOID_MARGIN;
+    if (d >= range) continue;
+    if (d < 0.0001) {
+      ay -= AVOID_MAX; // 球心重合:向上逃(任选方向,确定性优先)
+      continue;
+    }
+    const nx = dx / d;
+    const ny = dy / d;
+    const near = Math.min(1.6, Math.max(0, 1 - (d - touch) / AVOID_MARGIN));
+    const vn = vx * nx + vy * ny;
+    const boost = vn < 0 ? 1 + Math.min(1.6, -vn / 4) : 1;
+    ax += nx * AVOID_MAX * near * boost;
+    ay += ny * AVOID_MAX * near * boost;
+  }
+  const m = Math.hypot(ax, ay);
+  if (m > AVOID_MAX * 2) {
+    ax = (ax / m) * AVOID_MAX * 2;
+    ay = (ay / m) * AVOID_MAX * 2;
+  }
+  return { x: ax, y: ay };
+}
+
 export interface FlightTarget {
   x: number;
   y: number;
@@ -211,6 +260,7 @@ export function createFlightWorld(opts: {
 
       if (!dizzy && base) {
         const target = cruiseTarget(base, Math.floor(tMs / 4200), tMs);
+        const dt2 = Math.max(64, dtMs * dtMs);
         const f = flightForce(
           { x: body.position.x, y: body.position.y },
           { x: body.velocity.x, y: body.velocity.y },
@@ -218,7 +268,13 @@ export function createFlightWorld(opts: {
           body.mass,
           dtMs,
         );
-        Body.applyForce(body, body.position, { x: f.fx, y: f.fy });
+        // 避让转向场:球在感知域内推离(近距>巡航弹簧,宁可绕路不穿球)。
+        // 晕眩路径不进这里——被球拍是物理,巡航避让是姿态,两码事。
+        const av = avoidAccel(body.position.x, body.position.y, r, balls, body.velocity.x, body.velocity.y);
+        Body.applyForce(body, body.position, {
+          x: f.fx + (av.x * body.mass) / dt2,
+          y: f.fy + (av.y * body.mass) / dt2,
+        });
         // 姿态回正:角度弹簧(不是硬 setAngle——被撞的旋转要自然衰减)
         Body.setAngularVelocity(body, body.angularVelocity - body.angle * 0.06 - body.angularVelocity * 0.08);
       }

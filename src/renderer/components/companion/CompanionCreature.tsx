@@ -75,9 +75,10 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
   const mouth = useSpeechMouth(snap.state.talking);
   const reduced = usePrefersReducedMotion();
   const [inTransit, setInTransit] = useState(false);
-  /** v6 朗读跟句:正在指句时非 null(值=手指方向;left=生物在句右指左)。rAF 写 ref,变化才 setState。 */
-  const [pointing, setPointing] = useState<"left" | "right" | null>(null);
-  const pointingRef = useRef<"left" | "right" | null>(null);
+  /** v6 朗读跟句:正在指句时非 null。side=手指方向(left=生物在句右指左);
+   *  pane=mark 所在栏(决定体型:chat 76/notebook 88)。rAF 写 ref,变化才 setState。 */
+  const [reading, setReading] = useState<{ side: "left" | "right"; pane: "chat" | "notebook" } | null>(null);
+  const readingRef = useRef<{ side: "left" | "right"; pane: "chat" | "notebook" } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const flightRef = useRef<FlightWorld | null>(null);
   const posRef = useRef<{ x: number; y: number } | null>(null);
@@ -315,23 +316,27 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
         }
       } else if (eff !== "rail") {
         flightRef.current = null;
-        // v6 朗读跟句:讲解区有 karaoke 高亮句时,notebook 锚点被句子实时位置接管
-        // (贴着那句站,指住它;scroll 时 rect 随 .cp-reading-mark 元素自动更新)。
-        const readMark = eff === "notebook" ? document.querySelector<HTMLElement>(".cp-reading-mark") : null;
+        // v6 朗读跟句:有 karaoke 高亮句(讲解区/中栏对话消息均可)时,锚点被句子
+        // 实时位置接管(贴着那句站,指住它;scroll 时 rect 随 .cp-reading-mark 元素
+        // 自动更新)。clamp 面板取 mark 所在的 pane —— 讲解面板或对话流,两边同款。
+        const readMark = document.querySelector<HTMLElement>(".cp-reading-mark");
         const anchor = readMark
           ? null
           : eff === "chat"
             ? chatAnchor()
             : notebookAnchor();
         if (readMark) {
-          const panel = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]');
+          const panel = readMark.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]');
           const pr = panel?.getBoundingClientRect();
           const mr = readMark.getBoundingClientRect();
+          const zoneSize = readMark.closest('[data-testid="chat-stream"]') ? SIZE.chat : SIZE.notebook;
           if (pr && mr.width > 0) {
-            const pos = readingAnchorPos(mr, pr, SIZE.notebook);
-            if (pointingRef.current !== pos.side) {
-              pointingRef.current = pos.side;
-              setPointing(pos.side);
+            const pos = readingAnchorPos(mr, pr, zoneSize);
+            const pane: "chat" | "notebook" = zoneSize === SIZE.chat ? "chat" : "notebook";
+            const next = { side: pos.side, pane };
+            if (readingRef.current?.side !== next.side || readingRef.current?.pane !== next.pane) {
+              readingRef.current = next;
+              setReading(next);
             }
             if (reduced) {
               target = pos;
@@ -345,9 +350,9 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
             }
           }
         } else {
-          if (pointingRef.current !== null) {
-            pointingRef.current = null;
-            setPointing(null);
+          if (readingRef.current !== null) {
+            readingRef.current = null;
+            setReading(null);
           }
           if (anchor) {
             if (reduced) {
@@ -393,11 +398,13 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
 
   const pose = inTransit
     ? "flying"
-    : pointing === "left"
+    : reading?.side === "left"
       ? "point"
-      : pointing === "right"
+      : reading?.side === "right"
         ? "pointr"
         : snap.state.pose;
+  // 跟句时体型随 mark 所在栏(中栏对话 76/讲解栏 88),否则随 zone
+  const mascotSize = reading ? SIZE[reading.pane] : SIZE[zone];
   return (
     <div
       ref={wrapRef}
@@ -414,7 +421,7 @@ export function CompanionCreature({ worldReady, courseId }: { worldReady: boolea
         openScale={mouth.open}
         energyRatio={snap.energyRatio}
         streakLit={snap.streakLit}
-        size={SIZE[zone]}
+        size={mascotSize}
         interactive
         ariaLabel="companion"
         onPoke={companionPoke}

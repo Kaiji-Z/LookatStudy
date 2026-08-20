@@ -13,7 +13,7 @@
  *
  * 注意:本组件只负责"展示"。输入由 ChatComposer 负责。
  */
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import type { CanvasItem } from "@shared/types";
 import type { ChatMessageV2, ChatMessagePart } from "@shared/part-accumulator";
 import ReactMarkdown from "react-markdown";
@@ -25,7 +25,8 @@ import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Copy, Settings, Gr
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
-import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets } from "../lib/highlightText.js";
+import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark } from "../lib/highlightText.js";
+import { splitSentences, normalizeSpeechText } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
@@ -430,6 +431,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                 onQuizCompleted={onQuizCompleted}
                 speakingMessageId={speech.speakingMessageId}
                 speakingSentence={speech.speakingSentence}
+                playingSentence={speech.playingSentence}
                 onSpeak={speech.speak}
               />
             </div>
@@ -508,6 +510,7 @@ function MessageRowV2({
   onQuizCompleted,
   speakingMessageId,
   speakingSentence,
+  playingSentence,
   onSpeak,
 }: {
   msg: ChatMessageV2;
@@ -519,9 +522,52 @@ function MessageRowV2({
   onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
   speakingMessageId?: string | null;
   speakingSentence?: { index: number; total: number } | null;
+  /** v6 播放序(正在念的句,非合成到达序)——karaoke 高亮用它 */
+  playingSentence?: { index: number; total: number } | null;
   onSpeak?: (messageId: string, text: string) => void;
 }) {
   const t = useLang();
+  const msgRef = useRef<HTMLDivElement>(null);
+  // 朗读文本 = 全部 text part 拼接(工具产物/附件不读)。
+  // hooks 必须在 user 分支早退之前 —— 句表与 karaoke 对两种角色都安全声明(user 句表恒空)。
+  const speakableText = msg.parts
+    .map((p) => (p.type === "text" ? p.text : ""))
+    .join("")
+    .trim();
+  const isSpeakingThis = speakingMessageId === msg.id;
+  // v6 chat karaoke:与讲解区同源同款 —— shared/speech-text 纯函数从同一份朗读文本复算句表
+  const sentences = useMemo(
+    () => (msg.role === "assistant" && speakableText ? splitSentences(normalizeSpeechText(speakableText), { flush: true }).sentences : []),
+    [msg.role, speakableText],
+  );
+  const readingIdx = isSpeakingThis && playingSentence != null ? playingSentence.index : null;
+  // 当前播放句高亮 + 出视野才居中跟随(与讲解区同款 ±48px 容差)
+  useEffect(() => {
+    const root = msgRef.current;
+    if (!root) return;
+    if (readingIdx == null || readingIdx < 0 || readingIdx >= sentences.length) {
+      clearReadingMark(root);
+      return;
+    }
+    const sentence = sentences[readingIdx]!;
+    const timer = setTimeout(() => {
+      const el = markReadingSentence(root, sentence);
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const scroller = root.closest(".overflow-y-auto");
+      const sr = scroller?.getBoundingClientRect();
+      if (!sr || r.top < sr.top + 48 || r.bottom > sr.bottom - 48) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 30);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sentences 是 useMemo 稳定引用
+  }, [readingIdx, sentences]);
+  useEffect(() => {
+    if (readingIdx == null && msgRef.current) clearReadingMark(msgRef.current);
+  }, [readingIdx]);
+  useEffect(() => () => { if (msgRef.current) clearReadingMark(msgRef.current); }, []);
+
   if (msg.role === "user") {
     // user:极简阅读流(claude.ai 风)。右对齐 + 极轻微染,无气泡边框。
     // 与 AI 消息靠"右对齐 + 稍亮底色 + 你 标签"区分,不靠气泡。
@@ -542,15 +588,9 @@ function MessageRowV2({
   // assistant:全宽无背景、无头像(claude.ai 风)。头像列给每条 AI 消息制造 ~38px
   // 固定左缩进(正文/产物卡全被推右,手机窄屏最伤);对话双方靠"用户右对齐微染底
   // vs AI 全宽"已足够区分,不靠头像。
-  // 朗读文本 = 全部 text part 拼接(工具产物/附件不读)
-  const speakableText = msg.parts
-    .map((p) => (p.type === "text" ? p.text : ""))
-    .join("")
-    .trim();
-  const isSpeakingThis = speakingMessageId === msg.id;
-
+  // (speakableText/isSpeakingThis/sentences 已在顶部 hooks 区声明,供 karaoke)
   return (
-    <div className="msg-enter" data-testid="msg-assistant" data-msg-id={msg.id}>
+    <div className="msg-enter" ref={msgRef} data-testid="msg-assistant" data-msg-id={msg.id}>
       <div className="min-w-0 space-y-2.5">
         {msg.parts.map((part, idx) => (
           <PartRenderer

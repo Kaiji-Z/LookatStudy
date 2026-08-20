@@ -1022,10 +1022,13 @@ html.light ::-webkit-scrollbar-thumb:hover {
 .cp-pose-spin .cp-bot { transform-box: fill-box; transform-origin: 50% 60%; animation: cp-spin 0.75s cubic-bezier(0.45, 0.1, 0.3, 1) 1; }
 @keyframes cp-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 /* 朗读指句姿势(v6):生物站在句子旁边,抬起一侧手臂水平指向文字。
-   armL 转约 -92°(顺 y 向下坐标系逆时针)= 手臂抬平指向屏幕左;armR 对称指右。 */
-.cp-pose-point .cp-armL { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(-92deg); }
+   方向约定(与挥手 armR -108° 同款):SVG y 向下,正角=屏幕顺时针;
+   下垂手臂 +92° 从 6 点扫向 9 点=向左外伸,−92° 从 6 点扫向 3 点=向右外伸。
+   armL 在屏幕左侧,+92° 向左外伸(point);armR −92° 向右外伸(pointr)。
+   符号写反会让手臂横穿身体从脸前掠过(藏在头后面,实测踩过)。 */
+.cp-pose-point .cp-armL { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(92deg); }
 .cp-pose-point .cp-bot { transform-box: fill-box; transform-origin: 50% 62%; transform: rotate(-3deg); }
-.cp-pose-pointr .cp-armR { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(92deg); }
+.cp-pose-pointr .cp-armR { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(-92deg); }
 .cp-pose-pointr .cp-bot { transform-box: fill-box; transform-origin: 50% 62%; transform: rotate(3deg); }
 /* 朗读句高亮(karaoke):accent 蓝轻底,不遮字;跨行句子逐行都着色(clone)。 */
 .cp-reading-mark {

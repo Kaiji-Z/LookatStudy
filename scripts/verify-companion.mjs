@@ -737,12 +737,20 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
   // v6 接线:朗读句级跟随(播放序 + karaoke 高亮 + 跟句指向 + 🔊 sticky)
   const useSpeechSrc = read("lib/useSpeech.ts");
   assert.ok(
-    useSpeechSrc.includes("playingSentence") && useSpeechSrc.includes("setPlayingSentence({ index: startedRef.current"),
-    "T15: useSpeech 暴露播放序 playingSentence(播放起播推进,非到达序)",
+    useSpeechSrc.includes("playingSentence") && useSpeechSrc.includes("pendingRef.current.get(nextSeqRef.current)"),
+    "T15: useSpeech 播放序=按句序有序消费(pendingRef+nextSeq,非解码完成序)",
+  );
+  assert.ok(
+    useSpeechSrc.includes("lookatstudy-speech-start"),
+    "T15: 跨实例互停事件(讲解/对话两个 useSpeech 不再互相残留读态)",
   );
   assert.ok(
     notebook.includes("markReadingSentence") && notebook.includes("splitSentences(normalizeSpeechText"),
     "T15: 讲解区 karaoke 高亮接线(同源切句 + markReadingSentence)",
+  );
+  assert.ok(
+    notebook.includes("resetReadingCursor") && read("components/ChatStream.tsx").includes("resetReadingCursor"),
+    "T15: 两处 karaoke 调用都在新一轮朗读时重置匹配游标",
   );
   assert.ok(
     notebook.includes("sticky top-0") && notebook.includes('"node-content-speak"'),
@@ -764,10 +772,40 @@ console.log("✓ T14b v5/v6 栏内世界:朗读跟句锚点几何/换侧/钳制 
     "T15: 对话消息朗读 karaoke 接线(playingSentence 透传 + markReadingSentence)",
   );
   assert.ok(
+    chatStream.includes(`within: '[data-testid="part-text"]'`),
+    "T15: chat karaoke 限定正文 text part(思考块/工具产物显示但不朗读,搜进去必错位)",
+  );
+  assert.ok(
     creature.includes('[data-testid="chat-stream"]'),
     "T15: 伴学跟句覆盖中栏(mark 所在面板链含 chat-stream)",
   );
 }
 console.log("✓ T15 v3 接线守卫:单例挂载/三触发点/左栏注册表/物理碰撞源级咬合");
+
+/* ---------- T16 朗读句顺序匹配(纯:token 序列 + 单调游标) ---------- */
+{
+  const { matchSentenceTokens } = await import("../src/renderer/lib/highlightText.ts");
+  // 散文整句(中文常态:单 token)= 带游标 indexOf
+  const m0 = matchSentenceTokens("欢迎使用。这是一个平台。", ["欢迎使用。"], 0);
+  assert.ok(m0 && m0.start === 0 && m0.end === 5, "T16: 单 token 精确命中");
+  // 跨段落:朗读文本有 \n,DOM textContent 段落之间无分隔 → token 序列带间隔命中
+  const dom1 = "标题正文第一句。";
+  const m1 = matchSentenceTokens(dom1, ["标题", "正文第一句。"], 0);
+  assert.ok(m1 && m1.start === 0 && m1.end === 8, `T16: 跨段落 token 序列命中全句(实测 ${JSON.stringify(m1)})`);
+  // 行内代码:朗读剥掉代码,DOM 有 → token 之间允许间隔,span 覆盖含代码
+  const dom2 = "使用 bar() 方法。";
+  const m2 = matchSentenceTokens(dom2, ["使用", "方法。"], 0);
+  assert.ok(m2 && m2.start === 0 && m2.end === 12, `T16: 行内代码间隔跨接(实测 ${JSON.stringify(m2)})`);
+  // 单调游标:重复文本不回跳(第二句从第一句之后找)
+  const dom3 = "好的。再次好的。";
+  const a3 = matchSentenceTokens(dom3, ["好的。"], 0);
+  const b3 = a3 ? matchSentenceTokens(dom3, ["好的。"], a3.end) : null;
+  assert.ok(a3 && b3 && a3.start === 0 && b3.start === 5, `T16: 游标单调防重复回跳(实测 ${a3 && a3.start}→${b3 && b3.start})`);
+  // 找不到 → null;跨度异常(误命中极远重复)→ null
+  assert.equal(matchSentenceTokens("没有目标。", ["别的句子。"], 0), null, "T16: 未命中返回 null");
+  const far = "开头。" + "x".repeat(300) + "结尾。中间还有结尾。";
+  assert.equal(matchSentenceTokens(far, ["开头。", "结尾。"], 0), null, "T16: 跨度异常判失败(误命中保护)");
+}
+console.log("✓ T16 朗读句顺序匹配:跨段落/行内代码间隔/游标单调/跨度保护");
 
 console.log("\nverify-companion: ALL PASS");

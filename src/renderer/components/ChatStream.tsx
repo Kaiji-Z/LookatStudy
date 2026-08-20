@@ -25,7 +25,7 @@ import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Copy, Settings, Gr
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
-import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark } from "../lib/highlightText.js";
+import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor } from "../lib/highlightText.js";
 import { splitSentences, normalizeSpeechText } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { useLang } from "../lib/i18n.js";
@@ -550,8 +550,11 @@ function MessageRowV2({
       return;
     }
     const sentence = sentences[readingIdx]!;
+    if (readingIdx === 0) resetReadingCursor(root); // 新一轮朗读从第 0 句起,游标归零
     const timer = setTimeout(() => {
-      const el = markReadingSentence(root, sentence);
+      // within 限定正文 text part:思考块/工具产物渲染了文字但朗读不读,
+      // 搜进去会把高亮标到没在念的文字上(推理常复述正文措辞,极容易误命中)。
+      const el = markReadingSentence(root, sentence, { within: '[data-testid="part-text"]' });
       if (!el) return;
       const r = el.getBoundingClientRect();
       const scroller = root.closest(".overflow-y-auto");

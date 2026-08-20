@@ -20,7 +20,7 @@ export interface TextModel {
   nodes: { node: Text; start: number; end: number }[];
 }
 
-export function getTextModel(container: HTMLElement): TextModel {
+export function getTextModel(container: HTMLElement, within?: string): TextModel {
   const nodes: { node: Text; start: number; end: number }[] = [];
   let text = "";
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
@@ -33,6 +33,11 @@ export function getTextModel(container: HTMLElement): TextModel {
       // 跳过已画的持久画线 mark 内的所有文本(用 closest 检查祖先链,防止嵌套结构漏过)。
       // 这是 save 时 modelTextLen 随笔记数增长的根因:mark 内文本被重复计算。
       if (parent.closest("mark.lookatstudy-underline")) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      // within(可选):只收匹配选择器子树内的文本(朗读 karaoke 在对话消息里限定
+      // 正文 text part —— 思考块/工具产物也渲染文字,但朗读不读它们,搜进去必错位)。
+      if (within && !parent.closest(within)) {
         return NodeFilter.FILTER_REJECT;
       }
       // 不跳过空白节点 —— 跳过会让 rangeToOffsets 的 container 找不到对应 model 节点,
@@ -402,33 +407,73 @@ export function clearReadingMark(container: HTMLElement): void {
 }
 
 /**
- * 在讲解正文里定位并高亮**当前正在朗读**的句子,返回高亮元素(未找到返回 null)。
+ * 朗读句顺序匹配(纯函数,verify 直测):在 domText 的 from 起按序找 token 序列,
+ * token 之间允许间隔。间隔正是"读的"与"显示的"差异来源 ——
+ *   ①朗读文本有结构空白(\n 段落/列表边界),DOM textContent 段落之间什么都没有;
+ *   ②行内代码/围栏代码朗读时被剥掉,DOM 里还在;
+ *   ③表格竖线读成空格,DOM 里单元格直接拼接。
+ * 单 token(整句无空白,中文散文常态)= 退化为带游标的 indexOf。
+ * 跨度 Sanity:token 间隔之和异常大(误命中早期重复文本)判失败。
+ */
+export function matchSentenceTokens(
+  domText: string,
+  tokens: string[],
+  from: number,
+): { start: number; end: number } | null {
+  const toks = tokens.filter((t) => t.length > 0);
+  if (toks.length === 0) return null;
+  const totalLen = toks.reduce((s, t) => s + t.length, 0);
+  let searchFrom = Math.max(0, from);
+  let start = -1;
+  let end = -1;
+  for (const tok of toks) {
+    const idx = domText.indexOf(tok, searchFrom);
+    if (idx < 0) return null;
+    if (start < 0) start = idx;
+    end = idx + tok.length;
+    searchFrom = end;
+  }
+  if (start < 0) return null;
+  if (end - start > totalLen * 4 + 120) return null; // 误命中保护
+  return { start, end };
+}
+
+/** 各容器的朗读匹配游标(句 N 的终点 = 句 N+1 的搜索起点;单调防重复文本回跳)。 */
+const readingCursors = new WeakMap<HTMLElement, number>();
+
+/** 新一轮朗读从第 0 句开始前重置游标(讲解/对话两处调用方在 readingIdx===0 时调)。 */
+export function resetReadingCursor(container: HTMLElement): void {
+  readingCursors.delete(container);
+}
+
+/**
+ * 在讲解正文/对话消息里定位并高亮**当前正在朗读**的句子,返回高亮元素(未找到返回 null)。
  *
  * 句子文本来自 splitSentences(normalizeSpeechText(content)) —— 与 main 合成侧
- * 同一真源(shared/speech-text 纯函数),句子序=缓冲播放序。与渲染 DOM 的差异
- * 主要在空白与表格竖线,匹配策略与持久画线同款三级兜底:
- *   精确 indexOf → 空白归一化命中后前 15 字回原文 → 句首 24 字前缀。
+ * 同一真源(shared/speech-text 纯函数),句子序=缓冲播放序。匹配 = 句子按空白切
+ * token + matchSentenceTokens 顺序匹配 + 单调游标(重复文本不回跳;失败回卷重找一次
+ * 自愈内容重挂)。opts.within 限定搜索子树(对话消息限定正文 text part,思考块/
+ * 工具产物的文字不参与匹配 —— 它们显示但不朗读)。
  */
-export function markReadingSentence(container: HTMLElement, sentence: string): HTMLElement | null {
+export function markReadingSentence(
+  container: HTMLElement,
+  sentence: string,
+  opts?: { within?: string },
+): HTMLElement | null {
   clearReadingMark(container);
   const trimmed = sentence.trim();
   if (!trimmed) return null;
-  const model = getTextModel(container);
-  let pos = model.text.indexOf(trimmed);
-  if (pos < 0) {
-    const norm = trimmed.replace(/\s+/g, " ");
-    const normHay = model.text.replace(/\s+/g, " ");
-    if (normHay.indexOf(norm) >= 0) {
-      pos = model.text.indexOf(trimmed.slice(0, Math.min(15, trimmed.length)));
-    }
+  const model = getTextModel(container, opts?.within);
+  const tokens = trimmed.split(/\s+/);
+  const from = readingCursors.get(container) ?? 0;
+  let m = matchSentenceTokens(model.text, tokens, from);
+  if (!m && from > 0) {
+    // 游标漂移自愈(ReactMarkdown 重挂后 DOM 变了):从头重找一次
+    m = matchSentenceTokens(model.text, tokens, 0);
   }
-  if (pos < 0) {
-    const prefix = trimmed.slice(0, 24);
-    if (prefix.length >= 6) pos = model.text.indexOf(prefix);
-  }
-  if (pos < 0) return null;
-  const end = Math.min(pos + trimmed.length, model.text.length);
-  const range = offsetsToRange(model, pos, end);
+  if (!m) return null;
+  readingCursors.set(container, m.end);
+  const range = offsetsToRange(model, m.start, m.end);
   if (!range) return null;
   const span = document.createElement("span");
   span.className = READING_MARK_CLASS;

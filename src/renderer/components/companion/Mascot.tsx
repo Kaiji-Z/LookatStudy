@@ -54,6 +54,10 @@ export interface MascotProps {
   keySide?: -1 | 1;
   /** v10 胸屏显示的键入字符(typing 期间由生物传入;null=不显示) */
   screenKey?: string | null;
+  /** v11 连对点燃(≥3 连答对):能量核金环脉动,壳层渲染全形态共享 */
+  coreLit?: boolean;
+  /** v11 勾销动作:记笔记道具上叠金勾(卡点掌握的"这条我会了") */
+  noteTick?: boolean;
   /** 等级徽标:头顶小皇冠(XP 等级≥3,壳层渲染全形态共享) */
   crownBadge?: boolean;
   /** 等级徽标:金色光环(XP 等级≥7) */
@@ -77,6 +81,8 @@ export function Mascot({
   keySeq = 0,
   keySide = 1,
   screenKey = null,
+  coreLit = false,
+  noteTick = false,
   crownBadge = false,
   haloBadge = false,
 }: MascotProps) {
@@ -261,6 +267,8 @@ export function Mascot({
         energyRatio={energyRatio}
         streakLit={streakLit}
       />
+      {/* v11 连对点燃:能量核金环脉动(3+ 连续答对的得意态) */}
+      {coreLit && <circle cx="100" cy="135" r="21" fill="none" stroke="#FFC800" strokeWidth="3" className="cp-core-lit" aria-hidden="true" />}
       {/* v10 胸屏键入字符:打字时身体圆屏显示用户按的键(keySeq 变化=重挂载弹入) */}
       {screenKey && (
         <text
@@ -274,6 +282,16 @@ export function Mascot({
           {screenKey === " " ? "␣" : screenKey.toUpperCase()}
         </text>
       )}
+      {/* v11 听写胸屏波形:按住说话时圆屏跳动声纹条(壳层渲染,listening 期间) */}
+      {listening && !screenKey && (
+        <g className="cp-screen-wave" aria-hidden="true">
+          <rect x="88.6" y="130" width="3.2" height="10" rx="1.6" />
+          <rect x="93.6" y="127" width="3.2" height="16" rx="1.6" />
+          <rect x="98.6" y="125" width="3.2" height="20" rx="1.6" />
+          <rect x="103.6" y="127" width="3.2" height="16" rx="1.6" />
+          <rect x="108.6" y="130" width="3.2" height="10" rx="1.6" />
+        </g>
+      )}
       {/* v10 记笔记道具:掏出小本子和笔伏案记录(壳层渲染,pose=writing 期间) */}
       {pose === "writing" && (
         <g className="cp-writing" aria-hidden="true">
@@ -284,6 +302,17 @@ export function Mascot({
             <path d="M83,146 L95,149 M83,151 L95,154 M83,156 L95,159" stroke="#9AA7B8" strokeWidth="1.6" strokeLinecap="round" />
             <path d="M115,146 L103,149 M115,151 L103,154" stroke="#9AA7B8" strokeWidth="1.6" strokeLinecap="round" />
           </g>
+          {noteTick && (
+            <path
+              className="cp-note-tick"
+              d="M104,146 L108,152 L117,141"
+              fill="none"
+              stroke="#FFC800"
+              strokeWidth="4.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
           {/* 笔(笔尖朝本页,写划微动) */}
           <g className="cp-pen" transform="rotate(24 100 128)">
             <rect x="96" y="106" width="7" height="26" rx="2.5" fill="#FFC568" stroke="#2B2530" strokeWidth="2.6" />

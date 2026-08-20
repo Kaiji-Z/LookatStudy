@@ -18,26 +18,6 @@ import type { SpeechViseme } from "@shared/speech-types";
 
 /** v9:viseme 词表与主进程剧本路径共用同一真源(shared/speech-types)。 */
 export type Viseme = SpeechViseme;
-/** 只有母音艺术的旧形态(frost/moss/astro/ink)用的降级词表。 */
-export type CoarseViseme = "closed" | "A" | "E" | "I" | "O" | "U";
-
-/**
- * 辅音 viseme → 最近母音(SS 齿擦≈展唇窄口 I;L 舌尖≈开口 A;FV 咬唇≈闭)。
- * 旧形态没画辅音嘴型,渲染前先降级——全形态立刻获得 v9 时间轴,艺术后续逐形态补。
- */
-export function coarseViseme(v: Viseme): CoarseViseme {
-  switch (v) {
-    case "SS":
-      return "I";
-    case "L":
-      return "A";
-    case "FV":
-      return "closed";
-    default:
-      return v;
-  }
-}
-
 export type CompanionExpression =
   | "base"
   | "happy"
@@ -104,6 +84,10 @@ export interface CompanionState {
   keySide: -1 | 1;
   /** v10 最近一次键入的可见字符(胸屏显示;非打印键为 null) */
   lastKey: string | null;
+  /** v11 连续答对计数(wrong 清零;≥3 触发 flame 连击情绪) */
+  correctStreak: number;
+  /** v11 勾销动作保持到(卡点掌握→本子上打金勾) */
+  noteTickUntil: number;
   /** 最近一次按压时刻(ms)——typing 过期基准 */
   lastPress: number;
   /** 窗口聚焦(失焦→短阈值打盹;回归→唤醒+打招呼) */
@@ -148,6 +132,7 @@ export type CompanionEvent =
   | { type: "focus"; on: boolean; now: number }
   | { type: "zoneFocus"; on: boolean; now: number }
   | { type: "zoneNote"; now: number }
+  | { type: "noteTick"; now: number }
   | { type: "scroll"; now: number }
   | { type: "swat"; now: number }
   | { type: "examEnter"; now: number }
@@ -230,6 +215,8 @@ export function initialCompanionState(now = 0): CompanionState {
     keySeq: 0,
     keySide: 1,
     lastKey: null,
+    correctStreak: 0,
+    noteTickUntil: 0,
     lastPress: 0,
     windowFocused: true,
     zone: "roam",
@@ -294,14 +281,19 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
   switch (ev.type) {
     case "celebration": {
       // 入睡中被庆祝事件唤醒(庆祝本身即活动)
+      // v11 情绪层:连对计数(correct+1 / wrong 清零);每满 3 连对叠 flame
+      // 得意反应(盖过单次 correct 的普通开心——连击值得更亮的正反馈)
+      const streak = ev.kind === "correct" ? s.correctStreak + 1 : ev.kind === "wrong" ? 0 : s.correctStreak;
       const r = expressionForCelebration(ev.kind);
+      const onFire = ev.kind === "correct" && streak >= 3 && streak % 3 === 0;
       return {
         ...s,
         sleeping: false,
         lastActivity: ev.now,
-        expression: r.expression,
-        pose: r.pose,
-        until: ev.now + r.holdMs,
+        correctStreak: streak,
+        expression: onFire ? "flame" : r.expression,
+        pose: onFire ? "spin" : r.pose,
+        until: ev.now + (onFire ? 1600 : r.holdMs),
       };
     }
     case "poke": {
@@ -427,6 +419,17 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
       next.until = next.lastNoteUntil;
       return next;
     }
+    case "noteTick":
+      // v11 卡点掌握:掏本打金勾的自豪小动作(勾销"这条我记过,现在会了")
+      return {
+        ...s,
+        sleeping: false,
+        lastActivity: ev.now,
+        noteTickUntil: ev.now + 1900,
+        expression: "proud",
+        pose: "writing",
+        until: ev.now + 1900,
+      };
     case "scroll":
       // 滚动不唤醒(阅读是被动行为),只推进纱帘判定
       return s.lastScroll === ev.now ? s : { ...s, lastScroll: ev.now };
@@ -890,6 +893,29 @@ export function nextRoamPane(cur: CompanionPane, bucket: number, available: Comp
   }
   return cur;
 }
+
+/** v11 roam 目的性:闲逛时间桶上低概率产生"有想法"的意图。 */
+export type RoamIntentKind = "inspect" | "review" | "friction";
+
+/**
+ * 意图挑选(纯函数):复习到期 > 打量下一课 > 回访卡点,按 seed 确定性低频触发。
+ * opts 各布尔 = 该意图的素材是否在场(复习徽章/下一课球/卡点球位置)。
+ * 返回 null = 本桶照常闲逛。
+ */
+export function pickRoamIntent(
+  bucket: number,
+  opts: { hasReview: boolean; hasNext: boolean; hasFriction: boolean },
+): RoamIntentKind | null {
+  const r = Math.abs(Math.sin(bucket * 7.3171 + 2.41) * 43758.5453) % 1;
+  if (r >= 0.34) return null; // 大多数桶照常游走——意图是调味,不是常态
+  if (r < 0.12 && opts.hasReview) return "review";
+  if (r < 0.23 && opts.hasNext) return "inspect";
+  if (opts.hasFriction) return "friction";
+  return null;
+}
+
+/** 意图保持时长(ms)与触发概率的导出(verify 断言用)。 */
+export const INTENT_HOLD_MS = 3_000;
 
 /* ---------------- 设置门控 ---------------- */
 

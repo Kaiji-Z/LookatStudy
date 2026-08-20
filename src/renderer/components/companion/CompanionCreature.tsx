@@ -21,6 +21,7 @@ import {
   companionGrab,
   companionLandSfx,
   companionNodePoint,
+  companionNoteTick,
   companionPoke,
   companionSwat,
   getCompanionSnapshot,
@@ -39,12 +40,15 @@ import {
 import { BALL_RADIUS, WIND_STRENGTH, swirlAt, weatherPhysFor } from "../../lib/mapPhysics.js";
 import {
   type CompanionPane,
+  type RoamIntentKind,
   CRUISE_OP,
   CRUISE_READ,
   CRUISE_ROAM,
+  INTENT_HOLD_MS,
   ROAM_BUCKET_MS,
   glideTo,
   nextRoamPane,
+  pickRoamIntent,
   readingTailAnchor,
   zoneDrift,
   wanderInPanel,
@@ -110,6 +114,10 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   const nextShiverRef = useRef(0);
   /** v10 roam 跨栏游走调度:当前栖身栏 + 决策时间桶(桶切换时决定 留/跨栏) */
   const roamRef = useRef<{ pane: CompanionPane; bucket: number }>({ pane: "rail", bucket: -1 });
+  /** v11 roam 目的性意图:复习指点/打量下一课/回访卡点(限时,materials 位置视口坐标) */
+  const intentRef = useRef<{ kind: RoamIntentKind; until: number; pos: { x: number; y: number }; fired: boolean } | null>(null);
+  /** v11 卡点毕业判定:记忆联动聚焦的卡点节点 id(掌握后从 friction 榜消失→打金勾) */
+  const frictionNodeIdRef = useRef<string | null>(null);
 
   // v10 起飞动效挂**实际栖身栏**(dispZone):操作切栏/roam 跨栏都触发翻越感
   useEffect(() => {
@@ -159,6 +167,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         if (!alive) return;
         const weak = d?.frictionByNode?.[0];
         if (!weak?.nodeId) return;
+        frictionNodeIdRef.current = weak.nodeId;
         const rw = getRailWorld();
         const navRect = rw.nav?.getBoundingClientRect();
         if (!navRect) return;
@@ -176,6 +185,28 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       })
       .catch(() => {});
     return () => { alive = false; };
+  }, [courseId]);
+
+  // v11 卡点毕业:掌握事件(mastery 变化)后查 friction 榜,聚焦节点已消失 → 掏本打金勾
+  useEffect(() => {
+    const onChanged = (e: Event) => {
+      const kind = (e as CustomEvent<string>).detail;
+      const nodeId = frictionNodeIdRef.current;
+      if (kind !== "mastery" || !nodeId || !courseId) return;
+      void window.api
+        .getDashboard(courseId)
+        .then((d) => {
+          const still = d?.frictionByNode?.some((f) => f.nodeId === nodeId);
+          if (!still) {
+            frictionNodeIdRef.current = null;
+            perchDueRef.current = 0; // 解除卡点驻留
+            companionNoteTick();
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("companion-state-changed", onChanged);
+    return () => window.removeEventListener("companion-state-changed", onChanged);
   }, [courseId]);
 
   // 抓取:抓住后全局跟踪指针(不依赖 setPointerCapture,触屏同款);松手算速度
@@ -219,7 +250,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   }, []);
 
   useEffect(() => {
-    if (!snap.enabledLoaded || !snap.enabled) return;
+    if (!snap.enabledLoaded || !snap.enabled || snap.petMode) return;
     const wrap = wrapRef.current;
     if (!wrap) return;
 
@@ -228,6 +259,10 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
     let navW = 0;
     let navH = 0;
     let angle = 0;
+    // 栏矩形缓存:DOM 锚点 60fps 查询太贵(强制布局),150ms 刷新足够跟手
+    let rectCacheAt = -1e9;
+    let chatRectCache: DOMRect | null = null;
+    let nbRectCache: DOMRect | null = null;
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -242,9 +277,14 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       // 导入监工:importing 期间即使地图面板隐去也在左栏值守
       const railOk = !!navRect && navRect.width > 40 && (rw.visible || st.importing);
 
-      // ── 栏矩形(v10 roam 跨栏游走的地图) ──
-      const chatRect = document.querySelector<HTMLElement>('[data-testid="chat-panel"]')?.getBoundingClientRect() ?? null;
-      const nbRect = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]')?.getBoundingClientRect() ?? null;
+      // ── 栏矩形(v10 roam 跨栏游走的地图;150ms 节流缓存) ──
+      if (now - rectCacheAt > 150) {
+        rectCacheAt = now;
+        chatRectCache = document.querySelector<HTMLElement>('[data-testid="chat-panel"]')?.getBoundingClientRect() ?? null;
+        nbRectCache = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]')?.getBoundingClientRect() ?? null;
+      }
+      const chatRect = chatRectCache;
+      const nbRect = nbRectCache;
 
       // ── roam 调度:时间桶切换时确定性决定 留/跨栏(在场栏才可选) ──
       const bucket = Math.floor(now / ROAM_BUCKET_MS);
@@ -254,7 +294,36 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         if (chatRect) avail.push("chat");
         if (nbRect) avail.push("notebook");
         roamRef.current = { pane: nextRoamPane(roamRef.current.pane, bucket, avail), bucket };
+        // v11 目的性:低概率产生"有想法"的意图(素材在场才挑;全在左栏地图上)
+        if (railOk && st.zone === "roam") {
+          const badge = document.querySelector<HTMLElement>('[data-testid="map-review-badge"]');
+          const hasReview = !!badge && badge.className.includes("bg-review/20");
+          let nextBall: { x: number; y: number } | null = null;
+          for (const { island, container } of rw.sections.values()) {
+            const b = island.balls.find((bb) => !bb.body.isStatic); // 锁定球=static
+            if (b) {
+              const cr = container.getBoundingClientRect();
+              nextBall = { x: cr.left + b.body.position.x, y: cr.top + b.body.position.y };
+              break;
+            }
+          }
+          const friction = perchDueRef.current > now ? perchRef.current : null;
+          const kind = pickRoamIntent(bucket, { hasReview, hasNext: !!nextBall, hasFriction: !!friction });
+          if (kind === "review" && badge) {
+            const r = badge.getBoundingClientRect();
+            intentRef.current = { kind, until: now + INTENT_HOLD_MS, pos: { x: r.right + 44, y: r.bottom + 64 }, fired: false };
+            roamRef.current.pane = "rail";
+          } else if (kind === "inspect" && nextBall) {
+            intentRef.current = { kind, until: now + INTENT_HOLD_MS, pos: { x: nextBall.x + 34, y: nextBall.y - 66 }, fired: false };
+            roamRef.current.pane = "rail";
+          } else if (kind === "friction" && friction) {
+            intentRef.current = { kind, until: now + INTENT_HOLD_MS, pos: { x: friction.x, y: friction.y }, fired: false };
+            roamRef.current.pane = "rail";
+          }
+        }
       }
+      const intent = intentRef.current && now < intentRef.current.until ? intentRef.current : null;
+      if (intentRef.current && !intent) intentRef.current = null;
 
       // ── karaoke 跟句(朗读时的语义位置,最高优先) ──
       const readRange = getReadingRange();
@@ -359,7 +428,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             target = glideTo(cur, w, dt, CRUISE_OP);
             angle = Math.max(-0.3, Math.min(0.3, (target.x - cur.x) * 0.012));
           }
-        } else if (railOk && (zone === "rail" || (zone === "roam" && roamRef.current.pane === "rail"))) {
+        } else if (railOk && (zone === "rail" || (zone === "roam" && (roamRef.current.pane === "rail" || !!intent)))) {
           // ── 左栏原生物理世界(导入监工钉守 / roam 游走到左栏) ──
           const w = navRect!.width;
           const h = navRect!.height;
@@ -412,11 +481,17 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
               }
             }
             const roaming = zone === "roam";
-            // 待机位:roam 游走 = 利萨茹航点(物理控制器避球跟进);监工 = 中部空地
-            // 周期重选;纱帘 = 最近绳/球顶栖息(仅非 roam:roam 时帘后照常游)
+            // 待机位:意图(打量/指点)> roam 游走利萨茹航点 > 监工中部空地周期重选;
+            // 纱帘 = 最近绳/球顶栖息(仅非 roam:roam 时帘后照常游)
             let base = perchRef.current;
             let settle = false;
-            if (roaming) {
+            if (intent) {
+              base = { x: intent.pos.x - navRect!.left, y: intent.pos.y - navRect!.top };
+              if (!intent.fired) {
+                intent.fired = true;
+                companionNodePoint(); // "就是这里"的托脾指向反应
+              }
+            } else if (roaming) {
               const wp = wanderInPanel(navRect, SIZE.rail, now);
               base = { x: wp.x - navRect!.left, y: wp.y - navRect!.top };
             } else {
@@ -520,9 +595,9 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       flightRef.current?.dispose();
       flightRef.current = null;
     };
-  }, [snap.enabledLoaded, snap.enabled, reduced]);
+  }, [snap.enabledLoaded, snap.enabled, snap.petMode, reduced]);
 
-  if (!snap.enabledLoaded || !snap.enabled) return null;
+  if (!snap.enabledLoaded || !snap.enabled || snap.petMode) return null;
 
   const pose = inTransit
     ? "flying"
@@ -545,6 +620,8 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         form={snap.form}
         expression={snap.state.expression}
         screenKey={snap.state.typing ? snap.state.lastKey : null}
+        coreLit={snap.state.correctStreak >= 3}
+        noteTick={Date.now() < snap.state.noteTickUntil}
         pose={pose}
         viseme={mouth.viseme}
         openScale={mouth.open}

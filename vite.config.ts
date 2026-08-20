@@ -112,6 +112,13 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, "dist/renderer"),
     emptyOutDir: true,
+    rollupOptions: {
+      // 双页:主应用 + 桌宠窗(v0.11 透明置顶常驻)。dev 下 vite 按 root 天然服务 /pet.html
+      input: {
+        main: resolve(__dirname, "src/renderer/index.html"),
+        pet: resolve(__dirname, "src/renderer/pet.html"),
+      },
+    },
   },
   // mermaid v11 是大型纯 ESM 包(含 d3/cytoscape/elkjs/dagre 等子依赖)。
   // dev 模式下 dynamic import 一个未预构建的 ESM 包会因内部 bare import 解析失败 → 渲染报错。

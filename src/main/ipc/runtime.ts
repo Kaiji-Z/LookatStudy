@@ -40,6 +40,13 @@ export interface RuntimeDeps {
   dialog: RuntimeDialog;
   /** 运行时形态:electron=桌面(原生对话框),web=serve(浏览器端配合文件交互) */
   ui: "electron" | "web";
+  /** v0.11 桌宠窗桥(Electron 壳专属;serve 无窗口,不注入 → 相关 handler no-op) */
+  pet?: {
+    /** companion_pet_mode 落库 → 开/关桌宠窗 */
+    sync(enabled: boolean): void;
+    /** 渲染层指针热区检测 → 切换桌宠窗点击穿透 */
+    setClickThrough(passThrough: boolean): void;
+  };
 }
 
 /** handler 表的值:与 ipcMain.handle 的 (event, ...args) 形状一致。

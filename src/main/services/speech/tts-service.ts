@@ -192,6 +192,12 @@ export async function speakMessage(
   const synth = deps.synth ?? synthSentence;
   const isLocalReady = deps.localReady ?? localModelReady;
 
+  if (cfg.engine === "system") {
+    // system 档=渲染层 speechSynthesis 自实现管线,正常路径根本不进本 IPC;
+    // 这里的拒绝是防御(老缓存渲染层/异常调用),渲染层把 engine-unavailable
+    // 映射为既有引导文案,不会静默无声。
+    return { ok: false, reason: "engine-unavailable" };
+  }
   if (cfg.engine === "local") {
     if (!isSpeechEngineLoadable()) return { ok: false, reason: "engine-unavailable" };
     if (readSpeechModelStatus(dataDir, TTS_ENTRY).state !== "ready") {

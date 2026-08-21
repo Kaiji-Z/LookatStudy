@@ -95,7 +95,7 @@ npm run dev:electron
 
 ## 技术上
 
-Electron 33,React 19。数据库用 sql.js,就是把 SQLite 编译成 WASM,没有任何要编译的原生模块,Windows 上装依赖不会翻车。渲染进程碰不到数据库、文件系统和 key,所有跨进程调用走一套类型化的 IPC 桥。63 个确定性测试套件加一个无头真 GUI 测试看着它,`npm run verify:core` 一条命令全跑。
+Electron 33,React 19。数据库用 sql.js,就是把 SQLite 编译成 WASM,没有任何要编译的原生模块,Windows 上装依赖不会翻车。渲染进程碰不到数据库、文件系统和 key,所有跨进程调用走一套类型化的 IPC 桥。100 个确定性测试套件加一个无头真 GUI 测试看着它,`npm run verify:core` 一条命令全跑。
 
 ## 状态
 

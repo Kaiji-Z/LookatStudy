@@ -1359,13 +1359,13 @@ async function runUiTest(screenshot = false): Promise<void> {
           var has = function(id){ var el = q('[data-testid="' + id + '"]'); return !!el; };
           var r = {
             notebookSpeak: notebookSpeak,
-            ttsEdge: has("tts-engine-edge"), ttsLocal: has("tts-engine-local"), ttsCustom: has("tts-engine-custom"),
+            ttsEdge: has("tts-engine-edge"), ttsLocal: has("tts-engine-local"), ttsCustom: has("tts-engine-custom"), ttsSystem: has("tts-engine-system"),
             asrLocal: has("asr-engine-local"), asrCustom: has("asr-engine-custom"),
             asrModelSelect: has("asr-model-select"),
             selectGone: !q('[data-testid="tts-engine-select"]'),
             legacyGone: !q('[data-testid="tts-engine-azure"]') && !q('[data-testid="asr-engine-groq"]'),
           };
-          r.ok = r.notebookSpeak && r.ttsEdge && r.ttsLocal && r.ttsCustom && r.asrLocal && r.asrCustom && r.asrModelSelect && r.selectGone && r.legacyGone;
+          r.ok = r.notebookSpeak && r.ttsEdge && r.ttsLocal && r.ttsCustom && r.ttsSystem && r.asrLocal && r.asrCustom && r.asrModelSelect && r.selectGone && r.legacyGone;
           // 关设置(别污染后续步骤的界面状态)
           var closeBtn = q('[data-testid="settings-close"]');
           if (closeBtn) closeBtn.click();

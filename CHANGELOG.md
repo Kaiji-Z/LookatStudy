@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **TTS 第四档「系统引擎」**(浏览器/系统 speechSynthesis,显式自选) —— 手机/电脑系统自带的朗读引擎直接用作朗读档:国产安卓机的厂商/讯飞引擎常比本地 kokoro 自然,电脑端音色随设备而定(质量抽签,所以只做自选、不进 edge→local 自动降级链)。设置页新增「系统」按钮(WebView 环境无此 API 时置灰)+ 音色下拉(中文优先,可"自动");播放管线在渲染层(逐句 utterance 驱动现有 playingSentence),**朗读逐句高亮与伴学跟读照常**,伴学嘴型不可用(无音频字节可分析,已知降级);句切分与合成侧共用 `speechSentencesOf` 同一入口,零分叉。verify-system-tts 新套(音色挑选纯函数/档位解析/管线接线/i18n 双语)。
 ### Fixed
 - **Termux 安装器 npm 镜像未命中会静默中止** —— 滞后守卫的 miss 分支返回 1,在 `set -e` 下直接杀掉脚本,"回退 GitHub 链"从上线起就从未真正可达(语音段因 `install_voice || true` 处于 `||` 列表被豁免,便携包段裸调用必中)。解析函数契约改为**恒 exit 0、空输出=未命中**,回退链恢复可达;verify-termux-voice 新增 T7 守链序、双脚本 `bash -n` 语法门与该契约。
 - **伴学旋转动作不再被自身边界框裁剪** —— mascot SVG 开 `overflow: visible`,转圈/晕眩翻滚/抬臂越出画布的部分正常画出。

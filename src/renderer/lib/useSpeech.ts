@@ -6,13 +6,23 @@
  * 双计数收尾(received/played 对齐且 done 到达才算播完)。
  *
  * 取消:本地停 = 停排+撕源;远端也通知(api.ttsStop 让 main 停合成省 CPU)。
+ *
+ * system 档(v0.18):浏览器 speechSynthesis 的第二条播放管线,渲染层自治——
+ * 句切分走 speechSentencesOf(与 main 同一入口,零分叉),逐句 utterance 的
+ * onstart 驱动 playingSentence(karaoke/伴学跟读共用该状态);没有音频字节,
+ * 口型时间轴不可用(嘴型静默是已知降级)。档位配置(getSetting 三元组)缓存在
+ * ref,挂载时拉取 + window 事件广播刷新(SettingsView 改设置时发)——点击时
+ * 同步判定档位,不在手势后再 await(Android 首句手势豁免会丢)。
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { companionSetTalking } from "./companion/bus.ts";
+import { pickSystemVoice } from "./system-tts.ts";
 
+import { speechSentencesOf } from "@shared/speech-text";
 import type { SpeechTtsAudioEvent } from "@shared/speech-types";
+import { TTS_SETTINGS_CHANGED_EVENT } from "./system-tts.ts";
 import { connectSpeechSource, getSpeechAnalyser, setActivePlayback } from "./speech-analyser.js";
 import { analyzeVisemeTimeline, cuesToTimeline, type VisemeTimeline } from "./companion/viseme-timeline.js";
 
@@ -68,6 +78,83 @@ export function useSpeech(): {
   const doneRef = useRef(false);
   const activeIdRef = useRef<string | null>(null);
   const totalRef = useRef(0);
+
+  // ── system 档(speechSynthesis)状态 ──────────────────────────
+  /** 档位缓存(tts_engine/tts_system_voice/tts_speed);null=仍在拉取 */
+  const ttsCfgRef = useRef<{ engine: string; systemVoice: string | null; speed: number } | null>(null);
+  /** system 档逐句队列(null=不在 system 播放) */
+  const sysRef = useRef<{
+    messageId: string;
+    sentences: string[];
+    i: number;
+    stopped: boolean;
+    voice: SpeechSynthesisVoice | null;
+    rate: number;
+  } | null>(null);
+  /** 惰性建一次的步进函数(闭包只触 ref+setState,跨渲染安全) */
+  const sysStepRef = useRef<(() => void) | null>(null);
+  if (!sysStepRef.current) {
+    sysStepRef.current = () => {
+      const q = sysRef.current;
+      const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
+      if (!q || q.stopped || !synth) return;
+      if (q.i >= q.sentences.length) {
+        // 自然收尾(与主路径 finishIfDrained 同款终态)
+        sysRef.current = null;
+        activeIdRef.current = null;
+        setSpeakingMessageId(null);
+        setSpeakingSentence(null);
+        setPlayingSentence(null);
+        return;
+      }
+      const idx = q.i;
+      const text = q.sentences[idx]!;
+      const u = new SpeechSynthesisUtterance(text);
+      if (q.voice) {
+        u.voice = q.voice;
+        u.lang = q.voice.lang;
+      }
+      u.rate = q.rate;
+      u.onstart = () => {
+        if (!sysRef.current || sysRef.current.stopped) return;
+        setPlayingSentence({ index: idx, total: q.sentences.length, text });
+      };
+      const advance = () => {
+        if (!sysRef.current || sysRef.current.stopped) return;
+        sysRef.current.i += 1;
+        sysStepRef.current?.();
+      };
+      // 单句失败(音色缺失/引擎拒绝)跳下一句;句句都失败时首句后 onstart 从未
+      // 触发,最终仍会走完 advance 链收尾——静音但状态机不吊死
+      u.onend = advance;
+      u.onerror = advance;
+      synth.speak(u);
+    };
+  }
+
+  const speakSystem = useCallback((messageId: string, text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setFailReason("engine-unavailable");
+      return;
+    }
+    const sentences = speechSentencesOf(text);
+    if (sentences.length === 0) {
+      setFailReason("empty-text");
+      return;
+    }
+    // 句表与 streamTexts 同源登记:karaoke 用 playedSentencePrefix 拼前缀
+    streamTextsRef.current = sentences.slice();
+    setStreamTexts(sentences.slice());
+    totalRef.current = sentences.length;
+    setSpeakingSentence({ index: 0, total: sentences.length, text: sentences[0] ?? "" });
+    const cfg = ttsCfgRef.current;
+    // getVoices() 首次可能为空(voiceschanged 异步):先以平台默认音色起播,
+    // 下面的 voiceschanged 监听会把后续句的音色补上
+    const voice = pickSystemVoice(window.speechSynthesis.getVoices(), cfg?.systemVoice ?? null);
+    sysRef.current = { messageId, sentences, i: 0, stopped: false, voice, rate: clampRate(cfg?.speed) };
+    window.speechSynthesis.cancel();
+    sysStepRef.current?.();
+  }, []);
 
   const ensureCtx = () => {
     if (!ctxRef.current) {
@@ -148,6 +235,12 @@ export function useSpeech(): {
     setSpeakingMessageId(null);
     setSpeakingSentence(null);
     setPlayingSentence(null);
+    // system 档:撕队列 + cancel(Android 上 pause 语义残缺,cancel 是唯一可靠停法)
+    if (sysRef.current) {
+      sysRef.current.stopped = true;
+      sysRef.current = null;
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
   }, []);
 
   const stop = useCallback(() => {
@@ -175,6 +268,11 @@ export function useSpeech(): {
       totalRef.current = 0;
       setSpeakingMessageId(messageId);
       setSpeakingSentence({ index: 0, total: 0, text: "" });
+      // system 档:渲染层自治管线,不进 IPC(点击手势内同步起播)
+      if (ttsCfgRef.current?.engine === "system") {
+        speakSystem(messageId, text);
+        return;
+      }
       ensureCtx();
       void window.api
         .ttsSpeak(text, messageId)
@@ -188,7 +286,7 @@ export function useSpeech(): {
         })
         .catch(() => stopLocal());
     },
-    [stop, stopLocal],
+    [speakSystem, stop, stopLocal],
   );
 
   useEffect(() => {
@@ -253,6 +351,44 @@ export function useSpeech(): {
     return () => window.removeEventListener("lookatstudy-speech-start", onOtherStart);
   }, [stopLocal]);
 
+  // system 档位缓存:挂载拉取 + 设置页广播刷新(点击时同步判定档位,不在
+  // 手势后 await——Android 首句的手势豁免会因异步间隙丢失)
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      void Promise.all([
+        window.api.getSetting("tts_engine"),
+        window.api.getSetting("tts_system_voice"),
+        window.api.getSetting("tts_speed"),
+      ])
+        .then(([e, v, s]) => {
+          if (alive) {
+            ttsCfgRef.current = { engine: (e ?? "").trim(), systemVoice: v ?? null, speed: clampRate(s) };
+          }
+        })
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener(TTS_SETTINGS_CHANGED_EVENT, load);
+    return () => {
+      alive = false;
+      window.removeEventListener(TTS_SETTINGS_CHANGED_EVENT, load);
+    };
+  }, []);
+
+  // system 档:getVoices() 首次常为空(voiceschanged 异步)——起播先用平台默认,
+  // 列表到位后给后续句换上挑选音色
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const onVoices = () => {
+      const q = sysRef.current;
+      if (!q || q.voice) return;
+      q.voice = pickSystemVoice(window.speechSynthesis.getVoices(), ttsCfgRef.current?.systemVoice ?? null);
+    };
+    window.speechSynthesis.addEventListener("voiceschanged", onVoices);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", onVoices);
+  }, []);
+
   // 伴学 talking 信号(v3 下沉到引擎层):speakingMessageId 即朗读事实——
   // 谁在放谁发事件,同一次渲染必达(旧法在组件层按节点 id 对比,曾静默失效)。
   useEffect(() => {
@@ -281,4 +417,11 @@ function mixdownMono(buf: AudioBuffer): Float32Array {
   const out = new Float32Array(a.length);
   for (let i = 0; i < a.length; i++) out[i] = (a[i]! + b[i]!) / 2;
   return out;
+}
+
+/** utterance.rate 的多倍率钳制(与 main tts-tiers clampSpeed 同语义,渲染层本地实现) */
+function clampRate(raw: string | null | undefined): number {
+  const v = Number.parseFloat(raw ?? "");
+  if (!Number.isFinite(v)) return 1.0;
+  return Math.min(2.0, Math.max(0.5, v));
 }

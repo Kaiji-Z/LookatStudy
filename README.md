@@ -95,7 +95,7 @@ The phone runs the server itself and Chrome talks to it over localhost, so your 
 
 ## Under the hood
 
-Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there's nothing native to build and `npm install` doesn't blow up on Windows. The renderer can't reach the database, the filesystem, or your key. Every cross-process call goes through one typed IPC bridge. Eighty-nine deterministic test suites and a headless real-GUI test watch the whole thing, all runnable with `npm run verify:core`.
+Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there's nothing native to build and `npm install` doesn't blow up on Windows. The renderer can't reach the database, the filesystem, or your key. Every cross-process call goes through one typed IPC bridge. One hundred deterministic test suites and a headless real-GUI test watch the whole thing, all runnable with `npm run verify:core`.
 
 ## Status
 

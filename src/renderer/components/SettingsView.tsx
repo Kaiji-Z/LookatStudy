@@ -29,6 +29,14 @@ import { ConfirmCard } from "./ConfirmCard.js";
 import { CustomProviderForm } from "./CustomProviderForm.js";
 import { useTheme, type ThemeMode } from "../lib/useTheme.js";
 import { useLang, setLang, getLang } from "../lib/i18n.js";
+import { sortVoicesZhFirst, systemVoiceLabel, TTS_SETTINGS_CHANGED_EVENT } from "../lib/system-tts.ts";
+
+type SystemVoiceOption = SpeechSynthesisVoice;
+
+/** 语音设置落库后广播:useSpeech 实例重拉档位缓存(system 档点击时同步判定) */
+function notifyTtsSettingsChanged(): void {
+  window.dispatchEvent(new Event(TTS_SETTINGS_CHANGED_EVENT));
+}
 
 /** 表单控件统一样式:token 化背景/边框/聚焦,placeholder 用 ink-faint 保 ≥4.5:1 对比。 */
 const fieldCls =
@@ -1048,11 +1056,15 @@ function SpeechContent() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // v0.15 引擎值:内置 id("edge"/"local")或 "custom-<id>";旧库可能残留 azure
+  // v0.18 增 "system"(浏览器/系统 speechSynthesis,渲染层管线)
   const [engine, setEngine] = useState<string>("edge");
   const [voiceEdge, setVoiceEdge] = useState("zh-CN-XiaoxiaoNeural");
   const [sidLocal, setSidLocal] = useState("48");
   const [speed, setSpeed] = useState("1.0");
   const [customVoice, setCustomVoice] = useState("");
+  const [systemVoice, setSystemVoice] = useState("");
+  const [systemVoices, setSystemVoices] = useState<SystemVoiceOption[]>([]);
+  const systemTtsAvailable = typeof window !== "undefined" && "speechSynthesis" in window;
   // 听写:"local" 或 "custom-<id>";旧库可能残留 groq/azure
   const [asrEngine, setAsrEngine] = useState<string>("local");
   const [asrLocalModel, setAsrLocalModel] = useState("asr-whisper-turbo");
@@ -1084,21 +1096,32 @@ function SpeechContent() {
       api.getSetting("tts_sid_local"),
       api.getSetting("tts_speed"),
       api.getSetting("tts_custom_voice"),
+      api.getSetting("tts_system_voice"),
       api.getSetting("asr_engine"),
       api.getSetting("asr_local_model"),
       api.getSetting("asr_auto_stop"),
-    ]).then(([e, ve, sid, sp, cv, ae, alm, autoStopRaw]) => {
+    ]).then(([e, ve, sid, sp, cv, sv, ae, alm, autoStopRaw]) => {
       if (e) setEngine(e);
       if (ve) setVoiceEdge(ve);
       if (sid) setSidLocal(sid);
       if (sp) setSpeed(sp);
       if (cv) setCustomVoice(cv);
+      if (sv) setSystemVoice(sv);
       if (ae) setAsrEngine(ae);
       if (alm === "asr-whisper-turbo" || alm === "asr-whisper-small") setAsrLocalModel(alm);
       setAsrAutoStop(autoStopRaw !== "0");
     });
     refreshCustoms();
   }, [refreshCustoms]);
+
+  // system 档音色表(getVoices 异步,voiceschanged 后重拉;中文优先排序)
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const load = () => setSystemVoices(sortVoicesZhFirst(window.speechSynthesis.getVoices()));
+    load();
+    window.speechSynthesis.addEventListener("voiceschanged", load);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", load);
+  }, []);
 
   const refresh = useCallback(() => {
     void window.api
@@ -1167,6 +1190,12 @@ function SpeechContent() {
     setEngine(next);
     setTtsTestResult(null);
     void api.setSetting("tts_engine", next);
+    notifyTtsSettingsChanged();
+  };
+  const saveSystemVoice = (next: string) => {
+    setSystemVoice(next);
+    void api.setSetting("tts_system_voice", next);
+    notifyTtsSettingsChanged();
   };
   const saveAsrEngine = (next: string) => {
     setAsrEngine(next);
@@ -1360,6 +1389,22 @@ function SpeechContent() {
           </button>
           <button
             onClick={() => {
+              saveEngine("system");
+              setTtsExpanded(false);
+              setShowTtsForm(false);
+            }}
+            disabled={!systemTtsAvailable}
+            data-testid="tts-engine-system"
+            aria-pressed={engine === "system"}
+            title={systemTtsAvailable ? undefined : t("settings.speech.engine.system_unavailable")}
+            className={`px-4 py-2 rounded-xl text-body font-bold transition-all ${
+              engine === "system" ? pillActiveCls : pillInactiveCls
+            } ${systemTtsAvailable ? "" : "opacity-40 cursor-not-allowed"}`}
+          >
+            {t("settings.speech.engine.system")}
+          </button>
+          <button
+            onClick={() => {
               setTtsExpanded((s) => !s);
               if (!ttsExpanded) setShowTtsForm(false);
             }}
@@ -1422,6 +1467,27 @@ function SpeechContent() {
             </select>
           </div>
           <div className={rowCls(false)}>{modelRow("tts-kokoro")}</div>
+        </>
+      )}
+
+      {/* system 档:音色随设备引擎(中文优先列出);"自动"=pickSystemVoice 挑中文 */}
+      {engine === "system" && (
+        <>
+          <div className={rowCls(false)}>
+            <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.speech.voice")}</div>
+            <select
+              value={systemVoice}
+              onChange={(e) => saveSystemVoice(e.target.value)}
+              data-testid="tts-system-voice-select"
+              className={`${fieldCls} w-full min-w-0 px-2.5 py-1.5`}
+            >
+              <option value="">{t("settings.speech.voice_auto")}</option>
+              {systemVoices.map((v) => (
+                <option key={v.voiceURI} value={v.name}>{systemVoiceLabel(v)}</option>
+              ))}
+            </select>
+            <p className="text-label text-ink-muted mt-2">{t("settings.speech.engine.system_note")}</p>
+          </div>
         </>
       )}
 
@@ -1491,8 +1557,14 @@ function SpeechContent() {
             step="0.05"
             value={speed}
             onChange={(e) => setSpeed(e.target.value)}
-            onPointerUp={() => void api.setSetting("tts_speed", speed)}
-            onKeyUp={() => void api.setSetting("tts_speed", speed)}
+            onPointerUp={() => {
+              void api.setSetting("tts_speed", speed);
+              notifyTtsSettingsChanged();
+            }}
+            onKeyUp={() => {
+              void api.setSetting("tts_speed", speed);
+              notifyTtsSettingsChanged();
+            }}
             data-testid="tts-speed-range"
             className="flex-1 min-w-0 accent-[var(--brand)]"
           />

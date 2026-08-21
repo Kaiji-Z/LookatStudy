@@ -4,11 +4,15 @@
  * 档位(v0.15):edge(默认,微软在线,免费无 key)/ local(kokoro 离线)/
  * custom-<id>(自定义 provider,OpenAI 兼容 /audio/speech)。
  * azure 是 v0.13-0.14 的旧取值,后端仍解析(老库已配用户不受影响),UI 不再提供。
+ * system(v0.18)= 浏览器/系统 speechSynthesis 引擎:**渲染层自实现播放管线**
+ * (逐句 utterance 驱动 playingSentence,句切分走 speechSentencesOf 同一入口),
+ * 主进程不参与合成;speakMessage 收到 system 档只做防御性拒绝(正常路径
+ * 渲染层根本不发起 ttsSpeak IPC)。
  * 语义 speed 是统一的多倍率(1.0=常速);edge 需要转成 SSML 百分比("+10%"),
- * kokoro 直接吃多倍率,custom 转成 OpenAI speed 参数。
+ * kokoro 直接吃多倍率,custom 转成 OpenAI speed 参数,system 直接映射 utterance.rate。
  */
 
-export type TtsEngineTier = "edge" | "azure" | "local" | "custom";
+export type TtsEngineTier = "edge" | "azure" | "local" | "custom" | "system";
 
 export interface TtsTierConfig {
   engine: TtsEngineTier;
@@ -18,6 +22,8 @@ export interface TtsTierConfig {
   voice: string;
   /** custom 档音色(OpenAI /audio/speech 的 voice 参数,可空=端点默认) */
   customVoice: string | null;
+  /** system 档音色名(speechSynthesis voice.name;空=渲染层自动挑中文音色) */
+  systemVoice: string | null;
   /** 统一语速多倍率 */
   speed: number;
   /** azure 专属(旧库遗留) */
@@ -75,7 +81,7 @@ export function resolveTtsTier(settings: Record<string, string | null>): TtsTier
   const engineRaw = settings.tts_engine?.trim() ?? "";
   const isCustom = engineRaw.startsWith("custom-");
   const engine: TtsEngineTier =
-    isCustom || engineRaw === "azure" || engineRaw === "local" || engineRaw === "edge"
+    isCustom || engineRaw === "azure" || engineRaw === "local" || engineRaw === "edge" || engineRaw === "system"
       ? (isCustom ? "custom" : (engineRaw as TtsEngineTier))
       : DEFAULT_TTS_ENGINE;
   const voice =
@@ -87,6 +93,7 @@ export function resolveTtsTier(settings: Record<string, string | null>): TtsTier
     customProviderId: isCustom ? engineRaw : null,
     voice,
     customVoice: settings.tts_custom_voice?.trim() || null,
+    systemVoice: settings.tts_system_voice?.trim() || null,
     speed: clampSpeed(settings.tts_speed),
     azureKey: settings.azure_tts_api_key?.trim() || null,
     azureRegion: settings.azure_tts_region?.trim() || null,

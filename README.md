@@ -58,6 +58,8 @@ Each chapter ends with an exam guarding the gate. The questions are generated in
 - Images ride along with the content, notebook outputs and PDF embeds included. With a vision model, the tutor actually looks at the figure when you ask about it.
 - Bilingual sources pair up automatically. A `translations/{lang}/` folder, parallel folders, or `file.zh.md` suffixes all get recognized.
 
+Math formulas work end to end. LaTeX in any lesson, chat reply, or quiz question renders as typeset math, read-aloud says formulas in spoken words instead of backslash commands, and the exercise generator is told it may use LaTeX freely.
+
 ## It reads out loud and takes dictation
 
 A lesson can be read to you end to end, sentence by sentence, with the sentence being spoken highlighted in the text. The default voice is a free online one, an offline neural voice can be downloaded for no-network use, and the voices already installed on your device are selectable too. Dictation runs the other way. Hold the mic button, speak, release, and local Whisper writes it down, with a chance to fix the transcript before it goes out. Everything works offline once the models are down, on the phone as well.
@@ -109,7 +111,7 @@ Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there
 
 ## Status
 
-v0.18.0. The main loop, importing almost anything, learning with the tutor, reviewing, taking exams, reading aloud, is complete, and I use it daily. Full history in [CHANGELOG.md](CHANGELOG.md).
+v0.19.0. The main loop, importing almost anything, learning with the tutor, reviewing, taking exams, reading aloud, is complete, and I use it daily. Full history in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

@@ -44,7 +44,8 @@ export default defineConfig({
               // officeparser 内部 PdfGenerator 动态 import puppeteer(仅 PDF 路径),
               // rollup 解析不了 → externalize;我们只走 PPTX 路径, puppeteer 永不加载
               // @firecrawl/pdf-inspector 是 napi .node 二进制, 运行时 require, 不能 bundle
-              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse", "officeparser", "@firecrawl/pdf-inspector", "sherpa-onnx-node", "node-edge-tts", "audio-decode"],
+              // @napi-rs/canvas 同为 napi 二进制(pdf 公式视觉转写的整页渲染源)
+              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse", "officeparser", "@firecrawl/pdf-inspector", "sherpa-onnx-node", "node-edge-tts", "audio-decode", "@napi-rs/canvas"],
               output: {
                 format: "cjs", // CJS 让 __dirname 天然可用，避免 ESM 路径坑
               },

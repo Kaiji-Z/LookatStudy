@@ -28,6 +28,7 @@ Electron app, local SQLite (sql.js), BYO LLM API key. Light/dark theme.
 - **Vercel AI SDK v5** (`ai` + `@ai-sdk/openai` + `@ai-sdk/openai-compatible` + `@ai-sdk/anthropic` + `@ai-sdk/google`) · **zod v3** for tool schemas
 - **sql.js** (SQLite compiled to WASM, pure JS) + **Drizzle ORM** — *not* better-sqlite3
 - **pdfjs-dist** (PDF rendering, pure WASM/JS) — for PDF text + image extraction, no canvas dependency
+- **@napi-rs/canvas** (预编译 napi, v0.20) — 主进程整页渲染 PDF→PNG(公式密集页 vision 转写取图源);`globalThis.Path2D` 胶水必须在 import pdfjs 前补(`pdf-page-image.ts`);主束/移动束 external,平台无预编译自动回退文本层
 - **katex** + **remark-math** + **rehype-katex** (v0.19 数学渲染) — 讲解区/对话流公式渲染(插件序 raw→sanitize→katex);**getTextModel 跳过 `.katex-html` 只收 `.katex-mathml` annotation**(画线/朗读匹配对公式课不断裂的红线);朗读口语化在 `shared/math-speech.ts`(只转喂引擎的文本,句事件发原文)
 - **sherpa-onnx-node** (native sherpa-onnx) — local TTS (Kokoro fp32) + offline ASR (Whisper turbo/small int8, v0.13 质量优先取代 zipformer 流式).
   CRITICAL: every native→JS Float32Array transfer MUST pass `enableExternalBuffer: false`
@@ -197,7 +198,8 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | Export | `services/export-service.ts` | JSON + Markdown learning report export |
 | Starter prompts | `services/starter-prompts-service.ts` | 4 巩固选择(深入/举个例子/考考我/我没太懂),hook 揭晓后、对话开始后才出现(语境前零决策税);原 ? 卡点表单折进「我没太懂」(发消息+记 friction);`frictionCategory` 字段标记;每个带稳定 `key`，渲染层按界面语言查 `starter.{key}.*` 字典覆盖 label/hint/message |
 | Multimodal assets | `services/asset-service.ts` | `node_assets` CRUD — 图片/PDF 渲染图元数据(二进制存 `userData/assets/{courseId}/`,不入 DB blob);`listAssetsByNode` / `getAssetDataUrl` (base64) |
-| PDF text | `lib/pdf-text.ts` | `parsePdfText(buf)` — PDF **文本**提取路由:优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 + 多栏阅读顺序), 失败/平台不支持(Intel Mac/WinARM 无预编译)回退 `pdf-parse`;`LOOKATSTUDY_NO_PDF_INSPECTOR=1` 强制回退。**已知局限:不解码数学公式**(文本层赛道本质局限, STEM 留给未来 vision 路径) |
+| PDF text | `lib/pdf-text.ts` | `parsePdfText(buf)` — PDF **文本**提取路由:优先 `@firecrawl/pdf-inspector`(预编译 napi-rs, layout-aware markdown — 标题层级 + 多栏阅读顺序), 失败/平台不支持(Intel Mac/WinARM 无预编译)回退 `pdf-parse`;`LOOKATSTUDY_NO_PDF_INSPECTOR=1` 强制回退。**已知局限:纯文本层不解码数学公式**——密集页走下一行 vision 转写 |
+| PDF math vision | `services/pdf-math-vision.ts` + `pdf-page-image.ts` + `pure/math-dense.ts` | v0.20 PDF 公式密集页 vision 转写(BYOK, flag `flag_math_vision` 默认 off):`mathDensePageIndexes` 纯函数双信号检测(数学字形密度≥6/千字 或 符号汤行≥20%;×÷ 是 WinAnsi 里唯二能穿过 pdfjs 提取的运算符,± 会被换成 –)→ `openPdfPages` 整页渲染(@napi-rs/canvas 预编译 napi + pdfjs,`globalThis.Path2D` 胶水必须在 import pdfjs 前补;standardFontDataUrl 双环境候选)→ 视觉模型按页转 LaTeX(`generateTextWithTimeout` messages 模式,sha256 缓存 FIFO 120)。三层门控不满足/单页失败/平台无预编译一律回退文本层并留进度消息;文件夹导入(scanner `parsePdf` 注入)与 arXiv(`fetchArxivMarkdown` opts.parsePdf)两入口接线 |
 | PDF renderer | `lib/pdf-renderer.ts` | pdfjs-dist 封装:**内嵌图片提取**(纯 JS PNG 编码,无 canvas 依赖);`classifyPdfPageByTextRatio` 判断纯文字/纯图片/混合。文字提取已移至 `lib/pdf-text.ts`,本文件现仅图片 |
 | PPTX parser | `lib/pptx-parser.ts` | officeparser AST → `{markdown, images}`;每 slide 一个 `##`(讲者备注非标题随 slide), 现有导入管线自动每 slide 一节课。内嵌图片复用 pdf_page source(避 schema CHECK 迁移)。仅 `.pptx` |
 | Notebook parser | `services/pure/notebook-parser.ts` | Jupyter `.ipynb` JSON 解析:markdown cell 原文 + code cell → ```代码块 + output 图片提取(base64);`inferLanguage` 从 kernelspec 推断语言 |

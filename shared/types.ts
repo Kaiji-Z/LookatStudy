@@ -917,6 +917,8 @@ export type SettingKey =
   | "flag_multimodal_import"
   | "flag_image_download"
   | "flag_memory_system"
+  // v0.20: PDF 公式密集页 vision 转写(默认 off,BYOK 视觉覆盖)
+  | "flag_math_vision"
   // 多模态:可选的 vision 模型覆盖(不配则复用主模型)
   | "vision_provider_override"
   | "vision_model_override"

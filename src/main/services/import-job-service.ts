@@ -52,6 +52,7 @@ import { fetchArticleMarkdown, fetchArxivMarkdown } from "./url-import-service.j
 import { parseEpub } from "../lib/epub-parser.js";
 import { decodeAudioTo16kMono, AUDIO_IMPORT_EXTS } from "./speech/audio-file-decode.js";
 import { readSettingsMap } from "./agent/llm-client.js";
+import { parsePdfTextSmart } from "./pdf-math-vision.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -222,8 +223,15 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       }
       folderPath = path;
       send("正在扫描文件夹…");
+      // PDF 公式视觉转写(v0.20):flag_math_vision 开 + 配了视觉覆盖才真正走
+      // vision,parsePdfTextSmart 内部三层门控,不满足时= 文本层零变化。
+      // (不 import flags.js 的 isFlagOn —— 它拖 db/index 的 ?raw 链,tsx verify 进不去;
+      // settings 值约定与 flag_multimodal_import 相同:String(boolean))
+      const mathVisionOn = readSettingsMap(db)["flag_math_vision"] === "true";
       const inv = await buildLocalInventory(path, (n) => {
         if (n % 20 === 0) send(`已扫描 ${n} 个文件…`);
+      }, {
+        parsePdf: (buf) => parsePdfTextSmart(buf, { db, flagOn: mathVisionOn, onProgress: send, signal: cancelCtl.signal }),
       });
       if (inv.docs.length === 0) {
         throw new Error("文件夹里没有找到可识别的文本内容(.txt/.md/.html/.pdf)");
@@ -270,7 +278,9 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
           return await runSmartImport({ kind: "video", url: route.url }, deps);
         }
         if (route.flavor === "arxiv") {
-          const { title, markdown } = await fetchArxivMarkdown(route.arxivId, route.pdfUrl, route.url, fetchFn, send, cancelCtl.signal);
+          const { title, markdown } = await fetchArxivMarkdown(route.arxivId, route.pdfUrl, route.url, fetchFn, send, cancelCtl.signal, {
+            parsePdf: (buf) => parsePdfTextSmart(buf, { db, flagOn: readSettingsMap(db)["flag_math_vision"] === "true", onProgress: send, signal: cancelCtl.signal }),
+          });
           entries = prepareSingleDoc(title, markdown, `arxiv-${route.arxivId}`).map((p) => [p.path, p.content] as [string, string]);
           displayName = title;
         } else {

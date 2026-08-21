@@ -13,7 +13,8 @@ export type FlagName =
   | "lightweight_rag" // M3: 轻量 RAG
   | "memory_system" // 学习者记忆(remember tool + 注入);Phase1 已接线,默认 off(off=baseline)
   | "image_download" // 导入时从 CDN 下载 md/ipynb 里引用的相对路径图片(不涉及 AI)
-  | "multimodal_import"; // AI 多模态:vision 模型识图/看图(需要 API key + vision 模型)
+  | "multimodal_import" // AI 多模态:vision 模型识图/看图(需要 API key + vision 模型)
+  | "math_vision"; // v0.20: PDF 公式密集页 vision 转写(BYOK 视觉覆盖;off=纯文本层)
 
 export const FLAG_DEFAULTS: Record<FlagName, boolean> = {
   agent_engine: false,
@@ -23,6 +24,7 @@ export const FLAG_DEFAULTS: Record<FlagName, boolean> = {
   // 图片下载默认 on —— md 里有图片引用就应该导入,不需要 AI 识图
   image_download: true,
   multimodal_import: false,
+  math_vision: false,
 };
 
 /** 类型守卫：避免用字符串乱传 flag 名 */

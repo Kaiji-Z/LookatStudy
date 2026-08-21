@@ -195,7 +195,7 @@ export function dedupKey(relPath: string): string {
 export async function scanFolder(
   rootDir: string,
   onProgress?: (scanned: number, currentPath: string) => void,
-  options?: { collectImages?: boolean },
+  options?: { collectImages?: boolean; parsePdf?: (buf: Buffer) => Promise<string> },
 ): Promise<ScannedDoc[] | { docs: ScannedDoc[]; images: ScannedImage[] }> {
   const allFiles: { absPath: string; relPath: string; isImage: boolean }[] = [];
   await walkDir(rootDir, rootDir, allFiles);
@@ -215,7 +215,7 @@ export async function scanFolder(
     const kind = EXT_KIND[ext];
     if (!kind) continue;
     try {
-      const content = await readFileWithKind(f.absPath, kind);
+      const content = await readFileWithKind(f.absPath, kind, options?.parsePdf);
       if (!content || content.trim().length < 5) continue; // 跳过空/太短文件(中文 4-5 字也算有效)
       const lang = detectLang(f.relPath);
       docs.push({
@@ -534,11 +534,17 @@ async function walkDir(root: string, current: string, acc: { absPath: string; re
   }
 }
 
-async function readFileWithKind(absPath: string, kind: ScannedDoc["kind"]): Promise<string> {
+async function readFileWithKind(
+  absPath: string,
+  kind: ScannedDoc["kind"],
+  parsePdf?: (buf: Buffer) => Promise<string>,
+): Promise<string> {
   if (kind === "pdf") {
+    // parsePdf 注入(v0.20 公式视觉转写,flag 门控在调用方);缺省走文本层:
     // 优先 pdf-inspector(layout-aware markdown), 失败/平台不支持回退 pdf-parse。
     // 路由 + 兜底集中在 lib/pdf-text.ts(平台缺预编译时 require 会抛, 不能让导入挂)。
     const buf = await readFile(absPath);
+    if (parsePdf) return parsePdf(buf);
     const { parsePdfText } = await import("../../lib/pdf-text.js");
     return parsePdfText(buf);
   }
@@ -651,9 +657,10 @@ export interface LocalInventory {
 export async function buildLocalInventory(
   rootDir: string,
   onProgress?: (scanned: number, currentPath: string) => void,
+  options?: { parsePdf?: (buf: Buffer) => Promise<string> },
 ): Promise<LocalInventory> {
   // 1. 扫描文档 + 图片(scanFolder 内部排除 translations/,不影响)
-  const scanResult = await scanFolder(rootDir, onProgress, { collectImages: true });
+  const scanResult = await scanFolder(rootDir, onProgress, { collectImages: true, parsePdf: options?.parsePdf });
   // collectImages:true → 返回 { docs, images }（不是 ScannedDoc[]）
   const { docs, images } = Array.isArray(scanResult) ? { docs: scanResult, images: [] } : scanResult;
 

@@ -98,7 +98,8 @@ export function buildImportModel(
 
 export async function generateTextWithTimeout(
   model: Parameters<typeof streamText>[0]["model"],
-  prompt: string,
+  /** 纯文本 prompt,或完整 messages(v0.20 P6:PDF 公式页 vision 转写喂 图+文)。 */
+  prompt: string | NonNullable<Parameters<typeof streamText>[0]["messages"]>,
   opts?: ImportCallOpts,
 ): Promise<string> {
   // 预取消直接拒绝(SDK 对已 abort 的信号不保证立刻抛,空流会静默成功)
@@ -108,7 +109,8 @@ export async function generateTextWithTimeout(
   try {
     const result = streamText({
       model,
-      prompt,
+      // typeof 判别(messages 也是数组,Array.isArray 分不开 union)
+      ...(typeof prompt === "string" ? { prompt } : { messages: prompt }),
       abortSignal: signal,
       maxOutputTokens: opts?.maxOutputTokens ?? IMPORT_MAX_OUTPUT_TOKENS,
       ...(opts?.providerOptions ? { providerOptions: opts.providerOptions } : {}),

@@ -935,6 +935,8 @@ export type SettingKey =
   | "azure_tts_region"
   // v0.15:自定义朗读的音色(OpenAI 兼容 /audio/speech 的 voice 参数,可空)
   | "tts_custom_voice"
+  // v0.18:system 档音色名(浏览器 speechSynthesis voice.name;空=渲染层自动挑中文)
+  | "tts_system_voice"
   // edge 档首次使用已披露(在线服务告知,一次性)
   | "tts_edge_disclosed"
   // v0.13 听写三档:local(Whisper 离线,默认)/groq(复用 LLM preset key)/azure STT

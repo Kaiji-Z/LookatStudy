@@ -419,9 +419,10 @@ function mixdownMono(buf: AudioBuffer): Float32Array {
   return out;
 }
 
-/** utterance.rate 的多倍率钳制(与 main tts-tiers clampSpeed 同语义,渲染层本地实现) */
-function clampRate(raw: string | null | undefined): number {
-  const v = Number.parseFloat(raw ?? "");
+/** utterance.rate 的多倍率钳制(与 main tts-tiers clampSpeed 同语义,渲染层本地实现;
+ *  接受 number(档位缓存已钳过)或 string(设置原值)) */
+function clampRate(raw: number | string | null | undefined): number {
+  const v = typeof raw === "number" ? raw : Number.parseFloat(raw ?? "");
   if (!Number.isFinite(v)) return 1.0;
   return Math.min(2.0, Math.max(0.5, v));
 }

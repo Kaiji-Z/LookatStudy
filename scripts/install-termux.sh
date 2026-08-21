@@ -5,7 +5,9 @@
 #   bash ~/lookatstudy/stop.sh        # 停止
 #   bash ~/lookatstudy/status.sh      # 状态 + 访问链接
 #   bash ~/lookatstudy/update.sh      # 更新便携包并重启
-# 不在本机跑 npm:便携包与语音引擎包的 tarball 主源 npmmirror(自动同步 npmjs),未同步/失败回退 GitHub Release 直连+代理链。
+# 不在本机跑 npm。安装与升级(update.sh)走同一条下载链:
+#   npmmirror 主源(+滞后守卫) → npm 官方源 → GitHub Release 直连 → gh 代理链。
+# update.sh 的函数体与本文件逐字同源(verify-termux-voice T7 守链序与两份同步)。
 set -euo pipefail
 
 PORT="${LOOKATSTUDY_PORT:-17890}"
@@ -18,21 +20,31 @@ DL_PREFIXES=("" "https://gh-proxy.com/" "https://ghproxy.net/" "https://ghfast.t
 
 # npmmirror(阿里,自动同步 npm)解析包的 latest tarball 地址;空输出=未同步/网络失败。
 # 同步滞后守卫:刚发版的头几分钟镜像 latest 可能还指向上一个版本,静默拿到旧包
-# —— 版本落后于 GitHub 最新 release 时按"未命中"处理,走 GitHub 回退链(GitHub 的
-# releases/latest/download 永远指向最新版)。GitHub 版本探测失败(网络)则信任镜像,
-# 不因 GitHub 不可达惩罚国内直连的镜像主源。
+# —— 版本落后于 GitHub 最新 release 时按"未命中"处理,让位 npm 官方源/GitHub 链
+# (GitHub 的 releases/latest/download 永远指向最新版)。GitHub 版本探测失败(网络)
+# 则信任镜像,不因 GitHub 不可达惩罚国内直连的镜像主源。
+# 契约:恒 exit 0,空输出=未命中 —— 调用方都是 tb=$(npm_tarball …) 裸赋值,老写法
+# miss 返回 1 会把 set -e 的脚本整个静默杀掉(eeeada1 的滞后守卫实际从未走到回退链的根因)。
 npm_tarball() {
   local json ver gh
   json=$(curl -sfL --connect-timeout 8 --max-time 20 "https://registry.npmmirror.com/$1/latest" || true)
-  [ -n "$json" ] || return 1
+  [ -n "$json" ] || return 0
   ver=$(printf '%s' "$json" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
   if [ -n "$ver" ]; then
     gh=$(gh_latest_version)
     if [ -n "$gh" ] && ! ver_ge "$ver" "$gh"; then
-      info "npm 镜像同步滞后(镜像 v${ver} < GitHub v${gh}),走 GitHub 链…"
-      return 1
+      info "npm 镜像同步滞后(镜像 v${ver} < GitHub v${gh}),换 npm 官方源…"
+      return 0
     fi
   fi
+  printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p'
+}
+
+# npm 官方源(权威、零同步滞后):镜像未命中/滞后时的第一兜底,先于 GitHub 链。
+# 同一契约:恒 exit 0,空输出=未命中。
+npm_tarball_official() {
+  local json
+  json=$(curl -sfL --connect-timeout 8 --max-time 20 "https://registry.npmjs.org/$1/latest" || true)
   printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p'
 }
 
@@ -115,7 +127,15 @@ download_bundle() {
     ok "便携包就位(npm 镜像): $APP_DIR"
     return 0
   fi
-  info "npm 镜像未命中,回退 GitHub 直连+代理链..."
+  # 次选:npm 官方源(权威零滞后,接住镜像同步窗口)
+  tb=$(npm_tarball_official lookatstudy-mobile)
+  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb"; then
+    tar -xzf mobile.tgz --strip-components=1
+    rm -f mobile.tgz
+    ok "便携包就位(npm 官方源): $APP_DIR"
+    return 0
+  fi
+  info "npm 源未命中,回退 GitHub 直连+代理链..."
   local dl_ok=0 p=""
   for p in "${DL_PREFIXES[@]}"; do
     if curl -fL --connect-timeout 10 --retry 2 -o ls.zip "${p}${GH_ASSET}"; then
@@ -147,7 +167,15 @@ install_voice() {
     info "装完模型重启服务生效: bash ~/lookatstudy/start.sh"
     return 0
   fi
-  info "npm 镜像未命中,回退 GitHub 直连+代理链..."
+  # 次选:npm 官方源(权威零滞后,接住镜像同步窗口)
+  tb=$(npm_tarball_official lookatstudy-termux-voice)
+  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o voice.tgz "$tb"; then
+    tar -xzf voice.tgz --strip-components=1 -C "$APP_DIR/node_modules"
+    rm -f voice.tgz
+    ok "语音引擎就位(npm 官方源): $APP_DIR/node_modules/sherpa-onnx-node"
+    return 0
+  fi
+  info "npm 源未命中,回退 GitHub 直连+代理链..."
   local dl_ok=0 p=""
   for p in "${DL_PREFIXES[@]}"; do
     if curl -fL --connect-timeout 10 --retry 2 -o voice.tar.gz "${p}${GH_VOICE}"; then
@@ -253,27 +281,82 @@ fi
 exit 0
 EOS
 
-cat > "$APP_DIR/update.sh" <<EOS
-#!/data/data/com.termux/files/usr/bin/bash
-# 更新便携包并重启(下载源带回退链,与 install-termux.sh 同款)
-set -euo pipefail
-APP_DIR="${APP_DIR}"
-GH_ASSET="${GH_ASSET}"
-cd "\$APP_DIR"
+# update.sh 与安装器同一条下载链(npmmirror+滞后守卫 → npm 官方 → GitHub 直连 → gh 代理):
+# 头部三行配置用 printf %q 烤入;函数体放引号 heredoc —— 零转义、与上面定义逐字同源,
+# 改链时两处一起改(verify-termux-voice T7 守链序与两份同步)。
+{
+  printf '#!/data/data/com.termux/files/usr/bin/bash\n'
+  printf 'set -euo pipefail\n'
+  printf 'APP_DIR=%q PORT=%q GH_ASSET=%q\n\n' "$APP_DIR" "$PORT" "$GH_ASSET"
+  cat <<'UPDATE_EOF'
+# 更新便携包并重启(下载链与 install-termux.sh 同源:npmmirror+滞后守卫 → npm 官方 → GitHub 直连 → gh 代理)
+info() { printf '\033[1m[*]\033[0m %s\n' "$*"; }
+
+# ↓↓ 与 install-termux.sh 逐字同源的四个函数(契约:恒 exit 0,空输出=未命中)↓↓
+npm_tarball() {
+  local json ver gh
+  json=$(curl -sfL --connect-timeout 8 --max-time 20 "https://registry.npmmirror.com/$1/latest" || true)
+  [ -n "$json" ] || return 0
+  ver=$(printf '%s' "$json" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+  if [ -n "$ver" ]; then
+    gh=$(gh_latest_version)
+    if [ -n "$gh" ] && ! ver_ge "$ver" "$gh"; then
+      info "npm 镜像同步滞后(镜像 v${ver} < GitHub v${gh}),换 npm 官方源…"
+      return 0
+    fi
+  fi
+  printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p'
+}
+npm_tarball_official() {
+  local json
+  json=$(curl -sfL --connect-timeout 8 --max-time 20 "https://registry.npmjs.org/$1/latest" || true)
+  printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p'
+}
+gh_latest_version() {
+  local final
+  final=$(curl -sIL --connect-timeout 8 --max-time 20 -o /dev/null -w '%{url_effective}' \
+    "https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/probe" 2>/dev/null || true)
+  printf '%s' "$final" | sed -n 's#.*/download/v\([0-9][0-9.]*\)/.*#\1#p'
+}
+ver_ge() {
+  local a b
+  a=$(printf '%s' "$1" | tr -d 'v' | awk -F. '{printf "%02d%02d%02d", $1, $2, $3}')
+  b=$(printf '%s' "$2" | tr -d 'v' | awk -F. '{printf "%02d%02d%02d", $1, $2, $3}')
+  [ -n "$a" ] && [ -n "$b" ] && [ "$a" -ge "$b" ] 2>/dev/null
+}
+# ↑↑ 同源函数区结束 ↑↑
+
+cd "$APP_DIR"
 echo "==> 停止旧服务..."
-pkill -f "server.cjs --port ${PORT}" 2>/dev/null || true
+pkill -f "server.cjs --port $PORT" 2>/dev/null || true
 sleep 1
 echo "==> 下载最新便携包..."
-dl_ok=0
-for p in "" "https://gh-proxy.com/" "https://ghproxy.net/" "https://ghfast.top/"; do
-  if curl -fL --connect-timeout 10 --retry 2 -o ls.zip "\${p}\${GH_ASSET}"; then dl_ok=1; break; fi
-  echo "    \${p:-直连}失败,换下一个源..."
-done
-[ "\$dl_ok" = 1 ] || { echo "下载失败,保持原版本。"; exit 1; }
-unzip -o ls.zip && rm -f ls.zip
+src=""
+tb=$(npm_tarball lookatstudy-mobile)
+if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb"; then
+  src="npm 镜像"
+else
+  tb=$(npm_tarball_official lookatstudy-mobile)
+  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb"; then
+    src="npm 官方源"
+  fi
+fi
+if [ -n "$src" ]; then
+  tar -xzf mobile.tgz --strip-components=1 && rm -f mobile.tgz
+  echo "[✓] 已更新($src)"
+else
+  dl_ok=0
+  for p in "" "https://gh-proxy.com/" "https://ghproxy.net/" "https://ghfast.top/"; do
+    if curl -fL --connect-timeout 10 --retry 2 -o ls.zip "${p}${GH_ASSET}"; then dl_ok=1; break; fi
+    echo "    ${p:-GitHub 直连}失败,换下一个源..."
+  done
+  [ "$dl_ok" = 1 ] || { echo "下载失败,保持原版本。"; exit 1; }
+  unzip -o ls.zip && rm -f ls.zip
+fi
 echo "==> 重启..."
-exec bash "\$APP_DIR/start.sh"
-EOS
+exec bash "$APP_DIR/start.sh"
+UPDATE_EOF
+} > "$APP_DIR/update.sh"
 
 chmod 755 "$APP_DIR"/{start,stop,status,update}.sh
 ok "常用脚本就位: ~/lookatstudy/{start,stop,status,update}.sh"

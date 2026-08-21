@@ -34,6 +34,12 @@ export function getTextModel(
       const tag = parent.tagName;
       // 跳过脚本/样式
       if (tag === "SCRIPT" || tag === "STYLE") return NodeFilter.FILTER_REJECT;
+      // v0.19 KaTeX 公式:视觉字形层(.katex-html)整段跳过(字形文本与 TeX 源
+      // 重复,收进来会撕裂画线/朗读匹配);只收 .katex-mathml 里 annotation 的
+      // TeX 原文——canonical 空间本就滤掉 $ \ { } 等符号,DOM 文本与 markdown
+      // 源的 $..$/$$..$$ 公式天然对齐(karaoke/画线对公式课不断裂的关键)。
+      if (parent.closest(".katex-html")) return NodeFilter.FILTER_REJECT;
+      if (parent.closest(".katex-mathml") && !parent.closest("annotation")) return NodeFilter.FILTER_REJECT;
       // 跳过已画的持久画线 mark 内的所有文本(用 closest 检查祖先链,防止嵌套结构漏过)。
       // 这是 save 时 modelTextLen 随笔记数增长的根因:mark 内文本被重复计算。
       // includeMarks(朗读 karaoke 用):句子来自原文,必须收全文本——划线恰好落在

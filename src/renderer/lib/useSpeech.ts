@@ -21,6 +21,7 @@ import { companionSetTalking } from "./companion/bus.ts";
 import { pickSystemVoice } from "./system-tts.ts";
 
 import { speechSentencesOf } from "@shared/speech-text";
+import { speakMathInSentence } from "@shared/math-speech";
 import type { SpeechTtsAudioEvent } from "@shared/speech-types";
 import { TTS_SETTINGS_CHANGED_EVENT } from "./system-tts.ts";
 import { connectSpeechSource, getSpeechAnalyser, setActivePlayback } from "./speech-analyser.js";
@@ -108,7 +109,8 @@ export function useSpeech(): {
         return;
       }
       const idx = q.i;
-      const text = q.sentences[idx]!;
+      // v0.19 公式口语化:系统档 utterance 吃转换文本;streamTexts(高亮/匹配)保持原文
+      const text = speakMathInSentence(q.sentences[idx]!);
       const u = new SpeechSynthesisUtterance(text);
       if (q.voice) {
         u.voice = q.voice;

@@ -1527,6 +1527,75 @@ async function runUiTest(screenshot = false): Promise<void> {
     });
   }
 
+  // T-MATH (v0.19 数学渲染): 把当前课时的正文临时换成含 $..$/$$..$$ 的片段,
+  // 切走再切回(强制重渲染)→ 断言 KaTeX 双层结构在场(视觉层+MathML annotation)。
+  // 现场清理:恢复原 content(状态卫生,不污染后续步骤)。
+  let mathRender: { ok?: boolean; error?: string; [k: string]: unknown } = {};
+  try {
+    const pick = await win.webContents.executeJavaScript(`
+      (async function() {
+        var balls = Array.prototype.slice.call(document.querySelectorAll('button[data-testid^="map-node-"]:enabled'))
+          .filter(function(b){ return !/exam/.test(b.getAttribute('data-testid') || ''); });
+        return { nodeId: balls.length ? (balls[0].getAttribute('data-testid') || '').replace('map-node-', '') : null };
+      })()
+    `);
+    let fullNodeId = "";
+    if (pick?.nodeId) {
+      const rows = getDb().select({ id: contentNodes.id, content: contentNodes.content }).from(contentNodes)
+        .where(and(eq(contentNodes.courseId, "seed-lookatstudy-guide"), like_(contentNodes.id, `${pick.nodeId}%`)))
+        .all();
+      fullNodeId = rows[0]?.id ?? "";
+      if (fullNodeId) {
+        const orig = rows[0]!.content ?? "";
+        getDb().update(contentNodes).set({
+          content: "质能方程 $E=mc^2$ 很有名。\n\n行间公式:$$\\\\frac{a}{b}$$\n\n这是正文结尾。",
+        }).where(eq(contentNodes.id, fullNodeId)).run();
+        markDirty();
+        try {
+          mathRender = await win.webContents.executeJavaScript(`
+            (async function() {
+              var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+              try {
+                var balls = Array.prototype.slice.call(document.querySelectorAll('button[data-testid^="map-node-"]:enabled'))
+                  .filter(function(b){ return !/exam/.test(b.getAttribute('data-testid') || ''); });
+                if (balls.length < 2) return { ok: false, error: 'need 2 balls' };
+                balls[1].click(); await sleep(500);
+                balls[0].click(); await sleep(900);
+                var katex = document.querySelectorAll('.katex').length;
+                var vis = document.querySelectorAll('.katex .katex-html').length;
+                var ann = document.querySelectorAll('.katex .katex-mathml annotation').length;
+                return { ok: katex >= 2 && vis >= 2 && ann >= 2, katex: katex, vis: vis, ann: ann };
+              } catch (e) { return { ok: false, error: String(e) }; }
+            })()
+          `);
+        } finally {
+          getDb().update(contentNodes).set({ content: orig }).where(eq(contentNodes.id, fullNodeId)).run();
+          markDirty();
+          // 恢复后再切一次,让界面回到原正文
+          await win.webContents.executeJavaScript(`
+            (async function() {
+              var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+              var balls = Array.prototype.slice.call(document.querySelectorAll('button[data-testid^="map-node-"]:enabled'))
+                .filter(function(b){ return !/exam/.test(b.getAttribute('data-testid') || ''); });
+              if (balls.length >= 2) { balls[1].click(); await sleep(300); balls[0].click(); }
+            })()
+          `);
+        }
+      } else {
+        mathRender = { ok: false, error: "node unresolved" };
+      }
+    } else {
+      mathRender = { ok: false, error: "no lesson ball" };
+    }
+  } catch (e) {
+    mathRender = { error: String(e) };
+  }
+  results.push({
+    name: "math render: lesson content with $..$/$$..$$ renders KaTeX (visual + MathML annotation)",
+    ok: mathRender?.ok === true,
+    detail: mathRender,
+  });
+
 
   // 原 🤔 卡点 toggle+表单已撤(friction 折进"我没太懂"巩固选择)。
   // 巩固选择的"内容"由 verify-starter-prompts 覆盖;"语境前不出现"由 App 的 prop 门控(tsc 保证)。

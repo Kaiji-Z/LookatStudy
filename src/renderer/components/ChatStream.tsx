@@ -18,6 +18,8 @@ import type { CanvasItem } from "@shared/types";
 import type { ChatMessageV2, ChatMessagePart } from "@shared/part-accumulator";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
@@ -26,6 +28,7 @@ import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, centerReadingRangeInView } from "../lib/highlightText.js";
+import { normalizeMathNotation } from "../lib/math-normalize.js";
 import { playedSentencePrefix } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { useLang } from "../lib/i18n.js";
@@ -672,12 +675,12 @@ function PartRenderer({
         data-testid="part-text"
       >
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema], rehypeKatex]}
           urlTransform={(url) => url}
           components={markdownComponents}
         >
-          {part.text}
+          {normalizeMathNotation(part.text)}
         </ReactMarkdown>
       </div>
     );

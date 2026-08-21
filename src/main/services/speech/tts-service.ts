@@ -21,6 +21,7 @@ import type {
   SpeechTtsErrorEvent,
 } from "@shared/speech-types";
 import { speechSentencesOf } from "@shared/speech-text";
+import { speakMathInSentence } from "@shared/math-speech";
 
 import { SPEECH_MODELS_MANIFEST } from "./speech-model-manifest";
 import { ensureSpeechModel, readSpeechModelStatus } from "./speech-model-service";
@@ -229,7 +230,9 @@ export async function speakMessage(
     const running = inflight.get(i);
     if (running) return running;
     const sentence = sentences[i]!;
-    const p = synth(dataDir, cfg, engine, sentence, {
+    // v0.19 公式口语化:只转换**喂给引擎**的文本;句事件(sentence)仍发原文,
+    // karaoke 高亮/匹配层继续对齐 DOM 里的 TeX 源——念人话,亮原文。
+    const p = synth(dataDir, cfg, engine, speakMathInSentence(sentence), {
       sid,
       onChunk: () => !mine.stopped && active === mine,
       custom: deps.custom ?? undefined,

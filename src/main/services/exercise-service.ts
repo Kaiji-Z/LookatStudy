@@ -176,6 +176,7 @@ function buildGenerationPrompt(title: string, content: string, type: ExerciseTyp
     ``,
     `出题红线:`,
     `- 答案必须在提供的学习内容中有依据，不可编造内容里没有的知识`,
+    `- 数学表达式用行内 $..$ 或行间 $$..$$ 的 LaTeX 记法书写，不要用纯文本近似（界面会渲染成公式）`,
     questionLanguageLine(outLang),
     `- 干扰项 plausible 但 definitely wrong（不能有争议）`,
     ``,

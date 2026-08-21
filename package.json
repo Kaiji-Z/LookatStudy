@@ -37,6 +37,7 @@
     "@firecrawl/pdf-inspector": "^1.14.1",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@mozilla/readability": "^0.6.0",
+    "@napi-rs/canvas": "^1.0.7",
     "@tanstack/react-query": "^5.62.0",
     "ai": "^5.0.0",
     "audio-decode": "^3.12.0",

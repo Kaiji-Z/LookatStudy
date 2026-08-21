@@ -848,8 +848,8 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
     "T15: 跨实例互停事件(讲解/对话两个 useSpeech 不再互相残留读态)",
   );
   assert.ok(
-    notebook.includes("markReadingSentence") && notebook.includes("speechSentencesOf("),
-    "T15: 讲解区 karaoke 高亮接线(句表单一入口 + markReadingSentence)",
+    notebook.includes("markReadingSentence") && notebook.includes("playedSentencePrefix(") && !notebook.includes("speechSentencesOf("),
+    "T15: 讲解区 karaoke 高亮接线(合成侧权威原文前缀 + markReadingSentence,零复算)",
   );
   assert.ok(
     notebook.includes("resetReadingCursor") && read("components/ChatStream.tsx").includes("resetReadingCursor"),
@@ -905,8 +905,10 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
   assert.ok(creature.includes("window.innerWidth - 8"), "T15: 空态/两栏锚点全缺 → 整窗游走兜底(不隐匿)");
   assert.ok(read("lib/highlightText.ts").includes("matchSentenceAligned") && read("lib/highlightText.ts").includes("canonicalSpeechIndex"), "T15: v9 整句对齐匹配(规范化+句界扩展)");
   assert.ok(
-    notebook.includes("groupSentenceChunks(speechSentences)") && read("components/ChatStream.tsx").includes("groupSentenceChunks(sentences)"),
-    "T15: v9 karaoke 按 TTS 块并显示句组高亮(强制断句不在句中断开)",
+    readFileSync(new URL("../shared/speech-text.ts", import.meta.url), "utf8").includes("while (s > 0 && !endsWithSentenceEnd(texts[s - 1] ?? \"\")) s--;")
+      && notebook.includes("playedSentencePrefix(speech.streamTexts, readingIdx)")
+      && read("components/ChatStream.tsx").includes("playedSentencePrefix(streamTexts ?? [], readingIdx)"),
+    "T15: v11.4 karaoke 已播前缀并组(强断句块并回同句只亮到进度,合成侧权威原文)",
   );
   assert.ok(
     creature.includes("[snap.enabledLoaded, snap.enabled, snap.petMode, reduced]"),

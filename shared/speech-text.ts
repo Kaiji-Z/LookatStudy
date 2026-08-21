@@ -55,13 +55,30 @@ export function normalizeSpeechText(md: string): string {
 }
 
 /**
- * v11.2 朗读句表单一入口:主进程合成侧(tts-service)与渲染层显示侧
- * (NotebookPanel/ChatStream karaoke)必须拿到**同一份句表**——播放序号
- * index 是两侧共享的进度语言,句表一旦分叉(比如一侧单改 maxBuffer)
- * 高亮和声音就会错句。所有调用方一律走这里,verify-speech-split 有源级守卫。
+ * v11.2 朗读句表单一入口(v11.4 起仅合成侧使用):tts-service 用它切段;
+ * 渲染层 karaoke **不再调用**(改吃 ttsAudio.sentence 权威原文,见
+ * playedSentencePrefix)——句表从合成侧单向流出,显示侧零复算零分叉。
  */
 export function speechSentencesOf(text: string): string[] {
   return splitSentences(normalizeSpeechText(text), { flush: true }).sentences;
+}
+
+/**
+ * v11.4 已播句组前缀:karaoke 高亮文本 = 从当前块向前收拢到最近的"句终点块"
+ * (不含),拼接**已播放**各块的原文。块文本由合成侧 ttsAudio.sentence 权威下发
+ * (念什么高亮什么,渲染层零复算);强断句块(超长行被 maxBuffer 撕开的)按此
+ * 并回同一视觉句,且只亮到当前进度——高亮随音频逐块生长,永不错句。
+ */
+export function playedSentencePrefix(texts: readonly string[], idx: number): string {
+  if (idx < 0 || idx >= texts.length) return "";
+  let s = idx;
+  while (s > 0 && !endsWithSentenceEnd(texts[s - 1] ?? "")) s--;
+  const parts: string[] = [];
+  for (let i = s; i <= idx; i++) {
+    const t = texts[i];
+    if (t && t.trim()) parts.push(t);
+  }
+  return parts.join(" ");
 }
 
 export interface SplitOptions {

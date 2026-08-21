@@ -255,6 +255,8 @@ export async function speakMessage(
         messageId,
         sentenceIndex: i,
         sentenceTotal: sentences.length,
+        // v11.4 该块原文随音频下发:渲染层 karaoke 直接高亮这段文字,不再复算句表
+        sentence: sentences[i]!,
         wavBytes: out.bytes,
         sampleRate: out.sampleRate,
         mime: out.mime,

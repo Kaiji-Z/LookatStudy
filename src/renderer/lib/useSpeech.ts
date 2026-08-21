@@ -19,6 +19,8 @@ import { analyzeVisemeTimeline, cuesToTimeline, type VisemeTimeline } from "./co
 export interface SpeechSentenceInfo {
   index: number;
   total: number;
+  /** v11.4 该块朗读原文(合成侧 ttsAudio.sentence 权威下发)——karaoke 直接高亮它 */
+  text: string;
 }
 
 export function useSpeech(): {
@@ -27,6 +29,9 @@ export function useSpeech(): {
   /** v6 当前**正在播放**的句(按播放序,非到达序——合成快于收听,到达序会超前)。
    *  朗读句级跟随(讲解区 karaoke 高亮/伴学指句)用它;进度显示用 speakingSentence。 */
   playingSentence: SpeechSentenceInfo | null;
+  /** v11.4 逐块原文表(下标=句序):karaoke 用 playedSentencePrefix 拼已播前缀,
+   *  不再从 content 复算句表(合成侧是唯一真源) */
+  streamTexts: string[];
   /** 最近一次朗读失败原因("model-missing"|"engine-unavailable"|…;渲染层按类型引导) */
   failReason: string | null;
   clearFailReason: () => void;
@@ -40,6 +45,8 @@ export function useSpeech(): {
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [speakingSentence, setSpeakingSentence] = useState<SpeechSentenceInfo | null>(null);
   const [playingSentence, setPlayingSentence] = useState<SpeechSentenceInfo | null>(null);
+  const [streamTexts, setStreamTexts] = useState<string[]>([]);
+  const streamTextsRef = useRef<string[]>([]);
   const [failReason, setFailReason] = useState<string | null>(null);
   const [onlineNotice, setOnlineNotice] = useState(false);
 
@@ -93,7 +100,7 @@ export function useSpeech(): {
     pendingRef.current.delete(seq);
     playingRef.current = true;
     // v6 播放序:正在念的句 = nextSeq(按序消费的权威值,与解码完成序解耦)
-    setPlayingSentence({ index: seq, total: totalRef.current });
+    setPlayingSentence({ index: seq, total: totalRef.current, text: streamTextsRef.current[seq] ?? "" });
     nextSeqRef.current += 1;
     const src = ctx.createBufferSource();
     src.buffer = buf;
@@ -136,6 +143,8 @@ export function useSpeech(): {
     activeIdRef.current = null;
     nextSeqRef.current = 0;
     totalRef.current = 0;
+    streamTextsRef.current = [];
+    setStreamTexts([]);
     setSpeakingMessageId(null);
     setSpeakingSentence(null);
     setPlayingSentence(null);
@@ -165,7 +174,7 @@ export function useSpeech(): {
       nextSeqRef.current = 0;
       totalRef.current = 0;
       setSpeakingMessageId(messageId);
-      setSpeakingSentence({ index: 0, total: 0 });
+      setSpeakingSentence({ index: 0, total: 0, text: "" });
       ensureCtx();
       void window.api
         .ttsSpeak(text, messageId)
@@ -188,7 +197,12 @@ export function useSpeech(): {
       const ctx = ensureCtx();
       receivedRef.current += 1;
       totalRef.current = e.sentenceTotal;
-      setSpeakingSentence({ index: e.sentenceIndex, total: e.sentenceTotal });
+      setSpeakingSentence({ index: e.sentenceIndex, total: e.sentenceTotal, text: e.sentence ?? "" });
+      // v11.4 逐块原文登记(合成侧权威);ref 供 pump 即时读,state 供 karaoke 前缀拼接
+      if (e.sentence != null) {
+        streamTextsRef.current[e.sentenceIndex] = e.sentence;
+        setStreamTexts(streamTextsRef.current.slice());
+      }
       // 解码完成序 ≠ 句序(短句先解完):按 sentenceIndex 入池,消费端只按序取。
       // 坏块(解码失败)计收一个但永不入池 → 该句静默跳过,不卡死排空判定。
       void ctx.decodeAudioData(e.wavBytes).then(
@@ -249,6 +263,7 @@ export function useSpeech(): {
     speakingMessageId,
     speakingSentence,
     playingSentence,
+    streamTexts,
     failReason,
     clearFailReason: () => setFailReason(null),
     onlineNotice,

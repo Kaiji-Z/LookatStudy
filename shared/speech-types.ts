@@ -115,6 +115,12 @@ export interface SpeechTtsAudioEvent {
   messageId: string;
   sentenceIndex: number;
   sentenceTotal: number;
+  /**
+   * v11.4 该块音频朗读的**原文**(合成侧权威下发)。karaoke 高亮直接用它定位,
+   * 渲染层不再从 content 复算句表——两侧句表分叉的一切可能(净化差异/翻译切换/
+   * 切段参数漂移)从构造上消灭:念什么高亮什么。
+   */
+  sentence?: string;
   wavBytes: ArrayBuffer;
   sampleRate: number;
   /** v0.13:音频容器(edge=audio/mpeg;缺省视为 audio/wav 兼容 v0.12) */

@@ -21,7 +21,7 @@ import { ErrorBoundary } from "./ErrorBoundary.js";
 import { SelfRatingCard } from "./ReviewPanel.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, setLastNoteMark } from "../lib/highlightText.js";
-import { speechSentencesOf, groupSentenceChunks } from "@shared/speech-text";
+import { playedSentencePrefix } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { CanvasStage } from "./CanvasStage.js";
@@ -364,16 +364,9 @@ function ContentTab({
     return () => window.removeEventListener("lookatstudy-jump-to-note", handler);
   }, []);
 
-  // v6 朗读句级跟随(karaoke):当前**正在播放**的句子(播放序,非合成到达序)在
-  // 讲解正文里定位高亮;句子滚出视野时居中跟随。句子表用与 main 合成侧同一真源
-  // (shared/speech-text 纯函数)从同一份 content 复算,句序=缓冲播放序。
-  const speechSentences = useMemo(
-    () => (content ? speechSentencesOf(content) : []),
-    [content],
-  );
-  // v9 显示句组:TTS 块(超长强制断句产物)≠显示句——未以句终点结尾的块与后续块
-  // 并组,高亮整组,不在一句中间断开(maxBuffer 软标点断句只影响合成分块)。
-  const speechGroups = useMemo(() => groupSentenceChunks(speechSentences), [speechSentences]);
+  // v11.4 朗读句级跟随(karaoke):高亮文本 = 合成侧 ttsAudio.sentence 权威下发的
+  // **已播前缀**(playedSentencePrefix 拼块)——念什么高亮什么,渲染层不再从
+  // content 复算句表,两侧句表分叉(净化差异/翻译切换/切段参数漂移)从构造上消灭。
   const readingIdx =
     speech.speakingMessageId === nodeSpeechId && speech.playingSentence != null
       ? speech.playingSentence.index
@@ -381,14 +374,13 @@ function ContentTab({
   useEffect(() => {
     const prose = proseRef.current;
     if (!prose) return;
-    if (readingIdx == null || readingIdx < 0 || readingIdx >= speechSentences.length) {
+    if (readingIdx == null) {
       clearReadingMark(prose);
       return;
     }
-    const group = speechGroups.find((g) => readingIdx >= g.start && readingIdx <= g.end);
-    if (!group) return;
-    // 组文本 = 组内块拼接;块序在组内推进时高亮不动(同一句),组切换才重标
-    const sentence = speechSentences.slice(group.start, group.end + 1).join(" ");
+    // 已播句组前缀:强断句块(超长行被撕开的)并回同一视觉句,只亮到当前进度
+    const sentence = playedSentencePrefix(speech.streamTexts, readingIdx);
+    if (!sentence) return;
     if (readingIdx === 0) resetReadingCursor(prose); // 新一轮朗读从第 0 句起,游标归零
     // 等 ReactMarkdown 渲染完(content 刚到/语言切换重挂)再定位
     const timer = setTimeout(() => {
@@ -404,9 +396,7 @@ function ContentTab({
       }
     }, 30);
     return () => clearTimeout(timer);
-    // speechSentences 随 content 重算;readingIdx 驱动逐句切换
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sentences/groups 是 useMemo 稳定引用
-  }, [readingIdx, speechSentences, speechGroups, nodeSpeechId]);
+  }, [readingIdx, speech.streamTexts, nodeSpeechId]);
   // 停止/切节点/卸载:清掉朗读高亮
   useEffect(() => {
     if (readingIdx == null && proseRef.current) clearReadingMark(proseRef.current);

@@ -20,6 +20,7 @@ import {
   groupSentenceChunks,
   DISPLAY_GROUP_MAX,
   speechSentencesOf,
+  playedSentencePrefix,
 } from "../shared/speech-text.ts";
 
 // === T1: markdown 净化 ===
@@ -187,21 +188,46 @@ console.log("✓ v9 TTS块≠显示句:endsWithSentenceEnd/groupSentenceChunks(�
   assert.equal(normalizeSpeechText("甲句。\r\n乙句。"), "甲句。\n乙句。", "v11.2: CRLF 归一为 LF");
 }
 console.log("✓ v11.2 表意分隔:换行/emoji 成句(ZWJ/VS16 完整)+显示组上限+CRLF 归一");
-// === v11.2 T10: 句表单一入口守卫(合成侧与显示侧永不分叉) ===
+// === v11.4 T10: 高亮=合成侧权威原文(渲染层零复算守卫) ===
 {
   const src = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
-  for (const rel of [
-    "src/main/services/speech/tts-service.ts",
-    "src/renderer/components/NotebookPanel.tsx",
-    "src/renderer/components/ChatStream.tsx",
-  ]) {
+  // 合成侧:切段走单一入口,且每块原文随 ttsAudio 权威下发
+  const tts = src("src/main/services/speech/tts-service.ts");
+  assert.ok(tts.includes("speechSentencesOf("), "T10: 合成侧走句表单一入口");
+  assert.ok(tts.includes("sentence: sentences[i]!"), "T10: ttsAudio 附带块原文(权威下发)");
+  // useSpeech:逐块原文登记(ref 供 pump 即时读)+播放态携带原文
+  const hook = src("src/renderer/lib/useSpeech.ts");
+  assert.ok(hook.includes("streamTextsRef.current[e.sentenceIndex] = e.sentence"), "T10: 逐块原文登记");
+  assert.ok(hook.includes("text: streamTextsRef.current[seq] ?? \"\""), "T10: 播放态携带块原文");
+  // 显示侧:只吃流文本前缀,不得再从 content 复算句表(复算=两侧分叉之源,
+  // 净化差异/翻译切换/切段参数漂移都会让高亮和声音错句)
+  for (const rel of ["src/renderer/components/NotebookPanel.tsx", "src/renderer/components/ChatStream.tsx"]) {
     const t = src(rel);
-    assert.ok(t.includes("speechSentencesOf("), `T10: ${rel} 走句表单一入口`);
-    assert.ok(!t.includes("splitSentences(normalizeSpeechText("), `T10: ${rel} 不得内联切分(参数分叉=高亮错句)`);
+    assert.ok(t.includes("playedSentencePrefix("), `T10: ${rel} 高亮吃已播前缀`);
+    assert.ok(!t.includes("speechSentencesOf("), `T10: ${rel} 不得复算句表(v11.4 渲染层零复算)`);
+    assert.ok(!t.includes("splitSentences(normalizeSpeechText("), `T10: ${rel} 不得内联切分`);
   }
-  const probe = "# 标题\n正文一句。第二句没结束";
-  assert.deepEqual(speechSentencesOf(probe), speechSentencesOf(probe), "T10: 入口确定性");
-  assert.ok(speechSentencesOf("你好。世界。").length === 2, "T10: 入口可用性");
 }
-console.log("✓ v11.2 T10 句表单一入口(合成侧/显示侧同源,索引空间 1:1)");
+console.log("✓ v11.4 T10 高亮=合成侧权威原文(ttsAudio.sentence 下发,渲染层零复算)");
+
+// === v11.4 T11: 已播句组前缀(高亮文本=已播放的权威原文) ===
+{
+  const line = ["第一句。", "第二句。"];
+  assert.equal(playedSentencePrefix(line, 0), "第一句。", "T11: 单块句");
+  assert.equal(playedSentencePrefix(line, 1), "第二句。", "T11: 句终点块自成一句");
+  // 强断句块(超长行被 maxBuffer 撕开):非终点块并回同句,且只亮到当前进度
+  const forced = ["前半被撕开，", "后半收尾。", "新句。"];
+  assert.equal(playedSentencePrefix(forced, 0), "前半被撕开，", "T11: 组内首块=前缀起点");
+  assert.equal(playedSentencePrefix(forced, 1), "前半被撕开， 后半收尾。", "T11: 组内推进=前缀生长(已播拼接)");
+  assert.equal(playedSentencePrefix(forced, 2), "新句。", "T11: 终点块后新句重起");
+  // 表意块:换行/emoji 终点
+  const ideo = ["标题\n", "📚", "正文。"];
+  assert.equal(playedSentencePrefix(ideo, 1), "📚", "T11: emoji 块独立成句");
+  assert.equal(playedSentencePrefix(ideo, 2), "正文。", "T11: 换行终点后重起");
+  // 越界/空洞防御
+  assert.equal(playedSentencePrefix(["x。"], -1), "", "T11: 负下标空");
+  assert.equal(playedSentencePrefix([], 0), "", "T11: 空表");
+  assert.equal(playedSentencePrefix(["a。", void 0, "c。"], 2), "c。", "T11: 空洞块当边界不炸");
+}
+console.log("✓ v11.4 T11 已播前缀:强断句并组/逐块生长/表意终点/空洞防御");
 

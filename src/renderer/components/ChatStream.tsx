@@ -13,7 +13,7 @@
  *
  * 注意:本组件只负责"展示"。输入由 ChatComposer 负责。
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import type { CanvasItem } from "@shared/types";
 import type { ChatMessageV2, ChatMessagePart } from "@shared/part-accumulator";
 import ReactMarkdown from "react-markdown";
@@ -26,7 +26,7 @@ import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor } from "../lib/highlightText.js";
-import { speechSentencesOf, groupSentenceChunks } from "@shared/speech-text";
+import { playedSentencePrefix } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
@@ -432,6 +432,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                 speakingMessageId={speech.speakingMessageId}
                 speakingSentence={speech.speakingSentence}
                 playingSentence={speech.playingSentence}
+                streamTexts={speech.streamTexts}
                 onSpeak={speech.speak}
               />
             </div>
@@ -511,6 +512,7 @@ function MessageRowV2({
   speakingMessageId,
   speakingSentence,
   playingSentence,
+  streamTexts,
   onSpeak,
 }: {
   msg: ChatMessageV2;
@@ -524,36 +526,31 @@ function MessageRowV2({
   speakingSentence?: { index: number; total: number } | null;
   /** v6 播放序(正在念的句,非合成到达序)——karaoke 高亮用它 */
   playingSentence?: { index: number; total: number } | null;
+  /** v11.4 逐块原文表(合成侧权威下发)——karaoke 拼已播前缀,不再复算句表 */
+  streamTexts?: string[];
   onSpeak?: (messageId: string, text: string) => void;
 }) {
   const t = useLang();
   const msgRef = useRef<HTMLDivElement>(null);
   // 朗读文本 = 全部 text part 拼接(工具产物/附件不读)。
-  // hooks 必须在 user 分支早退之前 —— 句表与 karaoke 对两种角色都安全声明(user 句表恒空)。
+  // hooks 必须在 user 分支早退之前 —— karaoke 对两种角色都安全声明(user 不高亮)。
   const speakableText = msg.parts
     .map((p) => (p.type === "text" ? p.text : ""))
     .join("")
     .trim();
   const isSpeakingThis = speakingMessageId === msg.id;
-  // v6 chat karaoke:与讲解区同源同款 —— shared/speech-text 纯函数从同一份朗读文本复算句表
-  const sentences = useMemo(
-    () => (msg.role === "assistant" && speakableText ? speechSentencesOf(speakableText) : []),
-    [msg.role, speakableText],
-  );
-  // v9 显示句组:TTS 块(超长强制断句)≠显示句,未完句的块与后续块并组,高亮整组
-  const groups = useMemo(() => groupSentenceChunks(sentences), [sentences]);
   const readingIdx = isSpeakingThis && playingSentence != null ? playingSentence.index : null;
   // 当前播放句高亮 + 出视野才居中跟随(与讲解区同款 ±48px 容差)
   useEffect(() => {
     const root = msgRef.current;
     if (!root) return;
-    if (readingIdx == null || readingIdx < 0 || readingIdx >= sentences.length) {
+    if (readingIdx == null) {
       clearReadingMark(root);
       return;
     }
-    const group = groups.find((g) => readingIdx >= g.start && readingIdx <= g.end);
-    if (!group) return;
-    const sentence = sentences.slice(group.start, group.end + 1).join(" ");
+    // v11.4 已播句组前缀(合成侧权威原文),与讲解区同款
+    const sentence = playedSentencePrefix(streamTexts ?? [], readingIdx);
+    if (!sentence) return;
     if (readingIdx === 0) resetReadingCursor(root); // 新一轮朗读从第 0 句起,游标归零
     const timer = setTimeout(() => {
       // within 限定正文 text part:思考块/工具产物渲染了文字但朗读不读,
@@ -569,8 +566,7 @@ function MessageRowV2({
       }
     }, 30);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sentences/groups 是 useMemo 稳定引用
-  }, [readingIdx, sentences, groups]);
+  }, [readingIdx, streamTexts]);
   useEffect(() => {
     if (readingIdx == null && msgRef.current) clearReadingMark(msgRef.current);
   }, [readingIdx]);

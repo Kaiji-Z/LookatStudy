@@ -88,6 +88,19 @@ export function htmlToMarkdown(html: string, opts: { stripImages?: boolean } = {
   if (!document.body || document.body.childNodes.length === 0) {
     document = parseHTML(`<html><body>${html}</body></html>`).document;
   }
+  // v0.19 公式回收(在 script 清理**之前**做,MathJax v2 的 TeX 就存在 script 里):
+  //   KaTeX 渲染节点 → 读 .katex-mathml annotation 的 TeX 原文,回写成 $..$/$$..$$;
+  //   MathJax v2 → script[type="math/tex"] 同款;MathJax v3(mjx-container)无 TeX
+  //   源可回收,退化为按现状转文字(已知边界)。
+  type MathNode = { textContent: string | null; replaceWith(n: unknown): void; querySelector(s: string): { textContent: string | null } | null };
+  for (const el of Array.from(document.querySelectorAll("script[type='math/tex']")) as unknown as MathNode[]) {
+    const tex = (el.textContent ?? "").trim();
+    if (tex) el.replaceWith(document.createTextNode(tex.includes("\n") ? `$$${tex}$$` : `$${tex}$`));
+  }
+  for (const el of Array.from(document.querySelectorAll(".katex")) as unknown as MathNode[]) {
+    const tex = (el.querySelector("annotation")?.textContent ?? "").trim();
+    if (tex) el.replaceWith(document.createTextNode(tex.includes("\n") ? `$$${tex}$$` : `$${tex}$`));
+  }
   for (const tag of ["script", "style", "head"]) {
     for (const el of document.querySelectorAll(tag)) el.remove();
   }

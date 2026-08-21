@@ -14,6 +14,8 @@ import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode, type
 import type { ContentNode, CanvasItem, NoteSourceAnchor, NodeAsset } from "@shared/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
@@ -21,6 +23,7 @@ import { ErrorBoundary } from "./ErrorBoundary.js";
 import { SelfRatingCard } from "./ReviewPanel.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, setLastNoteMark, centerReadingRangeInView } from "../lib/highlightText.js";
+import { normalizeMathNotation } from "../lib/math-normalize.js";
 import { playedSentencePrefix } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
@@ -605,8 +608,8 @@ function ContentTab({
         >
         <div ref={proseRef} className="prose prose-sm max-w-[80ch] leading-relaxed break-words overflow-x-auto [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_img]:max-w-full [&_video]:max-w-full [&_iframe]:max-w-full select-text">
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema], rehypeKatex]}
             urlTransform={(url) => url}
             components={{
               // 外链强制新窗口 → setWindowOpenHandler → 系统浏览器,
@@ -629,7 +632,7 @@ function ContentTab({
               },
             }}
           >
-            {content}
+            {normalizeMathNotation(content)}
           </ReactMarkdown>
         </div>
         </ErrorBoundary>

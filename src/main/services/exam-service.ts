@@ -624,6 +624,7 @@ function buildKcBatchPrompt(
     `- 题干考"理解"和"应用",不要出死记硬背的定义题`,
     `- 干扰项 plausible 但 definitely wrong(基于学习者常犯的真实误解)`,
     `- 答案必须在提供的课程内容中有依据`,
+    `- 数学表达式用行内 $..$ 或行间 $$..$$ 的 LaTeX 记法书写,不要用纯文本近似(界面会渲染成公式)`,
     questionLanguageLine(outLang),
     ``,
     `严格按以下 JSON 格式返回,不要加 markdown 代码块标记、不要解释:`,

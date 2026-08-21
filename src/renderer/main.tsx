@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.js";
 import { ToastProvider } from "./components/Toast.js";
+import "katex/dist/katex.min.css"; // v0.19 数学渲染字体/样式(讲解+对话共用,一次打包)
 import "./index.css";
 
 // 全局错误捕获：renderer 崩溃时把错误打到 stderr（通过 IPC 传给 main 进程输出）

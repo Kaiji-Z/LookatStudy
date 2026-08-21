@@ -16,6 +16,11 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **数学公式渲染(讲解/对话全支持)** —— 讲解区与 AI 对话接入 KaTeX(remark-math + rehype-katex,插件序 raw→sanitize→katex,产物不经消毒器、XSS 面不扩大):行内 `$x^2$` 与行间 `$$..$$` 渲染成排版公式,LaTeX 原生 `\(..\)`/`\[..\]` 记法自动归一(代码围栏内不动);渲染失败该段退回原文显示,不崩整篇。**画线与朗读跟句对公式课不断裂**的关键:文本模型跳过 KaTeX 视觉字形层、只收 MathML annotation 的 TeX 源,与 markdown 源在匹配层天然对齐。网页课里 KaTeX/MathJax 渲染过的公式在导入时回收成 `$..$` 记法(此前直接变乱码)。verify-math-render 新套 T1-T5。
+- **公式朗读口语化** —— TTS 念公式不再"反斜杠 f-r-a-c":合成侧规则表把常见记号转中文口语(`x^2`→"x 的平方"、`\frac{a}{b}`→"a 分之 b"、根号/上下标/希腊字母/关系算符齐备,未知宏逐字母降级),四档引擎与系统档全生效;**只转换喂给引擎的文本**,逐句高亮与匹配层继续吃原文——念的是人话,亮的是原文。
+- **出题支持 LaTeX** —— 练习与章节考试的出题提示词放开行内/行间 LaTeX,数学题的题干与选项渲染成公式(判分逻辑不变)。
+
 ### Fixed
 - **讲解区朗读的屏幕不再钉死在超长段落顶部** —— 网页存档类课程(mathematics-for-machine-learning-and-data-science 一课实测)的正文由 HTML 转换而来,没有空行分段,一个"段落"可达上万像素高;朗读跟随的滚动锚点此前取**整段元素盒**并 `scrollIntoView(block:center)`,而对比视口还高的元素浏览器只能顶到段首——高亮逐句下行,屏幕纹丝不动。现在按**句子自己的首行盒**(Range client rect)判定与居中,视野离开 48px 缓冲带才平滑滚动,讲解区与对话流两处同款修正。verify-speech-split 新增 T12 守卫。
 

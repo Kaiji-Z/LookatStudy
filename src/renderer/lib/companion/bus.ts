@@ -271,6 +271,10 @@ function install(): void {
   window.addEventListener("companion-exam-enter", () => {
     dispatch({ type: "examEnter", now: Date.now() });
   });
+  window.addEventListener("companion-exam-active", (e) => {
+    // v0.19 考试静栖:ExamView 挂载/卸载发 on/off,生物钉在计时区陪考不抢戏
+    dispatch({ type: "examActive", on: !!detailOf(e), now: Date.now() });
+  });
   window.addEventListener("companion-importing", (e) => {
     dispatch({ type: "importing", on: !!detailOf(e), now: Date.now() });
   });
@@ -451,6 +455,11 @@ export function companionRailUnregister(sectionId: string): void {
 /** 进考试节点(App 在选中考试节点时) → 加油打气后离场(考试零干扰)。 */
 export function companionExamEnter(): void {
   fire("companion-exam-enter");
+}
+
+/** v0.19 考试静栖:ExamView 挂载(true)/卸载(false) → 生物钉在计时区,庆祝动作静默。 */
+export function companionExamActive(on: boolean): void {
+  fire("companion-exam-active", on);
 }
 
 /** 导入任务开始/结束(MapRail 导入面板) → 监工模式。 */

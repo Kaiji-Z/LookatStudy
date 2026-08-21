@@ -93,12 +93,16 @@ console.log("✓ T1 accuracyToStars 分档(95/80/60 阈值)正确");
   console.log("✓ T2 planExamQuota clamp(ceil(KC×1.5),5,15) + round-robin");
 }
 
-// === T3: questionTimeLimitSec 限时规则 ===
-assert.strictEqual(questionTimeLimitSec("短题干"), 60, "T3: 默认 60s");
-assert.strictEqual(questionTimeLimitSec("长".repeat(200)), 90, "T3: ≥200 字 → 90s");
-assert.strictEqual(questionTimeLimitSec("看代码:\n```js\nlet a=1\n```\n输出?"), 90, "T3: 含代码块 → 90s");
-assert.strictEqual(questionTimeLimitSec("x".repeat(199)), 60, "T3: 199 字仍 60s");
-console.log("✓ T3 questionTimeLimitSec 60/90 规则");
+// === T3: questionTimeLimitSec 动态限时(v0.19 宽松:45+cjk/5+words/3+opts×8+code25+math25,clamp(60,300)) ===
+assert.strictEqual(questionTimeLimitSec("短题干"), 78, "T3: 短题 45+1+0+32=78s");
+assert.strictEqual(questionTimeLimitSec("长".repeat(200)), 117, "T3: 200 汉字 45+40+32=117s");
+assert.strictEqual(questionTimeLimitSec("看代码:\n```js\nlet a=1\n```\n输出?"), 104, "T3: 代码块 +25(45+1+1+32+25)");
+assert.strictEqual(questionTimeLimitSec("$E=mc^2$ 是质能方程", 4), 104, "T3: 公式 +25(45+1+1+32+25)");
+assert.strictEqual(questionTimeLimitSec("x".repeat(199)), 78, "T3: 长英文单词按词计 45+0+1+32");
+assert.strictEqual(questionTimeLimitSec("短", 0), 60, "T3: 地板 60s");
+assert.strictEqual(questionTimeLimitSec("长".repeat(9000)), 300, "T3: 天花板 300s");
+assert.notStrictEqual(questionTimeLimitSec("长".repeat(200)), 90, "T3: 旧 60/90 二档已废");
+console.log("✓ T3 questionTimeLimitSec 动态宽松限时");
 
 // === T4: buildAttemptShuffle 种子确定 + 排列合法 + 映射判分正确(闭环核心) ===
 {

@@ -126,6 +126,8 @@ export interface CompanionState {
   pokeSeq: number;
   /** 课程导入进行中(监工模式:豁免纱帘,守在导入面板旁) */
   importing: boolean;
+  /** 章节考试进行中(v0.19:静栖计时区,庆祝动作/漫游静默,不抢考生注意力) */
+  examActive: boolean;
   /** 被用户抓住(挣扎表情,物理由渲染层接管) */
   grabbed: boolean;
   /** 被扔出去后的生气截止(晕眩结束→鼓脸) */
@@ -134,6 +136,7 @@ export interface CompanionState {
 
 export type CompanionEvent =
   | { type: "celebration"; kind: CelebrationKind; now: number }
+  | { type: "examActive"; on: boolean; now: number }
   | { type: "poke"; now: number }
   | { type: "talking"; on: boolean; now: number }
   | { type: "listening"; on: boolean; now: number }
@@ -308,6 +311,7 @@ export function initialCompanionState(now = 0): CompanionState {
     importing: false,
     grabbed: false,
     huffyUntil: 0,
+    examActive: false,
   };
 }
 
@@ -357,6 +361,19 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
   switch (ev.type) {
     case "celebration": {
       // 入睡中被庆祝事件唤醒(庆祝本身即活动)
+      // v0.19 考试静栖:答题中不做庆祝动作(出拳/跳跃/粒子式 pose 全静默),
+      // 只保留 800ms 的轻表情——在场陪考但不抢注意力
+      if (s.examActive) {
+        const lite = expressionForCelebration(ev.kind);
+        return {
+          ...s,
+          sleeping: false,
+          lastActivity: ev.now,
+          expression: lite.expression,
+          pose: "float",
+          until: ev.now + 800,
+        };
+      }
       // v11 情绪层:连对计数(correct+1 / wrong 清零);每满 3 连对叠 flame
       // 得意反应(盖过单次 correct 的普通开心——连击值得更亮的正反馈)
       const streak = ev.kind === "correct" ? s.correctStreak + 1 : ev.kind === "wrong" ? 0 : s.correctStreak;
@@ -583,6 +600,9 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
     case "importing":
       // 导入监工:进行中豁免纱帘守在面板旁;结束交棒给 importDone 反应
       return { ...s, importing: ev.on, lastActivity: ev.now, mode: ev.on ? "front" : s.mode };
+    case "examActive":
+      // v0.19 考试静栖:开考钉住计时区(渲染层 exam 分支),交卷恢复
+      return { ...s, examActive: ev.on, lastActivity: ev.now, mode: ev.on ? "front" : s.mode };
     case "importDone": {
       // 导入结束:成功=星星眼欢呼,失败=鼓励(不嘲讽)
       const ok = ev.ok;

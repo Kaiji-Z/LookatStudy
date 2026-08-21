@@ -28,9 +28,20 @@ export function planExamQuota(kcTitles: string[]): number[] {
   return quotas;
 }
 
-/** 每题答题限时(秒):默认 60;题干 ≥200 字或含代码块(阅读量大)→ 90。 */
-export function questionTimeLimitSec(prompt: string): number {
-  return prompt.length >= 200 || prompt.includes("```") ? 90 : 60;
+/**
+ * 每题答题限时(秒,v0.19 动态宽松):45 基础 + 中文/全角字数÷5 + 英文词数÷3
+ * + 选项数×8 + 围栏代码块 25 + 行内/行间公式 25,clamp(60, 300)。
+ * 旧版 60/90 二档对长题干/公式题太紧;新公式按宽松阅读速度估读题时间,
+ * 短题不至于拖沓(地板 60),长题/公式题给足(天花板 5 分钟)。
+ * 历史兼容:限时只在答题时实时计算,历史 attempt 回顾不重计时,无需迁移。
+ */
+export function questionTimeLimitSec(prompt: string, optionCount = 4): number {
+  const cjk = (prompt.match(/[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/g) ?? []).length;
+  const words = (prompt.match(/[A-Za-z]+/g) ?? []).length;
+  let s = 45 + Math.ceil(cjk / 5) + Math.ceil(words / 3) + Math.max(0, optionCount) * 8;
+  if (prompt.includes("```")) s += 25;
+  if (/\$\$?[^$\n]+\$\$?/.test(prompt)) s += 25;
+  return Math.max(60, Math.min(300, Math.round(s)));
 }
 
 /** 一次考试的重排:题序 + 每题选项序(重新考试时两者都变)。 */

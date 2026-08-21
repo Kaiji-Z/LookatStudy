@@ -33,6 +33,7 @@ import {
 import { api } from "../lib/api.js";
 import { celebrate } from "../lib/celebration.js";
 import { useLang } from "../lib/i18n.js";
+import { companionExamActive } from "../lib/companion/bus.ts";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { Target, Star, RotateCcw, Check, X, ArrowRight, AlertCircle, Timer, Lightbulb } from "lucide-react";
 
@@ -104,6 +105,12 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
   const perm = rawPerm.length === opts.length ? rawPerm : opts.map((_, i) => i);
 
   /* ---------- 挂载/换节点:拉状态,必要时自动触发生成 ---------- */
+  // v0.19 考试静栖:在场但安静——伴学钉在计时条旁陪考,庆祝动作/漫游静默;
+  // 卸载(交卷/离开)恢复日常。防呆:examNode 切换不重发(状态本就是 on)。
+  useEffect(() => {
+    companionExamActive(true);
+    return () => companionExamActive(false);
+  }, []);
   useEffect(() => {
     let cancelled = false;
     setPhase("loading");
@@ -194,7 +201,7 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
       setResult(null);
       consumedQRef.current = null;
       setPhase("answering");
-      setTimeLeft(questionTimeLimitSec(r.exercises[sh.questionOrder[0]!]?.prompt ?? ""));
+      setTimeLeft(questionTimeLimitSec(r.exercises[sh.questionOrder[0]!]?.prompt ?? "", r.exercises[sh.questionOrder[0]!]?.options?.length ?? 4));
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : String(e));
       setPhase("failed");
@@ -249,7 +256,7 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
   useEffect(() => {
     if (phase !== "answering" || !currentQ) return;
     if (consumedQRef.current !== currentQ.id) {
-      setTimeLeft(questionTimeLimitSec(currentQ.prompt));
+      setTimeLeft(questionTimeLimitSec(currentQ.prompt, currentQ.options?.length ?? 4));
       setSelected(null);
       answerScrollRef.current?.scrollTo({ top: 0 });
     }
@@ -406,7 +413,7 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
 
   // ── 就绪:元信息 + 开始考试 ──
   if (phase === "ready" && statusView) {
-    const estSec = statusView.exercises.reduce((a, q) => a + questionTimeLimitSec(q.prompt), 0);
+    const estSec = statusView.exercises.reduce((a, q) => a + questionTimeLimitSec(q.prompt, q.options?.length ?? 4), 0);
     const estMin = Math.max(1, Math.round(estSec / 60));
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6" data-testid="exam-ready">

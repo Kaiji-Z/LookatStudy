@@ -2,9 +2,9 @@
 
 # LookatStudy
 
-Turn any repo into a course you actually finish
+Turn almost anything into a course you actually finish
 
-I star a lot of tutorials and finish almost none of them, so I built this for myself. A repo comes in, a gated course comes out, and an AI tutor keeps track of what you've really learned. Everything runs on your machine, with your own API key.
+I star a lot of tutorials and finish almost none of them, so I built this for myself. A repo, a folder, a link, or a recording comes in, a gated course comes out, and an AI tutor keeps track of what you've really learned. Everything runs on your machine, with your own API key.
 
 [![License MIT](https://img.shields.io/badge/license-MIT-58cc02.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Kaiji-Z/LookatStudy?color=1cb0f6&label=release)](https://github.com/Kaiji-Z/LookatStudy/releases)
@@ -24,7 +24,7 @@ Every few weeks I'd star another roadmap, clone a tutorial repo, read the intro,
 
 Pick up a course and you know what to study today. Three hundred files in a repo give you no such answer. Finish a lesson and a quiz tells you whether it landed. Finish a doc and you're left guessing. A course brings material back before you forget it, and it gives you a reason to open it again tomorrow. A browser tab does neither.
 
-Duolingo solved these problems thoroughly, but only for its own content. I wanted the same mechanics on material I chose. Give LookatStudy a GitHub repo, a local folder, or pasted markdown, and it builds a gated course with exams and a review schedule.
+Duolingo solved these problems thoroughly, but only for its own content. I wanted the same mechanics on material I chose. Give LookatStudy a repo, a folder, a link, or a recording, and it builds a gated course with exams and a review schedule.
 
 ## The repo becomes a skill map
 
@@ -50,11 +50,21 @@ Each chapter ends with an exam guarding the gate. The questions are generated in
 
 ## What you can import
 
-- Three ways in. A GitHub URL, a local folder, or markdown you paste in.
-- Ten document formats. `.md` `.ipynb` `.rst` `.Rmd` `.org` `.adoc` `.pdf` `.pptx` `.html` `.txt`.
+- Five ways in. A GitHub URL, a local folder, any web article, arXiv paper, or video link, text you paste, an EPUB book.
+- Eleven document formats. `.md` `.ipynb` `.rst` `.Rmd` `.org` `.adoc` `.pdf` `.pptx` `.html` `.txt` `.epub`.
 - Thirty-odd code file types. `.py` `.ts` `.go` `.rs` `.java` `.c` `.cpp` `.sh` all count as teaching material, and docstrings become the prose.
+- Audio becomes lessons. Local recordings in `.mp3` `.m4a` `.flac` and other common formats get transcribed on your machine by Whisper and split into lessons, so a folder of lecture recordings lands as a multi-episode course.
+- Video too. Bilibili links pull the audio track directly, YouTube and a thousand other sites go through yt-dlp with subtitles preferred over transcription, and local `.mp4` `.m4v` `.mov` files have their audio extracted here. A multi-part Bilibili course imports as a whole season, one part per lesson. yt-dlp is a local install with in-app instructions, and mkv or webm want a quick rewrap to mp4 first.
 - Images ride along with the content, notebook outputs and PDF embeds included. With a vision model, the tutor actually looks at the figure when you ask about it.
-- Bilingual repos pair up automatically. A `translations/{lang}/` folder, parallel folders, or `file.zh.md` suffixes all get recognized.
+- Bilingual sources pair up automatically. A `translations/{lang}/` folder, parallel folders, or `file.zh.md` suffixes all get recognized.
+
+## It reads out loud and takes dictation
+
+A lesson can be read to you end to end, sentence by sentence, with the sentence being spoken highlighted in the text. The default voice is a free online one, an offline neural voice can be downloaded for no-network use, and the voices already installed on your device are selectable too. Dictation runs the other way. Hold the mic button, speak, release, and local Whisper writes it down, with a chance to fix the transcript before it goes out. Everything works offline once the models are down, on the phone as well.
+
+## A small bot lives in the app
+
+A tiny robot shares the study with you. It hovers around the skill map on real physics, a thrown ball can knock it into a spin, and it leans into the wind when the weather turns. It reacts to what you do. The keys you type light up on its chest screen, during read-aloud it points at the sentence being spoken, and a click on empty map space whistles it over to wave at you. Five bodies to pick from, and when you're heads-down working it retreats behind a curtain and leaves you alone.
 
 ## The part that makes you come back
 
@@ -99,7 +109,7 @@ Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there
 
 ## Status
 
-v0.9.0. The main loop, importing, learning with the tutor, reviewing, taking exams, is complete, and I use it daily. Full history in [CHANGELOG.md](CHANGELOG.md).
+v0.18.0. The main loop, importing almost anything, learning with the tutor, reviewing, taking exams, reading aloud, is complete, and I use it daily. Full history in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

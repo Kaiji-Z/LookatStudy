@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Fixed
+- **讲解区朗读的屏幕不再钉死在超长段落顶部** —— 网页存档类课程(mathematics-for-machine-learning-and-data-science 一课实测)的正文由 HTML 转换而来,没有空行分段,一个"段落"可达上万像素高;朗读跟随的滚动锚点此前取**整段元素盒**并 `scrollIntoView(block:center)`,而对比视口还高的元素浏览器只能顶到段首——高亮逐句下行,屏幕纹丝不动。现在按**句子自己的首行盒**(Range client rect)判定与居中,视野离开 48px 缓冲带才平滑滚动,讲解区与对话流两处同款修正。verify-speech-split 新增 T12 守卫。
+
 ## [0.18.0] - 2026-08-21
 
 ### Added

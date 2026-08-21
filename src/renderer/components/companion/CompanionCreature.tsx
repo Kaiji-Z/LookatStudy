@@ -422,17 +422,13 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         ? document.querySelector<HTMLElement>('[data-testid="exam-timer"]')?.getBoundingClientRect()
         : undefined;
 
-      if (grabbed) {
-        // ── 抓取中:指针就是全世界(任何 zone 都直接拖拽) ──
-        const g = grabRef.current!;
-        flightRef.current = null; // 物理旁路,松手再按 zone 重建
-        target = { x: g.x, y: g.y };
-        angle = Math.max(-0.5, Math.min(0.5, g.vx * 0.04));
-        pane = dispZoneRef.current;
-      } else if (examTimerRect) {
+      if (examTimerRect) {
         // ── v0.19 考试静栖:钉在考试计时条右下陪考(在场但安静,不漫游不物理)。
-        //    计时条只在答题阶段挂载;生成中/就绪页探测不到 → 继续常规链,绝不隐匿 ──
+        //    计时条只在答题阶段挂载;生成中/就绪页探测不到 → 继续常规链,绝不隐匿。
+        //    优先级高于抓取:考试中拖伴学无意义,也防 ui-test/真实指针遗留的
+        //    stale grab 把陪考位钉死在旧指针坐标 ──
         flightRef.current = null;
+        grabRef.current = null; // 陪考期接管,交卷后自然恢复
         pane = "chat";
         const anchor = {
           x: Math.min(examTimerRect.right + 64, window.innerWidth - 70),
@@ -441,6 +437,13 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         const cur = posRef.current ?? anchor;
         target = glideTo(cur, anchor, dt, CRUISE_OP);
         angle = Math.max(-0.15, Math.min(0.15, (target.x - cur.x) * 0.008));
+      } else if (grabbed) {
+        // ── 抓取中:指针就是全世界(任何 zone 都直接拖拽) ──
+        const g = grabRef.current!;
+        flightRef.current = null; // 物理旁路,松手再按 zone 重建
+        target = { x: g.x, y: g.y };
+        angle = Math.max(-0.5, Math.min(0.5, g.vx * 0.04));
+        pane = dispZoneRef.current;
       } else if (readMarkEl && readRange) {
         // v10 句尾右下角跟随:mark = 高亮句最后一行片段(Range.getClientRects 末位
         // 非零矩形)——生物栖在最后一个字的右下方,指住它;窄屏也全程钳在面板内

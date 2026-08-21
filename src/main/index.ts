@@ -2417,10 +2417,28 @@ async function runUiTest(screenshot = false): Promise<void> {
               var root = q('[data-testid="exam-answering"]');
               if (!root) return await bail({ ok: false, reason: "answering vanished at q" + k, overflow: overflow });
               if (k === 0 && !botPerch) {
-                await sleep(800); // v0.19 考试静栖:给生物留滑翔落位时间
+                // v0.19 考试静栖:轮询落位(无头窗口 rAF 被节流,跨栏滑翔可能要
+                // 数秒);到位即收,最多 8 秒。
+                for (var p0 = 0; p0 < 20 && !botPerch; p0++) {
+                  await sleep(500);
+                  var tmE = q('[data-testid="exam-timer"]');
+                  var boE = q(".cp-creature");
+                  if (tmE && boE) {
+                    var tmR = tmE.getBoundingClientRect();
+                    var bR = boE.getBoundingClientRect();
+                    var nearNow = Math.abs(bR.top - tmR.bottom) < 160 && Math.abs(bR.left - tmR.right) < 300;
+                    if (nearNow || p0 === 19) {
+                      botPerch = {
+                        near: nearNow,
+                        botTop: Math.round(bR.top), timerBottom: Math.round(tmR.bottom),
+                        botLeft: Math.round(bR.left), timerRight: Math.round(tmR.right),
+                      };
+                    }
+                  }
+                }
                 var tmEl = q('[data-testid="exam-timer"]');
                 var botEl = q(".cp-creature");
-                if (tmEl && botEl) {
+                if (!botPerch && tmEl && botEl) {
                   var tmr = tmEl.getBoundingClientRect();
                   var br = botEl.getBoundingClientRect();
                   botPerch = {

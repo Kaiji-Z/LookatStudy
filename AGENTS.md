@@ -28,6 +28,7 @@ Electron app, local SQLite (sql.js), BYO LLM API key. Light/dark theme.
 - **Vercel AI SDK v5** (`ai` + `@ai-sdk/openai` + `@ai-sdk/openai-compatible` + `@ai-sdk/anthropic` + `@ai-sdk/google`) · **zod v3** for tool schemas
 - **sql.js** (SQLite compiled to WASM, pure JS) + **Drizzle ORM** — *not* better-sqlite3
 - **pdfjs-dist** (PDF rendering, pure WASM/JS) — for PDF text + image extraction, no canvas dependency
+- **katex** + **remark-math** + **rehype-katex** (v0.19 数学渲染) — 讲解区/对话流公式渲染(插件序 raw→sanitize→katex);**getTextModel 跳过 `.katex-html` 只收 `.katex-mathml` annotation**(画线/朗读匹配对公式课不断裂的红线);朗读口语化在 `shared/math-speech.ts`(只转喂引擎的文本,句事件发原文)
 - **sherpa-onnx-node** (native sherpa-onnx) — local TTS (Kokoro fp32) + offline ASR (Whisper turbo/small int8, v0.13 质量优先取代 zipformer 流式).
   CRITICAL: every native→JS Float32Array transfer MUST pass `enableExternalBuffer: false`
   (Electron 21+ bans external array buffers in ALL process forms — M0 spike proved it;
@@ -88,11 +89,11 @@ npm run serve             # dev serve: esbuild server bundle only + serve dist/r
 npm run build:mobile      # 便携包 dist/mobile/: server.cjs 单文件 + web 前端 + install-termux.sh(Termux 手机端)
 node scripts/build-termux-voice.mjs  # Termux 语音引擎包(NDK 交叉编译,~12MB;CI termux-voice.yml 同源)
 
-npm run verify:core       # 100 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
+npm run verify:core       # 101 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
-npm run ui-test           # real-GUI verification (headless Electron, 48 DOM assertions;incl. companion v3 single creature (rail home zone after course pick + composer focus flies to chat zone w/ win.focus() for real focus events + read-aloud talking → notebook zone + T3 pane-switch persistence + form live-switch) + a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + seed bilingual 🌐 switcher + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue + exam answering integrity (option display order matches grading, click correct text → 3/3, long prompt stays in viewport) + voice tiers (mic click→voice mode→hold→release→review/error panel→back to keyboard, 设置页语音按钮组(朗读 Edge/本地/系统/自定义,听写 本地/自定义)+ whisper 模型下拉 + 讲解 🔊))
+npm run ui-test           # real-GUI verification (headless Electron, 50 DOM assertions;incl. companion v3 single creature (rail home zone after course pick + composer focus flies to chat zone w/ win.focus() for real focus events + read-aloud talking → notebook zone + T3 pane-switch persistence + form live-switch) + a11y + reactive i18n + cold-start gating + empty-start course gating (no auto-select, manual pick, delete→empty-state) + course search (tree nav + title filter + jump) + start-learning action-label bubble (no prompt leak) + seed bilingual 🌐 switcher + post-reveal choices + competence badges + due/interleave/dashboard + start-here cue + exam answering integrity (option display order matches grading, click correct text → 3/3, long prompt stays in viewport) + voice tiers (mic click→voice mode→hold→release→review/error panel→back to keyboard, 设置页语音按钮组(朗读 Edge/本地/系统/自定义,听写 本地/自定义)+ whisper 模型下拉 + 讲解 🔊))
 npm run lint              # oxlint
 npm run shots             # capture README screenshots → docs/screenshots/ (headless window, temp DB, real .env LLM; GPU stays ON for capturePage)
 npx tsc --noEmit                       # typecheck renderer
@@ -183,7 +184,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | Local scanner | `services/pure/local-folder-scanner.ts` | `scanFolder` (递归扫文档格式含 .epub(`parseEpubFlat` 压平,章标题降 H2 给 Step4 拆课) + 30+ 代码格式; `dedupByLang` **同语言内部去重,双语配对保留**——分流交分类层,不再"中文优先"吞英文原稿) + `buildLocalInventory` (本地清点: docs + images + translations + README + fullTree + standaloneImages) |
 | File classifier | `services/pure/file-classifier.ts` | Rule-based `classifyFile` — high-confidence noise filter (translations/notebook/lab/example/section-intro/meta) + uncertain flag for LLM |
 | Exercise | `services/exercise-service.ts` | AI exercise generation (mcq/fill_blank/true_false) + grading |
-| Exam | `services/exam-service.ts` + `exam-generation-store.ts` | 章节考试 v2:KC 分批后台出题(真实进度,`exam:status` 事件)+ `regenerateExam` 重新出题(删旧题/在飞 no-op/悬挂判死/历史星数保留;判分快照 prompt/options 让历史回顾自包含)+ attempt 档案(`exam_attempts`,逐题增量持久化/悬挂自动判死/terminated 未答=错);`shared/exam-logic.ts` 纯函数(题量 clamp(ceil(KC×1.5),5,15)/每题限时 60/90s/attemptId 种子重排题序+选项序);不回写 BKT |
+| Exam | `services/exam-service.ts` + `exam-generation-store.ts` | 章节考试 v2:KC 分批后台出题(真实进度,`exam:status` 事件)+ `regenerateExam` 重新出题(删旧题/在飞 no-op/悬挂判死/历史星数保留;判分快照 prompt/options 让历史回顾自包含)+ attempt 档案(`exam_attempts`,逐题增量持久化/悬挂自动判死/terminated 未答=错);`shared/exam-logic.ts` 纯函数(题量 clamp(ceil(KC×1.5),5,15)/v0.19 每题限时动态:45+cjk/5+词/3+选项×8+代码25+公式25,clamp(60,300)/attemptId 种子重排题序+选项序);不回写 BKT |
 | Dashboard | `services/dashboard-service.ts` | `getDashboard` — section mastery, metrics |
 | Progress | `services/progress-service.ts` | DB-injected progress read/write (headless-testable) |
 | Per-KC BKT | `services/kc-service.ts` | Per-Knowledge-Component BKT: `getKnowledgePoints`/`ensureKcRows`/`updateKcMastery`/`computeAggregateMastery`(min)/`floorAllKcMastery`。课级 mastery=min(各 KC)；防假毕业 |

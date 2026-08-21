@@ -12,11 +12,14 @@
  *   - 空输入/纯空白/纯代码块 → 零句
  */
 import assert from "node:assert";
+import { readFileSync } from "node:fs";
 import {
   normalizeSpeechText,
   splitSentences,
   endsWithSentenceEnd,
   groupSentenceChunks,
+  DISPLAY_GROUP_MAX,
+  speechSentencesOf,
 } from "../shared/speech-text.ts";
 
 // === T1: markdown 净化 ===
@@ -102,7 +105,7 @@ import {
 {
   assert.deepStrictEqual(splitSentences("").sentences, [], "T6: 空串零句");
   assert.deepStrictEqual(splitSentences("   \n  ").sentences, [], "T6: 纯空白零句");
-  assert.deepStrictEqual(splitSentences("```js\nlet a=1\n```").sentences, [], "T6: 纯代码块零句(净化后为空)");
+  assert.deepStrictEqual(splitSentences(normalizeSpeechText("```js\nlet a=1\n```")).sentences, [], "T6: 纯代码块零句(净化后为空;split 契约=输入已净化,v11.2 换行成句后原始 md 不再直喂)");
   assert.deepStrictEqual(splitSentences(normalizeSpeechText("```js\nlet a=1\n```"), { flush: true }).sentences, [], "T6: 净化+flush 纯代码零句");
   console.log("✓ T6 空输入/纯代码零句");
 }
@@ -144,14 +147,61 @@ console.log("\n=== ALL SPEECH TEXT TESTS PASSED ✅ ===");
   const g1 = groupSentenceChunks(["前半句没有结束，", "后半句结束了。", "新句子。"]);
   assert.deepEqual(g1, [{ start: 0, end: 1 }, { start: 2, end: 2 }], "v9: 强制断句块并入同显示句");
 
-  // 集成:超长无终止标点文本 → 多个 TTS 块,但显示上是一个句组
+  // 集成:超长无终止标点文本 → 多个 TTS 块;v11.2 显示组有长度上限,
+  // 不再无限并成整段(旧"整段高亮到结尾"的行为已被用户判为缺陷)
   const long = "这是一句完全没有终止标点的很长很长的话".repeat(12) + "，尾段也一直不停，最后才画上句号。";
   const { sentences } = splitSentences(long, { flush: true });
   assert.ok(sentences.length >= 2, "v9: 超长文本被切成多个 TTS 块");
   assert.ok(sentences.slice(0, -1).every((c) => !endsWithSentenceEnd(c)), "v9: 中间块都不是句终点");
   const g2 = groupSentenceChunks(sentences);
-  assert.equal(g2.length, 1, `v9: 显示层合并为一个句组(块数 ${sentences.length})`);
-  assert.equal(g2[0].start, 0);
-  assert.equal(g2[0].end, sentences.length - 1);
+  assert.ok(g2.length >= 2, `v11.2: 超长无标点显示组有界(组数 ${g2.length},不再吞整段)`);
+  for (const g of g2) {
+    const total = sentences.slice(g.start, g.end + 1).join("").length;
+    assert.ok(total <= DISPLAY_GROUP_MAX + 200, `v11.2: 组内总长有界(实际 ${total})`);
+  }
 }
-console.log("✓ v9 TTS块≠显示句:endsWithSentenceEnd/groupSentenceChunks(强制断句块并组)");
+console.log("✓ v9 TTS块≠显示句:endsWithSentenceEnd/groupSentenceChunks(并组修句+v11.2 长度上限)");
+
+// === v11.2 T9: 表意分隔(换行/emoji 成句)+ CRLF 归一 ===
+{
+  // 换行:无标点的行各自成句,句尾 \n 是显示终点(不被并组)
+  const r = splitSentences("第一行没有标点\n第二行也没有\n第三行更没有", { flush: true });
+  assert.equal(r.sentences.length, 3, `v11.2: 逐行成句(实际 ${r.sentences.length})`);
+  assert.ok(r.sentences[0].endsWith("\n"), "v11.2: 整行句保留结尾换行(显示终点标记)");
+  assert.equal(endsWithSentenceEnd("第一行没有标点\n"), true, "v11.2: 换行结尾=句终点");
+  assert.equal(endsWithSentenceEnd("后半句还没结"), false, "v11.2: 无标记尾巴仍非终点");
+  const g = groupSentenceChunks(r.sentences);
+  assert.equal(g.length, 3, "v11.2: 行句不并组(高亮逐行)");
+
+  // emoji:表意符号后断句;ZWJ 连写/VS16/肤色是序列的一部分
+  const e = splitSentences("太好了🎉继续加油💪最后。", { flush: true });
+  assert.deepEqual(e.sentences, ["太好了🎉", "继续加油💪", "最后。"], `v11.2: emoji 断句(实际 ${JSON.stringify(e.sentences)})`);
+  assert.equal(endsWithSentenceEnd("太好了🎉"), true, "v11.2: emoji 结尾=句终点");
+  assert.equal(endsWithSentenceEnd("家庭👨‍💻"), true, "v11.2: ZWJ 连写整序列算终点");
+  assert.equal(endsWithSentenceEnd("星星⭐"), true, "v11.2: VS16 修饰序列算终点");
+  const zw = splitSentences("家庭👨‍💻聚餐", { flush: true });
+  assert.equal(zw.sentences.length, 2, "v11.2: ZWJ 序列不拆开(序列收进句尾)");
+  assert.ok(zw.sentences[0].includes("👨‍💻"), "v11.2: 连写 emoji 完整保留");
+
+  // CRLF 归一(Windows 换行不混进句界判定)
+  assert.equal(normalizeSpeechText("甲句。\r\n乙句。"), "甲句。\n乙句。", "v11.2: CRLF 归一为 LF");
+}
+console.log("✓ v11.2 表意分隔:换行/emoji 成句(ZWJ/VS16 完整)+显示组上限+CRLF 归一");
+// === v11.2 T10: 句表单一入口守卫(合成侧与显示侧永不分叉) ===
+{
+  const src = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
+  for (const rel of [
+    "src/main/services/speech/tts-service.ts",
+    "src/renderer/components/NotebookPanel.tsx",
+    "src/renderer/components/ChatStream.tsx",
+  ]) {
+    const t = src(rel);
+    assert.ok(t.includes("speechSentencesOf("), `T10: ${rel} 走句表单一入口`);
+    assert.ok(!t.includes("splitSentences(normalizeSpeechText("), `T10: ${rel} 不得内联切分(参数分叉=高亮错句)`);
+  }
+  const probe = "# 标题\n正文一句。第二句没结束";
+  assert.deepEqual(speechSentencesOf(probe), speechSentencesOf(probe), "T10: 入口确定性");
+  assert.ok(speechSentencesOf("你好。世界。").length === 2, "T10: 入口可用性");
+}
+console.log("✓ v11.2 T10 句表单一入口(合成侧/显示侧同源,索引空间 1:1)");
+

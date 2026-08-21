@@ -21,7 +21,7 @@ import { ErrorBoundary } from "./ErrorBoundary.js";
 import { SelfRatingCard } from "./ReviewPanel.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, setLastNoteMark } from "../lib/highlightText.js";
-import { splitSentences, normalizeSpeechText, groupSentenceChunks } from "@shared/speech-text";
+import { speechSentencesOf, groupSentenceChunks } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { CanvasStage } from "./CanvasStage.js";
@@ -368,7 +368,7 @@ function ContentTab({
   // 讲解正文里定位高亮;句子滚出视野时居中跟随。句子表用与 main 合成侧同一真源
   // (shared/speech-text 纯函数)从同一份 content 复算,句序=缓冲播放序。
   const speechSentences = useMemo(
-    () => (content ? splitSentences(normalizeSpeechText(content), { flush: true }).sentences : []),
+    () => (content ? speechSentencesOf(content) : []),
     [content],
   );
   // v9 显示句组:TTS 块(超长强制断句产物)≠显示句——未以句终点结尾的块与后续块
@@ -465,15 +465,17 @@ function ContentTab({
     });
   }, [onQuoteToChat, onSaveContentNote]);
 
-  // 触屏长按选字/拖选区句柄不触发 mouseup:selectionchange(防抖)走同一检测,
-  // 手机上选完松手按钮才会出现(桌面 mouseup 仍即时响应,行为不变)。
+  // selectionchange 走同一检测:触屏长按选字/拖选区句柄不触发 mouseup;
+  // v11 桌面拖选也即现——80ms 节流跟位(拖选过程中浮钮就出现并跟随,
+  // 不再等松手;mouseup 仍做最终落位)。
   // 选区清空时延迟 250ms 收按钮 —— 触屏点按钮的 tap 会先清选区再派发 click,立即隐藏会吃掉点击。
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let hideTimer: ReturnType<typeof setTimeout> | null = null;
     const onChange = () => {
-      if (timer) clearTimeout(timer);
+      if (timer) return; // 节流:窗口内的事件忽略,到点必然执行(非尾随防抖,拖选中持续刷新)
       timer = setTimeout(() => {
+        timer = null;
         const hasText = (window.getSelection()?.toString().trim().length ?? 0) >= 2;
         if (hasText) {
           if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
@@ -481,7 +483,7 @@ function ContentTab({
         } else if (!hideTimer) {
           hideTimer = setTimeout(() => setQuoteBtn((cur) => (cur ? null : cur)), 250);
         }
-      }, 250);
+      }, 80);
     };
     document.addEventListener("selectionchange", onChange);
     return () => {

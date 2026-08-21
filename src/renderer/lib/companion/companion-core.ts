@@ -812,33 +812,65 @@ export const READING_MARGIN = 14;
  * 空间不够时的退让次序:右下 → 句尾正下 → 面板右下安全位。
  * side=手指方向(生物在字的右侧/下方 → 指左 "left")。
  */
-export function readingTailAnchor(
-  mark: { left: number; right: number; top: number; bottom: number },
-  panel: { left: number; right: number; top: number; bottom: number },
+export interface LineBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * v11.3 朗读/画线跟随锚点(灵活避让,替代 v10 句尾右下单一策略)。
+ *
+ * 候选按优先级逐个尝试,首选横向避让——生物悬浮在**行尾右侧空白边距**,
+ * 像页边批注的小伙伴,手臂抬起指向行尾,整句高亮一个字都不遮:
+ *  ① 末行行尾右外侧(贴住行底线微下沉) —— 有右侧余量时的默认位;
+ *  ② 首行行首左外侧 —— 右侧放不下(窄屏/行满宽)时镜像到左边;
+ *  ③ 句尾右下角 —— ①②都放不下的兜底(旧行为);
+ *  ④ 面板右下安全位 —— 极端窄屏。
+ * 全程钳在面板内;side=手臂指向(生物在文字右侧 → 指左)。
+ * lines 可传首/末行片段(Range.getClientRects);缺省按整体框算。
+ */
+export function readingAnchorFlex(
+  full: LineBox,
+  panel: LineBox,
   size: number,
+  lines?: { first?: LineBox; last?: LineBox },
 ): { x: number; y: number; side: "left" | "right" } {
   const half = size / 2;
   const pad = 10;
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const xMin = panel.left + half + pad;
   const xMax = panel.right - half - pad;
   const yMin = panel.top + half + pad;
   const yMax = panel.bottom - half - pad;
-  // ① 句尾右下(默认:贴住最后一个字的右下角,重叠仅数像素)
-  let x = mark.right + half * 0.88;
-  let y = mark.bottom + half * 0.92;
-  // ② 右侧放不下(窄屏行满宽) → 句尾正下方
-  if (x > xMax) {
-    x = Math.min(Math.max(mark.right - half * 0.55, xMin), xMax);
-    y = mark.bottom + half * 0.92;
+  const last = lines?.last ?? full;
+  const first = lines?.first ?? full;
+
+  // ① 末行行尾右外侧:生物中心离行尾整整一个半径+缝隙(横向零遮挡),纵向与行平齐微沉
+  const rX = last.right + half * 1.06;
+  if (rX <= xMax) {
+    const cy = (last.top + last.bottom) / 2 + half * 0.2;
+    return { x: clamp(rX, xMin, xMax), y: clamp(cy, yMin, yMax), side: "left" };
   }
-  // ③ 底部放不下(末行贴面板底) → 该行右侧垂直居中;再不行 → 面板右下安全位
-  if (y > yMax) {
-    y = Math.min(Math.max((mark.top + mark.bottom) / 2, yMin), yMax);
-    if (x > xMax) x = xMax;
+  // ② 首行行首左外侧(镜像)
+  const lX = first.left - half * 1.06;
+  if (lX >= xMin) {
+    const cy = (first.top + first.bottom) / 2 + half * 0.2;
+    return { x: lX, y: clamp(cy, yMin, yMax), side: "right" };
   }
-  // 左边界的最后防线
-  if (x < xMin) x = xMin;
-  return { x, y, side: x > mark.right ? "left" : "right" };
+  // ③ 句尾右下(旧默认;底部贴板则上收为该行右侧垂直居中)
+  let x = clamp(last.right + half * 0.88, xMin, xMax);
+  let y = clamp(full.bottom + half * 0.92, yMin, yMax);
+  if (y >= yMax) {
+    y = clamp((last.top + last.bottom) / 2, yMin, yMax);
+  }
+  // ④ 极端窄屏:面板右下安全位
+  if (x >= xMax && y >= yMax) {
+    x = xMax;
+    y = clamp(yMax - half * 0.1, yMin, yMax);
+  }
+  return { x, y, side: x > last.right ? "left" : "right" };
 }
 
 /* ---------------- v10 连续移动(限速滑翔,不闪现) ---------------- */

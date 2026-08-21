@@ -20,7 +20,7 @@ import type {
   SpeechTtsDoneEvent,
   SpeechTtsErrorEvent,
 } from "@shared/speech-types";
-import { splitSentences, normalizeSpeechText } from "@shared/speech-text";
+import { speechSentencesOf } from "@shared/speech-text";
 
 import { SPEECH_MODELS_MANIFEST } from "./speech-model-manifest";
 import { ensureSpeechModel, readSpeechModelStatus } from "./speech-model-service";
@@ -206,7 +206,7 @@ export async function speakMessage(
     if (!deps.custom) return { ok: false, reason: "custom-provider-missing" };
   }
 
-  const { sentences } = splitSentences(normalizeSpeechText(rawText), { flush: true });
+  const sentences = speechSentencesOf(rawText);
   if (sentences.length === 0) return { ok: false, reason: "empty-text" };
 
   // 新场开跑 = 旧场停(旧场循环看到 messageId 变更自行退场并发 stopped done)

@@ -133,9 +133,10 @@ export function useAsrInput(
     startInFlightRef.current = true;
     void (async () => {
       try {
-        // 不安全上下文(LAN http 等)getUserMedia 不可用 —— 按启动失败处理
+        // 不安全上下文(LAN http 等)getUserMedia 不可用 —— 区分真因:
+        // 非安全上下文(浏览器只允许 https/127.0.0.1 用麦克风)≠ 系统权限被拒
         if (navigator.mediaDevices?.getUserMedia == null) {
-          setStartError("mic-unavailable");
+          setStartError(window.isSecureContext ? "mic-unavailable" : "mic-insecure-context");
           return;
         }
         const media = await navigator.mediaDevices.getUserMedia({

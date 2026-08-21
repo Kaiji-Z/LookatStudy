@@ -93,7 +93,9 @@ async function reloadEnabled(): Promise<void> {
   enabledLoaded = true;
   try {
     const p = await window.api?.getSetting("companion_pet_mode");
-    petMode = p === "1";
+    // web 运行时(手机/浏览器)没有桌宠窗:设置即使是 1 也不隐身主窗生物(否则手机上 bot 凭空消失)
+    const webRuntime = typeof window !== "undefined" && !!(window as { __lookatstudyWeb?: boolean }).__lookatstudyWeb;
+    petMode = p === "1" && !webRuntime;
   } catch {
     petMode = false;
   }

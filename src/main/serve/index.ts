@@ -16,13 +16,24 @@ function arg(name: string, fallback: string): string {
   return fallback;
 }
 
+function argvHas(name: string): boolean {
+  return process.argv.includes(`--${name}`);
+}
+
 async function main(): Promise<void> {
   const dataDir = resolve(arg("data", join(homedir(), ".lookatstudy")));
   // 默认 web/ 与 server.cjs 同级(dist/mobile 布局);仓库 dev 场景显式传 dist/renderer
   const webDir = resolve(arg("web", join(__dirname, "web")));
   const port = Number(arg("port", "17890"));
+  // LAN 语音需要安全上下文:http://192.168.x.x 拿不到 getUserMedia。
+  // --tls-cert/--tls-key(成对,PEM)升级 https,浏览器侧 WS 自动走 wss。
+  const tlsCert = argvHas("tls-cert") ? resolve(arg("tls-cert", "")) : undefined;
+  const tlsKey = argvHas("tls-key") ? resolve(arg("tls-key", "")) : undefined;
+  if ((tlsCert !== undefined) !== (tlsKey !== undefined)) {
+    throw new Error("--tls-cert 与 --tls-key 必须成对提供(PEM 文件路径)");
+  }
 
-  const inst = await startServe({ dataDir, webDir, port });
+  const inst = await startServe({ dataDir, webDir, port, tlsCert, tlsKey });
   process.stderr.write(
     [
       `[lookatstudy-serve] listening on ${inst.url}`,

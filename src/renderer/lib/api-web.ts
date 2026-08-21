@@ -229,6 +229,8 @@ export async function installWebApi(): Promise<void> {
   }
   api.on = (channel: string, listener: (...args: unknown[]) => void) => transport.on(channel, listener);
   (window as { api?: unknown }).api = api as unknown as LookatStudyApi;
+  // web 运行时标记:无 Electron 能力的面(桌宠窗等)靠它隐藏入口/降级
+  (window as { __lookatstudyWeb?: boolean }).__lookatstudyWeb = true;
 }
 
 /** 测试用:直接拿传输层(不经 window) */

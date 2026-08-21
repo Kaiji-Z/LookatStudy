@@ -10,7 +10,7 @@
  * 服务端束到临时目录,~2s)
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -235,6 +235,41 @@ try {
     }
     ok("T5 漂移守卫:preload ↔ API_CHANNELS 逐对一致");
   } catch (e) { fail("T5 漂移守卫", e); }
+
+  // ── T6 手机端收尾(源级守卫):serve TLS / 麦克风安全上下文文案 / web 运行时桌宠门 ──
+  try {
+    const src = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
+    const serverSrc = src("src/main/serve/server.ts");
+    assert.ok(
+      serverSrc.includes("createHttpsServer") && serverSrc.includes("tlsCert") && serverSrc.includes('"https"'),
+      "T6: serve TLS 接线(证书成对 → https 服务,渲染层按协议自动 wss)",
+    );
+    const cliSrc = src("src/main/serve/index.ts");
+    assert.ok(cliSrc.includes("tls-cert") && cliSrc.includes("必须成对提供"), "T6: serve CLI --tls-cert/--tls-key(缺一报错)");
+    const asrSrc = src("src/renderer/lib/useAsrInput.ts");
+    assert.ok(
+      asrSrc.includes("window.isSecureContext") && asrSrc.includes("mic-insecure-context"),
+      "T6: 麦克风不可用时区分安全上下文真因(LAN http ≠ 权限被拒)",
+    );
+    const i18nSrc = src("src/renderer/lib/i18n.ts");
+    assert.ok(
+      i18nSrc.includes("chat.speech.asr_insecure_context") && i18nSrc.split("chat.speech.asr_insecure_context").length === 3,
+      "T6: 不安全上下文提示双语键(zh+en)",
+    );
+    const apiWebSrc = src("src/renderer/lib/api-web.ts");
+    assert.ok(apiWebSrc.includes("__lookatstudyWeb = true"), "T6: web 运行时标记(installWebApi 落章)");
+    const busSrc = src("src/renderer/lib/companion/bus.ts");
+    assert.ok(
+      busSrc.includes('petMode = p === "1" && !webRuntime') && busSrc.includes("__lookatstudyWeb"),
+      "T6: bus petMode 在 web 运行时强制 false(手机不隐身)",
+    );
+    const settingsSrc = src("src/renderer/components/SettingsView.tsx");
+    assert.ok(
+      settingsSrc.includes("isWebRuntime") && settingsSrc.includes("{!isWebRuntime && ("),
+      "T6: 设置页桌宠开关 web 运行时不出现",
+    );
+    ok("T6 手机端收尾源级守卫(TLS/安全上下文文案/桌宠 web 门)");
+  } catch (e) { fail("T6 手机端收尾源级守卫", e); }
 
   child.kill();
   await waitForExit(child);

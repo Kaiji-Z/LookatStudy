@@ -160,8 +160,10 @@ export function ChatComposer({
                 ? "chat.speech.azure_stt_key_missing"
                 : asrError === "azure-region-missing"
                   ? "chat.speech.azure_stt_region_missing"
-                  : asrError === "mic-unavailable"
-                    ? "chat.speech.asr_start_fail"
+                  : asrError === "mic-insecure-context"
+                    ? "chat.speech.asr_insecure_context"
+                    : asrError === "mic-unavailable"
+                      ? "chat.speech.asr_start_fail"
                     : "chat.speech.asr_failed";
     setVoiceError(t(key));
     asr.clearTranscribeError();

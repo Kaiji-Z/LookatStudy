@@ -8,7 +8,8 @@
  * 与 Electron 共享 collectHandlers() 的同一张 handler 表 —— API 面零漂移。
  * 安全:默认只绑回环地址;WS 连接需 ?token= 校验(dataDir/serve-token,首启生成)。
  */
-import { createServer, type Server as HttpServer } from "node:http";
+import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -34,6 +35,10 @@ export interface ServeOptions {
   port: number;
   /** 默认 127.0.0.1;显式传 0.0.0.0 走 LAN(自己负责安全) */
   host?: string;
+  /** TLS 证书/私钥 PEM 路径(成对传)。启用后 http→https、WS 自动 wss,
+   *  解锁 LAN IP 上的麦克风等安全上下文 API(自签证书需浏览器先信任一次)。 */
+  tlsCert?: string;
+  tlsKey?: string;
   /** 跳过 token(仅 verify 测试) */
   skipAuth?: boolean;
 }
@@ -140,7 +145,7 @@ export async function startServe(opts: ServeOptions): Promise<ServeInstance> {
   const handlers = collectHandlers({ ui: "web", dataDir: opts.dataDir, emitter, dialog: stubDialog });
   const dummyEvent = { sender: null };
 
-  const httpServer: HttpServer = createServer((req, res) => {
+  const requestHandler = (req: IncomingMessage, res: ServerResponse) => {
     // 静态文件 + SPA 回退。token 不用于静态资源(渲染层不是秘密,API 面全在 WS)
     const urlPath = decodeURIComponent((req.url ?? "/").split("?")[0]!);
     let filePath = normalize(join(webRoot, urlPath));
@@ -154,7 +159,17 @@ export async function startServe(opts: ServeOptions): Promise<ServeInstance> {
     const mime = MIME[extname(filePath)] ?? "application/octet-stream";
     res.writeHead(200, { "content-type": mime, "cache-control": "no-cache" });
     createReadStream(filePath).pipe(res);
-  });
+  };
+  // TLS(可选):证书+私钥成对提供时升级 https;渲染层 api-web 按页面协议自动切 wss
+  let httpServer: HttpServer | HttpsServer;
+  if (opts.tlsCert && opts.tlsKey) {
+    httpServer = createHttpsServer(
+      { cert: readFileSync(opts.tlsCert), key: readFileSync(opts.tlsKey) },
+      requestHandler,
+    );
+  } else {
+    httpServer = createServer(requestHandler);
+  }
 
   const wss = new WebSocketServer({ server: httpServer });
   wss.on("connection", (ws, req) => {
@@ -224,7 +239,7 @@ export async function startServe(opts: ServeOptions): Promise<ServeInstance> {
   return {
     port,
     token,
-    url: `http://${host}:${port}/`,
+    url: `${opts.tlsCert && opts.tlsKey ? "https" : "http"}://${host}:${port}/`,
     close,
   };
 }

@@ -858,6 +858,8 @@ function CompanionContent() {
 
   const [sfx, setSfx] = useState(true);
   const [pet, setPet] = useState(false);
+  // 桌宠=Electron 透明窗,web 运行时(手机/浏览器)没有这个窗:入口直接不出现
+  const isWebRuntime = typeof window !== "undefined" && !!(window as { __lookatstudyWeb?: boolean }).__lookatstudyWeb;
 
   useEffect(() => {
     api.getSetting("companion_enabled").then((v) => {
@@ -921,13 +923,15 @@ function CompanionContent() {
             <div className="text-label text-ink-muted">{t("settings.companion.sfx.desc")}</div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Toggle checked={pet} onChange={handlePetToggle} label={t("settings.companion.pet")} testid="companion-pet-toggle" />
-          <div className="flex-1 min-w-0">
-            <div className="text-body font-medium text-ink-strong">{t("settings.companion.pet")}</div>
-            <div className="text-label text-ink-muted">{t("settings.companion.pet.desc")}</div>
+        {!isWebRuntime && (
+          <div className="flex items-center gap-3">
+            <Toggle checked={pet} onChange={handlePetToggle} label={t("settings.companion.pet")} testid="companion-pet-toggle" />
+            <div className="flex-1 min-w-0">
+              <div className="text-body font-medium text-ink-strong">{t("settings.companion.pet")}</div>
+              <div className="text-label text-ink-muted">{t("settings.companion.pet.desc")}</div>
+            </div>
           </div>
-        </div>
+        )}
         <div>
           <div className="text-label text-ink-muted mb-2">{t("settings.companion.form")}</div>
           <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label={t("settings.companion.form")}>

@@ -724,17 +724,19 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
 
   const pose = inTransit
     ? "flying"
-    : ballAck
-      ? "point" // v0.17.2 点球应答:指住球(桌面=球旁指左;T3=朝离屏的左栏注目)
-      : reading?.dir === "left"
-      ? "point"
-      : reading?.dir === "right"
-        ? "pointr"
-        : reading?.dir === "up"
-          ? "pointu"
-          : reading?.dir === "down"
-            ? "pointd"
-            : snap.state.pose;
+    : snap.state.typing
+      ? "typing" // 用户正在打字=进行中活动,优先于点球应答/跟读的指向姿势
+      : ballAck
+        ? "point" // v0.17.2 点球应答:指住球(桌面=球旁指左;T3=朝离屏的左栏注目)
+        : reading?.dir === "left"
+          ? "point"
+          : reading?.dir === "right"
+            ? "pointr"
+            : reading?.dir === "up"
+              ? "pointu"
+              : reading?.dir === "down"
+                ? "pointd"
+                : snap.state.pose;
   // 跟句时体型随 mark 所在栏(中栏对话 76/讲解栏 88),否则随 zone
   const mascotSize = reading ? SIZE[reading.pane] : SIZE[dispZone];
   return (

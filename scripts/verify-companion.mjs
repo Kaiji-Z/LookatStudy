@@ -896,7 +896,10 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
     mascotV4.includes("cp-screen-key") && mascotV4.includes("screenKey") && mascotV4.includes("cp-writing") && mascotV4.includes("cp-pen"),
     "T15: v10 胸屏显示按键字符 + 记笔记本笔道具",
   );
-  assert.ok(creature.includes("screenKey={snap.state.typing ? snap.state.lastKey"), "T15: 生物把键入字符喂给胸屏");
+  assert.ok(
+    /screenKey=\{\s*snap\.state\.typing[\s\S]{0,220}snap\.state\.lastKey/.test(creature) && creature.includes('lastKeyKind === "enter" ? "→"'),
+    "T15: 生物把键入字符喂给胸屏(v0.17.2 含 Enter→/退格⌫ 字形回退)",
+  );
   // v6 接线:朗读句级跟随(播放序 + karaoke 高亮 + 跟句指向 + 🔊 sticky)
   const useSpeechSrc = read("lib/useSpeech.ts");
   assert.ok(
@@ -1366,6 +1369,63 @@ console.log("T24 v0.17.2 屏内表情机器人化 + 喷焰可见 + 点球互动"
   assert.ok(creature.includes("fly: false"), "T24: T3 分支(朝左注目不飞)");
   assert.ok(mapRail.split("companionBallTap").length - 1 >= 3, "T24: 物理球/键盘球/搜索三路发射");
   console.log("OK T24: 屏内表情机器人化 + 喷焰重定位 + 点球互动双分支");
+
+// ---------------------------------------------------------------------------
+console.log("T25 v0.17.2 键盘反馈包(信号面板/真实键位/节奏/仪式/IME)");
+{
+  const core = await import("../src/renderer/lib/companion/companion-core.js");
+  // ① 真实键位:QWERTY 物理分区(左=-1 右=1,未知沿用 fallback)
+  assert.equal(core.sideFromCode("KeyQ", 1), -1, "Q 在左半区");
+  assert.equal(core.sideFromCode("KeyP", -1), 1, "P 在右半区");
+  assert.equal(core.sideFromCode("KeyB", 1), -1, "B 在左半区(边界键)");
+  assert.equal(core.sideFromCode("KeyN", -1), 1, "N 在右半区(边界键)");
+  assert.equal(core.sideFromCode("Digit4", 1), -1, "4 在左");
+  assert.equal(core.sideFromCode("Digit7", -1), 1, "7 在右");
+  assert.equal(core.sideFromCode("Enter", -1), 1, "Enter 在右");
+  assert.equal(core.sideFromCode("Backspace", -1), 1, "Backspace 在右");
+  assert.equal(core.sideFromCode("Process", -1), -1, "未知键沿用 fallback");
+  assert.equal(core.sideFromCode("", 1), 1, "空 code 沿用 fallback(合成事件)");
+  // ② 信号面板条:确定性 + 范围 + 左→右延迟
+  const bars = core.scopeBars(42);
+  assert.equal(bars.length, 7, "7 条");
+  assert.deepEqual(core.scopeBars(42), bars, "同 seq 确定性");
+  assert.notDeepEqual(core.scopeBars(43), bars, "异 seq 波形不同");
+  for (const b of bars) assert.ok(b.h >= 4 && b.h <= 11, `条高在 4~11(${b.h})`);
+  assert.ok(bars[0].d === 0 && bars[6].d === 132, "延迟左→右传播");
+  // ③ reducer:Enter 仪式 / 退格连击 / 爆发专注
+  const st0 = core.initialCompanionState(0);
+  const press = (st, key, kind, now, side = 1) => core.companionReducer(st, { type: "press", side, now, key, kind });
+  const stE = press(st0, undefined, "enter", 1000);
+  assert.ok(stE.expression === "happy" && stE.pose === "hop" && stE.lastKeyKind === "enter", "Enter=小跳+happy(交接仪式)");
+  let st = st0;
+  for (let i = 0; i < 3; i++) st = press(st, undefined, "back", 2000 + i * 200);
+  assert.ok(st.backStreak === 3 && st.expression === "encourage", "3 连退格=汗滴担忧");
+  st = press(st, "a", "char", 2600);
+  assert.equal(st.backStreak, 0, "常规键清退格连击");
+  st = st0;
+  for (let i = 0; i < 6; i++) st = press(st, "k", "char", 5000 + i * 300);
+  assert.ok(st.burstN === 6 && st.expression === "thinking", "3s 内 6 键=专注(屏内思考眉)");
+  // 暂停相位:1.2~6s=listening,6~15s=thinking,之后回 0
+  assert.equal(core.pausePhaseOf({ typing: true, lastPress: 10_000 }, 12_500), 1, "停 2.5s=抬头等待");
+  assert.equal(core.pausePhaseOf({ typing: true, lastPress: 10_000 }, 18_000), 2, "停 8s=若有所思");
+  assert.equal(core.pausePhaseOf({ typing: true, lastPress: 10_000 }, 40_000), 0, "停 30s=回常态");
+  assert.equal(core.pausePhaseOf({ typing: true, lastPress: 10_000 }, 10_500), 0, "打字中=0");
+  const stTick = core.companionReducer({ ...st, lastPress: 10_000, typing: true, pausePhase: 0 }, { type: "tick", now: 12_500 });
+  assert.ok(stTick.expression === "listening" && stTick.pausePhase === 1, "tick 相位转移=等待表情");
+  // ④ 接线:bus 真实键位/compositionend,Mascot 信号面板+闪发,Creature squash
+  const bus = readFileSync(new URL("../src/renderer/lib/companion/bus.ts", import.meta.url), "utf8");
+  const mascot = read("components/companion/Mascot.tsx");
+  const creature = read("components/companion/CompanionCreature.tsx");
+  const css = readFileSync(new URL("../src/renderer/index.css", import.meta.url), "utf8");
+  assert.ok(bus.includes("sideFromCode(e.code, nextSide)") && bus.includes('"compositionend"'), "bus:真实键位+IME 汉字上屏");
+  assert.ok(bus.includes('e.code === "Enter" ? "enter"'), "Enter 分型");
+  assert.ok(mascot.includes("cp-key-scope") && mascot.includes("scopeBars(keySeq)") && mascot.includes("keyclip"), "胸屏信号面板(裁剪+脉冲条)");
+  assert.ok(mascot.includes("cp-screen-key-flash"), "闪发样式挂接");
+  assert.ok(creature.includes("cp-keypress") && creature.includes("void wrap.offsetWidth"), "整机 squash 重触发");
+  assert.ok(css.includes("cp-key-squash") && css.includes("cp-scope-pulse") && css.includes("cp-key-flash"), "CSS 三动画");
+  assert.ok(css.includes(".cp-scope-bar { animation: none; opacity: 0.7; }"), "reduced-motion 双轨");
+  console.log("OK T25: 键盘反馈包(信号面板/键位/节奏/仪式/IME)");
+}
 }
 
 console.log("\nverify-companion: ALL PASS");

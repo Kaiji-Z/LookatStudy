@@ -17,6 +17,7 @@ import {
   initialCompanionState,
   isCompanionEnabled,
   micArcScale,
+  sideFromCode,
   smoothMic,
 } from "./companion-core.ts";
 import { formIdFromSetting, type CompanionFormId } from "./forms-index.ts";
@@ -173,11 +174,29 @@ function install(): void {
     "keydown",
     (e) => {
       if (e.repeat) return;
-      const side = nextSide;
+      // v0.17.2 真实键位→左右臂(QWERTY 物理分区,取代机械交替;未知键沿用交替)
+      const side = sideFromCode(e.code, nextSide);
       nextSide = nextSide === 1 ? -1 : 1;
       // v10:打印字符随键击上屏(胸屏显示按键);组合键/功能键不上屏
       const printable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey ? e.key : undefined;
-      dispatch({ type: "press", side, now: Date.now(), key: printable });
+      // v0.17.2 按键分型:back=退格连击计数,enter=交接仪式(胸屏→/小跳)
+      const kind =
+        e.code === "Backspace" || e.code === "Delete" ? "back" : e.code === "Enter" ? "enter" : printable !== undefined ? "char" : "other";
+      dispatch({ type: "press", side, now: Date.now(), key: printable, kind });
+    },
+    { passive: true },
+  );
+  // v0.17.2 中文输入法:keydown 拿不到汉字(e.key="Process"),听 compositionend
+  // 把**已提交**串的最后一个字上屏(不是拼音中间态);空提交(如取消)不上屏
+  window.addEventListener(
+    "compositionend",
+    (e) => {
+      const data = (e as CompositionEvent).data ?? "";
+      const ch = [...data].pop();
+      if (ch && ch.trim()) {
+        dispatch({ type: "press", side: nextSide, now: Date.now(), key: ch, kind: "char" });
+        nextSide = nextSide === 1 ? -1 : 1;
+      }
     },
     { passive: true },
   );

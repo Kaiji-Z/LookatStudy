@@ -720,6 +720,21 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
     };
   }, [snap.enabledLoaded, snap.enabled, snap.petMode, reduced]);
 
+  // v0.17.2 击键 squash:每次按键整机微压缩(shiver 同款 add/remove;强制
+  // reflow 让连续击键也逐键重触发,而不是动画只在第一次播)
+  const keySeqPrevRef = useRef(0);
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap || snap.state.keySeq === keySeqPrevRef.current) return;
+    keySeqPrevRef.current = snap.state.keySeq;
+    wrap.classList.remove("cp-keypress");
+    void wrap.offsetWidth;
+    wrap.classList.add("cp-keypress");
+    const t = setTimeout(() => wrap.classList.remove("cp-keypress"), 160);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snap.state.keySeq 即依赖
+  }, [snap.state.keySeq]);
+
   if (!snap.enabledLoaded || !snap.enabled || snap.petMode) return null;
 
   const pose = inTransit
@@ -750,7 +765,12 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       <Mascot
         form={snap.form}
         expression={snap.state.expression}
-        screenKey={snap.state.typing ? snap.state.lastKey : null}
+        screenKey={
+          snap.state.typing
+            ? (snap.state.lastKey ?? (snap.state.lastKeyKind === "enter" ? "→" : snap.state.lastKeyKind === "back" ? "⌫" : null))
+            : null
+        }
+        keyFlash={snap.state.typing && snap.state.lastKey == null && (snap.state.lastKeyKind === "enter" || snap.state.lastKeyKind === "back")}
         coreLit={snap.state.correctStreak >= 3}
         noteTick={Date.now() < snap.state.noteTickUntil}
         pose={pose}

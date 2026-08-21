@@ -86,6 +86,16 @@ export interface CompanionState {
   keySide: -1 | 1;
   /** v10 最近一次键入的可见字符(胸屏显示;非打印键为 null) */
   lastKey: string | null;
+  /** v0.17.2 最近一次按键类别(char/back/enter/other;Enter=胸屏 → 闪发/小跳) */
+  lastKeyKind: "char" | "back" | "enter" | "other";
+  /** v0.17.2 退格连击(1.5s 窗内计数;≥3 → 汗滴担忧) */
+  backStreak: number;
+  lastBackAt: number;
+  /** v0.17.2 键击爆发窗(3s 内 ≥6 键 → 专注表情/眉聚) */
+  burstStart: number;
+  burstN: number;
+  /** v0.17.2 打字暂停相位(0/1/2,见 pausePhaseOf;存进状态让 tick 的提前返回能感知相位转移) */
+  pausePhase: 0 | 1 | 2;
   /** v11 连续答对计数(wrong 清零;≥3 触发 flame 连击情绪) */
   correctStreak: number;
   /** v11 勾销动作保持到(卡点掌握→本子上打金勾) */
@@ -129,7 +139,7 @@ export type CompanionEvent =
   | { type: "listening"; on: boolean; now: number }
   | { type: "streaming"; on: boolean; now: number }
   | { type: "activity"; now: number }
-  | { type: "press"; side: -1 | 1; now: number; key?: string }
+  | { type: "press"; side: -1 | 1; now: number; key?: string; kind?: "char" | "back" | "enter" | "other" }
   | { type: "send"; now: number }
   | { type: "focus"; on: boolean; now: number }
   | { type: "zoneFocus"; on: boolean; now: number }
@@ -157,6 +167,63 @@ export const SLEEP_AFTER_MS = 180_000;
 
 /** 打字反应空闲过期(Bongo Cat:停键 1.2s 收手) */
 export const TYPE_IDLE_MS = 1_200;
+
+/** v0.17.2 键击爆发窗:窗内 ≥6 键 → 专注(屏内思考眉) */
+export const KEY_BURST_MS = 3_000;
+export const KEY_BURST_FOCUS_N = 6;
+/** v0.17.2 打字暂停相位:1.2~6s=抬头等待(listening),6~15s=若有所思(thinking) */
+export const PAUSE_WAIT_MS = 6_000;
+export const PAUSE_THINK_MS = 15_000;
+
+/**
+ * v0.17.2 QWERTY 物理键位 → 左右臂(真实键位取代机械交替,bot 像"看着键盘")。
+ * 左半区=-1,右半区=1;未知键(空 code/IME Process 等)沿用交替 fallback。
+ * 纯函数,verify 直测。
+ */
+const CODE_LEFT = new Set([
+  "Backquote", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5",
+  "Tab", "CapsLock", "ShiftLeft", "ControlLeft", "MetaLeft", "AltLeft",
+  "Escape", "F1", "F2", "F3", "F4", "F5", "F6",
+]);
+const CODE_RIGHT = new Set([
+  "Digit6", "Digit7", "Digit8", "Digit9", "Digit0", "Minus", "Equal", "Backspace",
+  "Backslash", "BracketLeft", "BracketRight", "Semicolon", "Quote", "Enter",
+  "Comma", "Period", "Slash", "ShiftRight", "ControlRight", "MetaRight", "AltRight",
+  "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "F7", "F8", "F9", "F10", "F11", "F12",
+]);
+const LETTER_LEFT = new Set("qwertyasdfgzxcvb");
+export function sideFromCode(code: string, fallback: -1 | 1): -1 | 1 {
+  if (code.startsWith("Key")) return LETTER_LEFT.has(code.slice(3).toLowerCase()) ? -1 : 1;
+  if (code.startsWith("Digit")) return Number(code.slice(5)) <= 5 ? -1 : 1;
+  if (CODE_LEFT.has(code)) return -1;
+  if (CODE_RIGHT.has(code)) return 1;
+  return fallback;
+}
+
+/**
+ * v0.17.2 胸屏信号面板的击键脉冲条(确定性伪随机:同 keySeq 稳定,verify 直测)。
+ * h=条高(4~11,两端收敛成包络),d=动画延迟 ms(左→右传播,像信号扫过)。
+ */
+export function scopeBars(keySeq: number, bars = 7): Array<{ h: number; d: number }> {
+  const out: Array<{ h: number; d: number }> = [];
+  for (let i = 0; i < bars; i++) {
+    const x = Math.sin(keySeq * 12.9898 + i * 78.233) * 43758.5453;
+    const r = x - Math.floor(x);
+    const edge = i === 0 || i === bars - 1 ? 0.55 : 1;
+    out.push({ h: 4 + r * 7 * edge, d: i * 22 });
+  }
+  return out;
+}
+
+/** v0.17.2 打字暂停相位(0=打字中/无,1=抬头等待,2=若有所思;纯函数) */
+export function pausePhaseOf(s: Pick<CompanionState, "typing" | "lastPress">, now: number): 0 | 1 | 2 {
+  if (s.lastPress === 0) return 0; // 从未打字=无暂停相位(测试用合成小时间戳,生产 lastPress=0 是"未打字"哨兵)
+  if (s.typing && now - s.lastPress <= TYPE_IDLE_MS) return 0;
+  const age = now - s.lastPress;
+  if (age > TYPE_IDLE_MS && age <= PAUSE_WAIT_MS) return 1;
+  if (age > PAUSE_WAIT_MS && age <= PAUSE_THINK_MS) return 2;
+  return 0;
+}
 
 /** 窗口失焦后多久打盹(人回来一眼就醒,不用等 3 分钟) */
 export const BLUR_SLEEP_MS = 4_000;
@@ -217,6 +284,12 @@ export function initialCompanionState(now = 0): CompanionState {
     keySeq: 0,
     keySide: 1,
     lastKey: null,
+    lastKeyKind: "other",
+    backStreak: 0,
+    lastBackAt: 0,
+    burstStart: 0,
+    burstN: 0,
+    pausePhase: 0,
     correctStreak: 0,
     noteTickUntil: 0,
     lastPress: 0,
@@ -360,7 +433,10 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
       return next;
     }
     case "press": {
-      // Bongo Cat 式逐键:每次键击/点击都交替/定向按压一只臂,唤醒入睡
+      // Bongo Cat 式逐键:每次键击/点击都定向按压一只臂,唤醒入睡。
+      // v0.17.2 键盘反馈分型:char=常规(爆发窗≥6键→专注眉)/back=退格连击
+      // (≥3/1.5s→汗滴担忧)/enter=交接仪式(小跳+胸屏→闪发)。
+      const kind = ev.kind ?? (ev.key != null ? "char" : "other");
       const next: CompanionState = {
         ...s,
         sleeping: false,
@@ -370,11 +446,41 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         lastPress: ev.now,
         lastActivity: ev.now,
         lastKey: ev.key ?? null,
+        lastKeyKind: kind,
       };
-      if (next.until === null || next.until <= ev.now) {
-        next.expression = baseExpressionOf(next);
-        next.pose = basePoseOf(next);
-        next.until = null;
+      if (kind === "back") {
+        next.backStreak = ev.now - s.lastBackAt <= 1_500 ? s.backStreak + 1 : 1;
+        next.lastBackAt = ev.now;
+      } else {
+        next.backStreak = 0;
+      }
+      // 爆发窗:3s 内连续 ≥6 键 → 打字进入专注态(屏内思考眉)
+      if (ev.now - s.burstStart > KEY_BURST_MS) {
+        next.burstStart = ev.now;
+        next.burstN = 1;
+      } else {
+        next.burstN = s.burstN + 1;
+      }
+      if (kind === "back" && next.backStreak >= 3) {
+        // 连续返工(打错在改的信号):屏角冒汗,不打扰不评判
+        next.expression = "encourage";
+        next.pose = "float";
+        next.until = ev.now + 1_400;
+      } else if (kind === "enter") {
+        // 回车=「我打完了,该你了」的交接:小跳 + 胸屏 → 闪发
+        next.expression = "happy";
+        next.pose = "hop";
+        next.until = ev.now + 800;
+      } else {
+        if (next.until === null || next.until <= ev.now) {
+          next.expression = baseExpressionOf(next);
+          next.pose = basePoseOf(next);
+          next.until = null;
+        }
+        if (kind === "char" && next.burstN >= KEY_BURST_FOCUS_N && (next.until ?? 0) <= ev.now) {
+          next.expression = "thinking";
+          next.until = ev.now + 800; // 每键续期:持续快打=持续专注,停手 0.8s 自然回落
+        }
       }
       return next;
     }
@@ -552,6 +658,7 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
       };
     case "tick": {
       const typing = s.typing && ev.now - s.lastPress <= TYPE_IDLE_MS;
+      const phase = pausePhaseOf(s, ev.now);
       const sleepAfter = s.windowFocused ? SLEEP_AFTER_MS : BLUR_SLEEP_MS;
       const sleeping = !s.talking && !s.listening && !s.grabbed && ev.now - s.lastActivity >= sleepAfter;
       const expired = s.until !== null && ev.now > s.until;
@@ -574,14 +681,15 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
       const mode = veilDecision(s, ev.now) ? "veil" : "front";
       if (
         s.sleeping === sleeping && s.typing === typing && !expired
-        && zone === s.zone && mode === s.mode
+        && zone === s.zone && mode === s.mode && phase === s.pausePhase
       ) return s;
-      const next: CompanionState = { ...s, typing, sleeping, zone, zoneSince, mode };
+      const next: CompanionState = { ...s, typing, sleeping, zone, zoneSince, mode, pausePhase: phase };
       if (
         expired
         || (sleeping && s.expression !== "sleeping")
         || (typing !== s.typing && (s.until === null || expired))
         || (zone !== s.zone && (next.until === null || expired))
+        || (phase !== s.pausePhase && (s.until === null || expired))
       ) {
         // 被扔后的余怒:晕眩结束且无别的反应压着 → 鼓脸生气(huffy)
         if (expired && next.expression === "surprised" && ev.now < s.huffyUntil && !next.grabbed) {
@@ -592,6 +700,12 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
           next.expression = baseExpressionOf(next);
           next.pose = basePoseOf(next);
           next.until = null;
+          // v0.17.2 打字暂停的呼吸感:刚停(1.2~6s)抬头等待,停久(6~15s)若有所思
+          if (phase === 1 && !sleeping && !next.talking && !next.listening) {
+            next.expression = "listening";
+          } else if (phase === 2 && !sleeping && !next.talking && !next.listening) {
+            next.expression = "thinking";
+          }
         }
       }
       return next;

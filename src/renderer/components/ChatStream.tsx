@@ -25,7 +25,7 @@ import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Copy, Settings, Gr
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
-import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor } from "../lib/highlightText.js";
+import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, centerReadingRangeInView } from "../lib/highlightText.js";
 import { playedSentencePrefix } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { useLang } from "../lib/i18n.js";
@@ -557,13 +557,8 @@ function MessageRowV2({
       // 搜进去会把高亮标到没在念的文字上(推理常复述正文措辞,极容易误命中)。
       const rg = markReadingSentence(root, sentence, { within: '[data-testid="part-text"]' });
       if (!rg) return;
-      const el = rg.startContainer.parentElement ?? (rg.startContainer as HTMLElement);
-      const r = el.getBoundingClientRect();
-      const scroller = root.closest(".overflow-y-auto");
-      const sr = scroller?.getBoundingClientRect();
-      if (!sr || r.top < sr.top + 48 || r.bottom > sr.bottom - 48) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
+      // v0.18.1 按句子行盒居中(与讲解区同款:超长单段整盒 scrollIntoView 会钉死段首)
+      centerReadingRangeInView(rg, root.closest(".overflow-y-auto"));
     }, 30);
     return () => clearTimeout(timer);
   }, [readingIdx, streamTexts]);

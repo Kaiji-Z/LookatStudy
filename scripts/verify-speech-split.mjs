@@ -231,3 +231,23 @@ console.log("✓ v11.4 T10 高亮=合成侧权威原文(ttsAudio.sentence 下发
 }
 console.log("✓ v11.4 T11 已播前缀:强断句并组/逐块生长/表意终点/空洞防御");
 
+// v0.18.1 T12 朗读滚动跟随=句子行盒(不是整段巨盒):网页存档课单"段"可达 13k 字符
+// (无空行分段,渲染成一个 3000px+ 的 <p>),整段 scrollIntoView(block:center) 对超高
+// 元素只能顶到段首,高亮逐句下行而视野钉死。守卫:两处 karaoke 分支都改走
+// centerReadingRangeInView(Range 首行 rect + scrollTo 自算居中),旧写法禁回归。
+{
+  const src = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
+  const lib = src("src/renderer/lib/highlightText.ts");
+  const nb = src("src/renderer/components/NotebookPanel.tsx");
+  const chat = src("src/renderer/components/ChatStream.tsx");
+  assert.ok(/export function centerReadingRangeInView\(range: Range, scroller: HTMLElement \| null\)/.test(lib), "T12: 行盒居中助手存在");
+  assert.ok(lib.includes("range.getClientRects()"), "T12: 取句子首行 rect(非整段元素盒)");
+  assert.ok(/scroller\.scrollTo\(\{ top: Math\.max\(0, target\), behavior: "smooth" \}\)/.test(lib), "T12: scrollTo 自算居中(不依赖浏览器对超大盒的钳制)");
+  assert.ok(/line\.top >= sr\.top \+ 48 && line\.bottom <= sr\.bottom - 48/.test(lib), "T12: 视野内不动(48px 缓冲带)");
+  for (const [name, f] of [["讲解区", nb], ["对话流", chat]]) {
+    assert.ok(f.includes("centerReadingRangeInView(rg,"), `T12: ${name} karaoke 走行盒居中`);
+    assert.ok(!f.includes("rg.startContainer.parentElement"), `T12: ${name} 不再用整段元素盒锚点`);
+  }
+}
+console.log("✓ v0.18.1 T12 朗读滚动跟随按句子行盒居中(超长单段不钉死段首)");
+

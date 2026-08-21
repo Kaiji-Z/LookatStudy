@@ -594,6 +594,35 @@ export function getReadingRange(): Range | null {
 }
 
 /**
+ * v0.18.1 朗读滚动跟随按**句子行盒**居中,不再按整段元素盒。
+ * 根因(网页存档课实测):HTML 转 markdown 无空行分段,一"段"可达 13k 字符、
+ * 渲染成单个 3000px+ 高的 `<p>`——`scrollIntoView(block:center)` 对超高元素
+ * 只能顶到段首,之后高亮逐句下行、视野钉死在段顶("高亮在走、屏幕不跟")。
+ * 修法:取 Range 的**首行 client rect**(句子自己的行盒,不是所在段落的巨盒),
+ * 出视野 48px 缓冲带时把该行平滑居中(scroller.scrollTo 自算偏移,不依赖
+ * 浏览器对超大盒的钳制行为;scroller 缺席时退回整段 scrollIntoView 兜底)。
+ */
+export function centerReadingRangeInView(range: Range, scroller: HTMLElement | null): void {
+  const rects = range.getClientRects();
+  const line =
+    rects.length > 0 && rects[0]!.height > 0
+      ? rects[0]!
+      : (range.startContainer.parentElement ?? (range.startContainer as HTMLElement))?.getBoundingClientRect();
+  if (!line || line.height <= 0) return;
+  if (!scroller) {
+    (range.startContainer.parentElement ?? (range.startContainer as HTMLElement))?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "center",
+    });
+    return;
+  }
+  const sr = scroller.getBoundingClientRect();
+  if (line.top >= sr.top + 48 && line.bottom <= sr.bottom - 48) return; // 视野内不动(避免逐句连续跳)
+  const target = scroller.scrollTop + (line.top + line.height / 2) - (sr.top + sr.height / 2);
+  scroller.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+}
+
+/**
  * v10 最近一次新增笔记的画线 mark(伴学"飞来记笔记"的落点)。
  * v11 自愈:保存笔记会触发正文重渲染,ReactMarkdown 会把 mark span 整个换掉,
  * 存元素引用随即悬空(加笔记时伴学凭空隐身的根因)。这里同时记文本,取用时

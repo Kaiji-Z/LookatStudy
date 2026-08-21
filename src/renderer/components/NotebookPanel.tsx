@@ -20,7 +20,7 @@ import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { SelfRatingCard } from "./ReviewPanel.js";
 import { api } from "../lib/api.js";
-import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, setLastNoteMark } from "../lib/highlightText.js";
+import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, setLastNoteMark, centerReadingRangeInView } from "../lib/highlightText.js";
 import { playedSentencePrefix } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
@@ -386,14 +386,9 @@ function ContentTab({
     const timer = setTimeout(() => {
       const rg = markReadingSentence(prose, sentence);
       if (!rg) return;
-      const el = rg.startContainer.parentElement ?? (rg.startContainer as HTMLElement);
-      // 视野外才滚动(避免逐句连续跳);平滑居中
-      const r = el.getBoundingClientRect();
-      const scroller = prose.closest(".overflow-y-auto");
-      const sr = scroller?.getBoundingClientRect();
-      if (!sr || r.top < sr.top + 48 || r.bottom > sr.bottom - 48) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
+      // 视野外才滚动(避免逐句连续跳);按句子行盒居中(v0.18.1:网页存档课单段
+      // 可达 13k 字符/3000px 高,整段 scrollIntoView 只会顶到段首钉死不动)
+      centerReadingRangeInView(rg, prose.closest(".overflow-y-auto"));
     }, 30);
     return () => clearTimeout(timer);
   }, [readingIdx, speech.streamTexts, nodeSpeechId]);

@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **图产物语法自动修复** —— AI 画图(draw_diagram)偶发 mermaid 语法滑丝,此前学习者只能看到源码 fallback;现在渲染失败会带解析错误自动回主进程让 LLM 定点修复(只修语法不重画,一轮封顶),修好自动重渲,会话内缓存修复稿不重复调用;修复失败或未配模型时保持原 fallback,绝不白屏。出题侧同步升级:draw_diagram 提示词加图类型选型指南(流程/时序/状态按内容选)+ 标签引号规则(中文/括号 label 必须引号包裹——裸括号是渲染失败首因,防患于修复之前)。思想取自 archify 的"生成→验证回执→带错修复"循环。verify-diagram-repair T1-T5 + 破坏验证 2/2。
+
 ## [0.20.0] - 2026-08-22
 
 ### Added

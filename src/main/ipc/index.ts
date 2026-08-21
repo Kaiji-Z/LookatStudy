@@ -115,6 +115,7 @@ import {
 // Agent 引擎 + Proposal（M2）
 import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory, handleAgentChatThread, abortAgentChatThread } from "../services/agent/agent-engine.js";
 import { getContextUsage } from "../services/agent/context-usage.js";
+import { repairMermaidDiagram } from "../services/agent/diagram-repair-service.js";
 import { readAttachmentDataUrl } from "../services/attachment-store.js";
 import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels, resolveLlm, readSettingsMap } from "../services/agent/llm-client.js";
 import { gatherConsolidationWindow, consolidate, defaultLlmConsolidate, getConsolidationWatermark, setConsolidationWatermark } from "../services/memory-service.js";
@@ -1011,6 +1012,12 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
 
   handle("asset:getDataUrl", async (_e, assetId: string): Promise<string | null> => {
     return getAssetDataUrl(getDb(), assetId);
+  });
+
+  /* ---------- 产物(diagram 修复)---------- */
+
+  handle("artifact:repairMermaid", async (_e, input: import("@shared/types").DiagramRepairCall) => {
+    return repairMermaidDiagram(getDb(), input);
   });
 }
 

@@ -535,9 +535,11 @@ export async function runAgentTurn(
     }),
     draw_diagram: tool({
       description:
-        "用 Mermaid 语法画一个流程图/时序图/状态图。" +
-        "当需要展示流程、时序、状态转换等结构化图示时调用。" +
-        "返回的 mermaid 代码会渲染成图(支持 flowchart/sequence/state)。注意只返回合法 mermaid 语法。\n\n" +
+        "画结构化图示(Mermaid),按内容选最合适的类型:" +
+        "步骤/决策/因果走向 → flowchart TD(分支多时)或 LR(短链条);" +
+        "多方角色之间的来回交互(调用/请求/协议)→ sequenceDiagram;" +
+        "同一对象的状态与转换 → stateDiagram-v2。" +
+        "返回的 mermaid 代码会渲染成图。注意只返回合法 mermaid 语法。\n\n" +
         QUALITY_GUIDE.diagram,
       inputSchema: z.object({
         title: z.string().describe("图标题"),

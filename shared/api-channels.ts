@@ -35,6 +35,7 @@ export const API_CHANNELS: Record<string, string> = {
   listAssetsByNode: "asset:listByNode",
   listAssetsByCourse: "asset:listByCourse",
   getAssetDataUrl: "asset:getDataUrl",
+  repairMermaidDiagram: "artifact:repairMermaid",
   getProgress: "progress:get",
   updateProgress: "progress:update",
   markNodeAttempted: "progress:markAttempted",

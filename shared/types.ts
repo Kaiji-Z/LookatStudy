@@ -429,6 +429,22 @@ export interface ExamSubmitResult {
 /** 多模态资源:导入课程时收集的图片/PDF 页面渲染图元数据 */
 export type AssetSourceKind = "image_file" | "markdown_ref" | "pdf_page";
 
+/** draw_diagram 产物渲染失败时的 mermaid 定点修复请求(渲染层 → 主进程 LLM) */
+export interface DiagramRepairCall {
+  /** 渲染失败的原始 mermaid(不含围栏) */
+  mermaid: string;
+  /** 渲染层捕获的解析错误信息 */
+  errorMessage: string;
+  diagramType: "flowchart" | "sequence" | "state";
+}
+
+/** 修复回执:失败绝不抛,ok:false + reason 让渲染层守自己的源码 fallback */
+export interface DiagramRepairResult {
+  ok: boolean;
+  mermaid: string;
+  reason?: string;
+}
+
 export interface NodeAsset {
   id: string;
   nodeId: string;
@@ -553,6 +569,10 @@ export interface ApiExpose {
   listAssetsByCourse(courseId: string): Promise<NodeAsset[]>;
   /** 读某资源的 data-url(base64,给 <img> src 用)。不存在返回 null */
   getAssetDataUrl(assetId: string): Promise<string | null>;
+
+  /** 产物 */
+  /** draw_diagram 渲染失败的 mermaid 定点修复(主进程 LLM,1 轮封顶;失败 ok:false 不抛) */
+  repairMermaidDiagram(input: DiagramRepairCall): Promise<DiagramRepairResult>;
 
   /* 进度 */
   getProgress(nodeId: string): Promise<Progress | null>;

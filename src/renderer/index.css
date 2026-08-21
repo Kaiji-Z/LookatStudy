@@ -958,6 +958,10 @@ html.light ::-webkit-scrollbar-thumb:hover {
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .cp-screen-key, .cp-writing, .cp-pen, .cp-core-lit, .cp-note-tick { animation: none; stroke-dashoffset: 0; }
+  /* v0.17.2 键盘反馈动画同样关闭(reduced-motion 双轨) */
+  .cp-scope-bar { animation: none; opacity: 0.7; }
+  .cp-keypress .cp-mascot { animation: none; }
+  .cp-screen-key-flash { animation: none; opacity: 0.9; }
   .cp-screen-wave rect { animation: none; transform: scaleY(0.6); }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -1142,6 +1146,35 @@ html.light ::-webkit-scrollbar-thumb:hover {
   100% { opacity: 1; transform: scale(1); }
 }
 .cp-screen-key { transform-box: fill-box; transform-origin: center; }
+/* v0.17.2 键盘反馈三件套:整机击键 squash / 胸屏信号面板 / Enter·退格闪发 */
+.cp-keypress .cp-mascot {
+  transform-box: fill-box;
+  transform-origin: 50% 92%;
+  animation: cp-key-squash 0.15s ease-out;
+}
+@keyframes cp-key-squash {
+  0% { transform: scaleY(1); }
+  35% { transform: scaleY(0.965) scaleX(1.02); }
+  100% { transform: scaleY(1); }
+}
+.cp-scope-bar {
+  fill: #0e2a38; /* 与听写声波同族(胸屏亮底上的深色信号条) */
+  opacity: 0.8;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cp-scope-pulse 0.5s ease-out backwards;
+}
+@keyframes cp-scope-pulse {
+  from { transform: scaleY(1.9); opacity: 1; }
+  to { transform: scaleY(1); opacity: 0.55; }
+}
+.cp-screen-key-flash {
+  animation: cp-key-pop 0.18s cubic-bezier(0.2, 1.6, 0.4, 1), cp-key-flash 0.55s ease-out forwards;
+}
+@keyframes cp-key-flash {
+  0%, 55% { opacity: 1; }
+  100% { opacity: 0; }
+}
 /* v11 听写胸屏波形:五条声纹错相跳动(胸屏是亮底,用深色条) */
 .cp-screen-wave rect {
   fill: #0e2a38;

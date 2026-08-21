@@ -25,6 +25,7 @@ import {
 } from "../../lib/companion/companion-core.js";
 import { formIdFromSetting } from "../../lib/companion/forms-index.js";
 import { FORM_ART } from "./forms/registry.js";
+import { scopeBars } from "../../lib/companion/companion-core.js";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import type { FormRefs } from "./forms/shared.js";
@@ -50,6 +51,8 @@ export interface MascotProps {
   onGrab?: (px: number, py: number) => void;
   /** 键击序号(变化时重触按压动画);0=从不 */
   keySeq?: number;
+  /** v0.17.2 Enter/退格的闪发样式(→ / ⌫ 大字短闪) */
+  keyFlash?: boolean;
   /** 最近按压臂侧:-1=左 / 1=右 */
   keySide?: -1 | 1;
   /** v10 胸屏显示的键入字符(typing 期间由生物传入;null=不显示) */
@@ -79,6 +82,7 @@ export function Mascot({
   onPoke,
   onGrab,
   keySeq = 0,
+  keyFlash = false,
   keySide = 1,
   screenKey = null,
   coreLit = false,
@@ -242,6 +246,12 @@ export function Mascot({
           }
         : { "aria-hidden": true })}
     >
+      <defs>
+        {/* v0.17.2 胸屏信号面板裁剪:击键脉冲条锁在能量核圆内 */}
+        <clipPath id={`${uid}-keyclip`}>
+          <circle cx="100" cy="135" r="11.6" />
+        </clipPath>
+      </defs>
       {/* v7 航灯:左红右绿导航灯(航空惯例),常态低频呼吸、飞行/起飞时加速闪烁 */}
       <g className="cp-beacons" aria-hidden="true">
         <circle cx="52" cy="86" r="3" className="cp-beacon-l" />
@@ -272,18 +282,28 @@ export function Mascot({
       />
       {/* v11 连对点燃:能量核金环脉动(3+ 连续答对的得意态) */}
       {coreLit && <circle cx="100" cy="135" r="21" fill="none" stroke="#FFC800" strokeWidth="3" className="cp-core-lit" aria-hidden="true" />}
-      {/* v10 胸屏键入字符:打字时身体圆屏显示用户按的键(keySeq 变化=重挂载弹入) */}
+      {/* v0.17.2 胸屏=信号面板:击键脉冲条(确定性伪随机,keySeq 重挂载=信号扫过)
+          + 字符读数(空格 ␣;Enter→/退格⌫ 走闪发样式;汉字来自 compositionend) */}
       {screenKey && (
-        <text
-          key={`k${keySeq}`}
-          x="100"
-          y="140"
-          textAnchor="middle"
-          className="cp-screen-key"
-          aria-hidden="true"
-        >
-          {screenKey === " " ? "␣" : screenKey.toUpperCase()}
-        </text>
+        <g key={`k${keySeq}`} aria-hidden="true">
+          <g className="cp-key-scope" clipPath={`url(#${uid}-keyclip)`}>
+            {scopeBars(keySeq).map((bar, i) => (
+              <rect
+                key={i}
+                x={86.8 + i * 4.4}
+                y={140 - bar.h}
+                width="2.6"
+                height={bar.h}
+                rx="1.1"
+                className="cp-scope-bar"
+                style={{ animationDelay: `${bar.d}ms` }}
+              />
+            ))}
+          </g>
+          <text x="100" y="140" textAnchor="middle" className={`cp-screen-key${keyFlash ? " cp-screen-key-flash" : ""}`}>
+            {screenKey === " " ? "␣" : screenKey.toUpperCase()}
+          </text>
+        </g>
       )}
       {/* v11 听写胸屏波形:按住说话时圆屏跳动声纹条(壳层渲染,listening 期间) */}
       {listening && !screenKey && (

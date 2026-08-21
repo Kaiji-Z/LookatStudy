@@ -7,7 +7,7 @@
  * 笔触(圆头粗描,起收笔圆润)。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags , BevelPlate } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags , BevelPlate } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const INK: FormPalette = {
@@ -107,9 +107,6 @@ export function InkArt({ uid, refs, expression, viseme, openScale, energyRatio, 
         <clipPath id={`${uid}-helm`}><path d="M54,44 L100,30 L146,44 L150,72 L142,96 L58,96 L50,72 Z" /></clipPath>
         <clipPath id={`${uid}-scr`}><rect x="64" y="54" width="72" height="34" rx="5" /></clipPath>
       </defs>
-
-      <GroundShadow tint="rgba(40,34,24,0.3)" />
-
       <g ref={refs.bot} className="cp-bot">
         {/* 墨雾尾焰(书卷悬浮;streak=金墨) */}
         <g className="cp-thrust">
@@ -117,9 +114,6 @@ export function InkArt({ uid, refs, expression, viseme, openScale, energyRatio, 
           <ellipse cx="100" cy="176" rx="7" ry="5" fill={streakLit ? GOLD : SCREEN_D} />
         </g>
         <path d="M88,158 L112,158 L106,171 L94,171 Z" fill={INKWELL} stroke={OUT} strokeWidth="4" strokeLinejoin="round" />
-
-        <Arms refs={refs} armFill={PAPER_D} out={OUT} />
-
         {/* 砚台躯干 + cel 错位暗面 + 墨池核 */}
         <g className="cp-body">
           <g clipPath={`url(#${uid}-body)`}>
@@ -168,6 +162,8 @@ export function InkArt({ uid, refs, expression, viseme, openScale, energyRatio, 
           <Face expression={expression} flags={flags} refs={refs} p={INK} viseme={viseme} openScale={openScale} renderMouth={inkMouth} />
           <FaceExtras flags={flags} refs={refs} p={INK} />
         </g>
+        {/* v0.17.1 arms layer above head */}
+        <Arms refs={refs} armFill={PAPER_D} out={OUT} />
       </g>
     </>
   );

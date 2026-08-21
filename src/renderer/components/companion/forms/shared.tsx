@@ -193,11 +193,8 @@ export function FaceExtras({
     </>
   );
 }
-
-/** 地影(悬浮高度感,全家族同款)。 */
-export function GroundShadow({ tint = "rgba(20,16,28,0.35)" }: { tint?: string }) {
-  return <ellipse cx="100" cy="189" rx="33" ry="6.5" fill={tint} className="cp-shadow" />;
-}
+/* v0.17.1 地影组件删除:整身投影改 CSS drop-shadow 跟随剪影(见 index.css),
+   中/右栏模糊抽象影子+左栏天空无影;椭圆地影不再需要。 */
 
 /** 白手套手臂(共享锚位:姿势 CSS/逐键 WAAPI 对全家族零改动)。 */
 /** 块面伪 3D 倒角板(R-06 blk 风):底色板上叠左上受光棱 + 右下背光棱,硬边零渐变。

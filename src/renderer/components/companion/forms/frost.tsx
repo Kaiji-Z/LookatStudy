@@ -6,7 +6,7 @@
  * 口型=切角母音块(硬朗冰感)。冷调:冰川蓝×白 glare,屏面近白浮冰色。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags, BevelPlate } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags, BevelPlate } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const FROST: FormPalette = {
@@ -106,9 +106,6 @@ export function FrostArt({ uid, refs, expression, viseme, openScale, energyRatio
         <clipPath id={`${uid}-helm`}><path d="M54,40 L76,26 L124,26 L146,40 L150,64 L142,96 L58,96 L50,64 Z" /></clipPath>
         <clipPath id={`${uid}-scr`}><rect x="64" y="54" width="72" height="34" rx="6" /></clipPath>
       </defs>
-
-      <GroundShadow tint="rgba(24,34,48,0.32)" />
-
       <g ref={refs.bot} className="cp-bot">
         {/* 冰晶尾气(冷焰;streak=鎏金) */}
         <g className="cp-thrust">
@@ -116,9 +113,6 @@ export function FrostArt({ uid, refs, expression, viseme, openScale, energyRatio
           <ellipse cx="100" cy="176" rx="7" ry="5" fill={streakLit ? GOLD : CRYSTAL} />
         </g>
         <path d="M90,158 L110,158 L104,171 L96,171 Z" fill="#2E3A4A" stroke={OUT} strokeWidth="4" strokeLinejoin="round" />
-
-        <Arms refs={refs} armFill={ICE_D} out={OUT} />
-
         {/* 多面体躯干 + cel 错位暗面 + 冰晶核 */}
         <g className="cp-body">
           <g clipPath={`url(#${uid}-body)`}>
@@ -167,6 +161,8 @@ export function FrostArt({ uid, refs, expression, viseme, openScale, energyRatio
           <Face expression={expression} flags={flags} refs={refs} p={FROST} viseme={viseme} openScale={openScale} renderMouth={frostMouth} />
           <FaceExtras flags={flags} refs={refs} p={FROST} />
         </g>
+        {/* v0.17.1 arms layer above head */}
+        <Arms refs={refs} armFill={ICE_D} out={OUT} />
       </g>
     </>
   );

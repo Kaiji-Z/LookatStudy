@@ -765,7 +765,12 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       <Mascot
         form={snap.form}
         expression={snap.state.expression}
-        screenKey={snap.state.typing ? snap.state.lastKey : null}
+        screenKey={
+          snap.state.typing
+            ? (snap.state.lastKey ?? (snap.state.lastKeyKind === "enter" ? "→" : snap.state.lastKeyKind === "back" ? "⌫" : null))
+            : null
+        }
+        keyFlash={snap.state.typing && snap.state.lastKey == null && (snap.state.lastKeyKind === "enter" || snap.state.lastKeyKind === "back")}
         coreLit={snap.state.correctStreak >= 3}
         noteTick={Date.now() < snap.state.noteTickUntil}
         pose={pose}

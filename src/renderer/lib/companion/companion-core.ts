@@ -217,6 +217,7 @@ export function scopeBars(keySeq: number, bars = 7): Array<{ h: number; d: numbe
 
 /** v0.17.2 打字暂停相位(0=打字中/无,1=抬头等待,2=若有所思;纯函数) */
 export function pausePhaseOf(s: Pick<CompanionState, "typing" | "lastPress">, now: number): 0 | 1 | 2 {
+  if (s.lastPress === 0) return 0; // 从未打字=无暂停相位(测试用合成小时间戳,生产 lastPress=0 是"未打字"哨兵)
   if (s.typing && now - s.lastPress <= TYPE_IDLE_MS) return 0;
   const age = now - s.lastPress;
   if (age > TYPE_IDLE_MS && age <= PAUSE_WAIT_MS) return 1;

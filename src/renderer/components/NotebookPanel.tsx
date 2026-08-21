@@ -401,7 +401,7 @@ function ContentTab({
   useEffect(() => {
     if (readingIdx == null && proseRef.current) clearReadingMark(proseRef.current);
   }, [readingIdx]);
-  // v0.17.2 卸载清高亮(修"朗读中切课/切栏 → 伴学永久隐身"):旧写法
+  // v0.18 卸载清高亮(修"朗读中切课/切栏 → 伴学永久隐身"):旧写法
   // `if (proseRef.current) clearReadingMark(...)` 在卸载时自废——React 先把 ref
   // 置空再跑 passive cleanup,条件永假,全局 readingRange 残留 detached Range。
   // 改记"本面板是否正被朗读"的渲染期快照;不在朗读时卸载不清(别误伤对话流的

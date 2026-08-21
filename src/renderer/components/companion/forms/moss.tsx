@@ -50,7 +50,7 @@ function SeedCore({ energyRatio }: { energyRatio: number }) {
   );
 }
 
-/** 口型(v0.17.2 机器人化+屏内化,y≤86):圆润语言保留,叶舌/叶唇换屏光件
+/** 口型(v0.18 机器人化+屏内化,y≤86):圆润语言保留,叶舌/叶唇换屏光件
  *  ——舌=发光音素条(p.pupil),牙=卵石刻度,咬唇=快门压光。 */
 function mossMouth(v: Viseme, p: FormPalette) {
   switch (v) {
@@ -168,14 +168,14 @@ export function MossArt({ uid, refs, expression, viseme, openScale, energyRatio,
             <path d="M120,54 L136,54 L106,88 L90,88 Z" fill="#FFFFFF" opacity="0.2" />
           </g>
 
-          {/* v0.17.2 脸=屏幕渲染:表情整体剪进屏幕,任何元素构造上不可能越出屏框 */}
+          {/* v0.18 脸=屏幕渲染:表情整体剪进屏幕,任何元素构造上不可能越出屏框 */}
           <g className="cp-scr-face" clipPath={`url(#${uid}-scr)`}>
             <Face expression={expression} flags={flags} refs={refs} p={MOSS} viseme={viseme} openScale={openScale} renderMouth={mossMouth} />
             <FaceExtras flags={flags} refs={refs} p={MOSS} />
           </g>
         </g>
           {flags.proud && <CrownMark p={MOSS} />}
-        {/* v0.17.1 arms layer above head */}
+        {/* v0.18 arms layer above head */}
         <Arms refs={refs} armFill={LEAF_D} out={OUT} />
       </g>
     </>

@@ -864,10 +864,10 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
   assert.ok(creature.includes("getReadingRange") && creature.includes("wanderInPanel"), "T15: Range 跟句 + 右栏面板徘徊");
   assert.ok(read("lib/highlightText.ts").includes("highlights") && read("lib/highlightText.ts").includes("getReadingRange"), "T15: 朗读高亮=CSS Custom Highlight API(零 DOM 改动)");
   assert.ok(css.includes("::highlight(cp-reading)"), "T15: highlight CSS");
-  // v0.17.1 整身投影:drop-shadow 跟随剪影(中/右栏),椭圆地影已删,左栏天空无影
+  // v0.18 整身投影:drop-shadow 跟随剪影(中/右栏),椭圆地影已删,左栏天空无影
   assert.ok(
     css.includes('[data-zone="chat"] .cp-mascot') && css.includes("drop-shadow(4px 6px 5px") && !css.includes(".cp-shadow"),
-    "T15: v0.17.1 整身投影=drop-shadow(右下偏移对左上光源),椭圆地影删除",
+    "T15: v0.18 整身投影=drop-shadow(右下偏移对左上光源),椭圆地影删除",
   );
   assert.ok(!read("components/companion/forms/shared.tsx").includes("GroundShadow"), "T15: GroundShadow 组件已删");
   for (const f of ["ember", "frost", "moss", "astro", "ink"]) {
@@ -878,11 +878,11 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
   assert.ok(
     css.includes("overflow: visible") && css.includes("--cp-speed") && css.includes("rotate: var(--cp-thrust-deg")
       && creature.includes('setProperty("--cp-speed"') && creature.includes("prevPosRef"),
-    "T15: v0.17.1 旋转不裁剪(svg overflow visible)+速度驱动喷焰(速度→不透明度/方向→朝向)",
+    "T15: v0.18 旋转不裁剪(svg overflow visible)+速度驱动喷焰(速度→不透明度/方向→朝向)",
   );
   assert.ok(
     css.includes(".tb-label") && css.includes(".coarse-only") && css.includes("flex-wrap: nowrap"),
-    "T15: v0.17.1 手机端工具栏图标化单行(tb-label 隐藏/coarse-only 图标/不换行)",
+    "T15: v0.18 手机端工具栏图标化单行(tb-label 隐藏/coarse-only 图标/不换行)",
   );
   assert.ok(creature.includes("nextRoamPane(roamRef.current.pane, bucket, avail)") && creature.includes("ROAM_BUCKET_MS"), "T15: v10 roam 跨栏调度(时间桶+留/跨栏)");
   assert.ok(creature.includes("glideTo(cur") && creature.includes("CRUISE_ROAM") && creature.includes("CRUISE_OP"), "T15: v10 限速滑翔(跨栏/跟操作不闪现)");
@@ -898,7 +898,7 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
   );
   assert.ok(
     /screenKey=\{\s*snap\.state\.typing[\s\S]{0,220}snap\.state\.lastKey/.test(creature) && creature.includes('lastKeyKind === "enter" ? "→"'),
-    "T15: 生物把键入字符喂给胸屏(v0.17.2 含 Enter→/退格⌫ 字形回退)",
+    "T15: 生物把键入字符喂给胸屏(v0.18 含 Enter→/退格⌫ 字形回退)",
   );
   // v6 接线:朗读句级跟随(播放序 + karaoke 高亮 + 跟句指向 + 🔊 sticky)
   const useSpeechSrc = read("lib/useSpeech.ts");
@@ -1309,7 +1309,7 @@ console.log("✓ T21 v11 桌宠接线(穿透切换/协议/bus 隐身/设置开�
 console.log("OK T22 v11.1 guards: karaoke-with-marks / rail glide / live quote btn / note anchor self-heal");
 
 // ---------------------------------------------------------------------------
-console.log("T23 跟句悬空不隐身(v0.17.2:detached readingRange 兜底)");
+console.log("T23 跟句悬空不隐身(v0.18:detached readingRange 兜底)");
 {
   const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
   const creature = read("components/companion/CompanionCreature.tsx");
@@ -1323,7 +1323,7 @@ console.log("T23 跟句悬空不隐身(v0.17.2:detached readingRange 兜底)");
     "T23: 悬空时在宿主面板/整窗游弋(target 必非空)",
   );
   // ②两面板卸载清全局高亮:清理不得读 ref(React 卸载时先置空 ref 再跑 passive
-  //   cleanup,`if (ref.current)` 永假=守卫自废,v0.17.2 实测踩过)
+  //   cleanup,`if (ref.current)` 永假=守卫自废,v0.18 实测踩过)
   for (const [name, src] of [["NotebookPanel", notebook], ["ChatStream", chat]]) {
     assert.ok(
       src.includes("wasReadingRef.current = readingIdx != null") && src.includes("clearReadingMark(document.body)"),
@@ -1338,7 +1338,7 @@ console.log("T23 跟句悬空不隐身(v0.17.2:detached readingRange 兜底)");
 }
 
 // ---------------------------------------------------------------------------
-console.log("T24 v0.17.2 屏内表情机器人化 + 喷焰可见 + 点球互动");
+console.log("T24 v0.18 屏内表情机器人化 + 喷焰可见 + 点球互动");
 {
   const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
   const css = readFileSync(new URL("../src/renderer/index.css", import.meta.url), "utf8");
@@ -1371,7 +1371,7 @@ console.log("T24 v0.17.2 屏内表情机器人化 + 喷焰可见 + 点球互动"
   console.log("OK T24: 屏内表情机器人化 + 喷焰重定位 + 点球互动双分支");
 
 // ---------------------------------------------------------------------------
-console.log("T25 v0.17.2 键盘反馈包(信号面板/真实键位/节奏/仪式/IME)");
+console.log("T25 v0.18 键盘反馈包(信号面板/真实键位/节奏/仪式/IME)");
 {
   const core = await import("../src/renderer/lib/companion/companion-core.js");
   // ① 真实键位:QWERTY 物理分区(左=-1 右=1,未知沿用 fallback)
@@ -1428,7 +1428,7 @@ console.log("T25 v0.17.2 键盘反馈包(信号面板/真实键位/节奏/仪式
 }
 
 // ---------------------------------------------------------------------------
-console.log("T26 v0.17.3 吹哨召唤(点左栏空白处叫它过来)");
+console.log("T26 v0.18 吹哨召唤(点左栏空白处叫它过来)");
 {
   const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
   const core = await import("../src/renderer/lib/companion/companion-core.js");
@@ -1458,7 +1458,7 @@ console.log("T26 v0.17.3 吹哨召唤(点左栏空白处叫它过来)");
 }
 
 // ---------------------------------------------------------------------------
-console.log("T27 v0.17.3 标题栏禁入带(物理天花板+哨点钳制+视觉钳带)");
+console.log("T27 v0.18 标题栏禁入带(物理天花板+哨点钳制+视觉钳带)");
 {
   const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
   // ① 物理层:ceilY 硬天花板——把生物放进带内并向上冲,一步内压回线下+竖速反弹

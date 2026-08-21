@@ -51,7 +51,7 @@ export interface MascotProps {
   onGrab?: (px: number, py: number) => void;
   /** 键击序号(变化时重触按压动画);0=从不 */
   keySeq?: number;
-  /** v0.17.2 Enter/退格的闪发样式(→ / ⌫ 大字短闪) */
+  /** v0.18 Enter/退格的闪发样式(→ / ⌫ 大字短闪) */
   keyFlash?: boolean;
   /** 最近按压臂侧:-1=左 / 1=右 */
   keySide?: -1 | 1;
@@ -247,7 +247,7 @@ export function Mascot({
         : { "aria-hidden": true })}
     >
       <defs>
-        {/* v0.17.2 胸屏信号面板裁剪:击键脉冲条锁在能量核圆内 */}
+        {/* v0.18 胸屏信号面板裁剪:击键脉冲条锁在能量核圆内 */}
         <clipPath id={`${uid}-keyclip`}>
           <circle cx="100" cy="135" r="11.6" />
         </clipPath>
@@ -257,7 +257,7 @@ export function Mascot({
         <circle cx="52" cy="86" r="3" className="cp-beacon-l" />
         <circle cx="148" cy="86" r="3" className="cp-beacon-r" />
       </g>
-      {/* 喷焰(v0.17.2 修不可见):粒子推到旋转原点(100,135)外 52-66px——旧版
+      {/* 喷焰(v0.18 修不可见):粒子推到旋转原点(100,135)外 52-66px——旧版
           粒子距原点仅 ~15-23px,整段被身体轮廓盖住,速度焰从未露出过(起飞只是靠
           增大+辉光勉强探头)。现在沿运动反方向甩在身形外的真空区,rotate 由
           --cp-thrust-deg 驱动、长度由 --cp-speed 伸缩(见 index.css)。 */}
@@ -282,7 +282,7 @@ export function Mascot({
       />
       {/* v11 连对点燃:能量核金环脉动(3+ 连续答对的得意态) */}
       {coreLit && <circle cx="100" cy="135" r="21" fill="none" stroke="#FFC800" strokeWidth="3" className="cp-core-lit" aria-hidden="true" />}
-      {/* v0.17.2 胸屏=信号面板:击键脉冲条(确定性伪随机,keySeq 重挂载=信号扫过)
+      {/* v0.18 胸屏=信号面板:击键脉冲条(确定性伪随机,keySeq 重挂载=信号扫过)
           + 字符读数(空格 ␣;Enter→/退格⌫ 走闪发样式;汉字来自 compositionend) */}
       {screenKey && (
         <g key={`k${keySeq}`} aria-hidden="true">

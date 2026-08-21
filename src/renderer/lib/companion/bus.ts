@@ -174,19 +174,19 @@ function install(): void {
     "keydown",
     (e) => {
       if (e.repeat) return;
-      // v0.17.2 真实键位→左右臂(QWERTY 物理分区,取代机械交替;未知键沿用交替)
+      // v0.18 真实键位→左右臂(QWERTY 物理分区,取代机械交替;未知键沿用交替)
       const side = sideFromCode(e.code, nextSide);
       nextSide = nextSide === 1 ? -1 : 1;
       // v10:打印字符随键击上屏(胸屏显示按键);组合键/功能键不上屏
       const printable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey ? e.key : undefined;
-      // v0.17.2 按键分型:back=退格连击计数,enter=交接仪式(胸屏→/小跳)
+      // v0.18 按键分型:back=退格连击计数,enter=交接仪式(胸屏→/小跳)
       const kind =
         e.code === "Backspace" || e.code === "Delete" ? "back" : e.code === "Enter" ? "enter" : printable !== undefined ? "char" : "other";
       dispatch({ type: "press", side, now: Date.now(), key: printable, kind });
     },
     { passive: true },
   );
-  // v0.17.2 中文输入法:keydown 拿不到汉字(e.key="Process"),听 compositionend
+  // v0.18 中文输入法:keydown 拿不到汉字(e.key="Process"),听 compositionend
   // 把**已提交**串的最后一个字上屏(不是拼音中间态);空提交(如取消)不上屏
   window.addEventListener(
     "compositionend",
@@ -507,7 +507,7 @@ export function getRailWorld(): RailWorld {
   return railWorld;
 }
 
-/** 点球互动(v0.17.2):用户点课程球 → 桌面端生物飞到球旁指向+轻顶一下;
+/** 点球互动(v0.18):用户点课程球 → 桌面端生物飞到球旁指向+轻顶一下;
  * T3(rail 不在场,点球自动切中栏)→ 生物在当前栏朝左"注目礼"。
  * x/y 为屏幕坐标(空=由 Creature 从物理岛按 nodeId 定位,搜索跳转即此路);
  * bus 只存最近一次(seq 单调),Creature rAF 直读——同 railWorld 的 ref 级模式。 */
@@ -526,7 +526,7 @@ export function companionBallTap(x: number | null, y: number | null, nodeId: str
   fire("companion-ball-tap", { x, y, nodeId });
 }
 
-/** 吹哨召唤(v0.17.3):点左栏地图空白处 → 生物飞到哨点上空挥手应答。
+/** 吹哨召唤(v0.18):点左栏地图空白处 → 生物飞到哨点上空挥手应答。
  * x/y 为屏幕坐标;同 ballTap 的 ref 级模式(bus 存最近一次,seq 单调,
  * Creature rAF 直读)。 */
 export interface Whistle {

@@ -165,7 +165,7 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
   // Phase 2: 检测节点从 locked→available 的解锁瞬间,触发 celebrate("unlock") 粒子(完成 7 触点闭环)。
   // 比较 progressMap 前后状态;首次加载(prev 为空)不触发,防误报。
   const prevStatusRef = useRef<Record<string, string>>({});
-  /** v0.17.3 吹哨召唤:map-path 指针落点(区分"点空白"与"拖动/滚动松手") */
+  /** v0.18 吹哨召唤:map-path 指针落点(区分"点空白"与"拖动/滚动松手") */
   const whistleDownAtRef = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
     const prev = prevStatusRef.current;
@@ -290,7 +290,7 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
                 whistleDownAtRef.current = { x: e.clientX, y: e.clientY };
               }}
               onClick={(e) => {
-                // v0.17.3 吹哨召唤:点地图空白处叫伴学过来挥手。两道守卫:
+                // v0.18 吹哨召唤:点地图空白处叫伴学过来挥手。两道守卫:
                 // ① 位移>6px=拖动/滚动手势的松手,不是点击;② 落在按钮/链接/输入
                 // 控件上(球/路牌/搜索等)不算空白——那些有自己的交互。
                 const d = whistleDownAtRef.current;
@@ -354,7 +354,7 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
           onJump={(node) => {
             setWorld(node.world ?? "study");
             setSearchOpen(false);
-            companionBallTap(null, null, node.id); // v0.17.2 伴学点球互动(搜索路,坐标由物理岛定位)
+            companionBallTap(null, null, node.id); // v0.18 伴学点球互动(搜索路,坐标由物理岛定位)
             props.onJumpNode(node.id);
           }}
           onClose={() => setSearchOpen(false)}
@@ -1229,7 +1229,7 @@ function MapSection({
       // setPointerCapture 重定向了 click,按钮 onClick 只剩键盘路径。
       const lesson = lessons.find((l) => l.id === p.nodeId);
       if (lesson && Date.now() >= suppressClickUntilRef.current && !lessonLocked(lesson)) {
-        companionBallTap(e.clientX, e.clientY, lesson.id); // v0.17.2 伴学点球互动(坐标=指针≈球位)
+        companionBallTap(e.clientX, e.clientY, lesson.id); // v0.18 伴学点球互动(坐标=指针≈球位)
         onJumpNode(lesson.id);
       }
     }
@@ -1409,7 +1409,7 @@ function MapSection({
                 chapterLessonsMastered={chapterLessonsMastered}
                 onClick={() => {
                   if (Date.now() < suppressClickUntilRef.current) return;
-                  companionBallTap(null, null, lesson.id); // v0.17.2 伴学点球互动(键盘路;坐标由物理岛定位)
+                  companionBallTap(null, null, lesson.id); // v0.18 伴学点球互动(键盘路;坐标由物理岛定位)
                   onJumpNode(lesson.id);
                 }}
               />

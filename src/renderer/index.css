@@ -514,7 +514,7 @@ html.light .exam-bubble-locked {
 /* ============================================================
  * v0.11 触屏密度:手机 web(Termux/Custom Tab)上对话工具栏的
  * caption 级 pill 实高 ~28px,远低于 44px 手指命中下限。
- * v0.17.1 重做:粗指针上工具栏改**图标按钮**——文字标签/箭头隐藏
+ * v0.18 重做:粗指针上工具栏改**图标按钮**——文字标签/箭头隐藏
  * (tb-label/tb-chevron),模型钮补图标(coarse-only),单行放得下
  * 🎤📎思考上下文模型 全部五个;输入框本体与 fine 指针零变化。
  * ============================================================ */
@@ -958,7 +958,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .cp-screen-key, .cp-writing, .cp-pen, .cp-core-lit, .cp-note-tick { animation: none; stroke-dashoffset: 0; }
-  /* v0.17.2 键盘反馈动画同样关闭(reduced-motion 双轨) */
+  /* v0.18 键盘反馈动画同样关闭(reduced-motion 双轨) */
   .cp-scope-bar { animation: none; opacity: 0.7; }
   .cp-keypress .cp-mascot { animation: none; }
   .cp-screen-key-flash { animation: none; opacity: 0.9; }
@@ -974,7 +974,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
  * reduced-motion 由上方全局规则兜底;Mascot 组件的 JS 生命循环
  * (眨眼/瞳孔追踪)自行检测 usePrefersReducedMotion 关闭。 */
 /* 点击只落在角色涂色区(SVG 透明角落不挡宿主交互——地图球/正文选区) */
-.cp-mascot { pointer-events: none; cursor: default; overflow: visible; /* v0.17.1 旋转/抬臂越界不裁剪 */ }
+.cp-mascot { pointer-events: none; cursor: default; overflow: visible; /* v0.18 旋转/抬臂越界不裁剪 */ }
 .cp-mascot * { pointer-events: visiblePainted; }
 
 /* 悬浮生命:整机缓浮 + 尾焰闪烁 + 天线辉光 */
@@ -1102,7 +1102,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
 .cp-expr-sleeping .cp-bot { transform-box: fill-box; transform-origin: 50% 100%; animation: cp-sleep-breath 2.8s ease-in-out infinite alternate; }
 @keyframes cp-sleep-breath { from { transform: scale(1, 1); } to { transform: scale(1.015, 0.985); } }
 /* ---- v4 细化 ---- */
-/* v0.17.1 整身投影:drop-shadow 跟随剪影(自动随抬臂/旋转/压缩变,模糊抽象零逐帧
+/* v0.18 整身投影:drop-shadow 跟随剪影(自动随抬臂/旋转/压缩变,模糊抽象零逐帧
    运算——纯 transform 移动走合成器缓存);偏移右下=左上光源方向。
    左栏在天空无地面 → 无影。椭圆地影(GroundShadow)已删。 */
 [data-zone="chat"] .cp-mascot,
@@ -1117,7 +1117,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
   transform-box: view-box;
   transform-origin: 100px 135px;
   rotate: var(--cp-thrust-deg, 90deg);
-  /* v0.17.2 焰长随速度伸缩:静止缩半贴身,全速完全展开(粒子已推出身形半径外) */
+  /* v0.18 焰长随速度伸缩:静止缩半贴身,全速完全展开(粒子已推出身形半径外) */
   scale: calc(0.5 + 0.6 * min(1, var(--cp-speed, 0)));
   transition: opacity 0.16s linear;
 }
@@ -1146,7 +1146,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
   100% { opacity: 1; transform: scale(1); }
 }
 .cp-screen-key { transform-box: fill-box; transform-origin: center; }
-/* v0.17.2 键盘反馈三件套:整机击键 squash / 胸屏信号面板 / Enter·退格闪发 */
+/* v0.18 键盘反馈三件套:整机击键 squash / 胸屏信号面板 / Enter·退格闪发 */
 .cp-keypress .cp-mascot {
   transform-box: fill-box;
   transform-origin: 50% 92%;

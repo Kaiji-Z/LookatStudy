@@ -50,7 +50,7 @@ function MoonCore({ energyRatio, uid }: { energyRatio: number; uid: string }) {
   );
 }
 
-/** 口型(v0.17.2 机器人化+屏内化,y≤86):舱窗语言保留,紫光舌/紫罗兰唇换屏光件
+/** 口型(v0.18 机器人化+屏内化,y≤86):舱窗语言保留,紫光舌/紫罗兰唇换屏光件
  *  ——舌=发光音素条(p.pupil),牙=星轨刻度,咬唇=快门压光。 */
 function astroMouth(v: Viseme, p: FormPalette) {
   switch (v) {
@@ -176,14 +176,14 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
             <path d="M118,54 L136,54 L106,88 L92,88 Z" fill="#FFFFFF" opacity="0.08" />
           </g>
 
-          {/* v0.17.2 脸=屏幕渲染:表情整体剪进屏幕,任何元素构造上不可能越出屏框 */}
+          {/* v0.18 脸=屏幕渲染:表情整体剪进屏幕,任何元素构造上不可能越出屏框 */}
           <g className="cp-scr-face" clipPath={`url(#${uid}-scr)`}>
             <Face expression={expression} flags={flags} refs={refs} p={ASTRO} viseme={viseme} openScale={openScale} renderMouth={astroMouth} />
             <FaceExtras flags={flags} refs={refs} p={ASTRO} />
           </g>
         </g>
           {flags.proud && <CrownMark p={ASTRO} />}
-        {/* v0.17.1 arms layer above head */}
+        {/* v0.18 arms layer above head */}
         <Arms refs={refs} armFill={VIOLET_D} out={OUT} />
       </g>
     </>

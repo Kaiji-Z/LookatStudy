@@ -86,15 +86,15 @@ export interface CompanionState {
   keySide: -1 | 1;
   /** v10 最近一次键入的可见字符(胸屏显示;非打印键为 null) */
   lastKey: string | null;
-  /** v0.17.2 最近一次按键类别(char/back/enter/other;Enter=胸屏 → 闪发/小跳) */
+  /** v0.18 最近一次按键类别(char/back/enter/other;Enter=胸屏 → 闪发/小跳) */
   lastKeyKind: "char" | "back" | "enter" | "other";
-  /** v0.17.2 退格连击(1.5s 窗内计数;≥3 → 汗滴担忧) */
+  /** v0.18 退格连击(1.5s 窗内计数;≥3 → 汗滴担忧) */
   backStreak: number;
   lastBackAt: number;
-  /** v0.17.2 键击爆发窗(3s 内 ≥6 键 → 专注表情/眉聚) */
+  /** v0.18 键击爆发窗(3s 内 ≥6 键 → 专注表情/眉聚) */
   burstStart: number;
   burstN: number;
-  /** v0.17.2 打字暂停相位(0/1/2,见 pausePhaseOf;存进状态让 tick 的提前返回能感知相位转移) */
+  /** v0.18 打字暂停相位(0/1/2,见 pausePhaseOf;存进状态让 tick 的提前返回能感知相位转移) */
   pausePhase: 0 | 1 | 2;
   /** v11 连续答对计数(wrong 清零;≥3 触发 flame 连击情绪) */
   correctStreak: number;
@@ -169,15 +169,15 @@ export const SLEEP_AFTER_MS = 180_000;
 /** 打字反应空闲过期(Bongo Cat:停键 1.2s 收手) */
 export const TYPE_IDLE_MS = 1_200;
 
-/** v0.17.2 键击爆发窗:窗内 ≥6 键 → 专注(屏内思考眉) */
+/** v0.18 键击爆发窗:窗内 ≥6 键 → 专注(屏内思考眉) */
 export const KEY_BURST_MS = 3_000;
 export const KEY_BURST_FOCUS_N = 6;
-/** v0.17.2 打字暂停相位:1.2~6s=抬头等待(listening),6~15s=若有所思(thinking) */
+/** v0.18 打字暂停相位:1.2~6s=抬头等待(listening),6~15s=若有所思(thinking) */
 export const PAUSE_WAIT_MS = 6_000;
 export const PAUSE_THINK_MS = 15_000;
 
 /**
- * v0.17.2 QWERTY 物理键位 → 左右臂(真实键位取代机械交替,bot 像"看着键盘")。
+ * v0.18 QWERTY 物理键位 → 左右臂(真实键位取代机械交替,bot 像"看着键盘")。
  * 左半区=-1,右半区=1;未知键(空 code/IME Process 等)沿用交替 fallback。
  * 纯函数,verify 直测。
  */
@@ -202,7 +202,7 @@ export function sideFromCode(code: string, fallback: -1 | 1): -1 | 1 {
 }
 
 /**
- * v0.17.2 胸屏信号面板的击键脉冲条(确定性伪随机:同 keySeq 稳定,verify 直测)。
+ * v0.18 胸屏信号面板的击键脉冲条(确定性伪随机:同 keySeq 稳定,verify 直测)。
  * h=条高(4~11,两端收敛成包络),d=动画延迟 ms(左→右传播,像信号扫过)。
  */
 export function scopeBars(keySeq: number, bars = 7): Array<{ h: number; d: number }> {
@@ -216,7 +216,7 @@ export function scopeBars(keySeq: number, bars = 7): Array<{ h: number; d: numbe
   return out;
 }
 
-/** v0.17.2 打字暂停相位(0=打字中/无,1=抬头等待,2=若有所思;纯函数) */
+/** v0.18 打字暂停相位(0=打字中/无,1=抬头等待,2=若有所思;纯函数) */
 export function pausePhaseOf(s: Pick<CompanionState, "typing" | "lastPress">, now: number): 0 | 1 | 2 {
   if (s.lastPress === 0) return 0; // 从未打字=无暂停相位(测试用合成小时间戳,生产 lastPress=0 是"未打字"哨兵)
   if (s.typing && now - s.lastPress <= TYPE_IDLE_MS) return 0;
@@ -435,7 +435,7 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
     }
     case "press": {
       // Bongo Cat 式逐键:每次键击/点击都定向按压一只臂,唤醒入睡。
-      // v0.17.2 键盘反馈分型:char=常规(爆发窗≥6键→专注眉)/back=退格连击
+      // v0.18 键盘反馈分型:char=常规(爆发窗≥6键→专注眉)/back=退格连击
       // (≥3/1.5s→汗滴担忧)/enter=交接仪式(小跳+胸屏→闪发)。
       const kind = ev.kind ?? (ev.key != null ? "char" : "other");
       const next: CompanionState = {
@@ -712,7 +712,7 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
           next.expression = baseExpressionOf(next);
           next.pose = basePoseOf(next);
           next.until = null;
-          // v0.17.2 打字暂停的呼吸感:刚停(1.2~6s)抬头等待,停久(6~15s)若有所思
+          // v0.18 打字暂停的呼吸感:刚停(1.2~6s)抬头等待,停久(6~15s)若有所思
           if (phase === 1 && !sleeping && !next.talking && !next.listening) {
             next.expression = "listening";
           } else if (phase === 2 && !sleeping && !next.talking && !next.listening) {

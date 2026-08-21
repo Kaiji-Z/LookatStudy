@@ -108,15 +108,15 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const flightRef = useRef<FlightWorld | null>(null);
   const posRef = useRef<{ x: number; y: number } | null>(null);
-  /** v0.17.1 上一帧位置(喷焰速度/方向计算) */
+  /** v0.18 上一帧位置(喷焰速度/方向计算) */
   const prevPosRef = useRef<{ x: number; y: number } | null>(null);
   const zoneRef = useRef(snap.state.zone);
   const swatLatchRef = useRef(false);
-  /** v0.17.2 点球互动:消费过的 ballTap seq(去重)+ 当前生效的应答(飞去/朝左注目) */
+  /** v0.18 点球互动:消费过的 ballTap seq(去重)+ 当前生效的应答(飞去/朝左注目) */
   const ballTapSeqRef = useRef(0);
   const ballAckRef = useRef<{ nodeId: string; x: number; y: number; until: number; fired: boolean; fly: boolean } | null>(null);
   const [ballAck, setBallAck] = useState<{ until: number } | null>(null);
-  /** v0.17.3 吹哨召唤:消费过的 whistle seq(去重)+ 当前生效的哨点(rail 局部坐标) */
+  /** v0.18 吹哨召唤:消费过的 whistle seq(去重)+ 当前生效的哨点(rail 局部坐标) */
   const whistleSeqRef = useRef(0);
   const whistleAckRef = useRef<{ x: number; y: number; until: number } | null>(null);
   /** 左栏待机空地(中部带,周期重选/记忆卡点覆盖)与下次重选时刻 */
@@ -298,7 +298,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         rectCacheAt = now;
         chatRectCache = document.querySelector<HTMLElement>('[data-testid="chat-panel"]')?.getBoundingClientRect() ?? null;
         nbRectCache = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]')?.getBoundingClientRect() ?? null;
-        // v0.17.3 标题栏禁入带:应用标题栏(T1/T2 与 T3 窄版同元素)全局生效;
+        // v0.18 标题栏禁入带:应用标题栏(T1/T2 与 T3 窄版同元素)全局生效;
         // 左栏另有 tab/课名悬浮条(仅栏内 x 范围),rail 分支单独取 max
         hdrBottomCache = document.querySelector("header.app-header")?.getBoundingClientRect().bottom ?? 0;
         railBarBottomCache = document.querySelector<HTMLElement>('[data-testid="map-rail-topbar"]')?.getBoundingClientRect().bottom ?? 0;
@@ -347,7 +347,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       const intent = intentRef.current && now < intentRef.current.until ? intentRef.current : null;
       if (intentRef.current && !intent) intentRef.current = null;
 
-      // ── v0.17.2 点球互动:点课程球 → rail 在场则飞到球旁指向+轻顶;T3 无 rail
+      // ── v0.18 点球互动:点课程球 → rail 在场则飞到球旁指向+轻顶;T3 无 rail
       //    → 原地朝左"注目礼"(表情爆发由 bus 的 nodePoint dispatch 负责) ──
       const bt = getLastBallTap();
       if (bt && bt.seq !== ballTapSeqRef.current) {
@@ -394,7 +394,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         }
       }
 
-      // ── v0.17.3 吹哨召唤:点左栏空白处 → 飞到哨点上空挥手应答(爆发由 bus 的
+      // ── v0.18 吹哨召唤:点左栏空白处 → 飞到哨点上空挥手应答(爆发由 bus 的
       //    whistle dispatch 负责);坐标转 rail 局部并钳进禁入带之下,防哨点落进标题栏 ──
       const ws = getLastWhistle();
       if (ws && ws.seq !== whistleSeqRef.current) {
@@ -474,9 +474,9 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             angle = pos.dir === "left" ? -0.07 : pos.dir === "right" ? 0.07 : 0; // 侧向微倾,竖向不倾
           }
         } else {
-          // v0.17.2 跟句悬空兜底(永不隐身):mark 节点被卸载/换掉(切课/切线程/
+          // v0.18 跟句悬空兜底(永不隐身):mark 节点被卸载/换掉(切课/切线程/
           // T3 换栏/ReactMarkdown 重渲染)后,全局 readingRange 可能残留 detached
-          // Range——面板卸载清理曾因"cleanup 前 ref 已被置空"而自废(v0.17.2 已在
+          // Range——面板卸载清理曾因"cleanup 前 ref 已被置空"而自废(v0.18 已在
           // 两面板修),mark 节点被换且无人重标的路径仍可能短暂悬空。本分支若不
           // 兜底,target 滞留 null → opacity 0 隐身(v9"常驻绝不隐匿"在此被旁路;
           // 记笔记分支 v11.1 已有同款守卫)。处置:清跟句视觉态,在宿主面板(或
@@ -619,12 +619,12 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             let base = perchRef.current;
             let settle = false;
             if (whistleOk && whistleAckRef.current) {
-              // v0.17.3 吹哨应答:悬停在哨点右上上空挥手(爆发由 bus 派发;哨点已在
+              // v0.18 吹哨应答:悬停在哨点右上上空挥手(爆发由 bus 派发;哨点已在
               // 禁入带之下,再抬 -52 仍在带下)。最新召唤优先于点球/意图/待机。
               base = { x: whistleAckRef.current.x + 28, y: whistleAckRef.current.y - 52 };
               settle = false;
             } else if (ballOk && ballAckRef.current && ballAckRef.current.fly) {
-              // v0.17.2 点球应答:栖在被点球的右肩位,指住它(优先级高于意图/待机)
+              // v0.18 点球应答:栖在被点球的右肩位,指住它(优先级高于意图/待机)
               base = { x: ballAckRef.current.x - navRect!.left + 34, y: ballAckRef.current.y - navRect!.top - 46 };
               settle = false;
             } else if (intent) {
@@ -729,13 +729,13 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       }
       posRef.current = target;
       const w = wrap.offsetWidth || SIZE[pane];
-      // v0.17.3 标题栏禁入带(全分支兜底):中心不许高于 带底+半身+余量(旋转/晕眩
+      // v0.18 标题栏禁入带(全分支兜底):中心不许高于 带底+半身+余量(旋转/晕眩
       // 摆角不至于扫进标题栏)。rail 分支物理层已有 ceilY 硬天花板,这里是视觉带
       // 的统一收口(整窗游走/跟句锚点在首行等边缘路径)。
       const ceilBand = pane === "rail" ? Math.max(hdrBottomCache, railBarBottomCache) : hdrBottomCache;
       if (target.y < ceilBand + w / 2 + 10) target.y = ceilBand + w / 2 + 10;
       wrap.style.transform = `translate3d(${(target.x - w / 2).toFixed(1)}px, ${(target.y - w / 2).toFixed(1)}px, 0) rotate(${(angle * 57.2958).toFixed(1)}deg)`;
-      // v0.17.1 速度驱动喷焰(推进质感):速度→焰不透明度,方向→焰朝向(尾部指向
+      // v0.18 速度驱动喷焰(推进质感):速度→焰不透明度,方向→焰朝向(尾部指向
       // 运动反方向,CSS rotate 消费)。CSS 变量直写,零重渲染;静止时速度归零焰熄。
       const pv = prevPosRef.current;
       if (pv) {
@@ -759,7 +759,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
     };
   }, [snap.enabledLoaded, snap.enabled, snap.petMode, reduced]);
 
-  // v0.17.2 击键 squash:每次按键整机微压缩(shiver 同款 add/remove;强制
+  // v0.18 击键 squash:每次按键整机微压缩(shiver 同款 add/remove;强制
   // reflow 让连续击键也逐键重触发,而不是动画只在第一次播)
   const keySeqPrevRef = useRef(0);
   useEffect(() => {
@@ -781,7 +781,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
     : snap.state.typing
       ? "typing" // 用户正在打字=进行中活动,优先于点球应答/跟读的指向姿势
       : ballAck
-        ? "point" // v0.17.2 点球应答:指住球(桌面=球旁指左;T3=朝离屏的左栏注目)
+        ? "point" // v0.18 点球应答:指住球(桌面=球旁指左;T3=朝离屏的左栏注目)
         : reading?.dir === "left"
           ? "point"
           : reading?.dir === "right"

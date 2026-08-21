@@ -26,7 +26,7 @@ const GOLD = "#FFC800";
 const OUT = "#2B2530";
 
 /**
- * 口型(v0.17.2 机器人化 + 屏内化):口腔=屏幕暗腔,一切" fleshy"元素换成屏光件——
+ * 口型(v0.18 机器人化 + 屏内化):口腔=屏幕暗腔,一切" fleshy"元素换成屏光件——
  * 舌头=发光音素条(p.pupil 屏色),牙齿=分段显示刻度,咬唇=快门压住光条。
  * 坐标预算 y74-86(屏幕底=88,旧版嘴到 y90 越界)。
  */
@@ -155,14 +155,14 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
             <path d="M120,54 L136,54 L108,88 L92,88 Z" fill="#FFFFFF" opacity="0.14" />
           </g>
 
-          {/* v0.17.2 脸=屏幕渲染:表情整体剪进屏幕,任何元素(眉/嘴/挂件)构造上不可能越出屏框 */}
+          {/* v0.18 脸=屏幕渲染:表情整体剪进屏幕,任何元素(眉/嘴/挂件)构造上不可能越出屏框 */}
           <g className="cp-scr-face" clipPath={`url(#${uid}-scr)`}>
             <Face expression={expression} flags={flags} refs={refs} p={EMBER} viseme={viseme} openScale={openScale} renderMouth={emberMouth} />
             <FaceExtras flags={flags} refs={refs} p={EMBER} />
           </g>
         </g>
           {flags.proud && <CrownMark p={EMBER} />}
-        {/* v0.17.1 arms layer above head */}
+        {/* v0.18 arms layer above head */}
         <Arms refs={refs} armFill={CORAL_D} out={OUT} />
       </g>
     </>

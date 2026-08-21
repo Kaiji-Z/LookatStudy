@@ -512,6 +512,38 @@ html.light .exam-bubble-locked {
 }
 
 /* ============================================================
+ * v0.11 触屏密度:手机 web(Termux/Custom Tab)上对话工具栏的
+ * caption 级 pill 实高 ~28px,远低于 44px 手指命中下限。
+ * 粗指针(pointer: coarse)统一抬高命中面积——视觉密度让位于
+ * 可点性;fine 指针(桌面鼠标/触控笔)零变化。
+ * ============================================================ */
+@media (pointer: coarse) {
+  /* 工具栏 pill(🎤/📎/思考强度/上下文/模型)≥40px 命中,图标随之放大 */
+  .composer-toolbar button {
+    min-height: 40px;
+    min-width: 40px;
+    justify-content: center;
+  }
+  .composer-toolbar button svg {
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+  /* 发送/停止圆钮 36→44px(仍是 3D 手感,只是大一圈) */
+  .composer-card .btn-icon-3d-brand,
+  .composer-card .btn-icon-3d-warning {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+  /* 附件移除 X(16-20px):伪元素外扩命中,不动布局 */
+  .touch-target-sm { position: relative; }
+  .touch-target-sm::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
+}
+
+/* ============================================================
  * v0.5 选关地图节点美术(多邻国 2024+ 现代风)
  * 核心:radial-gradient 球体光照 + ::before 内高光 + ::after 发光环
  * 四态差异最大化:locked 沉重凹陷 / available 发光脉冲 /

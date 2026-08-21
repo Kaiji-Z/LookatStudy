@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-21
+
 ### Added
 - **serve HTTPS 选项(手机 LAN 语音解锁)** —— `--tls-cert/--tls-key`(成对,PEM 路径)让 serve 升级 https、WS 自动 wss;浏览器仅在安全上下文(https 或 127.0.0.1)暴露麦克风,配证书后经 `https://192.168.x.x:17890` 访问即可在非引导器路径使用语音(自签证书需在浏览器信任一次;缺一个参数会报错拒绝启动)。
 

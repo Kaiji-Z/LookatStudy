@@ -7,7 +7,7 @@
  * 月亮越圆:新月→满月)。口型=暖白星月母音。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags , BevelPlate } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags , BevelPlate } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const ASTRO: FormPalette = {
@@ -112,9 +112,6 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
         <clipPath id={`${uid}-scr`}><rect x="64" y="54" width="72" height="34" rx="9" /></clipPath>
         <clipPath id={`${uid}-moon`}><circle cx="100" cy="135" r="12.5" /></clipPath>
       </defs>
-
-      <GroundShadow tint="rgba(24,18,44,0.38)" />
-
       <g ref={refs.bot} className="cp-bot">
         {/* 星尘尾焰(紫;streak=金) */}
         <g className="cp-thrust">
@@ -122,9 +119,6 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
           <ellipse cx="100" cy="176" rx="7" ry="5" fill={streakLit ? GOLD : VIOLET} />
         </g>
         <path d="M88,158 L112,158 L106,171 L94,171 Z" fill="#2A2248" stroke={OUT} strokeWidth="4" strokeLinejoin="round" />
-
-        <Arms refs={refs} armFill={VIOLET_D} out={OUT} />
-
         {/* 修长舱体 + cel 错位暗面 + 月相核 */}
         <g className="cp-body">
           <g clipPath={`url(#${uid}-body)`}>
@@ -180,6 +174,8 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
           <Face expression={expression} flags={flags} refs={refs} p={ASTRO} viseme={viseme} openScale={openScale} renderMouth={astroMouth} />
           <FaceExtras flags={flags} refs={refs} p={ASTRO} />
         </g>
+        {/* v0.17.1 arms layer above head */}
+        <Arms refs={refs} armFill={VIOLET_D} out={OUT} />
       </g>
     </>
   );

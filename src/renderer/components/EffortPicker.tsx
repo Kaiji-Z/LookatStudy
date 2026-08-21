@@ -149,8 +149,8 @@ export function EffortPicker() {
         } ${supported ? "hover:text-ink-strong hover:bg-ink/[0.06]" : "opacity-40 cursor-not-allowed"}`}
       >
         <Brain className="w-3 h-3 shrink-0" />
-        <span className="truncate">{t(current.labelKey)}</span>
-        <ChevronUp className={`w-3 h-3 shrink-0 transition-transform ${open ? "" : "rotate-180"}`} />
+        <span className="truncate tb-label">{t(current.labelKey)}</span>
+        <ChevronUp className={`w-3 h-3 shrink-0 tb-chevron transition-transform ${open ? "" : "rotate-180"}`} />
       </button>
 
       {open && (

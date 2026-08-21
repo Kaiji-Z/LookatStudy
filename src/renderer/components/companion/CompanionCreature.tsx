@@ -106,6 +106,8 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const flightRef = useRef<FlightWorld | null>(null);
   const posRef = useRef<{ x: number; y: number } | null>(null);
+  /** v0.17.1 上一帧位置(喷焰速度/方向计算) */
+  const prevPosRef = useRef<{ x: number; y: number } | null>(null);
   const zoneRef = useRef(snap.state.zone);
   const swatLatchRef = useRef(false);
   /** 左栏待机空地(中部带,周期重选/记忆卡点覆盖)与下次重选时刻 */
@@ -609,16 +611,27 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       if (!target) {
         wrap.style.opacity = "0";
         posRef.current = null;
+        prevPosRef.current = null;
         return;
       }
       posRef.current = target;
       const w = wrap.offsetWidth || SIZE[pane];
       wrap.style.transform = `translate3d(${(target.x - w / 2).toFixed(1)}px, ${(target.y - w / 2).toFixed(1)}px, 0) rotate(${(angle * 57.2958).toFixed(1)}deg)`;
-      // 高度感:离栏底越远阴影越小越淡(CSS 变量直写,零重渲染)
-      if (navRect) {
-        const alt = Math.min(1, Math.max(0, 1 - (target.y - navRect.top) / navRect.height));
-        wrap.style.setProperty("--cp-alt", alt.toFixed(3));
+      // v0.17.1 速度驱动喷焰(推进质感):速度→焰不透明度,方向→焰朝向(尾部指向
+      // 运动反方向,CSS rotate 消费)。CSS 变量直写,零重渲染;静止时速度归零焰熄。
+      const pv = prevPosRef.current;
+      if (pv) {
+        const pdx = target.x - pv.x;
+        const pdy = target.y - pv.y;
+        const dist = Math.hypot(pdx, pdy);
+        const spd = dist / Math.max(1, dt);
+        wrap.style.setProperty("--cp-speed", Math.min(1, spd / 0.45).toFixed(3));
+        if (spd > 0.02) {
+          const deg = (Math.atan2(pdy, pdx) * 57.2958 + 90 + 360) % 360;
+          wrap.style.setProperty("--cp-thrust-deg", deg.toFixed(1) + "deg");
+        }
       }
+      prevPosRef.current = { x: target.x, y: target.y };
     };
     raf = requestAnimationFrame(frame);
     return () => {

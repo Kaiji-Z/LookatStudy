@@ -6,7 +6,7 @@
  * 口型=花瓣/叶片的有机母音。调性:苔绿×奶白屏,呼吸般的圆。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags , BevelPlate } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags , BevelPlate } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const MOSS: FormPalette = {
@@ -103,9 +103,6 @@ export function MossArt({ uid, refs, expression, viseme, openScale, energyRatio,
         <clipPath id={`${uid}-helm`}><ellipse cx="100" cy="69" rx="56" ry="42" /></clipPath>
         <clipPath id={`${uid}-scr`}><rect x="64" y="54" width="72" height="34" rx="12" /></clipPath>
       </defs>
-
-      <GroundShadow tint="rgba(26,36,24,0.32)" />
-
       <g ref={refs.bot} className="cp-bot">
         {/* 花粉光尘尾焰(自然悬浮;streak=金粉) */}
         <g className="cp-thrust">
@@ -113,9 +110,6 @@ export function MossArt({ uid, refs, expression, viseme, openScale, energyRatio,
           <ellipse cx="100" cy="176" rx="7" ry="5" fill={streakLit ? GOLD : LEAF} />
         </g>
         <path d="M88,158 Q100,152 112,158 L106,171 Q100,174 94,171 Z" fill="#3A4A34" stroke={OUT} strokeWidth="4" strokeLinejoin="round" />
-
-        <Arms refs={refs} armFill={LEAF_D} out={OUT} />
-
         {/* 圆滚躯干 + cel 错位暗面 + 种子核 */}
         <g className="cp-body">
           <g clipPath={`url(#${uid}-body)`}>
@@ -173,6 +167,8 @@ export function MossArt({ uid, refs, expression, viseme, openScale, energyRatio,
           <Face expression={expression} flags={flags} refs={refs} p={MOSS} viseme={viseme} openScale={openScale} renderMouth={mossMouth} />
           <FaceExtras flags={flags} refs={refs} p={MOSS} />
         </g>
+        {/* v0.17.1 arms layer above head */}
+        <Arms refs={refs} armFill={LEAF_D} out={OUT} />
       </g>
     </>
   );

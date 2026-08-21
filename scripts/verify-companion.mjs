@@ -863,7 +863,27 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
   assert.ok(!creature.includes("crownBadge={"), "T15: v8 已按要求去掉皇冠徽标");
   assert.ok(creature.includes("getReadingRange") && creature.includes("wanderInPanel"), "T15: Range 跟句 + 右栏面板徘徊");
   assert.ok(read("lib/highlightText.ts").includes("highlights") && read("lib/highlightText.ts").includes("getReadingRange"), "T15: 朗读高亮=CSS Custom Highlight API(零 DOM 改动)");
-  assert.ok(css.includes("::highlight(cp-reading)") && css.includes('[data-zone="rail"] .cp-shadow { display: none; }'), "T15: highlight CSS + 左栏飞行无影");
+  assert.ok(css.includes("::highlight(cp-reading)"), "T15: highlight CSS");
+  // v0.17.1 整身投影:drop-shadow 跟随剪影(中/右栏),椭圆地影已删,左栏天空无影
+  assert.ok(
+    css.includes('[data-zone="chat"] .cp-mascot') && css.includes("drop-shadow(4px 6px 5px") && !css.includes(".cp-shadow"),
+    "T15: v0.17.1 整身投影=drop-shadow(右下偏移对左上光源),椭圆地影删除",
+  );
+  assert.ok(!read("components/companion/forms/shared.tsx").includes("GroundShadow"), "T15: GroundShadow 组件已删");
+  for (const f of ["ember", "frost", "moss", "astro", "ink"]) {
+    const src = read(`components/companion/forms/${f}.tsx`);
+    assert.ok(src.lastIndexOf("<Arms") > src.indexOf('className="cp-head"'), `T15: ${f} 手臂图层在头之上(抬臂不藏头后)`);
+    assert.ok(!src.includes("GroundShadow"), `T15: ${f} 无地影`);
+  }
+  assert.ok(
+    css.includes("overflow: visible") && css.includes("--cp-speed") && css.includes("rotate: var(--cp-thrust-deg")
+      && creature.includes('setProperty("--cp-speed"') && creature.includes("prevPosRef"),
+    "T15: v0.17.1 旋转不裁剪(svg overflow visible)+速度驱动喷焰(速度→不透明度/方向→朝向)",
+  );
+  assert.ok(
+    css.includes(".tb-label") && css.includes(".coarse-only") && css.includes("flex-wrap: nowrap"),
+    "T15: v0.17.1 手机端工具栏图标化单行(tb-label 隐藏/coarse-only 图标/不换行)",
+  );
   assert.ok(creature.includes("nextRoamPane(roamRef.current.pane, bucket, avail)") && creature.includes("ROAM_BUCKET_MS"), "T15: v10 roam 跨栏调度(时间桶+留/跨栏)");
   assert.ok(creature.includes("glideTo(cur") && creature.includes("CRUISE_ROAM") && creature.includes("CRUISE_OP"), "T15: v10 限速滑翔(跨栏/跟操作不闪现)");
   assert.ok(creature.includes("zone === \"roam\""), "T15: v10 roam 分支(闲时游走/锚缺失回退在场栏)");

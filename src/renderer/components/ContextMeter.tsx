@@ -114,9 +114,9 @@ export function ContextMeter({ info, historyTokens, draftTokens }: ContextMeterP
           />
         </svg>
         {percent !== null ? (
-          <span>{percent}%</span>
+          <span className="tb-label">{percent}%</span>
         ) : (
-          <span>~{formatTokenCount(used)}</span>
+          <span className="tb-label">~{formatTokenCount(used)}</span>
         )}
       </button>
 

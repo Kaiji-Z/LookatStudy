@@ -514,16 +514,28 @@ html.light .exam-bubble-locked {
 /* ============================================================
  * v0.11 触屏密度:手机 web(Termux/Custom Tab)上对话工具栏的
  * caption 级 pill 实高 ~28px,远低于 44px 手指命中下限。
- * 粗指针(pointer: coarse)统一抬高命中面积——视觉密度让位于
- * 可点性;fine 指针(桌面鼠标/触控笔)零变化。
+ * v0.17.1 重做:粗指针上工具栏改**图标按钮**——文字标签/箭头隐藏
+ * (tb-label/tb-chevron),模型钮补图标(coarse-only),单行放得下
+ * 🎤📎思考上下文模型 全部五个;输入框本体与 fine 指针零变化。
  * ============================================================ */
+/* fine 指针默认:coarse-only 图标不显示 */
+.coarse-only { display: none; }
+
 @media (pointer: coarse) {
-  /* 工具栏 pill(🎤/📎/思考强度/上下文/模型)与语音模式「键盘」钮 ≥40px 命中,图标随之放大 */
+  .coarse-only { display: inline-flex; }
+  .tb-label, .tb-chevron { display: none; }
+  /* 单行铁律:工具栏不换行(标签已藏,五个图标钮 ~210px 必然放得下) */
+  .composer-toolbar { flex-wrap: nowrap; }
+  .composer-toolbar .flex-wrap { flex-wrap: nowrap; }
+  /* 工具栏 pill(🎤/📎/思考/上下文/模型)与语音模式「键盘」钮:40px 方形图标钮 */
   .composer-toolbar button,
   .touch-lift {
     min-height: 40px;
     min-width: 40px;
+    max-width: 44px;
     justify-content: center;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
   }
   .composer-toolbar button svg,
   .touch-lift svg {
@@ -958,14 +970,12 @@ html.light ::-webkit-scrollbar-thumb:hover {
  * reduced-motion 由上方全局规则兜底;Mascot 组件的 JS 生命循环
  * (眨眼/瞳孔追踪)自行检测 usePrefersReducedMotion 关闭。 */
 /* 点击只落在角色涂色区(SVG 透明角落不挡宿主交互——地图球/正文选区) */
-.cp-mascot { pointer-events: none; cursor: default; }
+.cp-mascot { pointer-events: none; cursor: default; overflow: visible; /* v0.17.1 旋转/抬臂越界不裁剪 */ }
 .cp-mascot * { pointer-events: visiblePainted; }
 
-/* 悬浮生命:整机缓浮 + 地影反相 + 尾焰闪烁 + 天线辉光 */
+/* 悬浮生命:整机缓浮 + 尾焰闪烁 + 天线辉光 */
 .cp-bot { transform-box: fill-box; transform-origin: 50% 90%; animation: cp-bob 3.4s ease-in-out infinite alternate; }
 @keyframes cp-bob { from { transform: translateY(0); } to { transform: translateY(-5px); } }
-.cp-shadow { transform-box: fill-box; transform-origin: center; animation: cp-shadow 3.4s ease-in-out infinite alternate; }
-@keyframes cp-shadow { from { transform: scaleX(1); opacity: 0.35; } to { transform: scaleX(0.86); opacity: 0.26; } }
 .cp-thrust { transform-box: fill-box; transform-origin: center; animation: cp-flick 0.38s ease-in-out infinite alternate; }
 @keyframes cp-flick { from { transform: scaleY(1); } to { transform: scaleY(0.72); } }
 .cp-ant-glow { animation: cp-glow 2.2s ease-in-out infinite; }
@@ -1088,18 +1098,25 @@ html.light ::-webkit-scrollbar-thumb:hover {
 .cp-expr-sleeping .cp-bot { transform-box: fill-box; transform-origin: 50% 100%; animation: cp-sleep-breath 2.8s ease-in-out infinite alternate; }
 @keyframes cp-sleep-breath { from { transform: scale(1, 1); } to { transform: scale(1.015, 0.985); } }
 /* ---- v4 细化 ---- */
-/* 高度感:离栏底越远阴影越小越淡(--cp-alt 由 Creature rAF 直写,零重渲染) */
-.cp-shadow {
-  transform-box: fill-box;
-  transform-origin: center;
-  transform: scaleX(calc(0.45 + var(--cp-alt, 1) * 0.55)) scaleY(calc(0.6 + var(--cp-alt, 1) * 0.4));
-  opacity: calc(0.3 + var(--cp-alt, 1) * 0.7);
-  transition: opacity 0.2s linear;
+/* v0.17.1 整身投影:drop-shadow 跟随剪影(自动随抬臂/旋转/压缩变,模糊抽象零逐帧
+   运算——纯 transform 移动走合成器缓存);偏移右下=左上光源方向。
+   左栏在天空无地面 → 无影。椭圆地影(GroundShadow)已删。 */
+[data-zone="chat"] .cp-mascot,
+[data-zone="notebook"] .cp-mascot {
+  filter: drop-shadow(4px 6px 5px rgb(15 12 20 / 0.32));
 }
-/* 喷焰:飞行姿势点亮的推进器粒子(壳层渲染,全形态共享) */
-.cp-thruster { opacity: 0; }
-/* v8 左栏飞行:天空无地面 → 无落地影;喷焰=钢铁侠推进(更长更亮+脉动) */
-[data-zone="rail"] .cp-shadow { display: none; }
+/* 喷焰:速度驱动(推进质感,不再是幽灵漂浮)——Creature rAF 直写
+   --cp-speed(0..1)与 --cp-thrust-deg(焰朝向=运动反方向),CSS 零 JS 侧代价 */
+.cp-creature { --cp-speed: 0; --cp-thrust-deg: 90deg; }
+.cp-thruster {
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 100px 135px;
+  rotate: var(--cp-thrust-deg, 90deg);
+  transition: opacity 0.16s linear;
+}
+.cp-creature .cp-thruster { opacity: calc(min(1, var(--cp-speed, 0)) * 0.95); }
+/* v8 跨栏飞行姿势:焰更长更亮+脉动(动画接管 opacity) */
 .cp-pose-flying .cp-thruster circle { r: 5.5; }
 .cp-pose-flying .cp-thruster circle:nth-child(2) { r: 7; }
 .cp-pose-flying .cp-thruster { filter: drop-shadow(0 0 6px rgba(53, 224, 232, 0.8)); animation: cp-thruster-pulse 0.28s ease-in-out infinite alternate; }

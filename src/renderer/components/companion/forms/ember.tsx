@@ -6,7 +6,7 @@
  * (今日 XP 充能) + 金色 streak 火苗。口型=圆角母音块。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags, BevelPlate , } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags, BevelPlate , } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const EMBER: FormPalette = {
@@ -83,9 +83,6 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
           <rect x="84" y={151 - Math.round(energyRatio * 32)} width="32" height={Math.max(0, Math.round(energyRatio * 32) + 1)} />
         </clipPath>
       </defs>
-
-      <GroundShadow />
-
       <g ref={refs.bot} className="cp-bot">
         {/* 尾焰(悬浮推进;streak 点燃=金色) */}
         <g className="cp-thrust">
@@ -96,9 +93,6 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
         <path d="M100,160 v8" stroke={OUT} strokeWidth="2.5" strokeLinecap="round" />
         <circle cx="92" cy="164" r="1.5" fill={OUT} opacity="0.6" />
         <circle cx="108" cy="164" r="1.5" fill={OUT} opacity="0.6" />
-
-        <Arms refs={refs} armFill={CORAL_D} out={OUT} />
-
         {/* 身体 + cel 错位暗面 + 能量核 */}
         <g className="cp-body">
           <g clipPath={`url(#${uid}-body)`}>
@@ -156,6 +150,8 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
           <Face expression={expression} flags={flags} refs={refs} p={EMBER} viseme={viseme} openScale={openScale} renderMouth={emberMouth} />
           <FaceExtras flags={flags} refs={refs} p={EMBER} />
         </g>
+        {/* v0.17.1 arms layer above head */}
+        <Arms refs={refs} armFill={CORAL_D} out={OUT} />
       </g>
     </>
   );

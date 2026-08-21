@@ -10,7 +10,7 @@
  * 数据自取(getProviderPresets + listCustomProviders + settings),不依赖父组件喂。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronUp, Eye, Settings2 } from "lucide-react";
+import { Boxes, Check, ChevronUp, Eye, Settings2 } from "lucide-react";
 import type { CustomProvider, ProviderPresetInfo, SettingKey } from "@shared/types";
 import { api } from "../lib/api.js";
 import { useLang } from "../lib/i18n.js";
@@ -160,8 +160,9 @@ export function ModelPicker({ onGotoSettings }: ModelPickerProps) {
         data-testid="composer-model-trigger"
         className="flex items-center gap-1 max-w-[13rem] px-1.5 py-0.5 rounded-full text-caption font-medium text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06] transition-colors"
       >
-        <span className="truncate">{currentLabel}</span>
-        <ChevronUp className={`w-3 h-3 shrink-0 transition-transform ${open ? "" : "rotate-180"}`} />
+        <Boxes className="w-3 h-3 shrink-0 coarse-only" aria-hidden />
+        <span className="truncate tb-label">{currentLabel}</span>
+        <ChevronUp className={`w-3 h-3 shrink-0 tb-chevron transition-transform ${open ? "" : "rotate-180"}`} />
       </button>
 
       {open && (

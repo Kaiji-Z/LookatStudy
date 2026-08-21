@@ -2288,7 +2288,7 @@ async function runUiTest(screenshot = false): Promise<void> {
     },
   ];
   const examSetup: { examId?: string; injectedLessonProgress: string[] } = { injectedLessonProgress: [] };
-  let examIntegrity: { ok?: boolean; scoreOk?: boolean; reason?: string; error?: string; overflow?: unknown } = {};
+  let examIntegrity: { ok?: boolean; scoreOk?: boolean; reason?: string; error?: string; overflow?: unknown; botPerch?: { near?: boolean; botTop?: number; timerBottom?: number; botLeft?: number; timerRight?: number } } = {};
   try {
     const examNode = getDb().select().from(contentNodes).all().find((n) => n.type === "exam");
     if (!examNode) {
@@ -2411,10 +2411,25 @@ async function runUiTest(screenshot = false): Promise<void> {
               ["E2E-选择题三", "SM-2"],
             ];
             var overflow = null, answered = 0;
+            var botPerch = null; // v0.19 考试静栖:首题时量一次伴学是否钉在计时条带
             for (var k = 0; k < 6; k++) {
               if (q('[data-testid="exam-result"]')) break; // 最后一题提交后 answering 卸载,先查结算页
               var root = q('[data-testid="exam-answering"]');
               if (!root) return await bail({ ok: false, reason: "answering vanished at q" + k, overflow: overflow });
+              if (k === 0 && !botPerch) {
+                await sleep(800); // v0.19 考试静栖:给生物留滑翔落位时间
+                var tmEl = q('[data-testid="exam-timer"]');
+                var botEl = q(".cp-creature");
+                if (tmEl && botEl) {
+                  var tmr = tmEl.getBoundingClientRect();
+                  var br = botEl.getBoundingClientRect();
+                  botPerch = {
+                    near: Math.abs(br.top - tmr.bottom) < 160 && Math.abs(br.left - tmr.right) < 220,
+                    botTop: Math.round(br.top), timerBottom: Math.round(tmr.bottom),
+                    botLeft: Math.round(br.left), timerRight: Math.round(tmr.right),
+                  };
+                }
+              }
               var body = root.innerText || "";
               var fp = null;
               for (var i = 0; i < FPS.length; i++) if (body.indexOf(FPS[i][0]) >= 0) { fp = FPS[i]; break; }
@@ -2493,6 +2508,7 @@ async function runUiTest(screenshot = false): Promise<void> {
               answered: answered,
               overflow: overflow,
               leave: leave,
+              botPerch: botPerch,
             };
           } catch (e) { return { ok: false, error: String(e) }; }
         })()
@@ -2523,6 +2539,11 @@ async function runUiTest(screenshot = false): Promise<void> {
     name: "exam answering: option display order matches grading (click correct text → 3/3) + long prompt stays in viewport",
     ok: examIntegrity?.ok === true,
     detail: examIntegrity,
+  });
+  results.push({
+    name: "companion v0.19: exam quiet perch — bot parked beside timer during answering",
+    ok: examIntegrity?.botPerch?.near === true,
+    detail: examIntegrity?.botPerch ?? { note: "capture missed" },
   });
 
   // T21 (课程删除闭环): 地图头"删除当前课程"按钮 → ConfirmCard 确认 → 课程删除,

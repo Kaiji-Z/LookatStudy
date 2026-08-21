@@ -350,7 +350,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       // ── v0.18 点球互动:点课程球 → rail 在场则飞到球旁指向+轻顶;T3 无 rail
       //    → 原地朝左"注目礼"(表情爆发由 bus 的 nodePoint dispatch 负责) ──
       const bt = getLastBallTap();
-      if (bt && bt.seq !== ballTapSeqRef.current) {
+      if (bt && bt.seq !== ballTapSeqRef.current && !st.examActive) {
         ballTapSeqRef.current = bt.seq;
         let tx: number | null = bt.x;
         let ty: number | null = bt.y;
@@ -397,7 +397,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       // ── v0.18 吹哨召唤:点左栏空白处 → 飞到哨点上空挥手应答(爆发由 bus 的
       //    whistle dispatch 负责);坐标转 rail 局部并钳进禁入带之下,防哨点落进标题栏 ──
       const ws = getLastWhistle();
-      if (ws && ws.seq !== whistleSeqRef.current) {
+      if (ws && ws.seq !== whistleSeqRef.current && !st.examActive) {
         whistleSeqRef.current = ws.seq;
         if (railOk && navRect) {
           const ceilLocal = railCeilLocal(); // 标题栏禁入带(含轨道 tab/课名条),哨点必须在其下
@@ -417,6 +417,10 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
 
       let target: { x: number; y: number } | null = null;
       let pane: CompanionPane = roamRef.current.pane;
+      // v0.19 考试静栖锚:答题阶段才有 exam-timer(不在场时走常规链,绝不隐匿)
+      const examTimerRect = st.examActive
+        ? document.querySelector<HTMLElement>('[data-testid="exam-timer"]')?.getBoundingClientRect()
+        : undefined;
 
       if (grabbed) {
         // ── 抓取中:指针就是全世界(任何 zone 都直接拖拽) ──
@@ -425,6 +429,18 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         target = { x: g.x, y: g.y };
         angle = Math.max(-0.5, Math.min(0.5, g.vx * 0.04));
         pane = dispZoneRef.current;
+      } else if (examTimerRect) {
+        // ── v0.19 考试静栖:钉在考试计时条右下陪考(在场但安静,不漫游不物理)。
+        //    计时条只在答题阶段挂载;生成中/就绪页探测不到 → 继续常规链,绝不隐匿 ──
+        flightRef.current = null;
+        pane = "chat";
+        const anchor = {
+          x: Math.min(examTimerRect.right + 64, window.innerWidth - 70),
+          y: Math.min(examTimerRect.bottom + 56, window.innerHeight - 90),
+        };
+        const cur = posRef.current ?? anchor;
+        target = glideTo(cur, anchor, dt, CRUISE_OP);
+        angle = Math.max(-0.15, Math.min(0.15, (target.x - cur.x) * 0.008));
       } else if (readMarkEl && readRange) {
         // v10 句尾右下角跟随:mark = 高亮句最后一行片段(Range.getClientRects 末位
         // 非零矩形)——生物栖在最后一个字的右下方,指住它;窄屏也全程钳在面板内
@@ -764,7 +780,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   const keySeqPrevRef = useRef(0);
   useEffect(() => {
     const wrap = wrapRef.current;
-    if (!wrap || snap.state.keySeq === keySeqPrevRef.current) return;
+    if (!wrap || snap.state.keySeq === keySeqPrevRef.current || snap.state.examActive) return;
     keySeqPrevRef.current = snap.state.keySeq;
     wrap.classList.remove("cp-keypress");
     void wrap.offsetWidth;

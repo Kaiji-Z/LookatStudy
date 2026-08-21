@@ -1486,6 +1486,36 @@ console.log("T27 v0.18 标题栏禁入带(物理天花板+哨点钳制+视觉钳
   assert.ok(mapRail.includes('data-testid="map-rail-topbar"'), "轨道顶部条有测量锚");
   console.log("OK T27: 标题栏禁入(物理/哨点/视觉三层)");
 }
+
+// ---------------------------------------------------------------------------
+console.log("T28 v0.19 考试静栖(伴学钉在计时区,庆祝动作静默)");
+{
+  const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
+  const core = await import("../src/renderer/lib/companion/companion-core.js");
+  // ① reducer:examActive 状态 + 庆祝动作静默(轻表情/pose=float/短保持)
+  const s0 = core.initialCompanionState(0);
+  assert.equal(s0.examActive, false, "初始不在考试");
+  const on = core.companionReducer(s0, { type: "examActive", on: true, now: 1000 });
+  assert.equal(on.examActive, true, "开考进入静栖");
+  const cheer = core.companionReducer(on, { type: "celebration", kind: "correct", now: 1200 });
+  assert.ok(cheer.pose === "float" && cheer.expression === "cheer", "考试中庆祝=轻表情(cheer)无动作");
+  assert.ok(cheer.until === 2000, "轻表情只保持 800ms");
+  const off = core.companionReducer(cheer, { type: "examActive", on: false, now: 3000 });
+  const cheer2 = core.companionReducer(off, { type: "celebration", kind: "correct", now: 3200 });
+  assert.ok(cheer2.pose !== "float" || cheer2.expression === "flame" || cheer2.until > 2000, "交卷后庆祝动作恢复");
+  // ② 接线:bus 事件/监听、ExamView 挂卸发 on/off、Creature 钉计时锚 + 静默门
+  const bus = read("lib/companion/bus.ts");
+  const examView = read("components/ExamView.tsx");
+  const creature = read("components/companion/CompanionCreature.tsx");
+  assert.ok(bus.includes("companion-exam-active") && bus.includes("export function companionExamActive"), "bus 事件+入口");
+  assert.ok(examView.includes("companionExamActive(true)") && examView.includes("companionExamActive(false)"), "ExamView 挂/卸发 on/off");
+  assert.ok(creature.includes("examTimerRect") && creature.includes('data-testid="exam-timer"'), "Creature 钉计时条锚");
+  assert.ok(creature.includes("生成中/就绪页探测不到"), "非答题阶段不落锚(绝不隐匿)");
+  assert.ok(creature.includes("bt.seq !== ballTapSeqRef.current && !st.examActive"), "考试中点球互动静默");
+  assert.ok(creature.includes("ws.seq !== whistleSeqRef.current && !st.examActive"), "考试中吹哨静默");
+  assert.ok(creature.includes("keySeqPrevRef.current || snap.state.examActive"), "考试中击键 squash 静默");
+  console.log("OK T28: 考试静栖(reducer 轻庆祝/接线/三道静默门)");
+}
 }
 
 console.log("\nverify-companion: ALL PASS");

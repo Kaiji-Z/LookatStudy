@@ -47,7 +47,9 @@ export type CompanionPose =
   | "wave"
   | "spin"
   | "point"
-  | "pointr";
+  | "pointr"
+  | "pointu"
+  | "pointd";
 
 /** 伙伴所在的世界维度:左栏原生物理世界 / 中栏宠物世界 / 右栏助教世界。 */
 export type CompanionZone = "rail" | "chat" | "notebook" | "roam";
@@ -820,24 +822,62 @@ export interface LineBox {
 }
 
 /**
- * v11.3 朗读/画线跟随锚点(灵活避让,替代 v10 句尾右下单一策略)。
+ * v11.5 朗读/画线跟随锚点(整句零遮挡版)。
  *
- * 候选按优先级逐个尝试,首选横向避让——生物悬浮在**行尾右侧空白边距**,
- * 像页边批注的小伙伴,手臂抬起指向行尾,整句高亮一个字都不遮:
- *  ① 末行行尾右外侧(贴住行底线微下沉) —— 有右侧余量时的默认位;
- *  ② 首行行首左外侧 —— 右侧放不下(窄屏/行满宽)时镜像到左边;
- *  ③ 句尾右下角 —— ①②都放不下的兜底(旧行为);
- *  ④ 面板右下安全位 —— 极端窄屏。
- * 全程钳在面板内;side=手臂指向(生物在文字右侧 → 指左)。
- * lines 可传首/末行片段(Range.getClientRects);缺省按整体框算。
+ * 用户拍板规则:**生物不压正在高亮的句子**(压未高亮文字可接受);高亮句有
+ * 多行时**每行都是障碍物**。候选序(逐个以核心盒 vs 全部行盒做零重叠校验):
+ *  ① 整句右侧(精灵整盒横向净空,像页边批注,横向指向) —— 有侧边余量时的默认位;
+ *  ② 整句左侧(镜像);
+ *  ③ 整句正下方(核心盒贴句底下缘,压到的是下一句未高亮文字) —— 多行满宽句的主位;
+ *  ④ 整句正上方(句贴面板底、③放不下时);
+ * 全部撞句(极端窄屏):最小遮挡位 + occluding=true(渲染层半透明保读性)。
+ * dir=手臂指向(生物在文字右侧→指左;在下方→指上…)。
+ * sent=高亮句全部行盒(Range.getClientRects 非零矩形);缺省按首/末/整体框算。
  */
+export type ReadingDir = "left" | "right" | "up" | "down";
+export interface ReadingAnchor {
+  x: number;
+  y: number;
+  /** 手臂指向(相对生物):文字在左=left … 文字在上方=up */
+  dir: ReadingDir;
+  /** true=所有候选都压句(极端窄屏),渲染层应半透明让出可读性 */
+  occluding: boolean;
+}
+
+/** 生物核心占位盒(中心±0.4×size):精灵四肢/天线稀疏,核心档已保守 */
+function coreBox(x: number, y: number, size: number): LineBox {
+  const r = size * 0.4;
+  return { left: x - r, right: x + r, top: y - r, bottom: y + r };
+}
+/** 核心盒(外扩 pad)是否与任一障碍行盒零重叠 */
+function boxClear(b: LineBox, obs: readonly LineBox[], pad: number): boolean {
+  for (const o of obs) {
+    if (b.right + pad > o.left && b.left - pad < o.right && b.bottom + pad > o.top && b.top - pad < o.bottom) {
+      return false;
+    }
+  }
+  return true;
+}
+/** 核心盒与障碍行盒的总重叠面积(最小遮挡兜底用) */
+function overlapSum(b: LineBox, obs: readonly LineBox[]): number {
+  let s = 0;
+  for (const o of obs) {
+    const w = Math.min(b.right, o.right) - Math.max(b.left, o.left);
+    const h = Math.min(b.bottom, o.bottom) - Math.max(b.top, o.top);
+    if (w > 0 && h > 0) s += w * h;
+  }
+  return s;
+}
+
 export function readingAnchorFlex(
   full: LineBox,
   panel: LineBox,
   size: number,
   lines?: { first?: LineBox; last?: LineBox },
-): { x: number; y: number; side: "left" | "right" } {
+  sent?: readonly LineBox[],
+): ReadingAnchor {
   const half = size / 2;
+  const core = size * 0.4; // 生物核心半径(四肢/天线稀疏,核心档已保守)
   const pad = 10;
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const xMin = panel.left + half + pad;
@@ -846,31 +886,35 @@ export function readingAnchorFlex(
   const yMax = panel.bottom - half - pad;
   const last = lines?.last ?? full;
   const first = lines?.first ?? full;
+  // 障碍物 = 高亮句**全部行盒**(多行句每行都算——只让开末行会被上半身压住前面几行)
+  const obs: readonly LineBox[] = sent && sent.length ? sent : [first, last, full];
 
-  // ① 末行行尾右外侧:生物中心离行尾整整一个半径+缝隙(横向零遮挡),纵向与行平齐微沉
-  const rX = last.right + half * 1.06;
-  if (rX <= xMax) {
-    const cy = (last.top + last.bottom) / 2 + half * 0.2;
-    return { x: clamp(rX, xMin, xMax), y: clamp(cy, yMin, yMax), side: "left" };
+  const sentMaxR = Math.max(...obs.map((o) => o.right));
+  const sentMinL = Math.min(...obs.map((o) => o.left));
+  const cySent = (full.top + full.bottom) / 2;
+
+  const raw: Array<{ x: number; y: number; dir: ReadingDir }> = [
+    // ① 整句右侧(精灵整盒横向净空,贴着读+横向指向)
+    { x: sentMaxR + half + 8, y: cySent, dir: "left" },
+    // ② 整句左侧(镜像)
+    { x: sentMinL - half - 8, y: cySent, dir: "right" },
+    // ③ 整句正下方(核心盒贴句底下缘;压到的是**下一句**未高亮文字,可接受)
+    { x: clamp(last.right + half * 0.4, xMin, xMax), y: full.bottom + core + 8, dir: "up" },
+    // ④ 整句正上方(句贴面板底、下方放不下时)
+    { x: clamp(first.left - half * 0.4, xMin, xMax), y: full.top - core - 8, dir: "down" },
+  ];
+
+  let fallback: { c: { x: number; y: number }; dir: ReadingDir; area: number } | null = null;
+  for (const c of raw) {
+    const cc = { x: clamp(c.x, xMin, xMax), y: clamp(c.y, yMin, yMax) };
+    const box = coreBox(cc.x, cc.y, size);
+    if (boxClear(box, obs, 6)) return { ...cc, dir: c.dir, occluding: false };
+    const area = overlapSum(box, obs);
+    if (!fallback || area < fallback.area) fallback = { c: cc, dir: c.dir, area };
   }
-  // ② 首行行首左外侧(镜像)
-  const lX = first.left - half * 1.06;
-  if (lX >= xMin) {
-    const cy = (first.top + first.bottom) / 2 + half * 0.2;
-    return { x: lX, y: clamp(cy, yMin, yMax), side: "right" };
-  }
-  // ③ 句尾右下(旧默认;底部贴板则上收为该行右侧垂直居中)
-  let x = clamp(last.right + half * 0.88, xMin, xMax);
-  let y = clamp(full.bottom + half * 0.92, yMin, yMax);
-  if (y >= yMax) {
-    y = clamp((last.top + last.bottom) / 2, yMin, yMax);
-  }
-  // ④ 极端窄屏:面板右下安全位
-  if (x >= xMax && y >= yMax) {
-    x = xMax;
-    y = clamp(yMax - half * 0.1, yMin, yMax);
-  }
-  return { x, y, side: x > last.right ? "left" : "right" };
+  // 全部撞句(极端窄屏):最小遮挡位 + occluding 回执(渲染层半透明保读性)
+  const f = fallback ?? { c: { x: xMax, y: clamp(yMax - half * 0.1, yMin, yMax) }, dir: "left" as ReadingDir, area: 0 };
+  return { ...f.c, dir: f.dir, occluding: true };
 }
 
 /* ---------------- v10 连续移动(限速滑翔,不闪现) ---------------- */

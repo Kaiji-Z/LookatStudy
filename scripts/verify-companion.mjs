@@ -691,33 +691,73 @@ console.log("✓ T13 v10 zone 状态机:最新动作优先/roam 游走态/记笔
 }
 console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性有界/跨引擎碰撞解算/倾角");
 
-/* ---------- T14b v11.3 朗读灵活锚点(多候选避让) + 栏内漂浮 ---------- */
+/* ---------- T14b v11.5 朗读锚点(整句全部行盒零遮挡 + 四向指向) + 栏内漂浮 ---------- */
 {
-  // readingAnchorFlex:①行尾右外侧(默认,整句零遮挡)→②行首左外侧→③句尾右下→④安全位
+  // readingAnchorFlex:①整句右侧→②整句左侧→③整句正下方→④整句正上方→⑤最小遮挡+occluding
   const panel = { left: 0, right: 600, top: 0, bottom: 800 };
   const size = 120;
   const line = { left: 100, right: 300, top: 350, bottom: 370 };
   const mid = readingAnchorFlex(line, panel, size);
-  assert.ok(mid.x - size / 2 > 300, `T14b: 宽屏=行尾右外侧悬浮(实测 x=${mid.x.toFixed(0)},生物左缘=${(mid.x - size / 2).toFixed(0)})`);
+  assert.ok(mid.x - size / 2 > 300, `T14b: 宽屏=句右侧悬浮(实测 x=${mid.x.toFixed(0)},生物左缘=${(mid.x - size / 2).toFixed(0)})`);
   assert.ok(mid.y > 350 && mid.y < 470, `T14b: 纵向贴行底下沿(实测 y=${mid.y.toFixed(0)})`);
-  assert.equal(mid.side, "left", "T14b: 生物在字右侧 → 指左");
+  assert.equal(mid.dir, "left", "T14b: 生物在字右侧 → 指左");
+  assert.equal(mid.occluding, false, "T14b: 侧位零遮挡");
   // 不遮字:生物整盒在句矩形右侧(横向零交叠)
-  assert.ok(mid.x - size / 2 >= 300, "T14b: 行尾候选横向不压高亮句");
-  // 窄屏 A:行满宽(两侧都放不下整只生物) → ③句尾右下兜底,钳在面板内
+  assert.ok(mid.x - size / 2 >= 300, "T14b: 侧位候选横向不压高亮句");
+  // 窄屏 A:行满宽(两侧都放不下) → 整句正下方(核心盒贴句底),指上
   const narrow = { left: 0, right: 320, top: 0, bottom: 800 };
   const n = readingAnchorFlex({ left: 10, right: 315, top: 200, bottom: 220 }, narrow, size);
   assert.ok(n.x >= narrow.left + size / 2 && n.x <= narrow.right - size / 2, "T14b: 窄屏 x 全程在面板内");
-  assert.ok(n.y > 220, "T14b: 窄屏兜底=句尾下方");
+  assert.ok(n.y > 220, "T14b: 窄屏兜底=句正下方");
   assert.ok(n.y <= narrow.bottom - size / 2, "T14b: y 全程在面板内");
-  // 窄屏 B:缩进/短行(行首离面板左缘有余量) → ②行首左外侧镜像,横向零遮挡
+  assert.ok(n.y - size * 0.4 >= 220, `T14b: 核心盒顶缘在句底之下(实测 y=${n.y.toFixed(0)})`);
+  assert.equal(n.dir, "up", "T14b: 句下方 → 指上");
+  // 窄屏 B:缩进/短行(行首离面板左缘有余量) → 整句左侧镜像,横向零遮挡
   const ind = readingAnchorFlex({ left: 160, right: 310, top: 200, bottom: 220 }, narrow, size);
-  assert.ok(ind.x + size / 2 < 160 + 4, `T14b: 缩进行=行首左外侧(实测 x=${ind.x.toFixed(0)})`);
-  assert.equal(ind.side, "right", "T14b: 生物在字左侧 → 指右");
-  // 两侧都放不下(极窄) → ③句尾右下兜底,仍不出面板
+  assert.ok(ind.x + size / 2 < 160 + 4, `T14b: 缩进行=句左侧(实测 x=${ind.x.toFixed(0)})`);
+  assert.equal(ind.dir, "right", "T14b: 生物在字左侧 → 指右");
+  // 两侧都放不下(极窄) → 正下方兜底,仍不出面板
   const xn = { left: 0, right: 240, top: 0, bottom: 800 };
   const b = readingAnchorFlex({ left: 10, right: 230, top: 100, bottom: 120 }, xn, size);
   assert.ok(b.x + size / 2 <= xn.right, `T14b: 极窄兜底不出面板(实测 x=${b.x.toFixed(0)})`);
-  assert.ok(b.y > 120, "T14b: 兜底=句尾下方");
+  assert.ok(b.y > 120, "T14b: 兜底=句正下方");
+  // v11.5 多行句:前两行满宽、末行短——只让开末行的侧位会被上半身压住满宽行,
+  // 障碍物=全部行盒 → 侧位被拒,落整句正下方
+  const ml = readingAnchorFlex(
+    { left: 0, right: 580, top: 100, bottom: 180 },
+    { left: 0, right: 620, top: 0, bottom: 800 },
+    size,
+    { first: { left: 0, right: 580, top: 100, bottom: 124 }, last: { left: 0, right: 200, top: 156, bottom: 180 } },
+    [
+      { left: 0, right: 580, top: 100, bottom: 124 },
+      { left: 0, right: 580, top: 128, bottom: 152 },
+      { left: 0, right: 200, top: 156, bottom: 180 },
+    ],
+  );
+  assert.equal(ml.dir, "up", "T14b: 多行满宽句=整句正下方");
+  assert.equal(ml.occluding, false, "T14b: 多行句正下方零遮挡");
+  assert.ok(ml.y - size * 0.4 >= 180, `T14b: 核心盒在末行底之下(实测 y=${ml.y.toFixed(0)})`);
+  // v11.5 句贴面板底:正下方被 yMax 钳进句里 → 整句正上方,指下
+  const ab = readingAnchorFlex(
+    { left: 50, right: 500, top: 690, bottom: 780 },
+    { left: 0, right: 560, top: 0, bottom: 820 },
+    size,
+    undefined,
+    [{ left: 50, right: 500, top: 690, bottom: 780 }],
+  );
+  assert.equal(ab.dir, "down", "T14b: 句贴底=整句正上方 → 指下");
+  assert.equal(ab.occluding, false, "T14b: 正上方零遮挡");
+  assert.ok(ab.y + size * 0.4 <= 690, `T14b: 核心盒底缘在句顶之上(实测 y=${ab.y.toFixed(0)})`);
+  // v11.5 极端窄面板(句占满面板):所有候选都压句 → 最小遮挡 + occluding(渲染层半透明)
+  const tiny = readingAnchorFlex(
+    { left: 10, right: 190, top: 60, bottom: 360 },
+    { left: 0, right: 200, top: 0, bottom: 400 },
+    size,
+    undefined,
+    [{ left: 10, right: 190, top: 60, bottom: 360 }],
+  );
+  assert.equal(tiny.occluding, true, "T14b: 全撞句时 occluding=true(半透明回执)");
+  assert.ok(tiny.x >= 70 && tiny.x <= 130 && tiny.y >= 70 && tiny.y <= 330, "T14b: 兜底仍钳在面板内");
   // 确定性
   assert.deepEqual(readingAnchorFlex(line, panel, size), mid, "T14b: 锚点确定性");
 
@@ -732,7 +772,7 @@ console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性
   }
   assert.ok(cx <= 11 && cy <= 5, `T14b: chat 漂移有界(实测 ${cx.toFixed(1)}/${cy.toFixed(1)})`);
 }
-console.log("✓ T14b v10 朗读句尾锚点(右下/窄屏正下/贴底行右)+锚点漂浮确定性有界");
+console.log("✓ T14b v11.5 朗读锚点:整句全部行盒零遮挡(右/左/正下/正上)+四向指向+occluding 兜底");
 
 /* ---------- T19 v10 连续移动:限速滑翔 + roam 栏调度 ---------- */
 {
@@ -866,6 +906,18 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
   assert.ok(
     /\.cp-pose-point \.cp-armL[^}]*rotate\(92deg\)/.test(css) && /\.cp-pose-pointr \.cp-armR[^}]*rotate\(-92deg\)/.test(css),
     "T15: 指臂方向正确(armL +92° 左伸 / armR -92° 右伸;符号反=手臂横穿藏头后,实测踩过)",
+  );
+  assert.ok(
+    /\.cp-pose-pointu \.cp-armL[^}]*rotate\(172deg\)/.test(css) && /\.cp-pose-pointd \.cp-armR[^}]*rotate\(-38deg\)/.test(css),
+    "T15: v11.5 竖向指向(句下方→172° 抬臂指上 / 句上方→-38° 外展下指)",
+  );
+  assert.ok(
+    creature.includes("sentLines,") && creature.includes('reading?.dir === "up"') && creature.includes('"pointu"') && creature.includes('"pointd"'),
+    "T15: v11.5 全部行盒进锚点(调用点实参 sentLines,多行句每行都算)+四向指向接线",
+  );
+  assert.ok(
+    css.includes(".cp-occluding") && creature.includes("setOccluding(pos.occluding)"),
+    "T15: v11.5 全撞句兜底=半透明(cp-occluding)让出高亮文字可读性",
   );
   assert.ok(css.includes("cp-reading-mark"), "T15: 朗读句高亮 CSS 存在");
   // v7 接线:共振峰口型 + 航灯 + 块面伪 3D

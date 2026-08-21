@@ -95,11 +95,14 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   const [inTransit, setInTransit] = useState(false);
   /** v6 朗读跟句:正在指句时非 null。side=手指方向(left=生物在句右指左);
    *  pane=mark 所在栏(决定体型:chat 76/notebook 88)。rAF 写 ref,变化才 setState。 */
-  const [reading, setReading] = useState<{ side: "left" | "right"; pane: "chat" | "notebook" } | null>(null);
+  const [reading, setReading] = useState<{ dir: "left" | "right" | "up" | "down"; pane: "chat" | "notebook" } | null>(null);
   /** v8 实际栖身栏(rAF 写 ref 变化才 setState):手机回退家/景深尺寸按它,不只看 zone 状态机 */
   const [dispZone, setDispZone] = useState<"rail" | "chat" | "notebook">("rail");
   const dispZoneRef = useRef<"rail" | "chat" | "notebook">("rail");
-  const readingRef = useRef<{ side: "left" | "right"; pane: "chat" | "notebook" } | null>(null);
+  const readingRef = useRef<{ dir: "left" | "right" | "up" | "down"; pane: "chat" | "notebook" } | null>(null);
+  // v11.5 整句零遮挡:所有锚点候选都压句(极端窄屏)时半透明让出可读性
+  const [occluding, setOccluding] = useState(false);
+  const occludeRef = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const flightRef = useRef<FlightWorld | null>(null);
   const posRef = useRef<{ x: number; y: number } | null>(null);
@@ -345,38 +348,38 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         const host = readMarkEl.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]');
         const pr = host?.getBoundingClientRect();
         const rects = readRange.getClientRects();
-        let tail: { left: number; right: number; top: number; bottom: number } | null = null;
-        for (let i = rects.length - 1; i >= 0; i--) {
-          const r = rects[i]!;
-          if (r.width > 1 && r.height > 1) {
-            tail = { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
-            break;
-          }
-        }
-        const fb = readRange.getBoundingClientRect();
-        let head: { left: number; right: number; top: number; bottom: number } | null = null;
+        // v11.5 障碍物=高亮句**全部行盒**(多行句每行都算,只取首末会被上半身压住中间行)
+        const sentLines: Array<{ left: number; right: number; top: number; bottom: number }> = [];
         for (let i = 0; i < rects.length; i++) {
           const r = rects[i]!;
           if (r.width > 1 && r.height > 1) {
-            head = { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
-            break;
+            sentLines.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
           }
         }
+        const tail = sentLines.length ? sentLines[sentLines.length - 1]! : null;
+        const head = sentLines.length ? sentLines[0]! : null;
+        const fb = readRange.getBoundingClientRect();
         const inChat = !!host?.closest('[data-testid="chat-stream"]');
         const zoneSize = inChat ? SIZE.chat : SIZE.notebook;
         pane = inChat ? "chat" : "notebook";
         if (pr && (tail || fb.width > 0)) {
-          // v11.3 灵活避让:首选行尾右侧悬浮(整句高亮零遮挡),窄屏镜像左侧,兜底句尾右下
+          // v11.5 整句零遮挡:候选(右侧/左侧/正下/正上)逐一 vs **全部行盒**校验,
+          // 指向 dir 随方位(下方→指上);全撞时最小遮挡+半透明(occluding)
           const pos = readingAnchorFlex(
             { left: fb.left, right: fb.right, top: fb.top, bottom: fb.bottom },
             pr,
             zoneSize,
             { first: head ?? undefined, last: tail ?? undefined },
+            sentLines,
           );
-          const next = { side: pos.side, pane };
-          if (readingRef.current?.side !== next.side || readingRef.current?.pane !== next.pane) {
+          const next = { dir: pos.dir, pane };
+          if (readingRef.current?.dir !== next.dir || readingRef.current?.pane !== next.pane) {
             readingRef.current = next;
             setReading(next);
+          }
+          if (occludeRef.current !== pos.occluding) {
+            occludeRef.current = pos.occluding;
+            setOccluding(pos.occluding);
           }
           if (reduced) {
             target = pos;
@@ -385,13 +388,17 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             // 限速滑翔跟句:换句/滚动都是看得见的飞行,不闪现
             const cur = posRef.current ?? { x: pos.x, y: pos.y };
             target = glideTo(cur, pos, dt, CRUISE_READ, 110);
-            angle = pos.side === "left" ? -0.07 : 0.07; // 微倾向所指文字
+            angle = pos.dir === "left" ? -0.07 : pos.dir === "right" ? 0.07 : 0; // 侧向微倾,竖向不倾
           }
         }
       } else {
         if (readingRef.current !== null) {
           readingRef.current = null;
           setReading(null);
+        }
+        if (occludeRef.current) {
+          occludeRef.current = false;
+          setOccluding(false);
         }
         // v10 记笔记:pose=writing 期间,锚点=用户刚画的那条线(飞到线旁拿出本笔记录)
         const noteMark = st.pose === "writing" ? getLastNoteMark() : null;
@@ -625,17 +632,21 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
 
   const pose = inTransit
     ? "flying"
-    : reading?.side === "left"
+    : reading?.dir === "left"
       ? "point"
-      : reading?.side === "right"
+      : reading?.dir === "right"
         ? "pointr"
-        : snap.state.pose;
+        : reading?.dir === "up"
+          ? "pointu"
+          : reading?.dir === "down"
+            ? "pointd"
+            : snap.state.pose;
   // 跟句时体型随 mark 所在栏(中栏对话 76/讲解栏 88),否则随 zone
   const mascotSize = reading ? SIZE[reading.pane] : SIZE[dispZone];
   return (
     <div
       ref={wrapRef}
-      className={`cp-creature fixed left-0 top-0 z-40 will-change-transform ${snap.state.mode === "veil" ? "cp-veil" : ""} ${snap.state.grabbed ? "cp-grabbed" : ""}`}
+      className={`cp-creature fixed left-0 top-0 z-40 will-change-transform ${snap.state.mode === "veil" ? "cp-veil" : ""} ${occluding ? "cp-occluding" : ""} ${snap.state.grabbed ? "cp-grabbed" : ""}`}
       data-testid="companion-creature"
       data-zone={snap.state.zone === "roam" ? dispZone : snap.state.zone}
       data-mode={snap.state.mode}

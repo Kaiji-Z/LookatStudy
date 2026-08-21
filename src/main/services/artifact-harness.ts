@@ -439,7 +439,7 @@ export const QUALITY_GUIDE = {
   compare_table:
     "质量要求:维度列(第一列)清晰,对比项 2-4 个(列数 ≤ 5),单元格文字简洁(≤ 15 字),最多 8 行。",
   diagram:
-    "质量要求:只返回合法 mermaid 语法(不含外层```),节点 id 用英文,标签可中文。优先 flowchart TD/LR;时序用 sequenceDiagram;状态用 stateDiagram-v2。代码 ≤ 30 行。",
+    "质量要求:只返回合法 mermaid 语法(不含外层```),节点 id 用英文,标签可中文。标签含中文/空格/括号时必须用双引号包裹,如 A[\"步骤(一)\"]——裸括号会截断节点导致渲染失败。优先 flowchart TD/LR;时序用 sequenceDiagram;状态用 stateDiagram-v2。代码 ≤ 30 行。",
   code_walkthrough:
     "质量要求:代码 ≤ 30 行(超长请节选关键片段),分段 3-6 段,每段讲解 1-2 句(说清 this does what),行号从 1 开始。",
   guess:

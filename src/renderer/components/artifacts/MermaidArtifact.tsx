@@ -32,6 +32,13 @@ type RenderState =
   | { status: "rendered"; svg: string }
   | { status: "error"; message: string };
 
+/** 轻量 djb2 哈希(修复缓存键用,不需要密码学强度) */
+function simpleHash(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.2;
@@ -47,6 +54,18 @@ export function MermaidArtifact({ data, variant = "card" }: { data: unknown; var
   // useId 保证 SSR-safe 唯一 id,mermaid v11 需要它作为内部 dom 节点 id
   const reactId = useId().replace(/[:]/g, "_");
   const [state, setState] = useState<RenderState>({ status: "loading" });
+  // 当前生效的 mermaid(初值=原始;会话缓存里有本图的修复稿则直接用,免重复调 LLM)
+  const [code, setCode] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem(`mmdfix:${d.mermaid.length}:${simpleHash(d.mermaid)}`) ?? d.mermaid;
+    } catch {
+      return d.mermaid;
+    }
+  });
+  // 修复循环(archify 思想):parse 失败 → 带错误回主进程 LLM 定点修(1 轮封顶,
+  // 只对**原始**代码触发,防"修复稿再失败→再修"的乒乓;修复稿失败走源码 fallback)。
+  const [repairAttempted, setRepairAttempted] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   // 主题切换 nonce:lazy-mermaid 只清自己的初始化缓存,已渲染的 SVG 不会自己换色
   // —— 这里监听 theme-changed 重跑下方渲染路径,让在场的图卡跟着主题变色。
   const [themeNonce, setThemeNonce] = useState(0);
@@ -69,9 +88,17 @@ export function MermaidArtifact({ data, variant = "card" }: { data: unknown; var
     let cancelled = false;
     setState({ status: "loading" });
     setSvgSize(null); // 新图重置尺寸,重新测量
-    renderMermaid(`mmd-${reactId}`, d.mermaid)
+    renderMermaid(`mmd-${reactId}`, code)
       .then((svg) => {
-        if (!cancelled) setState({ status: "rendered", svg });
+        if (!cancelled) {
+          setState({ status: "rendered", svg });
+          // 修复稿渲染成功才落缓存(只缓存被证实可渲染的,坏稿不进缓存)
+          if (code !== d.mermaid) {
+            try {
+              sessionStorage.setItem(`mmdfix:${d.mermaid.length}:${simpleHash(d.mermaid)}`, code);
+            } catch { /* 缓存失败不影响显示 */ }
+          }
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -86,9 +113,26 @@ export function MermaidArtifact({ data, variant = "card" }: { data: unknown; var
     return () => {
       cancelled = true;
     };
-  }, [d.mermaid, reactId, themeNonce]);
+  }, [code, reactId, themeNonce, d.mermaid]);
 
-  const liveUrl = `https://mermaid.live/edit#${encodeURIComponent(d.mermaid)}`;
+  // 失败 → 自动修复(仅原始代码、仅一轮;主进程 LLM 失败/无模型都静默守 fallback)
+  useEffect(() => {
+    if (state.status !== "error" || repairAttempted) return;
+    setRepairAttempted(true);
+    if (code !== d.mermaid) return; // 修复稿再失败:不再循环,走源码 fallback
+
+    if (!window.api?.repairMermaidDiagram) return;
+    setRepairing(true);
+    window.api
+      .repairMermaidDiagram({ mermaid: code, errorMessage: state.message, diagramType: d.diagramType })
+      .then((res) => {
+        if (res.ok && res.mermaid.trim()) setCode(res.mermaid);
+      })
+      .catch(() => { /* 修复失败保持 error 态 */ })
+      .finally(() => setRepairing(false));
+  }, [state, repairAttempted, code, d.mermaid, d.diagramType]);
+
+  const liveUrl = `https://mermaid.live/edit#${encodeURIComponent(code)}`;
 
   const zoomIn = useCallback(() => setZoom((z) => Math.min(MAX_ZOOM, +(z + ZOOM_STEP).toFixed(2))), []);
   const zoomOut = useCallback(() => setZoom((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2))), []);
@@ -230,14 +274,20 @@ export function MermaidArtifact({ data, variant = "card" }: { data: unknown; var
             </div>
           </div>
         )}
-        {state.status === "error" && (
+        {state.status === "error" && repairing && (
+          <div className="flex items-center gap-2 text-body text-ink-muted my-8 justify-center" data-testid="mermaid-repairing">
+            <span className="typing-dot w-1.5 h-1.5 bg-accent rounded-full inline-block" />
+            <span>{t("artifact.mermaid.repairing")}</span>
+          </div>
+        )}
+        {state.status === "error" && !repairing && (
           <div className="w-full text-center my-4" data-testid="mermaid-fallback">
             <div className="text-body text-warning mb-2 flex items-center justify-center gap-1.5">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span>{t("artifact.mermaid.renderFailed")}</span>
             </div>
             <pre className="text-label bg-surface-1/60 rounded p-2 overflow-x-auto text-ink-muted font-mono text-left">
-              {d.mermaid}
+              {code}
             </pre>
             <div className="text-caption text-ink-muted mt-2">{t("artifact.mermaid.errorPrefix", { msg: state.message })}</div>
           </div>

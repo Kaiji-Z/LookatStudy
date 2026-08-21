@@ -72,6 +72,8 @@ const api = {
     ipcRenderer.invoke("asset:listByCourse", courseId)) as ApiExpose["listAssetsByCourse"],
   getAssetDataUrl: ((assetId: string) =>
     ipcRenderer.invoke("asset:getDataUrl", assetId)) as ApiExpose["getAssetDataUrl"],
+  repairMermaidDiagram: ((input: import("@shared/types").DiagramRepairCall) =>
+    ipcRenderer.invoke("artifact:repairMermaid", input)) as ApiExpose["repairMermaidDiagram"],
 
   /* 进度 */
   getProgress: ((nodeId: string) =>

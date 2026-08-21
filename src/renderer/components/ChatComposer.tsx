@@ -441,7 +441,7 @@ export function ChatComposer({
           语音模式(飞书式,v0.14):整卡换成「语音输入」头行 + 按住说话大按钮,
           录音/转录/复查浮层(VoicePanel)锚在卡片上方弹出。 */}
       <div
-        className={`relative rounded-2xl transition-colors px-3 pt-2 pb-1.5 ${
+        className={`composer-card relative rounded-2xl transition-colors px-3 pt-2 pb-1.5 ${
           dragActive ? "bg-accent/10 ring-1 ring-accent" : "bg-ink/[0.05] focus-within:bg-ink/[0.07]"
         }`}
         onDragEnter={onDragEnter}
@@ -563,7 +563,7 @@ export function ChatComposer({
                     type="button"
                     onClick={() => removeAttachment(a.id)}
                     aria-label={t("chat.attach.remove", { name: a.name })}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-ink/70 hover:bg-warning text-white flex items-center justify-center transition-colors"
+                    className="touch-target-sm absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-ink/70 hover:bg-warning text-white flex items-center justify-center transition-colors"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -579,7 +579,7 @@ export function ChatComposer({
                     type="button"
                     onClick={() => removeAttachment(a.id)}
                     aria-label={t("chat.attach.remove", { name: a.name })}
-                    className="w-4 h-4 rounded-full hover:bg-ink/20 flex items-center justify-center text-ink-muted hover:text-warning transition-colors"
+                    className="touch-target-sm w-4 h-4 rounded-full hover:bg-ink/20 flex items-center justify-center text-ink-muted hover:text-warning transition-colors"
                   >
                     <X className="w-2.5 h-2.5" />
                   </button>
@@ -641,7 +641,7 @@ export function ChatComposer({
         </div>
 
         {/* v0.10 底部工具栏:左=附件入口;右=思考强度·上下文·模型(工具栏后撤,caption 调)。 */}
-        <div className="flex flex-wrap items-center justify-between gap-x-0.5 gap-y-1 mt-0.5">
+        <div className="composer-toolbar flex flex-wrap items-center justify-between gap-x-0.5 gap-y-1 mt-0.5">
           {/* 🎤 = 语音模式开关(飞书式):点击后整卡切「按住说话」,不在此按钮上录 */}
           <button
             type="button"

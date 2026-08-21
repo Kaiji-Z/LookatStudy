@@ -102,26 +102,26 @@ export function Face({
       <g ref={refs.eyes} className="cp-eyes" style={{ transformBox: "fill-box", transformOrigin: "center" }}>
         {flags.sleep ? (
           <>
-            <path d="M77,68 h14" stroke={p.ink} strokeWidth="4" strokeLinecap="round" />
-            <path d="M109,68 h14" stroke={p.ink} strokeWidth="4" strokeLinecap="round" />
+            <path d="M77,65 h14" stroke={p.ink} strokeWidth="4" strokeLinecap="round" />
+            <path d="M109,65 h14" stroke={p.ink} strokeWidth="4" strokeLinecap="round" />
           </>
         ) : flags.smile ? (
           <>
-            <path d="M77,71 Q84,62 91,71" fill="none" stroke={p.ink} strokeWidth="4.5" strokeLinecap="round" />
-            <path d="M109,71 Q116,62 123,71" fill="none" stroke={p.ink} strokeWidth="4.5" strokeLinecap="round" />
+            <path d="M77,68 Q84,59 91,68" fill="none" stroke={p.ink} strokeWidth="4.5" strokeLinecap="round" />
+            <path d="M109,68 Q116,59 123,68" fill="none" stroke={p.ink} strokeWidth="4.5" strokeLinecap="round" />
           </>
         ) : flags.star ? (
           <g className="cp-star-tw">
-            <path d="M84,60 L86.2,66 L92,68.2 L86.2,70.4 L84,76.4 L81.8,70.4 L76,68.2 L81.8,66 Z" fill={p.crown} stroke={p.crownD} strokeWidth="1.5" />
-            <path d="M116,60 L118.2,66 L124,68.2 L118.2,70.4 L116,76.4 L113.8,70.4 L108,68.2 L113.8,66 Z" fill={p.crown} stroke={p.crownD} strokeWidth="1.5" />
+            <path d="M84,58 L86.2,63.6 L92,65.6 L86.2,67.8 L84,73.2 L81.8,67.8 L76,65.6 L81.8,63.6 Z" fill={p.crown} stroke={p.crownD} strokeWidth="1.5" />
+            <path d="M116,58 L118.2,63.6 L124,65.6 L118.2,67.8 L116,73.2 L113.8,67.8 L108,65.6 L113.8,63.6 Z" fill={p.crown} stroke={p.crownD} strokeWidth="1.5" />
           </g>
         ) : (
           <>
-            <rect x={flags.surprised ? "75" : "76"} y={flags.surprised ? "59" : flags.listening ? "61" : "62"} width={flags.surprised ? "18" : "16"} height={flags.surprised ? "17" : flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
-            <rect x={flags.surprised ? "107" : "108"} y={flags.surprised ? "59" : flags.listening ? "61" : "62"} width={flags.surprised ? "18" : "16"} height={flags.surprised ? "17" : flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
+            <rect x={flags.surprised ? "75" : "76"} y={flags.surprised ? "56.5" : flags.listening ? "58.5" : "59"} width={flags.surprised ? "18" : "16"} height={flags.surprised ? "17" : flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
+            <rect x={flags.surprised ? "107" : "108"} y={flags.surprised ? "56.5" : flags.listening ? "58.5" : "59"} width={flags.surprised ? "18" : "16"} height={flags.surprised ? "17" : flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
             <g ref={refs.pupils} className="cp-pupils">
-              <rect x="82" y={flags.surprised ? "64" : "66"} width="4.5" height="5.5" rx="1.5" fill={p.pupil} />
-              <rect x="114" y={flags.surprised ? "64" : "66"} width="4.5" height="5.5" rx="1.5" fill={p.pupil} />
+              <rect x="82" y={flags.surprised ? "61.5" : "63"} width="4.5" height="5.5" rx="1.5" fill={p.pupil} />
+              <rect x="114" y={flags.surprised ? "61.5" : "63"} width="4.5" height="5.5" rx="1.5" fill={p.pupil} />
             </g>
           </>
         )}
@@ -140,7 +140,9 @@ export function Face({
   );
 }
 
-/** 表情挂件(共享几何,调色随形态):思考眉/听写声波/汗滴/zzz/加冕金冠。 */
+/** 表情挂件(v0.17.2 全部收进头部屏幕内——脸=屏幕渲染,是机器人身份的一部分;
+ * 表情互斥,同屏只渲染一支,坐标只避开常驻眼睛区)。皇冠是头顶实体徽章,
+ * 不属于屏幕表情,留在屏外。 */
 export function FaceExtras({
   flags,
   refs,
@@ -153,44 +155,48 @@ export function FaceExtras({
   return (
     <>
       {flags.thinking && (
+        /* 思考眉:屏内眼上,细圆棒(旧版在屏外盔额上,用户点名要进屏) */
         <>
-          <rect x="68" y="42" width="22" height="5" rx="2.5" fill={p.out} transform="rotate(10 79 44)" />
-          <rect x="110" y="42" width="22" height="5" rx="2.5" fill={p.out} transform="rotate(-10 121 44)" />
+          <rect className="cp-brow" x="70" y="55" width="19" height="3.6" rx="1.8" fill={p.ink} transform="rotate(9 79.5 56.8)" />
+          <rect className="cp-brow" x="111" y="55" width="19" height="3.6" rx="1.8" fill={p.ink} transform="rotate(-9 120.5 56.8)" />
         </>
       )}
       {flags.listening && (
         <g ref={refs.waves} className="cp-waves-wrap">
-          <g stroke={p.wave} strokeWidth="3" fill="none" strokeLinecap="round" className="cp-waves">
-            <path d="M168,64 a10,10 0 0 1 0,16" />
-            <path d="M174,60 a16,16 0 0 1 0,24" opacity="0.66" />
-            <path d="M180,56 a22,22 0 0 1 0,32" opacity="0.4" />
+          <g stroke={p.wave} strokeWidth="2.6" fill="none" strokeLinecap="round" className="cp-waves">
+            <path d="M130,62 a8,8 0 0 1 0,14" />
+            <path d="M134,59.5 a12,12 0 0 1 0,19" opacity="0.66" />
+            <path d="M138,57 a16,16 0 0 1 0,24" opacity="0.4" />
           </g>
         </g>
       )}
       {flags.encourage && (
-        <path d="M156,44 C160,50 160,55 156,57 C152,55 152,50 156,44 Z" fill={p.wave} stroke={p.out} strokeWidth="2" className="cp-sweat" />
+        <path d="M129,56 C131.6,60 131.6,63 129,64.6 C126.4,63 126.4,60 129,56 Z" fill={p.wave} stroke={p.ink} strokeWidth="1.6" className="cp-sweat" />
       )}
       {flags.huffy && (
-        /* 鼓脸生气:两颊吹起(被扔出去后飞回来的余怒) */
+        /* 鼓脸生气:屏底两角蒸汽团(屏内版;避开中央口型区) */
         <g className="cp-huffy">
-          <circle cx="66" cy="92" r="7.5" fill={p.wave} opacity="0.5" stroke={p.out} strokeWidth="1.5" />
-          <circle cx="134" cy="92" r="7.5" fill={p.wave} opacity="0.5" stroke={p.out} strokeWidth="1.5" />
+          <circle cx="69.5" cy="82" r="4.6" fill={p.wave} opacity="0.45" stroke={p.ink} strokeWidth="1.3" />
+          <circle cx="130.5" cy="82" r="4.6" fill={p.wave} opacity="0.45" stroke={p.ink} strokeWidth="1.3" />
         </g>
       )}
       {flags.sleep && (
-        <g className="cp-zzz" stroke={p.ink} strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M150,34 h9 l-9,9 h9" />
-          <path d="M166,24 h7 l-7,7 h7" opacity="0.7" />
-          <path d="M179,16 h5 l-5,5 h5" opacity="0.45" />
-        </g>
-      )}
-      {flags.proud && (
-        <g>
-          <path d="M108,30 L112,12 L120,24 L128,8 L136,24 L144,12 L148,30 Z" fill={p.crown} stroke={p.crownD} strokeWidth="3" strokeLinejoin="round" />
-          <circle cx="128" cy="24" r="3" fill={p.wave} stroke={p.crownD} strokeWidth="1.5" />
+        <g className="cp-zzz" stroke={p.ink} strokeWidth="2.6" fill="none" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M126,58 h6 l-6,6 h6" />
+          <path d="M134.5,52 h4 l-4,4 h4" opacity="0.7" />
         </g>
       )}
     </>
+  );
+}
+
+/** 加冕金冠(毕业得意态):头顶实体徽章,不属于屏幕表情——在屏内剪裁组**外**渲染。 */
+export function CrownMark({ p }: { p: FormPalette }) {
+  return (
+    <g>
+      <path d="M108,30 L112,12 L120,24 L128,8 L136,24 L144,12 L148,30 Z" fill={p.crown} stroke={p.crownD} strokeWidth="3" strokeLinejoin="round" />
+      <circle cx="128" cy="24" r="3" fill={p.wave} stroke={p.crownD} strokeWidth="1.5" />
+    </g>
   );
 }
 /* v0.17.1 地影组件删除:整身投影改 CSS drop-shadow 跟随剪影(见 index.css),

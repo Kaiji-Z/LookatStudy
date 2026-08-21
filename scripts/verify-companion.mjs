@@ -1334,4 +1334,38 @@ console.log("T23 跟句悬空不隐身(v0.17.2:detached readingRange 兜底)");
   console.log("OK T23: 跟句悬空兜底 + 卸载清高亮(ref 自废守卫)");
 }
 
+// ---------------------------------------------------------------------------
+console.log("T24 v0.17.2 屏内表情机器人化 + 喷焰可见 + 点球互动");
+{
+  const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
+  const css = readFileSync(new URL("../src/renderer/index.css", import.meta.url), "utf8");
+  // ① 脸=屏幕渲染:五形态 Face+FaceExtras 剪进屏框;皇冠(实体徽章)在剪裁外
+  for (const f of ["ember", "frost", "moss", "astro", "ink"]) {
+    const src = read(`components/companion/forms/${f}.tsx`);
+    assert.ok(src.includes('className="cp-scr-face" clipPath={`url(#${uid}-scr)`}'), `T24: ${f} 表情剪进屏幕`);
+    assert.ok(src.includes("flags.proud && <CrownMark"), `T24: ${f} 皇冠在剪裁组外`);
+    // 嘴型去 flesh 化:肉/叶/纸色舌唇禁用(只匹配 inline fill;装甲色是变量不误伤)
+    assert.ok(!/fill="#(FF9DB0|A8E89A|BFF3FF|7CC4DC|57BD74|E8543F|5D4FD1|8B7BF0|DCD2B8)"/.test(src), `T24: ${f} 无肉色舌/唇`);
+    assert.ok(src.includes('fill={p.pupil}'), `T24: ${f} 舌=发光音素条(p.pupil 屏光件)`);
+  }
+  const shared = read("components/companion/forms/shared.tsx");
+  assert.ok(shared.includes('className="cp-brow" x="70" y="55"'), "T24: 思考眉在屏幕内(y55;屏顶=54,旧版 y42 在屏外)");
+  assert.ok(!shared.includes('y="42" width="22"'), "T24: 屏外眉已删");
+  // ② 喷焰可见:粒子推出身形半径外(旧 150-158 距旋转原点仅 ~15-23px,被身体盖死)
+  const mascot = read("components/companion/Mascot.tsx");
+  assert.ok(mascot.includes('cy="187"') && mascot.includes('cy="198"'), "T24: 喷焰粒子在身形外(定向尾焰)");
+  assert.ok(css.includes("scale: calc(0.5 + 0.6 * min(1, var(--cp-speed, 0)))"), "T24: 焰长随速度伸缩");
+  // ③ 点球互动:桌面飞到球右肩指住+轻顶;T3 无 rail 朝左注目;三条跳转路径都发射
+  const bus = readFileSync(new URL("../src/renderer/lib/companion/bus.ts", import.meta.url), "utf8");
+  const creature = read("components/companion/CompanionCreature.tsx");
+  const mapRail = read("components/MapRail.tsx");
+  assert.ok(bus.includes("export function companionBallTap") && bus.includes("getLastBallTap"), "T24: bus 点球事件+ref 注册表");
+  assert.ok(creature.includes("getLastBallTap()") && creature.includes("x - navRect!.left + 34"), "T24: Creature 飞到球右肩位");
+  assert.ok(/ballAck\r?\n\s+\? "point"/.test(creature), "T24: 点球应答姿势=指向");
+  assert.ok(creature.includes("applyForce(b.body, b.body.position, { x: 0.0035, y: -0.005 })"), "T24: 轻顶非锁定球");
+  assert.ok(creature.includes("fly: false"), "T24: T3 分支(朝左注目不飞)");
+  assert.ok(mapRail.split("companionBallTap").length - 1 >= 3, "T24: 物理球/键盘球/搜索三路发射");
+  console.log("OK T24: 屏内表情机器人化 + 喷焰重定位 + 点球互动双分支");
+}
+
 console.log("\nverify-companion: ALL PASS");

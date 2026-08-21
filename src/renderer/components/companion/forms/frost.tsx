@@ -6,7 +6,7 @@
  * 口型=切角母音块(硬朗冰感)。冷调:冰川蓝×白 glare,屏面近白浮冰色。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, faceFlags, BevelPlate } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags, BevelPlate, CrownMark  } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const FROST: FormPalette = {
@@ -54,46 +54,50 @@ function CrystalCore({ energyRatio, uid }: { energyRatio: number; uid: string })
   );
 }
 
+/** 口型(v0.17.2 机器人化+屏内化,y≤86):切角语言保留," fleshy"件换屏光件
+ *  ——冰舌→发光音素条(p.pupil),牙→切面刻度,咬唇→快门压光。 */
 function frostMouth(v: Viseme, p: FormPalette) {
   switch (v) {
     case "A":
-      return <path d="M92,77 L108,77 L113,81 L108,89 L92,89 L87,81 Z M95,80 L105,80 L105,86 L95,86 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M92,74.5 L108,74.5 L113,78.5 L108,85.5 L92,85.5 L87,78.5 Z M95,77.5 L105,77.5 L105,83.5 L95,83.5 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":
-      return <path d="M90,79 L110,79 L113,82 L110,85 L90,85 L87,82 Z" fill={p.ink} />;
+      return <path d="M90,76.5 L110,76.5 L113,80 L110,83.5 L90,83.5 L87,80 Z" fill={p.ink} />;
     case "I":
-      return <path d="M90,81 L110,81 L111.5,82.8 L110,84.6 L90,84.6 L88.5,82.8 Z" fill={p.ink} />;
+      return <path d="M90,79 L110,79 L111.5,80.8 L110,82.6 L90,82.6 L88.5,80.8 Z" fill={p.ink} />;
     case "O":
-      return <path d="M100,75 L106,82 L100,90 L94,82 Z M100,79 L102.8,82 L100,85.4 L97.2,82 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M100,73.5 L106,80.5 L100,86 L94,80.5 Z M100,77.5 L102.8,80.5 L100,83.4 L97.2,80.5 Z" fill={p.ink} fillRule="evenodd" />;
     case "U":
-      return <path d="M100,75.5 L104,82 L100,89 L96,82 Z M100,79.5 L101.8,82 L100,84.6 L98.2,82 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M100,74 L104,80.5 L100,85.5 L96,80.5 Z M100,78 L101.8,80.5 L100,83 L98.2,80.5 Z" fill={p.ink} fillRule="evenodd" />;
     case "SS":
-      // 齿擦:宽冰槽 + 白牙 facets(冰晶切面感)
+      // 齿擦:宽冰槽 + 切面刻度齿列(非人类牙块)
       return (
         <g>
-          <path d="M87,80 L113,80 L111.5,84.5 L88.5,84.5 Z" fill={p.ink} />
-          <path d="M90,80.4 L96,80.4 L94.6,84.1 L91,84.1 Z" fill="#FFFFFF" />
-          <path d="M98.5,80.4 L104,80.4 L103,84.1 L99,84.1 Z" fill="#FFFFFF" opacity="0.9" />
-          <path d="M106.5,80.4 L110.6,80.4 L109.6,84.1 L107,84.1 Z" fill="#FFFFFF" opacity="0.75" />
+          <path d="M86,76 L114,76 L112.5,82.6 L87.5,82.6 Z" fill={p.ink} />
+          <path d="M90,76.4 L95.4,76.4 L94.4,82.2 L91.2,82.2 Z" fill="#FFFFFF" />
+          <path d="M98,76.4 L103,76.4 L102.2,82.2 L99,82.2 Z" fill="#FFFFFF" opacity="0.9" />
+          <path d="M105.6,76.4 L110.4,76.4 L109.4,82.2 L106.4,82.2 Z" fill="#FFFFFF" opacity="0.75" />
         </g>
       );
     case "L":
-      // 舌尖:切角开口 + 冰舌顶上齿龈
+      // 舌尖:切角开口 + 发光音素条顶上齿龈(屏光"舌")
       return (
         <g>
-          <path d="M92,77 L108,77 L113,81 L108,89 L92,89 L87,81 Z M95,80 L105,80 L105,86 L95,86 Z" fill={p.ink} fillRule="evenodd" />
-          <path d="M95.5,85.5 L100,78.5 L104.5,85.5 Q100,87.8 95.5,85.5 Z" fill="#BFF3FF" stroke={p.ink} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M92,74.5 L108,74.5 L113,78.5 L108,85.5 L92,85.5 L87,78.5 Z M95,77.5 L105,77.5 L105,83.5 L95,83.5 Z" fill={p.ink} fillRule="evenodd" />
+          <rect x="96" y="78" width="8" height="3.2" rx="1.6" fill={p.pupil} />
+          <rect x="98" y="78.8" width="4" height="1.6" rx="0.8" fill="#FFFFFF" opacity="0.9" />
         </g>
       );
     case "FV":
-      // 咬唇:白牙带咬冰蓝下唇
+      // 咬唇:切面齿条下压发光条=快门"咬"住光(非人类唇)
       return (
         <g>
-          <path d="M93,80.5 Q100,77.8 107,80.5 Q107.5,86.2 100,87 Q92.5,86.2 93,80.5 Z" fill="#7CC4DC" stroke={p.ink} strokeWidth="1.8" strokeLinejoin="round" />
-          <path d="M93.5,79 L106.5,79 L105.8,82.6 L94.2,82.6 Z" fill="#FFFFFF" stroke={p.ink} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M92,74.5 L108,74.5 L112,78 L108,84.5 L92,84.5 L88,78 Z" fill={p.ink} />
+          <path d="M93.5,76.2 L106.5,76.2 L105.8,79.4 L94.2,79.4 Z" fill="#FFFFFF" />
+          <rect x="95.5" y="80.6" width="9" height="2.6" rx="1.3" fill={p.pupil} />
         </g>
       );
     default:
-      return <path d="M92,83 L100,86.5 L108,83" fill="none" stroke={p.ink} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />;
+      return <path d="M92,79.5 L100,83.5 L108,79.5" fill="none" stroke={p.ink} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />;
   }
 }
 
@@ -158,9 +162,13 @@ export function FrostArt({ uid, refs, expression, viseme, openScale, energyRatio
             <path d="M118,54 L136,54 L108,88 L90,88 Z" fill="#FFFFFF" opacity="0.18" />
           </g>
 
-          <Face expression={expression} flags={flags} refs={refs} p={FROST} viseme={viseme} openScale={openScale} renderMouth={frostMouth} />
-          <FaceExtras flags={flags} refs={refs} p={FROST} />
+          {/* v0.17.2 脸=屏幕渲染:表情整体剪进屏幕,任何元素构造上不可能越出屏框 */}
+          <g className="cp-scr-face" clipPath={`url(#${uid}-scr)`}>
+            <Face expression={expression} flags={flags} refs={refs} p={FROST} viseme={viseme} openScale={openScale} renderMouth={frostMouth} />
+            <FaceExtras flags={flags} refs={refs} p={FROST} />
+          </g>
         </g>
+          {flags.proud && <CrownMark p={FROST} />}
         {/* v0.17.1 arms layer above head */}
         <Arms refs={refs} armFill={ICE_D} out={OUT} />
       </g>

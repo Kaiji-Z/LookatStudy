@@ -11,7 +11,7 @@ import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { CourseSearchPanel } from "./CourseSearchPanel.js";
-import { companionImportDone, companionImporting, companionRailRegister, companionRailUnregister, companionRailWorld } from "../lib/companion/bus.ts";
+import { companionBallTap, companionImportDone, companionImporting, companionRailRegister, companionRailUnregister, companionRailWorld } from "../lib/companion/bus.ts";
 import {
   computeBalloonLayout,
   balloonSegmentToPath,
@@ -339,6 +339,7 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
           onJump={(node) => {
             setWorld(node.world ?? "study");
             setSearchOpen(false);
+            companionBallTap(null, null, node.id); // v0.17.2 伴学点球互动(搜索路,坐标由物理岛定位)
             props.onJumpNode(node.id);
           }}
           onClose={() => setSearchOpen(false)}
@@ -1213,6 +1214,7 @@ function MapSection({
       // setPointerCapture 重定向了 click,按钮 onClick 只剩键盘路径。
       const lesson = lessons.find((l) => l.id === p.nodeId);
       if (lesson && Date.now() >= suppressClickUntilRef.current && !lessonLocked(lesson)) {
+        companionBallTap(e.clientX, e.clientY, lesson.id); // v0.17.2 伴学点球互动(坐标=指针≈球位)
         onJumpNode(lesson.id);
       }
     }
@@ -1392,6 +1394,7 @@ function MapSection({
                 chapterLessonsMastered={chapterLessonsMastered}
                 onClick={() => {
                   if (Date.now() < suppressClickUntilRef.current) return;
+                  companionBallTap(null, null, lesson.id); // v0.17.2 伴学点球互动(键盘路;坐标由物理岛定位)
                   onJumpNode(lesson.id);
                 }}
               />

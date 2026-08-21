@@ -7,7 +7,7 @@
  * 笔触(圆头粗描,起收笔圆润)。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, faceFlags , BevelPlate } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags , BevelPlate, CrownMark  } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const INK: FormPalette = {
@@ -55,46 +55,50 @@ function InkCore({ energyRatio, streakLit }: { energyRatio: number; streakLit: b
   );
 }
 
+/** 口型(v0.17.2 机器人化+屏内化,y≤86):笔画语言保留,朱砂舌/宣纸唇换屏光件
+ *  ——舌=发光音素条(p.pupil),齿=飞白刻度,咬唇=墨条压光。 */
 function inkMouth(v: Viseme, p: FormPalette) {
   switch (v) {
     case "A":
-      return <path d="M91,77 Q100,74.5 109,77 Q111,86 100,89.5 Q89,86 91,77 Z M96,79.5 Q100,81.5 104,79.5 Q103,84 100,85.5 Q97,84 96,79.5 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M91,74 Q100,71.5 109,74 Q111,83 100,86.5 Q89,83 91,74 Z M96,76.5 Q100,78.5 104,76.5 Q103,81 100,82.5 Q97,81 96,76.5 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":
-      return <path d="M90,79 Q100,76.8 110,79 Q110.8,85.2 100,86.4 Q89.2,85.2 90,79 Z" fill={p.ink} />;
+      return <path d="M90,76 Q100,73.8 110,76 Q110.8,82.2 100,83.4 Q89.2,82.2 90,76 Z" fill={p.ink} />;
     case "I":
-      return <path d="M90.5,81.4 Q100,80 109.5,81.4 Q110,84.8 100,85.4 Q90,84.8 90.5,81.4 Z" fill={p.ink} />;
+      return <path d="M90.5,78.4 Q100,77 109.5,78.4 Q110,81.8 100,82.4 Q90,81.8 90.5,78.4 Z" fill={p.ink} />;
     case "O":
-      return <path d="M100,75.5 C105.5,75.5 108,80 108,83 C108,86.6 104.8,89.6 100,89.6 C95.2,89.6 92,86.6 92,83 C92,80 94.5,75.5 100,75.5 Z M100,79.6 C102.6,79.6 104.2,81.1 104.2,83 C104.2,85 102.5,86.2 100,86.2 C97.5,86.2 95.8,85 95.8,83 C95.8,81.1 97.4,79.6 100,79.6 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M100,72.5 C105.5,72.5 108,77 108,80 C108,83.6 104.8,86.6 100,86.6 C95.2,86.6 92,83.6 92,80 C92,77 94.5,72.5 100,72.5 Z M100,77 C102.6,77 104.2,78.5 104.2,80.5 C104.2,82.5 102.5,83.7 100,83.7 C97.5,83.7 95.8,82.5 95.8,80.5 C95.8,78.5 97.4,77 100,77 Z" fill={p.ink} fillRule="evenodd" />;
     case "U":
-      return <path d="M100,76 C103.2,76 105.2,79.6 105.2,83 C105.2,86.4 103.2,89 100,89 C96.8,89 94.8,86.4 94.8,83 C94.8,79.6 96.8,76 100,76 Z M100,79.6 C101.4,79.6 102.3,81.1 102.3,83 C102.3,85 101.4,86.2 100,86.2 C98.6,86.2 97.7,85 97.7,83 C97.7,81.1 98.6,79.6 100,79.6 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M100,73 C103.2,73 105.2,76.6 105.2,80 C105.2,83.4 103.2,86 100,86 C96.8,86 94.8,83.4 94.8,80 C94.8,76.6 96.8,73 100,73 Z M100,76.8 C101.4,76.8 102.3,78.3 102.3,80.3 C102.3,82.3 101.4,83.5 100,83.5 C98.6,83.5 97.7,82.3 97.7,80.3 C97.7,78.3 98.6,76.8 100,76.8 Z" fill={p.ink} fillRule="evenodd" />;
     case "SS":
-      // 齿擦:宽笔锋横抹 + 纸白齿缝(飞白)
+      // 齿擦:宽笔锋横抹 + 飞白刻度齿列(非人类牙块)
       return (
         <g>
-          <path d="M88,80.2 Q100,78.6 112,80.2 Q112.6,85.8 100,86.4 Q87.4,85.8 88,80.2 Z" fill={p.ink} />
-          <path d="M91.5,80.8 L96.5,80.5 L95.8,84.6 L92,84.4 Z" fill="#F7F2E6" />
-          <path d="M99,80.4 L104.5,80.4 L104,84.7 L99.4,84.6 Z" fill="#F7F2E6" opacity="0.9" />
-          <path d="M107,80.6 L110.4,80.8 L109.8,84.4 L107.4,84.3 Z" fill="#F7F2E6" opacity="0.72" />
+          <path d="M88,77.2 Q100,75.6 112,77.2 Q112.6,82.8 100,83.4 Q87.4,82.8 88,77.2 Z" fill={p.ink} />
+          <path d="M91.5,77.8 L96.3,77.6 L95.7,81.6 L92.1,81.5 Z" fill="#F7F2E6" />
+          <path d="M99,77.6 L104.3,77.6 L103.8,81.7 L99.3,81.6 Z" fill="#F7F2E6" opacity="0.9" />
+          <path d="M107,77.7 L110.3,77.9 L109.7,81.5 L107.3,81.4 Z" fill="#F7F2E6" opacity="0.72" />
         </g>
       );
     case "L":
-      // 舌尖:笔画开口 + 朱砂舌顶上齿龈
+      // 舌尖:笔画开口 + 发光音素条顶上齿龈(屏光"舌",非朱砂肉)
       return (
         <g>
-          <path d="M91,77 Q100,74.5 109,77 Q111,86 100,89.5 Q89,86 91,77 Z M96,79.5 Q100,81.5 104,79.5 Q103,84 100,85.5 Q97,84 96,79.5 Z" fill={p.ink} fillRule="evenodd" />
-          <path d="M96.2,85.6 Q100,78.6 103.8,85.6 Q100,87.9 96.2,85.6 Z" fill="#E8543F" stroke={p.ink} strokeWidth="1.3" strokeLinejoin="round" />
+          <path d="M91,74 Q100,71.5 109,74 Q111,83 100,86.5 Q89,83 91,74 Z M96,76.5 Q100,78.5 104,76.5 Q103,81 100,82.5 Q97,81 96,76.5 Z" fill={p.ink} fillRule="evenodd" />
+          <rect x="96.2" y="77.2" width="7.6" height="3" rx="1.5" fill={p.pupil} />
+          <rect x="98" y="77.9" width="4" height="1.6" rx="0.8" fill="#FFFFFF" opacity="0.9" />
         </g>
       );
     case "FV":
-      // 咬唇:墨条上牙咬宣纸下唇
+      // 咬唇:墨条齿带下压发光条=快门"咬"住光(非宣纸唇)
       return (
         <g>
-          <path d="M93.5,80.6 Q100,78.2 106.5,80.6 Q107,86.2 100,87 Q93,86.2 93.5,80.6 Z" fill="#DCD2B8" stroke={p.ink} strokeWidth="1.8" strokeLinejoin="round" />
-          <path d="M94,79.2 Q100,77.2 106,79.2 L105.4,82.5 Q100,83.6 94.6,82.5 Z" fill="#3A342A" stroke={p.ink} strokeWidth="1.3" strokeLinejoin="round" />
+          <path d="M93.5,77 Q100,74.6 106.5,77 Q107,82.6 100,83.4 Q93,82.6 93.5,77 Z" fill={p.ink} />
+          <path d="M94,76.6 Q100,74.8 106,76.6 L105.4,79.6 Q100,80.6 94.6,79.6 Z" fill="#3A342A" />
+          <rect x="95.5" y="80.6" width="9" height="2.5" rx="1.25" fill={p.pupil} />
         </g>
       );
     default:
-      return <path d="M91,81.8 Q100,88.6 109,81.4" fill="none" stroke={p.ink} strokeWidth="4.2" strokeLinecap="round" />;
+      return <path d="M91,78.8 Q100,85.6 109,78.4" fill="none" stroke={p.ink} strokeWidth="4.2" strokeLinecap="round" />;
   }
 }
 
@@ -159,9 +163,13 @@ export function InkArt({ uid, refs, expression, viseme, openScale, energyRatio, 
             <path d="M118,54 L136,54 L108,88 L92,88 Z" fill="#FFFFFF" opacity="0.22" />
           </g>
 
-          <Face expression={expression} flags={flags} refs={refs} p={INK} viseme={viseme} openScale={openScale} renderMouth={inkMouth} />
-          <FaceExtras flags={flags} refs={refs} p={INK} />
+          {/* v0.17.2 脸=屏幕渲染:表情整体剪进屏幕,任何元素构造上不可能越出屏框 */}
+          <g className="cp-scr-face" clipPath={`url(#${uid}-scr)`}>
+            <Face expression={expression} flags={flags} refs={refs} p={INK} viseme={viseme} openScale={openScale} renderMouth={inkMouth} />
+            <FaceExtras flags={flags} refs={refs} p={INK} />
+          </g>
         </g>
+          {flags.proud && <CrownMark p={INK} />}
         {/* v0.17.1 arms layer above head */}
         <Arms refs={refs} armFill={PAPER_D} out={OUT} />
       </g>

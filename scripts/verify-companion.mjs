@@ -1305,4 +1305,33 @@ console.log("✓ T21 v11 桌宠接线(穿透切换/协议/bus 隐身/设置开�
 }
 console.log("OK T22 v11.1 guards: karaoke-with-marks / rail glide / live quote btn / note anchor self-heal");
 
+// ---------------------------------------------------------------------------
+console.log("T23 跟句悬空不隐身(v0.17.2:detached readingRange 兜底)");
+{
+  const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
+  const creature = read("components/companion/CompanionCreature.tsx");
+  const notebook = read("components/NotebookPanel.tsx");
+  const chat = read("components/ChatStream.tsx");
+  // ①跟句分支的悬空兜底:pr/行盒全空时必须就地游弋,不许 target 滞留 null
+  //   (null → opacity 0 永久隐身,v9"常驻绝不隐匿"的旁路点)
+  assert.ok(creature.includes("跟句悬空兜底(永不隐身)"), "T23: 跟句分支有悬空兜底标记");
+  assert.ok(
+    creature.includes("wanderInPanel(box, zoneSize, now)") && creature.includes("glideTo(cur, wp, dt, CRUISE_ROAM, 140)"),
+    "T23: 悬空时在宿主面板/整窗游弋(target 必非空)",
+  );
+  // ②两面板卸载清全局高亮:清理不得读 ref(React 卸载时先置空 ref 再跑 passive
+  //   cleanup,`if (ref.current)` 永假=守卫自废,v0.17.2 实测踩过)
+  for (const [name, src] of [["NotebookPanel", notebook], ["ChatStream", chat]]) {
+    assert.ok(
+      src.includes("wasReadingRef.current = readingIdx != null") && src.includes("clearReadingMark(document.body)"),
+      `T23: ${name} 卸载按渲染期快照清全局高亮`,
+    );
+    assert.ok(
+      !/useEffect\(\(\) => \(\) => \{ if \(\w+Ref\.current\) clearReadingMark\(\w+Ref\.current\)/.test(src),
+      `T23: ${name} 卸载清理不再读 ref(自废写法禁止回归)`,
+    );
+  }
+  console.log("OK T23: 跟句悬空兜底 + 卸载清高亮(ref 自废守卫)");
+}
+
 console.log("\nverify-companion: ALL PASS");

@@ -570,7 +570,19 @@ function MessageRowV2({
   useEffect(() => {
     if (readingIdx == null && msgRef.current) clearReadingMark(msgRef.current);
   }, [readingIdx]);
-  useEffect(() => () => { if (msgRef.current) clearReadingMark(msgRef.current); }, []);
+  // v0.17.2 卸载清高亮(修"朗读中切线程 → 伴学永久隐身"):旧写法
+  // `if (msgRef.current) clearReadingMark(...)` 在卸载时自废——React 先把 ref
+  // 置空再跑 passive cleanup,条件永假,全局 readingRange 残留 detached Range
+  // (伴学跟句分支拿悬空锚点 → opacity 0)。改记"本消息是否正被朗读"的渲染期
+  // 快照,卸载时按它决定是否清全局态。
+  const wasReadingRef = useRef(false);
+  wasReadingRef.current = readingIdx != null;
+  useEffect(
+    () => () => {
+      if (wasReadingRef.current) clearReadingMark(document.body);
+    },
+    [],
+  );
 
   if (msg.role === "user") {
     // user:极简阅读流(claude.ai 风)。右对齐 + 极轻微染,无气泡边框。

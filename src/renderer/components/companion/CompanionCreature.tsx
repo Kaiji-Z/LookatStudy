@@ -392,6 +392,29 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             target = glideTo(cur, pos, dt, CRUISE_READ, 110);
             angle = pos.dir === "left" ? -0.07 : pos.dir === "right" ? 0.07 : 0; // 侧向微倾,竖向不倾
           }
+        } else {
+          // v0.17.2 跟句悬空兜底(永不隐身):mark 节点被卸载/换掉(切课/切线程/
+          // T3 换栏/ReactMarkdown 重渲染)后,全局 readingRange 可能残留 detached
+          // Range——面板卸载清理曾因"cleanup 前 ref 已被置空"而自废(v0.17.2 已在
+          // 两面板修),mark 节点被换且无人重标的路径仍可能短暂悬空。本分支若不
+          // 兜底,target 滞留 null → opacity 0 隐身(v9"常驻绝不隐匿"在此被旁路;
+          // 记笔记分支 v11.1 已有同款守卫)。处置:清跟句视觉态,在宿主面板(或
+          // 整窗)游弋,等 karaoke 层自愈。
+          if (readingRef.current !== null) {
+            readingRef.current = null;
+            setReading(null);
+          }
+          if (occludeRef.current) {
+            occludeRef.current = false;
+            setOccluding(false);
+          }
+          const box = pr
+            ? { left: pr.left, top: pr.top, right: pr.right, bottom: pr.bottom }
+            : { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 };
+          const wp = wanderInPanel(box, zoneSize, now);
+          const cur = posRef.current ?? { x: wp.x, y: wp.y };
+          target = glideTo(cur, wp, dt, CRUISE_ROAM, 140);
+          angle = Math.max(-0.25, Math.min(0.25, (target.x - cur.x) * 0.01));
         }
       } else {
         if (readingRef.current !== null) {

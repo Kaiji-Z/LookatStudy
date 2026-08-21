@@ -38,8 +38,10 @@ export async function buildServerBundle(outfile, opts = {}) {
     format: "cjs",
     outfile,
     // electron 只剩惰性 require 分支(serve 路径不执行);pdf-inspector 是 napi
-    // 预编译(Android bionic 加载不了),运行时 require 失败走 pdf-parse fallback
-    external: ["electron", "@firecrawl/pdf-inspector", "sherpa-onnx-node", "audio-decode"],
+    // 预编译(Android bionic 加载不了),运行时 require 失败走 pdf-parse fallback;
+    // @napi-rs/canvas 同理(Android 无预编译)→ pdf-math-vision 动态 import 失败
+    // 自动回退文本层
+    external: ["electron", "@firecrawl/pdf-inspector", "sherpa-onnx-node", "audio-decode", "@napi-rs/canvas"],
     loader: { ".wasm": "file" },
     plugins: [rawQueryPlugin],
     logLevel: opts.quiet ? "silent" : "info",

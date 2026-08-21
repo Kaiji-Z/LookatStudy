@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **PDF 公式视觉转写(实验,默认关)** —— 导入 PDF 时自动检测"公式密集页"(文本层里数学字形密度/符号汤行占比双信号),把这些页整页渲染成图,交给设置里配置的看图模型转写成 LaTeX Markdown,再并回文本层——文件夹导入与 arXiv 链接两条路都接通。三层门控(flag_math_vision 默认 off → 视觉覆盖已配置 → 密集页命中)任一不满足都诚实回退纯文本层并留进度说明;单页渲染/转写失败留文本层不炸整本,Android/Termux 无 canvas 预编译同样自动回退;转写结果按 sha256(pdf+页+模型) 进程内缓存,重导零二次调用。verify-pdf-math-vision T1-T3 + live-test 真模型 4/4。内部:generateTextWithTimeout 支持 messages 多模态输入,@napi-rs/canvas 加入主束/移动束 external(Electron 打包依赖)。
+
 ## [0.19.0] - 2026-08-22
 
 ### Added

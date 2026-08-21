@@ -651,15 +651,18 @@ function MultimodalContent({
   const [showForm, setShowForm] = useState(false);
   const [visionTesting, setVisionTesting] = useState(false);
   const [visionTestResult, setVisionTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [mathVision, setMathVision] = useState(false);
 
   useEffect(() => {
     Promise.all([
       api.getSetting("flag_multimodal_import"),
       api.getSetting("vision_provider_override"),
       api.getSetting("vision_model_override"),
-    ]).then(([flag, prov]) => {
+      api.getSetting("flag_math_vision"),
+    ]).then(([flag, prov, mv]) => {
       setEnabled(flag === "true");
       setOverrideProvider(prov ?? "");
+      setMathVision(mv === "true");
       setLoaded(true);
     });
   }, []);
@@ -668,6 +671,13 @@ function MultimodalContent({
     const next = !enabled;
     setEnabled(next);
     await api.setSetting("flag_multimodal_import", String(next));
+  };
+
+  /** v0.20 PDF 公式视觉转写开关:开=公式密集页整页渲染交给上面配的看图模型转 LaTeX */
+  const handleMathVisionToggle = async () => {
+    const next = !mathVision;
+    setMathVision(next);
+    await api.setSetting("flag_math_vision", String(next));
   };
 
   /** 覆盖自定义保存:provider 行 + 模型一起写入(vision 模型=provider 的 defaultModel) */
@@ -815,6 +825,20 @@ function MultimodalContent({
                   </>
                 )}
           </div>
+          </div>
+          {/* v0.20:PDF 公式视觉转写 —— 导入 PDF 时公式密集页整页渲染成图,交给上面配置的
+              看图模型转成 LaTeX Markdown(实验性,按页消耗视觉模型额度;需先配好看图模型)。 */}
+          <div className="bg-ink/5 rounded-lg p-3 flex items-center gap-3">
+            <Toggle
+              checked={mathVision}
+              onChange={handleMathVisionToggle}
+              label={t("settings.mathvision.toggle")}
+              testid="math-vision-toggle"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="text-label font-medium text-ink-strong">{t("settings.mathvision.toggle")}</div>
+              <div className="text-caption text-ink-muted">{t("settings.mathvision.desc")}</div>
+            </div>
           </div>
       </div>
     </>

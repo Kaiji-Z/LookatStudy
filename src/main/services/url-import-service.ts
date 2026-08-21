@@ -56,6 +56,7 @@ export async function fetchArxivMarkdown(
   fetchFn: typeof fetch,
   onProgress?: (msg: string) => void,
   signal?: AbortSignal,
+  opts?: { parsePdf?: (buf: Uint8Array) => Promise<string> },
 ): Promise<{ title: string; markdown: string }> {
   let title = `arXiv ${arxivId}`;
   try {
@@ -70,8 +71,14 @@ export async function fetchArxivMarkdown(
 
   onProgress?.(`下载 PDF(${arxivId})…`);
   const buf = await downloadToBuffer(pdfUrl, fetchFn, { signal, headers: UA_HEADERS });
-  const { parsePdfText } = await import("../lib/pdf-text.js");
-  const markdown = await parsePdfText(buf);
+  // parsePdf 注入 = v0.20 公式视觉转写(flag 门控在调用方);缺省走文本层
+  let markdown: string;
+  if (opts?.parsePdf) {
+    markdown = await opts.parsePdf(buf);
+  } else {
+    const { parsePdfText } = await import("../lib/pdf-text.js");
+    markdown = await parsePdfText(buf);
+  }
   if (!markdown.trim()) {
     throw new Error("PDF 文本提取为空——可能是扫描版论文(纯图片页),暂不支持");
   }

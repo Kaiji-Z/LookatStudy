@@ -478,7 +478,7 @@ export function ChatComposer({
                 data-tooltip={t("chat.speech.back_to_keyboard")}
                 aria-label={t("chat.speech.back_to_keyboard")}
                 data-testid="voice-keyboard-toggle"
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06] transition-colors"
+                className="touch-lift flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06] transition-colors"
               >
                 <Keyboard className="w-3.5 h-3.5" />
                 <span>{t("chat.speech.keyboard")}</span>

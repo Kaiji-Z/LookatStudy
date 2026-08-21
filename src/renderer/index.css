@@ -518,13 +518,15 @@ html.light .exam-bubble-locked {
  * 可点性;fine 指针(桌面鼠标/触控笔)零变化。
  * ============================================================ */
 @media (pointer: coarse) {
-  /* 工具栏 pill(🎤/📎/思考强度/上下文/模型)≥40px 命中,图标随之放大 */
-  .composer-toolbar button {
+  /* 工具栏 pill(🎤/📎/思考强度/上下文/模型)与语音模式「键盘」钮 ≥40px 命中,图标随之放大 */
+  .composer-toolbar button,
+  .touch-lift {
     min-height: 40px;
     min-width: 40px;
     justify-content: center;
   }
-  .composer-toolbar button svg {
+  .composer-toolbar button svg,
+  .touch-lift svg {
     width: 1.1rem;
     height: 1.1rem;
   }

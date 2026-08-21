@@ -64,3 +64,6 @@ memory/
 
 # Termux 语音引擎本地构建产物(scripts/build-termux-voice.mjs)
 .termux-build/
+
+# playwright MCP local artifacts (screenshots)
+.playwright-mcp/

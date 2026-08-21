@@ -247,11 +247,14 @@ export function Mascot({
         <circle cx="52" cy="86" r="3" className="cp-beacon-l" />
         <circle cx="148" cy="86" r="3" className="cp-beacon-r" />
       </g>
-      {/* 喷焰:飞行姿势点亮的推进器粒子(壳层渲染,全形态共享) */}
+      {/* 喷焰(v0.17.2 修不可见):粒子推到旋转原点(100,135)外 52-66px——旧版
+          粒子距原点仅 ~15-23px,整段被身体轮廓盖住,速度焰从未露出过(起飞只是靠
+          增大+辉光勉强探头)。现在沿运动反方向甩在身形外的真空区,rotate 由
+          --cp-thrust-deg 驱动、长度由 --cp-speed 伸缩(见 index.css)。 */}
       <g className="cp-thruster" aria-hidden="true">
-        <circle cx="78" cy="150" r="3.2" />
-        <circle cx="100" cy="158" r="4" />
-        <circle cx="122" cy="150" r="3.2" />
+        <circle cx="100" cy="187" r="5.2" />
+        <circle cx="91.5" cy="198" r="3.8" />
+        <circle cx="108.5" cy="196.5" r="3" />
       </g>
       {/* 等级徽标:金色光环(高等级)在形态身后,小皇冠在头顶 */}
       {haloBadge && (

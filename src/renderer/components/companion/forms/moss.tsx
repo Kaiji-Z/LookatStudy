@@ -6,7 +6,7 @@
  * 口型=花瓣/叶片的有机母音。调性:苔绿×奶白屏,呼吸般的圆。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, faceFlags , BevelPlate } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags , BevelPlate, CrownMark  } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const MOSS: FormPalette = {
@@ -50,47 +50,51 @@ function SeedCore({ energyRatio }: { energyRatio: number }) {
   );
 }
 
+/** 口型(v0.17.2 机器人化+屏内化,y≤86):圆润语言保留,叶舌/叶唇换屏光件
+ *  ——舌=发光音素条(p.pupil),牙=卵石刻度,咬唇=快门压光。 */
 function mossMouth(v: Viseme, p: FormPalette) {
   switch (v) {
     case "A":
-      return <path d="M92,77 Q100,74 108,77 Q110,86 100,89 Q90,86 92,77 Z M96,79 Q100,81 104,79 Q103,83 100,84.5 Q97,83 96,79 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M92,74 Q100,71 108,74 Q110,83 100,86 Q90,83 92,74 Z M96,76 Q100,78 104,76 Q103,80 100,81.5 Q97,80 96,76 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":
-      return <path d="M91,79.5 Q100,77 109,79.5 Q109,85 100,86 Q91,85 91,79.5 Z" fill={p.ink} />;
+      return <path d="M91,76.5 Q100,74 109,76.5 Q109,82 100,83 Q91,82 91,76.5 Z" fill={p.ink} />;
     case "I":
-      return <path d="M91,81.5 Q100,80 109,81.5 Q109,84.5 100,85.2 Q91,84.5 91,81.5 Z" fill={p.ink} />;
+      return <path d="M91,78.5 Q100,77 109,78.5 Q109,81.5 100,82.2 Q91,81.5 91,78.5 Z" fill={p.ink} />;
     case "O":
-      return <path d="M100,75.5 C105,75.5 107.5,80 107.5,83 C107.5,86.5 104.5,89.5 100,89.5 C95.5,89.5 92.5,86.5 92.5,83 C92.5,80 95,75.5 100,75.5 Z M100,79.5 C102.5,79.5 104,81 104,83 C104,85 102.3,86.3 100,86.3 C97.7,86.3 96,85 96,83 C96,81 97.5,79.5 100,79.5 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M100,72.5 C105,72.5 107.5,77 107.5,80 C107.5,83.5 104.5,86.5 100,86.5 C95.5,86.5 92.5,83.5 92.5,80 C92.5,77 95,72.5 100,72.5 Z M100,77 C102.5,77 104,78.5 104,80.5 C104,82.5 102.3,83.8 100,83.8 C97.7,83.8 96,82.5 96,80.5 C96,78.5 97.5,77 100,77 Z" fill={p.ink} fillRule="evenodd" />;
     case "U":
-      return <path d="M100,76 C103,76 105,79.5 105,83 C105,86.3 103,89 100,89 C97,89 95,86.3 95,83 C95,79.5 97,76 100,76 Z M100,79.5 C101.3,79.5 102.2,81 102.2,83 C102.2,85 101.3,86.3 100,86.3 C98.7,86.3 97.8,85 97.8,83 C97.8,81 98.7,79.5 100,79.5 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M100,73 C103,73 105,76.5 105,80 C105,83.3 103,86 100,86 C97,86 95,83.3 95,80 C95,76.5 97,73 100,73 Z M100,76.8 C101.3,76.8 102.2,78.3 102.2,80.3 C102.2,82.3 101.3,83.6 100,83.6 C98.7,83.6 97.8,82.3 97.8,80.3 C97.8,78.3 98.7,76.8 100,76.8 Z" fill={p.ink} fillRule="evenodd" />;
     case "SS":
-      // 齿擦:圆润宽槽 + 白牙卵石
+      // 齿擦:圆润宽槽 + 卵石刻度齿列(非人类牙块)
       return (
         <g>
-          <path d="M88,80 Q100,78 112,80 Q112.5,85.5 100,86 Q87.5,85.5 88,80 Z" fill={p.ink} />
-          <rect x="91" y="80.6" width="6.5" height="2.6" rx="1.3" fill="#FFFFFF" />
-          <rect x="99" y="80.4" width="6.5" height="2.8" rx="1.4" fill="#FFFFFF" opacity="0.9" />
-          <rect x="106.6" y="80.7" width="4.2" height="2.5" rx="1.25" fill="#FFFFFF" opacity="0.75" />
+          <path d="M87,77 Q100,75 113,77 Q113.5,82.5 100,83 Q86.5,82.5 87,77 Z" fill={p.ink} />
+          <rect x="90.5" y="77.8" width="1.8" height="3.2" rx="0.9" fill="#FFFFFF" />
+          <rect x="96.5" y="77.7" width="1.8" height="3.4" rx="0.9" fill="#FFFFFF" opacity="0.92" />
+          <rect x="102.5" y="77.8" width="1.8" height="3.2" rx="0.9" fill="#FFFFFF" opacity="0.84" />
+          <rect x="108" y="77.9" width="1.8" height="3" rx="0.9" fill="#FFFFFF" opacity="0.72" />
         </g>
       );
     case "L":
-      // 舌尖:圆润开口 + 嫩叶舌顶上齿龈
+      // 舌尖:圆润开口 + 发光音素条顶上齿龈(屏光"舌",非叶肉)
       return (
         <g>
-          <path d="M92,77 Q100,74 108,77 Q110,86 100,89 Q90,86 92,77 Z M96,79 Q100,81 104,79 Q103,83 100,84.5 Q97,83 96,79 Z" fill={p.ink} fillRule="evenodd" />
-          <path d="M96,85.5 Q100,78 104,85.5 Q100,88 96,85.5 Z" fill="#A8E89A" stroke={p.ink} strokeWidth="1.4" strokeLinejoin="round" />
-          <path d="M98.4,84 Q100,81 101.6,84" fill="none" stroke={p.ink} strokeWidth="1" strokeLinecap="round" />
+          <path d="M92,74 Q100,71 108,74 Q110,83 100,86 Q90,83 92,74 Z M96,76 Q100,78 104,76 Q103,80 100,81.5 Q97,80 96,76 Z" fill={p.ink} fillRule="evenodd" />
+          <rect x="96" y="76.6" width="8" height="3.2" rx="1.6" fill={p.pupil} />
+          <rect x="98" y="77.4" width="4" height="1.6" rx="0.8" fill="#FFFFFF" opacity="0.9" />
         </g>
       );
     case "FV":
-      // 咬唇:白牙咬叶片下唇
+      // 咬唇:卵石齿条下压发光条=快门"咬"住光(非叶唇)
       return (
         <g>
-          <path d="M93.5,80.5 Q100,78 106.5,80.5 Q107,86 100,86.8 Q93,86 93.5,80.5 Z" fill="#57BD74" stroke={p.ink} strokeWidth="1.8" strokeLinejoin="round" />
-          <path d="M94,79.2 Q100,77.4 106,79.2 L105.4,82.4 Q100,83.4 94.6,82.4 Z" fill="#FFFFFF" stroke={p.ink} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M93.5,77 Q100,74.5 106.5,77 Q107,82.5 100,83.8 Q93,82.5 93.5,77 Z" fill={p.ink} />
+          <rect x="94.5" y="77.2" width="11" height="2.4" rx="1.2" fill="#FFFFFF" />
+          <rect x="95.5" y="80.4" width="9" height="2.6" rx="1.3" fill={p.pupil} />
         </g>
       );
     default:
-      return <path d="M92,82.5 Q100,88.5 108,82.5" fill="none" stroke={p.ink} strokeWidth="3.5" strokeLinecap="round" />;
+      return <path d="M92,79.5 Q100,85.5 108,79.5" fill="none" stroke={p.ink} strokeWidth="3.5" strokeLinecap="round" />;
   }
 }
 
@@ -164,9 +168,13 @@ export function MossArt({ uid, refs, expression, viseme, openScale, energyRatio,
             <path d="M120,54 L136,54 L106,88 L90,88 Z" fill="#FFFFFF" opacity="0.2" />
           </g>
 
-          <Face expression={expression} flags={flags} refs={refs} p={MOSS} viseme={viseme} openScale={openScale} renderMouth={mossMouth} />
-          <FaceExtras flags={flags} refs={refs} p={MOSS} />
+          {/* v0.17.2 脸=屏幕渲染:表情整体剪进屏幕,任何元素构造上不可能越出屏框 */}
+          <g className="cp-scr-face" clipPath={`url(#${uid}-scr)`}>
+            <Face expression={expression} flags={flags} refs={refs} p={MOSS} viseme={viseme} openScale={openScale} renderMouth={mossMouth} />
+            <FaceExtras flags={flags} refs={refs} p={MOSS} />
+          </g>
         </g>
+          {flags.proud && <CrownMark p={MOSS} />}
         {/* v0.17.1 arms layer above head */}
         <Arms refs={refs} armFill={LEAF_D} out={OUT} />
       </g>

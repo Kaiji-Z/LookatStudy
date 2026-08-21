@@ -7,7 +7,7 @@
  * 月亮越圆:新月→满月)。口型=暖白星月母音。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, faceFlags , BevelPlate } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags , BevelPlate, CrownMark  } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const ASTRO: FormPalette = {
@@ -50,55 +50,60 @@ function MoonCore({ energyRatio, uid }: { energyRatio: number; uid: string }) {
   );
 }
 
+/** 口型(v0.17.2 机器人化+屏内化,y≤86):舱窗语言保留,紫光舌/紫罗兰唇换屏光件
+ *  ——舌=发光音素条(p.pupil),牙=星轨刻度,咬唇=快门压光。 */
 function astroMouth(v: Viseme, p: FormPalette) {
   switch (v) {
     case "A":
-      return <path d="M91,77 h18 a5,5 0 0 1 5,5 v3 a5,5 0 0 1 -5,5 h-18 a5,5 0 0 1 -5,-5 v-3 a5,5 0 0 1 5,-5 Z M95,80.5 h10 v6 h-10 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M91,74.5 h18 a5,5 0 0 1 5,5 v2.6 a5,5 0 0 1 -5,5 h-18 a5,5 0 0 1 -5,-5 v-2.6 a5,5 0 0 1 5,-5 Z M95,77.5 h10 v5.6 h-10 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":
-      return <path d="M90,79.5 h20 a3.2,3.2 0 0 1 0,6.4 h-20 a3.2,3.2 0 0 1 0,-6.4 Z" fill={p.ink} />;
+      return <path d="M90,77 h20 a3.2,3.2 0 0 1 0,6.4 h-20 a3.2,3.2 0 0 1 0,-6.4 Z" fill={p.ink} />;
     case "I":
-      return <path d="M90,82 h20 a1.9,1.9 0 0 1 0,3.8 h-20 a1.9,1.9 0 0 1 0,-3.8 Z" fill={p.ink} />;
+      return <path d="M90,79.5 h20 a1.9,1.9 0 0 1 0,3.8 h-20 a1.9,1.9 0 0 1 0,-3.8 Z" fill={p.ink} />;
     case "O":
       return (
         <g fill="none">
-          <circle cx="100" cy="82.5" r="7" stroke={p.ink} strokeWidth="4" />
-          <circle cx="100" cy="82.5" r="1.6" fill={p.ink} stroke="none" />
+          <circle cx="100" cy="79.5" r="6.4" stroke={p.ink} strokeWidth="4" />
+          <circle cx="100" cy="79.5" r="1.6" fill={p.ink} stroke="none" />
         </g>
       );
     case "U":
       return (
         <g fill="none">
-          <circle cx="100" cy="82.5" r="4.6" stroke={p.ink} strokeWidth="3.6" />
+          <circle cx="100" cy="79.5" r="4.4" stroke={p.ink} strokeWidth="3.6" />
         </g>
       );
     case "SS":
-      // 齿擦:宽暗槽 + 发光白齿(星轨刻度感)
+      // 齿擦:宽暗槽 + 星轨刻度齿列(非人类牙块)
       return (
         <g>
-          <path d="M88,80 h24 a2.4,2.4 0 0 1 2.4,2.4 v1.2 a2.4,2.4 0 0 1 -2.4,2.4 h-24 a2.4,2.4 0 0 1 -2.4,-2.4 v-1.2 a2.4,2.4 0 0 1 2.4,-2.4 Z" fill={p.ink} />
-          <rect x="91" y="80.5" width="6" height="2.2" rx="1.1" fill="#FFFFFF" />
-          <rect x="99" y="80.5" width="6" height="2.2" rx="1.1" fill="#FFFFFF" opacity="0.9" />
-          <rect x="107" y="80.5" width="4" height="2.2" rx="1.1" fill="#FFFFFF" opacity="0.72" />
+          <path d="M87,76.5 h26 a2.4,2.4 0 0 1 2.4,2.4 v1.2 a2.4,2.4 0 0 1 -2.4,2.4 h-26 a2.4,2.4 0 0 1 -2.4,-2.4 v-1.2 a2.4,2.4 0 0 1 2.4,-2.4 Z" fill={p.ink} />
+          <rect x="90.5" y="78.1" width="1.8" height="3.2" rx="0.9" fill="#FFFFFF" />
+          <rect x="96.5" y="78.1" width="1.8" height="3.2" rx="0.9" fill="#FFFFFF" opacity="0.92" />
+          <rect x="102.5" y="78.1" width="1.8" height="3.2" rx="0.9" fill="#FFFFFF" opacity="0.84" />
+          <rect x="108" y="78.1" width="1.8" height="3" rx="0.9" fill="#FFFFFF" opacity="0.72" />
         </g>
       );
     case "L":
-      // 舌尖:开口 + 紫光舌顶上齿龈
+      // 舌尖:开口 + 发光音素条顶上齿龈(屏光"舌",非紫光肉)
       return (
         <g>
-          <path d="M91,77 h18 a5,5 0 0 1 5,5 v3 a5,5 0 0 1 -5,5 h-18 a5,5 0 0 1 -5,-5 v-3 a5,5 0 0 1 5,-5 Z M95,80.5 h10 v6 h-10 Z" fill={p.ink} fillRule="evenodd" />
-          <path d="M96,85.5 Q100,78.5 104,85.5 Q100,87.6 96,85.5 Z" fill="#8B7BF0" stroke={p.ink} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M91,74.5 h18 a5,5 0 0 1 5,5 v2.6 a5,5 0 0 1 -5,5 h-18 a5,5 0 0 1 -5,-5 v-2.6 a5,5 0 0 1 5,-5 Z M95,77.5 h10 v5.6 h-10 Z" fill={p.ink} fillRule="evenodd" />
+          <rect x="96" y="77.2" width="8" height="3.2" rx="1.6" fill={p.pupil} />
+          <rect x="98" y="78" width="4" height="1.6" rx="0.8" fill="#FFFFFF" opacity="0.9" />
         </g>
       );
     case "FV":
-      // 咬唇:白牙咬紫罗兰下唇
+      // 咬唇:星轨齿条下压发光条=快门"咬"住光(非紫罗兰唇)
       return (
         <g>
-          <path d="M93.5,80.5 Q100,78 106.5,80.5 Q107,86 100,87 Q93,86 93.5,80.5 Z" fill="#5D4FD1" stroke={p.ink} strokeWidth="1.8" strokeLinejoin="round" />
-          <rect x="94" y="78.8" width="12" height="3.4" rx="1.7" fill="#FFFFFF" stroke={p.ink} strokeWidth="1.4" />
+          <path d="M92,74.8 h16 a5,5 0 0 1 5,5 v2.4 a5,5 0 0 1 -5,5 h-16 a5,5 0 0 1 -5,-5 v-2.4 a5,5 0 0 1 5,-5 Z" fill={p.ink} />
+          <rect x="93.5" y="76.6" width="13" height="2.4" rx="1.2" fill="#FFFFFF" />
+          <rect x="95.5" y="79.6" width="9" height="2.6" rx="1.3" fill={p.pupil} />
         </g>
       );
     default:
-      return <path d="M92,82.5 Q100,88 108,82.5" fill="none" stroke={p.ink} strokeWidth="3.5" strokeLinecap="round" />;
+      return <path d="M92,79.5 Q100,85 108,79.5" fill="none" stroke={p.ink} strokeWidth="3.5" strokeLinecap="round" />;
   }
 }
 
@@ -171,9 +176,13 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
             <path d="M118,54 L136,54 L106,88 L92,88 Z" fill="#FFFFFF" opacity="0.08" />
           </g>
 
-          <Face expression={expression} flags={flags} refs={refs} p={ASTRO} viseme={viseme} openScale={openScale} renderMouth={astroMouth} />
-          <FaceExtras flags={flags} refs={refs} p={ASTRO} />
+          {/* v0.17.2 脸=屏幕渲染:表情整体剪进屏幕,任何元素构造上不可能越出屏框 */}
+          <g className="cp-scr-face" clipPath={`url(#${uid}-scr)`}>
+            <Face expression={expression} flags={flags} refs={refs} p={ASTRO} viseme={viseme} openScale={openScale} renderMouth={astroMouth} />
+            <FaceExtras flags={flags} refs={refs} p={ASTRO} />
+          </g>
         </g>
+          {flags.proud && <CrownMark p={ASTRO} />}
         {/* v0.17.1 arms layer above head */}
         <Arms refs={refs} armFill={VIOLET_D} out={OUT} />
       </g>

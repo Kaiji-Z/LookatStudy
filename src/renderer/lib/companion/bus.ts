@@ -269,6 +269,13 @@ function install(): void {
   window.addEventListener("companion-node-point", () => {
     dispatch({ type: "nodePoint", now: Date.now() });
   });
+  window.addEventListener("companion-ball-tap", (e) => {
+    const d = detailOf(e) as { x: number | null; y: number | null; nodeId: string } | undefined;
+    if (!d?.nodeId) return;
+    ballTap = { x: d.x ?? null, y: d.y ?? null, nodeId: d.nodeId, seq: (ballTap?.seq ?? 0) + 1, at: Date.now() };
+    // 表情爆发复用"就是这里"反应(thinking+托腮);飞行/指向由 Creature 侧消费
+    dispatch({ type: "nodePoint", now: Date.now() });
+  });
   window.addEventListener("companion-day-welcome", () => {
     dispatch({ type: "dayWelcome", now: Date.now() });
   });
@@ -471,4 +478,23 @@ const railWorld: RailWorld = { nav: null, visible: false, weather: "clear", sect
 
 export function getRailWorld(): RailWorld {
   return railWorld;
+}
+
+/** 点球互动(v0.17.2):用户点课程球 → 桌面端生物飞到球旁指向+轻顶一下;
+ * T3(rail 不在场,点球自动切中栏)→ 生物在当前栏朝左"注目礼"。
+ * x/y 为屏幕坐标(空=由 Creature 从物理岛按 nodeId 定位,搜索跳转即此路);
+ * bus 只存最近一次(seq 单调),Creature rAF 直读——同 railWorld 的 ref 级模式。 */
+export interface BallTap {
+  x: number | null;
+  y: number | null;
+  nodeId: string;
+  seq: number;
+  at: number;
+}
+let ballTap: BallTap | null = null;
+export function getLastBallTap(): BallTap | null {
+  return ballTap;
+}
+export function companionBallTap(x: number | null, y: number | null, nodeId: string): void {
+  fire("companion-ball-tap", { x, y, nodeId });
 }

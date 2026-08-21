@@ -25,6 +25,7 @@ import {
   companionPoke,
   companionSwat,
   getCompanionSnapshot,
+  getLastBallTap,
   getRailWorld,
   subscribeCompanion,
 } from "../../lib/companion/bus.ts";
@@ -110,6 +111,10 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   const prevPosRef = useRef<{ x: number; y: number } | null>(null);
   const zoneRef = useRef(snap.state.zone);
   const swatLatchRef = useRef(false);
+  /** v0.17.2 点球互动:消费过的 ballTap seq(去重)+ 当前生效的应答(飞去/朝左注目) */
+  const ballTapSeqRef = useRef(0);
+  const ballAckRef = useRef<{ nodeId: string; x: number; y: number; until: number; fired: boolean; fly: boolean } | null>(null);
+  const [ballAck, setBallAck] = useState<{ until: number } | null>(null);
   /** 左栏待机空地(中部带,周期重选/记忆卡点覆盖)与下次重选时刻 */
   const perchRef = useRef<{ x: number; y: number } | null>(null);
   const perchDueRef = useRef(0);
@@ -330,6 +335,53 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       const intent = intentRef.current && now < intentRef.current.until ? intentRef.current : null;
       if (intentRef.current && !intent) intentRef.current = null;
 
+      // ── v0.17.2 点球互动:点课程球 → rail 在场则飞到球旁指向+轻顶;T3 无 rail
+      //    → 原地朝左"注目礼"(表情爆发由 bus 的 nodePoint dispatch 负责) ──
+      const bt = getLastBallTap();
+      if (bt && bt.seq !== ballTapSeqRef.current) {
+        ballTapSeqRef.current = bt.seq;
+        let tx: number | null = bt.x;
+        let ty: number | null = bt.y;
+        if ((tx == null || ty == null) && railOk) {
+          // 坐标缺(搜索跳转):从物理岛按 nodeId 定位球
+          for (const { island, container } of rw.sections.values()) {
+            const b = island.ball(bt.nodeId);
+            if (b) {
+              const cr = container.getBoundingClientRect();
+              tx = cr.left + b.body.position.x;
+              ty = cr.top + b.body.position.y;
+              break;
+            }
+          }
+        }
+        if (railOk && tx != null && ty != null) {
+          ballAckRef.current = { nodeId: bt.nodeId, x: tx, y: ty, until: now + 2400, fired: false, fly: true };
+          setBallAck({ until: now + 2400 });
+        } else {
+          ballAckRef.current = { nodeId: bt.nodeId, x: 0, y: 0, until: now + 1600, fired: true, fly: false };
+          setBallAck({ until: now + 1600 });
+        }
+      }
+      const ballOk = !!ballAckRef.current && now < ballAckRef.current.until;
+      if (ballAckRef.current && !ballOk) {
+        ballAckRef.current = null;
+        setBallAck(null);
+      }
+      if (ballOk && ballAckRef.current && !ballAckRef.current.fired) {
+        const a = ballAckRef.current;
+        a.fired = true;
+        // 轻顶一下被点的球(只顶非锁定球;力很小,纯庆祝性拨弄)
+        if (a.fly && navRect) {
+          for (const { island } of rw.sections.values()) {
+            const b = island.ball(a.nodeId);
+            if (b && !b.body.isStatic) {
+              Matter.Body.applyForce(b.body, b.body.position, { x: 0.0035, y: -0.005 });
+              break;
+            }
+          }
+        }
+      }
+
       // ── karaoke 跟句(朗读时的语义位置,最高优先) ──
       const readRange = getReadingRange();
       const readMarkEl = readRange ? (readRange.startContainer.parentElement ?? null) : null;
@@ -480,7 +532,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             target = glideTo(cur, w, dt, CRUISE_OP);
             angle = Math.max(-0.3, Math.min(0.3, (target.x - cur.x) * 0.012));
           }
-        } else if (railOk && (zone === "rail" || (zone === "roam" && (roamRef.current.pane === "rail" || !!intent)))) {
+        } else if (railOk && (ballOk || zone === "rail" || (zone === "roam" && (roamRef.current.pane === "rail" || !!intent)))) {
           // ── 左栏原生物理世界(导入监工钉守 / roam 游走到左栏) ──
           const w = navRect!.width;
           const h = navRect!.height;
@@ -537,7 +589,11 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             // 纱帘 = 最近绳/球顶栖息(仅非 roam:roam 时帘后照常游)
             let base = perchRef.current;
             let settle = false;
-            if (intent) {
+            if (ballOk && ballAckRef.current && ballAckRef.current.fly) {
+              // v0.17.2 点球应答:栖在被点球的右肩位,指住它(优先级高于意图/待机)
+              base = { x: ballAckRef.current.x - navRect!.left + 34, y: ballAckRef.current.y - navRect!.top - 46 };
+              settle = false;
+            } else if (intent) {
               base = { x: intent.pos.x - navRect!.left, y: intent.pos.y - navRect!.top };
               if (!intent.fired) {
                 intent.fired = true;
@@ -668,7 +724,9 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
 
   const pose = inTransit
     ? "flying"
-    : reading?.dir === "left"
+    : ballAck
+      ? "point" // v0.17.2 点球应答:指住球(桌面=球旁指左;T3=朝离屏的左栏注目)
+      : reading?.dir === "left"
       ? "point"
       : reading?.dir === "right"
         ? "pointr"

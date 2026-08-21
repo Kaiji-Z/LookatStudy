@@ -6,7 +6,7 @@
  * (今日 XP 充能) + 金色 streak 火苗。口型=圆角母音块。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, faceFlags, BevelPlate , } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags, BevelPlate ,, CrownMark  } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const EMBER: FormPalette = {
@@ -25,46 +25,54 @@ const BEZEL = "#1E2A3E";
 const GOLD = "#FFC800";
 const OUT = "#2B2530";
 
+/**
+ * 口型(v0.17.2 机器人化 + 屏内化):口腔=屏幕暗腔,一切" fleshy"元素换成屏光件——
+ * 舌头=发光音素条(p.pupil 屏色),牙齿=分段显示刻度,咬唇=快门压住光条。
+ * 坐标预算 y74-86(屏幕底=88,旧版嘴到 y90 越界)。
+ */
 function emberMouth(v: Viseme, p: FormPalette) {
   switch (v) {
     case "A":
-      return <path d="M91,78 h18 a4,4 0 0 1 4,4 v4 a4,4 0 0 1 -4,4 h-18 a4,4 0 0 1 -4,-4 v-4 a4,4 0 0 1 4,-4 Z M95,81 h10 v3 h-10 Z" fill={p.ink} fillRule="evenodd" />;
+      return <path d="M91,75 h18 a4,4 0 0 1 4,4 v3 a4,4 0 0 1 -4,4 h-18 a4,4 0 0 1 -4,-4 v-3 a4,4 0 0 1 4,-4 Z M95,78 h10 v2.6 h-10 Z" fill={p.ink} fillRule="evenodd" />;
     case "E":
-      return <path d="M90,80 h20 a3,3 0 0 1 0,6 h-20 a3,3 0 0 1 0,-6 Z" fill={p.ink} />;
+      return <path d="M90,77 h20 a3,3 0 0 1 0,6 h-20 a3,3 0 0 1 0,-6 Z" fill={p.ink} />;
     case "I":
-      return <path d="M90,82 h20 a1.8,1.8 0 0 1 0,3.6 h-20 a1.8,1.8 0 0 1 0,-3.6 Z" fill={p.ink} />;
+      return <path d="M90,79 h20 a1.8,1.8 0 0 1 0,3.6 h-20 a1.8,1.8 0 0 1 0,-3.6 Z" fill={p.ink} />;
     case "O":
-      return <path d="M100,76 a7,7.5 0 1 1 -0.01,0 Z" fill={p.ink} />;
+      return <path d="M100,73 a7,6 0 1 1 -0.01,0 Z" fill={p.ink} />;
     case "U":
-      return <path d="M100,76.5 a4.5,7.5 0 1 1 -0.01,0 Z" fill={p.ink} />;
+      return <path d="M100,73.5 a4.5,6 0 1 1 -0.01,0 Z" fill={p.ink} />;
     case "SS":
-      // 齿擦(s/x/sh 家族):咧开露齿——上牙带 + 暗腔,横向最宽
+      // 齿擦(s/x/sh 家族):横向最宽,分段显示"齿列"刻度(非人类牙块)
       return (
         <g>
-          <path d="M87,80 h26 a2.6,2.6 0 0 1 2.6,2.6 v1.6 a2.6,2.6 0 0 1 -2.6,2.6 h-26 a2.6,2.6 0 0 1 -2.6,-2.6 v-1.6 a2.6,2.6 0 0 1 2.6,-2.6 Z" fill={p.ink} />
-          <rect x="90" y="80.4" width="7" height="2" rx="1" fill="#FFFFFF" />
-          <rect x="99" y="80.4" width="7" height="2" rx="1" fill="#FFFFFF" opacity="0.9" />
-          <rect x="108" y="80.4" width="4.4" height="2" rx="1" fill="#FFFFFF" opacity="0.75" />
+          <path d="M86,76.5 h28 a2.6,2.6 0 0 1 2.6,2.6 v1.6 a2.6,2.6 0 0 1 -2.6,2.6 h-28 a2.6,2.6 0 0 1 -2.6,-2.6 v-1.6 a2.6,2.6 0 0 1 2.6,-2.6 Z" fill={p.ink} />
+          <rect x="90" y="78.2" width="1.8" height="3.4" rx="0.9" fill="#FFFFFF" />
+          <rect x="96" y="78.2" width="1.8" height="3.4" rx="0.9" fill="#FFFFFF" opacity="0.92" />
+          <rect x="102" y="78.2" width="1.8" height="3.4" rx="0.9" fill="#FFFFFF" opacity="0.84" />
+          <rect x="108" y="78.2" width="1.8" height="3.4" rx="0.9" fill="#FFFFFF" opacity="0.72" />
         </g>
       );
     case "L":
-      // 舌尖(d/t/n/l 家族):口腔微开,舌尖顶上齿龈
+      // 舌尖(d/t/n/l 家族):口腔微开,发光音素条顶上齿龈(屏光"舌",非肉色)
       return (
         <g>
-          <path d="M92,77 h16 a4,4 0 0 1 4,4 v5 a4,4 0 0 1 -4,4 h-16 a4,4 0 0 1 -4,-4 v-5 a4,4 0 0 1 4,-4 Z" fill={p.ink} />
-          <path d="M95.5,84.5 Q100,78.5 104.5,84.5 Q100,87.5 95.5,84.5 Z" fill="#FF9DB0" stroke={p.ink} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M92,74.5 h16 a4,4 0 0 1 4,4 v3.5 a4,4 0 0 1 -4,4 h-16 a4,4 0 0 1 -4,-4 v-3.5 a4,4 0 0 1 4,-4 Z" fill={p.ink} />
+          <rect x="96" y="77.4" width="8" height="3.4" rx="1.7" fill={p.pupil} />
+          <rect x="98" y="78.2" width="4" height="1.8" rx="0.9" fill="#FFFFFF" opacity="0.9" />
         </g>
       );
     case "FV":
-      // 咬唇(f/v/h 家族):上牙咬住下唇
+      // 咬唇(f/v/h 家族):分段齿条下压发光条=快门"咬"住光(非人类唇)
       return (
         <g>
-          <path d="M93,80.5 Q100,77.5 107,80.5 Q107,86.5 100,87 Q93,86.5 93,80.5 Z" fill="#E8563F" stroke={p.ink} strokeWidth="1.8" strokeLinejoin="round" />
-          <rect x="93.5" y="78.6" width="13" height="3.6" rx="1.8" fill="#FFFFFF" stroke={p.ink} strokeWidth="1.4" />
+          <path d="M92,75 h16 a4,4 0 0 1 4,4 v2.6 a4,4 0 0 1 -4,4 h-16 a4,4 0 0 1 -4,-4 v-2.6 a4,4 0 0 1 4,-4 Z" fill={p.ink} />
+          <rect x="93.5" y="76.8" width="13" height="2.4" rx="1.2" fill="#FFFFFF" />
+          <rect x="95.5" y="79.8" width="9" height="2.6" rx="1.3" fill={p.pupil} />
         </g>
       );
     default:
-      return <path d="M92,83 Q100,88 108,83" fill="none" stroke={p.ink} strokeWidth="3.5" strokeLinecap="round" />;
+      return <path d="M92,80 Q100,85 108,80" fill="none" stroke={p.ink} strokeWidth="3.5" strokeLinecap="round" />;
   }
 }
 
@@ -147,9 +155,13 @@ export function EmberArt({ uid, refs, expression, viseme, openScale, energyRatio
             <path d="M120,54 L136,54 L108,88 L92,88 Z" fill="#FFFFFF" opacity="0.14" />
           </g>
 
-          <Face expression={expression} flags={flags} refs={refs} p={EMBER} viseme={viseme} openScale={openScale} renderMouth={emberMouth} />
-          <FaceExtras flags={flags} refs={refs} p={EMBER} />
+          {/* v0.17.2 脸=屏幕渲染:表情整体剪进屏幕,任何元素(眉/嘴/挂件)构造上不可能越出屏框 */}
+          <g className="cp-scr-face" clipPath={`url(#${uid}-scr)`}>
+            <Face expression={expression} flags={flags} refs={refs} p={EMBER} viseme={viseme} openScale={openScale} renderMouth={emberMouth} />
+            <FaceExtras flags={flags} refs={refs} p={EMBER} />
+          </g>
         </g>
+          {flags.proud && <CrownMark p={EMBER} />}
         {/* v0.17.1 arms layer above head */}
         <Arms refs={refs} armFill={CORAL_D} out={OUT} />
       </g>

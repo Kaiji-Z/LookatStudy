@@ -1113,13 +1113,15 @@ html.light ::-webkit-scrollbar-thumb:hover {
   transform-box: view-box;
   transform-origin: 100px 135px;
   rotate: var(--cp-thrust-deg, 90deg);
+  /* v0.17.2 焰长随速度伸缩:静止缩半贴身,全速完全展开(粒子已推出身形半径外) */
+  scale: calc(0.5 + 0.6 * min(1, var(--cp-speed, 0)));
   transition: opacity 0.16s linear;
 }
 .cp-creature .cp-thruster { opacity: calc(min(1, var(--cp-speed, 0)) * 0.95); }
 /* v8 跨栏飞行姿势:焰更长更亮+脉动(动画接管 opacity) */
-.cp-pose-flying .cp-thruster circle { r: 5.5; }
-.cp-pose-flying .cp-thruster circle:nth-child(2) { r: 7; }
-.cp-pose-flying .cp-thruster { filter: drop-shadow(0 0 6px rgba(53, 224, 232, 0.8)); animation: cp-thruster-pulse 0.28s ease-in-out infinite alternate; }
+.cp-pose-flying .cp-thruster circle { r: 6.4; }
+.cp-pose-flying .cp-thruster circle:nth-child(2) { r: 8; }
+.cp-pose-flying .cp-thruster { scale: 1.15; filter: drop-shadow(0 0 6px rgba(53, 224, 232, 0.8)); animation: cp-thruster-pulse 0.28s ease-in-out infinite alternate; }
 @keyframes cp-thruster-pulse { from { opacity: 0.85; } to { opacity: 1; } }
 /* v8 朗读句高亮(CSS Custom Highlight API,零 DOM 改动) */
 ::highlight(cp-reading) { background-color: rgba(28, 176, 246, 0.2); }

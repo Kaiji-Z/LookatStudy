@@ -153,6 +153,7 @@ export type CompanionEvent =
   | { type: "reviewing"; on: boolean; now: number }
   | { type: "grab"; on: boolean; speed?: number; now: number }
   | { type: "nodePoint"; now: number }
+  | { type: "whistle"; now: number }
   | { type: "dayWelcome"; now: number }
   | { type: "tick"; now: number };
 
@@ -655,6 +656,17 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         expression: "thinking",
         pose: "lean-left",
         until: ev.now + 2600,
+      };
+    case "whistle":
+      // 吹哨召唤应答:被叫到 → 开心+挥手"来啦"(飞行途中就挥,落定继续挥)
+      return {
+        ...s,
+        sleeping: false,
+        mode: "front",
+        lastActivity: ev.now,
+        expression: "happy",
+        pose: "wave",
+        until: ev.now + 2400,
       };
     case "tick": {
       const typing = s.typing && ev.now - s.lastPress <= TYPE_IDLE_MS;

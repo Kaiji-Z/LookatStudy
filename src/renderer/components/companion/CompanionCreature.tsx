@@ -26,6 +26,7 @@ import {
   companionSwat,
   getCompanionSnapshot,
   getLastBallTap,
+  getLastWhistle,
   getRailWorld,
   subscribeCompanion,
 } from "../../lib/companion/bus.ts";
@@ -115,6 +116,9 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   const ballTapSeqRef = useRef(0);
   const ballAckRef = useRef<{ nodeId: string; x: number; y: number; until: number; fired: boolean; fly: boolean } | null>(null);
   const [ballAck, setBallAck] = useState<{ until: number } | null>(null);
+  /** v0.17.3 吹哨召唤:消费过的 whistle seq(去重)+ 当前生效的哨点(rail 局部坐标) */
+  const whistleSeqRef = useRef(0);
+  const whistleAckRef = useRef<{ x: number; y: number; until: number } | null>(null);
   /** 左栏待机空地(中部带,周期重选/记忆卡点覆盖)与下次重选时刻 */
   const perchRef = useRef<{ x: number; y: number } | null>(null);
   const perchDueRef = useRef(0);
@@ -273,6 +277,8 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
     let rectCacheAt = -1e9;
     let chatRectCache: DOMRect | null = null;
     let nbRectCache: DOMRect | null = null;
+    let hdrBottomCache = 0;
+    let railBarBottomCache = 0;
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -292,9 +298,15 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         rectCacheAt = now;
         chatRectCache = document.querySelector<HTMLElement>('[data-testid="chat-panel"]')?.getBoundingClientRect() ?? null;
         nbRectCache = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]')?.getBoundingClientRect() ?? null;
+        // v0.17.3 标题栏禁入带:应用标题栏(T1/T2 与 T3 窄版同元素)全局生效;
+        // 左栏另有 tab/课名悬浮条(仅栏内 x 范围),rail 分支单独取 max
+        hdrBottomCache = document.querySelector("header.app-header")?.getBoundingClientRect().bottom ?? 0;
+        railBarBottomCache = document.querySelector<HTMLElement>('[data-testid="map-rail-topbar"]')?.getBoundingClientRect().bottom ?? 0;
       }
       const chatRect = chatRectCache;
       const nbRect = nbRectCache;
+      /** rail 局部坐标的禁入带底线(标题栏与 tab/课名条取深者;-navRect.top 转局部) */
+      const railCeilLocal = () => Math.max(hdrBottomCache, railBarBottomCache) - (navRect?.top ?? 0);
 
       // ── roam 调度:时间桶切换时确定性决定 留/跨栏(在场栏才可选) ──
       const bucket = Math.floor(now / ROAM_BUCKET_MS);
@@ -381,6 +393,23 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
           }
         }
       }
+
+      // ── v0.17.3 吹哨召唤:点左栏空白处 → 飞到哨点上空挥手应答(爆发由 bus 的
+      //    whistle dispatch 负责);坐标转 rail 局部并钳进禁入带之下,防哨点落进标题栏 ──
+      const ws = getLastWhistle();
+      if (ws && ws.seq !== whistleSeqRef.current) {
+        whistleSeqRef.current = ws.seq;
+        if (railOk && navRect) {
+          const ceilLocal = railCeilLocal(); // 标题栏禁入带(含轨道 tab/课名条),哨点必须在其下
+          whistleAckRef.current = {
+            x: Math.min(navRect.width - 44, Math.max(44, ws.x - navRect.left)),
+            y: Math.min(navRect.height - 44, Math.max(ceilLocal + 52, ws.y - navRect.top)),
+            until: now + 3200,
+          };
+        }
+      }
+      const whistleOk = !!whistleAckRef.current && now < whistleAckRef.current.until;
+      if (whistleAckRef.current && !whistleOk) whistleAckRef.current = null;
 
       // ── karaoke 跟句(朗读时的语义位置,最高优先) ──
       const readRange = getReadingRange();
@@ -532,7 +561,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             target = glideTo(cur, w, dt, CRUISE_OP);
             angle = Math.max(-0.3, Math.min(0.3, (target.x - cur.x) * 0.012));
           }
-        } else if (railOk && (ballOk || zone === "rail" || (zone === "roam" && (roamRef.current.pane === "rail" || !!intent)))) {
+        } else if (railOk && (ballOk || whistleOk || zone === "rail" || (zone === "roam" && (roamRef.current.pane === "rail" || !!intent)))) {
           // ── 左栏原生物理世界(导入监工钉守 / roam 游走到左栏) ──
           const w = navRect!.width;
           const h = navRect!.height;
@@ -589,7 +618,12 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             // 纱帘 = 最近绳/球顶栖息(仅非 roam:roam 时帘后照常游)
             let base = perchRef.current;
             let settle = false;
-            if (ballOk && ballAckRef.current && ballAckRef.current.fly) {
+            if (whistleOk && whistleAckRef.current) {
+              // v0.17.3 吹哨应答:悬停在哨点右上上空挥手(爆发由 bus 派发;哨点已在
+              // 禁入带之下,再抬 -52 仍在带下)。最新召唤优先于点球/意图/待机。
+              base = { x: whistleAckRef.current.x + 28, y: whistleAckRef.current.y - 52 };
+              settle = false;
+            } else if (ballOk && ballAckRef.current && ballAckRef.current.fly) {
               // v0.17.2 点球应答:栖在被点球的右肩位,指住它(优先级高于意图/待机)
               base = { x: ballAckRef.current.x - navRect!.left + 34, y: ballAckRef.current.y - navRect!.top - 46 };
               settle = false;
@@ -616,7 +650,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
                 base = perchRef.current;
               }
             }
-            const swatted = flight.step(dt, base, st.mode === "veil" && !roaming ? [] : probes, now, { settle });
+            const swatted = flight.step(dt, base, st.mode === "veil" && !roaming ? [] : probes, now, { settle, ceilY: railCeilLocal() });
             if (swatted && !swatLatchRef.current) companionSwat();
             swatLatchRef.current = swatted || flight.dizzyRemaining(now) > 0;
             if (flight.dizzyRemaining(now) === 0) {
@@ -695,6 +729,11 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       }
       posRef.current = target;
       const w = wrap.offsetWidth || SIZE[pane];
+      // v0.17.3 标题栏禁入带(全分支兜底):中心不许高于 带底+半身+余量(旋转/晕眩
+      // 摆角不至于扫进标题栏)。rail 分支物理层已有 ceilY 硬天花板,这里是视觉带
+      // 的统一收口(整窗游走/跟句锚点在首行等边缘路径)。
+      const ceilBand = pane === "rail" ? Math.max(hdrBottomCache, railBarBottomCache) : hdrBottomCache;
+      if (target.y < ceilBand + w / 2 + 10) target.y = ceilBand + w / 2 + 10;
       wrap.style.transform = `translate3d(${(target.x - w / 2).toFixed(1)}px, ${(target.y - w / 2).toFixed(1)}px, 0) rotate(${(angle * 57.2958).toFixed(1)}deg)`;
       // v0.17.1 速度驱动喷焰(推进质感):速度→焰不透明度,方向→焰朝向(尾部指向
       // 运动反方向,CSS rotate 消费)。CSS 变量直写,零重渲染;静止时速度归零焰熄。

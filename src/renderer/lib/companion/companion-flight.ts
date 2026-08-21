@@ -253,9 +253,11 @@ export interface FlightWorld {
    * 每帧步进。
    * target=null(晕眩期/无家)时控制器断开,只受重力+墙。
    * opts.settle=true(栖息中):巡航游走幅值收到近零,定住休息。
+   * opts.ceilY:硬天花板(栏局部坐标,伴学圆心不许低于此线——标题栏禁入带;
+   * 撞线反弹同边界墙,物理/视觉同源,不在渲染层拉扯)。
    * 返回本帧是否被拍(hitSpeed ≥ SWAT_IMPULSE)。
    */
-  step(dtMs: number, base: FlightTarget | null, balls: BallProbe[], tMs: number, opts?: { settle?: boolean }): boolean;
+  step(dtMs: number, base: FlightTarget | null, balls: BallProbe[], tMs: number, opts?: { settle?: boolean; ceilY?: number }): boolean;
   /** 晕眩剩余时间(ms)。 */
   dizzyRemaining(tMs: number): number;
   /** 被扔出:外部设定晕眩窗口(控制器断开自由翻滚)。 */
@@ -391,6 +393,12 @@ export function createFlightWorld(opts: {
       const p = body.position;
       if (p.x < r) { Body.setPosition(body, { x: r, y: p.y }); if (body.velocity.x < 0) Body.setVelocity(body, { x: -body.velocity.x * 0.5, y: body.velocity.y }); }
       if (p.x > width - r) { Body.setPosition(body, { x: width - r, y: p.y }); if (body.velocity.x > 0) Body.setVelocity(body, { x: -body.velocity.x * 0.5, y: body.velocity.y }); }
+      // 硬天花板(标题栏禁入带):撞线=定位到线上+竖速反弹减半
+      const ceil = opts?.ceilY;
+      if (ceil !== undefined && p.y < ceil + r) {
+        Body.setPosition(body, { x: p.x, y: ceil + r });
+        if (body.velocity.y < 0) Body.setVelocity(body, { x: body.velocity.x, y: -body.velocity.y * 0.5 });
+      }
       return swatted;
     },
     dizzyRemaining(tMs) {

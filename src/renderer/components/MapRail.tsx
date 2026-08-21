@@ -1392,10 +1392,9 @@ function MapSection({
                 isSelected={lesson.id === selectedNodeId}
                 isDue={dueNodeIds.has(lesson.id)}
                 chapterLessonsMastered={chapterLessonsMastered}
-                onClick={(e) => {
+                onClick={() => {
                   if (Date.now() < suppressClickUntilRef.current) return;
-                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                  companionBallTap(r.left + r.width / 2, r.top + r.height / 2, lesson.id); // v0.17.2 伴学点球互动
+                  companionBallTap(null, null, lesson.id); // v0.17.2 伴学点球互动(键盘路;坐标由物理岛定位)
                   onJumpNode(lesson.id);
                 }}
               />

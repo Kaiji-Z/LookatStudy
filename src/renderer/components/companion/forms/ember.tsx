@@ -6,7 +6,7 @@
  * (今日 XP 充能) + 金色 streak 火苗。口型=圆角母音块。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, faceFlags, BevelPlate ,, CrownMark  } from "./shared.js";
+import { Arms, Face, FaceExtras, faceFlags, BevelPlate, CrownMark } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const EMBER: FormPalette = {

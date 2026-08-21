@@ -58,7 +58,7 @@ Each chapter ends with an exam guarding the gate. The questions are generated in
 - Images ride along with the content, notebook outputs and PDF embeds included. With a vision model, the tutor actually looks at the figure when you ask about it.
 - Bilingual sources pair up automatically. A `translations/{lang}/` folder, parallel folders, or `file.zh.md` suffixes all get recognized.
 
-Math formulas work end to end. LaTeX in any lesson, chat reply, or quiz question renders as typeset math, read-aloud says formulas in spoken words instead of backslash commands, and the exercise generator is told it may use LaTeX freely.
+Math formulas work end to end. LaTeX in any lesson, chat reply, or quiz question renders as typeset math, read-aloud says formulas in spoken words instead of backslash commands, and the exercise generator is told it may use LaTeX freely. Importing a formula-heavy PDF has a new experimental path: math-dense pages get rendered to images and your vision model transcribes them to LaTeX, behind a switch in settings.
 
 ## It reads out loud and takes dictation
 
@@ -102,12 +102,12 @@ The phone runs the server itself and Chrome talks to it over localhost, so your 
 ## What it can't do yet
 
 - The macOS build is unsigned and Apple Silicon only. First launch needs a right-click and Open, and there's no Intel package yet. The Windows exe is unsigned too, so SmartScreen will grumble the first time.
-- PDF text extraction can't decode math formulas. That's a hard limit of reading the text layer, and a formula-heavy math PDF comes through mangled. The planned fix is rendering pages to images and letting a vision model read them.
+- PDF math formulas don't survive the text layer, and that limit stays. The experimental switch described above is the way around it, and it needs a vision model configured plus its quota, page by page. Off by default, and when it's off or fails, the PDF imports through the plain text layer as before.
 - The smart part of importing, classifying files and designing the course tree, calls the LLM. Without a key, local imports fall back to pure rules. It works, just blunter.
 
 ## Under the hood
 
-Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there's nothing native to build and `npm install` doesn't blow up on Windows. The renderer can't reach the database, the filesystem, or your key. Every cross-process call goes through one typed IPC bridge. One hundred deterministic test suites and a headless real-GUI test watch the whole thing, all runnable with `npm run verify:core`.
+Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there's nothing native to build and `npm install` doesn't blow up on Windows. The renderer can't reach the database, the filesystem, or your key. Every cross-process call goes through one typed IPC bridge. A hundred and one deterministic test suites and a headless real-GUI test watch the whole thing, all runnable with `npm run verify:core`.
 
 ## Status
 

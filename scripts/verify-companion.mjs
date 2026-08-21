@@ -38,7 +38,7 @@ import {
   micArcScale,
   mouthOpenScale,
   visemeFromFormants,
-  readingTailAnchor,
+  readingAnchorFlex,
   glideTo,
   nextRoamPane,
   CRUISE_OP,
@@ -691,27 +691,35 @@ console.log("✓ T13 v10 zone 状态机:最新动作优先/roam 游走态/记笔
 }
 console.log("✓ T14 飞行物理:PD 悬浮(重力补偿/钳制)/巡航确定性有界/跨引擎碰撞解算/倾角");
 
-/* ---------- T14b v10 朗读句尾锚点 + 栏内漂浮 ---------- */
+/* ---------- T14b v11.3 朗读灵活锚点(多候选避让) + 栏内漂浮 ---------- */
 {
-  // readingTailAnchor:句尾右下(默认)/窄屏句尾正下/贴底行右侧——全程钳在面板内
+  // readingAnchorFlex:①行尾右外侧(默认,整句零遮挡)→②行首左外侧→③句尾右下→④安全位
   const panel = { left: 0, right: 600, top: 0, bottom: 800 };
   const size = 120;
-  const mid = readingTailAnchor({ left: 100, right: 300, top: 350, bottom: 370 }, panel, size);
-  assert.ok(mid.x > 300 && mid.y > 370, `T14b: 宽屏=句尾右下(实测 ${mid.x.toFixed(0)},${mid.y.toFixed(0)})`);
-  assert.equal(mid.side, "left", "T14b: 生物在字右/下 → 指左");
-  // 窄屏:行满宽(句尾≈面板右缘) → x 钳回面板内,y 在行下方
+  const line = { left: 100, right: 300, top: 350, bottom: 370 };
+  const mid = readingAnchorFlex(line, panel, size);
+  assert.ok(mid.x - size / 2 > 300, `T14b: 宽屏=行尾右外侧悬浮(实测 x=${mid.x.toFixed(0)},生物左缘=${(mid.x - size / 2).toFixed(0)})`);
+  assert.ok(mid.y > 350 && mid.y < 470, `T14b: 纵向贴行底下沿(实测 y=${mid.y.toFixed(0)})`);
+  assert.equal(mid.side, "left", "T14b: 生物在字右侧 → 指左");
+  // 不遮字:生物整盒在句矩形右侧(横向零交叠)
+  assert.ok(mid.x - size / 2 >= 300, "T14b: 行尾候选横向不压高亮句");
+  // 窄屏 A:行满宽(两侧都放不下整只生物) → ③句尾右下兜底,钳在面板内
   const narrow = { left: 0, right: 320, top: 0, bottom: 800 };
-  const n = readingTailAnchor({ left: 10, right: 315, top: 200, bottom: 220 }, narrow, size);
-  assert.ok(n.x + size / 2 <= narrow.right, `T14b: 窄屏不出面板右缘(实测 x=${n.x.toFixed(0)})`);
-  assert.ok(n.y > 220, "T14b: 窄屏退让=句尾正下方");
-  assert.ok(n.x >= narrow.left + size / 2 && n.x <= narrow.right - size / 2, "T14b: x 全程在面板内");
-  assert.ok(n.y >= narrow.top + size / 2 && n.y <= narrow.bottom - size / 2, "T14b: y 全程在面板内");
-  // 末行贴面板底 → 该行右侧垂直居中(仍不出面板)
-  const b = readingTailAnchor({ left: 20, right: 260, top: 760, bottom: 785 }, panel, size);
-  assert.ok(b.y + size / 2 <= panel.bottom, `T14b: 贴底行不出面板底(实测 y=${b.y.toFixed(0)})`);
-  assert.ok(b.x > 260, "T14b: 贴底退让=行右侧");
-  // 不遮字:锚点在句尾矩形右/下方(左边界例外仍有 x≥句右)
-  assert.ok(mid.x - size / 2 >= 300 - 8, "T14b: 锚点横向不压句尾字(≤8px 贴角)");
+  const n = readingAnchorFlex({ left: 10, right: 315, top: 200, bottom: 220 }, narrow, size);
+  assert.ok(n.x >= narrow.left + size / 2 && n.x <= narrow.right - size / 2, "T14b: 窄屏 x 全程在面板内");
+  assert.ok(n.y > 220, "T14b: 窄屏兜底=句尾下方");
+  assert.ok(n.y <= narrow.bottom - size / 2, "T14b: y 全程在面板内");
+  // 窄屏 B:缩进/短行(行首离面板左缘有余量) → ②行首左外侧镜像,横向零遮挡
+  const ind = readingAnchorFlex({ left: 160, right: 310, top: 200, bottom: 220 }, narrow, size);
+  assert.ok(ind.x + size / 2 < 160 + 4, `T14b: 缩进行=行首左外侧(实测 x=${ind.x.toFixed(0)})`);
+  assert.equal(ind.side, "right", "T14b: 生物在字左侧 → 指右");
+  // 两侧都放不下(极窄) → ③句尾右下兜底,仍不出面板
+  const xn = { left: 0, right: 240, top: 0, bottom: 800 };
+  const b = readingAnchorFlex({ left: 10, right: 230, top: 100, bottom: 120 }, xn, size);
+  assert.ok(b.x + size / 2 <= xn.right, `T14b: 极窄兜底不出面板(实测 x=${b.x.toFixed(0)})`);
+  assert.ok(b.y > 120, "T14b: 兜底=句尾下方");
+  // 确定性
+  assert.deepEqual(readingAnchorFlex(line, panel, size), mid, "T14b: 锚点确定性");
 
   // zoneDrift:确定性 + 有界(保留断言)
   const a = zoneDrift("chat", 12345);
@@ -840,8 +848,8 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
     "T15: 跨实例互停事件(讲解/对话两个 useSpeech 不再互相残留读态)",
   );
   assert.ok(
-    notebook.includes("markReadingSentence") && notebook.includes("splitSentences(normalizeSpeechText"),
-    "T15: 讲解区 karaoke 高亮接线(同源切句 + markReadingSentence)",
+    notebook.includes("markReadingSentence") && notebook.includes("speechSentencesOf("),
+    "T15: 讲解区 karaoke 高亮接线(句表单一入口 + markReadingSentence)",
   );
   assert.ok(
     notebook.includes("resetReadingCursor") && read("components/ChatStream.tsx").includes("resetReadingCursor"),
@@ -852,8 +860,8 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
     "T15: 🔊 朗读按钮 sticky 悬浮讲解视口右上(不随正文滚走)",
   );
   assert.ok(
-    creature.includes("getReadingRange") && creature.includes("readingTailAnchor") && creature.includes('"point"'),
-    "T15: 伴学跟句(Range 句尾 + readingTailAnchor 右下锚 + 指向姿势)",
+    creature.includes("getReadingRange") && creature.includes("readingAnchorFlex") && creature.includes('"point"'),
+    "T15: 伴学跟句(Range 行片段 + readingAnchorFlex 灵活避让锚 + 指向姿势)",
   );
   assert.ok(
     /\.cp-pose-point \.cp-armL[^}]*rotate\(92deg\)/.test(css) && /\.cp-pose-pointr \.cp-armR[^}]*rotate\(-92deg\)/.test(css),
@@ -928,11 +936,11 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
   }
   // v10 新交互接线
   assert.ok(
-    read("components/companion/forms/shared.tsx").includes("export function Shoulders"),
-    "T15: 肩甲组件(R-06 式宽肩,共享骨骼)",
+    !read("components/companion/forms/shared.tsx").includes("export function Shoulders"),
+    "T15: 肩甲组件已拆除(v11.3 用户拍板:取消 R-06 肩甲)",
   );
   for (const f of ["ember", "frost", "moss", "astro", "ink"]) {
-    assert.ok(read(`components/companion/forms/${f}.tsx`).includes("<Shoulders "), `T15: ${f} 形态挂肩甲`);
+    assert.ok(!read(`components/companion/forms/${f}.tsx`).includes("Shoulders"), `T15: ${f} 形态无肩甲残留`);
   }
   assert.ok(
     read("lib/highlightText.ts").includes("setLastNoteMark") && notebook.includes("setLastNoteMark") && creature.includes("getLastNoteMark"),
@@ -1178,5 +1186,34 @@ console.log("✓ T20 v11 意图调度(确定性/占比/让位)+情绪层(3连对
   assert.ok(nbSrc.includes("companionNote()"), "T21: 笔记 tab → 掏本动画触发");
 }
 console.log("✓ T21 v11 桌宠接线(穿透切换/协议/bus 隐身/设置开关/双页构建)+波形与斜面守卫");
+
+/* ---------- T22 v11.1 三修守卫:karaoke 含画线 / rail 滑翔 / 拖选即现 / 笔记锚点自愈 ---------- */
+{
+  const read = (p2) => readFileSync(new URL(`../src/renderer/${p2}`, import.meta.url), "utf8");
+  const hl = read("lib/highlightText.ts");
+  assert.ok(
+    hl.includes("includeMarks") && hl.includes("getTextModel(container, opts?.within, { includeMarks: true })"),
+    "T22: karaoke 句子匹配收全文本(含画线 mark——划线落在朗读句里不再断高亮)",
+  );
+  assert.ok(
+    hl.includes("lastNoteMarkText") && hl.includes("isConnected"),
+    "T22: 画线锚点重渲染自愈(元素悬空按文本找回)",
+  );
+  const creatureSrc = read("components/companion/CompanionCreature.tsx");
+  assert.ok(
+    creatureSrc.includes("noteAnchored"),
+    "T22: noteMark 无效宿主不消费分支链(加笔记不隐身)",
+  );
+  assert.ok(
+    creatureSrc.includes("glideTo(curPos, bodyPos, dt, CRUISE_OP)"),
+    "T22: rail 物理体位置经滑翔趋近(入左栏不再瞬移)",
+  );
+  const nb = read("components/NotebookPanel.tsx");
+  assert.ok(
+    nb.includes("if (timer) return;") && nb.includes("}, 80);"),
+    "T22: 划线浮钮拖选即现(selectionchange 80ms 节流跟位,非防抖等松手)",
+  );
+}
+console.log("OK T22 v11.1 guards: karaoke-with-marks / rail glide / live quote btn / note anchor self-heal");
 
 console.log("\nverify-companion: ALL PASS");

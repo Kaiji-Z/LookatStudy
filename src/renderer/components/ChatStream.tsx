@@ -26,7 +26,7 @@ import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor } from "../lib/highlightText.js";
-import { splitSentences, normalizeSpeechText, groupSentenceChunks } from "@shared/speech-text";
+import { speechSentencesOf, groupSentenceChunks } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
@@ -537,7 +537,7 @@ function MessageRowV2({
   const isSpeakingThis = speakingMessageId === msg.id;
   // v6 chat karaoke:与讲解区同源同款 —— shared/speech-text 纯函数从同一份朗读文本复算句表
   const sentences = useMemo(
-    () => (msg.role === "assistant" && speakableText ? splitSentences(normalizeSpeechText(speakableText), { flush: true }).sentences : []),
+    () => (msg.role === "assistant" && speakableText ? speechSentencesOf(speakableText) : []),
     [msg.role, speakableText],
   );
   // v9 显示句组:TTS 块(超长强制断句)≠显示句,未完句的块与后续块并组,高亮整组

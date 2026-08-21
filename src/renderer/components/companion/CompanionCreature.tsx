@@ -49,7 +49,7 @@ import {
   glideTo,
   nextRoamPane,
   pickRoamIntent,
-  readingTailAnchor,
+  readingAnchorFlex,
   zoneDrift,
   wanderInPanel,
 } from "../../lib/companion/companion-core.js";
@@ -354,12 +354,25 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
           }
         }
         const fb = readRange.getBoundingClientRect();
-        const mark = tail ?? { left: fb.left, right: fb.right, top: fb.top, bottom: fb.bottom };
+        let head: { left: number; right: number; top: number; bottom: number } | null = null;
+        for (let i = 0; i < rects.length; i++) {
+          const r = rects[i]!;
+          if (r.width > 1 && r.height > 1) {
+            head = { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+            break;
+          }
+        }
         const inChat = !!host?.closest('[data-testid="chat-stream"]');
         const zoneSize = inChat ? SIZE.chat : SIZE.notebook;
         pane = inChat ? "chat" : "notebook";
         if (pr && (tail || fb.width > 0)) {
-          const pos = readingTailAnchor(mark, pr, zoneSize);
+          // v11.3 灵活避让:首选行尾右侧悬浮(整句高亮零遮挡),窄屏镜像左侧,兜底句尾右下
+          const pos = readingAnchorFlex(
+            { left: fb.left, right: fb.right, top: fb.top, bottom: fb.bottom },
+            pr,
+            zoneSize,
+            { first: head ?? undefined, last: tail ?? undefined },
+          );
           const next = { side: pos.side, pane };
           if (readingRef.current?.side !== next.side || readingRef.current?.pane !== next.pane) {
             readingRef.current = next;
@@ -383,14 +396,21 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         // v10 记笔记:pose=writing 期间,锚点=用户刚画的那条线(飞到线旁拿出本笔记录)
         const noteMark = st.pose === "writing" ? getLastNoteMark() : null;
         const zone = st.zone;
-        if (noteMark) {
-          const host = noteMark.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]');
-          const pr = host?.getBoundingClientRect();
-          const mr = noteMark.getBoundingClientRect();
-          const inChat = !!host?.closest('[data-testid="chat-stream"]');
+        // 锚点有效性先判定:mark 重渲染悬空(无宿主/零宽)时不再消费分支链,
+        // 让下方 zone 分支接住栏内游弋——修复"加笔记时伴学隐身"(target 空=opacity 0)
+        const noteHost = noteMark
+          ? noteMark.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]')
+          : null;
+        const noteRect = noteMark?.getBoundingClientRect();
+        const noteAnchored = !!(noteHost && noteRect && noteRect.width > 0);
+        if (noteMark && noteAnchored) {
+          const host = noteHost;
+          const pr = host.getBoundingClientRect();
+          const mr = noteRect;
+          const inChat = !!host.closest('[data-testid="chat-stream"]');
           pane = inChat ? "chat" : "notebook";
-          if (pr && mr.width > 0) {
-            const pos = readingTailAnchor(mr, pr, inChat ? SIZE.chat : SIZE.notebook);
+          {
+            const pos = readingAnchorFlex(mr, pr, inChat ? SIZE.chat : SIZE.notebook);
             flightRef.current = null;
             if (reduced) {
               target = pos;
@@ -527,7 +547,11 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
               }
             }
             const p = flight.body.position;
-            target = { x: navRect!.left + p.x, y: navRect!.top + p.y };
+            // v11 修瞬移到左栏:不再直跳物理体位置——先按巡航限速滑翔趋近,
+            // 跨栏进入(如 chat/notebook→rail)是连续飞行;栏内 cur≈body 时 glide 无感
+            const bodyPos = { x: navRect!.left + p.x, y: navRect!.top + p.y };
+            const curPos = posRef.current ?? bodyPos;
+            target = glideTo(curPos, bodyPos, dt, CRUISE_OP);
             angle = flight.body.angle + bankAngle(flight.body.velocity.x, flight.body.velocity.y);
           }
         } else {

@@ -8,17 +8,30 @@
  * flush=true 时尾句强制吐出。终止标点:中英句号/叹/问/分号 + 省略号;ASCII '.' 要求后跟
  * 空白且前字符非数字(3.14 不切)。超过 maxBuffer 仍无终止标点 → 在最后的软标点(、,;: 空白)
  * 处断开,再无则硬断 —— 保证"导师边生成边念"的流式管线永远不会饿死。
+ *
+ * v11.2 表意分隔:换行与 emoji 也是句界。无标点的段落/列表/短句流文本,
+ * 旧逻辑的强制断句块会在显示层并组吞整段(高亮整段到结尾);现在逐行/逐 emoji
+ * 成句,显示组另加长度上限兜底 —— karaoke 高亮粒度永远可控。
  */
 
 /** 终止标点(出现即成句,连续终止/右引号并吞进句尾) */
 const HARD = new Set(["。", "!", "?", "！", "？", ";", "；", "…"]);
 /** 软标点(超长兜底断句位) */
-const SOFT = new Set([",", "，", "、", ":", "：", " ", "\n", "\t"]);
+const SOFT = new Set([",", "，", "、", ":", "：", " ", "\t"]);
+/** v11.2 emoji 基字符范围(表意/象形/杂项符号/箭头符号区);修饰符(VS16/ZWJ/肤色)不单独成界 */
+const EMOJI_CP_RE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/u;
+function isEmojiCp(cp: number | undefined): boolean {
+  return cp != null && EMOJI_CP_RE.test(String.fromCodePoint(cp));
+}
+/** 句尾 emoji 序列(含 ZWJ 连写/VS16/肤色修饰) —— endsWithSentenceEnd 认它为显示终点 */
+const EMOJI_TAIL_RE = /(?:[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}](?:\uFE0F|\u200D[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]|[\u{1F3FB}-\u{1F3FF}])*)$/u;
 /** 句尾可并吞的右闭合符 */
 const CLOSERS = new Set(["”", '"', "」", "』", "》", ")", "】", "])".slice(0, 1)]);
 
 export function normalizeSpeechText(md: string): string {
   let s = md;
+  // Windows CRLF 归一(换行是 v11.2 句界,\r 不许混进来)
+  s = s.replace(/\r\n?/g, "\n");
   // 围栏代码块(``` / ~~~):整个移除,不朗读
   s = s.replace(/(?:^|\n)[ \t]*(?:```|~~~)[^\n]*\n[\s\S]*?(?:\n[ \t]*(?:```|~~~)[^\n]*|\n?$)/g, "\n");
   // 行内代码
@@ -39,6 +52,16 @@ export function normalizeSpeechText(md: string): string {
   s = s.replace(/~~(.+?)~~/g, "$1");
   s = s.replace(/\n{3,}/g, "\n\n");
   return s.trim();
+}
+
+/**
+ * v11.2 朗读句表单一入口:主进程合成侧(tts-service)与渲染层显示侧
+ * (NotebookPanel/ChatStream karaoke)必须拿到**同一份句表**——播放序号
+ * index 是两侧共享的进度语言,句表一旦分叉(比如一侧单改 maxBuffer)
+ * 高亮和声音就会错句。所有调用方一律走这里,verify-speech-split 有源级守卫。
+ */
+export function speechSentencesOf(text: string): string[] {
+  return splitSentences(normalizeSpeechText(text), { flush: true }).sentences;
 }
 
 export interface SplitOptions {
@@ -69,6 +92,33 @@ export function splitSentences(
 
   while (i < n) {
     const ch = text[i]!;
+    // v11.2 emoji=句界:吞后续修饰符(VS16/ZWJ/肤色)与连写 emoji,整序列收进句尾
+    const cp = text.codePointAt(i)!;
+    if (isEmojiCp(cp)) {
+      let j = i + (cp > 0xffff ? 2 : 1);
+      while (j < n) {
+        const cj = text.codePointAt(j)!;
+        const ul = cj > 0xffff ? 2 : 1;
+        if (cj === 0xfe0f || cj === 0x200d || (cj >= 0x1f3fb && cj <= 0x1f3ff) || isEmojiCp(cj)) {
+          j += ul;
+          continue;
+        }
+        break;
+      }
+      emit(j);
+      i = j;
+      continue;
+    }
+    // v11.2 换行=句界:整行成句(无标点的段落/列表不再被并组吞成整段);
+    // 句尾保留 \n 作为显示终点标记(endsWithSentenceEnd 认它,不被并组)
+    if (ch === "\n") {
+      const piece = text.slice(start, i + 1).replace(/[^\S\n]+$/, "");
+      if (piece.trim()) out.push(piece);
+      start = i + 1;
+      lastSoft = -1;
+      i++;
+      continue;
+    }
     if (HARD.has(ch)) {
       let j = i + 1;
       while (j < n && (HARD.has(text[j]!) || CLOSERS.has(text[j]!))) j++;
@@ -117,14 +167,23 @@ export function splitSentences(
  * 与后续块并成一个显示句组,高亮整组,不在一句中间断开。
  */
 export function endsWithSentenceEnd(chunk: string): boolean {
+  // v11.2 句尾换行=整行句的显示终点标记 —— 必须在 trimEnd 之前查(它会剥掉 \n)
+  if (/\n\s*$/.test(chunk)) return true;
   const t = chunk.trimEnd();
   if (!t) return true;
   let i = t.length - 1;
   while (i >= 0 && CLOSERS.has(t[i]!)) i--;
   if (i < 0) return true;
   const ch = t[i]!;
-  return HARD.has(ch) || ch === ".";
+  if (HARD.has(ch) || ch === ".") return true;
+  // v11.2 表意终点:句尾换行(整行句)或 emoji 序列(含修饰符尾巴)
+  if (ch === "\n") return true;
+  return EMOJI_TAIL_RE.test(t);
 }
+
+/** v11.2 显示句组长度上限(字符):并组只为"把被强制断句撕开的真句子缝回来",
+ * 不是无限吞 —— 超上限就保持独立组,karaoke 高亮粒度永远可控。 */
+export const DISPLAY_GROUP_MAX = 160;
 
 /** TTS 分块序列 → 显示句组(每组合成一个真句子):[start,end] 闭区间块下标。 */
 export function groupSentenceChunks(sentences: string[]): Array<{ start: number; end: number }> {
@@ -132,7 +191,15 @@ export function groupSentenceChunks(sentences: string[]): Array<{ start: number;
   let i = 0;
   while (i < sentences.length) {
     let j = i;
-    while (j + 1 < sentences.length && !endsWithSentenceEnd(sentences[j]!)) j++;
+    let len = sentences[i]!.length;
+    while (
+      j + 1 < sentences.length &&
+      !endsWithSentenceEnd(sentences[j]!) &&
+      len + sentences[j + 1]!.length <= DISPLAY_GROUP_MAX
+    ) {
+      j++;
+      len += sentences[j]!.length;
+    }
     groups.push({ start: i, end: j });
     i = j + 1;
   }

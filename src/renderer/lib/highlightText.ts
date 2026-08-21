@@ -20,7 +20,11 @@ export interface TextModel {
   nodes: { node: Text; start: number; end: number }[];
 }
 
-export function getTextModel(container: HTMLElement, within?: string): TextModel {
+export function getTextModel(
+  container: HTMLElement,
+  within?: string,
+  opts?: { includeMarks?: boolean },
+): TextModel {
   const nodes: { node: Text; start: number; end: number }[] = [];
   let text = "";
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
@@ -32,7 +36,9 @@ export function getTextModel(container: HTMLElement, within?: string): TextModel
       if (tag === "SCRIPT" || tag === "STYLE") return NodeFilter.FILTER_REJECT;
       // 跳过已画的持久画线 mark 内的所有文本(用 closest 检查祖先链,防止嵌套结构漏过)。
       // 这是 save 时 modelTextLen 随笔记数增长的根因:mark 内文本被重复计算。
-      if (parent.closest("mark.lookatstudy-underline")) {
+      // includeMarks(朗读 karaoke 用):句子来自原文,必须收全文本——划线恰好落在
+      // 朗读句里时,跳 mark 会让整句匹配失败、高亮消失(加笔记后 karaoke 断裂的根因)。
+      if (!opts?.includeMarks && parent.closest("mark.lookatstudy-underline")) {
         return NodeFilter.FILTER_REJECT;
       }
       // within(可选):只收匹配选择器子树内的文本(朗读 karaoke 在对话消息里限定
@@ -543,7 +549,7 @@ export function markReadingSentence(
   clearReadingMark(container);
   const trimmed = sentence.trim();
   if (!trimmed) return null;
-  const model = getTextModel(container, opts?.within);
+  const model = getTextModel(container, opts?.within, { includeMarks: true });
   const from = readingCursors.get(container) ?? 0;
   let m = matchSentenceAligned(model.text, trimmed, from);
   if (!m && from > 0) {
@@ -579,13 +585,33 @@ export function getReadingRange(): Range | null {
   return readingRange;
 }
 
-/** v10 最近一次新增笔记的画线 mark(伴学"飞来记笔记"的落点;元素引用随滚动自动更新)。 */
+/**
+ * v10 最近一次新增笔记的画线 mark(伴学"飞来记笔记"的落点)。
+ * v11 自愈:保存笔记会触发正文重渲染,ReactMarkdown 会把 mark span 整个换掉,
+ * 存元素引用随即悬空(加笔记时伴学凭空隐身的根因)。这里同时记文本,取用时
+ * 元素已脱离 DOM 就按文本在当前 DOM 找回同一条线——与画线定位同思路,
+ * 不依赖 DOM 节点身份的稳定性。
+ */
 let lastNoteMark: HTMLElement | null = null;
+let lastNoteMarkText: string | null = null;
 export function setLastNoteMark(el: HTMLElement | null): void {
   lastNoteMark = el;
+  lastNoteMarkText = el?.textContent ?? null;
 }
 export function getLastNoteMark(): HTMLElement | null {
-  return lastNoteMark;
+  if (lastNoteMarkEl_isLive(lastNoteMark)) return lastNoteMark;
+  if (lastNoteMarkText) {
+    for (const m of document.querySelectorAll<HTMLElement>("mark.lookatstudy-underline")) {
+      if (m.textContent === lastNoteMarkText) {
+        lastNoteMark = m;
+        return m;
+      }
+    }
+  }
+  return null;
+}
+function lastNoteMarkEl_isLive(el: HTMLElement | null): el is HTMLElement {
+  return !!el && el.isConnected;
 }
 
 /** 闪烁某个持久画线 mark(溯源跳转时用):加粗下划线 + 淡黄背景高亮,1.5s 后恢复。 */

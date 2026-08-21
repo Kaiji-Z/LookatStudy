@@ -6,7 +6,7 @@
  * 口型=切角母音块(硬朗冰感)。冷调:冰川蓝×白 glare,屏面近白浮冰色。
  */
 import type { FormPalette, FormArtProps } from "./shared.js";
-import { Arms, Face, FaceExtras, GroundShadow, faceFlags, Shoulders, BevelPlate } from "./shared.js";
+import { Arms, Face, FaceExtras, GroundShadow, faceFlags, BevelPlate } from "./shared.js";
 import type { Viseme } from "../../../lib/companion/companion-core.js";
 
 export const FROST: FormPalette = {
@@ -117,11 +117,6 @@ export function FrostArt({ uid, refs, expression, viseme, openScale, energyRatio
         </g>
         <path d="M90,158 L110,158 L104,171 L96,171 Z" fill="#2E3A4A" stroke={OUT} strokeWidth="4" strokeLinejoin="round" />
 
-        {/* 肩部冰棱(角朝外,守望者的甲) */}
-        <path d="M60,112 L48,100 L52,120 Z" fill={ICE_D} stroke={OUT} strokeWidth="3.5" strokeLinejoin="round" />
-        <path d="M140,112 L152,100 L148,120 Z" fill={ICE_D} stroke={OUT} strokeWidth="3.5" strokeLinejoin="round" />
-
-        <Shoulders fill={ICE} fillDark={ICE_D} out={OUT} />
         <Arms refs={refs} armFill={ICE_D} out={OUT} />
 
         {/* 多面体躯干 + cel 错位暗面 + 冰晶核 */}

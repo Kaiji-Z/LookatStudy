@@ -984,6 +984,21 @@ console.log("✓ T15 v3 接线守卫:单例挂载/三触发点/左栏注册表/�
   assert.equal(matchSentenceAligned("没有目标。", "别的句子", 0), null, "T16: 未命中返回 null");
   const far = "开头。" + "x".repeat(300) + "结尾。中间还有结尾。";
   assert.equal(matchSentenceAligned(far, "开头 结尾", 0), null, "T16: 跨度异常判失败(误命中保护)");
+
+  // ⑥ v11.2 表意句的匹配坑(实测"高亮慢一句"根因):emoji/符号独立句 canonical 全滤成空串,
+  // 旧逻辑 toks.length===0 直接 null → 高亮冻结在上一句。回退原文逐字查找 verbatim 命中。
+  const domE = "它能帮你做什么\n📚 把任何仓库变课程：粘贴 URL。";
+  const mE = matchSentenceAligned(domE, "📚", 0);
+  assert.deepEqual(mE, { start: 8, end: 10 }, `T16: emoji 独立句原文直找(代理对 2 单位,实测 ${JSON.stringify(mE)})`);
+  assert.deepEqual(matchSentenceAligned(domE, "📚", 8), { start: 8, end: 10 }, "T16: 游标起点后仍命中");
+  const domS = "前文。\n……\n后文。";
+  const mS = matchSentenceAligned(domS, "……", 0);
+  assert.deepEqual(mS, { start: 4, end: 6 }, `T16: 省略号独立句直找(实测 ${JSON.stringify(mS)})`);
+  const zw = matchSentenceAligned("家庭\n👨‍💻 聚餐", "👨‍💻", 0);
+  assert.deepEqual(zw, { start: 3, end: 8 }, `T16: ZWJ 连写整序列 5 单位(实测 ${JSON.stringify(zw)})`);
+  const vs = matchSentenceAligned("去看\n🗺️ 地图", "🗺️", 0);
+  assert.deepEqual(vs, { start: 3, end: 6 }, `T16: VS16 序列含修饰符(实测 ${JSON.stringify(vs)})`);
+  assert.equal(matchSentenceAligned("没有符号", "🚀", 0), null, "T16: DOM 没有该 emoji → null(旧高亮保留)");
 }
 console.log("✓ T16 v9 朗读句对齐:规范化(全半角/标点/引号)+句界扩展+游标单调+跨度保护");
 

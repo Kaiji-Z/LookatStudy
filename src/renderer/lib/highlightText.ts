@@ -491,7 +491,15 @@ export function matchSentenceAligned(
     .split(/\s+/)
     .map((t) => [...t].map(canonChar).filter(Boolean).join(""))
     .filter((t) => t.length > 0);
-  if (toks.length === 0 || canon.length === 0) return null;
+  if (toks.length === 0 || canon.length === 0) {
+    // 规范化为空的句子(emoji 句/省略号句——v11.2 表意句界的产物):文字 canonical
+    // 全滤掉它们,整句匹配永远失败 → 旧高亮冻结在上一句(实测"高亮慢一句"的根因)。
+    // 它们在 DOM 里原样渲染,回退**原文逐字查找**verbatim 命中。
+    const raw = sentence.trim();
+    if (!raw) return null;
+    const idx = domText.indexOf(raw, Math.max(0, from));
+    return idx >= 0 ? { start: idx, end: idx + raw.length } : null;
+  }
 
   const ci = canonLowerBound(map, Math.max(0, from));
   const full = toks.join("");

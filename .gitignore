@@ -67,3 +67,4 @@ memory/
 
 # playwright MCP local artifacts (screenshots)
 .playwright-mcp/
+.serve-data/

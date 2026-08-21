@@ -1426,6 +1426,66 @@ console.log("T25 v0.17.2 键盘反馈包(信号面板/真实键位/节奏/仪式
   assert.ok(css.includes(".cp-scope-bar { animation: none; opacity: 0.7; }"), "reduced-motion 双轨");
   console.log("OK T25: 键盘反馈包(信号面板/键位/节奏/仪式/IME)");
 }
+
+// ---------------------------------------------------------------------------
+console.log("T26 v0.17.3 吹哨召唤(点左栏空白处叫它过来)");
+{
+  const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
+  const core = await import("../src/renderer/lib/companion/companion-core.js");
+  // ① reducer:whistle → happy+wave 爆发 + 刷新活动/唤醒到前台
+  const s0 = core.initialCompanionState(0);
+  const sw = core.companionReducer(s0, { type: "whistle", now: 5000 });
+  assert.ok(sw.expression === "happy" && sw.pose === "wave", "吹哨应答=开心+挥手");
+  assert.equal(sw.until, 7400, "挥手保持 2.4s");
+  assert.ok(sw.lastActivity === 5000 && sw.sleeping === false && sw.mode === "front", "刷新活动/唤醒出纱帘");
+  const stb = core.companionReducer(sw, { type: "tick", now: 20000 });
+  assert.ok(stb.expression !== "happy" || stb.pose !== "wave", "到期回落(不再挥手应答)");
+  // ② 接线:bus 事件+注册表;MapRail 空白点击发哨(拖动/控件双守卫);Creature 消费
+  const bus = read("lib/companion/bus.ts");
+  const mapRail = read("components/MapRail.tsx");
+  const creature = read("components/companion/CompanionCreature.tsx");
+  assert.ok(bus.includes("export function companionWhistle") && bus.includes("getLastWhistle"), "bus 哨事件+注册表");
+  assert.ok(/whistle = \{ x: d\.x, y: d\.y, seq: \(whistle\?\.seq \?\? 0\) \+ 1/.test(bus), "seq 单调递增");
+  assert.ok(bus.includes('dispatch({ type: "whistle"'), "应答爆发派发");
+  assert.ok(/typeof d\?\.x !== "number" \|\| typeof d\?\.y !== "number"/.test(bus), "畸形 detail 守卫");
+  assert.ok(mapRail.includes("companionWhistle(e.clientX, e.clientY)"), "空白点击发哨");
+  assert.ok(mapRail.includes("Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6"), "拖动/滚动松手不误触");
+  assert.ok(mapRail.includes('closest("button, a, input, textarea, select")'), "控件上的点击不算空白");
+  assert.ok(creature.includes("getLastWhistle()") && creature.includes("ws.seq !== whistleSeqRef.current"), "rAF seq 去重消费");
+  assert.ok(/whistleOk \|\| zone === "rail"/.test(creature), "哨点把生物带进 rail 分支");
+  assert.ok(creature.includes("whistleAckRef.current.x + 28, y: whistleAckRef.current.y - 52"), "悬停哨点右上上空");
+  console.log("OK T26: 吹哨召唤(reducer/接线/双守卫)");
+}
+
+// ---------------------------------------------------------------------------
+console.log("T27 v0.17.3 标题栏禁入带(物理天花板+哨点钳制+视觉钳带)");
+{
+  const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
+  // ① 物理层:ceilY 硬天花板——把生物放进带内并向上冲,一步内压回线下+竖速反弹
+  const cf = await import("../src/renderer/lib/companion/companion-flight.js");
+  const Matter = (await import("matter-js")).default;
+  const fw = cf.createFlightWorld({ width: 300, height: 800 });
+  Matter.Body.setPosition(fw.body, { x: 150, y: 80 });
+  Matter.Body.setVelocity(fw.body, { x: 0, y: -6 });
+  fw.step(16, null, [], 100, { ceilY: 120 });
+  assert.ok(fw.body.position.y >= 142 - 1e-6, `圆心压回天花板下(y=${fw.body.position.y.toFixed(1)})`);
+  assert.ok(fw.body.velocity.y > 0, `竖速反弹向下(vy=${fw.body.velocity.y.toFixed(2)})`);
+  const fw2 = cf.createFlightWorld({ width: 300, height: 800 });
+  Matter.Body.setPosition(fw2.body, { x: 150, y: 80 });
+  fw2.step(16, null, [], 100);
+  assert.ok(fw2.body.position.y < 120, "未传 ceilY 不启用天花板(向后兼容)");
+  fw.dispose();
+  fw2.dispose();
+  // ② 接线:带底缓存(标题栏∪轨道tab条)、rail step 传 ceilY、哨点钳带、收尾视觉钳带
+  const creature = read("components/companion/CompanionCreature.tsx");
+  const mapRail = read("components/MapRail.tsx");
+  assert.ok(creature.includes('document.querySelector("header.app-header")') && creature.includes("map-rail-topbar"), "带底=应用标题栏∪轨道tab条");
+  assert.ok(creature.includes("{ settle, ceilY: railCeilLocal() }"), "rail 物理接硬天花板");
+  assert.ok(/target\.y < ceilBand \+ w \/ 2 \+ 10/.test(creature), "收尾视觉钳带(全分支兜底,含拖拽)");
+  assert.ok(creature.includes("Math.max(ceilLocal + 52, ws.y - navRect.top)"), "哨点不许落进禁入带");
+  assert.ok(mapRail.includes('data-testid="map-rail-topbar"'), "轨道顶部条有测量锚");
+  console.log("OK T27: 标题栏禁入(物理/哨点/视觉三层)");
+}
 }
 
 console.log("\nverify-companion: ALL PASS");

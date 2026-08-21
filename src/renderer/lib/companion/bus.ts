@@ -295,6 +295,14 @@ function install(): void {
     // 表情爆发复用"就是这里"反应(thinking+托腮);飞行/指向由 Creature 侧消费
     dispatch({ type: "nodePoint", now: Date.now() });
   });
+  window.addEventListener("companion-whistle", (e) => {
+    const d = detailOf(e) as { x: number; y: number } | undefined;
+    if (typeof d?.x !== "number" || typeof d?.y !== "number") return;
+    whistle = { x: d.x, y: d.y, seq: (whistle?.seq ?? 0) + 1, at: Date.now() };
+    // 应答爆发(开心+挥手"来啦");飞行/悬停由 Creature 侧消费注册表
+    playPetSfx("happy");
+    dispatch({ type: "whistle", now: Date.now() });
+  });
   window.addEventListener("companion-day-welcome", () => {
     dispatch({ type: "dayWelcome", now: Date.now() });
   });
@@ -516,4 +524,21 @@ export function getLastBallTap(): BallTap | null {
 }
 export function companionBallTap(x: number | null, y: number | null, nodeId: string): void {
   fire("companion-ball-tap", { x, y, nodeId });
+}
+
+/** 吹哨召唤(v0.17.3):点左栏地图空白处 → 生物飞到哨点上空挥手应答。
+ * x/y 为屏幕坐标;同 ballTap 的 ref 级模式(bus 存最近一次,seq 单调,
+ * Creature rAF 直读)。 */
+export interface Whistle {
+  x: number;
+  y: number;
+  seq: number;
+  at: number;
+}
+let whistle: Whistle | null = null;
+export function getLastWhistle(): Whistle | null {
+  return whistle;
+}
+export function companionWhistle(x: number, y: number): void {
+  fire("companion-whistle", { x, y });
 }

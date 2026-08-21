@@ -11,7 +11,7 @@ import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { CourseSearchPanel } from "./CourseSearchPanel.js";
-import { companionBallTap, companionImportDone, companionImporting, companionRailRegister, companionRailUnregister, companionRailWorld } from "../lib/companion/bus.ts";
+import { companionBallTap, companionImportDone, companionImporting, companionRailRegister, companionRailUnregister, companionRailWorld, companionWhistle } from "../lib/companion/bus.ts";
 import {
   computeBalloonLayout,
   balloonSegmentToPath,
@@ -165,6 +165,8 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
   // Phase 2: 检测节点从 locked→available 的解锁瞬间,触发 celebrate("unlock") 粒子(完成 7 触点闭环)。
   // 比较 progressMap 前后状态;首次加载(prev 为空)不触发,防误报。
   const prevStatusRef = useRef<Record<string, string>>({});
+  /** v0.17.3 吹哨召唤:map-path 指针落点(区分"点空白"与"拖动/滚动松手") */
+  const whistleDownAtRef = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
     const prev = prevStatusRef.current;
     const cur: Record<string, string> = {};
@@ -191,7 +193,7 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
 
       {/* tab 栏 + 标题:都悬浮(absolute),不占文档流。
           map-path 全高滚动,球和内容从屏幕边缘(tab 顶部)才开始被遮。 */}
-      <div className="absolute top-0 left-0 right-0 z-40 px-2 pt-2 pb-2 pointer-events-none [&_button]:pointer-events-auto">
+      <div className="absolute top-0 left-0 right-0 z-40 px-2 pt-2 pb-2 pointer-events-none [&_button]:pointer-events-auto" data-testid="map-rail-topbar">
         {/* tab 胶囊 */}
         <div className="flex p-1 rounded-lg gap-1 mb-2" style={{ background: "rgb(var(--surface-rail-rgb) / 0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
           <button onClick={() => setPanel("map")} data-testid="map-tab-map" className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-label font-bold transition-colors ${panel === "map" ? "bg-brand/20 text-brand" : "text-white/50 hover:text-white/80"}`}>
@@ -283,7 +285,20 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
         <div className="flex h-full transition-transform duration-300" style={{ transform: panel === "map" ? "translateX(0)" : "translateX(-50%)", width: "200%" }}>
           {/* 地图面板(透明)。map-path 全高滚动(pt-48 留出 tab+标题+XP条+世界切换悬浮空间)。 */}
           <div className="w-1/2 h-full relative">
-            <div ref={mapPathRef} className="map-path h-full overflow-y-auto overflow-x-hidden px-2 pt-48 pb-4" data-testid="map-path">
+            <div ref={mapPathRef} className="map-path h-full overflow-y-auto overflow-x-hidden px-2 pt-48 pb-4" data-testid="map-path"
+              onPointerDown={(e) => {
+                whistleDownAtRef.current = { x: e.clientX, y: e.clientY };
+              }}
+              onClick={(e) => {
+                // v0.17.3 吹哨召唤:点地图空白处叫伴学过来挥手。两道守卫:
+                // ① 位移>6px=拖动/滚动手势的松手,不是点击;② 落在按钮/链接/输入
+                // 控件上(球/路牌/搜索等)不算空白——那些有自己的交互。
+                const d = whistleDownAtRef.current;
+                whistleDownAtRef.current = null;
+                if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return;
+                if ((e.target as HTMLElement).closest("button, a, input, textarea, select")) return;
+                companionWhistle(e.clientX, e.clientY);
+              }}>
               <div className={`map-sky-content ${skyPreset ? `env-${skyPreset.season} env-${skyPreset.weather}` : ""}`}>
                 {props.streaming && (
                   <div className="mb-3 mx-1 px-3 py-2 rounded-xl bg-brand/10 border border-brand/30 flex items-center gap-2 text-label text-brand font-medium backdrop-blur-sm" data-testid="streaming-notice">

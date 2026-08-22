@@ -97,33 +97,74 @@ export function Face({
   renderMouth: (v: Viseme, p: FormPalette) => ReactNode;
 }) {
   const strokeMouth = viseme === "closed";
+  /* 竖线眼:全表情统一竖圆棒(EVE 式冷萌机器脸),情绪靠棒的长短/倾角/浓度传;
+   * 圆角矩形瞳孔眼/上弧笑眼/横线睡眼/星形眼退役。棒渲染进 cp-pupils 组 →
+   * 壳的视线 lerp 变成整眼平移(眼神跟随),眨眼 scaleY 仍作用外层
+   * cp-eyes 组,两套生命机制对竖线眼照常生效。 */
+  const bar = (x: number, y: number, len: number, opt?: { tilt?: number; w?: number; op?: number }) => (
+    <path
+      d={`M${x},${y} v${len}`}
+      stroke={p.ink}
+      strokeWidth={opt?.w ?? 5}
+      strokeLinecap="round"
+      opacity={opt?.op ?? 1}
+      transform={opt?.tilt ? `rotate(${opt.tilt} ${x} ${y + len / 2})` : undefined}
+    />
+  );
   return (
     <g key={expression} className="cp-face cp-face-pop" transform={flags.thinking ? "translate(-1.5 -1)" : undefined}>
       <g ref={refs.eyes} className="cp-eyes" style={{ transformBox: "fill-box", transformOrigin: "center" }}>
         {flags.sleep ? (
+          /* 睡:两粒短淡竖点(旧横线睡眼退役) */
           <>
-            <path d="M77,65 h14" stroke={p.ink} strokeWidth="4" strokeLinecap="round" />
-            <path d="M109,65 h14" stroke={p.ink} strokeWidth="4" strokeLinecap="round" />
+            {bar(84, 63.5, 4, { w: 4.5, op: 0.55 })}
+            {bar(116, 63.5, 4, { w: 4.5, op: 0.55 })}
           </>
         ) : flags.smile ? (
+          /* 笑(^_^):竖棒弯成上拱弧——竖线的弯曲变形,弧顶即笑意 */
           <>
-            <path d="M77,68 Q84,59 91,68" fill="none" stroke={p.ink} strokeWidth="4.5" strokeLinecap="round" />
-            <path d="M109,68 Q116,59 123,68" fill="none" stroke={p.ink} strokeWidth="4.5" strokeLinecap="round" />
+            <path d="M78,68 Q84,60.5 90,68" fill="none" stroke={p.ink} strokeWidth="5" strokeLinecap="round" />
+            <path d="M110,68 Q116,60.5 122,68" fill="none" stroke={p.ink} strokeWidth="5" strokeLinecap="round" />
           </>
         ) : flags.star ? (
-          <g className="cp-star-tw">
-            <path d="M84,58 L86.2,63.6 L92,65.6 L86.2,67.8 L84,73.2 L81.8,67.8 L76,65.6 L81.8,63.6 Z" fill={p.crown} stroke={p.crownD} strokeWidth="1.5" />
-            <path d="M116,58 L118.2,63.6 L124,65.6 L118.2,67.8 L116,73.2 L113.8,67.8 L108,65.6 L113.8,63.6 Z" fill={p.crown} stroke={p.crownD} strokeWidth="1.5" />
-          </g>
-        ) : (
+          /* 星星眼:竖棒本体 + 棒旁小星芒(star-tw 闪动挂件保留) */
           <>
-            <rect x={flags.surprised ? "75" : "76"} y={flags.surprised ? "56.5" : flags.listening ? "58.5" : "59"} width={flags.surprised ? "18" : "16"} height={flags.surprised ? "17" : flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
-            <rect x={flags.surprised ? "107" : "108"} y={flags.surprised ? "56.5" : flags.listening ? "58.5" : "59"} width={flags.surprised ? "18" : "16"} height={flags.surprised ? "17" : flags.listening ? "15" : "13"} rx="6" fill={p.ink} />
             <g ref={refs.pupils} className="cp-pupils">
-              <rect x="82" y={flags.surprised ? "61.5" : "63"} width="4.5" height="5.5" rx="1.5" fill={p.pupil} />
-              <rect x="114" y={flags.surprised ? "61.5" : "63"} width="4.5" height="5.5" rx="1.5" fill={p.pupil} />
+              {bar(84, 58.5, 13)}
+              {bar(116, 58.5, 13)}
+            </g>
+            <g className="cp-star-tw">
+              <path d="M72,60 l1.7,3.4 3.4,1.7 -3.4,1.7 -1.7,3.4 -1.7,-3.4 -3.4,-1.7 3.4,-1.7 Z" fill={p.crown} stroke={p.crownD} strokeWidth="1.2" />
+              <path d="M128,60 l1.7,3.4 3.4,1.7 -3.4,1.7 -1.7,3.4 -1.7,-3.4 -3.4,-1.7 3.4,-1.7 Z" fill={p.crown} stroke={p.crownD} strokeWidth="1.2" />
             </g>
           </>
+        ) : flags.huffy ? (
+          /* 无语(-_-):竖棒整体旋横 90°——鼓脸余怒的"懒得看你" */
+          <g ref={refs.pupils} className="cp-pupils">
+            <path d="M78,65 h12" stroke={p.ink} strokeWidth="5" strokeLinecap="round" />
+            <path d="M110,65 h12" stroke={p.ink} strokeWidth="5" strokeLinecap="round" />
+          </g>
+        ) : (
+          <g ref={refs.pupils} className="cp-pupils">
+            {flags.surprised
+              ? /* 惊:拉长收细 */
+                <>
+                  {bar(84, 56.5, 18, { w: 4.5 })}
+                  {bar(116, 56.5, 18, { w: 4.5 })}
+                </>
+              : flags.thinking
+                ? /* 思考:左短右长不对称(配合思考眉) */
+                  <>
+                    {bar(84, 61.5, 9)}
+                    {bar(116, 58.5, 13)}
+                  </>
+                : /* 常态/说话/聆听/鼓励/鼓脸:标准双竖棒 */
+                  <>
+                    {bar(84, 58.5, flags.listening ? 12.5 : 13)}
+                    {bar(116, 58.5, flags.listening ? 12.5 : 13)}
+                  </>
+                }
+          </g>
         )}
       </g>
       <g

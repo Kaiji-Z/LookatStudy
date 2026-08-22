@@ -1024,6 +1024,25 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
     "T15: 记笔记落点通道(画线 mark 登记 → 生物飞到线旁)",
   );
   assert.ok(css.includes("cp-screen-key") && css.includes("cp-scribble") && css.includes("cp-notebook-in"), "T15: 胸屏字符/本笔/弹入 CSS");
+  // 竖线眼:全表情统一竖圆棒词汇(EVE 式),情绪=棒的长短/倾角/浓度;
+  // 棒渲染进 cp-pupils 组 → 壳的视线 lerp=整眼平移,眨眼 scaleY 作用外层 cp-eyes 压扁竖棒
+  const sharedFaceSrc = read("components/companion/forms/shared.tsx");
+  assert.ok(
+    sharedFaceSrc.includes("const bar = (x: number, y: number, len: number"),
+    "T15: 竖线眼词汇=bar() 圆头竖棒助手(旧圆角矩形瞳孔眼/横线睡眼退役)",
+  );
+  assert.ok(
+    sharedFaceSrc.includes("Q84,60.5 90,68") && sharedFaceSrc.includes("M78,65 h12"),
+    "T15: 笑=竖棒弯成上拱弧(^_^) / 鼓脸=竖棒旋横(-_-)——竖线的两种变形",
+  );
+  assert.ok(
+    (sharedFaceSrc.match(/<g ref=\{refs\.pupils\} className="cp-pupils">/g) ?? []).length >= 3,
+    "T15: 竖线棒渲染在 cp-pupils 组内(星/横线/默认三分支)→视线跟随=整眼平移",
+  );
+  assert.ok(
+    mascotV4.includes("g.x * 5") && mascotV4.includes("g.y * 3"),
+    "T15: 视线跟随幅度 5/3px(竖线整眼平移可视幅度,旧瞳孔 3/2px 看不出)",
+  );
 }
 console.log("✓ T15 v3 接线守卫:单例挂载/三触发点/左栏注册表/物理碰撞源级咬合");
 

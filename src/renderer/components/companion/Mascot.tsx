@@ -203,7 +203,9 @@ export function Mascot({
       }
       gaze = { x: lerp(gaze.x, target.x, 0.1), y: lerp(gaze.y, target.y, 0.1) };
       const g = clampGaze(gaze.x, gaze.y);
-      refs.pupils.current?.setAttribute("transform", `translate(${(g.x * 3).toFixed(2)} ${(g.y * 2).toFixed(2)})`);
+      /* 竖线眼:整眼平移(EVE 式),可视幅度要求高于旧瞳孔小位移(3/2px→5/3px,
+         棒仍在屏幕剪裁内,越界部分被屏框裁掉反而像"贴着屏幕看") */
+      refs.pupils.current?.setAttribute("transform", `translate(${(g.x * 5).toFixed(2)} ${(g.y * 3).toFixed(2)})`);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);

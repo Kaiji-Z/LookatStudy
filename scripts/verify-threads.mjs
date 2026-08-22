@@ -104,7 +104,7 @@ test("T1 create 默认 status=active count=0", () => {
 
 // T2: status 过滤
 test("T2 status 过滤", () => {
-  const a = svc.createThread({ courseId: "c2", title: "A" });
+  const _a = svc.createThread({ courseId: "c2", title: "A" });
   const b = svc.createThread({ courseId: "c2", title: "B" });
   svc.updateThread(b.id, { status: "archived" });
   const active = svc.listThreads("c2", "active");
@@ -188,7 +188,7 @@ test("T8 appendMessage partsJson 可空", () => {
 test("T9 appendMessage displayText 持久化往返 + 默认 null", () => {
   const t = svc.createThread({ courseId: "c9", title: "T9" });
   const btnMsg = svc.appendMessage(t.id, "user", "我想开始学「X」。但我现在没什么劲——别直接讲概念……(完整开场提示词)", null, "开始学习「X」");
-  const typed = svc.appendMessage(t.id, "user", "用户手打的原文");
+  const _typed = svc.appendMessage(t.id, "user", "用户手打的原文");
   const msgs = svc.getThreadMessages(t.id);
   assert.strictEqual(msgs[0].displayText, "开始学习「X」", "按钮消息读回短标签");
   assert.strictEqual(msgs[0].content.includes("别直接讲概念"), true, "完整提示词仍在 content(LLM 可见)");

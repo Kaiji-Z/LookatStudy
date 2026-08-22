@@ -592,7 +592,7 @@ console.log("✓ T13 v10 zone 状态机:最新动作优先/roam 游走态/记笔
   }
   // 避让纯函数:域外零推力/方向推离/接近制动增强/重合安全
   {
-    const { avoidAccel, AVOID_MARGIN, AVOID_MAX } = await import("../src/renderer/lib/companion/companion-flight.ts");
+    const { avoidAccel, AVOID_MAX } = await import("../src/renderer/lib/companion/companion-flight.ts");
     const ball = { x: 100, y: 0, r: 28 };
     const far = avoidAccel(300, 0, 22, [ball]);
     assert.ok(Math.hypot(far.x, far.y) < 1e-9, "T14: 感知域外零避让");

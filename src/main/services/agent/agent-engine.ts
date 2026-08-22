@@ -388,7 +388,8 @@ export async function runAgentTurn(
         // BKT↔SRS 闭环：答题同时更新 SRS 复习计划（与 quiz:recordAnswer 对齐）
         recordReview(nodeId, (correct ? 5 : 2) as ReviewQuality);
         // XP 即时反馈（答对+10/答错+1），与 quiz/exercise 对齐。
-        correct ? addXpCorrect(db) : addXpWrong(db);
+        if (correct) addXpCorrect(db);
+        else addXpWrong(db);
         return {
           status: "applied",
           message: `掌握度已更新（${correct ? "答对" : "答错"}）：${rationale}`,

@@ -19,7 +19,6 @@ import {
   endsWithSentenceEnd,
   groupSentenceChunks,
   DISPLAY_GROUP_MAX,
-  speechSentencesOf,
   playedSentencePrefix,
 } from "../shared/speech-text.ts";
 

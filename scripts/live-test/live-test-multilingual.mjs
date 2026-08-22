@@ -14,7 +14,6 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
-import { randomUUID } from "node:crypto";
 
 import { readApiKey } from "./_load-env.mjs";
 import * as schema from "../../src/main/db/schema.ts";

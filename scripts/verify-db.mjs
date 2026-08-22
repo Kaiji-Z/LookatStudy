@@ -5,7 +5,7 @@
  * 这是 v0.1 的"地基"——如果这个脚本能过，说明数据层完整可用，
  * Electron 只是一层 GUI 壳。
  */
-import { readFileSync, existsSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";

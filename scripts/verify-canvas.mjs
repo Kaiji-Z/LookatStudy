@@ -204,7 +204,7 @@ test("T5 togglePin 0→1→0", () => {
 // ---------- T6: list 排序(置顶优先 + 时间倒序) ----------
 test("T6 list 排序:置顶优先", () => {
   const a = canvas.save({ courseId: "c5", nodeId: null, artifactType: "quiz", title: "A", data: { q: "a1" } });
-  const b = canvas.save({ courseId: "c5", nodeId: null, artifactType: "quiz", title: "B", data: { q: "b1" } });
+  const _b = canvas.save({ courseId: "c5", nodeId: null, artifactType: "quiz", title: "B", data: { q: "b1" } });
   canvas.togglePin(a.id); // A 置顶
   const list = canvas.list("c5");
   assert.strictEqual(list[0].title, "A", "置顶项优先");

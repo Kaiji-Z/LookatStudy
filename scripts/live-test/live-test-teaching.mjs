@@ -114,7 +114,6 @@ async function callGlm(systemPrompt, userMessage) {
 
 let testCount = 0;
 let passCount = 0;
-const qualityScores = [];
 
 async function testTeaching(label, userMessage, checks, masteryOverride) {
   testCount++;

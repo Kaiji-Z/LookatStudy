@@ -156,14 +156,7 @@ const ROOT = join(__dirname, "..");
 
 // === T10: classifyFilesResilient 截断自愈 —— 批>1 截断则拆半,单文件兜底,sourceLang 传播 ===
 {
-  const calls = [];
   const progress = [];
-  // 桩:批 >1 个文件时返回半个 JSON(截断),单文件返回完整判定
-  const call = async (prompt) => {
-    const n = (prompt.match(/"path"/g) || []).length; // buildPrompt 桩里我们直接数文件数
-    calls.push(n);
-    return n; // 占位,真实返回在下面拼
-  };
   // 更直接的桩:buildPrompt 收到 files,按长度决定截断/完整
   const files5 = ["a.md", "b.md", "c.md", "d.md", "e.md"];
   const stub = {

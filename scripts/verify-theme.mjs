@@ -75,7 +75,7 @@ const css = readFileSync(join(ROOT, "src/renderer/index.css"), "utf8");
 const lightBlock = css.match(/html\.light\s*\{([\s\S]*?)\n\}/);
 // @supports oklch 层(真源):@supports (...) { <selector> { vars } } — 双层结构的作者位
 const supportsBlocks = [...css.matchAll(
-  /@supports \(color: oklch\([^)]*\)\)\s*\{\s*\n\s*([^\{\n]+?)\s*\{([\s\S]*?)\n\s*\}\s*\n\}/g,
+  /@supports \(color: oklch\([^)]*\)\)\s*\{\s*\n\s*([^{\n]+?)\s*\{([\s\S]*?)\n\s*\}\s*\n\}/g,
 )].map((m) => ({ selector: (m[1] || "").trim(), body: m[2] || "" }));
 const lightOklch = supportsBlocks.find((b) => b.selector === "html.light");
 const themeHook = existsSync(join(ROOT, "src/renderer/lib/useTheme.ts"));

@@ -126,7 +126,7 @@ if (proposal.skippedNodeIds.length > 0) {
 
 // ── Step 8: 验证结果 ──
 console.log("\nStep 8: 验证质量…");
-const applyResult = applyCourseStructure(db, COURSE_ID, proposal);
+const _applyResult = applyCourseStructure(db, COURSE_ID, proposal);
 
 const finalLessons = db.select().from(schema.contentNodes).all()
   .filter((n) => n.courseId === COURSE_ID && n.type === "lesson");

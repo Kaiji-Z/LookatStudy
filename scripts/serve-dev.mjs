@@ -4,7 +4,7 @@
  * 然后 spawn node dist/.serve-dev/server.cjs。Ctrl+C 透传。
  */
 import { spawnSync, execSync } from "node:child_process";
-import { existsSync, mkdirSync, cpSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildServerBundle } from "./lib/build-server.mjs";

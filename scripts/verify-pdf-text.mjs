@@ -45,11 +45,6 @@ function buildMinimalPdf(text) {
 
 const KNOWN = "Hello PDF test";
 let passed = 0;
-const fail = (msg) => {
-  console.error("  ✗ " + msg);
-  process.exitCode = 1;
-};
-
 // T0: 生成器产出合法 PDF
 {
   const pdf = buildMinimalPdf(KNOWN);

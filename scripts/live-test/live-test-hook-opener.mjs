@@ -126,7 +126,7 @@ console.log(`✓ T2 散文钩子非空(先暖场,再给猜测)`);
 let args = {};
 try {
   args = JSON.parse(guessCall.function.arguments || "{}");
-} catch (e) {
+} catch {
   assert(false, `T3 pose_guess arguments 不是合法 JSON: ${guessCall.function.arguments}`);
 }
 

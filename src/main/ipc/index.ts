@@ -838,7 +838,7 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
     // github 沿用 owner-repo 命名;url/text/epub/audio 用课程标题(docCache 让包自包含)
     const base = plan.kind === "github" && plan.github
       ? `${plan.github.owner}-${plan.github.repo}`
-      : (plan.courseTitle ?? plan.courseId ?? "course").replace(/[\/:*?"<>|#\s]+/g, "-").slice(0, 60) || "course";
+      : (plan.courseTitle ?? plan.courseId ?? "course").replace(/[/:*?"<>|#\s]+/g, "-").slice(0, 60) || "course";
     const fileName = `${base}.lookatstudy-pack.json`;
     const content = serializePlan(plan);
     if (deps.ui === "web") {
@@ -1302,7 +1302,7 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
       if (op.type === "update_mastery" && op.nodeId) {
         recordReview(op.nodeId, ((op.correct ?? false) ? 5 : 2) as ReviewQuality);
       } else if (op.type === "mark_mastered" && result.nodeId) {
-        recordReview(result.nodeId, 5 as 5);
+        recordReview(result.nodeId, 5 as const);
         // 里程碑(拿皇冠):仅首次掌握(!wasMastered)触发固化——一个节点只拿一次皇冠
         if (!wasMastered) triggerConsolidationOnMilestone(result.nodeId);
       }
@@ -1320,7 +1320,8 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
   handle("quiz:recordAnswer", async (_e, nodeId: string, correct: boolean, kc?: string) => {
     if (!nodeId) return { applied: false };
     // XP 即时反馈(与 exercise:submit 对齐:答对+10/答错+1)。
-    correct ? addXpCorrect(getDb()) : addXpWrong(getDb());
+    if (correct) addXpCorrect(getDb());
+    else addXpWrong(getDb());
     // Per-KC BKT: 将 KC 标题解析为下标（proposal 用 kcIndex 归因）
     let kcIndex: number | undefined;
     if (kc) {

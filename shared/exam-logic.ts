@@ -21,7 +21,7 @@ export function planExamQuota(kcTitles: string[]): number[] {
     EXAM_MAX_QUESTIONS,
     Math.max(EXAM_MIN_QUESTIONS, Math.ceil((n * 3) / 2)),
   );
-  const quotas = new Array<number>(n).fill(0);
+  const quotas = Array.from({ length: n }, () => 0);
   for (let i = 0; i < target; i++) {
     quotas[i % n]++;
   }

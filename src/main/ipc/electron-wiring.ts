@@ -74,7 +74,7 @@ export function setupIpc(mainWindow: BrowserWindow | null): void {
         if (picked.canceled) return [];
         const { readFileSync } = await import("node:fs");
         return picked.filePaths.map((filePath) => ({
-          fileName: filePath.split(/[\/]/).pop() ?? "file",
+          fileName: filePath.split(/[/]/).pop() ?? "file",
           bytes: new Uint8Array(readFileSync(filePath)),
         }));
       },

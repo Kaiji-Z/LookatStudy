@@ -160,15 +160,13 @@ try {
     invoke("ep", "exam:prepare", examNode.id, null);
     const rp = await waitRes("ep");
     assert.ok(rp.ok, `exam:prepare 应返回状态: ${JSON.stringify(rp).slice(0, 120)}`);
-    const examEvents = await Promise.race([
-      new Promise((resolve) => {
+    const examEvents = await new Promise((resolve) => {
         const poll = setInterval(() => {
           const got = events.filter((f) => f.channel === "exam:status" && f.args?.[0]?.nodeId === examNode.id);
           if (got.length > 0) { clearInterval(poll); resolve(got); }
         }, 50);
         setTimeout(() => { clearInterval(poll); resolve([]); }, 5000);
-      }),
-    ]);
+      });
     assert.ok(
       examEvents.length > 0,
       `应收到 exam:status 事件帧(实际 ${JSON.stringify(events.map((f) => f.channel))})——serve 漏接 setExamStatusSender 的回归`,

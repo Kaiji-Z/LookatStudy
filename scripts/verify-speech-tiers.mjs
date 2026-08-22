@@ -142,7 +142,7 @@ console.log("T4 静音检测状态机:说话后静音触发 / 未说话不触发
   assert.equal(a[7], "listening", "静音未满 400ms 不触发");
   assert.equal(a[8], "auto-stop", "静音计满 500ms 触发");
   // 一直安静(没说过话):不触发(等用户开口)
-  const b = t(new Array(10).fill(0.001));
+  const b = t(Array.from({ length: 10 }, () => 0.001));
   assert.ok(b.every((v) => v === "listening"), "没说过话不自动停");
   // 一声碰撞(<minSpeech)后静音:不触发
   const c = t([0.001, 0.06, 0.001, 0.001, 0.001, 0.001]);

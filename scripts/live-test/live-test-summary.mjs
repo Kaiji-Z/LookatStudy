@@ -9,13 +9,11 @@
  *   3. 摘要内容相关性: 摘要应包含章节标题关键词
  *   4. Ollama 本地连接: 尝试连 http://localhost:11434/v1/models（不要求 Ollama 在跑，只需验证不崩溃）
  */
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readApiKey } from "./_load-env.mjs"; // 把 .env 的 Z_AI_API_KEY 灌进 process.env
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "../..");
 
 const API_KEY = readApiKey();
 if (!API_KEY) { console.log("skip: no API key configured"); process.exit(0); }

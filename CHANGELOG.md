@@ -17,6 +17,7 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **概念图 v2(ELK 引擎 + draw.io 皮肤)** —— AI 概念图产物整体重做:v0.12 的手写径向布局(空白与拥挤并存、边交叉、无分组、单色调)退役,换 elkjs——draw.io 新版同款 Eclipse Layout Kernel(懒加载 chunk,不动主束)。`show_concept_map` 新增可选 `groups` 分组字段,AI 可以声明概念分组;未声明时按邻接关系兜底聚类,密集关系图不再摊成一张大饼。视觉换 draw.io 经典词汇:同色系"浅填充+深描边"五色色板(暗色主题明度反转同色相)、分组=带标题栏的容器盒、连线=正交路由(直角折线绕开盒子)+箭头、边标签=胶囊白晕压线可读、hub(度数最大)更大更粗,入场 stagger。verify-artifact-cmap-v2(确定性/零重叠/组包含/边端点贴节点边界/边界防御)+ 破坏验证 2/2;边端点断言防 elkjs `INCLUDE_CHILDREN` 下组内边坐标系(hoist 到根+container 字段)错位这类回归。
 - **图产物语法自动修复** —— AI 画图(draw_diagram)偶发 mermaid 语法滑丝,此前学习者只能看到源码 fallback;现在渲染失败会带解析错误自动回主进程让 LLM 定点修复(只修语法不重画,一轮封顶),修好自动重渲,会话内缓存修复稿不重复调用;修复失败或未配模型时保持原 fallback,绝不白屏。出题侧同步升级:draw_diagram 提示词加图类型选型指南(流程/时序/状态按内容选)+ 标签引号规则(中文/括号 label 必须引号包裹——裸括号是渲染失败首因,防患于修复之前)。思想取自 archify 的"生成→验证回执→带错修复"循环。verify-diagram-repair T1-T5 + 破坏验证 2/2。
 
 ## [0.20.0] - 2026-08-22

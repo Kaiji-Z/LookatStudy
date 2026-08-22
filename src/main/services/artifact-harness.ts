@@ -39,6 +39,9 @@ export interface ConceptMapData {
   title: string;
   nodes: { id: string; label: string }[];
   edges: { from: string; to: string; label?: string }[];
+  /** v0.21 可选概念分组:每组 ≥2 节点;渲染层 ELK 复合布局画成带标题栏容器。
+   *  缺省/无效时客户端按邻接聚类兜底(见 renderer/lib/cmap-elk-layout.ts)。 */
+  groups?: { id: string; label: string; nodeIds: string[] }[];
 }
 
 export interface QuizData {
@@ -118,6 +121,15 @@ export const conceptMapSchema = z
         }),
       )
       .min(1),
+    groups: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          label: z.string().min(1),
+          nodeIds: z.array(z.string().min(1)).min(2),
+        }),
+      )
+      .optional(),
   })
   .refine(
     (d) => {
@@ -203,7 +215,8 @@ export const guessSchema = z.object({
 // §3  sanitize —— graceful 修复(LLM 输出总会出错,不 throw)
 // ============================================================
 
-/** 修复 concept_map:丢弃指向不存在 node 的 edge。 */
+/** 修复 concept_map:丢弃指向不存在 node 的 edge;groups 净化(未知 nodeId/
+ *  跨组重复剔除,<2 成员的组丢弃;全无效或单组覆盖全部 → 不下发,渲染层兜底)。 */
 function sanitizeConceptMap(input: unknown): SanitizeResult<ConceptMapData> {
   const warnings: string[] = [];
   const d = (input ?? {}) as Partial<ConceptMapData>;
@@ -218,6 +231,26 @@ function sanitizeConceptMap(input: unknown): SanitizeResult<ConceptMapData> {
         return ok;
       })
     : [];
+  const assigned = new Set<string>();
+  let droppedGroups = 0;
+  const groups: NonNullable<ConceptMapData["groups"]> = [];
+  if (Array.isArray(d.groups)) {
+    for (const g of d.groups) {
+      if (!g?.id || !g.label) continue;
+      const nodeIds = [...new Set((Array.isArray(g.nodeIds) ? g.nodeIds : []).filter((nid) => ids.has(nid) && !assigned.has(nid)))];
+      if (nodeIds.length < 2) {
+        droppedGroups++;
+        continue;
+      }
+      nodeIds.forEach((nid) => assigned.add(nid));
+      groups.push({ id: g.id, label: g.label, nodeIds });
+    }
+  }
+  if (droppedGroups > 0) {
+    warnings.push(`丢弃了 ${droppedGroups} 个无效概念分组`);
+  }
+  const singleFullCover = groups.length === 1 && assigned.size === nodes.length && nodes.length > 2;
+  const useGroups = groups.length > 0 && !singleFullCover ? groups : undefined;
   if (nodes.length < 2) {
     warnings.push("概念节点少于 2 个,渲染可能不完整");
   }
@@ -227,6 +260,7 @@ function sanitizeConceptMap(input: unknown): SanitizeResult<ConceptMapData> {
       title: typeof d.title === "string" && d.title ? d.title : "概念图",
       nodes,
       edges,
+      ...(useGroups ? { groups: useGroups } : {}),
     },
     warnings,
   };
@@ -433,7 +467,7 @@ export function sanitizeArtifact(input: unknown, type: string): SanitizeResult {
 
 export const QUALITY_GUIDE = {
   concept_map:
-    "质量要求:6-9 个节点。以一个中心概念为根(其余概念大多与它相关),但根的直接子节点 ≤ 4 —— 不要星形摊大饼;二级概念之间有真实关系就给交叉边(不是纯树)。边标签用具体关系词(如 生成/依赖/对比/输入),不要全用『包含』。每个节点 label ≤ 8 字。id 用英文小写下划线(如 attention / feed_forward)。",
+    "质量要求:6-9 个节点。以一个中心概念为根(其余概念大多与它相关),但根的直接子节点 ≤ 4 —— 不要星形摊大饼;二级概念之间有真实关系就给交叉边(不是纯树)。边标签用具体关系词(如 生成/依赖/对比/输入),不要全用『包含』。每个节点 label ≤ 8 字。id 用英文小写下划线(如 attention / feed_forward)。可选 groups:把相关的概念归成 2-4 组(每组 2-4 个节点,组名 ≤ 6 字,允许个别枢纽节点不分组)——分组会画成带标题的容器框,能显著提升可读性。",
   quiz:
     "质量要求:3-4 题最佳(最多 5 题),每题 4 个选项,distractor 要有迷惑性(不能明显荒谬),explanation 说清为什么对/错。",
   compare_table:

@@ -714,6 +714,38 @@ html.light .exam-bubble-locked {
 }
 /* .mode-tab / .mode-tab-active removed (audit: orphan, 0 usages — dead since v0.6 segmented-control migration) */
 
+/* ============ 概念图 v0.21 draw.io 词汇色板(--cm-c0..c4) ============
+ * 同色系"浅填充 + 深描边"(draw.io 经典配色);暗色(默认)做明度反转:
+ * 深填充 + 亮描边,同一色相。节点吃 fill/line 全值,组容器吃低透明度 tint。
+ * 亮色值 = draw.io 经典;暗色值同 hue 反转(手调,和 surface 阶梯协调)。 */
+:root {
+  --cm-c0-fill: #1C3352; --cm-c0-line: #6F9FD4;  /* blue */
+  --cm-c1-fill: #1F3A29; --cm-c1-line: #7FB37F;  /* green */
+  --cm-c2-fill: #42301A; --cm-c2-line: #CFA05E;  /* orange */
+  --cm-c3-fill: #3D3620; --cm-c3-line: #CBB75E;  /* yellow */
+  --cm-c4-fill: #33294A; --cm-c4-line: #A48DCB;  /* violet */
+}
+html.light {
+  --cm-c0-fill: #DAE8FC; --cm-c0-line: #6C8EBF;
+  --cm-c1-fill: #D5E8D4; --cm-c1-line: #82B366;
+  --cm-c2-fill: #FFE6CC; --cm-c2-line: #D79B00;
+  --cm-c3-fill: #FFF2CC; --cm-c3-line: #D6B656;
+  --cm-c4-fill: #E1D5E7; --cm-c4-line: #9673A6;
+}
+/* 入场 stagger(组→边→节点,序号延迟);reduced-motion 由下方全局块关停 */
+@keyframes cm-node-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.cm-enter {
+  animation: cm-node-enter 220ms var(--ease-out-expo, ease-out) both;
+}
+/* 组容器 tint 与标题栏条带:暗色底上 tint 要重一档才可见(评审:0.24 深色近隐形) */
+.cm-group-box { fill-opacity: 0.42; stroke-opacity: 0.85; stroke-width: 1.25; }
+.cm-group-head { fill-opacity: 0.18; }
+html.light .cm-group-box { fill-opacity: 0.55; stroke-opacity: 0.95; }
+html.light .cm-group-head { fill-opacity: 0.22; }
+
 /* Chat message entrance */
 @keyframes msg-enter {
   from { opacity: 0; transform: translateY(8px); }
@@ -963,6 +995,8 @@ html.light ::-webkit-scrollbar-thumb:hover {
   .cp-keypress .cp-mascot { animation: none; }
   .cp-screen-key-flash { animation: none; opacity: 0.9; }
   .cp-screen-wave rect { animation: none; transform: scaleY(0.6); }
+  /* 概念图 v0.21 入场 stagger:全局 0.01ms 只压时长不清延迟,这里补清延迟防"逐个闪现" */
+  .cm-enter { animation-delay: 0ms !important; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;

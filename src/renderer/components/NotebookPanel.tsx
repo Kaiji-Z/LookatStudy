@@ -304,27 +304,8 @@ function ContentTab({
   const [quoteBtn, setQuoteBtn] = useState<{ x: number; y: number; transform?: string; text: string; surrounding: string; offsets?: { start: number; end: number } } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null); // 整个讲解容器(标题+正文+提示)
   const proseRef = useRef<HTMLDivElement>(null); // 仅 Markdown 正文(offset 计算和画线基于此,避免标题/提示污染偏移)
-
-  /* 拖选中浮层穿透:拖选扩展的指针路线会扫过浮钮(右侧=向右多选的必经之路),
-     浏览器在按钮上解析不出文字插入点 → 选区漂移。手势期间浮层可见但
-     pointer-events:none,松开恢复可点;按下点在浮层自身(要点按钮)不算拖选。 */
-  const [popoverSelecting, setPopoverSelecting] = useState(false);
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      const el = e.target as Element | null;
-      if (el?.closest?.("[data-selection-popover]")) return;
-      setPopoverSelecting(true);
-    };
-    const onUp = () => setPopoverSelecting(false);
-    window.addEventListener("pointerdown", onDown, true);
-    window.addEventListener("pointerup", onUp, true);
-    window.addEventListener("pointercancel", onUp, true);
-    return () => {
-      window.removeEventListener("pointerdown", onDown, true);
-      window.removeEventListener("pointerup", onUp, true);
-      window.removeEventListener("pointercancel", onUp, true);
-    };
-  }, []);
+  /* 粗指针(手机)上浮钮按 44px 命中底线放大 → 定位的宽度估算同步放大 */
+  const coarsePointer = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 
   useEffect(() => {
     if (!selectedNode) {
@@ -438,8 +419,8 @@ function ContentTab({
     [],
   );
 
-  // 鼠标松开时检查选区(哪里不会点哪里 + 加到笔记)
-  const handleMouseUp = useCallback(() => {
+  // 选区评估:检查选区有效性并给浮钮落位(pointerup 即时/选区稳定 250ms 两条路进来)
+  const evaluateSelection = useCallback(() => {
     if (!onQuoteToChat && !onSaveContentNote) return;
     const sel = window.getSelection();
     const text = sel?.toString().trim() ?? "";
@@ -467,8 +448,8 @@ function ContentTab({
     const modelText = proseEl ? getTextModel(proseEl).text : text;
     const startIdx = offsets ? offsets.start : modelText.indexOf(text);
     const surrounding = startIdx >= 0 ? modelText.slice(Math.max(0, startIdx - 30), startIdx + text.length + 30) : text;
-    // 浮钮定位:右侧优先(手机 Chrome 原生 复制/分享 菜单锚在选区上方,上侧必被遮);
-    // 末行行盒作锚 → 多行拖选时跟"最后一个字"而非外接框右缘
+    // 浮钮定位:fine=右侧优先(末行行盒锚最后一个字);coarse=选区下方
+    // (避开拖选手柄与上方原生菜单,见 selection-popover.ts 注释)
     const rects = range.getClientRects();
     const endRect = rects.length ? rects[rects.length - 1] : rect;
     const pos = selectionPopoverPosition(
@@ -481,7 +462,7 @@ function ContentTab({
         height: rect.height,
       },
       containerRect.width,
-      onQuoteToChat ? 150 : 100,
+      onQuoteToChat ? (coarsePointer ? 190 : 150) : coarsePointer ? 140 : 100,
       {
         left: endRect.left - containerRect.left,
         top: endRect.top - containerRect.top,
@@ -490,6 +471,7 @@ function ContentTab({
         width: endRect.width,
         height: endRect.height,
       },
+      coarsePointer,
     );
     setQuoteBtn({
       x: pos.left,
@@ -499,35 +481,57 @@ function ContentTab({
       surrounding,
       offsets: offsets ?? undefined,
     });
-  }, [onQuoteToChat, onSaveContentNote]);
+  }, [onQuoteToChat, onSaveContentNote, coarsePointer]);
 
-  // selectionchange 走同一检测:触屏长按选字/拖选区句柄不触发 mouseup;
-  // v11 桌面拖选也即现——80ms 节流跟位(拖选过程中浮钮就出现并跟随,
-  // 不再等松手;mouseup 仍做最终落位)。
-  // 选区清空时延迟 250ms 收按钮 —— 触屏点按钮的 tap 会先清选区再派发 click,立即隐藏会吃掉点击。
+  /* 浮钮显示时机(2026-08-22 用户拍板:松开才显示,拖选途中一律隐藏——
+     途中跟随会挡拖选路线,手机上还跟原生选择菜单抢位):
+     - selectionchange 有文字 = 变化流(桌面拖选/手机拖手柄进行中)→ 立即隐藏,
+       稳定且无按住的手势才落位;手机拖手柄松开没有页面事件可听,只能靠稳定
+       窗口判定,故 coarse 放宽到 600ms(拖柄途中的短暂停顿不弹);
+     - pointerup(鼠标松开/抬指)→ 立即评估落位(桌面拖选松手零等待);
+     - 选区清空延迟 250ms 收按钮 —— 触屏点按钮的 tap 会先清选区再派发 click,立即隐藏会吃掉点击。 */
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    const SETTLE = coarsePointer ? 600 : 250;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
     let hideTimer: ReturnType<typeof setTimeout> | null = null;
+    let gesture = false; // 指针按住中(拖选手势):稳定计时到点也不放行,松手的 pointerup 负责落位
+    const selectionHasText = () => (window.getSelection()?.toString().trim().length ?? 0) >= 2;
     const onChange = () => {
-      if (timer) return; // 节流:窗口内的事件忽略,到点必然执行(非尾随防抖,拖选中持续刷新)
-      timer = setTimeout(() => {
-        timer = null;
-        const hasText = (window.getSelection()?.toString().trim().length ?? 0) >= 2;
-        if (hasText) {
-          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-          handleMouseUp();
-        } else if (!hideTimer) {
-          hideTimer = setTimeout(() => setQuoteBtn((cur) => (cur ? null : cur)), 250);
-        }
-      }, 80);
+      if (selectionHasText()) {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        setQuoteBtn((cur) => (cur ? null : cur)); // 变化流中一律隐藏
+        if (settleTimer) clearTimeout(settleTimer);
+        settleTimer = setTimeout(() => {
+          settleTimer = null;
+          if (!gesture && selectionHasText()) evaluateSelection();
+        }, SETTLE);
+      } else if (!hideTimer) {
+        hideTimer = setTimeout(() => setQuoteBtn((cur) => (cur ? null : cur)), 250);
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as Element | null;
+      if (el?.closest?.("[data-selection-popover]")) return; // 按下点在浮钮自身=要点击,不算拖选
+      gesture = true;
+    };
+    const onUp = () => {
+      gesture = false;
+      if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+      if (!hideTimer && selectionHasText()) evaluateSelection(); // 松开立即落位
     };
     document.addEventListener("selectionchange", onChange);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
     return () => {
       document.removeEventListener("selectionchange", onChange);
-      if (timer) clearTimeout(timer);
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+      if (settleTimer) clearTimeout(settleTimer);
       if (hideTimer) clearTimeout(hideTimer);
     };
-  }, [handleMouseUp]);
+  }, [evaluateSelection]);
 
   const handleQuoteClick = useCallback(() => {
     if (!quoteBtn || !onQuoteToChat) return;
@@ -571,7 +575,7 @@ function ContentTab({
     );
   }
   return (
-    <div className="p-5 relative" data-testid="node-content" ref={contentRef} onMouseUp={handleMouseUp}>
+    <div className="p-5 relative" data-testid="node-content" ref={contentRef}>
       {/* 整课朗读(v6):sticky 悬浮在讲解视口右上角,不随正文滚动 ——
           用户翻到后面也能一键停。吸顶行 pointer-events-none,只有按钮本身可点,
           不挡吸顶行底下的正文选区/点击。 */}
@@ -711,12 +715,12 @@ function ContentTab({
           </div>
         </div>
       )}
-      {/* 选区浮按钮:提问 + 加到笔记;拖选手势期间穿透(见 popoverSelecting) */}
+      {/* 选区浮按钮:提问 + 加到笔记;固定单行(white-space nowrap 见 index.css),松手才显示 */}
       {quoteBtn && (
         <div
           data-selection-popover
-          style={{ left: quoteBtn.x, top: quoteBtn.y, transform: quoteBtn.transform, pointerEvents: popoverSelecting ? "none" : undefined }}
-          className="absolute z-20 flex items-center gap-0.5 msg-enter"
+          style={{ left: quoteBtn.x, top: quoteBtn.y, transform: quoteBtn.transform }}
+          className="absolute z-20 flex items-center gap-0.5 msg-enter whitespace-nowrap"
         >
           {onQuoteToChat && (
             <button

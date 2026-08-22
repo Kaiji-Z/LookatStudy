@@ -558,6 +558,28 @@ html.light .exam-bubble-locked {
 }
 
 /* ============================================================
+ * 选区浮按钮(提问这段 / ✏️ 加笔记,2026-08-22 用户拍板):
+ * - 固定单行永不换行(white-space 继承到按钮文字);
+ * - 显示时机=指针松开/选区稳定(拖选途中一律隐藏,组件层 settle 门控);
+ * - 粗指针(手机)抬到 44px 手指命中底线(body 级字号),桌面 fine 维持紧凑 label 级。
+ * ============================================================ */
+[data-selection-popover] { white-space: nowrap; }
+
+@media (pointer: coarse) {
+  [data-selection-popover] button {
+    min-height: 44px;
+    padding-left: 0.875rem;
+    padding-right: 0.875rem;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+  [data-selection-popover] button svg {
+    width: 1rem;
+    height: 1rem;
+  }
+}
+
+/* ============================================================
  * v0.5 选关地图节点美术(多邻国 2024+ 现代风)
  * 核心:radial-gradient 球体光照 + ::before 内高光 + ::after 发光环
  * 四态差异最大化:locked 沉重凹陷 / available 发光脉冲 /

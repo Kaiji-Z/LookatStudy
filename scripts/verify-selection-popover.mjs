@@ -1,11 +1,10 @@
 /**
  * verify-selection-popover.mjs —— 选区浮钮定位纯函数验证(selection-popover.ts)。
  *
- * 定位策略:手机 Chrome 原生 复制/分享 菜单锚在选区上方,浮钮上侧必被遮 →
- * 优先选区右侧垂直居中;右侧放不下试左侧;两侧都满落选区下方。
- * 多行拖选传 endRect(末行行盒)→ 右侧锚"最后一个字"而非外接框右缘。
- * 拖选干扰(指针扫过浮钮→选区漂移)由组件层穿透解决(pointerdown~up 期间
- * pointer-events:none),本套件守接线。
+ * 定位策略:fine 指针(桌面)右侧优先(末行行盒锚"最后一个字");
+ * coarse 指针(手机)直接落选区下方(避开拖选手柄与上方原生菜单)。
+ * 显示时机=松手/选区稳定(拖选途中一律隐藏,coarse settle 600ms),
+ * 组件层接线由本套件守卫。
  *
  * 跑法: npx tsx scripts/verify-selection-popover.mjs (也被 verify:core 调用)
  */
@@ -97,15 +96,47 @@ test("无 endRect=旧行为(外接框右缘),签名向后兼容", () => {
   assert.equal(p.left, 148); // 20+120+8
 });
 
-test("接线守卫:两容器 拖选穿透+末行锚 全链在源码", () => {
+test("coarse(preferBelow):右侧明明放得下也直接落选区下方(避开拖选手柄)", () => {
+  const p = selectionPopoverPosition(sel(20, 100, 120, 20), 390, 150, undefined, true);
+  assert.equal(p.transform, "translate(0, 0)");
+  assert.equal(p.left, 20);
+  assert.equal(p.top, 128); // bottom 120 + 8
+});
+
+test("coarse(preferBelow):下方左缘钳制不溢出容器", () => {
+  const p = selectionPopoverPosition(sel(300, 100, 80, 20), 390, 150, undefined, true);
+  assert.equal(p.left, 240); // 300 → 钳到 390-150
+  assert.equal(p.top, 128);
+});
+
+test("coarse(preferBelow):多行选区取末行 bottom(不是外接框)", () => {
+  const selRect = sel(0, 100, 390, 60);
+  const endRect = sel(0, 140, 120, 20);
+  const p = selectionPopoverPosition(selRect, 390, 150, endRect, true);
+  assert.equal(p.top, 168); // 末行 bottom 160 + 8
+});
+
+test("接线守卫:两容器 松手才现+coarse 下方锚 全链在源码", () => {
   for (const f of ["NotebookPanel.tsx", "ChatStream.tsx"]) {
     const src = readFileSync(new URL(`../src/renderer/components/${f}`, import.meta.url), "utf8");
-    assert.ok(src.includes("data-selection-popover"), `${f}: 浮层带 data 锚(按下点豁免判定用)`);
-    assert.ok(src.includes('pointerEvents: popoverSelecting ? "none" : undefined'), `${f}: 拖选手势期间浮层穿透`);
-    assert.ok(src.includes('closest?.("[data-selection-popover]")'), `${f}: 按下点在浮层自身不算拖选`);
-    assert.ok(src.includes("pointercancel"), `${f}: 指针中断(触屏滚动取消)恢复可点`);
+    assert.ok(src.includes("data-selection-popover"), `${f}: 浮层带 data 锚(CSS 钩+豁免判定)`);
+    assert.ok(src.includes('const SETTLE = coarsePointer ? 600 : 250;'), `${f}: 手机稳定窗口 600ms(拖柄停顿不弹)`);
+    assert.ok(src.includes("settleTimer = setTimeout"), `${f}: 选区稳定才落位`);
+    assert.ok(src.includes("if (!gesture && selectionHasText()) evaluateSelection();"), `${f}: 稳定落位受手势门控(桌面拖选中不放行)`);
+    assert.ok(src.includes("if (!hideTimer && selectionHasText()) evaluateSelection(); // 松开立即落位"), `${f}: pointerup 松手即落位`);
+    assert.ok(src.includes('closest?.("[data-selection-popover]")'), `${f}: 按下点在浮钮自身不算拖选`);
+    assert.ok(src.includes("pointercancel"), `${f}: 指针中断(触屏滚动取消)恢复`);
     assert.ok(src.includes("rects[rects.length - 1]"), `${f}: 末行行盒锚最后一个字`);
+    assert.ok(/coarsePointer,\s*\);?\s*\n\s*(setQuoteBtn|setChatNoteBtn)/.test(src) || src.includes("      coarsePointer,\n    );"), `${f}: coarse 传入 preferBelow`);
+    assert.ok(!src.includes("popoverSelecting"), `${f}: 旧穿透机制已撤(显示时机改松手后冗余)`);
+    assert.ok(!src.includes("onMouseUp={"), `${f}: 旧 mouseup 通道已并入 pointerup`);
   }
+});
+
+test("接线守卫:CSS 单行铁律+分端尺寸", () => {
+  const css = readFileSync(new URL("../src/renderer/index.css", import.meta.url), "utf8");
+  assert.ok(css.includes("[data-selection-popover] { white-space: nowrap; }"), "浮钮固定单行永不换行");
+  assert.ok(/@media \(pointer: coarse\)\s*\{\s*\[data-selection-popover\] button\s*\{[^}]*min-height: 44px/.test(css), "粗指针 44px 命中底线");
 });
 
 console.log(`\n${passed} passed`);

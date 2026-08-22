@@ -1321,11 +1321,13 @@ console.log("✓ T21 v11 桌宠接线(穿透切换/协议/bus 隐身/设置开�
   );
   const nb = read("components/NotebookPanel.tsx");
   assert.ok(
-    nb.includes("if (timer) return;") && nb.includes("}, 80);"),
-    "T22: 划线浮钮拖选即现(selectionchange 80ms 节流跟位,非防抖等松手)",
+    nb.includes("const SETTLE = coarsePointer ? 600 : 250;")
+      && nb.includes("if (!hideTimer && selectionHasText()) evaluateSelection(); // 松开立即落位")
+      && nb.includes("(cur ? null : cur)); // 变化流中一律隐藏"),
+    "T22: 划线浮钮松手才现(变化流一律隐藏,稳定/pointerup 才落位;2026-08-22 用户拍板取代旧 80ms 途中即现)",
   );
 }
-console.log("OK T22 v11.1 guards: karaoke-with-marks / rail glide / live quote btn / note anchor self-heal");
+console.log("OK T22 v11.1 guards: karaoke-with-marks / rail glide / quote btn on release / note anchor self-heal");
 
 // ---------------------------------------------------------------------------
 console.log("T23 跟句悬空不隐身(v0.18:detached readingRange 兜底)");

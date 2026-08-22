@@ -209,29 +209,11 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
     return () => window.removeEventListener("lookatstudy-jump-to-chat-note", handler);
   }, []);
 
-  // 对话流画线加笔记:选 assistant 消息文字 → 浮出"✏️ 加笔记"按钮
+  // 对话流画线加笔记:选 assistant 消息文字 → 松手后浮出"✏️ 加笔记"按钮
   const [chatNoteBtn, setChatNoteBtn] = useState<{ x: number; y: number; transform?: string; text: string; msgId: string; startOffset?: number; endOffset?: number } | null>(null);
-  /* 拖选中浮层穿透:拖选扩展的指针路线会扫过浮钮(右侧=向右多选的必经之路),
-     浏览器在按钮上解析不出文字插入点 → 选区漂移。手势期间浮层可见但
-     pointer-events:none,松开恢复可点;按下点在浮层自身(要点按钮)不算拖选。 */
-  const [popoverSelecting, setPopoverSelecting] = useState(false);
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      const el = e.target as Element | null;
-      if (el?.closest?.("[data-selection-popover]")) return;
-      setPopoverSelecting(true);
-    };
-    const onUp = () => setPopoverSelecting(false);
-    window.addEventListener("pointerdown", onDown, true);
-    window.addEventListener("pointerup", onUp, true);
-    window.addEventListener("pointercancel", onUp, true);
-    return () => {
-      window.removeEventListener("pointerdown", onDown, true);
-      window.removeEventListener("pointerup", onUp, true);
-      window.removeEventListener("pointercancel", onUp, true);
-    };
-  }, []);
-  const handleChatMouseUp = useCallback(() => {
+  /* 粗指针(手机)上浮钮按 44px 命中底线放大 → 定位的宽度估算同步放大 */
+  const coarsePointer = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  const evaluateSelection = useCallback(() => {
     if (!onSaveChatNote || !threadId) return;
     const sel = window.getSelection();
     const text = sel?.toString().trim() ?? "";
@@ -264,8 +246,8 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
     const offsets = rangeToOffsets(range, model);
     const rect = range.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
-    // 浮钮定位:右侧优先(手机 Chrome 原生 复制/分享 菜单锚在选区上方,上侧必被遮);
-    // 末行行盒作锚 → 多行拖选时跟"最后一个字"而非外接框右缘
+    // 浮钮定位:fine=右侧优先(末行行盒锚最后一个字);coarse=选区下方
+    // (避开拖选手柄与上方原生菜单,见 selection-popover.ts 注释)
     const rects = range.getClientRects();
     const endRect = rects.length ? rects[rects.length - 1] : rect;
     const pos = selectionPopoverPosition(
@@ -278,7 +260,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         height: rect.height,
       },
       containerRect.width,
-      110,
+      coarsePointer ? 150 : 110,
       {
         left: endRect.left - containerRect.left,
         top: endRect.top - containerRect.top,
@@ -287,6 +269,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         width: endRect.width,
         height: endRect.height,
       },
+      coarsePointer,
     );
     setChatNoteBtn({
       x: pos.left,
@@ -297,32 +280,57 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       startOffset: offsets?.start,
       endOffset: offsets?.end,
     });
-  }, [onSaveChatNote, threadId]);
+  }, [onSaveChatNote, threadId, coarsePointer]);
 
-  // 触屏长按选字不触发 mouseup:selectionchange(防抖)走同一检测(与 NotebookPanel 同款);
-  // 选区清空延迟 250ms 收按钮,给 tap 的 click 留竞态窗口。
+  /* 浮钮显示时机(2026-08-22 用户拍板:松开才显示,拖选途中一律隐藏——
+     途中跟随会挡拖选路线,手机上还跟原生选择菜单抢位):
+     - selectionchange 有文字 = 变化流(桌面拖选/手机拖手柄进行中)→ 立即隐藏,
+       稳定且无按住的手势才落位;手机拖手柄松开没有页面事件可听,只能靠稳定
+       窗口判定,故 coarse 放宽到 600ms(拖柄途中的短暂停顿不弹);
+     - pointerup(鼠标松开/抬指)→ 立即评估落位(桌面拖选松手零等待);
+     - 选区清空延迟 250ms 收按钮 —— 触屏点按钮的 tap 会先清选区再派发 click,立即隐藏会吃掉点击。 */
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    const SETTLE = coarsePointer ? 600 : 250;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
     let hideTimer: ReturnType<typeof setTimeout> | null = null;
+    let gesture = false; // 指针按住中(拖选手势):稳定计时到点也不放行,松手的 pointerup 负责落位
+    const selectionHasText = () => (window.getSelection()?.toString().trim().length ?? 0) >= 2;
     const onChange = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        const hasText = (window.getSelection()?.toString().trim().length ?? 0) >= 2;
-        if (hasText) {
-          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-          handleChatMouseUp();
-        } else if (!hideTimer) {
-          hideTimer = setTimeout(() => setChatNoteBtn((cur) => (cur ? null : cur)), 250);
-        }
-      }, 250);
+      if (selectionHasText()) {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        setChatNoteBtn((cur) => (cur ? null : cur)); // 变化流中一律隐藏
+        if (settleTimer) clearTimeout(settleTimer);
+        settleTimer = setTimeout(() => {
+          settleTimer = null;
+          if (!gesture && selectionHasText()) evaluateSelection();
+        }, SETTLE);
+      } else if (!hideTimer) {
+        hideTimer = setTimeout(() => setChatNoteBtn((cur) => (cur ? null : cur)), 250);
+      }
+    };
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as Element | null;
+      if (el?.closest?.("[data-selection-popover]")) return; // 按下点在浮钮自身=要点击,不算拖选
+      gesture = true;
+    };
+    const onUp = () => {
+      gesture = false;
+      if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+      if (!hideTimer && selectionHasText()) evaluateSelection(); // 松开立即落位
     };
     document.addEventListener("selectionchange", onChange);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
     return () => {
       document.removeEventListener("selectionchange", onChange);
-      if (timer) clearTimeout(timer);
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+      if (settleTimer) clearTimeout(settleTimer);
       if (hideTimer) clearTimeout(hideTimer);
     };
-  }, [handleChatMouseUp]);
+  }, [evaluateSelection]);
 
   const handleSaveChatNote = useCallback(() => {
     if (!chatNoteBtn || !onSaveChatNote) return;
@@ -376,7 +384,6 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        onMouseUp={handleChatMouseUp}
         className={`h-full overflow-y-auto px-3 py-4 space-y-2 relative ${cardMode ? "" : "px-5 py-6 space-y-6"}`}
         data-testid="chat-stream"
       >
@@ -499,14 +506,14 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         </button>
       )}
 
-      {/* 对话画线加笔记按钮:选 assistant 消息文字后浮出;拖选手势期间穿透(见 popoverSelecting) */}
+      {/* 对话画线加笔记按钮:选 assistant 消息文字松手后浮出;固定单行,粗指针锚选区下方(index.css 分端尺寸) */}
       {chatNoteBtn && (
         <button
           onClick={handleSaveChatNote}
           data-testid="save-chat-note-btn"
           data-selection-popover
-          style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: chatNoteBtn.transform, pointerEvents: popoverSelecting ? "none" : undefined }}
-          className="absolute z-20 px-3 py-1.5 rounded-lg bg-brand text-white text-body font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition msg-enter"
+          style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: chatNoteBtn.transform }}
+          className="absolute z-20 px-3 py-1.5 rounded-lg bg-brand text-white text-body font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition msg-enter whitespace-nowrap"
           title={t("chat.note.add.title")}
         >
           <Pencil className="w-3 h-3" /> {t("chat.note.add")}

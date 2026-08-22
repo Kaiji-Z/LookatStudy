@@ -446,6 +446,18 @@ export async function runAgentTurn(
           )
           .min(1)
           .describe("节点间的关系边"),
+        groups: z
+          .array(
+            z.object({
+              id: z.string().describe("分组唯一 id(如'core')"),
+              label: z.string().describe("分组显示名(≤ 6 字,如'训练流程')"),
+              nodeIds: z.array(z.string()).min(2).describe("组内节点 id 列表(2-4 个)"),
+            }),
+          )
+          .optional()
+          .describe(
+            "概念分组(可选,推荐给):相关的概念归成 2-4 组,每组 2-4 个节点;组名概括这组概念的共性;中心枢纽节点可以不分组。分组会画成带标题的容器框。",
+          ),
       }),
       execute: async (input) => {
         events.onToolCall?.("show_concept_map", input);

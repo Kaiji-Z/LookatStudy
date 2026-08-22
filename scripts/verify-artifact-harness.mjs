@@ -78,6 +78,67 @@ test("T3 concept_map 节点缺 label 被过滤", () => {
   assert.ok(r.warnings.length >= 1, "节点 < 2 应有 warning");
 });
 
+test("T3b concept_map groups 净化(v0.21):未知 id 剔除/被榨干的组丢弃/跨组去重", () => {
+  const r = sanitizeArtifact(
+    {
+      title: "X",
+      nodes: [
+        { id: "a", label: "A" },
+        { id: "b", label: "B" },
+        { id: "c", label: "C" },
+        { id: "d", label: "D" },
+      ],
+      edges: [{ from: "a", to: "b" }],
+      groups: [
+        { id: "g1", label: "甲", nodeIds: ["a", "b", "ghost"] }, // ghost 剔除后仍 ≥2 → 存活
+        { id: "g2", label: "乙", nodeIds: ["c", "ghost2"] }, // 剔除后剩 1 → 整组丢弃
+        { id: "g3", label: "丙", nodeIds: ["a", "d"] }, // a 已归甲 → 剩 d <2 → 丢弃
+      ],
+    },
+    "concept_map",
+  );
+  assert.strictEqual(r.data.groups?.length, 1, "只剩 g1");
+  assert.deepStrictEqual(r.data.groups?.[0]?.nodeIds, ["a", "b"], "ghost 剔除");
+  assert.ok(r.warnings.some((w) => w.includes("2 个无效概念分组")), "丢弃组有 warning");
+});
+
+test("T3c concept_map groups 单组覆盖全部 → 不下发(渲染层兜底)", () => {
+  const r = sanitizeArtifact(
+    {
+      title: "X",
+      nodes: [
+        { id: "a", label: "A" },
+        { id: "b", label: "B" },
+        { id: "c", label: "C" },
+      ],
+      edges: [{ from: "a", to: "b" }],
+      groups: [{ id: "all", label: "全部", nodeIds: ["a", "b", "c"] }],
+    },
+    "concept_map",
+  );
+  assert.strictEqual(r.data.groups, undefined, "单组全覆盖不下发");
+});
+
+test("T3d concept_map 合法 groups 原样透传", () => {
+  const r = sanitizeArtifact(
+    {
+      title: "X",
+      nodes: [
+        { id: "a", label: "A" },
+        { id: "b", label: "B" },
+        { id: "c", label: "C" },
+      ],
+      edges: [{ from: "a", to: "b" }, { from: "b", to: "c" }],
+      groups: [
+        { id: "g1", label: "甲", nodeIds: ["a", "b"] },
+        { id: "g2", label: "乙", nodeIds: ["c"] }, // <2 → 丢弃,c 留给渲染层不分组
+      ],
+    },
+    "concept_map",
+  );
+  assert.deepStrictEqual(r.data.groups, [{ id: "g1", label: "甲", nodeIds: ["a", "b"] }]);
+});
+
 // ============================================================
 // § quiz
 // ============================================================

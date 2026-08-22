@@ -1,30 +1,40 @@
 /**
- * ConceptMapArtifact —— 概念图产物(v0.12 径向重设计)。
+ * ConceptMapArtifact —— 概念图产物(v0.21 ELK 重设计)。
  *
- * v0.2.2 用 dagre TB 分层,但概念图数据形态是"以中心概念展开的网",分层布局
- * 产出宽扁层+交叉边;v0.12 换径向布局(见 lib/conceptmap-layout.ts)。
+ * v0.12 径向布局的视觉评审结论:空白与拥挤并存、边交叉、无层级、单色调。
+ * v0.21 换 elkjs 引擎(draw.io 新版同款 Eclipse Layout Kernel,懒加载 chunk),
+ * 视觉换 draw.io 词汇(见 lib/cmap-elk-layout.ts 头注):
+ *   - 同色系浅填充 + 深描边(色板 CSS 变量 --cm-c0..c4,暗色明度反转)
+ *   - 分组 = 带标题栏的容器盒(复合图,组内紧凑组间留白)
+ *   - 连线 = ELK 正交路由(直角折线绕开盒子) + 箭头
+ *   - 边标签 = 胶囊 + 白晕(paint-order stroke),压线可读
+ *   - hub(度数最大)更大更粗;入场 stagger,reduced-motion 静默
  *
- * 视觉规则(yFiles 图可视化指南 + impeccable Playful Product):
- *   - 节点大小 = 重要度:hub(中心/高度数)更大、accent 描边、粗体;叶子收敛
- *   - 无装饰:去掉旧版每节点一致的左侧色条(side-stripe 禁令),颜色只编码 hub
- *   - 文字两行自适应包裹,不再 14 字硬截断
- *   - 边 = 轻弧贝塞尔 + 中点标签胶囊(宽度与文字同源估算,不再溢出)
- *   - 不加投影滤镜:清晰描边 + 面色分层即可(暗亮双色系走 token)
- *
- * 交互不变:v0.12 CanvasStage 全屏手势弹窗 / 黑板 canvas 变体 / 内联原生滚动 + 缩放按钮。
+ * 布局是异步的(elkjs 动态 import):先占位后渲染,失败保持占位不炸卡片。
+ * 交互不变:CanvasStage 全屏手势弹窗 / 黑板 canvas 变体 / 内联原生滚动 + 缩放按钮。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Share2, AlertTriangle, Maximize2 } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
 import { DiagramViewerModal } from "./DiagramViewerModal.js";
 import { CanvasStage } from "../CanvasStage.js";
-import { radialLayout, labelPillSize, type CmNode, type CmEdge } from "../../lib/conceptmap-layout.js";
+import {
+  layoutConceptMap,
+  estTextWidth,
+  GROUP_TITLE_PX,
+  type CmapLayout,
+  type CmNode,
+  type CmEdge,
+  type CmGroup,
+} from "../../lib/cmap-elk-layout.js";
 
 interface ConceptMapData {
   artifactType: "concept_map";
   title: string;
   nodes: { id: string; label: string }[];
   edges: { from: string; to: string; label?: string }[];
+  /** v0.21 可选概念分组(LLM 给;无效/缺省时客户端邻接聚类兜底) */
+  groups?: { id: string; label: string; nodeIds: string[] }[];
   /** harness 可能注入的修复警告 */
   warnings?: string[];
 }
@@ -33,16 +43,16 @@ const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 0.2;
 
-function ConceptMapSvg({ data }: { data: ConceptMapData }) {
-  const L = useMemo(
-    () => radialLayout(data.nodes as CmNode[], data.edges as CmEdge[]),
-    [data.nodes, data.edges],
-  );
+function pathD(pts: { x: number; y: number }[]): string {
+  return pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+}
+
+function CmapSvg({ layout }: { layout: CmapLayout }) {
   return (
     <svg
-      width={L.width}
-      height={L.height}
-      viewBox={`0 0 ${L.width} ${L.height}`}
+      width={layout.width}
+      height={layout.height}
+      viewBox={`0 0 ${layout.width} ${layout.height}`}
       style={{ display: "block" }}
       data-testid="conceptmap-svg"
     >
@@ -60,35 +70,84 @@ function ConceptMapSvg({ data }: { data: ConceptMapData }) {
         </marker>
       </defs>
 
-      {/* 边:先画在节点下层;标签胶囊不透明,压线可读 */}
-      {L.edges.map(({ edge, d, labelPt }, i) => {
-        const pill = edge.label ? labelPillSize(edge.label) : null;
+      {/* 组容器:先画(最底层);同色相 tint 面+描边(透明度走 CSS 暗亮分档)+ 标题栏条带 */}
+      {layout.groups.map((g, i) => (
+        <g key={`g-${g.id}`} className="cm-enter" style={{ animationDelay: `${i * 60}ms` }}>
+          <rect
+            x={g.x}
+            y={g.y}
+            width={g.w}
+            height={g.h}
+            rx={14}
+            className="cm-group-box"
+            style={{ fill: `var(--cm-c${g.colorIdx}-fill)`, stroke: `var(--cm-c${g.colorIdx}-line)` }}
+          />
+          {/* 标题栏:上圆角条带(上 rect 带 rx,下 rect 补方角),组色同相加深 */}
+          <rect
+            x={g.x}
+            y={g.y}
+            width={g.w}
+            height={GROUP_TITLE_PX}
+            rx={14}
+            className="cm-group-head"
+            style={{ fill: `var(--cm-c${g.colorIdx}-line)` }}
+          />
+          <rect
+            x={g.x}
+            y={g.y + GROUP_TITLE_PX / 2}
+            width={g.w}
+            height={GROUP_TITLE_PX / 2}
+            className="cm-group-head"
+            style={{ fill: `var(--cm-c${g.colorIdx}-line)` }}
+          />
+          <text
+            x={g.x + 14}
+            y={g.y + 22}
+            fontSize={12}
+            fontWeight={600}
+            fill={`var(--cm-c${g.colorIdx}-line)`}
+            data-testid="conceptmap-group-label"
+          >
+            {g.label}
+          </text>
+        </g>
+      ))}
+
+      {/* 边:正交折线 + 箭头;标签胶囊带白晕(paint-order stroke),压线可读 */}
+      {layout.edges.map((e, i) => {
+        const pill = e.label
+          ? { width: estTextWidth(e.label, 12) + 16, height: 19 }
+          : null;
         return (
-          <g key={`e-${i}`}>
+          <g key={`e-${i}`} className="cm-enter" style={{ animationDelay: `${(layout.groups.length + 1) * 60 + i * 30}ms` }}>
             <path
-              d={d}
-              className="fill-none stroke-ink-faint/70"
+              d={pathD(e.pts)}
+              className="fill-none stroke-ink-faint/80"
               strokeWidth={1.6}
               markerEnd="url(#cm-arrow)"
             />
-            {edge.label && pill && (
+            {e.label && pill && e.labelPt && (
               <g>
                 <rect
-                  x={labelPt.x - pill.width / 2}
-                  y={labelPt.y - pill.height / 2}
+                  x={e.labelPt.x - pill.width / 2}
+                  y={e.labelPt.y - pill.height / 2}
                   width={pill.width}
                   height={pill.height}
                   rx={pill.height / 2}
-                  className="fill-surface-0 stroke-[var(--border-faint)]"
+                  className="fill-surface-0/95 stroke-[var(--border-faint)]"
                   strokeWidth={1}
                 />
                 <text
-                  x={labelPt.x}
-                  y={labelPt.y + 3.5}
+                  x={e.labelPt.x}
+                  y={e.labelPt.y + 3.5}
                   textAnchor="middle"
-                  className="fill-ink-muted text-caption font-medium"
+                  fontSize={12}
+                  className="fill-ink-muted font-medium"
+                  style={{ paintOrder: "stroke" }}
+                  stroke="var(--surface-0)"
+                  strokeWidth={3}
                 >
-                  {edge.label}
+                  {e.label}
                 </text>
               </g>
             )}
@@ -96,36 +155,37 @@ function ConceptMapSvg({ data }: { data: ConceptMapData }) {
         );
       })}
 
-      {/* 节点:hub = accent 描边 + 染底 + 粗体;普通 = 中性面 + 标准描边 */}
-      {[...L.nodes.values()].map((n) => {
-        const x = n.center.x - n.box.width / 2;
-        const y = n.center.y - n.box.height / 2;
-        const fs = n.box.hub ? 14 : 13;
+      {/* 节点:同色系浅填充+深描边;hub 更大更粗;无组 = 中性面 */}
+      {layout.nodes.map((n, i) => {
+        const fill = n.colorIdx >= 0 ? `var(--cm-c${n.colorIdx}-fill)` : "var(--surface-3)";
+        const line = n.colorIdx >= 0 ? `var(--cm-c${n.colorIdx}-line)` : "var(--border)";
+        const fs = n.hub ? 14 : 13;
         return (
-          <g key={n.id}>
+          <g
+            key={n.id}
+            className="cm-enter"
+            style={{ animationDelay: `${(layout.groups.length + 2) * 60 + i * 35}ms` }}
+          >
             <rect
-              x={x}
-              y={y}
-              width={n.box.width}
-              height={n.box.height}
-              rx={n.box.hub ? 13 : 11}
-              className={
-                n.box.hub
-                  ? "fill-accent/10 stroke-accent/80"
-                  : "fill-surface-3 stroke-[var(--border)]"
-              }
-              strokeWidth={n.box.hub ? 1.6 : 1.1}
+              x={n.x}
+              y={n.y}
+              width={n.w}
+              height={n.h}
+              rx={n.hub ? 12 : 10}
+              fill={fill}
+              stroke={line}
+              strokeWidth={n.hub ? 1.8 : 1.4}
             />
-            {n.box.lines.map((line, li) => (
+            {n.lines.map((l, li) => (
               <text
                 key={li}
-                x={n.center.x}
-                y={n.center.y + (li - (n.box.lines.length - 1) / 2) * 17 + 4.5}
+                x={n.x + n.w / 2}
+                y={n.y + n.h / 2 + (li - (n.lines.length - 1) / 2) * 17 + 4.5}
                 textAnchor="middle"
                 fontSize={fs}
-                className={n.box.hub ? "fill-ink-strong font-bold" : "fill-ink"}
+                className={n.hub ? "fill-ink-strong font-bold" : "fill-ink"}
               >
-                {line}
+                {l}
               </text>
             ))}
           </g>
@@ -138,10 +198,27 @@ function ConceptMapSvg({ data }: { data: ConceptMapData }) {
 export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; variant?: "card" | "canvas" }) {
   const d = data as ConceptMapData;
   const t = useLang();
-  const layout = useMemo(
-    () => radialLayout(d.nodes as CmNode[], d.edges as CmEdge[]),
-    [d.nodes, d.edges],
+  /* ELK 布局是异步的(elkjs 懒加载):先占位,坐标到了再换;key 防同形数据重复算 */
+  const layoutKey = useMemo(
+    () => JSON.stringify({ n: d.nodes, e: d.edges, g: d.groups ?? null }),
+    [d.nodes, d.edges, d.groups],
   );
+  const [layout, setLayout] = useState<CmapLayout | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setLayout(null);
+    layoutConceptMap(d.nodes as CmNode[], d.edges as CmEdge[], (d.groups ?? null) as CmGroup[] | null)
+      .then((l) => {
+        if (alive) setLayout(l);
+      })
+      .catch(() => {
+        /* 布局引擎失败保持占位,不炸卡片 */
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey]);
   const [zoom, setZoom] = useState(1);
   /* 手势分界(v0.11):主界面内联区不吃手势(浏览器页面缩放已被 viewport 禁掉,
      内联只留原生滚动),单指平移/双指捏合只在全屏弹窗舞台里。 */
@@ -150,7 +227,7 @@ export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; 
   // 窄屏初始适宽:内容比视口宽时自动缩到整图可见(手机一眼看全,细节进弹窗捏合看)
   useEffect(() => {
     const el = viewportRef.current;
-    if (!el) return;
+    if (!el || !layout) return;
     const fit = () => {
       const ratio = (el.clientWidth - 16) / layout.width;
       if (ratio < 1) setZoom(Math.max(MIN_ZOOM, +ratio.toFixed(2)));
@@ -159,7 +236,7 @@ export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; 
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [layout.width]);
+  }, [layout?.width, layout]);
   const zoomIn = useCallback(() => setZoom((z) => Math.min(MAX_ZOOM, +(z + ZOOM_STEP).toFixed(2))), []);
   const zoomOut = useCallback(() => setZoom((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2))), []);
   const zoomReset = useCallback(() => setZoom(1), []);
@@ -170,9 +247,14 @@ export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; 
     setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z + delta).toFixed(2))));
   }, []);
 
-  /* canvas 变体:裸内容自然尺寸 —— 黑板/全屏查看器的 CanvasStage 用 transform 接管缩放平移 */
+  /* canvas 变体:裸内容自然尺寸 —— 黑板/全屏查看器的 CanvasStage 用 transform 接管缩放平移。
+     弹窗里复用卡片已算好的 layout(不重算异步布局)。 */
   if (variant === "canvas") {
-    return <div data-testid="conceptmap-canvas-content"><ConceptMapSvg data={d} /></div>;
+    return (
+      <div data-testid="conceptmap-canvas-content">
+        {layout ? <CmapSvg layout={layout} /> : <div style={{ minWidth: 320, minHeight: 160 }} />}
+      </div>
+    );
   }
 
   return (
@@ -235,17 +317,23 @@ export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; 
         data-testid="conceptmap-render-area"
         data-noswipe="" /* 内联横向滚动与 T3 切栏滑动手势互斥:图上滑动不切栏 */
       >
-        <div
-          style={{
-            width: layout.width * zoom,
-            height: layout.height * zoom,
-            margin: "0 auto",
-          }}
-        >
-          <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: layout.width, height: layout.height }}>
-            <ConceptMapSvg data={d} />
+        {layout ? (
+          <div
+            style={{
+              width: layout.width * zoom,
+              height: layout.height * zoom,
+              margin: "0 auto",
+            }}
+          >
+            <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: layout.width, height: layout.height }}>
+              <CmapSvg layout={layout} />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="h-[152px] flex items-center justify-center text-caption text-ink-muted" data-testid="conceptmap-loading">
+            …
+          </div>
+        )}
       </div>
 
       <div className="mt-1.5 flex items-center justify-between text-caption text-ink-muted">
@@ -260,12 +348,16 @@ export function ConceptMapArtifact({ data, variant = "card" }: { data: unknown; 
       )}
 
       {/* 全屏画布舞台:纯 transform pan/zoom(锚定手势中点,零布局耦合不抖动);
-          Esc/背景/X 关闭 */}
+          Esc/背景/X 关闭。canvas 变体复用已算好的 layout。 */}
       {expanded && (
         <DiagramViewerModal title={d.title} onClose={() => setExpanded(false)}>
           <div className="h-full w-full rounded-xl overflow-hidden bg-surface-0/60">
             <CanvasStage testid="conceptmap-modal-stage">
-              <ConceptMapArtifact data={data} variant="canvas" />
+              {layout ? (
+                <CmapSvg layout={layout} />
+              ) : (
+                <div className="min-w-[320px] min-h-[160px]" />
+              )}
             </CanvasStage>
           </div>
         </DiagramViewerModal>

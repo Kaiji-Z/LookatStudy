@@ -10,31 +10,29 @@
  *
  * 砍掉了"全部"tab —— 笔记跟随节点,跨节点靠左侧地图切换。
  */
-import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode, type ComponentType } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode, type ComponentType, Suspense, lazy } from "react";
 import type { ContentNode, CanvasItem, NoteSourceAnchor, NodeAsset } from "@shared/types";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import rehypeRaw from "rehype-raw";
-import rehypeSanitize from "rehype-sanitize";
-import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
+import { useMarkdownPipeline } from "../lib/math-plugins.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
-import { SelfRatingCard } from "./ReviewPanel.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, setLastNoteMark, centerReadingRangeInView } from "../lib/highlightText.js";
 import { normalizeMathNotation } from "../lib/math-normalize.js";
 import { playedSentencePrefix } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
-import { ArtifactRenderer } from "./artifacts/index.js";
-import { CanvasStage } from "./CanvasStage.js";
 import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote , Presentation, Volume2, Square, Brain } from "lucide-react";
 import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
 import { useToast } from "./Toast.js";
 import { CodeBlock } from "./CodeBlock.js";
-import { MindmapView } from "./MindmapView.js";
 import { companionNote } from "../lib/companion/bus.ts";
+
+// 脑图视图按需加载(入口包瘦身):仅点 Brain 按钮时才拉 chunk(markmap 库本就动态导入)
+const MindmapView = lazy(() => import("./MindmapView.js").then((m) => ({ default: m.MindmapView })));
+// 产物渲染器/画布舞台/复习自评卡同批按需加载:黑板 tab、产物卡、复习模式打开时才拉 chunk
+const ArtifactRenderer = lazy(() => import("./artifacts/index.js").then((m) => ({ default: m.ArtifactRenderer })));
+const CanvasStage = lazy(() => import("./CanvasStage.js").then((m) => ({ default: m.CanvasStage })));
+const SelfRatingCard = lazy(() => import("./ReviewPanel.js").then((m) => ({ default: m.SelfRatingCard })));
 
 export type NotebookTab = "content" | "notes" | "board";
 
@@ -183,9 +181,11 @@ export function NotebookPanel({
                 </div>
                 <div className="flex-1 min-h-0 px-2 pb-2">
                   <div className="h-full rounded-xl overflow-hidden bg-surface-0/60 border border-[var(--border-faint)]">
-                    <CanvasStage testid="board-canvas-stage">
-                      <ArtifactRenderer data={canvasArtifact.output} variant="canvas" />
-                    </CanvasStage>
+                    <Suspense fallback={null}>
+                      <CanvasStage testid="board-canvas-stage">
+                        <ArtifactRenderer data={canvasArtifact.output} variant="canvas" />
+                      </CanvasStage>
+                    </Suspense>
                   </div>
                 </div>
               </>
@@ -294,6 +294,8 @@ function ContentTab({
   // 谁的 speakingMessageId 谁发事件,不再按节点 id 对比(旧法在某些实例
   // 状态下静默失效——朗读在放,信号没发)。
   const [content, setContent] = useState<string | null>(null);
+  // 数学插件集按需加载:含公式课文才拉 katex(入口包瘦身,见 lib/math-plugins.ts)
+  const mdPipeline = useMarkdownPipeline(content ?? "");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
   // 思维导图视图(v0.21):Brain 按钮切换 讲解 markdown ↔ markmap 脑图
@@ -640,7 +642,9 @@ function ContentTab({
         </div>
       ) : content ? (
         mindmap ? (
-          <MindmapView markdown={content} />
+          <Suspense fallback={null}>
+            <MindmapView markdown={content} />
+          </Suspense>
         ) : (
         <ErrorBoundary
           key={`${selectedNode.id}-${locale ?? "orig"}`}
@@ -663,8 +667,8 @@ function ContentTab({
         >
         <div ref={proseRef} className="prose prose-sm max-w-[80ch] leading-relaxed break-words overflow-x-auto [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_img]:max-w-full [&_video]:max-w-full [&_iframe]:max-w-full select-text">
           <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema], rehypeKatex]}
+            remarkPlugins={mdPipeline.remarkPlugins}
+            rehypePlugins={mdPipeline.rehypePlugins}
             urlTransform={(url) => url}
             components={{
               // 代码块(shiki 高亮)——与对话流同一共享组件(v0.21)
@@ -757,7 +761,9 @@ function ContentTab({
       </div>
       {/* 复习自评卡:仅从复习抽屉选课时显示。自评完 → SRS 重排 + BKT 更新 + 退出复习模式 */}
       {isReviewing && selectedNode && (
-        <SelfRatingCard nodeId={selectedNode.id} onRated={onReviewDone} />
+        <Suspense fallback={null}>
+          <SelfRatingCard nodeId={selectedNode.id} onRated={onReviewDone} />
+        </Suspense>
       )}
     </div>
   );
@@ -1205,7 +1211,7 @@ function CanvasItemCard({
 
       {/* 产物内容 */}
       <div className="text-label">
-        {parsed ? <ArtifactRenderer data={parsed} onQuizAnswered={handleQuizAnswered} /> : <div className="text-ink-muted">{t("notebook.artifact.broken")}</div>}
+        {parsed ? <Suspense fallback={null}><ArtifactRenderer data={parsed} onQuizAnswered={handleQuizAnswered} /></Suspense> : <div className="text-ink-muted">{t("notebook.artifact.broken")}</div>}
       </div>
 
       {/* 时间 */}

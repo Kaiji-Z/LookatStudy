@@ -13,18 +13,12 @@
  *
  * 注意:本组件只负责"展示"。输入由 ChatComposer 负责。
  */
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense, lazy } from "react";
 import type { CanvasItem } from "@shared/types";
 import type { ChatMessageV2, ChatMessagePart } from "@shared/part-accumulator";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import rehypeRaw from "rehype-raw";
-import rehypeSanitize from "rehype-sanitize";
-import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
+import { useMarkdownPipeline } from "../lib/math-plugins.js";
 import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square } from "lucide-react";
-import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, centerReadingRangeInView } from "../lib/highlightText.js";
@@ -35,6 +29,9 @@ import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
 import { useToast } from "./Toast.js";
 import { CodeBlock } from "./CodeBlock.js";
+
+// 产物渲染器按需加载(入口包瘦身):AI 产物卡出现时才拉 chunk(与 NotebookPanel 共享同一 chunk)
+const ArtifactRenderer = lazy(() => import("./artifacts/index.js").then((m) => ({ default: m.ArtifactRenderer })));
 /** 一条消息 = role + parts 数组(v0.2 parts-based)。
  * ChatMessageV2 / ChatMessagePart 定义已移至 @shared/part-accumulator(main 与 renderer 共用)。 */
 
@@ -708,6 +705,8 @@ function PartRenderer({
   onPickAction?: (message: string) => void;
   onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
 }) {
+  // 数学插件集按需加载:含公式文本才拉 katex(入口包瘦身,见 lib/math-plugins.ts)
+  const mdPipeline = useMarkdownPipeline(part.type === "text" ? part.text : "");
   if (part.type === "text") {
     return (
       <div
@@ -715,8 +714,8 @@ function PartRenderer({
         data-testid="part-text"
       >
         <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema], rehypeKatex]}
+          remarkPlugins={mdPipeline.remarkPlugins}
+          rehypePlugins={mdPipeline.rehypePlugins}
           urlTransform={(url) => url}
           components={markdownComponents}
         >
@@ -883,13 +882,15 @@ function ToolCallBlock({
         data-testid={`inline-artifact-${artifactType}`}
         data-tool={toolName}
       >
-        <ArtifactRenderer
-          data={output}
-          onQuizAnswered={onQuizAnswered}
-          quizMastery={quizMastery}
-          onPickAction={onPickAction}
-          onQuizCompleted={onQuizCompleted}
-        />
+        <Suspense fallback={null}>
+          <ArtifactRenderer
+            data={output}
+            onQuizAnswered={onQuizAnswered}
+            quizMastery={quizMastery}
+            onPickAction={onPickAction}
+            onQuizCompleted={onQuizCompleted}
+          />
+        </Suspense>
       </div>
     );
   }

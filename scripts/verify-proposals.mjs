@@ -17,7 +17,6 @@ import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
 import {
   createProposal,
-  getProposal,
   applyProposal,
   rejectProposal,
   listPendingProposals,
@@ -79,7 +78,6 @@ console.log(`✓ T4 重复 apply 抛错（幂等保护）`);
 const p2 = createProposal(db, {
   operations: [{ type: "update_mastery", nodeId: "n2", correct: true }],
 });
-const masteryBeforeN2 = getProgress(db, "n2")?.mastery ?? null;
 const rejected = rejectProposal(db, p2.id);
 assert.strictEqual(rejected.status, "rejected");
 assert.strictEqual(
@@ -95,7 +93,7 @@ console.log(`✓ T6 重复 reject 抛错`);
 
 // === T7: apply 多操作原子语义——部分失败 → stale + applyError ===
 // 故意塞一个操作指向不存在的节点（外键会失败），混在一个合法操作前后
-const { db: db2, sqljs: sqljs2 } = await makeDb();
+const { db: db2 } = await makeDb();
 const p3 = createProposal(db2, {
   operations: [
     { type: "update_mastery", nodeId: "n1", correct: true }, // 合法

@@ -47,7 +47,7 @@ export function titleToAnchor(title: string): string {
     .toLowerCase()
     .trim()
     // GitHub slugger 移除的标点集（保留字母/数字/中文/下划线/连字符）
-    .replace(/[!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~]/g, "")
+    .replace(/[!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~]/g, "")
     .replace(/ /g, "-") // 每个空格单独转 -（不合并）
     .replace(/^-|-$/g, ""); // 去首尾 -
 }
@@ -69,7 +69,7 @@ export function cleanTitle(raw: string): string {
     .trim()
     .replace(/\s+/g, " ")
     // 去首尾标点
-    .replace(/^[·\-\.\s]+|[·\-\.\s]+$/g, "")
+    .replace(/^[·\-.\s]+|[·\-.\s]+$/g, "")
     .trim();
 }
 

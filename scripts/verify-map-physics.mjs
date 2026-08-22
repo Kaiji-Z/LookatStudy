@@ -481,7 +481,7 @@ await test("T21 甩雪:快速移动/拖拽从球顶甩出雪屑,雪载同步扣�
 });
 
 await test("T22 力场:球靠近相斥(磁悬浮垫),锁定球是场源不受力,远处不激活", async () => {
-  const { Body } = await M();
+  await M();
   // 半径下限:悬停间隙(FIELD_RANGE-2r)必须盖过球缘装饰件(选中环外沿 r+6)
   assert.ok(FIELD_RANGE >= BALL_RADIUS * 2.4, `力场半径应 ≥ 2.4r(选中环不叠邻球): ${FIELD_RANGE}`);
   // 1) 两自由球放进力场半径内(间距 44px < FIELD_RANGE,未接触):应被推开

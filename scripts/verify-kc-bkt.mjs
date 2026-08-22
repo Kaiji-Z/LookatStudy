@@ -23,7 +23,6 @@ import {
   getKcMastery,
   updateKcMastery,
   computeAggregateMastery,
-  floorAllKcMastery,
 } from "../src/main/services/kc-service.ts";
 import {
   createProposal,

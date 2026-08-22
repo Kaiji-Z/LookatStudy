@@ -177,7 +177,7 @@ export async function fetchViaYtDlp(
     onProgress?.(`无字幕,下载音轨(${title})…`);
     const dl = await runYtDlp(["-f", "bestaudio", "-o", join(workDir, "audio.%(ext)s"), "--no-warnings", url], signal);
     if (dl.code !== 0) throw new Error(`yt-dlp 下载失败: ${dl.stdout.slice(-300)}`);
-    const audioFile = readdirSync(workDir).find((f) => /^audio\./.test(f));
+    const audioFile = readdirSync(workDir).find((f) => f.startsWith("audio."));
     if (!audioFile) throw new Error("yt-dlp 未产出音频文件");
     const ext = audioFile.split(".").pop() ?? "m4a";
     return { source: "audio", title, bytes: new Uint8Array(readFileSync(join(workDir, audioFile))), ext };

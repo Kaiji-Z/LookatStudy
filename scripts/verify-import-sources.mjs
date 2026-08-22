@@ -4,7 +4,7 @@
  * 跑法: npx tsx scripts/verify-import-sources.mjs (verify:core 调用)
  */
 import assert from "node:assert/strict";
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

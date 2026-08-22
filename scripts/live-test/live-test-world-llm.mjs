@@ -13,10 +13,6 @@ import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../../src/main/db/schema.ts";
 import {
-  detectRepoPattern,
-  filterLessonFiles,
-  fetchMarkdownContents,
-  buildCourseFromFiles,
   importRepoToParsedCourse,
 } from "../../src/main/services/pure/repo-fetcher.ts";
 import { generateCourseFromRepoFiles } from "../../src/main/services/course-generator.ts";

@@ -5,7 +5,7 @@
  *
  * 需要: Z_AI_API_KEY 环境变量（或 ~/.config/opencode/opencode.json 里的 key）
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readApiKey } from "./_load-env.mjs"; // 把 .env 的 Z_AI_API_KEY 灌进 process.env
@@ -77,7 +77,7 @@ console.log(`  发现 ${lessonFiles.length} 个课时文件`);
 console.log("Step 3: 批量拉取 .md 文件…");
 const fetched = await fetchMarkdownContents(
   lessonFiles, "microsoft", "AI-For-Beginners", "main", fetch,
-  (done, total, path) => {
+  (done, total, _path) => {
     if (done % 10 === 0 || done === total) process.stdout.write(`  ${done}/${total}\r`);
   },
 );

@@ -13,7 +13,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { readApiKey } from "./_load-env.mjs"; // 不需要 LLM key(纯模型下载+本地推理),导入仅为统一入口惯例
+import { readApiKey as _readApiKey } from "./_load-env.mjs"; // 不需要 LLM key(纯模型下载+本地推理),导入仅为统一入口惯例
 import { SPEECH_MODELS_MANIFEST } from "../../src/main/services/speech/speech-model-manifest";
 import { ensureSpeechModel, readSpeechModelStatus } from "../../src/main/services/speech/speech-model-service";
 import { getTtsEngine, getWhisperRecognizer, synthesize } from "../../src/main/services/speech/speech-engine";

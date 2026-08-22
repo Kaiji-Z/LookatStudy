@@ -33,7 +33,7 @@ function fieldName(front: string): string {
 
 function fieldDescription(front: string): string {
   const lines = front.split(/\r?\n/);
-  const i = lines.findIndex((l) => /^description:/.test(l));
+  const i = lines.findIndex((l) => l.startsWith("description:"));
   if (i < 0) return "";
   const first = lines[i].replace(/^description:\s*/, "");
   // YAML block scalar（`|`/`|-`/`>`）或空 inline → 收集缩进行

@@ -23,7 +23,7 @@ import { join } from "node:path";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
-import { designSectionsResilient, extractJsonBlock, extractJsonBlockAny, buildStructureDesignPrompt } from "../src/main/services/import-llm-service.ts";
+import { designSectionsResilient, extractJsonBlockAny, buildStructureDesignPrompt } from "../src/main/services/import-llm-service.ts";
 import { runSmartImport, planIdOf } from "../src/main/services/import-job-service.ts";
 import { createPlanStore } from "../src/main/services/import-plan-store.ts";
 

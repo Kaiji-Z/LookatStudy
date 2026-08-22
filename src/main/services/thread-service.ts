@@ -187,7 +187,7 @@ export function getThreadMessagesForDisplay(threadId: string): ChatMessageRow[] 
         if (typeof pid === "string" && statusMap.has(pid)) {
           const live = statusMap.get(pid)!;
           if (out?.status !== live) {
-            (p as { output: Record<string, unknown> }).output = { ...(out ?? {}), status: live };
+            (p as { output: Record<string, unknown> }).output = { ...out, status: live };
             changed = true;
           }
         }

@@ -116,9 +116,9 @@ const fakeFiles = [
   { path: "b.md", title: "B", kind: "md" },
   { path: "c.md", title: "C", kind: "md" },
 ];
-let fetchCalls = 0;
+let _fetchCalls = 0;
 const fakeFetch = async (url) => {
-  fetchCalls++;
+  _fetchCalls++;
   // 模拟 b.md 失败
   if (url.includes("b.md")) return { ok: false, status: 404 };
   return { ok: true, text: async () => `# Content for ${url}` };
@@ -227,7 +227,7 @@ console.log("=== 多模态图片引用解析(repo-fetcher): 通过 ✅ ===");
 {
   const net = await import("node:net");
   const { performance } = await import("node:perf_hooks");
-  const srv = net.createServer((sock) => { /* 接受连接,永不响应 */ });
+  const srv = net.createServer(() => { /* 接受连接,永不响应 */ });
   await new Promise((r) => srv.listen(0, "127.0.0.1", r));
   const port = srv.address().port;
   const t0 = performance.now();
@@ -262,7 +262,7 @@ console.log("=== 多模态图片引用解析(repo-fetcher): 通过 ✅ ===");
 
   // C2: httpsGet 在飞中止 → 哑服务器上 120ms 撕断,而非等 5s deadline
   {
-    const srv = net.createServer((sock) => { /* 接受连接,永不响应 */ });
+    const srv = net.createServer(() => { /* 接受连接,永不响应 */ });
     await new Promise((r) => srv.listen(0, "127.0.0.1", r));
     const port = srv.address().port;
     const ctl = new AbortController();

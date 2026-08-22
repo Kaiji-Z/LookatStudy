@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense, lazy } from "react";
 import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight, AlertTriangle, Map as MapIcon, MessageSquare, PenLine } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
@@ -22,10 +22,7 @@ import { useFontSize } from "./lib/useFontSize.js";
 import { ChatStream, extractArtifacts } from "./components/ChatStream.js";
 import { ChatComposer } from "./components/ChatComposer.js";
 import { CompanionCreature } from "./components/companion/CompanionCreature.js";
-import { ExamView } from "./components/ExamView.js";
-import { CommandPalette } from "./components/CommandPalette.js";
 // ReviewPanel component no longer used — SelfRatingCard is imported by NotebookPanel directly
-import { SettingsView } from "./components/SettingsView.js";
 import { useChatStream } from "./lib/useChatStream.js";
 import { buildQuizHookLabel, buildQuizHookMessage } from "./lib/quiz-hook.js";
 import { useThreads } from "./lib/useThreads.js";
@@ -38,6 +35,11 @@ import { useFocusTrap } from "./lib/useFocusTrap.js";
 import { CelebrationLayer } from "./components/CelebrationLayer.js";
 import { celebrate } from "./lib/celebration.js";
 import { companionReviewing, companionSetStreaming } from "./lib/companion/bus.ts";
+
+// 非首屏重组件按需加载(入口包瘦身):设置抽屉/考试视图/命令面板仅打开时才拉 chunk
+const SettingsView = lazy(() => import("./components/SettingsView.js").then((m) => ({ default: m.SettingsView })));
+const ExamView = lazy(() => import("./components/ExamView.js").then((m) => ({ default: m.ExamView })));
+const CommandPalette = lazy(() => import("./components/CommandPalette.js").then((m) => ({ default: m.CommandPalette })));
 
 /**
  * v0.2 三栏布局(M1 重构):
@@ -903,18 +905,20 @@ export default function App() {
                 </div>
               ) : selectedNode?.type === "exam" ? (
                 /* 考试节点:渲染 ExamView 替代 chat(关底 boss,独立 UI) */
-                <ExamView
-                  examNode={selectedNode}
-                  locale={uiLang}
-                  onSessionChange={handleExamSessionChange}
-                  paused={examLeave.open}
-                  onExamCompleted={() => {
-                    // 考试完成 → 刷新该考试节点的 progress(更新地图星数)
-                    api.getProgress(selectedNode.id).then((p) => {
-                      if (p) setProgressMap((m) => ({ ...m, [selectedNode.id]: p }));
-                    });
-                  }}
-                />
+                <Suspense fallback={null}>
+                  <ExamView
+                    examNode={selectedNode}
+                    locale={uiLang}
+                    onSessionChange={handleExamSessionChange}
+                    paused={examLeave.open}
+                    onExamCompleted={() => {
+                      // 考试完成 → 刷新该考试节点的 progress(更新地图星数)
+                      api.getProgress(selectedNode.id).then((p) => {
+                        if (p) setProgressMap((m) => ({ ...m, [selectedNode.id]: p }));
+                      });
+                    }}
+                  />
+                </Suspense>
               ) : (
                 <>
               {/* v0.4 顶栏:thread 切换条(焦点节点 + 会话切换) */}
@@ -1133,14 +1137,16 @@ export default function App() {
 
       {/* Cmd+K 命令面板(M2) */}
       {showCommandPalette && (
-        <CommandPalette
-          onClose={() => setShowCommandPalette(false)}
-          onPick={(action) => {
-            setShowCommandPalette(false);
-            handleCommandAction(action);
-          }}
-          hasNode={!!selectedNodeId}
-        />
+        <Suspense fallback={null}>
+          <CommandPalette
+            onClose={() => setShowCommandPalette(false)}
+            onPick={(action) => {
+              setShowCommandPalette(false);
+              handleCommandAction(action);
+            }}
+            hasNode={!!selectedNodeId}
+          />
+        </Suspense>
       )}
 
       {/* 全局悬浮提示(Portal 到 body,脱离所有 stacking context,永远最上层) */}
@@ -1363,7 +1369,9 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto">
-          <SettingsView />
+          <Suspense fallback={null}>
+            <SettingsView />
+          </Suspense>
         </div>
       </div>
     </div>

@@ -244,7 +244,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
     const offsets = rangeToOffsets(range, model);
     const rect = range.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
-    // 浮钮定位:右侧优先(手机 Chrome 原生 复制/分享 菜单锚在选区上方,上侧必被遮)
+    // 浮钮定位:选区正上方居中(用户拍板;贴容器顶自动落下方)
     const pos = selectionPopoverPosition(
       {
         left: rect.left - containerRect.left,
@@ -256,6 +256,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       },
       containerRect.width,
       110,
+      36,
     );
     setChatNoteBtn({
       x: pos.left,

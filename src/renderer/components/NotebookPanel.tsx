@@ -446,7 +446,7 @@ function ContentTab({
     const modelText = proseEl ? getTextModel(proseEl).text : text;
     const startIdx = offsets ? offsets.start : modelText.indexOf(text);
     const surrounding = startIdx >= 0 ? modelText.slice(Math.max(0, startIdx - 30), startIdx + text.length + 30) : text;
-    // 浮钮定位:右侧优先(手机 Chrome 原生 复制/分享 菜单锚在选区上方,上侧必被遮)
+    // 浮钮定位:选区正上方居中(用户拍板;贴容器顶自动落下方)
     const pos = selectionPopoverPosition(
       {
         left: rect.left - containerRect.left,
@@ -458,6 +458,7 @@ function ContentTab({
       },
       containerRect.width,
       onQuoteToChat ? 150 : 100,
+      36,
     );
     setQuoteBtn({
       x: pos.left,

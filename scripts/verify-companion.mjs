@@ -130,6 +130,7 @@ assert.strictEqual(baseExpressionOf(s), "talking");
 s = companionReducer(s, { type: "talking", on: false, now: 3100 });
 s = companionReducer(s, { type: "streaming", on: true, now: 3101 });
 assert.strictEqual(baseExpressionOf(s), "thinking");
+assert.strictEqual(s.pose, "thinking", "T2: 流式回答=托腮思考姿势(非整机歪头)");
 
 // 空闲入睡:超过 SLEEP_AFTER_MS 且不在朗读/听写 → sleeping;朗读中绝不睡
 s = companionReducer(s, { type: "streaming", on: false, now: 3102 });
@@ -498,6 +499,7 @@ console.log("✓ T12 形象注册表:5 形态唯一/回退安全/注册表·壳�
     assert.equal(q.expression, "stars", "T13: 隔天回来=加倍欢迎");
     q = companionReducer(q, { type: "nodePoint", now: 700 });
     assert.equal(q.expression, "thinking", "T13: 卡点指向=托腮");
+    assert.equal(q.pose, "thinking", "T13: 卡点指向姿势=托腮(同流式思考)");
   }
 
   // v4 抓取:抓住挣扎/快扔晕眩→鼓脸/慢放温柔
@@ -933,6 +935,10 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
   assert.ok(
     /\.cp-pose-pointu \.cp-armL[^}]*rotate\(172deg\)/.test(css) && /\.cp-pose-pointd \.cp-armR[^}]*rotate\(-38deg\)/.test(css),
     "T15: v11.5 竖向指向(句下方→172° 抬臂指上 / 句上方→-38° 外展下指)",
+  );
+  assert.ok(
+    /\.cp-pose-thinking \.cp-armL[^}]*rotate\(108deg\)/.test(css) && /\.cp-pose-thinking \.cp-head[^}]*cp-think-head/.test(css) && !css.includes("cp-pose-lean-left"),
+    "T15: 思考姿势=托腮(armL 108° 手扶下巴+头微倾慢摆),lean-left 整机歪头已退役",
   );
   assert.ok(
     creature.includes("sentLines,") && creature.includes('reading?.dir === "up"') && creature.includes('"pointu"') && creature.includes('"pointd"'),

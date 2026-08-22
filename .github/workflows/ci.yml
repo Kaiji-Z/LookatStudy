@@ -30,11 +30,17 @@ jobs:
       - name: Typecheck main + preload
         run: npx tsc -p tsconfig.electron.json --noEmit
 
-      - name: Logic test suites (74 suites)
+      - name: Logic test suites (105 suites)
         run: npm run verify:core
 
       - name: Build renderer
         run: npm run build
+
+      # v0.21 产物清单断言:主束零 elkjs/shiki/mermaid、elk 懒 chunk 唯一、
+      # shiki 懒 chunk 在场。verify:core 里同名套在无 dist 时 SKIP,这里在
+      # build 之后跑才是真断言。
+      - name: Build manifest assertions
+        run: npx tsx scripts/verify-build-manifest.mjs
 
   mobile-bundle:
     runs-on: ubuntu-latest

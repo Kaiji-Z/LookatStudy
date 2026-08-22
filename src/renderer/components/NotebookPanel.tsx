@@ -32,6 +32,7 @@ import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, Messa
 import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
 import { useToast } from "./Toast.js";
+import { CodeBlock } from "./CodeBlock.js";
 import { companionNote } from "../lib/companion/bus.ts";
 
 export type NotebookTab = "content" | "notes" | "board";
@@ -612,6 +613,10 @@ function ContentTab({
             rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema], rehypeKatex]}
             urlTransform={(url) => url}
             components={{
+              // 代码块(shiki 高亮)——与对话流同一共享组件(v0.21)
+              pre({ children, ...props }) {
+                return <CodeBlock {...props}>{children}</CodeBlock>;
+              },
               // 外链强制新窗口 → setWindowOpenHandler → 系统浏览器,
               // 防止点击讲解里的链接把 electron 主窗口导航成网页。
               a({ children, ...props }) {

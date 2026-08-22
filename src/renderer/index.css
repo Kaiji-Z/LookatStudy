@@ -746,6 +746,35 @@ html.light {
 html.light .cm-group-box { fill-opacity: 0.55; stroke-opacity: 0.95; }
 html.light .cm-group-head { fill-opacity: 0.22; }
 
+/* ============ shiki 代码高亮面板(v0.21) ============
+ * 双主题零闪烁:shiki 输出内联色=github-dark(应用默认暗色),亮色值挂在
+ * --shiki-light 变量,html.light 时 CSS 翻转 —— 同一 DOM 换 computed color,
+ * 不重跑高亮、无重渲染闪烁(!important 压过内联 style)。
+ * 面板底色不吃 shiki 主题色:沿用应用 surface-0 代码面板(与 tailwind.config
+ * prose pre 同款),设计系统优先。上缘接 CodeBlock 头部条(圆角只留下方)。 */
+.md-shiki pre.shiki {
+  background-color: rgb(var(--surface-0-rgb));
+  color: var(--ink);
+  margin: 0;
+  padding: 0.9em 1em;
+  border: 1px solid rgb(var(--border-rgb));
+  border-top: 0;
+  border-radius: 0 0 0.5rem 0.5rem;
+  overflow-x: auto;
+  font-size: 0.82em;
+  line-height: 1.55;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.md-shiki pre.shiki code { display: block; width: max-content; }
+.md-shiki pre.shiki .line { display: block; white-space: pre; }
+.md-shiki pre.shiki .line:empty::after { content: " "; }
+html.light .md-shiki pre.shiki span {
+  color: var(--shiki-light) !important;
+}
+/* CodeWalkthrough 行内 token:面板固定深底(neutral-950)不随主题翻转,
+ * token 色由 highlightLines 单主题直出,这里只保空行高度一致 */
+.md-walk-line:empty::after { content: " "; }
+
 /* Chat message entrance */
 @keyframes msg-enter {
   from { opacity: 0; transform: translateY(8px); }

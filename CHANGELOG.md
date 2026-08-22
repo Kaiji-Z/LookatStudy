@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-23
+
 ### Added
 - **异步会话:AI 思考中自由切节点,原会话后台继续输出** —— 流式从"跟视图"改为"跟 thread 走"。此前 chat:part/done/error 事件不带 threadId 且流式状态全局单值,流式中切节点会把 A 节点的回答混进 B 的消息列表、done 错换 B 的消息 id、B 的输入框被全局锁死——"切了节点会话混乱要刷新"的根因(手机端观察,桌面同病)。现每个 thread 一个流式桶(`stream-buckets.ts` 纯函数):事件按 threadId 路由进桶,跨 thread 零污染;切走后原 thread 后台继续累加,切回时缓存原样恢复(流式中间态不落库,缓存优先于重拉);LRU 保留 8 桶,流式桶永不淘汰;同 thread 流式中仍拒发(Stop 钮),跨 thread 自由开新会话。指示:会话 tab 转圈、地图球右上转圈(事件携带 focusNodeId)、地图提示条改"后台回答,可随意切换节点"。主进程 per-thread AbortController 原本就绪,零改动。手机实测四场景实锤:流式中切节点输入框解锁/双节点并行流式/视图内容零串扰/切回原节点回答完整。
 

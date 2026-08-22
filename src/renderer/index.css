@@ -527,8 +527,10 @@ html.light .exam-bubble-locked {
   /* 单行铁律:工具栏不换行(标签已藏,五个图标钮 ~210px 必然放得下) */
   .composer-toolbar { flex-wrap: nowrap; }
   .composer-toolbar .flex-wrap { flex-wrap: nowrap; }
-  /* 工具栏 pill(🎤/📎/思考/上下文/模型)与语音模式「键盘」钮:40px 方形图标钮 */
-  .composer-toolbar button,
+  /* 工具栏 pill(🎤/📎/思考/上下文/模型)与语音模式「键盘」钮:40px 方形图标钮。
+     菜单项带 role(menuitemradio/menuitem)→ 排除:思考/模型菜单的按钮 DOM 挂在
+     toolbar 里,不排除会被钳成 44px 窄条(手机端"菜单排版错乱"根源,2026-08-22)。 */
+  .composer-toolbar button:not([role="menuitemradio"]):not([role="menuitem"]),
   .touch-lift {
     min-height: 40px;
     min-width: 40px;
@@ -537,7 +539,7 @@ html.light .exam-bubble-locked {
     padding-left: 0.25rem;
     padding-right: 0.25rem;
   }
-  .composer-toolbar button svg,
+  .composer-toolbar button:not([role="menuitemradio"]):not([role="menuitem"]) svg,
   .touch-lift svg {
     width: 1.1rem;
     height: 1.1rem;

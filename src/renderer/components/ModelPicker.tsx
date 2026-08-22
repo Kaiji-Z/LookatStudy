@@ -170,7 +170,7 @@ export function ModelPicker({ onGotoSettings }: ModelPickerProps) {
           role="menu"
           aria-label={t("model.picker.label")}
           data-testid="composer-model-menu"
-          className="absolute bottom-full right-0 mb-1.5 z-50 w-64 max-h-72 overflow-y-auto bg-surface-0 rounded-xl shadow-elevated border border-[var(--border)] py-1.5"
+          className="absolute bottom-full right-0 mb-1.5 z-50 w-64 max-w-[calc(100vw-1.5rem)] max-h-72 overflow-y-auto bg-surface-0 rounded-xl shadow-elevated border border-[var(--border)] py-1.5"
         >
           {groups.length === 0 && (
             <div className="px-3 py-2 text-caption text-ink-faint">{t("model.picker.noneConfigured")}</div>

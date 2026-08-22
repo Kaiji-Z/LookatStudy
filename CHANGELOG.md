@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Fixed
+- **手机端输入框弹出菜单排版错乱** —— 触屏粗指针适配里 `.composer-toolbar button { min-width:40px; max-width:44px; … }` 是后代选择器,把思考强度/模型切换菜单的菜单项(按钮 DOM 挂在工具栏里)一并钳成 44px 窄条,手机打开菜单即文字挤压成方块。修复:选择器加 `:not([role="menuitemradio"]):not([role="menuitem"])` 排除菜单项(触发钮无 role、菜单项带 role,两者恰好可分),触发钮的 40px 图标化命中不变;模型菜单补 `max-w-[calc(100vw-1.5rem)]` 视口保护(与思考菜单同款)。新增 verify-composer-touch-menu 守卫(选择器排除/菜单项 role/视口保护三段,破坏验证闭环)。
+
 ## [0.22.1] - 2026-08-22
 
 ### Changed

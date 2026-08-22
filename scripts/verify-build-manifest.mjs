@@ -24,22 +24,40 @@ if (!existsSync(assetsDir)) {
 }
 const files = readdirSync(assetsDir);
 
-// ---------------------------------------------------------------- T1 主束零污染
-{
-  const entryChunks = files.filter((f) => /^index-[A-Za-z0-9_-]+\.js$/.test(f));
-  assert.ok(entryChunks.length >= 1, "T1 找到入口 chunk");
-  const markers = [
-    ["elkjs", "elk.bundled"], // elkjs bundled 构建的特征串
-    ["shiki", "createJavaScriptRegexEngine"],
-    ["mermaid", "registerLayoutLoaders"],
-  ];
-  for (const f of entryChunks) {
-    const src = readFileSync(join(assetsDir, f), "utf8");
-    for (const [label, marker] of markers) {
-      assert.ok(!src.includes(marker), `T1 主束 ${f} 不得内联 ${label}(marker: ${marker})`);
+// 急载边界 = HTML 显式引用的资产(script src / modulepreload / css link)。
+// 不能按文件名猜入口:index-*.js 也可能是懒 chunk(实测 markmap 的 globalCSS
+// 落在名为 index-*.js 的懒 chunk 里),猜错会把懒 chunk 当主束误报。
+function eagerAssets() {
+  const names = new Set();
+  const rendererDir = join(assetsDir, "..");
+  for (const html of readdirSync(rendererDir).filter((f) => f.endsWith(".html"))) {
+    const src = readFileSync(join(rendererDir, html), "utf8");
+    for (const m of src.matchAll(/(?:src|href)="\.?\/?(assets\/[^"]+)"/g)) {
+      names.add((m[1] ?? "").replace(/^assets\//, ""));
     }
   }
-  console.log(`T1 主束零污染(入口 ${entryChunks.length} 个 chunk 无 elkjs/shiki/mermaid)✓`);
+  return [...names];
+}
+
+// ---------------------------------------------------------------- T1 主束零污染
+{
+  const eager = eagerAssets().filter((f) => f.endsWith(".js"));
+  assert.ok(eager.length >= 1, "T1 从 HTML 解析到急载 JS");
+  // 库级特征串(只在该库的代码里出现;不能用文件名/函数名字符串——懒 import 的
+  // 路径引用与调用点胶水代码本来就在主束里,是合法的)
+  const markers = [
+    ["elkjs", "org.eclipse.elk"],
+    ["shiki", "ShikiError"],
+    ["mermaid", "DOMPurify"],
+    ["markmap", "markmap-foreign"],
+  ];
+  for (const f of eager) {
+    const src = readFileSync(join(assetsDir, f), "utf8");
+    for (const [label, marker] of markers) {
+      assert.ok(!src.includes(marker), `T1 急载 ${f} 不得内联 ${label}(marker: ${marker})`);
+    }
+  }
+  console.log(`T1 主束零污染(急载 ${eager.length} 个 JS 无 elkjs/shiki/mermaid/markmap)✓`);
 }
 
 // ---------------------------------------------------------------- T2 elkjs 懒 chunk
@@ -58,4 +76,14 @@ const files = readdirSync(assetsDir);
   console.log("T3 shiki 懒 chunk(core + engine-javascript)✓");
 }
 
-console.log("verify-build-manifest: 3 组全部通过");
+// ---------------------------------------------------------------- T4 markmap 懒 chunk
+{
+  // markmap-view 的 globalCSS 特征串必须存在(懒加载接线活着),且不在急载集里(T1 已断言)
+  const lazyHit = files.some(
+    (f) => f.endsWith(".js") && readFileSync(join(assetsDir, f), "utf8").includes("markmap-foreign"),
+  );
+  assert.ok(lazyHit, "T4 markmap 懒 chunk 在场(globalCSS 特征串)");
+  console.log("T4 markmap 懒 chunk 在场✓");
+}
+
+console.log("verify-build-manifest: 4 组全部通过");

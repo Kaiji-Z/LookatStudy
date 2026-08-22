@@ -28,11 +28,12 @@ import { playedSentencePrefix } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { CanvasStage } from "./CanvasStage.js";
-import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote , Presentation, Volume2, Square } from "lucide-react";
+import { Pin, Trash, ChevronDown, Pencil, Check, X, BookOpen, NotebookPen, MessageCircle, Image as ImageIcon, Lightbulb, Share2, ListChecks, Table2, GitBranch, Code2, Puzzle, Quote , Presentation, Volume2, Square, Brain } from "lucide-react";
 import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
 import { useToast } from "./Toast.js";
 import { CodeBlock } from "./CodeBlock.js";
+import { MindmapView } from "./MindmapView.js";
 import { companionNote } from "../lib/companion/bus.ts";
 
 export type NotebookTab = "content" | "notes" | "board";
@@ -295,6 +296,8 @@ function ContentTab({
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // 思维导图视图(v0.21):Brain 按钮切换 讲解 markdown ↔ markmap 脑图
+  const [mindmap, setMindmap] = useState(false);
   // 多模态:当前节点的图片资源(集中插图区展示)
   const [assets, setAssets] = useState<NodeAsset[]>([]);
   // 选区浮按钮:选中文字后显示。带 offsets(Range-based 偏移,精准)和 surroundingText(legacy 回退)
@@ -541,7 +544,19 @@ function ContentTab({
           用户翻到后面也能一键停。吸顶行 pointer-events-none,只有按钮本身可点,
           不挡吸顶行底下的正文选区/点击。 */}
       {!loading && !loadError && content && (
-        <div className="sticky top-0 z-20 flex justify-end -mt-2 pointer-events-none">
+        <div className="sticky top-0 z-20 flex justify-end gap-2 -mt-2 pointer-events-none">
+          <button
+            onClick={() => setMindmap((v) => !v)}
+            data-tooltip={t("notebook.mindmap.toggle")}
+            aria-label={t("notebook.mindmap.toggle")}
+            aria-pressed={mindmap}
+            data-testid="node-content-mindmap"
+            className={`pointer-events-auto shrink-0 rounded-full p-2 bg-surface-2 shadow-elevated transition-colors ${
+              mindmap ? "text-accent" : "text-ink-muted hover:text-ink-strong"
+            }`}
+          >
+            <Brain className="w-4 h-4" />
+          </button>
           <button
             onClick={() => speech.speak(nodeSpeechId ?? "content", content)}
             data-tooltip={
@@ -588,6 +603,9 @@ function ContentTab({
           {t("notebook.content.load_failed")}<button className="underline ml-1" onClick={() => { setLoadError(false); setLoading(true); api.getNodeContent(selectedNode.id, locale ?? undefined).then(setContent).catch(() => setLoadError(true)).finally(() => setLoading(false)); }}>{t("notebook.content.retry")}</button>
         </div>
       ) : content ? (
+        mindmap ? (
+          <MindmapView markdown={content} />
+        ) : (
         <ErrorBoundary
           key={`${selectedNode.id}-${locale ?? "orig"}`}
           fallback={(_err, retry) => (
@@ -641,6 +659,7 @@ function ContentTab({
           </ReactMarkdown>
         </div>
         </ErrorBoundary>
+        )
       ) : (
         <div className="text-body text-ink-muted">
           {t("notebook.content.empty")}

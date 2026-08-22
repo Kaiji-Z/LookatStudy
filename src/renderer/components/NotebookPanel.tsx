@@ -305,6 +305,27 @@ function ContentTab({
   const contentRef = useRef<HTMLDivElement>(null); // 整个讲解容器(标题+正文+提示)
   const proseRef = useRef<HTMLDivElement>(null); // 仅 Markdown 正文(offset 计算和画线基于此,避免标题/提示污染偏移)
 
+  /* 拖选中浮层穿透:拖选扩展的指针路线会扫过浮钮(右侧=向右多选的必经之路),
+     浏览器在按钮上解析不出文字插入点 → 选区漂移。手势期间浮层可见但
+     pointer-events:none,松开恢复可点;按下点在浮层自身(要点按钮)不算拖选。 */
+  const [popoverSelecting, setPopoverSelecting] = useState(false);
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as Element | null;
+      if (el?.closest?.("[data-selection-popover]")) return;
+      setPopoverSelecting(true);
+    };
+    const onUp = () => setPopoverSelecting(false);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+    };
+  }, []);
+
   useEffect(() => {
     if (!selectedNode) {
       setContent(null);
@@ -446,7 +467,10 @@ function ContentTab({
     const modelText = proseEl ? getTextModel(proseEl).text : text;
     const startIdx = offsets ? offsets.start : modelText.indexOf(text);
     const surrounding = startIdx >= 0 ? modelText.slice(Math.max(0, startIdx - 30), startIdx + text.length + 30) : text;
-    // 浮钮定位:选区正上方居中(用户拍板;贴容器顶自动落下方)
+    // 浮钮定位:右侧优先(手机 Chrome 原生 复制/分享 菜单锚在选区上方,上侧必被遮);
+    // 末行行盒作锚 → 多行拖选时跟"最后一个字"而非外接框右缘
+    const rects = range.getClientRects();
+    const endRect = rects.length ? rects[rects.length - 1] : rect;
     const pos = selectionPopoverPosition(
       {
         left: rect.left - containerRect.left,
@@ -458,7 +482,14 @@ function ContentTab({
       },
       containerRect.width,
       onQuoteToChat ? 150 : 100,
-      36,
+      {
+        left: endRect.left - containerRect.left,
+        top: endRect.top - containerRect.top,
+        right: endRect.right - containerRect.left,
+        bottom: endRect.bottom - containerRect.top,
+        width: endRect.width,
+        height: endRect.height,
+      },
     );
     setQuoteBtn({
       x: pos.left,
@@ -680,10 +711,11 @@ function ContentTab({
           </div>
         </div>
       )}
-      {/* 选区浮按钮:提问 + 加到笔记 */}
+      {/* 选区浮按钮:提问 + 加到笔记;拖选手势期间穿透(见 popoverSelecting) */}
       {quoteBtn && (
         <div
-          style={{ left: quoteBtn.x, top: quoteBtn.y, transform: quoteBtn.transform }}
+          data-selection-popover
+          style={{ left: quoteBtn.x, top: quoteBtn.y, transform: quoteBtn.transform, pointerEvents: popoverSelecting ? "none" : undefined }}
           className="absolute z-20 flex items-center gap-0.5 msg-enter"
         >
           {onQuoteToChat && (

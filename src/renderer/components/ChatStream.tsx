@@ -211,6 +211,26 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
 
   // 对话流画线加笔记:选 assistant 消息文字 → 浮出"✏️ 加笔记"按钮
   const [chatNoteBtn, setChatNoteBtn] = useState<{ x: number; y: number; transform?: string; text: string; msgId: string; startOffset?: number; endOffset?: number } | null>(null);
+  /* 拖选中浮层穿透:拖选扩展的指针路线会扫过浮钮(右侧=向右多选的必经之路),
+     浏览器在按钮上解析不出文字插入点 → 选区漂移。手势期间浮层可见但
+     pointer-events:none,松开恢复可点;按下点在浮层自身(要点按钮)不算拖选。 */
+  const [popoverSelecting, setPopoverSelecting] = useState(false);
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as Element | null;
+      if (el?.closest?.("[data-selection-popover]")) return;
+      setPopoverSelecting(true);
+    };
+    const onUp = () => setPopoverSelecting(false);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+    };
+  }, []);
   const handleChatMouseUp = useCallback(() => {
     if (!onSaveChatNote || !threadId) return;
     const sel = window.getSelection();
@@ -244,7 +264,10 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
     const offsets = rangeToOffsets(range, model);
     const rect = range.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
-    // 浮钮定位:选区正上方居中(用户拍板;贴容器顶自动落下方)
+    // 浮钮定位:右侧优先(手机 Chrome 原生 复制/分享 菜单锚在选区上方,上侧必被遮);
+    // 末行行盒作锚 → 多行拖选时跟"最后一个字"而非外接框右缘
+    const rects = range.getClientRects();
+    const endRect = rects.length ? rects[rects.length - 1] : rect;
     const pos = selectionPopoverPosition(
       {
         left: rect.left - containerRect.left,
@@ -256,7 +279,14 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       },
       containerRect.width,
       110,
-      36,
+      {
+        left: endRect.left - containerRect.left,
+        top: endRect.top - containerRect.top,
+        right: endRect.right - containerRect.left,
+        bottom: endRect.bottom - containerRect.top,
+        width: endRect.width,
+        height: endRect.height,
+      },
     );
     setChatNoteBtn({
       x: pos.left,
@@ -469,12 +499,13 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
         </button>
       )}
 
-      {/* 对话画线加笔记按钮:选 assistant 消息文字后浮出 */}
+      {/* 对话画线加笔记按钮:选 assistant 消息文字后浮出;拖选手势期间穿透(见 popoverSelecting) */}
       {chatNoteBtn && (
         <button
           onClick={handleSaveChatNote}
           data-testid="save-chat-note-btn"
-          style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: chatNoteBtn.transform }}
+          data-selection-popover
+          style={{ left: chatNoteBtn.x, top: chatNoteBtn.y, transform: chatNoteBtn.transform, pointerEvents: popoverSelecting ? "none" : undefined }}
           className="absolute z-20 px-3 py-1.5 rounded-lg bg-brand text-white text-body font-bold shadow-elevated flex items-center gap-1 hover:bg-brand-light transition msg-enter"
           title={t("chat.note.add.title")}
         >

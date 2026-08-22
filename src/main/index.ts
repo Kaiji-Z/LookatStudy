@@ -1372,6 +1372,40 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: shikiRes,
   });
 
+  // T-MINDMAP (v0.21): 讲解区 Brain 按钮 → markmap 脑图渲染(svg 有内容)→
+  // 再点回讲解(markdown 回来,脑图卸载)。markmap 懒 chunk 首开慢,轮询放宽。
+  let mindmapRes: { ok?: boolean; [k: string]: unknown } = {};
+  try {
+    mindmapRes = await win.webContents.executeJavaScript(`
+      (async function() {
+        var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+        var btn = document.querySelector('[data-testid="node-content-mindmap"]');
+        if (!btn) return { ok: false, why: "no brain btn" };
+        btn.click();
+        var svg = null;
+        for (var i = 0; i < 80; i++) {
+          await sleep(250);
+          svg = document.querySelector('[data-testid="mindmap-view"] svg');
+          if (svg && svg.childElementCount > 0 && svg.querySelector("path, g")) break;
+        }
+        if (!svg || svg.childElementCount === 0) return { ok: false, why: "mindmap svg 未渲染" };
+        var nodes = svg.querySelectorAll("g.markmap-node").length;
+        btn.click(); // 切回讲解
+        await sleep(300);
+        var back = document.querySelector('[data-testid="mindmap-view"]') === null;
+        var proseBack = document.querySelector('[data-testid="node-content"] .prose') !== null;
+        return { ok: back && proseBack, nodeCount: nodes };
+      })()
+    `).catch(() => ({}));
+  } catch (e) {
+    mindmapRes = { ok: false, error: String(e) };
+  }
+  results.push({
+    name: "markmap: brain button toggles mind map render and back",
+    ok: mindmapRes?.ok === true,
+    detail: mindmapRes,
+  });
+
   // T-MERMAID-ELK (v0.21): 笔记理解区的 flowchart 图卡 → 渲染成 SVG + ELK 布局
   // 真实生效。生效判据 = mermaid 的兜底 warn 缺席:flowchart-elk 请求 'elk' 布局
   // 而注册表没有时,mermaid 会 console.warn("flowchart-elk was moved…") 并退

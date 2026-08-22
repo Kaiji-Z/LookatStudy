@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.21.0] - 2026-08-22
 
 ### Added
 - **讲解区思维导图(markmap)** —— 讲解内容一键切脑图:工具栏新增 Brain 按钮(朗读按钮旁),把当前课的标题/列表层级渲染成可折叠交互脑图——课前扫结构、课后回忆框架都有了抓手。画布复用黑板同款 CanvasStage(拖拽/双指缩放/双击适屏),节点点击折叠由 markmap 接管;分支线按深度吃应用色板,文字走 ink token,双主题自适应。代码块/图片在脑图侧剥离(`mindmap-markdown.ts` 纯函数:围栏→「代码块」占位列表项、图片取 alt 文字——结构概览不要内容噪声);markmap-lib/markmap-view 全部懒加载,主束零污染(build-manifest T4 断言在场)。verify-markmap(预处理纯函数/transform 真集成含确定性/接线守卫)+ 破坏验证 + ui-test 真渲染断言(Brain 切换往返)。

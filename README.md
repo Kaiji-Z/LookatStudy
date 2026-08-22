@@ -46,7 +46,7 @@ Teaching style is a pill next to the input box, switchable anytime. Explain it t
 
 <img src="docs/screenshots/en/03-exam-boss.png" alt="A timed chapter exam question with one option selected" width="880">
 
-Each chapter ends with an exam guarding the gate. The questions are generated in the background from that chapter's knowledge points, in batches, while you keep studying elsewhere, and a toast tells you when the boss is ready. Every question runs on a countdown, 60 seconds normally, 90 for the ones with long text or code. Walk away mid-exam and the attempt terminates, with unanswered questions counted wrong, so the star score stays honest. The result page breaks your score down by knowledge point, which tells you what to review next. One rule I hold to, exams never write back into the mastery model. They measure. The tutor teaches.
+Each chapter ends with an exam guarding the gate. The questions are generated in the background from that chapter's knowledge points, in batches, while you keep studying elsewhere, and a toast tells you when the boss is ready. Every question runs on a countdown sized to the question itself, so a short one doesn't drag and a wall of text or code gets room to breathe. Walk away mid-exam and the attempt terminates, with unanswered questions counted wrong, so the star score stays honest. The result page breaks your score down by knowledge point, which tells you what to review next. One rule I hold to, exams never write back into the mastery model. They measure. The tutor teaches.
 
 ## What you can import
 

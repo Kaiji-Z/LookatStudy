@@ -14,6 +14,11 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Changed
+- **伴学流式思考姿势:歪头改托腮** —— AI 流式回答期间伴学从"整机歪头 -5°"(悬浮中容易被误读成飞歪了)换成明确的手托下巴+头部微倾慢摆:身体保持水平、悬浮浮动照常,与飞行倾角(banking)的视觉语义彻底分开。卡点指向反应(记忆联动"就是这里")同步换用同款托腮姿势。verify 守姿势断言+CSS 接线。
+
 ## [0.22.0] - 2026-08-22
 
 ### Added

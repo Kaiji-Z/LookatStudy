@@ -38,7 +38,7 @@ export type CompanionPose =
   | "hop"
   | "punch"
   | "oops"
-  | "lean-left"
+  | "thinking"
   | "lean-right"
   | "typing"
   | "doze"
@@ -350,7 +350,7 @@ export function baseExpressionOf(s: CompanionState): CompanionExpression {
 
 function basePoseOf(s: CompanionState): CompanionPose {
   if (s.listening) return "lean-right";
-  if (s.streaming) return "lean-left";
+  if (s.streaming) return "thinking";
   if (s.sleeping) return "doze";
   if (s.typing) return "typing";
   return "float";
@@ -674,7 +674,7 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         mode: "front",
         lastActivity: ev.now,
         expression: "thinking",
-        pose: "lean-left",
+        pose: "thinking",
         until: ev.now + 2600,
       };
     case "whistle":

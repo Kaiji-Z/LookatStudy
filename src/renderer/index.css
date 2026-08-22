@@ -1102,7 +1102,12 @@ html.light ::-webkit-scrollbar-thumb:hover {
 @keyframes cp-oops-head { 0%, 100% { transform: rotate(0deg); } 40% { transform: rotate(6deg); } 70% { transform: rotate(3deg); } }
 @keyframes cp-oops-armL { 0%, 100% { transform: rotate(0deg); } 40% { transform: rotate(24deg); } }
 @keyframes cp-oops-armR { 0%, 100% { transform: rotate(0deg); } 40% { transform: rotate(-24deg); } }
-.cp-pose-lean-left .cp-bot { transform: rotate(-5deg) translateX(-3px); animation: none; }
+/* 思考姿势(流式回答/卡点指向,v0.22.1):手托下巴+头微倾慢摆。旧版整机
+   歪 -5° 曾被误读成"飞歪了"——身体现在保持水平,悬浮浮动(cp-bob)照常;
+   头部倾斜以颈为轴,与整机倾角(飞行 banking)语义分开。 */
+.cp-pose-thinking .cp-armL { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(108deg); }
+.cp-pose-thinking .cp-head { transform-box: fill-box; transform-origin: 50% 95%; transform: rotate(-7deg); animation: cp-think-head 3.2s ease-in-out infinite alternate; }
+@keyframes cp-think-head { from { transform: rotate(-7deg); } to { transform: rotate(-3deg); } }
 .cp-pose-lean-right .cp-bot { transform: rotate(5deg); animation: none; }
 .cp-pose-doze .cp-bot { transform: translateY(4px) rotate(2.5deg); animation: cp-breath 4.5s ease-in-out infinite alternate; }
 @keyframes cp-breath {
@@ -1368,6 +1373,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
 @keyframes cp-huffy-puff { from { transform: scale(0.85); } to { transform: scale(1.1); } }
 @media (prefers-reduced-motion: reduce) {
   .cp-pose-writing .cp-armR { animation: none; transform: rotate(2deg); }
+  .cp-pose-thinking .cp-head { animation: none; }
   .cp-pose-wave .cp-armR { animation: none; }
   .cp-pose-spin .cp-bot { animation: none; }
   .cp-star-tw { animation: none; }

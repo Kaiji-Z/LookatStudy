@@ -758,6 +758,31 @@ async function runUiTest(screenshot = false): Promise<void> {
     console.error("[lookatstudy] ui-test canvas seed failed:", e);
   }
 
+  // v0.21 shiki:给种子首课讲解注入一个 ts 代码围栏(断言讲解区语法高亮)。
+  // 保存原文,断言后恢复(共享现场纪律:不留测试残留)。
+  let shikiSeedOriginal: string | null = null;
+  try {
+    const row = getDb()
+      .select({ content: contentNodes.content })
+      .from(contentNodes)
+      .where(eq(contentNodes.id, "guide-les-1-1"))
+      .get();
+    if (row?.content && !row.content.includes("SHIKI_UI_TEST_FENCE")) {
+      shikiSeedOriginal = row.content;
+      getDb()
+        .update(contentNodes)
+        .set({
+          content:
+            row.content +
+            "\n\n```ts\n// SHIKI_UI_TEST_FENCE\nconst answer: number = 42;\n```",
+        })
+        .where(eq(contentNodes.id, "guide-les-1-1"))
+        .run();
+    }
+  } catch (e) {
+    console.error("[lookatstudy] ui-test shiki seed failed:", e);
+  }
+
   // 加载构建产物（不依赖 vite dev server，CI 友好）
   // v0.11 三档布局:ui-test 断言主体跑在 T1(三栏)——窗口默认 800 落在 T3 单栏,
   // 先拉宽再加载(渲染层初始化即测得 1280);末尾有专门的跨档行为测试。
@@ -1164,12 +1189,18 @@ async function runUiTest(screenshot = false): Promise<void> {
       }
       var c = document.querySelector('[data-testid="companion-creature"]');
       var zone = c ? c.dataset.zone : null;
-      // 等跨栏飞行姿势窗(~950ms)结束再敲键:否则 cp-pose-flying 压过 typing
-      await new Promise(function(r) { setTimeout(r, 1100); });
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }));
-      await new Promise(function(r) { setTimeout(r, 240); });
-      var m = document.querySelector('[data-testid="companion-mascot"]');
-      var cls = m ? String(m.getAttribute('class')) : '';
+      // 等跨栏飞行姿势窗(~950ms)结束再敲键:cp-pose-flying 压过 typing;
+      // v10 roam 时间桶可能恰好又起一段跨栏飞行(2026-08-22 实测 3/3 偶发),
+      // 重试敲键直到姿势窗落地(上限 ~5s,防死等,仍要求真实观察到 typing)
+      var cls = '';
+      for (var k = 0; k < 10; k++) {
+        await new Promise(function(r) { setTimeout(r, 300); });
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }));
+        await new Promise(function(r) { setTimeout(r, 200); });
+        var m = document.querySelector('[data-testid="companion-mascot"]');
+        cls = m ? String(m.getAttribute('class')) : '';
+        if (cls.indexOf('cp-pose-typing') >= 0) break;
+      }
       // 释放聚焦闩(blur 事件在无 OS 焦点的 headless 下可能不派发,事件兜底)
       input.blur();
       window.dispatchEvent(new CustomEvent("companion-zone-focus", { detail: false }));
@@ -1256,6 +1287,66 @@ async function runUiTest(screenshot = false): Promise<void> {
   } catch {
     /* 尽力而为:清理失败不阻塞后续测试 */
   }
+
+  // T-SHIKI (v0.21): 讲解区代码围栏 → shiki 高亮节点(.shiki)+ 双主题 CSS 翻转
+  // (同一 DOM 切 html.light 只换 computed color——零重渲染零闪烁的机制证明)。
+  // 断言后恢复注入前的原文(共享现场纪律)。
+  let shikiRes: { ok?: boolean; [k: string]: unknown } = {};
+  try {
+    shikiRes = await win.webContents.executeJavaScript(`
+      (async function() {
+        var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+        // 讲解 tab 是第一个 tab 按钮(前面步骤可能把面板停在其他 tab)
+        var tabs = document.querySelectorAll('[data-testid="notebook-tabs"] button');
+        if (tabs.length && tabs[0]) tabs[0].click();
+        for (var i = 0; i < 60; i++) {
+          await sleep(250);
+          if (document.querySelector('[data-testid="notebook-panel"] .md-shiki pre.shiki')) break;
+        }
+        var pre = document.querySelector('[data-testid="notebook-panel"] .md-shiki pre.shiki');
+        if (!pre) return { ok: false, why: "no shiki node" };
+        // 挑一个双主题不同色的 token(github 系注释灰两主题同值,不能用它验翻转)
+        var span = null, inlineC = "", lightC = "";
+        var spans = pre.querySelectorAll('span[style*="color"]');
+        for (var s = 0; s < spans.length; s++) {
+          var m = /color:\\s*(#[0-9a-fA-F]{6}).*--shiki-light:\\s*(#[0-9a-fA-F]{6})/.exec(spans[s].getAttribute('style') || "");
+          if (m && m[1].toLowerCase() !== m[2].toLowerCase()) { span = spans[s]; inlineC = m[1]; lightC = m[2]; break; }
+        }
+        if (!span) return { ok: false, why: "no dual-color token span" };
+        // headless 默认亮色主题(app auto→light):先读亮色,摘类测暗色,再还原
+        var hadLight = document.documentElement.classList.contains('light');
+        var light = getComputedStyle(span).color;
+        document.documentElement.classList.remove('light');
+        window.dispatchEvent(new CustomEvent('theme-changed'));
+        await sleep(200);
+        var dark = getComputedStyle(span).color;
+        if (hadLight) {
+          document.documentElement.classList.add('light');
+          window.dispatchEvent(new CustomEvent('theme-changed'));
+        }
+        return { ok: dark !== light, dark: dark, light: light, inline: inlineC, lightVar: lightC };
+      })()
+    `).catch(() => ({}));
+  } catch (e) {
+    shikiRes = { ok: false, error: String(e) };
+  }
+  try {
+    if (shikiSeedOriginal != null) {
+      getDb()
+        .update(contentNodes)
+        .set({ content: shikiSeedOriginal })
+        .where(eq(contentNodes.id, "guide-les-1-1"))
+        .run();
+      shikiSeedOriginal = null;
+    }
+  } catch {
+    /* 尽力而为 */
+  }
+  results.push({
+    name: "shiki: notebook code fence highlighted + dual-theme CSS flip",
+    ok: shikiRes?.ok === true,
+    detail: shikiRes,
+  });
 
   // T-ASR (v0.14 听写,飞书式): mic 点击切语音模式 → 按住说话(dispatch 原生
   // pointerdown/up,React 根委托可收到)→ 录音浮层 → 松开 → 转录 → 复查浮层

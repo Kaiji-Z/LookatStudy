@@ -23,7 +23,7 @@ import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { markdownSanitizeSchema } from "../lib/markdown-sanitize.js";
-import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Copy, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square } from "lucide-react";
+import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square } from "lucide-react";
 import { ArtifactRenderer } from "./artifacts/index.js";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
@@ -34,6 +34,7 @@ import { selectionPopoverPosition } from "../lib/selection-popover.js";
 import { useLang } from "../lib/i18n.js";
 import { useSpeech } from "../lib/useSpeech.js";
 import { useToast } from "./Toast.js";
+import { CodeBlock } from "./CodeBlock.js";
 /** 一条消息 = role + parts 数组(v0.2 parts-based)。
  * ChatMessageV2 / ChatMessagePart 定义已移至 @shared/part-accumulator(main 与 renderer 共用)。 */
 
@@ -912,58 +913,8 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components
   },
 };
 
-/** 代码块:语言标签 + 一键复制(学习场景高频需求)。 */
-function CodeBlock({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
-  const t = useLang();
-  const [copied, setCopied] = useState(false);
-  // 从子级 code 的 className 提取语言(如 language-typescript → typescript)
-  const child = Array.isArray(children) ? children[0] : children;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const childProps: any = (child as React.ReactElement)?.props ?? {};
-  const langMatch = /language-(\w+)/.exec(childProps.className ?? "");
-  const lang = langMatch?.[1] ?? "";
-
-  const handleCopy = () => {
-    const raw = childProps.children;
-    const text = typeof raw === "string"
-      ? raw
-      : Array.isArray(raw)
-        ? raw.join("")
-        : "";
-    navigator.clipboard?.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
-
-  return (
-    <div className="relative group my-3" data-testid="md-codeblock">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-surface-1 border border-b-0 border-[var(--border-faint)] rounded-t-md">
-        <span className="text-caption font-mono text-ink-faint uppercase tracking-wider">
-          {lang || "code"}
-        </span>
-        <button
-          onClick={handleCopy}
-          aria-label={t("chat.copy")}
-          className="text-caption text-ink-muted hover:text-brand transition-colors opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 inline-flex items-center gap-1"
-          data-testid="md-copy"
-        >
-          {copied ? (
-            <><Check className="w-3 h-3 inline" />{t("chat.copied")}</>
-          ) : (
-            <><Copy className="w-3 h-3 inline" />{t("chat.copy")}</>
-          )}
-        </button>
-      </div>
-      <pre
-        {...props}
-        className="!mt-0 !rounded-t-none !border-t-0"
-      >
-        {children}
-      </pre>
-    </div>
-  );
-}
+/** 代码块渲染已抽出共享组件(v0.21 shiki 升级):components/CodeBlock.tsx,
+ *  讲解区(NotebookPanel)与对话流同一实现。 */
 
 /** 工具名 → 本地化标签(module-level helper,接受 t 函数避免 hook 限制)。 */
 function toolLabel(name: string, t: ReturnType<typeof useLang>): string {

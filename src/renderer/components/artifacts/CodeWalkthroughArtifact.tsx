@@ -12,11 +12,12 @@
  * v0.11:手机全屏读码 —— 点代码块/「放大查看」进弹窗,弹窗里单指拖动 + 双指捏合
  * (zoom 属性重排);标注点击联动在弹窗内同样生效(独立的 modal 行 ref,互不覆盖)。
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Code2, AlertTriangle, Maximize2 } from "lucide-react";
 import { useLang } from "../../lib/i18n.js";
 import { DiagramViewerModal } from "./DiagramViewerModal.js";
 import { CanvasStage } from "../CanvasStage.js";
+import { highlightLines } from "../../lib/lazy-shiki.js";
 
 interface Annotation {
   lineStart: number;
@@ -42,6 +43,17 @@ export function CodeWalkthroughArtifact({ data, variant = "card" }: { data: unkn
   /** canvas 变体(黑板/全屏画布)专用 ref:与卡片内联互不覆盖 */
   const canvasLineRefs = useRef<(HTMLDivElement | null)[]>([]);
   const lines = d.code.split("\n");
+  /** shiki 逐行 token 色(v0.21):懒加载,未就绪/未知语言保持纯文本行 */
+  const [tokenLines, setTokenLines] = useState<string[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    highlightLines(d.code, d.language).then((h) => {
+      if (alive && h) setTokenLines(h);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [d.code, d.language]);
 
   const isLineHighlighted = (lineNum: number) => {
     if (activeAnnotation === null) return false;
@@ -80,7 +92,15 @@ export function CodeWalkthroughArtifact({ data, variant = "card" }: { data: unkn
                 <span className="select-none text-neutral-600 pr-3 pl-3 text-right w-10 shrink-0 border-r border-neutral-800 tabular-nums">
                   {lineNum}
                 </span>
-                <span className="text-neutral-200 pl-3 whitespace-pre">{line || " "}</span>
+                {tokenLines && tokenLines[i] != null ? (
+                  <span
+                    className="pl-3 whitespace-pre text-neutral-200"
+                    data-testid="walk-shiki-line"
+                    dangerouslySetInnerHTML={{ __html: tokenLines[i] || " " }}
+                  />
+                ) : (
+                  <span className="text-neutral-200 pl-3 whitespace-pre">{line || " "}</span>
+                )}
               </div>
             );
           })}

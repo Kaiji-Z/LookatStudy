@@ -17,6 +17,7 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- **全应用代码语法高亮(shiki)** —— 讲解区与 AI 对话的代码块、代码逐段讲解产物从纯文本灰升级为真语法高亮:shiki + 纯 JS 正则引擎(零 WASM、不碰 CSP)懒加载,主束零增加(core+引擎+精选 35 门常用语言全部按需 chunk,未知语言诚实回退纯文本);**双主题零闪烁**——高亮 HTML 同时携带暗/亮两套颜色(CSS 变量),切主题只换 CSS 不重跑;GitHub 亮/暗配色,代码块面板沿用应用 surface 设计。代码逐段讲解按行着色,行号/标注点击交互不变。安全:输入永远是已净化文本、输出自带转义(XSS 面不扩大,KaTeX 同款渲染层信任模型),rehype-sanitize 链零改动。verify-shiki 6 组 + 破坏验证 + ui-test 真渲染断言(.shiki 节点在场 + 主题切换 computed color 翻转)。
 - **概念图 v2(ELK 引擎 + draw.io 皮肤)** —— AI 概念图产物整体重做:v0.12 的手写径向布局(空白与拥挤并存、边交叉、无分组、单色调)退役,换 elkjs——draw.io 新版同款 Eclipse Layout Kernel(懒加载 chunk,不动主束)。`show_concept_map` 新增可选 `groups` 分组字段,AI 可以声明概念分组;未声明时按邻接关系兜底聚类,密集关系图不再摊成一张大饼。视觉换 draw.io 经典词汇:同色系"浅填充+深描边"五色色板(暗色主题明度反转同色相)、分组=带标题栏的容器盒、连线=正交路由(直角折线绕开盒子)+箭头、边标签=胶囊白晕压线可读、hub(度数最大)更大更粗,入场 stagger。verify-artifact-cmap-v2(确定性/零重叠/组包含/边端点贴节点边界/边界防御)+ 破坏验证 2/2;边端点断言防 elkjs `INCLUDE_CHILDREN` 下组内边坐标系(hoist 到根+container 字段)错位这类回归。
 - **图产物语法自动修复** —— AI 画图(draw_diagram)偶发 mermaid 语法滑丝,此前学习者只能看到源码 fallback;现在渲染失败会带解析错误自动回主进程让 LLM 定点修复(只修语法不重画,一轮封顶),修好自动重渲,会话内缓存修复稿不重复调用;修复失败或未配模型时保持原 fallback,绝不白屏。出题侧同步升级:draw_diagram 提示词加图类型选型指南(流程/时序/状态按内容选)+ 标签引号规则(中文/括号 label 必须引号包裹——裸括号是渲染失败首因,防患于修复之前)。思想取自 archify 的"生成→验证回执→带错修复"循环。verify-diagram-repair T1-T5 + 破坏验证 2/2。
 

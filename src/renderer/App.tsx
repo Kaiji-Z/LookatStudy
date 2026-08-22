@@ -850,9 +850,10 @@ export default function App() {
           dueNodeIds={dueInCourseIds}
           overallMastery={dashboard?.overallMastery ?? 0}
           streak={streak?.currentStreak ?? 0}
-          streaming={chat.streaming}
+          streaming={chat.streamingThreadIds.length > 0}
+          streamingNodeIds={chat.streamingNodeIds}
           onJumpNode={(id) => {
-            if (chat.streaming) return;
+            // v0.23 异步会话:不再锁节点切换——原 thread 后台继续输出(见 useChatStream)
             const node = tree.find((n) => n.id === id);
             if (node) handleLessonClick(node);
             // T3 单栏:选完球自动切到对话栏(手机习惯:地图是选择器,内容在对话里看)
@@ -926,12 +927,12 @@ export default function App() {
                 threads={thread.threads}
                 activeThread={thread.activeThread}
                 focusNodeTitle={selectedNode?.title ?? null}
+                streamingThreadIds={chat.streamingThreadIds}
                 onPickThread={(id) => {
-                  if (chat.streaming) return; // 输出中拒绝切换
+                  // v0.23 异步会话:自由切换(原 thread 后台继续输出,tab 上有转圈指示)
                   thread.setActiveId(id);
                 }}
                 onCreate={() => {
-                  if (chat.streaming) return;
                   thread.create({ title: null });
                   toast.show(t("toast.threadCreated"));
                 }}

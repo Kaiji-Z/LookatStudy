@@ -1,22 +1,31 @@
 /**
- * useChatStream —— v0.2 parts-based 对话流 hook(M1)。
+ * useChatStream —— v0.23 异步会话:per-thread 流式状态(parts-based)。
  *
- * 订阅 chat:part 事件,把 part 流累积成 ChatMessageV2[]。
- * 兼容期同时订阅 chat:token(转成 text part),保证旧 onTextDelta 流不丢。
+ * 订阅 chat:part/chat:done/chat:error(均带 threadId),把 part 流路由进
+ * 对应 thread 的桶(stream-buckets.ts 纯函数)。视图只是当前 activeThread
+ * 桶的观察窗口——**流式跟 thread 走**:AI 思考中切节点,原 thread 在后台
+ * 继续累加输出,切回时缓存原样恢复(流式中间态只在桶里,DB 未落库,缓存
+ * 优先于重拉);新节点自由开新会话,同 thread 流式中拒发(Stop 钮)。
  *
- * 这是 ChatStream 组件的数据源。把"协议解析"和"UI 渲染"解耦——
- * hook 管 parts 累积,组件只管按 type 渲染。
- *
- * 重构自 ChatPanel.tsx 里散落在 useEffect 里的 5 个事件订阅。
+ * v0.2→v0.23 变更:旧实现事件不带 threadId 且流式全局单值,切节点会把 A
+ * 的回答混进 B 的消息列表、done 错换 id、B 输入框被全局锁死——本版根治。
+ * 后台流式中的 thread 由 streamingThreadIds 导出(ThreadSwitcher tab 指示)。
  */
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { api } from "./api.js";
 import { translate } from "./i18n.js";
 import type { ChatStreamPart, ChatAttachmentInput } from "@shared/types";
-import { accumulatePart, type ChatMessageV2, type ChatMessagePart } from "@shared/part-accumulator";
+import { type ChatMessageV2, type ChatMessagePart } from "@shared/part-accumulator.js";
+import {
+  makeBucket, touchBucket, applyPart, applyDone, applyError,
+  beginSend, failSend, evictLRU, type StreamBuckets,
+} from "./stream-buckets.js";
 
 let msgIdCounter = 0;
 const nextMsgId = () => `msg-v2-${++msgIdCounter}`;
+
+/** 桶缓存上限(LRU 淘汰,流式桶永不淘汰;见 evictLRU)。 */
+const MAX_BUCKETS = 8;
 
 /** 把持久化的 parts(JSON)安全还原成 ChatMessagePart[]。解析失败/形状不对 → null(回退纯文本)。 */
 function deserializeParts(partsJson: string | null): ChatMessagePart[] | null {
@@ -48,7 +57,12 @@ export function textHistoryToV2(
 
 interface UseChatStreamResult {
   messages: ChatMessageV2[];
+  /** 当前 thread 是否有回合在跑(后台 thread 的流式不算在这里) */
   streaming: boolean;
+  /** 所有流式中的 thread id(含后台;ThreadSwitcher tab 指示用) */
+  streamingThreadIds: string[];
+  /** 所有流式中 thread 的焦点节点 id 去重(含后台;MapRail 球指示用) */
+  streamingNodeIds: string[];
   send: (text: string, overrideThreadId?: string, displayText?: string, attachments?: ChatAttachmentInput[]) => Promise<void>;
   stop: () => Promise<void>;
   clear: () => void;
@@ -59,30 +73,32 @@ interface UseChatStreamResult {
 
 /** locale: 界面语言(i18n)。用户偏好什么界面,AI 就用什么语言回复。 */
 export function useChatStream(threadId: string | null, locale?: string | null): UseChatStreamResult {
-  const [messages, setMessages] = useState<ChatMessageV2[]>([]);
-  const [streaming, setStreaming] = useState(false);
-  // 当前正在流式追加的 assistant 消息 id。
-  // 注意:此 ref 只在事件回调(非 setState updater)里读/写,updater 内部不碰 ref
-  // (React 严格模式会双调用 updater,ref mutation 在里面会导致状态不一致)。
-  const streamingMsgIdRef = useRef<string | null>(null);
+  const [buckets, setBuckets] = useState<StreamBuckets>(() => new Map());
+  // 事件回调与 send 闭包里读最新桶(不经 deps 冻结)
+  const bucketsRef = useRef(buckets);
+  bucketsRef.current = buckets;
+  // error 事件缺 threadId 时的兜底目标(同构建内主进程总是带,防御升级窗口)
+  const threadIdRef = useRef<string>(threadId ?? "");
+  threadIdRef.current = threadId ?? "";
 
-  // thread 切换时加载历史(从 chat_messages 表)
+  // thread 切换:加载历史(缓存优先)。桶已有消息(流式中间态/已完成的回合)时
+  // 全信桶——assistant 消息在 done 前不在 DB,重拉会丢;桶从建立起就跟踪完整生命周期。
   useEffect(() => {
-    if (!threadId) {
-      setMessages([]);
-      setStreaming(false); // 切到空 thread 时重置 streaming(防卡死输入框)
-      streamingMsgIdRef.current = null;
-      return;
-    }
+    if (!threadId) return;
     let cancelled = false;
     (async () => {
+      const existing = bucketsRef.current.get(threadId);
+      if (existing && (existing.loaded || existing.messages.length > 0)) {
+        setBuckets((prev) => touchBucket(prev, threadId, Date.now()));
+        return;
+      }
       try {
         const history = await api.threadGetMessages(threadId);
         if (cancelled) return;
-        // chat_messages 行 → ChatMessageV2。优先复原 parts_json(产物/提议卡/思考过程),
-        // 无 parts_json 或解析失败则回退纯文本 content(旧消息兼容)。
-        setMessages(
-          history.map((m) => {
+        setBuckets((prev) => {
+          const cur = prev.get(threadId);
+          if (cur && (cur.loaded || cur.messages.length > 0)) return touchBucket(prev, threadId, Date.now()); // 竞态:期间桶已建立
+          const msgs = history.map((m) => {
             const restored = deserializeParts(m.partsJson);
             return {
               id: m.id,
@@ -90,11 +106,14 @@ export function useChatStream(threadId: string | null, locale?: string | null): 
               parts: restored ?? [{ type: "text" as const, text: m.content }],
               // 按钮触发的消息:气泡只展示短动作标签(完整提示词在 parts/content,仅供 LLM)
               ...(m.displayText ? { displayText: m.displayText } : {}),
-            };
-          }),
-        );
+            } satisfies ChatMessageV2;
+          });
+          const next = new Map(prev);
+          next.set(threadId, { ...(cur ?? makeBucket(Date.now())), messages: msgs, loaded: true, touched: Date.now() });
+          return evictLRU(next, MAX_BUCKETS);
+        });
       } catch {
-        if (!cancelled) setMessages([]);
+        /* 拉取失败:视图投影为空桶,事件到达时仍能建立 */
       }
     })();
     return () => {
@@ -102,89 +121,37 @@ export function useChatStream(threadId: string | null, locale?: string | null): 
     };
   }, [threadId]);
 
-  // 订阅 chat:part 事件(parts-based,优先)
+  // 事件订阅(全局一次,与 activeThread 无关——后台 thread 的输出继续路由进自己的桶)
   useEffect(() => {
-    const off = api.on("chat:part", (part: ChatStreamPart) => {
-      // 在回调里确定目标消息 id(读 ref),然后传进纯 updater
-      const candidateId = streamingMsgIdRef.current;
-      const targetId = candidateId; // 下面用,ref 只在这里读一次
-      setMessages((prev) => {
-        // 判断是否需要新建 assistant 消息:
-        //   1. ref 里有 id 且该消息还存在 → 追加到它
-        //   2. 否则 → 看最后一条是不是 assistant 且是当前流式(启发式),是就追加,否则新建
-        let msgId = targetId;
-        let base = prev;
-        const exists = msgId && prev.some((m) => m.id === msgId);
-        if (!exists) {
-          // 启发式:如果最后一条是 assistant 且还没有 chat:done 收尾,继续往它追加
-          const last = prev[prev.length - 1];
-          if (last && last.role === "assistant") {
-            msgId = last.id;
-          } else {
-            msgId = nextMsgId();
-            base = [...prev, { id: msgId, role: "assistant" as const, parts: [] }];
-          }
-        }
-        const finalId = msgId;
-        return base.map((m) =>
-          m.id === finalId
-            ? { ...m, parts: accumulatePart(m.parts, part) }
-            : m,
-        );
-      });
+    const offPart = api.on("chat:part", (part: ChatStreamPart, tid?: string, focusNodeId?: string) => {
+      const target = tid ?? threadIdRef.current;
+      setBuckets((prev) => evictLRU(applyPart(prev, target, part, nextMsgId, Date.now(), focusNodeId), MAX_BUCKETS));
     });
-    return off;
-  }, []);
-
-  // 订阅 chat:done(流式结束)。后端带回两条消息的真实 DB id,
-  // 用它替换流式时的临时 msg-v2-N id,让"对话画线笔记"的溯源 msgId 跨重载稳定匹配。
-  useEffect(() => {
-    const off = api.on("chat:done", (_fullText: string, ids?: { userMessageId?: string; assistantMessageId?: string }) => {
-      setStreaming(false);
-      streamingMsgIdRef.current = null;
-      if (ids && (ids.userMessageId || ids.assistantMessageId)) {
-        setMessages((prev) => {
-          // 找最后一条 user 消息 + 最后一条 assistant 消息,替换它们的 id
-          let lastUserIdx = -1;
-          let lastAssistantIdx = -1;
-          for (let i = prev.length - 1; i >= 0; i--) {
-            if (prev[i].role === "user" && lastUserIdx === -1) lastUserIdx = i;
-            if (prev[i].role === "assistant" && lastAssistantIdx === -1) lastAssistantIdx = i;
-            if (lastUserIdx !== -1 && lastAssistantIdx !== -1) break;
-          }
-          return prev.map((m, i) => {
-            if (i === lastUserIdx && ids.userMessageId) {
-              return { ...m, id: ids.userMessageId };
-            }
-            if (i === lastAssistantIdx && ids.assistantMessageId) {
-              return { ...m, id: ids.assistantMessageId };
-            }
-            return m;
-          });
-        });
-      }
+    const offDone = api.on(
+      "chat:done",
+      (_fullText: string, ids?: { userMessageId?: string; assistantMessageId?: string }, tid?: string) => {
+        const target = tid ?? threadIdRef.current;
+        setBuckets((prev) => applyDone(prev, target, ids, Date.now()));
+      },
+    );
+    const offErr = api.on("chat:error", (err: string, tid?: string) => {
+      const target = tid ?? threadIdRef.current;
+      setBuckets((prev) => applyError(prev, target, err, nextMsgId, Date.now()));
     });
-    return off;
-  }, []);
-
-  // 订阅 chat:error
-  useEffect(() => {
-    const off = api.on("chat:error", (err: string) => {
-      setStreaming(false);
-      streamingMsgIdRef.current = null;
-      setMessages((prev) => [
-        ...prev,
-        { id: nextMsgId(), role: "assistant", parts: [{ type: "text", text: `⚠️ ${err}` }] },
-      ]);
-    });
-    return off;
+    return () => {
+      offPart();
+      offDone();
+      offErr();
+    };
   }, []);
 
   const send = useCallback(
     async (text: string, overrideThreadId?: string, displayText?: string, attachments?: ChatAttachmentInput[]) => {
       // 优先用 overrideThreadId(首次建 thread 后立刻发,不等 prop 更新)
       const tid = overrideThreadId ?? threadId;
-      if (!tid || streaming || !text.trim()) return;
+      if (!tid || !text.trim()) return;
+      // 同 thread 流式中拒发(跨 thread 自由——异步会话的核心)
+      if (bucketsRef.current.get(tid)?.streaming) return;
       const trimmed = text.trim();
       const userMsg: ChatMessageV2 = {
         id: nextMsgId(),
@@ -208,42 +175,50 @@ export function useChatStream(threadId: string | null, locale?: string | null): 
         // 按钮触发时气泡只显示短动作标签,不显示发给 LLM 的完整提示词
         ...(displayText ? { displayText } : {}),
       };
-      setMessages((prev) => [...prev, userMsg]);
-      setStreaming(true);
-      streamingMsgIdRef.current = null;
+      const r = beginSend(bucketsRef.current, tid, userMsg, Date.now());
+      if (!r.accepted) return;
+      setBuckets(r.buckets);
       try {
         await api.agentChatThread(tid, trimmed, displayText, locale ?? null, attachments);
       } catch (e) {
-        setStreaming(false);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextMsgId(),
-            role: "assistant",
-            parts: [{ type: "text", text: `⚠️ ${e instanceof Error ? e.message : String(e)}` }],
-          },
-        ]);
+        // 归位发起桶(发起后用户可能已切走,错误不能落到别的 thread 视图)
+        const msg = e instanceof Error ? e.message : String(e);
+        setBuckets((prev) => failSend(prev, tid, msg, nextMsgId, Date.now()));
       }
     },
-    [threadId, streaming, locale],
+    [threadId, locale],
   );
 
   const stop = useCallback(async () => {
-    if (!threadId || !streaming) return;
+    if (!threadId) return;
     try {
       await api.abortAgentChatThread(threadId);
     } catch {
       /* 忽略 */
     }
-    setStreaming(false);
-    streamingMsgIdRef.current = null;
-  }, [threadId, streaming]);
+    // 立即结束当前桶的流式态(不等事件收尾,防卡输入框);
+    // abort 的 reject 随后经 send catch 的 failSend 落 ⚠️ 消息
+    setBuckets((prev) => {
+      const b = prev.get(threadId);
+      if (!b?.streaming) return prev;
+      const next = new Map(prev);
+      next.set(threadId, { ...b, streaming: false, streamingMsgId: null, touched: Date.now() });
+      return next;
+    });
+  }, [threadId]);
 
   const clear = useCallback(() => {
     // v0.4: clear 在 thread 模型里改为"清空当前显示"(不删 DB,DB 里消息保留)
-    // 真正删除整条 thread 走 useThreads.remove
-    setMessages([]);
-  }, []);
+    // 真正删除整条 thread 走 useThreads.remove。清的是当前桶。
+    if (!threadId) return;
+    setBuckets((prev) => {
+      const b = prev.get(threadId);
+      if (!b) return prev;
+      const next = new Map(prev);
+      next.set(threadId, { ...b, messages: [], streamingMsgId: null, loaded: true, touched: Date.now() });
+      return next;
+    });
+  }, [threadId]);
 
   // M2: 监听命令面板事件(Cmd+K 派发的预设指令)
   useEffect(() => {
@@ -260,7 +235,7 @@ export function useChatStream(threadId: string | null, locale?: string | null): 
         exam_mode: { msg: "切换到考试冲刺模式,出有难度的题", labelKey: "command.exam_mode" },
       };
       const cmd = COMMAND_MESSAGES[action];
-      if (cmd) send(cmd.msg, undefined, translate(cmd.labelKey));
+      if (cmd) void send(cmd.msg, undefined, translate(cmd.labelKey));
     };
     window.addEventListener("lookatstudy-command", handler);
     return () => window.removeEventListener("lookatstudy-command", handler);
@@ -268,35 +243,71 @@ export function useChatStream(threadId: string | null, locale?: string | null): 
 
   const markProposalStatus = useCallback(
     (msgId: string, toolCallIdx: number, applied: boolean) => {
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.id !== msgId) return m;
-          const parts = [...m.parts];
-          const part = parts[toolCallIdx];
-          if (part && part.type === "tool-call") {
-            // 把 output 替换成标记已处理的状态(UI 只读)
-            parts[toolCallIdx] = {
-              ...part,
-              output: {
-                ...(typeof part.output === "object" && part.output ? part.output : {}),
-                status: applied ? "applied" : "rejected",
-              },
-            };
-          }
-          return { ...m, parts };
-        }),
-      );
+      if (!threadId) return;
+      setBuckets((prev) => {
+        const b = prev.get(threadId);
+        if (!b) return prev;
+        const next = new Map(prev);
+        next.set(threadId, {
+          ...b,
+          messages: b.messages.map((m) => {
+            if (m.id !== msgId) return m;
+            const parts = [...m.parts];
+            const part = parts[toolCallIdx];
+            if (part && part.type === "tool-call") {
+              // 把 output 替换成标记已处理的状态(UI 只读)
+              parts[toolCallIdx] = {
+                ...part,
+                output: {
+                  ...(typeof part.output === "object" && part.output ? part.output : {}),
+                  status: applied ? "applied" : "rejected",
+                },
+              };
+            }
+            return { ...m, parts };
+          }),
+        });
+        return next;
+      });
     },
-    [],
+    [threadId],
   );
 
-  const setMessagesForNode = useCallback((msgs: ChatMessageV2[]) => {
-    setMessages(msgs);
-  }, []);
+  const setMessagesForNode = useCallback(
+    (messages: ChatMessageV2[]) => {
+      if (!threadId) return;
+      setBuckets((prev) => {
+        const b = prev.get(threadId) ?? makeBucket(Date.now());
+        const next = new Map(prev);
+        next.set(threadId, { ...b, messages, loaded: true, touched: Date.now() });
+        return next;
+      });
+    },
+    [threadId],
+  );
+
+  // 视图投影:当前 thread 的桶。空 thread=空视图。
+  const bucket = threadId ? buckets.get(threadId) : undefined;
+  const messages = useMemo(() => bucket?.messages ?? [], [bucket]);
+  const streaming = bucket?.streaming ?? false;
+  const streamingThreadIds = useMemo(
+    () => Array.from(buckets.entries()).filter(([, b]) => b.streaming).map(([id]) => id),
+    [buckets],
+  );
+  const streamingNodeIds = useMemo(
+    () =>
+      Array.from(buckets.values())
+        .filter((b) => b.streaming && b.focusNodeId)
+        .map((b) => b.focusNodeId as string)
+        .filter((v, i, arr) => arr.indexOf(v) === i),
+    [buckets],
+  );
 
   return {
     messages,
     streaming,
+    streamingThreadIds,
+    streamingNodeIds,
     send,
     stop,
     clear,

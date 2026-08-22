@@ -77,7 +77,7 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 - **Middle (chat)**: `ThreadSwitcher` (Chrome-style horizontal tabs, one thread per tab) + `ChatStream` (parts rendering) + `ChatComposer` (input + 教学人设 soul 药丸 + starter prompts + 附件📎/粘贴/拖拽 + 底部工具栏:思考强度 · 上下文用量表 · 模型切换). `Ctrl+K` opens the command palette; `Ctrl+Tab` cycles threads.
 - **Right (NotebookPanel)**: 康奈尔笔记法三区(讲解/笔记)+ **黑板 tab**(v0.12:对话最新重产物 concept_map/diagram/compare_table/code_walkthrough 的大画布,流式中出现新重产物自动切到该 tab,App `canvasArtifact`+`forceTab` 联动;画布=CanvasStage 纯 transform pan/zoom,contain 适屏自适应容器,缩放锚定手势中点,双击适屏↔100%,四产物 canvas 裸内容变体经 ArtifactRenderer variant 透传,放大弹窗同引擎)。讲解 tab 显示节点 markdown + 支持选区画线(`✏️ 加笔记`)+ 🔊 整课朗读按钮(v0.13,切节点自动停;v6 改 sticky 悬浮讲解视口右上角不随正文滚动,朗读时讲解区句级高亮 + 伴学跟句指向)。笔记 tab 三区:🗺️理解区(AI 产物:概念图/对比表/流程图/代码讲解)、✏️笔记区(用户画线 user_note,带溯源跳转)、📝练习区(quiz + last_result 答题记录)。画线用 `highlightText.ts` 的文本搜索方案(不依赖 DOM offset 稳定性)。
 - **Responsive tiers (v0.11, `lib/paneTiers.ts` + `useWindowTier`)**: T1 ≥1240 三栏共存;T2 920~1239 双栏(中栏+一侧,侧栏互斥——显示左则隐右,默认右侧);T3 <920 单栏(默认对话,对话流卡片模式:每 AI 回合一卡+scroll-snap 邻近吸附「一幕一屏」)+ 单行窄标题栏(51px:左 XP 紧凑数字 / 中居中分段切换器 课程/导师/黑板 / 右设置;三栏名即教室隐喻 i18n `pane.*`)+ 内容区水平滑屏切换(纯函数 swipeTarget,横向>60px 主导;data-noswipe 区域豁免)+ 左栏选球自动切到对话栏。拉宽自动弹回(进 T1 三栏全恢复,T3→T2 承接当前侧);窄化自动收。中栏宽 clamp(480,36vw,800);笔记本内容居中封顶 960;T3 地图全宽(物理岛按新墙宽自动重建);窗口 minWidth 560。
-- **Focus lock**: while the AI is streaming, node/thread switching is blocked so the learner stays in one context. Do not remove this without an explicit off switch the user controls.
+- **Async sessions (v0.23)**: streaming follows the **thread**, not the view. `chat:part/done/error` carry `threadId` (+`focusNodeId` on part); `useChatStream` routes events into per-thread buckets (`stream-buckets.ts` pure functions, LRU 8, streaming buckets never evicted, same-thread sends blocked while streaming, cross-thread free). Switching nodes/threads mid-stream is allowed — the old thread keeps accumulating in the background; indicators: spinner on thread tab + map node badge. The former global focus lock (block switching while streaming) was removed 2026-08-23 because the real guard was the threadId-less protocol that mixed streams across views; buckets make the lock unnecessary.
 - **HMR rule**: renderer-only changes (CSS/TSX) auto-hot-reload via Vite — no restart needed. Main process or preload changes require `taskkill electron + npm run dev:electron`.
 
 ## Common commands
@@ -92,7 +92,7 @@ npm run serve             # dev serve: esbuild server bundle only + serve dist/r
 npm run build:mobile      # 便携包 dist/mobile/: server.cjs 单文件 + web 前端 + install-termux.sh(Termux 手机端)
 node scripts/build-termux-voice.mjs  # Termux 语音引擎包(NDK 交叉编译,~12MB;CI termux-voice.yml 同源)
 
-npm run verify:core       # 108 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑)
+npm run verify:core       # 109 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -121,7 +121,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z` — `package.yml` (3-OS matrix) and `android-build.yml` both auto-trigger on `v*`. **Neither creates the Release**: their attach steps (`gh release upload`) fail with `release not found` until the Release object exists. So right after pushing the tag, run `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <file>` (notes drafted per human-writing + check_prose, English first). If the attach jobs already failed, `gh run rerun <id> --failed` after creating the release — builds are cached, only attach re-runs.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 108 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
+5. `ci.yml` runs oxlint + both typechecks + 109 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -222,7 +222,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | Map physics | `src/renderer/lib/mapPhysics.ts` | 左栏物理地图(Matter.js 0.19):真实重力场+球浮力(彩旗串悬垂链);绳=粒子链(受拉弹力/松弛垂坠);天气驱动环境(风/阵风/雨滴冲击/雪载增重/雾阻尼,weatherPhysFor);顺序=绳链(路牌绳结→球→…→紫考试球,更沉;考试球另系一条绳到下段路牌上缘,整图成连续链,挂点 x 按 section id 确定性随机);无弹簧回位自由摆布;锁定球=static 刚体(不可拖,解锁重建岛"苏醒");碰撞=squash+脉冲环(命中点用碰撞支撑点)+天气耦合;视口外岛冻结;reduced-motion 回退静态 |
 | Motion infra | `src/renderer/lib/motion-presets.ts` + `usePrefersReducedMotion.ts` | `motion` 弹簧/stagger/enter-exit 预设 + a11y reduced-motion 响应式 hook(useSyncExternalStore on matchMedia) |
 
-Key renderer hooks: `useChatStream` (parts-based chat, pure `accumulatePart`),
+Key renderer hooks: `useChatStream` (parts-based chat routed per-thread via `stream-buckets.ts` — async sessions, background streaming, pure `accumulatePart`),
 `useThreads` (node-bound thread CRUD + soft-delete undo), `useCanvas` (canvas
 item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription),
 `useFocusTrap` (drawer/modal focus-trap + restore for a11y),
@@ -231,7 +231,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (108 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (109 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

@@ -16,8 +16,11 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **异步会话:AI 思考中自由切节点,原会话后台继续输出** —— 流式从"跟视图"改为"跟 thread 走"。此前 chat:part/done/error 事件不带 threadId 且流式状态全局单值,流式中切节点会把 A 节点的回答混进 B 的消息列表、done 错换 B 的消息 id、B 的输入框被全局锁死——"切了节点会话混乱要刷新"的根因(手机端观察,桌面同病)。现每个 thread 一个流式桶(`stream-buckets.ts` 纯函数):事件按 threadId 路由进桶,跨 thread 零污染;切走后原 thread 后台继续累加,切回时缓存原样恢复(流式中间态不落库,缓存优先于重拉);LRU 保留 8 桶,流式桶永不淘汰;同 thread 流式中仍拒发(Stop 钮),跨 thread 自由开新会话。指示:会话 tab 转圈、地图球右上转圈(事件携带 focusNodeId)、地图提示条改"后台回答,可随意切换节点"。主进程 per-thread AbortController 原本就绪,零改动。手机实测四场景实锤:流式中切节点输入框解锁/双节点并行流式/视图内容零串扰/切回原节点回答完整。
+
 ### Fixed
-- **手机端输入框弹出菜单排版错乱** —— 触屏粗指针适配里 `.composer-toolbar button { min-width:40px; max-width:44px; … }` 是后代选择器,把思考强度/模型切换菜单的菜单项(按钮 DOM 挂在工具栏里)一并钳成 44px 窄条,手机打开菜单即文字挤压成方块。修复:选择器加 `:not([role="menuitemradio"]):not([role="menuitem"])` 排除菜单项(触发钮无 role、菜单项带 role,两者恰好可分),触发钮的 40px 图标化命中不变;模型菜单补 `max-w-[calc(100vw-1.5rem)]` 视口保护(与思考菜单同款)。新增 verify-composer-touch-menu 守卫(选择器排除/菜单项 role/视口保护三段,破坏验证闭环)。
+- **手机端输入框弹出菜单排版错乱** —— 触屏粗指针适配里 `.composer-toolbar button { min-width:40px; max-width:44px; … }` 是后代选择器,把思考强度/模型切换菜单的菜单项(按钮 DOM 挂在工具栏里)一并钳成 44px 窄条,手机打开菜单即文字挤压成方块。修复:选择器加 `:not([role="menuitemradio"]):not([role="menuitem"])` 排除菜单项(触发钮无 role、菜单项带 role,两者恰好可分),触发钮的 40px 图标化命中不变;模型菜单与上下文弹层补 `max-w-[calc(100vw-1.5rem)]` 视口保护(与思考菜单同款)。新增 verify-composer-touch-menu 守卫(选择器排除/菜单项 role/视口保护三段,破坏验证闭环)。
 
 ## [0.22.1] - 2026-08-22
 

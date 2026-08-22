@@ -993,8 +993,10 @@ export type ChatStreamPart =
 
 export interface IpcEvents {
   "chat:token": (chunk: string) => void;
-  "chat:done": (fullText: string, ids?: { userMessageId?: string; assistantMessageId?: string }) => void;
-  "chat:error": (error: string) => void;
+  /** v0.23 异步会话:done/error/part 末参带 threadId,渲染层按 thread 归位
+   * (流式跟 thread 走,切节点后原 thread 后台继续输出)。 */
+  "chat:done": (fullText: string, ids?: { userMessageId?: string; assistantMessageId?: string }, threadId?: string) => void;
+  "chat:error": (error: string, threadId?: string) => void;
   /** 工具调用事件（结构化，供聊天栏渲染工具条） */
   "chat:toolCall": (name: string, args: string) => void;
   /** 提议创建事件（结构化，供聊天栏渲染应用/拒绝卡） */
@@ -1009,8 +1011,10 @@ export interface IpcEvents {
   /**
    * v0.2 parts-based 流式协议：把 fullStream 的 part 透传给渲染层。
    * 与 chat:token 并存（兼容期），渲染层可二选一。M2 起优先用 chat:part。
+   * v0.23:第二参 threadId(渲染层按 thread 分发),第三参 focusNodeId
+   * (地图球后台流式指示:thread → 节点映射由事件直接携带)。
    */
-  "chat:part": (part: ChatStreamPart) => void;
+  "chat:part": (part: ChatStreamPart, threadId?: string, focusNodeId?: string) => void;
   /** 考试题目生成进度推送(后台生成实时进度;完成/失败也走这里)。 */
   "exam:status": (status: ExamStatus) => void;
   /** main→renderer 状态变化推送(xp/streak/mastery 变化)。renderer 重拉 + 触发庆祝。 */

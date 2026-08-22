@@ -962,9 +962,10 @@ export async function handleAgentChat(
       onProposalCreated: (id, summary) => {
         win?.send("chat:proposal", id, summary, "pending");
       },
-      onError: (msg) => win?.send("chat:error", msg),
+      onError: (msg) => win?.send("chat:error", msg, nodeId),
       // v0.2 parts 协议：把 reasoning/tool-start/tool-result/tool-error 透传给渲染层
-      onPart: (part) => win?.send("chat:part", part),
+      // (v0.23 第二参带会话标识,旧接口用 nodeId 充当;第三参同)
+      onPart: (part) => win?.send("chat:part", part, nodeId, nodeId),
     },
     controller.signal,
     locale,
@@ -975,7 +976,7 @@ export async function handleAgentChat(
   history.push({ role: "assistant", content: reply });
   saveChatHistory(db, nodeId, history);
   markDirty();
-  win?.send("chat:done", reply, {});
+  win?.send("chat:done", reply, {}, nodeId);
   return reply;
 }
 
@@ -1153,8 +1154,9 @@ export async function handleAgentChatThread(
       onProposalCreated: (id, summary) => {
         win?.send("chat:proposal", id, summary, "pending");
       },
-      onError: (msg) => win?.send("chat:error", msg),
-      onPart: (part) => win?.send("chat:part", part),
+      onError: (msg) => win?.send("chat:error", msg, threadId),
+      // v0.23: part 带 threadId(渲染层按 thread 分发)+focusNodeId(地图球后台指示)
+      onPart: (part) => win?.send("chat:part", part, threadId, focusNodeId),
     },
     controller.signal,
     locale,
@@ -1177,7 +1179,7 @@ export async function handleAgentChatThread(
   win?.send("chat:done", reply, {
     userMessageId: savedUserMsg.id,
     assistantMessageId: savedAssistantMsg.id,
-  });
+  }, threadId);
   return reply;
 }
 

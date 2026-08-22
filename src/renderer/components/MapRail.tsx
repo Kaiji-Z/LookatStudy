@@ -8,7 +8,7 @@
 import type { ContentNode, Progress, Course } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { useState, useEffect, useRef, type CSSProperties, Suspense, lazy } from "react";
-import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic } from "lucide-react";
+import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic, Loader2 } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { companionBallTap, companionImportDone, companionImporting, companionRailRegister, companionRailUnregister, companionRailWorld, companionWhistle } from "../lib/companion/bus.ts";
 import {
@@ -58,7 +58,10 @@ interface MapRailProps {
   dueNodeIds: Set<string>;
   overallMastery: number;
   streak: number;
+  /** 有任意 thread 在流式(含后台;地图顶部提示条) */
   streaming: boolean;
+  /** v0.23 异步会话:流式中的节点 id(含后台;对应球上转圈指示) */
+  streamingNodeIds: string[];
   onJumpNode: (nodeId: string) => void;
   /** 课程可用的翻译语言列表 */
   availableLanguages: string[];
@@ -329,7 +332,7 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
                 ) : (
                   <div className="space-y-6 pt-2">
                     {visibleSections.map((section, sIdx) => (
-                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} onJumpNode={props.onJumpNode} physics={physicsOn} physicsWeather={skyPreset?.weather ?? "clear"} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} onFlakes={pushFlakes} orbSnowRef={orbSnowRef} />
+                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} streamingNodeIds={props.streamingNodeIds} onJumpNode={props.onJumpNode} physics={physicsOn} physicsWeather={skyPreset?.weather ?? "clear"} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} onFlakes={pushFlakes} orbSnowRef={orbSnowRef} />
                     ))}
                   </div>
                 )}
@@ -916,6 +919,7 @@ function MapSection({
   progressMap,
   selectedNodeId,
   dueNodeIds,
+  streamingNodeIds,
   onJumpNode,
   physics,
   physicsWeather,
@@ -931,6 +935,8 @@ function MapSection({
   progressMap: Record<string, Progress>;
   selectedNodeId: string | null;
   dueNodeIds: Set<string>;
+  /** v0.23 异步会话:流式中的节点 id(球上转圈指示)。 */
+  streamingNodeIds: string[];
   onJumpNode: (nodeId: string) => void;
   /** 物理地图开(reduced-motion 时 false,渲染静态布局)。 */
   physics: boolean;
@@ -1410,6 +1416,7 @@ function MapSection({
                 progress={progressMap[lesson.id]}
                 isSelected={lesson.id === selectedNodeId}
                 isDue={dueNodeIds.has(lesson.id)}
+                isStreaming={streamingNodeIds.includes(lesson.id)}
                 chapterLessonsMastered={chapterLessonsMastered}
                 onClick={() => {
                   if (Date.now() < suppressClickUntilRef.current) return;
@@ -1441,6 +1448,7 @@ function MapNode({
   progress,
   isSelected,
   isDue,
+  isStreaming,
   chapterLessonsMastered,
   onClick,
 }: {
@@ -1448,6 +1456,8 @@ function MapNode({
   progress?: Progress;
   isSelected: boolean;
   isDue: boolean;
+  /** v0.23 异步会话:该节点有 thread 正在流式(含后台)——球上转圈指示 */
+  isStreaming: boolean;
   /** 同 section 所有 lesson mastery 都 ≥0.5(考试解锁条件)。 */
   chapterLessonsMastered: boolean;
   onClick: () => void;
@@ -1498,6 +1508,14 @@ function MapNode({
                   : lesson.title
         }
       >
+        {/* v0.23 异步会话:该节点有 thread 在流式(含后台)——球右上转圈指示 */}
+        {isStreaming && (
+          <Loader2
+            className="absolute -top-1.5 -right-1.5 z-10 w-4 h-4 text-accent bg-surface-0 rounded-full p-0.5 animate-spin shadow-pop pointer-events-none"
+            aria-label={t("thread.streamingBadge")}
+            data-testid={`node-streaming-${lesson.id.slice(0, 8)}`}
+          />
+        )}
         {/* 进度环(普通课:in_progress 白色部分环 / mastered 金色满环闭环;考试不画) */}
         {showRing && (
           <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 56 56" aria-hidden="true">

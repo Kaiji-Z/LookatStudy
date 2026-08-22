@@ -18,7 +18,7 @@
  */
 import { useState, useRef, useEffect } from "react";
 import type { Thread } from "@shared/types";
-import { Plus, Settings, Edit, Archive, Trash } from "lucide-react";
+import { Plus, Settings, Edit, Archive, Trash, Loader2 } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { useLang } from "../lib/i18n.js";
 
@@ -26,6 +26,8 @@ interface ThreadSwitcherProps {
   threads: Thread[];
   activeThread: Thread | null;
   focusNodeTitle: string | null;
+  /** v0.23 异步会话:所有流式中的 thread id(含后台),tab 上转圈指示 */
+  streamingThreadIds: string[];
   onPickThread: (id: string) => void;
   onCreate: () => void;
   onRename: (id: string, title: string) => void;
@@ -37,6 +39,7 @@ export function ThreadSwitcher({
   threads,
   activeThread,
   focusNodeTitle,
+  streamingThreadIds,
   onPickThread,
   onCreate,
   onRename,
@@ -103,6 +106,7 @@ export function ThreadSwitcher({
         {threads.map((th) => {
           const isActive = th.id === activeThread?.id;
           const isRenaming = renamingId === th.id;
+          const isStreaming = streamingThreadIds.includes(th.id);
           return (
             <div
               key={th.id}
@@ -114,7 +118,11 @@ export function ThreadSwitcher({
               onClick={() => !isRenaming && onPickThread(th.id)}
               data-testid={`thread-tab-${th.id.slice(0, 8)}`}
             >
-              <span className={`w-1 h-1 rounded-full shrink-0 transition-opacity ${isActive ? "bg-brand opacity-100" : "bg-[var(--border)] opacity-0 group-hover:opacity-60"}`} />
+              {isStreaming ? (
+                <Loader2 className="w-3 h-3 shrink-0 text-accent animate-spin" aria-label={t("thread.streamingBadge")} data-testid={`thread-streaming-${th.id.slice(0, 8)}`} />
+              ) : (
+                <span className={`w-1 h-1 rounded-full shrink-0 transition-opacity ${isActive ? "bg-brand opacity-100" : "bg-[var(--border)] opacity-0 group-hover:opacity-60"}`} />
+              )}
 
               {isRenaming ? (
                 <input

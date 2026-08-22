@@ -125,7 +125,7 @@ export function ContextMeter({ info, historyTokens, draftTokens }: ContextMeterP
           role="dialog"
           aria-label={t("context.label")}
           data-testid="composer-context-panel"
-          className="absolute bottom-full right-0 mb-1.5 z-50 w-64 bg-surface-0 rounded-xl shadow-elevated border border-[var(--border)] p-3"
+          className="absolute bottom-full right-0 mb-1.5 z-50 w-64 max-w-[calc(100vw-1.5rem)] bg-surface-0 rounded-xl shadow-elevated border border-[var(--border)] p-3"
         >
           <div className="flex items-baseline justify-between mb-2">
             <span className="text-label font-bold text-ink-strong">{t("context.label")}</span>

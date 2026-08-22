@@ -11,7 +11,7 @@
  *
  * 未配 key 时显示引导(去设置)。
  */
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from "react";
 import { companionSend, companionSetListening, companionZoneFocus } from "../lib/companion/bus.ts";
 import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X, Mic, Keyboard } from "lucide-react";
 import type { Soul, StarterPrompt, HumanFrictionCategory, ChatAttachmentInput, ContextUsageInfo } from "@shared/types";
@@ -23,7 +23,10 @@ import { useAsrInput } from "../lib/useAsrInput.js";
 import { ModelPicker } from "./ModelPicker.js";
 import { ContextMeter } from "./ContextMeter.js";
 import { EffortPicker } from "./EffortPicker.js";
-import { VoicePanel, type VoicePanelView } from "./VoicePanel.js";
+import type { VoicePanelView } from "./VoicePanel.js";
+
+// 语音面板按需加载(入口包瘦身):切到语音模式才拉 chunk
+const VoicePanel = lazy(() => import("./VoicePanel.js").then((m) => ({ default: m.VoicePanel })));
 
 /** soul 名 → i18n key(短标签,显示在药丸里)。 */
 const SOUL_LABEL_KEY: Record<string, string> = {
@@ -457,16 +460,18 @@ export function ChatComposer({
         {voiceMode ? (
           <>
             {voiceView !== "idle" && (
-              <VoicePanel
-                view={voiceView}
-                level={asr.level}
-                text={voiceText}
-                onTextChange={setVoiceText}
-                onSend={handleVoiceSend}
-                onRerecord={resetVoiceState}
-                errorMessage={voiceError}
-                sendDisabled={streaming || !nodeId || !voiceText.trim()}
-              />
+              <Suspense fallback={null}>
+                <VoicePanel
+                  view={voiceView}
+                  level={asr.level}
+                  text={voiceText}
+                  onTextChange={setVoiceText}
+                  onSend={handleVoiceSend}
+                  onRerecord={resetVoiceState}
+                  errorMessage={voiceError}
+                  sendDisabled={streaming || !nodeId || !voiceText.trim()}
+                />
+              </Suspense>
             )}
             {/* 头行:语音模式标识 + 切回键盘 */}
             <div className="flex items-center justify-between mb-1.5">

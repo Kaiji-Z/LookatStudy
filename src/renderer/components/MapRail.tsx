@@ -7,10 +7,9 @@
  */
 import type { ContentNode, Progress, Course } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
-import { useState, useEffect, useRef, type CSSProperties } from "react";
+import { useState, useEffect, useRef, type CSSProperties, Suspense, lazy } from "react";
 import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
-import { CourseSearchPanel } from "./CourseSearchPanel.js";
 import { companionBallTap, companionImportDone, companionImporting, companionRailRegister, companionRailUnregister, companionRailWorld, companionWhistle } from "../lib/companion/bus.ts";
 import {
   computeBalloonLayout,
@@ -39,6 +38,9 @@ import { api, isDesktopApp } from "../lib/api.js";
 import { useLang } from "../lib/i18n.js";
 import { celebrate } from "../lib/celebration.js";
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion.js";
+
+// 课程搜索面板按需加载(入口包瘦身):仅点开搜索时才拉 chunk
+const CourseSearchPanel = lazy(() => import("./CourseSearchPanel.js").then((m) => ({ default: m.CourseSearchPanel })));
 
 export type MapView = "map" | "import";
 
@@ -346,19 +348,21 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
           跳转先切到目标节点的 world(实操课自动切实操页),再走 onJumpNode
           (带流式锁/考试离开守卫),面板收起后滚动定位到对应球。 */}
       {searchOpen && props.courseId && (
-        <CourseSearchPanel
-          sections={props.sections}
-          tree={props.tree}
-          progressMap={props.progressMap}
-          selectedNodeId={props.selectedNodeId}
-          onJump={(node) => {
-            setWorld(node.world ?? "study");
-            setSearchOpen(false);
-            companionBallTap(null, null, node.id); // v0.18 伴学点球互动(搜索路,坐标由物理岛定位)
-            props.onJumpNode(node.id);
-          }}
-          onClose={() => setSearchOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <CourseSearchPanel
+            sections={props.sections}
+            tree={props.tree}
+            progressMap={props.progressMap}
+            selectedNodeId={props.selectedNodeId}
+            onJump={(node) => {
+              setWorld(node.world ?? "study");
+              setSearchOpen(false);
+              companionBallTap(null, null, node.id); // v0.18 伴学点球互动(搜索路,坐标由物理岛定位)
+              props.onJumpNode(node.id);
+            }}
+            onClose={() => setSearchOpen(false)}
+          />
+        </Suspense>
       )}
 
       {/* 删除课程确认(导入面板课程行 + 地图头当前课删除按钮共用,替代 native confirm) */}

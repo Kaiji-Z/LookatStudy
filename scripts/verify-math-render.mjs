@@ -49,11 +49,20 @@ console.log("✓ T2 口语化规则表");
 
 console.log("T3 渲染接线(两出口插件序=sanitize 先于 katex;字体全局引入)");
 {
+  // v0.22 起两出口改用 lib/math-plugins 的共享管线(katex 按需加载,不进主束),
+  // 守卫跟随新家:① 管线定义处的插件序;② 两出口经 useMarkdownPipeline 接线;
+  // ③ 组件不得静态引数学插件(否则 katex 回流入口包)。
+  const mp = read("src/renderer/lib/math-plugins.ts");
+  assert.ok(mp.includes("remarkPlugins: [remarkGfm, remarkMath]"), "T3: 数学管线挂 remark-math");
+  const m = mp.match(/rehypePlugins: \[rehypeRaw, \[rehypeSanitize, markdownSanitizeSchema\], rehypeKatex\]/);
+  assert.ok(m, "T3: 插件序=raw→sanitize→katex(katex 产物不经 sanitize)");
+  assert.ok(mp.includes('import("remark-math")') && mp.includes('import("rehype-katex")'), "T3: 数学插件集动态加载(katex 不进主束)");
   for (const [name, f] of [["讲解区", "src/renderer/components/NotebookPanel.tsx"], ["对话流", "src/renderer/components/ChatStream.tsx"]]) {
     const src = read(f);
-    assert.ok(src.includes("remarkPlugins={[remarkGfm, remarkMath]}"), `T3: ${name} 挂 remark-math`);
-    const m = src.match(/rehypePlugins=\{\[rehypeRaw, \[rehypeSanitize, markdownSanitizeSchema\], rehypeKatex\]\}/);
-    assert.ok(m, `T3: ${name} 插件序=raw→sanitize→katex(katex 产物不经 sanitize)`);
+    assert.ok(src.includes("useMarkdownPipeline("), `T3: ${name} 经共享管线接入`);
+    assert.ok(src.includes("remarkPlugins={mdPipeline.remarkPlugins}"), `T3: ${name} remark 插件来自管线`);
+    assert.ok(src.includes("rehypePlugins={mdPipeline.rehypePlugins}"), `T3: ${name} rehype 插件来自管线`);
+    assert.ok(!src.includes('from "rehype-katex"') && !src.includes('from "remark-math"'), `T3: ${name} 不得静态引数学插件(入口包红线)`);
     assert.ok(src.includes("normalizeMathNotation("), `T3: ${name} 内容过记法归一`);
   }
   assert.ok(read("src/renderer/main.tsx").includes("katex/dist/katex.min.css"), "T3: katex 样式全局引入(一次打包)");

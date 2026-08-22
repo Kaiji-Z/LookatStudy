@@ -13,6 +13,7 @@
  * CSP:script-src 'self' 允许 dynamic import 同源 chunk;style-src 'unsafe-inline' 已开,SVG 内联样式可用。
  */
 import type { Mermaid } from "mermaid";
+import { rewriteFlowchartToElk } from "./mermaid-elk-rewrite.js";
 
 let mermaidPromise: Promise<Mermaid> | null = null;
 
@@ -23,11 +24,21 @@ let mermaidPromise: Promise<Mermaid> | null = null;
  * v0.12:不再用内置 dark/default 主题(默认调色板与应用的 token 体系完全脱节),
  * 改 theme:"base" + themeVariables 从 :root 的 CSS 变量实时读取 —— 节点面色/文字/连线
  * 全部走 surface/ink/border token,暗亮双色系自动跟随,字号跟应用字体系统。
+ *
+ * v0.21 ELK 布局:注册 @mermaid-js/layout-elk 的 "elk" 算法(renderMermaid 把
+ * flowchart 前缀改写成 flowchart-elk → mermaid 置 config.layout="elk" 走这里)。
+ * 不注册则 mermaid 静默退 dagre 并 console.warn("flowchart-elk was moved…")。
+ * 注意:该包发布件内联自带 elkjs 0.9.3(644KB gzip 懒 chunk),与概念图的
+ * elkjs 0.12 无法去重(用户已知情拍板接受双份,都在懒 chunk、主束零污染)。
  */
 export function loadMermaid(): Promise<Mermaid> {
   if (!mermaidPromise) {
-    mermaidPromise = import("mermaid").then((mod) => {
+    mermaidPromise = import("mermaid").then(async (mod) => {
       const mermaid = mod.default;
+      const { default: elkLayouts } = await import("@mermaid-js/layout-elk");
+      mermaid.registerLayoutLoaders(
+        elkLayouts as Parameters<Mermaid["registerLayoutLoaders"]>[0],
+      );
       mermaid.initialize({
         startOnLoad: false,
         theme: "base",
@@ -119,20 +130,25 @@ if (typeof window !== "undefined") {
  *   1. render 前先 parse() 预检语法 —— mermaid.parse 失败会真 throw,带具体错误位置
  *   2. render 后检测返回的 SVG 是否是 error SVG(mermaid v11 的坑:语法错不 throw 而是画炸弹图)
  *
+ * v0.21:flowchart 家族在喂给 mermaid 前改写为 flowchart-elk(ELK 正交布局)。
+ * 改写只发生在这里——调用方(MermaidArtifact/修复回路/sessionStorage 修复缓存)
+ * 看到的永远是原版语法,零耦合。
+ *
  * @param id 唯一 id(mermaid v11 需要,作为内部 dom 节点 id)
  * @param code mermaid 语法代码
  */
 export async function renderMermaid(id: string, code: string): Promise<string> {
   const mermaid = await loadMermaid();
+  const elkCode = rewriteFlowchartToElk(code);
   // 预检语法:parse 失败会 throw,带具体行号/原因(比 render 的炸弹图友好)
   try {
-    await mermaid.parse(code);
+    await mermaid.parse(elkCode);
   } catch (e) {
     throw new Error(
       `mermaid 语法校验失败: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
-  const { svg } = await mermaid.render(id, code);
+  const { svg } = await mermaid.render(id, elkCode);
   // mermaid v11 的坑:语法错误时不 throw,返回 error SVG —— 检测并转成真错误
   if (
     svg.includes('aria-roledescription="error"') ||

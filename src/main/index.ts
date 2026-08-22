@@ -783,6 +783,30 @@ async function runUiTest(screenshot = false): Promise<void> {
     console.error("[lookatstudy] ui-test shiki seed failed:", e);
   }
 
+  // v0.21 mermaid ELK:笔记理解区种一张 flowchart 图卡(ELK 生效断言的载体)。
+  // 语法必须合法——否则触发修复回路(LLM 假 key,静默失败走源码 fallback)。
+  try {
+    getDb()
+      .insert(canvasItems)
+      .values({
+        id: "ui-diagram-seed",
+        nodeId: "guide-les-1-1",
+        courseId: "seed-lookatstudy-guide",
+        artifactType: "diagram",
+        title: "UI test flowchart",
+        data: JSON.stringify({
+          artifactType: "diagram",
+          title: "学习闭环",
+          mermaid: "flowchart TD\n  学[学习] --> 练[练习]\n  练 --> 测[测验]\n  测 --> 复[复习]",
+          diagramType: "flowchart",
+        }),
+      })
+      .onConflictDoNothing()
+      .run();
+  } catch (e) {
+    console.error("[lookatstudy] ui-test diagram seed failed:", e);
+  }
+
   // 加载构建产物（不依赖 vite dev server，CI 友好）
   // v0.11 三档布局:ui-test 断言主体跑在 T1(三栏)——窗口默认 800 落在 T3 单栏,
   // 先拉宽再加载(渲染层初始化即测得 1280);末尾有专门的跨档行为测试。
@@ -1346,6 +1370,51 @@ async function runUiTest(screenshot = false): Promise<void> {
     name: "shiki: notebook code fence highlighted + dual-theme CSS flip",
     ok: shikiRes?.ok === true,
     detail: shikiRes,
+  });
+
+  // T-MERMAID-ELK (v0.21): 笔记理解区的 flowchart 图卡 → 渲染成 SVG + ELK 布局
+  // 真实生效。生效判据 = mermaid 的兜底 warn 缺席:flowchart-elk 请求 'elk' 布局
+  // 而注册表没有时,mermaid 会 console.warn("flowchart-elk was moved…") 并退
+  // dagre——挂 warn 探针再开笔记 tab,探针没捕到该 warn 即 ELK 真接管。
+  let mermaidElkRes: { ok?: boolean; [k: string]: unknown } = {};
+  try {
+    mermaidElkRes = await win.webContents.executeJavaScript(`
+      (async function() {
+        var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+        // 先挂 warn 探针(渲染发生在图卡 mount,必须先于 tab 点击)
+        var warned = [];
+        var ow = console.warn;
+        console.warn = function() {
+          for (var i = 0; i < arguments.length; i++) warned.push(String(arguments[i]));
+          return ow.apply(console, arguments);
+        };
+        try {
+          var tabs = document.querySelectorAll('[data-testid="notebook-tabs"] button');
+          if (tabs.length > 1 && tabs[1]) tabs[1].click(); // 笔记 tab(理解区所在)
+          var svg = null;
+          for (var i = 0; i < 60; i++) {
+            await sleep(250);
+            svg = document.querySelector('[data-testid="notebook-panel"] [data-testid="mermaid-svg"]');
+            if (svg) break;
+          }
+          if (!svg) return { ok: false, why: "mermaid svg 未渲染" };
+          var fallbackPre = document.querySelector('[data-testid="artifact-mermaid"] pre');
+          var elkWarn = warned.filter(function(w){ return w.indexOf("flowchart-elk was moved") >= 0; });
+          return { ok: elkWarn.length === 0 && !fallbackPre, elkFallbackWarn: elkWarn.length, warnedCount: warned.length, hasFallback: !!fallbackPre };
+        } finally {
+          console.warn = ow;
+          var back = document.querySelectorAll('[data-testid="notebook-tabs"] button');
+          if (back.length && back[0]) back[0].click(); // 回讲解 tab,还原现场
+        }
+      })()
+    `).catch(() => ({}));
+  } catch (e) {
+    mermaidElkRes = { ok: false, error: String(e) };
+  }
+  results.push({
+    name: "mermaid ELK: flowchart card renders + elk layout engaged (no dagre-fallback warn)",
+    ok: mermaidElkRes?.ok === true,
+    detail: mermaidElkRes,
   });
 
   // T-ASR (v0.14 听写,飞书式): mic 点击切语音模式 → 按住说话(dispatch 原生

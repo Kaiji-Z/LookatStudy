@@ -29,7 +29,7 @@ Electron app, local SQLite (sql.js), BYO LLM API key. Light/dark theme.
 - **sql.js** (SQLite compiled to WASM, pure JS) + **Drizzle ORM** — *not* better-sqlite3
 - **pdfjs-dist** (PDF rendering, pure WASM/JS) — for PDF text + image extraction, no canvas dependency
 - **@napi-rs/canvas** (预编译 napi, v0.20) — 主进程整页渲染 PDF→PNG(公式密集页 vision 转写取图源);`globalThis.Path2D` 胶水必须在 import pdfjs 前补(`pdf-page-image.ts`);主束/移动束 external,平台无预编译自动回退文本层
-- **katex** + **remark-math** + **rehype-katex** (v0.19 数学渲染) — 讲解区/对话流公式渲染(插件序 raw→sanitize→katex);**getTextModel 跳过 `.katex-html` 只收 `.katex-mathml` annotation**(画线/朗读匹配对公式课不断裂的红线);朗读口语化在 `shared/math-speech.ts`(只转喂引擎的文本,句事件发原文)
+- **katex** + **remark-math** + **rehype-katex** (v0.19 数学渲染) — 讲解区/对话流公式渲染(插件序 raw→sanitize→katex);v0.22 起插件集收口 `src/renderer/lib/math-plugins.ts`(`useMarkdownPipeline`:基础管线 gfm/raw/sanitize 同步常驻,含公式内容才动态拉 katex 三件——**主束不得静态引数学插件**,verify-math-render T3 守);**getTextModel 跳过 `.katex-html` 只收 `.katex-mathml` annotation**(画线/朗读匹配对公式课不断裂的红线);朗读口语化在 `shared/math-speech.ts`(只转喂引擎的文本,句事件发原文)
 - **sherpa-onnx-node** (native sherpa-onnx) — local TTS (Kokoro fp32) + offline ASR (Whisper turbo/small int8, v0.13 质量优先取代 zipformer 流式).
   CRITICAL: every native→JS Float32Array transfer MUST pass `enableExternalBuffer: false`
   (Electron 21+ bans external array buffers in ALL process forms — M0 spike proved it;
@@ -51,6 +51,7 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 - **Custom providers** (`custom_providers` table) bypass preset key settings — their API key is stored in the table row, resolved by `resolveLlm()` when `active_provider` starts with `custom-`。v0.16 `vision` 列:kind=llm 行由用户显式声明"支持看图"(勾选 → capabilities 含 vision → 直通;不勾选 → 保守 false → 配了覆盖走桥接、没配走 reject);kind=vision 天生支持。
 - **Third runtime: serve (mobile/web).** `src/main/serve/server.ts` runs the SAME 108-handler table (`ipc/runtime.ts` `collectHandlers(deps)`) behind a WebSocket dispatcher — Electron's `ipcMain` and serve share one registry, zero drift. Protocol in `shared/ws-protocol.ts`; channel names ARE the IPC `domain:action` names. Renderer web mode: `src/renderer/lib/api-web.ts` (`installWebApi`) builds `window.api` from `shared/api-channels.ts` when preload is absent (`main.tsx` boot fork + token gate). Token auth (`dataDir/serve-token`, persisted), WS rejects with close 4001. Portable bundle via `scripts/build-mobile.mjs` (esbuild CJS, electron + pdf-inspector + @napi-rs/canvas external, companion wasm/seed beside server.cjs).
 - **Streaming is parts-based.** Main emits `chat:part` events with a `ChatStreamPart` discriminated union (text / reasoning / tool-start / tool-result / tool-error). Renderer accumulates them via a **pure** `accumulatePart` (no mutation — React 19 StrictMode double-invokes updaters).
+- **Renderer 非首屏组件一律 React.lazy (v0.22 入口包瘦身)**: SettingsView/ExamView/CommandPalette/CourseSearchPanel/MindmapView/artifact 渲染器(artifacts/index)/CanvasStage/SelfRatingCard/VoicePanel 按需拉 chunk(打开时才加载,主束 main-*.js gzip 397→276KB)。新增重组件先问"首屏要不要"——伴学伙伴/i18n/基础 markdown 管线例外(常驻)。
 
 ## Three-pane layout (v0.5)
 
@@ -91,7 +92,7 @@ npm run serve             # dev serve: esbuild server bundle only + serve dist/r
 npm run build:mobile      # 便携包 dist/mobile/: server.cjs 单文件 + web 前端 + install-termux.sh(Termux 手机端)
 node scripts/build-termux-voice.mjs  # Termux 语音引擎包(NDK 交叉编译,~12MB;CI termux-voice.yml 同源)
 
-npm run verify:core       # 106 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑)
+npm run verify:core       # 107 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -120,7 +121,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z` — `package.yml` (3-OS matrix) and `android-build.yml` both auto-trigger on `v*`. **Neither creates the Release**: their attach steps (`gh release upload`) fail with `release not found` until the Release object exists. So right after pushing the tag, run `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <file>` (notes drafted per human-writing + check_prose, English first). If the attach jobs already failed, `gh run rerun <id> --failed` after creating the release — builds are cached, only attach re-runs.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 99 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
+5. `ci.yml` runs oxlint + both typechecks + 107 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -230,7 +231,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (100 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (107 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

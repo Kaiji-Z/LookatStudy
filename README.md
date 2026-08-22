@@ -42,6 +42,7 @@ The AI cannot touch your learning record on its own. It drafts a proposal card, 
 
 Teaching style is a pill next to the input box, switchable anytime. Explain it to me straight, ask me guiding questions, or make me do it myself.
 
+Chats run async. Mid-answer you can jump to another lesson and ask something new there. The first reply keeps building in the background, its thread tab and its node on the map wear a small spinner, and the whole thing is waiting when you come back. Two threads can stream at once.
 ## Chapter exams are boss fights
 
 <img src="docs/screenshots/en/03-exam-boss.png" alt="A timed chapter exam question with one option selected" width="880">
@@ -107,11 +108,11 @@ The phone runs the server itself and Chrome talks to it over localhost, so your 
 
 ## Under the hood
 
-Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there's nothing native to build and `npm install` doesn't blow up on Windows. The renderer can't reach the database, the filesystem, or your key. Every cross-process call goes through one typed IPC bridge. A hundred and one deterministic test suites and a headless real-GUI test watch the whole thing, all runnable with `npm run verify:core`.
+Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there's nothing native to build and `npm install` doesn't blow up on Windows. The renderer can't reach the database, the filesystem, or your key. Every cross-process call goes through one typed IPC bridge. A hundred and nine deterministic test suites and a headless real-GUI test watch the whole thing, all runnable with `npm run verify:core`.
 
 ## Status
 
-v0.19.0. The main loop, importing almost anything, learning with the tutor, reviewing, taking exams, reading aloud, is complete, and I use it daily. Full history in [CHANGELOG.md](CHANGELOG.md).
+v0.23.0. The main loop, importing almost anything, learning with the tutor, reviewing, taking exams, reading aloud, is complete, and I use it daily. Full history in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

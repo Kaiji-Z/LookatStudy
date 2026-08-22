@@ -1,6 +1,6 @@
 {
   "name": "lookatstudy",
-  "version": "0.22.0",
+  "version": "0.22.1",
   "private": true,
   "description": "Open-source, local-first, AI-driven learning platform. Turn any GitHub repo into a Duolingo-style course you can actually finish.",
   "license": "MIT",

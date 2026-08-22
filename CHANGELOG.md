@@ -16,16 +16,18 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-08-22
+
 ### Changed
 - **入口包瘦身(内部优化)** —— 渲染层主束 `main-*.js` gzip 397KB→276KB(-30%):非首屏重组件(设置抽屉/考试视图/命令面板/课程搜索/脑图/AI 产物渲染器/黑板画布/复习自评卡/语音面板)改 React.lazy 按需加载;数学插件集(katex+remark-math+rehype-katex)收口 `lib/math-plugins.ts`,只对含公式内容动态加载,插件序 raw→sanitize→katex 不变。启动不再为"暂时用不到的界面"买单,手机 web 模式同步受益。
 - **lint 清零(内部优化)** —— oxlint 52 条警告(未用导入/死代码/冗余转义/unicorn 规则)全部清零,未关闭任何规则;套件数三处文档漂移(106/99/100→107)一并对齐。
 - **伴学流式思考姿势:歪头改托腮** —— AI 流式回答期间伴学从"整机歪头 -5°"(悬浮中容易被误读成飞歪了)换成明确的手托下巴+头部微倾慢摆:身体保持水平、悬浮浮动照常,与飞行倾角(banking)的视觉语义彻底分开。卡点指向反应(记忆联动"就是这里")同步换用同款托腮姿势。verify 守姿势断言+CSS 接线。
 
-### Security
-- **生产依赖高危漏洞清零** —— `npm audit --omit=dev` 4 high → 0(零破坏性升级):drizzle-orm 0.38→0.45.2(标识符转义不当 SQL 注入);undici 5.29→6.28.0 经 overrides 全链生效(HTTP 响应解压链资源耗尽等);officeparser 内嵌 pdfjs-dist 6.1.200→6.2.108(恶意 PDF 任意 JS 执行)。不升 ai@7(技术栈锁定 v5);余 7 条 low 均为 @ai-sdk/provider-utils 资源消耗类,待上游 v5 线修复后跟进。
-
 ### Fixed
 - **公式字体被 CSP 拦截** —— CSP 缺 `font-src` 指令,KaTeX 打包进 CSS 的 `data:font/woff2` 内联字体被 `default-src 'self'` 全部拦下,公式字形退化到系统衬线字体(桌面 Electron 与手机 web 模式同源同病)。补 `font-src 'self' data:`;verify-math-render 新增 T6 把它与 `img-src data:`(base64 内联图,同类旧修)一并锁死。
+
+### Security
+- **生产依赖高危漏洞清零** —— `npm audit --omit=dev` 4 high → 0(零破坏性升级):drizzle-orm 0.38→0.45.2(标识符转义不当 SQL 注入);undici 5.29→6.28.0 经 overrides 全链生效(HTTP 响应解压链资源耗尽等);officeparser 内嵌 pdfjs-dist 6.1.200→6.2.108(恶意 PDF 任意 JS 执行)。不升 ai@7(技术栈锁定 v5);余 7 条 low 均为 @ai-sdk/provider-utils 资源消耗类,待上游 v5 线修复后跟进。
 
 ## [0.22.0] - 2026-08-22
 

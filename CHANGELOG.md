@@ -19,6 +19,9 @@ Entry conventions for contributors:
 ### Changed
 - **伴学流式思考姿势:歪头改托腮** —— AI 流式回答期间伴学从"整机歪头 -5°"(悬浮中容易被误读成飞歪了)换成明确的手托下巴+头部微倾慢摆:身体保持水平、悬浮浮动照常,与飞行倾角(banking)的视觉语义彻底分开。卡点指向反应(记忆联动"就是这里")同步换用同款托腮姿势。verify 守姿势断言+CSS 接线。
 
+### Fixed
+- **公式字体被 CSP 拦截** —— CSP 缺 `font-src` 指令,KaTeX 打包进 CSS 的 `data:font/woff2` 内联字体被 `default-src 'self'` 全部拦下,公式字形退化到系统衬线字体(桌面 Electron 与手机 web 模式同源同病)。补 `font-src 'self' data:`;verify-math-render 新增 T6 把它与 `img-src data:`(base64 内联图,同类旧修)一并锁死。
+
 ## [0.22.0] - 2026-08-22
 
 ### Added

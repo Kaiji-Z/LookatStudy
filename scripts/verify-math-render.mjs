@@ -86,4 +86,16 @@ console.log("T5 网页公式回收 + 出题放开 LaTeX");
 }
 console.log("✓ T5 网页公式回收 + 出题放开");
 
+console.log("T6 CSP 放行 KaTeX 内联字体(base64 图同守)");
+{
+  // katex.min.css 经 vite 打包会把小于内联阈值的 woff2 字体转成 data:font/woff2;
+  // CSP 不给 font-src 开 data: 时 default-src 'self' 全拦(公式字形退化系统衬线,
+  // Electron/web 双模式同源,2026-08-22 web 复现实锤)。与 img-src data:(base64
+  // 内联图,2026-08-11 修)同类,一并锁死防回退。
+  const csp = read("src/renderer/index.html");
+  assert.ok(/font-src\s+'self'\s+data:/.test(csp), "T6: CSP 含 font-src 'self' data:(KaTeX data: 字体放行)");
+  assert.ok(/img-src\s+'self'\s+data:/.test(csp), "T6: CSP 含 img-src 'self' data:(base64 内联图放行)");
+}
+console.log("✓ T6 CSP 放行");
+
 console.log("\nverify-math-render: ALL PASS");

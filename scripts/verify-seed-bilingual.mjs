@@ -48,7 +48,7 @@ function freshDb() {
 }
 
 const seed = JSON.parse(readFileSync(join(ROOT, "src/main/assets/seed-course.json"), "utf8"));
-const SEED_VERSION = 13; // 与 src/main/services/seed.ts 的 SEED_VERSION 对齐(bump 时同步改)
+const SEED_VERSION = 14; // 与 src/main/services/seed.ts 的 SEED_VERSION 对齐(bump 时同步改)
 
 // ── 1) JSON 结构 ──
 

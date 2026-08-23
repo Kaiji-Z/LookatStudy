@@ -895,6 +895,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // T0a (伴学 v9 常驻): 无课程空态 creature 已在场且 rAF 循环活着——
   // transform 由 rAF 写入(左上角卡死 bug 的回归探针:effect 首跑时 ref 未挂,
   // deps 不变则 rAF 永不启动,creature 停在 DOM 默认 0,0)。
+  // v13 空态的家=标题栏栖息地(左缘停靠退役):判据=在场+栖身标题栏带内。
   const emptyCreature = await win.webContents.executeJavaScript(`
     (async function() {
       window.__cpErr = [];
@@ -911,16 +912,29 @@ async function runUiTest(screenshot = false): Promise<void> {
         var x = parseFloat(xs), y = parseFloat(ys);
         return (isNaN(x) || isNaN(y)) ? null : { x: x, y: y };
       }
+      var hdr = document.querySelector("header.app-header");
+      var hdrR = hdr ? hdr.getBoundingClientRect() : null;
+      var zone = document.querySelector('[data-testid="companion-creature"]');
       var a = sample();
       await new Promise(function(r){ setTimeout(r, 1200); });
       var b = sample();
-      return { a: a, b: b, moved: !!(a && b && (Math.abs(a.x-b.x) > 2 || Math.abs(a.y-b.y) > 2)) };
+      return {
+        a: a, b: b,
+        moved: !!(a && b && (Math.abs(a.x-b.x) > 2 || Math.abs(a.y-b.y) > 2)),
+        hdr: hdrR ? { top: Math.round(hdrR.top), bottom: Math.round(hdrR.bottom) } : null,
+        zone: zone ? zone.dataset.zone : null,
+      };
     })()
   `).catch(() => null);
   results.push({
-    name: "companion v9: always-on at empty state (rAF loop alive, not stuck at 0,0)",
-    // 首采样为 null 合法(设置异步加载完 creature 才首次渲染);判据=终态在场+不在原点+在动
-    ok: !!emptyCreature?.b && (emptyCreature.moved || Math.abs(emptyCreature.b.y) > 60),
+    name: "companion v9: always-on at empty state (titlebar habitat, rAF loop alive)",
+    // 首采样为 null 合法(设置异步加载完 creature 才首次渲染);
+    // v13 判据=终态在场+栖身标题栏带内(zone=titlebar,y 在 header 带内)
+    ok:
+      !!emptyCreature?.b &&
+      emptyCreature.hdr != null &&
+      emptyCreature.b.y + 44 >= (emptyCreature.hdr.top ?? 0) - 8 &&
+      emptyCreature.b.y <= (emptyCreature.hdr.bottom ?? 9999) + 8,
     detail: emptyCreature,
   });
 
@@ -953,21 +967,33 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T2c (companion v3): 选课 + 默认开 → 单生物在场且在左栏原生物理世界(zone=rail)
-  const railCompanion = await win.webContents.executeJavaScript(
-    `(() => { const el = document.querySelector('[data-testid="companion-creature"]'); return el ? el.dataset.zone : null; })()`,
-  );
-  const railPos = await win.webContents.executeJavaScript(`
-    (function() {
-      var el = document.querySelector('[data-testid="companion-creature"]');
-      if (!el) return null;
-      var t = el.style.transform || "";
-      if (t.indexOf("translate3d(") !== 0) return null;
-      var body = t.slice(12);
-      var xs = body.slice(0, body.indexOf("px"));
-      var rest = body.slice(body.indexOf("px") + 3);
-      var ys = rest.slice(0, rest.indexOf("px"));
-      var x = parseFloat(xs), y = parseFloat(ys);
-      return (isNaN(x) || isNaN(y)) ? null : { x: x, y: y };
+  // v13 轮询:v12 召回制家=左栏,但岛注册/可见性到位前会短暂栖标题栏——
+  // 轮询最多 4s 等他飞进左栏,容忍瞬态不误报
+  const railProbe = await win.webContents.executeJavaScript(`
+    (async function() {
+      function readPos() {
+        var el = document.querySelector('[data-testid="companion-creature"]');
+        if (!el) return null;
+        var t = el.style.transform || "";
+        if (t.indexOf("translate3d(") !== 0) return null;
+        var body = t.slice(12);
+        var xs = body.slice(0, body.indexOf("px"));
+        var rest = body.slice(body.indexOf("px") + 3);
+        var ys = rest.slice(0, rest.indexOf("px"));
+        var x = parseFloat(xs), y = parseFloat(ys);
+        return (isNaN(x) || isNaN(y)) ? null : { x: x, y: y };
+      }
+      for (var i = 0; i < 40; i++) {
+        var el = document.querySelector('[data-testid="companion-creature"]');
+        var zone = el ? el.dataset.zone : null;
+        var pos = readPos();
+        if ((zone === "rail" || zone === "chat" || zone === "notebook") && pos && pos.y > 60) {
+          return { zone: zone, pos: pos };
+        }
+        await new Promise(function(r){ setTimeout(r, 100); });
+      }
+      var el2 = document.querySelector('[data-testid="companion-creature"]');
+      return { zone: el2 ? el2.dataset.zone : null, pos: readPos() };
     })()
   `).catch(() => null);
   const railErrors = await win.webContents
@@ -975,9 +1001,12 @@ async function runUiTest(screenshot = false): Promise<void> {
     .catch(() => []);
   results.push({
     name: "companion v10: creature alive at course pick (roam pane, position written)",
-    // v10 闲时=roam 跨栏游走:栖身栏由时间桶决定(任意栏都合法),只要求在场+位置已写
-    ok: ["rail", "chat", "notebook"].includes(railCompanion) && !!railPos && railPos.y > 60,
-    detail: { zone: railCompanion, pos: railPos, errors: railErrors },
+    // v10 闲时=roam:栖身栏由时间桶决定(任意栏都合法),只要求在场+位置已写
+    ok:
+      !!railProbe?.pos &&
+      railProbe.pos.y > 60 &&
+      ["rail", "chat", "notebook"].includes(railProbe.zone ?? ""),
+    detail: { zone: railProbe?.zone, pos: railProbe?.pos, errors: railErrors },
   });
 
   // T3: 三栏都在(chat-panel + notebook-panel + map-rail)
@@ -2375,14 +2404,32 @@ async function runUiTest(screenshot = false): Promise<void> {
     await waitForPane((st) => !st.rail && st.chat && !st.nb);
     const narrowChat = await waitFits('[data-testid="chat-panel"]');
     // T20d (companion v3): T3 单栏切换 = 单生物连续体不消失(组件仍在场,
-    // 随栏可见性自适应显隐);zone+typing 的行为断言在 keyless 之前已覆盖
-    const t3Typing = await win.webContents
-      .executeJavaScript(`document.querySelector('[data-testid="companion-creature"]') !== null`)
-      .catch(() => null);
+    // 随栏可见性自适应显隐);v13 加断言:左栏卸载后家=标题栏栖息地
+    // (zone=titlebar 且栖身 header 带内,滑翔在途时轮询等待)
+    const t3Creature = await win.webContents.executeJavaScript(`
+      (async function() {
+        for (var i = 0; i < 30; i++) {
+          var el = document.querySelector('[data-testid="companion-creature"]');
+          if (!el) return { present: false };
+          var zone = el.dataset.zone;
+          var r = el.getBoundingClientRect();
+          var hdr = document.querySelector("header.app-header");
+          var hr = hdr ? hdr.getBoundingClientRect() : null;
+          if (zone === "titlebar" && hr && r.top >= hr.top - 6 && r.bottom <= hr.bottom + 6) {
+            return { present: true, zone: zone, inHeader: true, top: Math.round(r.top), hdrBottom: Math.round(hr.bottom) };
+          }
+          await new Promise(function(f){ setTimeout(f, 100); });
+        }
+        var el2 = document.querySelector('[data-testid="companion-creature"]');
+        var r2 = el2 ? el2.getBoundingClientRect() : null;
+        var hdr2 = document.querySelector("header.app-header");
+        return { present: !!el2, zone: el2 ? el2.dataset.zone : null, top: r2 ? Math.round(r2.top) : null, hdrBottom: hdr2 ? Math.round(hdr2.getBoundingClientRect().bottom) : null };
+      })()
+    `).catch(() => null);
     results.push({
-      name: "companion v3: single creature persists across T3 pane switching",
-      ok: t3Typing === true,
-      detail: { present: t3Typing },
+      name: "companion v3: single creature persists across T3 pane switching (titlebar habitat when rail off)",
+      ok: t3Creature?.present === true && t3Creature.zone === "titlebar" && t3Creature.inHeader === true,
+      detail: t3Creature,
     });
     // T20e (companion v3): 形象切换 — 写 companion_form=frost + 广播 → 机体 data-form
     // 即时变 frost;断言后切回 ember(状态卫生:不污染下游与真实用户首选项)

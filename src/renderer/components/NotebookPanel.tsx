@@ -151,7 +151,7 @@ export function NotebookPanel({
             label={t("notebook.tab.notes")}
             icon={NotebookPen}
             active={tab === "notes"}
-            onClick={() => { handleTabClick("notes"); companionNote(); }}
+            onClick={() => handleTabClick("notes")}
             testid="tab-notes"
             badge={nodeItems.length > 0 ? String(nodeItems.length) : undefined}
           />

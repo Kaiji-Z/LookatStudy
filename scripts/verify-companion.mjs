@@ -43,6 +43,8 @@ import {
   nextRoamPane,
   edgeHomeAnchor,
   celebrationPerch,
+  titlebarRoam,
+  manualHomeWander,
   CRUISE_OP,
   CRUISE_ROAM,
   CRUISE_HOME,
@@ -437,8 +439,21 @@ console.log("✓ T12 形象注册表:5 形态唯一/回退安全/注册表·壳�
   assert.equal(desiredZone(s, 20000 + NOTE_HOLD_MS - 100), "notebook", "T13: 钉住期内意图在右栏");
   s = companionReducer(s, { type: "tick", now: 20000 + NOTE_HOLD_MS + 100 });
   assert.equal(desiredZone(s, 20000 + NOTE_HOLD_MS + 200), "roam", "T13: note 信号到期 → roam 意图");
-  s = companionReducer(s, { type: "tick", now: 20000 + NOTE_HOLD_MS + ZONE_RETURN_MS + 100 });
-  assert.equal(s.zone, "roam", "T13: 记完笔记开始游走");
+  // v13 笔记动作结束=直接回家:nb 定时信号到期跳过 ZONE_RETURN_MS 防抖——
+  // 不再在讲解面板右上肩多停留(用户实测点名);对照=talking(非定时)仍走防抖
+  s = companionReducer(s, { type: "tick", now: 20000 + NOTE_HOLD_MS + 150 });
+  assert.equal(s.zone, "roam", "T13: v13 笔记结束立即回 roam(免防抖不逗留右上肩)");
+  {
+    // talking 结束(朗读停)仍走 ZONE_RETURN_MS 防抖(有意保留:别刚停读就抖走)
+    let t = initialCompanionState(0);
+    t = companionReducer(t, { type: "talking", on: true, now: 1000 });
+    t = companionReducer(t, { type: "tick", now: 1010 });
+    t = companionReducer(t, { type: "talking", on: false, now: 5000 });
+    t = companionReducer(t, { type: "tick", now: 5000 + ZONE_RETURN_MS - 100 });
+    assert.equal(t.zone, "notebook", "T13: v13 朗读结束防抖期内仍在右栏(防抖保留)");
+    t = companionReducer(t, { type: "tick", now: 5000 + ZONE_RETURN_MS + 100 });
+    assert.equal(t.zone, "roam", "T13: v13 朗读结束防抖期满回家");
+  }
 
   // v12 听写召唤:listening(语音模式)也算 chat 在场信号——按住说话时飞来陪听写
   s = companionReducer(s, { type: "listening", on: true, now: 40000 });
@@ -446,6 +461,37 @@ console.log("✓ T12 形象注册表:5 形态唯一/回退安全/注册表·壳�
   assert.equal(desiredZone(s, 40010), "chat", "T13: v12 听写 → chat 意图(无需聚焦输入框)");
   s = companionReducer(s, { type: "listening", on: false, now: 41000 });
   assert.equal(desiredZone(s, 41000 + ZONE_RETURN_MS + 100), "roam", "T13: v12 听写结束 → 回家(经防抖)");
+
+  // v13 流式思考召唤:AI 流式回答中 → chat 意图(飞到输入卡上空托腮思考),
+  // 流式结束 → 回 roam。表情/姿势链由 baseExpressionOf/basePoseOf 出(thinking)。
+  {
+    let t = initialCompanionState(0);
+    t = companionReducer(t, { type: "streaming", on: true, now: 1000 });
+    assert.equal(desiredZone(t, 1010), "chat", "T13: v13 流式思考 → chat 意图");
+    assert.equal(baseExpressionOf(t), "thinking", "T13: v13 流式中表情=thinking");
+    t = companionReducer(t, { type: "streaming", on: false, now: 9000 });
+    assert.equal(desiredZone(t, 9000 + ZONE_RETURN_MS + 100), "roam", "T13: v13 流式结束 → 回家(经防抖)");
+  }
+
+  // v13 标题栏栖息轨迹(纯函数):x 沿栏横向缓游且不出安全边,y 钉栏中心
+  {
+    const hdr = { left: 0, right: 1280, top: 0, bottom: 51 };
+    const a = titlebarRoam(hdr, 44, 0);
+    const b = titlebarRoam(hdr, 44, 60_000);
+    assert.equal(a.y, 25.5, "T13: v13 标题栏 y=栏中心");
+    const pad = 44 * 0.62;
+    for (const p of [a, b, titlebarRoam(hdr, 44, 12345)]) {
+      assert.ok(p.x >= hdr.left + pad - 1e-6 && p.x <= hdr.right - pad + 1e-6, `T13: v13 标题栏 x 在安全边内(实测 ${p.x})`);
+    }
+    assert.ok(Math.abs(a.x - b.x) > 1, "T13: v13 标题栏横向缓游有位移");
+    // 手放落点小徘徊:围绕落点 ±22/±16,不离开放置处附近
+    const home = { x: 500, y: 300 };
+    const w1 = manualHomeWander(home, 0);
+    const w2 = manualHomeWander(home, 5000);
+    for (const p of [w1, w2]) {
+      assert.ok(Math.abs(p.x - home.x) <= 22.001 && Math.abs(p.y - home.y) <= 16.001, "T13: v13 手放落点小范围徘徊");
+    }
+  }
 
   // 导入监工:importing 钉左栏(优先于一切信号)
   s = companionReducer(s, { type: "talking", on: true, now: 30000 });
@@ -902,10 +948,22 @@ console.log("✓ T19 v10 连续移动+v12 召回制:限速滑翔/roam 锁左栏/
   assert.ok(creature.includes("nextRoamPane(roamRef.current.pane, bucket,") && creature.includes("ROAM_BUCKET_MS"), "T15: roam 时间桶调度(v12 召回制:锁左栏)");
   assert.ok(creature.includes("glideTo(cur") && creature.includes("CRUISE_ROAM") && creature.includes("CRUISE_OP"), "T15: v10 限速滑翔(跨栏/跟操作不闪现)");
   assert.ok(creature.includes("zone === \"roam\""), "T15: v10 roam 分支(闲时游走/锚缺失回退在场栏)");
-  // v12 召回制守卫:①无信号兜底=左缘停靠(edgeHomeAnchor 接线),旧"整窗游走"退役;
-  // ②正文栏不再游弋(wanderInPanel 只许喂 navRect/notebook 锚停靠);③拖拽松手
-  // 同步 rail 物理体到落点(否则滑回拖拽前旧坐标=观感"回原点");④回家巡航档接线
-  assert.ok(creature.includes("edgeHomeAnchor(window.innerHeight, SIZE.rail"), "T15: v12 左缘停靠接线(家分支;整窗游走退役)");
+  // v12 召回制守卫:①无信号兜底(v13 起家分支=标题栏栖息,左缘停靠只留跟句悬空
+  // 兜底一处);②正文栏不再游弋(wanderInPanel 只许喂 navRect/notebook 锚停靠);
+  // ③拖拽松手同步 rail 物理体到落点(否则滑回拖拽前旧坐标=观感"回原点");④回家巡航档接线
+  assert.ok(/edgeHomeAnchor\(window\.innerHeight, zoneSize/.test(creature), "T15: v12 左缘停靠只留跟句悬空兜底一处(v13 家分支退役)");
+  assert.ok(creature.includes("titlebarRoam(hdrRectCache, SIZE.titlebar, now)"), "T15: v13 标题栏栖息轨迹接线(无栏时的家)");
+  assert.ok(creature.includes("cp-titlebar-dim") && creature.includes("hdrBtnRectsCache.some("), "T15: v13 标题栏按钮重叠透明态(不遮按钮)");
+  assert.ok(creature.includes("manualHomeWander(manualHomeRef.current, now)"), "T15: v13 拖出手放落点原地小徘徊");
+  assert.ok(/if \(railOk && !railOkPrevRef\.current\) manualHomeRef\.current = null/.test(creature), "T15: v13 栏回场清手放落点(家=左栏)");
+  assert.ok(creature.includes('pane !== "titlebar" && target.y < ceilBand'), "T15: v13 标题栏豁免禁入带钳制(家就在带里)");
+  assert.ok(coreSrc.includes("s.zoneNbUntil !== 0 && ev.now >= s.zoneNbUntil"), "T15: v13 笔记结束免防抖直回(不逗留右上肩)");
+  assert.ok(coreSrc.includes("s.zoneChatAt !== null || s.listening || s.streaming"), "T15: v13 流式思考召唤(desiredZone 含 streaming)");
+  {
+    const nbPanel = read("components/NotebookPanel.tsx");
+    assert.ok(!/handleTabClick\("notes"\); companionNote\(\)/.test(nbPanel), "T15: v13 笔记tab点击不召唤");
+    assert.ok(/companionNote\(\);[\s\S]{0,700}setLastNoteMark/.test(nbPanel), "T15: v13 划线加笔记仍召唤且落点=新画线");
+  }
   assert.ok(!/wanderInPanel\((chatRect|nbRect)/.test(creature), "T15: v12 正文栏(chat/nb 矩形)不再游弋——防遮挡阅读");
   assert.ok(/onUp[\s\S]{0,900}Body\.setPosition\(flight\.body/.test(creature), "T15: v12 拖拽松手同步物理体到落点(修回原点)");
   assert.ok(creature.includes("CRUISE_HOME"), "T15: v12 回家巡航档(有来有往)");

@@ -42,6 +42,7 @@ import {
 import { BALL_RADIUS, WIND_STRENGTH, swirlAt, weatherPhysFor } from "../../lib/mapPhysics.js";
 import {
   type CompanionPane,
+  type CompanionZone,
   type RoamIntentKind,
   CRUISE_OP,
   CRUISE_READ,
@@ -52,9 +53,11 @@ import {
   celebrationPerch,
   edgeHomeAnchor,
   glideTo,
+  manualHomeWander,
   nextRoamPane,
   pickRoamIntent,
   readingAnchorFlex,
+  titlebarRoam,
   zoneDrift,
   wanderInPanel,
 } from "../../lib/companion/companion-core.js";
@@ -67,7 +70,8 @@ import { Mascot } from "./Mascot.tsx";
 /** 各世界体型(v5 放大:chat 76 / notebook 88 看清口型;rail 天空居民不变)。 */
 // v7 近大远小:左栏=远距离(小),中栏=中距离,右栏=近距离(最大,看清口型细节)。
 // 跨栏时 Mascot 尺寸带过渡动画(CSS width/height transition),飞行途中就是"变大/变小"本身。
-const SIZE: Record<"rail" | "chat" | "notebook", number> = { rail: 76, chat: 96, notebook: 120 };
+// v13 titlebar=标题栏栖息地专用小形态(44px 适配 T3 51px 窄栏/桌面标题栏)。
+const SIZE: Record<"rail" | "chat" | "notebook" | "titlebar", number> = { rail: 76, chat: 96, notebook: 120, titlebar: 44 };
 
 /** 栏内锚点(视口坐标)。 */
 type ZoneAnchor = { x: number; y: number };
@@ -102,9 +106,10 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   /** v6 朗读跟句:正在指句时非 null。side=手指方向(left=生物在句右指左);
    *  pane=mark 所在栏(决定体型:chat 76/notebook 88)。rAF 写 ref,变化才 setState。 */
   const [reading, setReading] = useState<{ dir: "left" | "right" | "up" | "down"; pane: "chat" | "notebook" } | null>(null);
-  /** v8 实际栖身栏(rAF 写 ref 变化才 setState):手机回退家/景深尺寸按它,不只看 zone 状态机 */
-  const [dispZone, setDispZone] = useState<"rail" | "chat" | "notebook">("rail");
-  const dispZoneRef = useRef<"rail" | "chat" | "notebook">("rail");
+  /** v8 实际栖身栏(rAF 写 ref 变化才 setState):手机回退家/景深尺寸按它,不只看 zone 状态机。
+   *  v13 含 titlebar(标题栏栖息地,小形态)。 */
+  const [dispZone, setDispZone] = useState<CompanionPane>("rail");
+  const dispZoneRef = useRef<CompanionPane>("rail");
   const readingRef = useRef<{ dir: "left" | "right" | "up" | "down"; pane: "chat" | "notebook" } | null>(null);
   // v11.5 整句零遮挡:所有锚点候选都压句(极端窄屏)时半透明让出可读性
   const [occluding, setOccluding] = useState(false);
@@ -114,8 +119,13 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   const posRef = useRef<{ x: number; y: number } | null>(null);
   /** v0.18 上一帧位置(喷焰速度/方向计算) */
   const prevPosRef = useRef<{ x: number; y: number } | null>(null);
-  const zoneRef = useRef(snap.state.zone);
+  // v13 起可能记 titlebar(起飞检测只比前后值,类型放宽到栏并集)
+  const zoneRef = useRef<CompanionZone | CompanionPane>(snap.state.zone);
   const swatLatchRef = useRef(false);
+  /** v13 用户手放落点(拖出标题栏松手):{x,y}+pane,留在原地小范围徘徊;
+   *  rail 回场(上升沿)时清空——左栏在场时家=左栏,手放落点只在无栏可归时生效 */
+  const manualHomeRef = useRef<{ x: number; y: number; pane: "chat" | "notebook" } | null>(null);
+  const railOkPrevRef = useRef(false);
   /** v0.18 点球互动:消费过的 ballTap seq(去重)+ 当前生效的应答(飞去/朝左注目) */
   const ballTapSeqRef = useRef(0);
   const ballAckRef = useRef<{ nodeId: string; x: number; y: number; until: number; fired: boolean; fly: boolean } | null>(null);
@@ -287,6 +297,29 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
           flight.throwDizzy(performance.now());
         }
       }
+      // v13 手放落点(仅左栏不在场时生效;栏在场时 v12 契约不变=从落点飞回
+      // 职责锚/左栏家):松手在标题栏内 → 栖栏游走(清手放落点);松手在栏外
+      // → 记为手放落点,原地小范围徘徊,拖回标题栏或栏回场即恢复常规
+      const rw = getRailWorld();
+      const navR = rw.nav?.getBoundingClientRect() ?? null;
+      const railOkNow = !!navR && navR.width > 40 && (rw.visible || getCompanionSnapshot().state.importing);
+      if (!railOkNow) {
+        const hdr = document.querySelector("header.app-header")?.getBoundingClientRect() ?? null;
+        const inTitlebar = !!hdr && g.y >= hdr.top && g.y <= hdr.bottom;
+        if (inTitlebar) {
+          manualHomeRef.current = null;
+        } else {
+          const nb = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]')?.getBoundingClientRect() ?? null;
+          const pane: "chat" | "notebook" =
+            nb && g.x >= nb.left && g.x <= nb.right && g.y >= nb.top && g.y <= nb.bottom ? "notebook" : "chat";
+          const ceil = (hdr?.bottom ?? 0) + 80;
+          manualHomeRef.current = {
+            x: Math.min(Math.max(g.x, 60), window.innerWidth - 60),
+            y: Math.min(Math.max(g.y, ceil), window.innerHeight - 60),
+            pane,
+          };
+        }
+      }
       companionGrab(false, speed);
     };
     window.addEventListener("pointermove", onMove, { passive: true });
@@ -314,6 +347,9 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
     let nbRectCache: DOMRect | null = null;
     let hdrBottomCache = 0;
     let railBarBottomCache = 0;
+    // v13 标题栏栖息地:header 全矩形(游走轨道)+ 栏内可交互元素矩形集(重叠切透明)
+    let hdrRectCache: { left: number; right: number; top: number; bottom: number } | null = null;
+    let hdrBtnRectsCache: Array<{ left: number; right: number; top: number; bottom: number }> = [];
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -327,6 +363,9 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
 
       // 导入监工:importing 期间即使地图面板隐去也在左栏值守
       const railOk = !!navRect && navRect.width > 40 && (rw.visible || st.importing);
+      // v13 手放落点的生存期:左栏回场(上升沿)即失效——有栏可归时家=左栏
+      if (railOk && !railOkPrevRef.current) manualHomeRef.current = null;
+      railOkPrevRef.current = railOk;
 
       // ── 栏矩形(duty 栏存在性判定 + 跟句宿主;150ms 节流缓存;v12 起
       //    roam 不再跨栏,chat 矩形仅留作缓存键一致性,nbRect 供 notebook 停靠) ──
@@ -334,8 +373,23 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         rectCacheAt = now;
         nbRectCache = document.querySelector<HTMLElement>('[data-testid="notebook-panel"]')?.getBoundingClientRect() ?? null;
         // v0.18 标题栏禁入带:应用标题栏(T1/T2 与 T3 窄版同元素)全局生效;
+        // v13 同源加挂 header 全矩形(标题栏栖息轨道)与栏内可交互矩形集(重叠透明)
+        const hdrRect = document.querySelector("header.app-header")?.getBoundingClientRect() ?? null;
+        hdrRectCache = hdrRect
+          ? { left: hdrRect.left, right: hdrRect.right, top: hdrRect.top, bottom: hdrRect.bottom }
+          : null;
+        hdrBottomCache = hdrRect?.bottom ?? 0;
+        hdrBtnRectsCache = hdrRect
+          ? Array.from(
+              document.querySelectorAll<HTMLElement>(
+                'header.app-header button, header.app-header [role="button"], header.app-header a, header.app-header input, header.app-header select',
+              ),
+            ).map((el) => {
+              const r = el.getBoundingClientRect();
+              return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+            })
+          : [];
         // 左栏另有 tab/课名悬浮条(仅栏内 x 范围),rail 分支单独取 max
-        hdrBottomCache = document.querySelector("header.app-header")?.getBoundingClientRect().bottom ?? 0;
         railBarBottomCache = document.querySelector<HTMLElement>('[data-testid="map-rail-topbar"]')?.getBoundingClientRect().bottom ?? 0;
       }
       const nbRect = nbRectCache;
@@ -757,27 +811,59 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
           //    半身探出门框等事,召唤事件(duty)从这里飞入,办完飞回;
           //    替代旧版"整窗游走"——无栏可游时满屏飘本身就是阅读干扰。
           //    rail 在场时上面的 rail 分支已接住(zone=roam/rail),这里只在
-          //    duty 信号滞留(zone=chat/notebook)但栏已卸载的换栏瞬间兜底 ──
+          //    duty 信号滞留(zone=chat/notebook)但栏已卸载的换栏瞬间兜底;
+          //    左栏真不在场时:用户手放落点优先(原地小徘徊),否则标题栏栖息(v13,
+          //    替代 v12 左缘停靠——标题栏也是居住空间,缩小游走遇按钮变透明) ──
           flightRef.current = null;
-          pane = "rail";
           if (railOk && navRect) {
+            pane = "rail";
             const wp = wanderInPanel(navRect, SIZE.rail, now);
             const cur = posRef.current ?? { x: wp.x, y: wp.y };
             target = glideTo(cur, wp, dt, CRUISE_ROAM, 140);
             angle = Math.max(-0.25, Math.min(0.25, (target.x - cur.x) * 0.01));
-          } else {
-            const home = edgeHomeAnchor(window.innerHeight, SIZE.rail, Math.max(hdrBottomCache, railBarBottomCache));
+          } else if (manualHomeRef.current) {
+            // ── v13 手放落点:拖出标题栏松手后留在放置处小范围徘徊(不回家、
+            //    不满屏游走,用户觉得遮挡自然会再挪);栏回场时上升沿已清空 ──
+            pane = manualHomeRef.current.pane;
             if (reduced) {
-              target = home;
+              target = { x: manualHomeRef.current.x, y: manualHomeRef.current.y };
               angle = 0;
             } else {
-              const d = zoneDrift("notebook", now); // 停靠时轻漂(趴着也会呼吸),复用收敛漂移
-              const cur = posRef.current ?? { x: home.x, y: home.y };
-              target = glideTo(cur, { x: home.x + d.x * 0.5, y: home.y + d.y * 0.5 }, dt, CRUISE_HOME);
+              const wp = manualHomeWander(manualHomeRef.current, now);
+              const cur = posRef.current ?? wp;
+              target = glideTo(cur, wp, dt, CRUISE_HOME);
               angle = Math.max(-0.2, Math.min(0.2, (target.x - cur.x) * 0.01));
             }
+          } else if (hdrRectCache) {
+            // ── v13 标题栏栖息地:缩小到栏高沿栏横向缓游(纯函数轨迹);
+            //    按钮重叠透明态在链尾统一判定 ──
+            pane = "titlebar";
+            if (reduced) {
+              target = { x: (hdrRectCache.left + hdrRectCache.right) / 2, y: (hdrRectCache.top + hdrRectCache.bottom) / 2 };
+              angle = 0;
+            } else {
+              const wp = titlebarRoam(hdrRectCache, SIZE.titlebar, now);
+              const cur = posRef.current ?? wp;
+              target = glideTo(cur, wp, dt, CRUISE_HOME);
+              angle = 0; // 贴栏平移,不倾斜
+            }
           }
+          // hdrRectCache 缺失(app 无 header,几乎不可能)→ target null → 隐匿兜底
         }
+      }
+
+      // v13 标题栏模式:与栏内可交互元素(按钮/输入)重叠 → 半透明+点击穿透
+      // (不遮按钮);离开重叠区恢复常态。其余模式确保清掉标记。
+      if (pane === "titlebar" && target) {
+        const half = SIZE.titlebar / 2;
+        const bl = target.x - half;
+        const br = target.x + half;
+        const bt = target.y - half;
+        const bb = target.y + half;
+        const hit = hdrBtnRectsCache.some((b) => bl < b.right && br > b.left && bt < b.bottom && bb > b.top);
+        wrap.classList.toggle("cp-titlebar-dim", hit);
+      } else if (wrap.classList.contains("cp-titlebar-dim")) {
+        wrap.classList.remove("cp-titlebar-dim");
       }
 
       if (dispZoneRef.current !== pane) {
@@ -797,7 +883,8 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       // 摆角不至于扫进标题栏)。rail 分支物理层已有 ceilY 硬天花板,这里是视觉带
       // 的统一收口(整窗游走/跟句锚点在首行等边缘路径)。
       const ceilBand = pane === "rail" ? Math.max(hdrBottomCache, railBarBottomCache) : hdrBottomCache;
-      if (target.y < ceilBand + w / 2 + 10) target.y = ceilBand + w / 2 + 10;
+      // v13 豁免:标题栏栖息模式的家就在禁入带里(半透明+穿透已保证不碍事)
+      if (pane !== "titlebar" && target.y < ceilBand + w / 2 + 10) target.y = ceilBand + w / 2 + 10;
       wrap.style.transform = `translate3d(${(target.x - w / 2).toFixed(1)}px, ${(target.y - w / 2).toFixed(1)}px, 0) rotate(${(angle * 57.2958).toFixed(1)}deg)`;
       // v0.18 速度驱动喷焰(推进质感):速度→焰不透明度,方向→焰朝向(尾部指向
       // 运动反方向,CSS rotate 消费)。CSS 变量直写,零重渲染;静止时速度归零焰熄。

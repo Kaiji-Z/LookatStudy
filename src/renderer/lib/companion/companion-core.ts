@@ -53,7 +53,8 @@ export type CompanionPose =
 
 /** 伙伴所在的世界维度:左栏原生物理世界 / 中栏宠物世界 / 右栏助教世界。 */
 export type CompanionZone = "rail" | "chat" | "notebook" | "roam";
-export type CompanionPane = "rail" | "chat" | "notebook";
+/** 渲染栏(体型/坐标系维度)。v13 新增 titlebar:左栏不在场时的标题栏栖息地。 */
+export type CompanionPane = "rail" | "chat" | "notebook" | "titlebar";
 
 /**
  * v10 用户操作信号(最新者优先,双槽):聚焦=chat 槽,朗读/记笔记=notebook 槽,
@@ -326,7 +327,9 @@ export function initialCompanionState(now = 0): CompanionState {
 export function desiredZone(s: CompanionState, now: number): CompanionZone {
   if (s.importing) return "rail";
   const nbActive = s.zoneNbAt !== null && (s.zoneNbUntil === 0 || now < s.zoneNbUntil);
-  const chatActive = s.zoneChatAt !== null || s.listening;
+  // v13 streaming(AI 流式回答/思考中)也算 chat 在场信号:飞到输入卡上空
+  // 托腮思考,流式结束再回去该去的地方(thinking 表情/姿势由 basePoseOf 链出)
+  const chatActive = s.zoneChatAt !== null || s.listening || s.streaming;
   if (!chatActive && !nbActive) return "roam";
   if (!chatActive) return "notebook";
   if (!nbActive) return "chat";
@@ -706,7 +709,14 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
         if (want !== "roam") {
           zone = want;
           zoneSince = ev.now;
-        } else if (ev.now - s.zoneSince >= ZONE_RETURN_MS) {
+        } else if (
+          ev.now - s.zoneSince >= ZONE_RETURN_MS
+          // v13 笔记动作结束=直接回家:nb 槽是定时信号(zoneNbUntil≠0)且已到期
+          // 时跳过 ZONE_RETURN_MS 防抖——写作姿势 2.2s 本身就是驻留,再在讲解
+          // 面板右上肩多呆 3.5s 是用户实测点名的"多余停留"(talking 是非定时
+          // 信号 zoneNbUntil=0,朗读结束仍走防抖不受影响)
+          || (s.zoneNbUntil !== 0 && ev.now >= s.zoneNbUntil)
+        ) {
           zone = "roam";
           zoneSince = ev.now;
         }
@@ -1141,6 +1151,34 @@ export function celebrationPerch(
   const x = Math.min(origin.x + 36, vw - size * 0.7);
   const y = Math.max(origin.y - 44, ceilBottom + size * 0.8);
   return { x, y };
+}
+
+/**
+ * 标题栏栖息游走(纯,v13):左栏不在场(T3 未选左栏/未选课程/T2 无左栏)时的
+ * 新家——缩小到标题栏高度,沿标题栏横向利萨茹缓游(全程 ~40s 一个来回),
+ * y 钉在栏竖直中心。x 两端留 size*0.62 的安全边(不出头不贴边)。
+ * 按钮避让不在这里做(渲染层按重叠切透明态,这里只管轨迹)。
+ */
+export function titlebarRoam(
+  hdr: { left: number; right: number; top: number; bottom: number },
+  size: number,
+  now: number,
+): { x: number; y: number } {
+  const pad = size * 0.62;
+  const span = Math.max(0, hdr.right - hdr.left - pad * 2);
+  const x = hdr.left + pad + (0.5 + 0.42 * Math.sin(now / 6400 + 0.7)) * span;
+  return { x, y: (hdr.top + hdr.bottom) / 2 };
+}
+
+/**
+ * 用户手放落点的小范围徘徊(纯,v13):把伴学拖出标题栏松手后,他留在放置处
+ * 附近 ±22/±16px 利萨茹小游——不回家也不满屏游走,用户觉得遮挡自然会再挪。
+ */
+export function manualHomeWander(home: { x: number; y: number }, now: number): { x: number; y: number } {
+  return {
+    x: home.x + Math.sin(now / 2900) * 22,
+    y: home.y + Math.sin(now / 2100 + 1.3) * 16,
+  };
 }
 
 /** v11 roam 目的性:闲逛时间桶上低概率产生"有想法"的意图。 */

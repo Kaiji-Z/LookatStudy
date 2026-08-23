@@ -14,6 +14,14 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Added
+- **设置页显示版本号** —— 底部新增"关于"分组,版本行显示当前构建的版本(取自 package.json,构建期固化,与正在运行的构建严格一致),点版本号跳 GitHub releases 查看该版更新内容。中英双语,懒加载 chunk 内零主束增量。
+
+### Fixed
+- **EPUB 出版社形态三修(沉思录真书驱动)** —— 用户样本(上海译文《沉思录》)暴露三个新形态问题:①解析器无标题兜底自己在编造"第 N 章"(对用"卷"的书双重失真,且假标题作为大纲权威喂给 LLM 档,把唯一能救场的层也毒掉);②出版社 epub 的"短扉页(带卷标题)+紧随的无标题正文页"两文件结构配对失败,12 卷被拆成 12 个短扉页课+12 个无名正文课;③版权页/链接目录页成了课。修复:兜底改"未命名章节"交 Step4 按内容主题命名;扉页配对(短扉页+紧随无标题正文合并,后章有标题绝不合并,已吞并的不连锁);版权页按著录字段密度(书名:/作者:/ISBN:≥3)过滤、目录页按链接密度(≥60% 行是链接)过滤;出版社宣传小页无高置信信号按原则留给 Step4 LLM(提示词新增"书籍的前置/外围小页"规则)。实测沉思录 27→13 章(12 卷配对齐整),Gutenberg 8 书语料零回归;verify-epub-parser T11-T15+沉思录本地语料入核查;破坏闭环三向(配对禁用/编造回归/字段阈值)见提交记录。
+
 ## [0.23.1] - 2026-08-23
 
 ### Added

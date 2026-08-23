@@ -99,6 +99,8 @@ export function QuizArtifact({
   const [score, setScore] = useState(saved?.score ?? { correct: 0, total: 0 });
   /* 逐题判定累积(真实提交才追加;恢复的进度没有判定,也不触发完成 hook) */
   const detailRef = useRef<QuizCompletedResult["detail"]>([]);
+  /** v12 庆祝召唤锚:题卡根元素(答对时伴学飞来这卡旁庆祝) */
+  const rootRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     saveQuizProgress(progressKey, { current, score });
   }, [progressKey, current, score]);
@@ -194,7 +196,12 @@ export function QuizArtifact({
     // 最后一题提交只判分出答案,不发成绩单——hook 在「完成」按钮(handleNext)触发。
     // 逐题判定只在真实提交时累积——localStorage 恢复的完成态 detail 为空,补交时只带总分。
     // Phase 1: 答题高光时刻 — 答对粒子爆发,答错柔红光闪(CelebrationLayer 统一渲染)。
-    celebrate(correct ? "correct" : "wrong");
+    // v12:答对带题卡锚点 → 伴学飞来庆祝;答错不带(原地柔红闪,不召唤)
+    celebrate(correct ? "correct" : "wrong", {
+      origin: correct && rootRef.current
+        ? (() => { const r = rootRef.current!.getBoundingClientRect(); return { x: r.right - 48, y: r.top + 24 }; })()
+        : undefined,
+    });
   };
 
   const handleNext = () => {
@@ -215,7 +222,7 @@ export function QuizArtifact({
   };
 
   return (
-    <div className="surface-card p-4" data-testid="artifact-quiz">
+    <div ref={rootRef} className="surface-card p-4" data-testid="artifact-quiz">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <ListChecks className="w-4 h-4 text-brand" />

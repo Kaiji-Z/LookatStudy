@@ -42,6 +42,7 @@ import {
   glideTo,
   nextRoamPane,
   edgeHomeAnchor,
+  celebrationPerch,
   CRUISE_OP,
   CRUISE_ROAM,
   CRUISE_HOME,
@@ -439,6 +440,13 @@ console.log("✓ T12 形象注册表:5 形态唯一/回退安全/注册表·壳�
   s = companionReducer(s, { type: "tick", now: 20000 + NOTE_HOLD_MS + ZONE_RETURN_MS + 100 });
   assert.equal(s.zone, "roam", "T13: 记完笔记开始游走");
 
+  // v12 听写召唤:listening(语音模式)也算 chat 在场信号——按住说话时飞来陪听写
+  s = companionReducer(s, { type: "listening", on: true, now: 40000 });
+  assert.equal(s.listening, true, "T13: listening 态置位");
+  assert.equal(desiredZone(s, 40010), "chat", "T13: v12 听写 → chat 意图(无需聚焦输入框)");
+  s = companionReducer(s, { type: "listening", on: false, now: 41000 });
+  assert.equal(desiredZone(s, 41000 + ZONE_RETURN_MS + 100), "roam", "T13: v12 听写结束 → 回家(经防抖)");
+
   // 导入监工:importing 钉左栏(优先于一切信号)
   s = companionReducer(s, { type: "talking", on: true, now: 30000 });
   s = companionReducer(s, { type: "importing", on: true, now: 30100 });
@@ -807,6 +815,13 @@ console.log("✓ T14b v11.5 朗读锚点:整句全部行盒零遮挡(右/左/正
   assert.ok(ehTall.y <= 2000 * 0.46 + 1e-9, "T19: 大屏落在视口中带");
   const ehTiny = edgeHomeAnchor(240, 76, 64);
   assert.ok(ehTiny.y < 240 && ehTiny.y > 0, "T19: 小屏也不越界/不贴顶");
+  // celebrationPerch(v12 庆祝召唤栖位):事件源右上/右缘钳制/禁入带钳制
+  const cp = celebrationPerch({ x: 400, y: 300 }, 96, 1200, 64);
+  assert.ok(Math.abs(cp.x - 436) < 1e-9 && Math.abs(cp.y - 256) < 1e-9, `T19: 庆祝栖位=源右上(+36/-44),实际 ${JSON.stringify(cp)}`);
+  const cpEdge = celebrationPerch({ x: 1180, y: 100 }, 96, 1200, 64);
+  assert.ok(cpEdge.x <= 1200 - 96 * 0.7 + 1e-9, `T19: 视口右缘钳制(x=${cpEdge.x})`);
+  const cpCeil = celebrationPerch({ x: 400, y: 100 }, 96, 1200, 64);
+  assert.ok(cpCeil.y >= 64 + 96 * 0.8 - 1e-9, `T19: 顶部禁入带钳制(y=${cpCeil.y})`);
   // CRUISE_HOME 排序:回家比赶场慢、比闲逛快(有来有往的速度语义)
   assert.ok(CRUISE_ROAM < CRUISE_HOME && CRUISE_HOME < CRUISE_OP, "T19: CRUISE_ROAM < CRUISE_HOME < CRUISE_OP");
 }
@@ -894,6 +909,15 @@ console.log("✓ T19 v10 连续移动+v12 召回制:限速滑翔/roam 锁左栏/
   assert.ok(!/wanderInPanel\((chatRect|nbRect)/.test(creature), "T15: v12 正文栏(chat/nb 矩形)不再游弋——防遮挡阅读");
   assert.ok(/onUp[\s\S]{0,900}Body\.setPosition\(flight\.body/.test(creature), "T15: v12 拖拽松手同步物理体到落点(修回原点)");
   assert.ok(creature.includes("CRUISE_HOME"), "T15: v12 回家巡航档(有来有往)");
+  // v12 召唤扩展:①听写(listening)算 chat 信号;②庆祝召唤(答对/解锁带 origin 飞来)
+  assert.ok(coreSrc.includes("s.zoneChatAt !== null || s.listening"), "T15: v12 听写召唤(desiredZone 含 listening)");
+  assert.ok(creature.includes("onCelebration((e)") && creature.includes("celebrationPerch(") && creature.includes("e.kind !== \"correct\" && e.kind !== \"unlock\""), "T15: v12 庆祝召唤接线(监听+kind 门槛+栖位)");
+  const quizArt = read("components/artifacts/QuizArtifact.tsx");
+  const reviewPanel = read("components/ReviewPanel.tsx");
+  const mapRail2 = read("components/MapRail.tsx");
+  assert.ok(quizArt.includes('celebrate(correct ? "correct" : "wrong", {') && quizArt.includes("rootRef.current"), "T15: 题卡答对带锚点");
+  assert.ok(reviewPanel.includes('celebrate(quality >= 4 ? "correct" : "wrong", {') && reviewPanel.includes("rateRef.current"), "T15: 复习自评带锚点");
+  assert.ok(mapRail2.includes('celebrate("unlock", r ?') && mapRail2.includes("map-node-${unlockedId"), "T15: 解锁球带锚点");
   assert.ok(creature.includes("cp-takeoff"), "T15: 起飞动效(蓄力弹射+喷焰增强)");
   assert.ok(
     mascotV4.includes("-44 : 44") && mascotV4.includes("scale(1.045, 0.93)") && mascotV4.includes("cubic-bezier(0.2, 1.5, 0.4, 1)"),

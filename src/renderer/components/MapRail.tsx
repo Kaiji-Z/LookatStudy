@@ -175,13 +175,20 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
   useEffect(() => {
     const prev = prevStatusRef.current;
     const cur: Record<string, string> = {};
-    let unlocked = false;
+    let unlockedId: string | null = null;
     for (const n of props.tree) {
       const s = props.progressMap[n.id]?.status ?? "locked";
       cur[n.id] = s;
-      if (prev[n.id] === "locked" && s !== "locked") unlocked = true;
+      if (prev[n.id] === "locked" && s !== "locked" && !unlockedId) unlockedId = n.id;
     }
-    if (unlocked && Object.keys(prev).length > 0) celebrate("unlock");
+    if (unlockedId && Object.keys(prev).length > 0) {
+      // v12:解锁带球锚点 → 伴学飞来这颗球旁庆祝(取首个解锁球;球此刻已在 DOM)
+      const ballEl = navRef.current?.querySelector<HTMLElement>(
+        `[data-testid="map-node-${unlockedId.slice(0, 8)}"], [data-testid="exam-node-${unlockedId.slice(0, 8)}"]`,
+      );
+      const r = ballEl?.getBoundingClientRect();
+      celebrate("unlock", r ? { origin: { x: r.left + r.width / 2, y: r.top + 4 } } : undefined);
+    }
     prevStatusRef.current = cur;
   }, [props.tree, props.progressMap]);
 

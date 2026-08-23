@@ -49,6 +49,7 @@ import {
   CRUISE_HOME,
   INTENT_HOLD_MS,
   ROAM_BUCKET_MS,
+  celebrationPerch,
   edgeHomeAnchor,
   glideTo,
   nextRoamPane,
@@ -58,6 +59,7 @@ import {
   wanderInPanel,
 } from "../../lib/companion/companion-core.js";
 import { getReadingRange, getLastNoteMark } from "../../lib/highlightText.js";
+import { onCelebration } from "../../lib/celebration.js";
 import { usePrefersReducedMotion } from "../../lib/usePrefersReducedMotion.js";
 
 import { Mascot } from "./Mascot.tsx";
@@ -121,6 +123,9 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
   /** v0.18 吹哨召唤:消费过的 whistle seq(去重)+ 当前生效的哨点(rail 局部坐标) */
   const whistleSeqRef = useRef(0);
   const whistleAckRef = useRef<{ x: number; y: number; until: number } | null>(null);
+  /** v12 庆祝召唤:答对/解锁带 origin 时飞到事件源(题卡/复习卡/解锁球)旁庆祝,
+   *  挂 ~3s 后回落常规链(回家)。pane 由触发瞬间 elementFromPoint 判定。 */
+  const celebAckRef = useRef<{ x: number; y: number; until: number; pane: CompanionPane } | null>(null);
   /** 左栏待机空地(中部带,周期重选/记忆卡点覆盖)与下次重选时刻 */
   const perchRef = useRef<{ x: number; y: number } | null>(null);
   const perchDueRef = useRef(0);
@@ -224,6 +229,24 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
     window.addEventListener("companion-state-changed", onChanged);
     return () => window.removeEventListener("companion-state-changed", onChanged);
   }, [courseId]);
+
+  // v12 庆祝召唤:答对/解锁(带事件源 origin)→ 飞到源旁庆祝 ~3s 再回落。
+  // 答错/其他高光时刻不召唤(wrong 只是原地柔红闪);考试答题中不抢陪考位。
+  useEffect(() => {
+    return onCelebration((e) => {
+      if ((e.kind !== "correct" && e.kind !== "unlock") || !e.origin) return;
+      if (getCompanionSnapshot().state.examActive) return;
+      const host = document
+        .elementFromPoint(e.origin.x, e.origin.y)
+        ?.closest<HTMLElement>('[data-testid="map-rail"]');
+      celebAckRef.current = {
+        x: e.origin.x,
+        y: e.origin.y,
+        until: performance.now() + 3000,
+        pane: host ? "rail" : "chat", // map 宿主=rail 世界(解锁球);题卡/复习卡=内容栏
+      };
+    });
+  }, []);
 
   // 抓取:抓住后全局跟踪指针(不依赖 setPointerCapture,触屏同款);松手算速度
   useEffect(() => {
@@ -418,6 +441,8 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       }
       const whistleOk = !!whistleAckRef.current && now < whistleAckRef.current.until;
       if (whistleAckRef.current && !whistleOk) whistleAckRef.current = null;
+      const celebOk = !!celebAckRef.current && now < celebAckRef.current.until;
+      if (celebAckRef.current && !celebOk) celebAckRef.current = null;
 
       // ── karaoke 跟句(朗读时的语义位置,最高优先) ──
       const readRange = getReadingRange();
@@ -562,6 +587,22 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
               angle = 0.08; // 伏案微倾
             }
           }
+        } else if (celebOk && celebAckRef.current && celebAckRef.current.pane !== "rail") {
+          // ── v12 庆祝召唤(内容栏):答对/解锁 → 飞到事件源(题卡/复习卡)右上
+          //    上空庆祝 ~3s(表情爆发由 celebration→bus 链负责),挂完回落回家 ──
+          flightRef.current = null;
+          const ack = celebAckRef.current;
+          pane = ack.pane === "notebook" ? "notebook" : "chat";
+          const size = pane === "notebook" ? SIZE.notebook : SIZE.chat;
+          const pos = celebrationPerch({ x: ack.x, y: ack.y }, size, window.innerWidth, Math.max(hdrBottomCache, railBarBottomCache));
+          if (reduced) {
+            target = pos;
+            angle = 0;
+          } else {
+            const cur = posRef.current ?? { x: pos.x, y: pos.y };
+            target = glideTo(cur, pos, dt, CRUISE_OP);
+            angle = Math.max(-0.2, Math.min(0.2, (target.x - cur.x) * 0.01));
+          }
         } else if (zone === "chat" && chatAnchor()) {
           // ── 操作:输入框聚焦 → 从当前位置限速飞到输入卡上空(叠轻漂移) ──
           flightRef.current = null;
@@ -657,6 +698,10 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             } else if (ballOk && ballAckRef.current && ballAckRef.current.fly) {
               // v0.18 点球应答:栖在被点球的右肩位,指住它(优先级高于意图/待机)
               base = { x: ballAckRef.current.x - navRect!.left + 34, y: ballAckRef.current.y - navRect!.top - 46 };
+              settle = false;
+            } else if (celebOk && celebAckRef.current && celebAckRef.current.pane === "rail") {
+              // v12 庆祝召唤(左栏):解锁球旁右上上空庆祝 ~3s(表情爆发走 celebration→bus)
+              base = { x: celebAckRef.current.x - navRect!.left + 34, y: celebAckRef.current.y - navRect!.top - 46 };
               settle = false;
             } else if (intent) {
               base = { x: intent.pos.x - navRect!.left, y: intent.pos.y - navRect!.top };

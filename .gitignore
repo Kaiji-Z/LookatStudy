@@ -77,3 +77,6 @@ scripts/fixtures/epub-corpus/
 
 # PDF 语料缓存(live 重下;github release 大文件可 gh release download 代下)
 scripts/fixtures/pdf-corpus/
+
+# 字幕语料缓存(live 重下,jsdelivr)
+scripts/fixtures/subtitle-corpus/

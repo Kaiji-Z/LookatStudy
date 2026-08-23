@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { encWbi, getMixinKey, extractKeysFromNavUrl } from "./pure/bilibili-wbi.js";
 import { downloadToBuffer } from "./pure/repo-fetcher.js";
-import { parseSubtitleToText } from "./pure/subtitle-parse.js";
+import { parseSubtitleToText, pickSubtitleFile } from "./pure/subtitle-parse.js";
 
 export type VideoFetchResult =
   | { source: "subtitle"; title: string; text: string }
@@ -164,7 +164,8 @@ export async function fetchViaYtDlp(
       "--sub-langs", "zh-Hans,zh-CN,zh,en,-live_chat", "--sub-format", "vtt/srt/best",
       "-o", join(workDir, "sub.%(ext)s"), "--no-warnings", url,
     ], signal);
-    const subFile = readdirSync(workDir).find((f) => /^sub\..*\.(vtt|srt)$/i.test(f));
+    // 多语言文件按中文优先级挑(readdir 字母序会让 en 压过 zh-Hans)
+    const subFile = pickSubtitleFile(readdirSync(workDir));
     if (subFile) {
       const text = parseSubtitleToText(readFileSync(join(workDir, subFile), "utf8"));
       if (text.length > 50) {

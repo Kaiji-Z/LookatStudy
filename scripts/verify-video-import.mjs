@@ -14,7 +14,7 @@ import { eq } from "drizzle-orm";
 import { contentNodes } from "../src/main/db/schema.ts";
 import { routeImportUrl } from "../src/main/services/pure/url-route.ts";
 import { encWbi, getMixinKey, extractKeysFromNavUrl } from "../src/main/services/pure/bilibili-wbi.ts";
-import { parseSubtitleToText } from "../src/main/services/pure/subtitle-parse.ts";
+import { parseSubtitleToText, pickSubtitleFile } from "../src/main/services/pure/subtitle-parse.ts";
 import { parseBilibiliId } from "../src/main/services/video-import-service.ts";
 import { fmp4ToAdts } from "../src/main/services/pure/fmp4-to-adts.ts";
 import { runSmartImport } from "../src/main/services/import-job-service.ts";
@@ -58,7 +58,7 @@ test("T3 wbi 签名回归向量(POC 真 API 定标,表漂移即红)", () => {
   assert.equal(subKey, "efgh5678");
 });
 
-test("T4 字幕解析:vtt/srt 时间轴剥除 + 滚动重复行去重 + 标签清理", () => {
+test("T4 字幕解析:vtt/srt 时间轴剥除 + 滚动重复行去重 + 标签清理 + CJK 感知接行", () => {
   const vtt = [
     "WEBVTT", "Kind: captions", "",
     "00:00:01.000 --> 00:00:03.000", "大家好今天讲<c>梯度</c>下降", "",
@@ -67,9 +67,61 @@ test("T4 字幕解析:vtt/srt 时间轴剥除 + 滚动重复行去重 + 标签�
     "00:00:05.000 --> 00:00:07.000", "梯度下降是优化算法&nbsp;的核心", "",
   ].join("\n");
   const text = parseSubtitleToText(vtt);
-  assert.equal(text, "大家好今天讲梯度下降 梯度下降是优化算法 的核心");
+  assert.equal(text, "大家好今天讲梯度下降梯度下降是优化算法 的核心");
   const srt = "1\n00:00:01,000 --> 00:00:02,000\n第一句。\n\n2\n00:00:02,000 --> 00:00:03,000\n第二句。\n";
-  assert.equal(parseSubtitleToText(srt), "第一句。 第二句。");
+  // CJK 感知接行:句号(中文标点)与下句首字之间不加空格(2026-08-23 修)
+  assert.equal(parseSubtitleToText(srt), "第一句。第二句。");
+});
+
+test("T4b YouTube 自动字幕滚动窗:cue N+1 首行复述 cue N 尾行(隔行重复)也去重", () => {
+  // 结构复刻 yt-dlp issue #1734 文档化的滚动窗(本网不可达 YouTube,按公开格式构造):
+  // cueA=[A,B] cueB=[B,C] cueC=[C,D] → 行序 A,B,B,C,C,D,旧"相邻去重"会漏 B/C 首次重放
+  const vtt = [
+    "WEBVTT", "Kind: captions", "Language: en", "",
+    "00:00:00.719 --> 00:00:03.829 align:start position:0%",
+    "hello world",
+    "this is<00:00:01.099><c> a</c><00:00:01.259><c> test</c>",
+    "",
+    "00:00:03.829 --> 00:00:05.340 align:start position:0%",
+    "hello world",
+    "this is a test",
+    "",
+    "00:00:05.340 --> 00:00:07.000 align:start position:0%",
+    "this is a test",
+    "now the next sentence",
+    "",
+    "00:00:07.000 --> 00:00:08.000 align:start position:0%",
+    "[Music]",
+    ">> now the next sentence",
+    "",
+  ].join("\n");
+  const text = parseSubtitleToText(vtt);
+  assert.equal(text, "hello world this is a test now the next sentence now the next sentence");
+});
+
+test("T4c 字幕实体解码 + 整行自动标记 + 换说话人标记(原则:行内方括号/对话破折号是正文,不删)", () => {
+  const vtt = [
+    "WEBVTT", "",
+    "00:00:01.000 --> 00:00:02.000", "Tom &amp; Jerry &lt;_best&gt; &#39;friends&#39;", "",
+    "00:00:02.000 --> 00:00:03.000", "[Applause]", "",
+    "00:00:03.000 --> 00:00:04.000", ">>第二位讲者开口", "",
+    "00:00:04.000 --> 00:00:05.000", "音符 [C4] 是正文里的方括号", "",
+    "00:00:05.000 --> 00:00:06.000", "- 对话破折号保留", "",
+  ].join("\n");
+  const text = parseSubtitleToText(vtt);
+  assert.ok(text.includes("Tom & Jerry <_best> 'friends'"), `实体应解码,实际: ${text}`);
+  assert.ok(!text.includes("[Applause]"), "整行自动标记应删");
+  assert.ok(text.includes("第二位讲者开口") && !text.includes(">>"), "行首换说话人标记应剥");
+  assert.ok(text.includes("[C4]"), "行内方括号是正文,不删");
+  assert.ok(text.includes("- 对话破折号保留"), "对话破折号是正文,不删");
+});
+
+test("T4d pickSubtitleFile 语言优先级:zh-Hans/zh-CN > 其他 zh > en(readdir 字母序 en 会压过 zh)", () => {
+  assert.equal(pickSubtitleFile(["sub.en.vtt", "sub.zh-Hans.vtt"]), "sub.zh-Hans.vtt");
+  assert.equal(pickSubtitleFile(["sub.en.vtt", "sub.zh.vtt"]), "sub.zh.vtt");
+  assert.equal(pickSubtitleFile(["sub.zh-Hant.vtt", "sub.en.vtt"]), "sub.zh-Hant.vtt");
+  assert.equal(pickSubtitleFile(["sub.en.srt", "sub.ja.vtt"]), "sub.en.srt");
+  assert.equal(pickSubtitleFile(["audio.m4a", "sub.info.json"]), null, "无字幕文件 → null");
 });
 
 const SQL = await initSqlJs({ locateFile: (f) => join(process.cwd(), "node_modules/sql.js/dist", f) });

@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-24
+
 ### Removed
 - **思维导图(markmap)功能整体移除** —— 讲解区 Brain 按钮与 markmap 脑图视图退役。移除理由(用户判断):正文分了标题的结构是显而易见的,不需要再画一张;正文没分标题时,截首句生成的节点图又看不懂——两头都不讨好;而对话产物系统里的 LLM 概念图(show_concept_map)已经能按内容语义生成真正的概念结构图,覆盖了这个场景且质量更高。markmap-lib/markmap-view 依赖从 package.json 删除(安装体积与移动端包瘦身),verify-build-manifest 改为守卫产物零 markmap 残留,测试套件 109→108。
 

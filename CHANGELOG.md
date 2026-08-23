@@ -14,8 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
-
+## [0.24.0] - 2026-08-23
 ### Added
 - **设置页显示版本号** —— 底部新增"关于"分组,版本行显示当前构建的版本(取自 package.json,构建期固化,与正在运行的构建严格一致),点版本号跳 GitHub releases 查看该版更新内容。中英双语,懒加载 chunk 内零主束增量。
 

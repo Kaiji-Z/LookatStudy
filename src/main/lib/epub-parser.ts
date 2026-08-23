@@ -17,7 +17,7 @@ import { htmlToMarkdown } from "../services/pure/html-article.js";
 export interface EpubChapter {
   /** 虚拟路径 chapters/{nn}-{title}.md */
   path: string;
-  /** 章节标题(TOC 优先,退回首行 H1,再退回"第 N 章") */
+  /** 章节标题(TOC 优先,退回首行 H1,再退回"未命名章节"——不编造编号,交 Step4 按内容命名) */
   title: string;
   /** 章节 markdown(以 `# {title}` 开头) */
   markdown: string;
@@ -258,6 +258,8 @@ export async function parseEpub(buf: Uint8Array): Promise<EpubBook> {
     tocLabels = parseTocLabels(read(resolveZipPath(opfPath, manifest.get(spineTocId)!.href)), true);
   }
 
+  /** 无标题标记(不再编造"第 N 章";配对/LLM 命名的锚点) */
+  const UNTITLED_MARK = "未命名章节";
   // spine 顺序遍历章节
   const opfDirKey = (href: string) => decodeURIComponent(href.split("#")[0] ?? href).replace(/\\/g, "/");
   const chapters: EpubChapter[] = [];
@@ -279,12 +281,27 @@ export async function parseEpub(buf: Uint8Array): Promise<EpubBook> {
     n++;
     const body0 = md.startsWith("# ") && md.includes("\n") ? md.slice(md.indexOf("\n") + 1).trim() : md;
     const firstHeading = md.startsWith("# ") ? md.split("\n")[0]!.slice(2).trim() : "";
-    const fileTitle = tocLabels.get(opfDirKey(item.href)) || firstHeading || `第 ${n} 章`;
+    // 无标题兜底**不编造编号**:解析层发明"第 N 章"会把假标题喂成大纲权威
+    // (Step4 忠实原则反而保住它),对无编号体系的书双重失真。未命名交 Step4
+    // 按内容主题命名;扉页配对(见 mergeEpigraphStubs)会回填真标题。
+    const fileTitle = tocLabels.get(opfDirKey(item.href)) || firstHeading || UNTITLED_MARK;
 
     // Gutenberg 目录页(title=Contents 且正文短)不成课
     if (/^(contents|table of contents)$/i.test(fileTitle) && body0.replace(/\s/g, "").length < 4000) continue;
     // 前言/元数据小文件(短正文 + 版权标志,如 Metamorphosis 的译者页)不成课
     if (body0.replace(/\s/g, "").length < 1500 && /project gutenberg|copyright/i.test(body0)) continue;
+    // 出版社前置件不成课(2026-08-23,沉思录真书驱动):①版权页——标题点名版权,
+    // 或短正文里 ≥3 个"书名：/作者：/ISBN："式著录字段(出版社版权页机器指纹);
+    // ②链接目录页——标题是"目录"且正文六成以上行是 markdown 链接(目录页链接密
+    // 度是格式指纹,正文章不会长这样)。出版社宣传小页(Digital Lab 之类)无高置
+    // 信信号,按原则不猜——留给 Step4 LLM(见提示词"前置小页")。
+    if (/^(版权信息|版权|版权页|著作权|版權)/.test(fileTitle)) continue;
+    const colophonFields = (body0.match(/^(书名|作者|译者|编者|丛书|出版社|出版时间|出版年|ISBN|版次|定价|装帧|字数|品牌|出品方)[：:]/gm) ?? []).length;
+    if (colophonFields >= 3 && body0.replace(/\s/g, "").length < 2500) continue;
+    if (/^目\s*录$/.test(fileTitle)) {
+      const lines = body0.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (lines.length >= 3 && lines.filter((l) => l.includes("](")).length / lines.length >= 0.6) continue;
+    }
 
     // 噪声清理(头/尾块、装饰行)后按章标记二次拆分——spine 文件≠章是采样常态
     const body = sanitizeEpubBody(body0);
@@ -321,6 +338,31 @@ export async function parseEpub(buf: Uint8Array): Promise<EpubBook> {
       title: fileTitle,
       markdown: `# ${fileTitle}\n\n${body}`,
     });
+  }
+
+  // 扉页配对(2026-08-23,沉思录真书驱动):出版社 epub 常见"短扉页(带卷/部标题)
+  // + 紧随的无标题正文页"两文件结构。规则(高置信):前一章是有真标题的极短扉页
+  // (正文 ≤300 字)且后一章是 UNTITLED → 合并,标题取扉页,扉页格言并入正文开头。
+  // 后一章自己有标题(正常书)绝不合并;已吞并过正文的章不再是"纯扉页",不许
+  // 连锁再吞(否则短正文书会被一路并成一章)。
+  const absorbed = new Set<string>();
+  for (let i = 0; i + 1 < chapters.length; i++) {
+    const stub = chapters[i]!;
+    const next = chapters[i + 1]!;
+    if (absorbed.has(stub.path)) continue;
+    const stubBody = stub.markdown.includes("\n") ? stub.markdown.slice(stub.markdown.indexOf("\n") + 1).trim() : "";
+    if (stub.title === UNTITLED_MARK || stub.title === "附录") continue;
+    if (stubBody.replace(/\s/g, "").length > 300) continue;
+    if (next.title !== UNTITLED_MARK) continue;
+    const nextBody = next.markdown.includes("\n") ? next.markdown.slice(next.markdown.indexOf("\n") + 1).trim() : next.markdown;
+    chapters[i] = {
+      path: stub.path,
+      title: stub.title,
+      markdown: `# ${stub.title}\n\n${stubBody}\n\n${nextBody}`,
+    };
+    absorbed.add(stub.path);
+    chapters.splice(i + 1, 1);
+    i--; // 回看一格:后移的邻居可能仍是可配对的短扉页+未命名对
   }
 
   if (chapters.length === 0) throw new Error("epub 里没有可识别的章节文本");

@@ -30,6 +30,29 @@ let failed = 0;
 const ok = (m) => console.log(`  ✅ ${m}`);
 const bad = (m) => { console.error(`  ❌ ${m}`); failed++; };
 
+// ── 本地真书(出版社形态,2026-08-23 沉思录驱动):缓存-only——无网络来源可重下,
+//    缓存缺失时 SKIP(诚实;样本随开发者机器携带,不入库)。 ──
+{
+  const cache = "scripts/fixtures/epub-corpus/meditations-zh.epub";
+  if (!existsSync(cache)) {
+    console.log("  SKIP 沉思录(出版社形态): 本地缓存缺失且无下载源");
+  } else {
+    try {
+      const book = await parseEpub(new Uint8Array(readFileSync(cache)));
+      const chs = book.chapters;
+      const juan = chs.filter((c) => /^第[一二三四五六七八九十]+卷$/.test(c.title)).length;
+      const fabricated = chs.filter((c) => /^第\s*\d+\s*章$/.test(c.title)).length;
+      const frontJunk = chs.filter((c) => /^(版权信息|目\s*录)/.test(c.title)).length;
+      if (juan === 12 && fabricated === 0 && frontJunk === 0 && chs.length <= 14) {
+        ok(`沉思录(上海译文): ${chs.length} 章,12 卷扉页配对成功,零编造标题,零前置件`);
+      } else {
+        bad(`沉思录: 卷 ${juan}/12,编造标题 ${fabricated},前置件 ${frontJunk},共 ${chs.length} 章(>14=扉页未配对)`);
+      }
+    } catch (e) { bad(`沉思录: 解析抛错 ${e.message}`); }
+  }
+}
+
+
 for (const [id, name, expectCh, tol] of BOOKS) {
   const cache = `scripts/fixtures/epub-corpus/${id}.epub`;
   let bytes = null;

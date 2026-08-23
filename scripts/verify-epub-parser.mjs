@@ -210,4 +210,73 @@ await test("T10 端到端:多章一文件 epub 拆出对齐的真章(裸行标�
   assert.ok(book.chapters[1].markdown.includes("第二章正文"), "内容归属正确");
 });
 
+// ── 出版社形态三修(2026-08-23,沉思录真书驱动) ──
+/** 出版社式 epub:多 spine 文件(版权页/目录页/卷扉页/无标题正文页)。 */
+function buildPublisherEpub(files) {
+  const containerXml = `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="b.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`;
+  const items = files.map((_, i) => `<item id="c${i}" href="c${i}.xhtml" media-type="application/xhtml+xml"/>`).join("");
+  const refs = files.map((_, i) => `<itemref idref="c${i}"/>`).join("");
+  const opf = `<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>出版社书</dc:title></metadata><manifest>${items}</manifest><spine>${refs}</spine></package>`;
+  const zip = { mimetype: strToU8("application/epub+zip"), "META-INF/container.xml": strToU8(containerXml), "b.opf": strToU8(opf) };
+  files.forEach(([title, body], i) => { zip[`c${i}.xhtml`] = strToU8(xhtml(title, body)); });
+  return zipSync(zip);
+}
+
+await test("T11 标题兜底不编造:无 toc 无 H1 的文件 → 未命名章节(不是'第 N 章')", async () => {
+  const epub = buildPublisherEpub([["", "<p>一段没有标题的正文内容,足够长以通过最小过滤。</p><p>第二段内容继续补充。</p>"]]);
+  const book = await parseEpub(epub);
+  assert.equal(book.chapters.length, 1);
+  assert.equal(book.chapters[0].title, "未命名章节", `兜底应诚实未命名,实际 ${book.chapters[0].title}`);
+});
+
+await test("T12 扉页配对:短扉页(有标题) + 紧随的无标题正文页 → 合并成一章", async () => {
+  const epub = buildPublisherEpub([
+    ["第一卷", "<p>一句卷首格言,非常短。</p>"],
+    ["", "<p>第一卷的真正正文,这里写满足够长的内容让它成为显著的一章。</p><p>再一段正文内容。</p>"],
+    ["第二卷", "<p>第二卷的卷首格言,同样简短。</p>"],
+    ["", "<p>第二卷正文内容,同样足够长以构成独立一章。</p>"],
+  ]);
+  const book = await parseEpub(epub);
+  const titles = book.chapters.map((c) => c.title);
+  assert.equal(book.chapters.length, 2, `扉页应并入后章,实际 ${book.chapters.length} 章(${titles.join(",")})`);
+  assert.equal(titles[0], "第一卷", "标题取扉页");
+  assert.ok(book.chapters[0].markdown.includes("一句卷首格言"), "扉页格言并入正文");
+  assert.ok(book.chapters[0].markdown.includes("第一卷的真正正文"), "正文页内容并入");
+  assert.ok(!book.chapters[0].markdown.includes("第二卷正文内容"), "不许连锁吞并下一卷正文");
+  assert.equal(titles[1], "第二卷");
+});
+
+await test("T13 不误合并:后一章自己有标题 → 短章保持独立(配对条件=下一章未命名)", async () => {
+  const epub = buildPublisherEpub([
+    ["献词", "<p>给某人的短短献词。</p>"],
+    ["第一章 起点", "<p>正文内容,标题来自首行 H1。</p><p>继续正文。</p>"],
+  ]);
+  const book = await parseEpub(epub);
+  assert.equal(book.chapters.length, 2, "两章都应独立(后章有标题不合并)");
+  assert.equal(book.chapters[0].title, "献词");
+});
+
+await test("T14 版权页不成课:著录字段密度(书名:/作者:/出版社:)是版权页机器指纹", async () => {
+  const epub = buildPublisherEpub([
+    ["版权信息", "<p>书名：沉思录</p><p>作者：马可·奥勒留</p><p>编者：衷雅琴</p><p>出版社：上海译文出版社</p><p>关注微博与公众号的推广文字若干。</p>"],
+    ["", "<p>书名：无名书</p><p>译者：某人</p><p>ISBN：978-7-5327-0000-0</p><p>版次：2026 年 1 月第 1 版。</p><p>无标题的版权页,只靠著录字段密度识别。</p>"],
+    ["第一卷", "<p>正文第一章内容,足够长。</p><p>继续正文。</p>"],
+  ]);
+  const book = await parseEpub(epub);
+  const titles = book.chapters.map((c) => c.title);
+  assert.ok(!titles.includes("版权信息"), `标题点名的版权页应过滤,实际 ${titles.join(",")}`);
+  assert.ok(book.chapters.length === 1, `无标题版权页也应被字段密度过滤(只留正文),实际 ${titles.join(",")}`);
+});
+
+await test("T15 链接目录页不成课:标题'目录'且六成行是链接 → 过滤", async () => {
+  const epub = buildPublisherEpub([
+    ["目 录", `<p><a href="c1.xhtml">第一卷</a></p><p><a href="c1.xhtml">第二卷</a></p><p><a href="c1.xhtml">第三卷</a></p><p><a href="c1.xhtml">第四卷</a></p>`],
+    ["第一卷", "<p>正文内容开始,足够长不被当封面。</p><p>第二段内容。</p>"],
+  ]);
+  const book = await parseEpub(epub);
+  const titles = book.chapters.map((c) => c.title);
+  assert.ok(!titles.some((t) => /^目\s*录$/.test(t)), `链接目录页应过滤,实际 ${titles.join(",")}`);
+  assert.equal(book.chapters.length, 1);
+});
+
 console.log(`\n${passed} passed`);

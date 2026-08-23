@@ -89,13 +89,21 @@ check('T20 App 订阅 state:changed 重拉', app.includes('"state:changed"') && 
 
 /* ---- Phase 1: 高光时刻接入庆祝总线 ---- */
 const quiz = read("src/renderer/components/artifacts/QuizArtifact.tsx");
-check('T21 QuizArtifact 答题 celebrate(correct/wrong)', quiz.includes('celebrate(correct ? "correct" : "wrong")'));
+// v12:答对带题卡锚点(rootRef)召唤伴学,答错不带 origin(原地柔红闪)
+check(
+  'T21 QuizArtifact 答题 celebrate(correct/wrong)',
+  quiz.includes('celebrate(correct ? "correct" : "wrong"') && quiz.includes("origin: correct && rootRef.current"),
+);
 
 const exam = read("src/renderer/components/ExamView.tsx");
 check('T22 ExamView 考试通过 celebrate(exam-pass)', exam.includes('celebrate("exam-pass")'));
 
 const review = read("src/renderer/components/ReviewPanel.tsx");
-check('T23 ReviewPanel 自评 celebrate(correct/wrong)', review.includes('celebrate(quality >= 4 ? "correct" : "wrong")'));
+// v12:记得/很熟(≥4)带自评卡锚点(rateRef)召唤伴学,忘了不带 origin
+check(
+  'T23 ReviewPanel 自评 celebrate(correct/wrong)',
+  review.includes('celebrate(quality >= 4 ? "correct" : "wrong"') && review.includes("origin: quality >= 4 && rateRef.current"),
+);
 
 check('T24 App 能量充满 celebrate(energy-full)', app.includes('celebrate("energy-full")'));
 check('T25 App 连击 celebrate(streak)', app.includes('celebrate("streak")'));

@@ -653,6 +653,14 @@ async function runUiTest(screenshot = false): Promise<void> {
     },
   });
   setupIpc(win);
+  if (!screenshot) {
+    // 透明 show:从未 show 的窗口拿不到合成器 begin-frame,rAF 被降到 ~1s/帧
+    // 甚至完全停摆(2026-08-23 实测:frame16@16.1s 后全停,伴学冻死在 roam
+    // 半路,exam-perch 断言假红)。backgroundThrottling:false 只救定时器救不了
+    // 合成器。透明 show 让合成器全速,视觉上仍然"无头"。
+    win.show();
+    win.setOpacity(0);
+  }
 
   // M2 测试造数：造一条 pending proposal，让 T8 能测 listPending→reject→空 的回路
   // （渲染层没暴露 createProposal IPC——create 是 AI 发起的，学习者只 list/apply/reject）

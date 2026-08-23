@@ -917,7 +917,16 @@ console.log("✓ T19 v10 连续移动+v12 召回制:限速滑翔/roam 锁左栏/
   const mapRail2 = read("components/MapRail.tsx");
   assert.ok(quizArt.includes('celebrate(correct ? "correct" : "wrong", {') && quizArt.includes("rootRef.current"), "T15: 题卡答对带锚点");
   assert.ok(reviewPanel.includes('celebrate(quality >= 4 ? "correct" : "wrong", {') && reviewPanel.includes("rateRef.current"), "T15: 复习自评带锚点");
-  assert.ok(mapRail2.includes('celebrate("unlock", r ?') && mapRail2.includes("map-node-${unlockedId"), "T15: 解锁球带锚点");
+  // v12.1:锚点只在球真在视口内携带(onScreen 守卫——屏外/未布局球的 rect 是负坐标/零宽,
+  // 带出去伴学会朝屏外冲刺;2026-08-23 ui-test 取证 t=478ms 解锁即此例)
+  assert.ok(
+    mapRail2.includes('celebrate("unlock", onScreen') &&
+      mapRail2.includes("const onScreen = !!r && r.width > 0 && r.left >= 0") &&
+      mapRail2.includes("map-node-${unlockedId"),
+    "T15: 解锁球带锚点",
+  );
+  // v12.1:庆祝落点取不到宿主元素(锚点屏外/未布局)→ 不召唤,绝不兑底猜栏
+  assert.ok(creature.includes("if (!hit) return"), "T15: 庆祝落点无宿主不召唤");
   assert.ok(creature.includes("cp-takeoff"), "T15: 起飞动效(蓄力弹射+喷焰增强)");
   assert.ok(
     mascotV4.includes("-44 : 44") && mascotV4.includes("scale(1.045, 0.93)") && mascotV4.includes("cubic-bezier(0.2, 1.5, 0.4, 1)"),

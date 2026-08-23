@@ -187,7 +187,10 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean }) {
         `[data-testid="map-node-${unlockedId.slice(0, 8)}"], [data-testid="exam-node-${unlockedId.slice(0, 8)}"]`,
       );
       const r = ballEl?.getBoundingClientRect();
-      celebrate("unlock", r ? { origin: { x: r.left + r.width / 2, y: r.top + 4 } } : undefined);
+      // 球锚必须真在视口内才携带:解锁常发生在进度数据二次加载时,球可能还
+      // 虚拟化/滚出视口(rect 负坐标或零宽)——带出去会让伴学朝屏外冲刺。
+      const onScreen = !!r && r.width > 0 && r.left >= 0 && r.right <= window.innerWidth && r.top >= 0;
+      celebrate("unlock", onScreen ? { origin: { x: r!.left + r!.width / 2, y: r!.top + 4 } } : undefined);
     }
     prevStatusRef.current = cur;
   }, [props.tree, props.progressMap]);

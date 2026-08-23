@@ -236,9 +236,9 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
     return onCelebration((e) => {
       if ((e.kind !== "correct" && e.kind !== "unlock") || !e.origin) return;
       if (getCompanionSnapshot().state.examActive) return;
-      const host = document
-        .elementFromPoint(e.origin.x, e.origin.y)
-        ?.closest<HTMLElement>('[data-testid="map-rail"]');
+      const hit = document.elementFromPoint(e.origin.x, e.origin.y);
+      if (!hit) return; // 落点取不到元素(锚点屏外/尚未布局)→ 归属不明,不召唤
+      const host = hit.closest<HTMLElement>('[data-testid="map-rail"]');
       celebAckRef.current = {
         x: e.origin.x,
         y: e.origin.y,

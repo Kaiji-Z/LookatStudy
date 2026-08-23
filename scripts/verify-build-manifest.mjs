@@ -49,7 +49,6 @@ function eagerAssets() {
     ["elkjs", "org.eclipse.elk"],
     ["shiki", "ShikiError"],
     ["mermaid", "DOMPurify"],
-    ["markmap", "markmap-foreign"],
   ];
   for (const f of eager) {
     const src = readFileSync(join(assetsDir, f), "utf8");
@@ -57,7 +56,7 @@ function eagerAssets() {
       assert.ok(!src.includes(marker), `T1 急载 ${f} 不得内联 ${label}(marker: ${marker})`);
     }
   }
-  console.log(`T1 主束零污染(急载 ${eager.length} 个 JS 无 elkjs/shiki/mermaid/markmap)✓`);
+  console.log(`T1 主束零污染(急载 ${eager.length} 个 JS 无 elkjs/shiki/mermaid)✓`);
 }
 
 // ---------------------------------------------------------------- T2 elkjs 懒 chunk
@@ -76,14 +75,15 @@ function eagerAssets() {
   console.log("T3 shiki 懒 chunk(core + engine-javascript)✓");
 }
 
-// ---------------------------------------------------------------- T4 markmap 懒 chunk
+// ---------------------------------------------------------------- T4 markmap 移除守卫(v0.26)
 {
-  // markmap-view 的 globalCSS 特征串必须存在(懒加载接线活着),且不在急载集里(T1 已断言)
-  const lazyHit = files.some(
+  // markmap 功能已整体移除(产物系统的 LLM 概念图覆盖其场景):产物目录不得
+  // 再出现 markmap 代码(懒 chunk 也不许——依赖已从 package.json 删,残留即打包泄漏)
+  const leak = files.filter(
     (f) => f.endsWith(".js") && readFileSync(join(assetsDir, f), "utf8").includes("markmap-foreign"),
   );
-  assert.ok(lazyHit, "T4 markmap 懒 chunk 在场(globalCSS 特征串)");
-  console.log("T4 markmap 懒 chunk 在场✓");
+  assert.equal(leak.length, 0, `T4 markmap 已移除,产物零残留(实得 ${leak.join(", ") || "无"})`);
+  console.log("T4 markmap 移除守卫(产物零残留)✓");
 }
 
 console.log("verify-build-manifest: 4 组全部通过");

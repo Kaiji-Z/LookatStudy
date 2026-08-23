@@ -1356,7 +1356,7 @@ function SettingsDrawer({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label={t("settings.title")}
-        className="relative w-full max-w-lg h-full bg-surface-0 border-l border-[var(--border)] shadow-elevated flex flex-col"
+        className="relative w-full max-w-lg h-full bg-surface-0 border-l border-[var(--border)] shadow-elevated flex flex-col" /* v0.26 手机最小宽适配:w-full 全随视口(手机浏览器 360-430px 全宽),max-w-lg 只是桌面帽;内部布局按 420px 零溢出设计(ui-test 守卫) */
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] shrink-0">
           <h2 className="text-body font-bold">{t("settings.title")}</h2>
@@ -1473,7 +1473,7 @@ function ReviewDrawer({
         role="dialog"
         aria-modal="true"
         aria-label={t("review.title")}
-        className="relative w-full max-w-md h-full bg-surface-0 border-l border-[var(--border)] shadow-elevated flex flex-col"
+        className="relative w-full max-w-md h-full bg-surface-0 border-l border-[var(--border)] shadow-elevated flex flex-col" /* v0.26 同设置抽屉:全随视口,手机端全宽 */
       >
         {/* 头 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] shrink-0">

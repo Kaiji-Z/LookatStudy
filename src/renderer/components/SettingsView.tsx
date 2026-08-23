@@ -381,13 +381,13 @@ export function SettingsView() {
                   </div>
                 </div>
                 <div className={rowCls(true)}>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
                     <button onClick={handleTest} disabled={testing} data-testid="test-connection-btn" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">
                       {testing ? t("settings.testing") : t("settings.test")}
                     </button>
                     {testResult && (
-                      <span className={`text-label inline-flex items-center gap-1 ${testResult.ok ? "text-brand" : "text-warning"}`}>
-                        {testResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
+                      <span className={`text-label inline-flex items-center gap-1 min-w-0 break-words ${testResult.ok ? "text-brand" : "text-warning"}`}>
+                        {testResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> : <XCircle className="w-4 h-4 shrink-0" aria-hidden="true" />}
                         {testResult.detail}
                       </span>
                     )}
@@ -446,13 +446,13 @@ export function SettingsView() {
                   </label>
                 </div>
                 <div className={rowCls(true)}>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
                     <button onClick={handleTest} disabled={testing} data-testid="test-connection-btn" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">
                       {testing ? t("settings.testing") : t("settings.test")}
                     </button>
                     {testResult && (
-                      <span className={`text-label inline-flex items-center gap-1 ${testResult.ok ? "text-brand" : "text-warning"}`}>
-                        {testResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
+                      <span className={`text-label inline-flex items-center gap-1 min-w-0 break-words ${testResult.ok ? "text-brand" : "text-warning"}`}>
+                        {testResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> : <XCircle className="w-4 h-4 shrink-0" aria-hidden="true" />}
                         {testResult.detail}
                       </span>
                     )}
@@ -989,7 +989,7 @@ function CompanionContent() {
         )}
         <div>
           <div className="text-label text-ink-muted mb-2">{t("settings.companion.form")}</div>
-          <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label={t("settings.companion.form")}>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t("settings.companion.form")}>
             {COMPANION_FORM_IDS.map((id) => {
               const selected = snap.form === id;
               return (

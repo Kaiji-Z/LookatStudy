@@ -808,19 +808,6 @@ html.light .md-shiki pre.shiki span {
   animation: msg-enter 200ms var(--ease-out-expo);
 }
 
-/* ============ 思维导图(markmap,v0.21) ============
- * 节点文字经 foreignObject 的 HTML div 渲染,继承这里的设计 token;
- * 分支线颜色由 MindmapView 的 color 回调按深度吃应用色板。
- * markmap 全局 CSS(embedGlobalCSS)管节点 margin/光标,这里只调字体体系。 */
-.mindmap-view {
-  color: var(--ink-strong);
-  border-radius: 0.5rem;
-}
-.mindmap-view .markmap-foreign {
-  font-size: 13px;
-  line-height: 1.35;
-}
-
 /* Proposal card glow */
 .proposal-card {
   @apply surface-card p-3 border-brand/30;

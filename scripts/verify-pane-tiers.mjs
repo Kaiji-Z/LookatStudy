@@ -8,6 +8,7 @@
  * 跑法: npx tsx scripts/verify-pane-tiers.mjs (也被 verify:core 调用)
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   T1_MIN,
   T2_MIN,
@@ -68,6 +69,27 @@ test("swipeTarget 手势判定(阈值/方向/边界)", () => {
   assert.equal(swipeTarget("chat", 59, 0), null);
   assert.equal(swipeTarget("chat", -80, 60), null);
   assert.equal(swipeTarget("chat", -200, 100), "notebook");
+});
+
+
+// ---------- v0.26 抽屉手机最小宽适配(源级守卫) ----------
+test("抽屉宽度视口相对(w-full+max-w 帽,无固定 px 宽);手机端全宽不破", () => {
+  const read = (f) => readFileSync(new URL(f, import.meta.url), "utf8");
+  const app = read("../src/renderer/App.tsx");
+  // 两个抽屉面板:w-full 全随视口,max-w 只是桌面帽
+  assert.ok(app.includes('className="relative w-full max-w-lg h-full'), "T: 设置抽屉面板 w-full+max-w-lg(视口相对)");
+  assert.ok(app.includes('className="relative w-full max-w-md h-full'), "T: 复习抽屉面板 w-full+max-w-md(视口相对)");
+  // 抽屉内不许固定五列(手机 ~57px/格必破)——companion 形态选择 flex-wrap
+  const settings = read("../src/renderer/components/SettingsView.tsx");
+  assert.ok(!settings.includes("grid-cols-5"), "T: 设置页无固定五列网格(改 flex-wrap)");
+  assert.ok(settings.includes("flex flex-wrap gap-2\" role=\"radiogroup\""), "T: companion 形态选择 flex-wrap(窄屏换行)");
+  // 测试结果行允许换行(长错误文案不撑破)
+  assert.ok(settings.includes("flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0"), "T: 测试结果行可换行");
+});
+
+test("ui-test 抽屉窄屏守卫在(420px 零水平溢出断言)", () => {
+  const idx = readFileSync(new URL("../src/main/index.ts", import.meta.url), "utf8");
+  assert.ok(idx.includes("no horizontal overflow at 420px"), "T: ui-test 420px 抽屉零溢出断言在场");
 });
 
 console.log(`\n${passed} passed`);

@@ -1409,38 +1409,17 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: shikiRes,
   });
 
-  // T-MINDMAP (v0.21): 讲解区 Brain 按钮 → markmap 脑图渲染(svg 有内容)→
-  // 再点回讲解(markdown 回来,脑图卸载)。markmap 懒 chunk 首开慢,轮询放宽。
-  let mindmapRes: { ok?: boolean; [k: string]: unknown } = {};
-  try {
-    mindmapRes = await win.webContents.executeJavaScript(`
-      (async function() {
-        var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
-        var btn = document.querySelector('[data-testid="node-content-mindmap"]');
-        if (!btn) return { ok: false, why: "no brain btn" };
-        btn.click();
-        var svg = null;
-        for (var i = 0; i < 80; i++) {
-          await sleep(250);
-          svg = document.querySelector('[data-testid="mindmap-view"] svg');
-          if (svg && svg.childElementCount > 0 && svg.querySelector("path, g")) break;
-        }
-        if (!svg || svg.childElementCount === 0) return { ok: false, why: "mindmap svg 未渲染" };
-        var nodes = svg.querySelectorAll("g.markmap-node").length;
-        btn.click(); // 切回讲解
-        await sleep(300);
-        var back = document.querySelector('[data-testid="mindmap-view"]') === null;
-        var proseBack = document.querySelector('[data-testid="node-content"] .prose') !== null;
-        return { ok: back && proseBack, nodeCount: nodes };
-      })()
-    `).catch(() => ({}));
-  } catch (e) {
-    mindmapRes = { ok: false, error: String(e) };
-  }
+  // T-MINDMAP:v0.26 已整体移除 markmap(产物系统的 LLM 概念图覆盖其场景)——
+  // 守卫:Brain 按钮与脑图视图都不再存在(接线删干净,误留入口会打到死组件)。
+  const brainGone = await win.webContents
+    .executeJavaScript(
+      `document.querySelector('[data-testid="node-content-mindmap"]') === null && document.querySelector('[data-testid="mindmap-view"]') === null`,
+    )
+    .catch(() => null);
   results.push({
-    name: "markmap: brain button toggles mind map render and back",
-    ok: mindmapRes?.ok === true,
-    detail: mindmapRes,
+    name: "markmap removed: brain button + mindmap view absent",
+    ok: brainGone === true,
+    detail: { gone: brainGone },
   });
 
   // T-MERMAID-ELK (v0.21): 笔记理解区的 flowchart 图卡 → 渲染成 SVG + ELK 布局
@@ -1854,6 +1833,68 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: settingsDrawer?.ok === true,
     detail: settingsDrawer,
   });
+
+  // v0.26 抽屉手机最小宽适配:窗口压到 420px(手机浏览器视口,不受桌面 minWidth
+  // 560 保护)分别开设置/复习抽屉,断言抽屉滚动容器零水平溢出(布局在手机端
+  // 不破);测完立即恢复 1280 宽,不污染后续断言。
+  {
+    await win.setBounds({ width: 420, height: 800 });
+    await new Promise((r) => setTimeout(r, 400));
+    const narrowDrawers = await win.webContents.executeJavaScript(`
+      (async function() {
+        function overflowOf(sel) {
+          var root = document.querySelector(sel);
+          if (!root) return { present: false };
+          var panel = root.querySelector('[role="dialog"]') || root;
+          var scroller = panel.querySelector(".overflow-y-auto") || panel;
+          return {
+            present: true,
+            sw: scroller.scrollWidth, cw: scroller.clientWidth,
+            pw: panel.getBoundingClientRect().width,
+            docSw: document.documentElement.scrollWidth, vw: window.innerWidth,
+          };
+        }
+        function open(sel) {
+          var btn = document.querySelector(sel);
+          if (btn) btn.click();
+        }
+        var out = {};
+        try {
+          open('[data-testid="header-settings"]');
+          await new Promise(function(r){ setTimeout(r, 500); });
+          out.settings = overflowOf('[data-testid="settings-drawer"]');
+          var close = document.querySelector('[data-testid="settings-close"]');
+          if (close) { close.click(); await new Promise(function(r){ setTimeout(r, 300); }); }
+          // 复习抽屉:420px 已是 T3 单栏,先切到地图栏再点复习徽章(徽章在 MapRail);
+          // 入口不在就跳过该半场,只测设置半场
+          var railBtn = document.querySelector('[data-testid="t3-btn-rail"]');
+          if (railBtn) { railBtn.click(); await new Promise(function(r){ setTimeout(r, 500); }); }
+          var revBtn = document.querySelector('[data-testid="map-review-badge"]');
+          if (revBtn) {
+            revBtn.click();
+            await new Promise(function(r){ setTimeout(r, 500); });
+            out.review = overflowOf('[data-testid="review-drawer"]');
+            var rclose = document.querySelector('[data-testid="review-close"]');
+            if (rclose) { rclose.click(); await new Promise(function(r){ setTimeout(r, 300); }); }
+          }
+        } catch (e) { out.error = String(e); }
+        return out;
+      })()
+    `).catch(() => null);
+    await win.setBounds({ width: 1280, height: 800 });
+    await new Promise((r) => setTimeout(r, 400));
+    const sOk = narrowDrawers?.settings?.present === true
+      && narrowDrawers.settings.sw <= narrowDrawers.settings.cw + 1
+      && narrowDrawers.settings.docSw <= narrowDrawers.settings.vw + 1;
+    const rOk = !narrowDrawers?.review || (narrowDrawers.review.present === true
+      && narrowDrawers.review.sw <= narrowDrawers.review.cw + 1
+      && narrowDrawers.review.docSw <= narrowDrawers.review.vw + 1);
+    results.push({
+      name: "drawers: no horizontal overflow at 420px phone viewport (settings + review)",
+      ok: sOk && rOk,
+      detail: narrowDrawers,
+    });
+  }
 
   // T9 (M3): 切到 dashboard 视图 → 仪表盘渲染（3 stat 卡 + 热力图行）
   const dashboardOk = await win.webContents.executeJavaScript(`

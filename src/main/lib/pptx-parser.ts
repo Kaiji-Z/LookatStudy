@@ -34,6 +34,37 @@ export interface PptxProcessResult {
 }
 
 /**
+ * officeparser 的 table 节点(table → row → cell,cell.text + metadata.{row,col})
+ * → GFM markdown 表格。2026-08-23 真实样本驱动修复:此前 table 节点被整层
+ * 忽略,表格文字全军覆没(真实课件表格极常见)。竖线转义防破表;行按 row
+ * 排序、格按 col 排序,缺格补空(合并单元格容错)。
+ */
+function tableToMarkdown(node: any): string {
+  const rows = new Map<number, { col: number; text: string }[]>();
+  const walk = (n: any): void => {
+    if (n?.type === "cell") {
+      const r = Number(n.metadata?.row ?? 0);
+      const c = Number(n.metadata?.col ?? 0);
+      const text = String(n.text ?? "").trim().replace(/\|/g, "\\|").replace(/\s+/g, " ");
+      if (!rows.has(r)) rows.set(r, []);
+      rows.get(r)!.push({ col: c, text });
+      return;
+    }
+    for (const ch of n?.children ?? []) walk(ch);
+  };
+  walk(node);
+  if (rows.size === 0) return "";
+  // 全空表格(占位符未填的空表)整张跳过,不产出噪声行
+  if ([...rows.values()].every((cells) => cells.every((c) => !c.text))) return "";
+  const sorted = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([, cells]) => cells.sort((a, b) => a.col - b.col));
+  const width = Math.max(...sorted.map((cs) => cs.length));
+  const line = (texts: string[]) => `| ${Array.from({ length: width }, (_, i) => texts[i] ?? "").join(" | ")} |`;
+  const header = line(sorted[0]!.map((c) => c.text));
+  const sep = `| ${Array.from({ length: width }, () => "---").join(" | ")} |`;
+  return [header, sep, ...sorted.slice(1).map((cs) => line(cs.map((c) => c.text)))].join("\n");
+}
+
+/**
  * 把 .pptx buffer 解析成 { markdown, images }。
  * 失败抛出(上游 try/catch 兜底, 当"无内容"处理, 不崩导入)。
  */
@@ -76,6 +107,10 @@ export async function parsePptx(buf: Buffer): Promise<PptxProcessResult> {
       if (child.type === "paragraph" && child.text) {
         if (!title) title = child.text;
         else bodyTexts.push(child.text);
+      } else if (child.type === "table") {
+        // 表格进正文(GFM markdown 表格);标题仍只取段落,表不当标题
+        const md = tableToMarkdown(child);
+        if (md) bodyTexts.push(md);
       } else if (child.type === "image") {
         const name = child.metadata?.attachmentName;
         if (name && attMap.has(name) && !seenImg.has(name)) {

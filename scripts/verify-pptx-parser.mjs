@@ -76,5 +76,48 @@ let passed = 0;
   passed++;
 }
 
-console.log(`\nverify-pptx-parser: ${passed}/3 通过`);
-if (passed < 3) process.exitCode = 1;
+// 测试内再造一个带表格的 deck(pptxgenjs addTable → 真实 OOXML table 部件)
+const p2 = new pptxgen();
+p2.title = "Table Deck";
+const t1 = p2.addSlide();
+t1.addText("表格页标题", { x: 0.5, y: 0.3, w: 9, h: 1 });
+t1.addTable(
+  [
+    [{ text: "算法" }, { text: "复杂度" }],
+    [{ text: "快排" }, { text: "O(n log n)" }],
+    [{ text: "冒泡" }, { text: "O(n^2)" }],
+  ],
+  { x: 0.5, y: 1.5, w: 9 },
+);
+const t2 = p2.addSlide(); // 空表(pptxgenjs 最小 1x1)→ 应整张跳过不产噪声
+t2.addTable([[{ text: "" }]], { x: 0.5, y: 1.5, w: 2 });
+const buf2 = await p2.write("nodebuffer");
+
+// T4: 表格 → GFM markdown 表格进正文(2026-08-23 真实样本驱动修复:
+// 此前 officeparser 的 table 节点被整层忽略, 表格文字全军覆没)
+{
+  const { markdown } = await parsePptx(buf2);
+  assert.ok(markdown.includes("## Slide 1: 表格页标题"), "T4 表格页标题");
+  assert.ok(/\| *算法 *\|/.test(markdown), `T4 表头行, 实际: ${markdown.slice(0, 200)}`);
+  assert.ok(markdown.includes("O(n log n)") && markdown.includes("冒泡"), "T4 单元格文字进正文");
+  assert.ok(/\|\s*---/.test(markdown), "T4 GFM 分隔行");
+  const emptySlides = (markdown.match(/^## Slide 2:[^\n]*\n+(\|)/gm) ?? []).length;
+  assert.ok(emptySlides === 0, `T4 空表格整张跳过(Slide 2 无表格噪声), 实际出现 ${emptySlides} 处`);
+  console.log("  ✓ T4 表格文字成 GFM markdown 表格 + 空表整张跳过");
+  passed++;
+}
+
+// T5: 竖线转义防破表(单元格含 | 时不炸 markdown 表结构)
+{
+  const p3 = new pptxgen();
+  const s = p3.addSlide();
+  s.addText("管道符页", { x: 0.5, y: 0.3, w: 9, h: 1 });
+  s.addTable([[{ text: "a|b" }, { text: "c" }]], { x: 0.5, y: 1.5, w: 6 });
+  const { markdown } = await parsePptx(await p3.write("nodebuffer"));
+  assert.ok(markdown.includes("a\\|b"), `T5 竖线应转义, 实际: ${JSON.stringify(markdown.slice(-80))}`);
+  console.log("  ✓ T5 单元格竖线转义");
+  passed++;
+}
+
+console.log(`\nverify-pptx-parser: ${passed}/5 通过`);
+if (passed < 5) process.exitCode = 1;

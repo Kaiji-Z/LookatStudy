@@ -41,8 +41,10 @@ import {
   readingAnchorFlex,
   glideTo,
   nextRoamPane,
+  edgeHomeAnchor,
   CRUISE_OP,
   CRUISE_ROAM,
+  CRUISE_HOME,
   smoothMic,
   wanderTarget,
   zoneDrift,
@@ -788,31 +790,27 @@ console.log("✓ T14b v11.5 朗读锚点:整句全部行盒零遮挡(右/左/正
   const dd = Math.hypot(diag.x, diag.y);
   assert.ok(dd <= CRUISE_OP * 16 + 1e-9, `T19: 斜向同样限幅(实测 ${dd.toFixed(2)})`);
 
-  // nextRoamPane:同桶不动/首桶稳定/跨栏率合理/不可用栏跳过
+  // nextRoamPane(v12 召回制):游走只锁左栏——任意入参恒 rail,
+  // 闲时绝不栖身正文栏(用户反馈:遮挡阅读)
   const all = ["rail", "chat", "notebook"];
-  assert.equal(nextRoamPane("chat", 0, all), "chat", "T19: 首桶稳定(启动不立刻跨栏)");
-  assert.equal(nextRoamPane("chat", 7, ["chat", "notebook"]), nextRoamPane("chat", 7, ["chat", "notebook"]), "T19: 同参确定性");
-  assert.equal(nextRoamPane("rail", 5, ["chat"]), "chat", "T19: 当前栏不可用 → 落到在场栏");
-  let crossed = 0;
-  let pane = "rail";
-  for (let bkt = 1; bkt <= 400; bkt++) {
-    const next = nextRoamPane(pane, bkt, all);
-    if (next !== pane) crossed++;
-    pane = next;
-  }
-  assert.ok(crossed > 40 && crossed < 240, `T19: 跨栏率 ~30%(实测 ${crossed}/400)`);
-  // 相邻栏偏好:跨栏只跨一步(环形)
-  let pane2 = "rail";
-  for (let bkt = 1; bkt <= 200; bkt++) {
-    const next = nextRoamPane(pane2, bkt, all);
-    if (next !== pane2) {
-      const dist = Math.min(Math.abs(all.indexOf(next) - all.indexOf(pane2)), 3 - Math.abs(all.indexOf(next) - all.indexOf(pane2)));
-      assert.equal(dist, 1, "T19: 跨栏=相邻一步(rail→chat→notebook 环)");
+  for (const cur of all) {
+    for (let bkt = 0; bkt <= 50; bkt++) {
+      assert.equal(nextRoamPane(cur, bkt, all), "rail", `T19: 召回制恒 rail(cur=${cur}, bkt=${bkt})`);
+      assert.equal(nextRoamPane(cur, bkt, []), "rail", `T19: 无在场栏也指 rail(左缘停靠由渲染层接)`);
     }
-    pane2 = next;
   }
+  // edgeHomeAnchor(v12 左缘停靠):贴左缘/让开顶部禁入带/小屏不越界
+  const eh = edgeHomeAnchor(900, 76, 64);
+  assert.ok(eh.x > 0 && eh.x <= 76 * 0.5, `T19: 左缘停靠贴左(x=${eh.x})`);
+  assert.ok(eh.y >= 64 * 0.75 - 1e-9, `T19: y 在禁入带之下(y=${eh.y})`);
+  const ehTall = edgeHomeAnchor(2000, 76, 64);
+  assert.ok(ehTall.y <= 2000 * 0.46 + 1e-9, "T19: 大屏落在视口中带");
+  const ehTiny = edgeHomeAnchor(240, 76, 64);
+  assert.ok(ehTiny.y < 240 && ehTiny.y > 0, "T19: 小屏也不越界/不贴顶");
+  // CRUISE_HOME 排序:回家比赶场慢、比闲逛快(有来有往的速度语义)
+  assert.ok(CRUISE_ROAM < CRUISE_HOME && CRUISE_HOME < CRUISE_OP, "T19: CRUISE_ROAM < CRUISE_HOME < CRUISE_OP");
 }
-console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(首桶稳定/跨栏率/相邻偏好)");
+console.log("✓ T19 v10 连续移动+v12 召回制:限速滑翔/roam 锁左栏/左缘停靠锚/回家巡航档");
 
 /* ---------- T15 v3 接线守卫(源码级:单例/触发点/注册表) ---------- */
 {
@@ -886,9 +884,16 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
     css.includes(".tb-label") && css.includes(".coarse-only") && css.includes("flex-wrap: nowrap"),
     "T15: v0.18 手机端工具栏图标化单行(tb-label 隐藏/coarse-only 图标/不换行)",
   );
-  assert.ok(creature.includes("nextRoamPane(roamRef.current.pane, bucket, avail)") && creature.includes("ROAM_BUCKET_MS"), "T15: v10 roam 跨栏调度(时间桶+留/跨栏)");
+  assert.ok(creature.includes("nextRoamPane(roamRef.current.pane, bucket,") && creature.includes("ROAM_BUCKET_MS"), "T15: roam 时间桶调度(v12 召回制:锁左栏)");
   assert.ok(creature.includes("glideTo(cur") && creature.includes("CRUISE_ROAM") && creature.includes("CRUISE_OP"), "T15: v10 限速滑翔(跨栏/跟操作不闪现)");
   assert.ok(creature.includes("zone === \"roam\""), "T15: v10 roam 分支(闲时游走/锚缺失回退在场栏)");
+  // v12 召回制守卫:①无信号兜底=左缘停靠(edgeHomeAnchor 接线),旧"整窗游走"退役;
+  // ②正文栏不再游弋(wanderInPanel 只许喂 navRect/notebook 锚停靠);③拖拽松手
+  // 同步 rail 物理体到落点(否则滑回拖拽前旧坐标=观感"回原点");④回家巡航档接线
+  assert.ok(creature.includes("edgeHomeAnchor(window.innerHeight, SIZE.rail"), "T15: v12 左缘停靠接线(家分支;整窗游走退役)");
+  assert.ok(!/wanderInPanel\((chatRect|nbRect)/.test(creature), "T15: v12 正文栏(chat/nb 矩形)不再游弋——防遮挡阅读");
+  assert.ok(/onUp[\s\S]{0,900}Body\.setPosition\(flight\.body/.test(creature), "T15: v12 拖拽松手同步物理体到落点(修回原点)");
+  assert.ok(creature.includes("CRUISE_HOME"), "T15: v12 回家巡航档(有来有往)");
   assert.ok(creature.includes("cp-takeoff"), "T15: 起飞动效(蓄力弹射+喷焰增强)");
   assert.ok(
     mascotV4.includes("-44 : 44") && mascotV4.includes("scale(1.045, 0.93)") && mascotV4.includes("cubic-bezier(0.2, 1.5, 0.4, 1)"),
@@ -983,7 +988,7 @@ console.log("✓ T19 v10 连续移动:限速滑翔(远距封顶)/roam 栏调度(
     app.includes("<CompanionCreature courseId=") && !app.includes("worldReady"),
     "T15: v9 伴学常驻(无课程也挂载,worldReady 门控移除)",
   );
-  assert.ok(creature.includes("window.innerWidth - 8"), "T15: 空态/两栏锚点全缺 → 整窗游走兜底(不隐匿)");
+  assert.ok(creature.includes("edgeHomeAnchor(window.innerHeight"), "T15: 空态/无栏 → v12 左缘停靠家(不隐匿;整窗游走已退役)");
   assert.ok(read("lib/highlightText.ts").includes("matchSentenceAligned") && read("lib/highlightText.ts").includes("canonicalSpeechIndex"), "T15: v9 整句对齐匹配(规范化+句界扩展)");
   assert.ok(
     readFileSync(new URL("../shared/speech-text.ts", import.meta.url), "utf8").includes("while (s > 0 && !endsWithSentenceEnd(texts[s - 1] ?? \"\")) s--;")
@@ -1342,12 +1347,13 @@ console.log("T23 跟句悬空不隐身(v0.18:detached readingRange 兜底)");
   const creature = read("components/companion/CompanionCreature.tsx");
   const notebook = read("components/NotebookPanel.tsx");
   const chat = read("components/ChatStream.tsx");
-  // ①跟句分支的悬空兜底:pr/行盒全空时必须就地游弋,不许 target 滞留 null
-  //   (null → opacity 0 永久隐身,v9"常驻绝不隐匿"的旁路点)
+  // ①跟句分支的悬空兜底:pr/行盒全空时必须就地停靠,不许 target 滞留 null
+  //   (null → opacity 0 永久隐身,v9"常驻绝不隐匿"的旁路点);
+  //   v12:停靠改为宿主面板右上肩/左缘家(edgeHomeAnchor),不再游进正文
   assert.ok(creature.includes("跟句悬空兜底(永不隐身)"), "T23: 跟句分支有悬空兜底标记");
   assert.ok(
-    creature.includes("wanderInPanel(box, zoneSize, now)") && creature.includes("glideTo(cur, wp, dt, CRUISE_ROAM, 140)"),
-    "T23: 悬空时在宿主面板/整窗游弋(target 必非空)",
+    /const dock = pr[\s\S]{0,200}edgeHomeAnchor\(window\.innerHeight/.test(creature) && creature.includes("glideTo(cur, dock, dt, CRUISE_OP)"),
+    "T23: 悬空时退宿主面板边缘/左缘停靠(target 必非空;v12 不游进正文)",
   );
   // ②两面板卸载清全局高亮:清理不得读 ref(React 卸载时先置空 ref 再跑 passive
   //   cleanup,`if (ref.current)` 永假=守卫自废,v0.18 实测踩过)

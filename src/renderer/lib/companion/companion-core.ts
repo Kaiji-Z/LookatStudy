@@ -1065,10 +1065,12 @@ export function readingAnchorFlex(
 
 /* ---------------- v10 连续移动(限速滑翔,不闪现) ---------------- */
 
-/** 巡航速度(px/ms):操作响应快、闲时游走慢、朗读跟句居中。 */
+/** 巡航速度(px/ms):操作响应快、闲时游走慢、朗读跟句居中、回家从容。 */
 export const CRUISE_OP = 0.85;
 export const CRUISE_ROAM = 0.3;
 export const CRUISE_READ = 0.6;
+/** v12 召回制回家巡航:比赶场慢、比闲逛快——"办完事往回飞"读得出有来有往。 */
+export const CRUISE_HOME = 0.5;
 
 /**
  * 限速滑翔(v10 治"闪现"):指数趋近在远距时速度无界(跨栏一瞬到达=闪现感),
@@ -1095,25 +1097,32 @@ export function glideTo(
   return { x, y };
 }
 
-/** roam 栏驻留周期(ms):每个时间桶决定一次 留/跨栏。 */
+/** roam 栏驻留周期(ms):每个时间桶重估一次待机地。 */
 export const ROAM_BUCKET_MS = 6_500;
 
 /**
- * roam 下一栏(确定性):同桶不动;换桶时 ~30% 跨到相邻栏(环形
- * rail→chat→notebook→rail,跳过不在场的栏)。纯函数,verify 直测。
+ * roam 下一栏(确定性)——**v12 召回制:游走只锁左栏**。
+ * 中栏/右栏只在"有事"(输入框聚焦/朗读/记笔记等 duty 信号)时到场,办完回
+ * 左栏家(desiredZone 的无信号态);左栏不在场(手机 T3/左栏收起/空态)由渲染层
+ * 落左缘停靠(edgeHomeAnchor)。旧版环形跨栏游走(rail→chat→notebook,~30% 换栏)
+ * 按用户反馈退役——闲时栖在正文栏会遮挡阅读。纯函数,verify 直测。
  */
-export function nextRoamPane(cur: CompanionPane, bucket: number, available: CompanionPane[]): CompanionPane {
-  const avail: CompanionPane[] = available.length > 0 ? available : ["rail"];
-  if (!avail.includes(cur)) return avail[0]!;
-  if (bucket <= 0) return cur; // 首桶稳定:启动先栖身初始栏,不立刻跨栏
-  const r = Math.abs(Math.sin(bucket * 12.9898) * 43758.5453) % 1;
-  if (r >= 0.3) return cur;
-  const ring: CompanionPane[] = ["rail", "chat", "notebook"];
-  for (let step = 1; step <= 2; step++) {
-    const next = ring[(ring.indexOf(cur) + step) % 3]!;
-    if (avail.includes(next)) return next;
-  }
-  return cur;
+export function nextRoamPane(_cur: CompanionPane, _bucket: number, _available: CompanionPane[]): CompanionPane {
+  return "rail";
+}
+
+/**
+ * 左缘停靠锚(纯,v12):左栏不在场时的家——半身探出屏幕左缘(趴在门框上等事),
+ * 竖直方向落在视口中带并让开顶部禁入带;召唤事件从这里飞入,办完飞回这里。
+ */
+export function edgeHomeAnchor(
+  vh: number,
+  size: number,
+  ceilBottom: number,
+): { x: number; y: number } {
+  const x = size * 0.34;
+  const y = Math.min(Math.max(vh, size) * 0.46, Math.max(ceilBottom + size * 0.8, size * 0.8));
+  return { x, y };
 }
 
 /** v11 roam 目的性:闲逛时间桶上低概率产生"有想法"的意图。 */

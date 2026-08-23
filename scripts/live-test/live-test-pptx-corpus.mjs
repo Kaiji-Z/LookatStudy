@@ -59,14 +59,12 @@ if (WANTED.some(([n]) => !existsSync(`${DIR}/${n}`))) {
     const tmp = `${DIR}/.extract`;
     rmSync(tmp, { recursive: true, force: true });
     mkdirSync(tmp, { recursive: true });
-    for (const [name, path] of WANTED) {
+    for (const [, path] of WANTED) {
       execFileSync("tar", ["-xzf", SDIST, "-C", tmp, `python_pptx-1.0.2/${path}`], { stdio: "ignore" });
     }
+    const { copyFileSync } = await import("node:fs");
     for (const [name, path] of WANTED) {
       const src = `${tmp}/python_pptx-1.0.2/${path}`;
-      if (existsSync(src)) readFileSync(src); // 触达
-      // 用 copy(避免 readFileSync 返回值被吞):tar 已写盘,直接挪
-      const { copyFileSync } = await import("node:fs");
       if (existsSync(src) && !existsSync(`${DIR}/${name}`)) copyFileSync(src, `${DIR}/${name}`);
     }
     rmSync(tmp, { recursive: true, force: true });

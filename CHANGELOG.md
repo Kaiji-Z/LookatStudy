@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- **导入测试补全程:真实来源一路验到课程落库** —— 此前 arXiv/网页/EPUB/docx 的真实链路核查只测获取与解析层,LLM 结构化与落库层只有手工桩(形状太理想),层与层的接缝没有真实形状流过。两层补齐:①fixture 回灌——真实拉取的 arXiv 论文(PDF 提取的作者挤行/四级标题怪形状)与网页文章 markdown 存进 `scripts/fixtures/`,verify-import-sources 新增 T8-T10 在 CI 里用真实形状跑完整管线落库并断言课程形状(章节/课数区间/正文非空/保真率);②live-test-import-sources 新增全程落库两档——无 key 降级档(arXiv URL/EPUB 真书/docx+md 文件夹→规则结构化→落库)与有 key LLM 档(按 .env 端点建 custom provider 跑真实 Step2/4,与降级档形成结构对照)。破坏验证闭环(截断分段阈值→T8/T9 红)。实测对照:arXiv 论文降级档 11 章 11 课 vs LLM 档 4 章 11 课(LLM 语义分组真实生效);顺带发现 EPUB 兜底分课会把 Gutenberg 版权页当一课(已知待修)。
+
 ## [0.23.0] - 2026-08-23
 
 ### Added

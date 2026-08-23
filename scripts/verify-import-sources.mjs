@@ -135,6 +135,53 @@ await test("T7 坏链接诚实报错(非 http/抓取失败)", async () => {
   await assert.rejects(() => runSmartImport({ kind: "url", url: "https://example.com/x" }, { ...deps, fetchFn: failing }), /抓取失败|HTTP/);
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 真实形状 fixture 回灌(2026-08-23):live-test 一次性拉取的真实来源产物
+// (scripts/fixtures/:arXiv PDF 提取的论文 markdown + 网页文章正文)存进 repo,
+// 喂完整管线(text 源同构)落库。手工桩的 markdown 形状太理想,真实形状
+// (arXiv 的作者列表挤行/四级标题开头/特殊字符、文章的超长段落)才能触发
+// Step4 分段与落库的真实分支。每次 PR 都在 CI 里跑。
+// ─────────────────────────────────────────────────────────────────────────────
+const FIXTURES = new URL("./fixtures/", import.meta.url);
+
+/** 真实形状全程:fixture 文本 → runSmartImport(text 源)→ 落库课程形状断言 */
+async function assertRealShapeCourse(fixtureBase, minLessons) {
+  const text = readFileSync(new URL(`${fixtureBase}.md`, FIXTURES), "utf8");
+  const meta = JSON.parse(readFileSync(new URL(`${fixtureBase}.meta.json`, FIXTURES), "utf8"));
+  const deps = mkDeps();
+  const r = await runSmartImport({ kind: "text", name: meta.title, text }, deps);
+  assert.ok(r.courseId, "课程应落库");
+  const nodes = deps.db.select().from(contentNodes).where(eq(contentNodes.courseId, r.courseId)).all();
+  const sections = nodes.filter((n) => n.type === "section");
+  const lessons = nodes.filter((n) => n.type === "lesson");
+  assert.ok(sections.length >= 1, `至少一个章节,实际 ${sections.length}`);
+  assert.ok(lessons.length >= minLessons, `长文应分成多课,实际 ${lessons.length}`);
+  assert.ok(lessons.length <= 50, `课数异常上浮(实际 ${lessons.length}),分段失控`);
+  for (const l of lessons) {
+    assert.ok((l.content ?? "").trim().length > 0, `课 ${l.title} 内容为空`);
+  }
+  const totalContent = lessons.reduce((s, l) => s + (l.content ?? "").length, 0);
+  assert.ok(totalContent > text.length * 0.8, `正文基本保真(落库 ${totalContent} / 原文 ${text.length})`);
+  return { lessons: lessons.length, totalContent };
+}
+
+await test("T8 fixture 回灌·arXiv 真实形状(PDF 提取怪形状)全程落库", async () => {
+  const { lessons, totalContent } = await assertRealShapeCourse("arxiv-1706.03762", 2);
+  console.log(`    arXiv 论文 → ${lessons} 课,正文 ${totalContent} 字`);
+});
+
+await test("T9 fixture 回灌·网页文章真实形状全程落库", async () => {
+  const { lessons, totalContent } = await assertRealShapeCourse("article-greatwork", 2);
+  console.log(`    文章 → ${lessons} 课,正文 ${totalContent} 字`);
+});
+
+await test("T10 fixture 形状卫生:fixtures 存在且非空(防误删)", async () => {
+  for (const base of ["arxiv-1706.03762", "article-greatwork"]) {
+    const md = readFileSync(new URL(`${base}.md`, FIXTURES), "utf8");
+    assert.ok(md.length > 10000, `${base}.md 应为真实长文(>10000 字),实际 ${md.length}`);
+  }
+});
+
 // 清理临时 plan 目录留给系统 tmp 回收;不主动 rm(Windows 上偶发 EBUSY)
 
 console.log(`\n${passed} passed`);

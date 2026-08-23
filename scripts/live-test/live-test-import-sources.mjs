@@ -1,15 +1,19 @@
 /**
  * live: 非仓库来源导入的真实链路核查(arXiv/网页/EPUB/docx/Whisper/yt-dlp)。
- * 不需要 API key(只测获取与解析层,不跑 LLM);yt-dlp 未装、Whisper 模型缺、
- * python-docx 缺时对应项 SKIP。跑法: npx tsx scripts/live-test/live-test-import-sources.mjs
+ * 解析层不需要 API key;末尾另有「全程落库」两档(2026-08-23):
+ *   - 无 key 降级档:获取→解析→规则结构化→落库,断言最终课程形状(空 settings
+ *     的内存库 → isLlmReady false → 管线自动走降级路径,与生产无 key 行为同构);
+ *   - 有 key LLM 档:Z_AI_API_KEY 存在时完整跑 Step2/4 真实 LLM,再落库断言。
+ * yt-dlp 未装、Whisper 模型缺、python-docx 缺时对应项 SKIP。
+ * 跑法: npx tsx scripts/live-test/live-test-import-sources.mjs
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readApiKey } from "./_load-env.mjs";
 
-readApiKey(); // 烟雾协议要求(本测试本身不依赖 key)
+readApiKey(); // 有 key 灌 env(LLM 档用);无 key 也能跑(降级档+解析层)
 let failed = 0, skipped = 0;
 const ok = (m) => console.log(`  ✅ ${m}`);
 const skip = (m) => { console.log(`  ⏭️  SKIP ${m}`); skipped++; };
@@ -32,6 +36,8 @@ try {
 } catch (e) { bad(e.message); }
 
 console.log("== EPUB 真书(Gutenberg 傲慢与偏见) ==");
+/** 全程落库档复用(避免二次下载);用后由全程档清理 */
+let epubBytes = null;
 try {
   const tmp = join(tmpdir(), "ls-live-epub.epub");
   // Gutenberg 从国内直连偶发连接重置,重试 3 次 + zip 完整性校验(半截文件不是 zip)
@@ -45,10 +51,10 @@ try {
       writeFileSync(tmp, Buffer.from(await resp.arrayBuffer()));
       const head = readFileSync(tmp).subarray(0, 2).toString("latin1");
       if (head !== "PK") throw new Error("下载不完整(非 zip 头)");
-      book = await parseEpub(new Uint8Array(readFileSync(tmp)));
+      epubBytes = new Uint8Array(readFileSync(tmp));
+      book = await parseEpub(epubBytes);
     } catch (e) { lastErr = e.message; await new Promise((r) => setTimeout(r, 2000 * attempt)); }
   }
-  rmSync(tmp, { force: true });
   if (!book) throw new Error(lastErr || "下载失败");
   if (book.chapters.length >= 10) ok(`${book.title} · ${book.chapters.length} 章`);
   else bad(`章节数异常: ${book.chapters.length}`);
@@ -111,6 +117,122 @@ try {
     else bad(`结果异常: source=${r.source}`);
   }
 } catch (e) { bad(e.message); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 全程落库两档(2026-08-23):不止验获取与解析,把真实来源一路跑到课程落库,
+// 断言最终生成的课程形状。层与层的接缝(真实形状喂 Step4、Step4 产物落库)
+// 是桩测不到的地方。无 key 档与生产"未配 key"行为同构;有 key 档跑真 LLM。
+// ─────────────────────────────────────────────────────────────────────────────
+const SQLW = await import("sql.js");
+const initSqlJs = SQLW.default;
+const { drizzle } = await import("drizzle-orm/sql-js");
+const schemaMod = await import("../../src/main/db/schema.ts");
+const { eq } = await import("drizzle-orm");
+const { runSmartImport } = await import("../../src/main/services/import-job-service.ts");
+const { createPlanStore } = await import("../../src/main/services/import-plan-store.ts");
+const schemaSqlLive = readFileSync(new URL("../../src/main/db/schema.sql", import.meta.url), "utf8");
+
+/** 空设置内存库(→ isLlmReady=false → 管线自动降级);withKey 时按 .env 端点建
+ *  custom provider 走真 LLM(不写死 glm 标准预设——.env 的 key 可能是 CodingPlan
+ *  端点的,标准端点下会 401/余额不通,LLM 档就退化成了兜底分课,验不到真结构化) */
+async function mkDeps(withKey = false) {
+  const sqljs = new (await initSqlJs({ locateFile: (f) => join(process.cwd(), "node_modules/sql.js/dist", f) })).Database();
+  sqljs.run(schemaSqlLive);
+  const db = drizzle(sqljs, { schema: schemaMod });
+  if (withKey && process.env.Z_AI_API_KEY) {
+    const { settings: settingsTable, customProviders } = schemaMod;
+    const pid = "custom-live-import";
+    const baseUrl = process.env.Z_AI_BASE_URL || "https://api.z.ai/api/coding/paas/v4";
+    const model = process.env.Z_AI_MODEL || "glm-4.7";
+    db.insert(customProviders).values({ id: pid, label: "live-import (.env)", kind: "llm", protocol: "openai-compatible", baseUrl, apiKey: process.env.Z_AI_API_KEY, defaultModel: model }).run();
+    db.insert(settingsTable).values([
+      { key: "active_provider", value: pid },
+      { key: "active_model", value: model },
+    ]).run();
+  }
+  return {
+    db,
+    store: createPlanStore(mkdtempSync(join(tmpdir(), "ls-live-store-"))),
+    markDirty: () => {},
+    onProgress: (m) => console.log(`      · ${m}`),
+    shouldAbort: () => false,
+  };
+}
+
+/** 课程形状断言:标题非空/有章节/每课有正文/课数在合理区间 */
+function assertCourseShape(deps, courseId, tag, { minLessonChars = 100 } = {}) {
+  const { courses, contentNodes } = schemaMod;
+  const course = deps.db.select().from(courses).where(eq(courses.id, courseId)).get();
+  if (!course || !course.title.trim()) throw new Error(`${tag}: 课程或标题缺失`);
+  const nodes = deps.db.select().from(contentNodes).where(eq(contentNodes.courseId, courseId)).all();
+  const sections = nodes.filter((n) => n.type === "section");
+  const lessons = nodes.filter((n) => n.type === "lesson");
+  if (sections.length < 1) throw new Error(`${tag}: 无章节`);
+  if (lessons.length < 1) throw new Error(`${tag}: 无课时`);
+  if (lessons.length > 60) throw new Error(`${tag}: 课时数异常上浮(${lessons.length})`);
+  const empty = lessons.filter((l) => (l.content ?? "").trim().length < minLessonChars);
+  if (empty.length > 0) throw new Error(`${tag}: ${empty.length} 节课正文过短(首例「${empty[0].title}」)`);
+  return { title: course.title, sections: sections.length, lessons: lessons.length };
+}
+
+console.log("== 全程落库 · 无 key 降级档(arXiv URL → 课程) ==");
+try {
+  const deps = await mkDeps(false);
+  const r = await runSmartImport({ kind: "url", url: "https://arxiv.org/abs/1706.03762" }, deps);
+  const shape = assertCourseShape(deps, r.courseId, "arXiv 降级档");
+  ok(`「${shape.title}」${shape.sections} 章 ${shape.lessons} 课,课程形状合法`);
+} catch (e) { bad(e.message); }
+
+console.log("== 全程落库 · 无 key 降级档(EPUB 真书 → 课程) ==");
+if (!epubBytes) {
+  skip("EPUB 未下载成功(上方解析层已报错)");
+} else {
+  try {
+    const deps = await mkDeps(false);
+    const r = await runSmartImport({ kind: "epub", fileName: "pride.epub", bytes: epubBytes }, deps);
+    const shape = assertCourseShape(deps, r.courseId, "EPUB 降级档");
+    ok(`「${shape.title}」${shape.sections} 章 ${shape.lessons} 课,课程形状合法`);
+  } catch (e) { bad(e.message); }
+  finally { rmSync(join(tmpdir(), "ls-live-epub.epub"), { force: true }); }
+}
+
+console.log("== 全程落库 · 无 key 降级档(docx+md 临时文件夹 → 课程) ==");
+const pyProbe2 = spawnSync("python", ["-c", "import docx"], { encoding: "utf8", timeout: 15000 });
+if (pyProbe2.status !== 0) {
+  skip("python-docx 未安装(文件夹档需要)");
+} else {
+  let folderPath = null;
+  try {
+    folderPath = mkdtempSync(join(tmpdir(), "ls-live-folder-"));
+    const docxPath = join(folderPath, "lesson1.docx");
+    const gen = spawnSync("python", ["-c", [
+      "from docx import Document",
+      "d = Document()",
+      'd.add_heading("Course Notes", level=1)',
+      'd.add_paragraph("Chapter one body text with enough substance for a lesson. " * 20)',
+      `d.save(r"${docxPath.replace(/\\/g, "/")}")`,
+    ].join("\n")], { encoding: "utf8", timeout: 30000 });
+    if (gen.status !== 0 || !existsSync(docxPath)) throw new Error(`docx 生成失败: ${gen.stderr?.slice(0, 120)}`);
+    writeFileSync(join(folderPath, "lesson2.md"), "# Second Lesson\n\n" + "Markdown body with real content for the second lesson. ".repeat(30));
+    const deps = await mkDeps(false);
+    const r = await runSmartImport({ kind: "folder", path: folderPath }, deps);
+    const shape = assertCourseShape(deps, r.courseId, "文件夹降级档");
+    ok(`「${shape.title}」${shape.sections} 章 ${shape.lessons} 课,课程形状合法`);
+  } catch (e) { bad(e.message); }
+  finally { if (folderPath) rmSync(folderPath, { recursive: true, force: true }); }
+}
+
+console.log("== 全程落库 · 有 key LLM 档(arXiv URL → 课程,真实 Step2/4) ==");
+if (!process.env.Z_AI_API_KEY) {
+  skip("无 Z_AI_API_KEY(配 .env 后此档跑真实 LLM 结构化)");
+} else {
+  try {
+    const deps = await mkDeps(true);
+    const r = await runSmartImport({ kind: "url", url: "https://arxiv.org/abs/1706.03762" }, deps);
+    const shape = assertCourseShape(deps, r.courseId, "arXiv LLM 档");
+    ok(`「${shape.title}」${shape.sections} 章 ${shape.lessons} 课,LLM 结构化课程形状合法`);
+  } catch (e) { bad(e.message); }
+}
 
 console.log(`\n=== 导入来源 live 核查: ${failed === 0 ? "✅ 全部通过" : "❌"} (skip ${skipped}) ===`);
 process.exit(failed === 0 ? 0 : 1);

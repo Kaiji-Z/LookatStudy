@@ -107,7 +107,7 @@ npx tsx scripts/live-test/live-test-summary.mjs     # LLM summary + Ollama test
 npx tsx scripts/live-test/live-test-hook-opener.mjs # LLM "开始学习" hook 起手式形状测试(动机层:钩子+二选一猜测+不计分)
 npx tsx scripts/live-test/live-test-import-pipeline.mjs  # full import → structure pipeline
 npx tsx scripts/live-test/live-test-video-import.mjs     # 真实 B站拉流+fMP4→ADTS+全管线(转写桩)
-npx tsx scripts/live-test/live-test-import-sources.mjs   # 非仓库来源真实链路核查(arXiv/网页/EPUB/docx/Whisper/yt-dlp,条件项自动 SKIP)
+npx tsx scripts/live-test/live-test-import-sources.mjs   # 非仓库来源真实链路核查(arXiv/网页/EPUB/docx/Whisper/yt-dlp,条件项自动 SKIP)+ 全程落库两档:无 key 降级档(arXiv/EPUB/docx 文件夹→规则结构化→落库,断言最终课程形状)与有 key LLM 档(.env 端点建 custom provider 跑真实 Step2/4)
 ```
 
 Standard verification triad after code changes:
@@ -296,6 +296,8 @@ them as load-bearing, not optional.
 /dev-docs/              ★ gitignored ★ dev-process docs: ARCHITECTURE, BUILD-NOTES, ROADMAP,
                         DESIGN-PLAN-*.md — kept locally, NOT committed
 /scripts/verify-*.mjs   deterministic test suites (tsx + node:assert)
+/scripts/fixtures/      real-shape import fixtures: markdown fetched once from real arXiv paper + real web
+                        article; verify-import-sources T8-T10 replays them through the full pipeline
 /scripts/live-test/     LLM behavior tests (need API key)
 /src/main/              Electron main process (CJS) — DB, services, IPC handlers
 /src/preload/           contextBridge — the only renderer↔main path

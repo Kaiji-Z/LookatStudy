@@ -5,7 +5,7 @@
  * 跑法: npx tsx scripts/verify-html-article.mjs (verify:core 调用)
  */
 import assert from "node:assert/strict";
-import { extractArticle, htmlToMarkdown } from "../src/main/services/pure/html-article.ts";
+import { extractArticle, htmlToMarkdown, stripTailNavigation } from "../src/main/services/pure/html-article.ts";
 
 let passed = 0;
 const test = (name, fn) => {
@@ -70,6 +70,41 @@ test("T4 htmlToMarkdown(epub 章节用):标题保留 + 代码块 + 图片剥除"
 test("T5 htmlToMarkdown 默认不剥图片(epub 之外的通用转换)", () => {
   const md = htmlToMarkdown(`<body><p>一段正文。</p><img src="https://a.com/i.png" alt="图"></body>`);
   assert.ok(md.includes("![图](https://a.com/i.png)"), "图片保留为 markdown 语法");
+});
+
+test("T6 尾部站点模板指纹清理(搜狐返回行/阿里云侧栏三行)", () => {
+  const md1 = ["# 标题", "", "正文第一段。", "", "[返回搜狐,查看更多](//www.sohu.com)"].join("\n");
+  assert.ok(!stripTailNavigation(md1).includes("返回搜狐"), "搜狐模板行应删");
+  const md2 = ["# 标题", "", "正文。", "", "目录", "", "热门文章", "", "最新文章"].join("\n");
+  const out2 = stripTailNavigation(md2);
+  assert.ok(!out2.endsWith("最新文章"), "阿里云侧栏三行应删");
+  assert.ok(out2.includes("正文。"), "正文保留");
+});
+
+test("T7 行内模板后缀剥离(正文与模板同行)", () => {
+  const md3 = "正文最后一句。 目录 热门文章 最新文章";
+  assert.equal(stripTailNavigation(md3), "正文最后一句。", "行内精确短语剥掉,正文保留");
+});
+
+test("T8 裸图路径行清理(CSDN 尾形态)", () => {
+  const md4 = ["# 标题", "", "正文。", "", "https://img-blog.csdnimg.cn/x.jpeg)"].join("\n");
+  assert.ok(!stripTailNavigation(md4).includes("csdnimg"), "裸图路径行应删");
+});
+
+test("T9 模板带 markdown 前缀(## / > 形态)也识别", () => {
+  const md5 = ["# 标题", "", "正文。", "", "## END 本文版权所有"].join("\n");
+  assert.ok(!stripTailNavigation(md5).includes("END"), "## 前缀模板行应删");
+});
+
+test("T10 原则守卫:作者推广尾段是正文,规则层不删(语义边界交 Step4 LLM)", () => {
+  const md6 = ["# 标题", "", "正文。", "", "## 欢迎关注我的微信公众号!!!会不断分享统计学、机器学习知识"].join("\n");
+  const out6 = stripTailNavigation(md6);
+  assert.ok(out6.includes("欢迎关注我的微信公众号"), "作者推广段必须保留(规则只管机器模板,不猜语义)");
+});
+
+test("T11 正文文字+图片链接行不受影响", () => {
+  const md7 = ["# 标题", "", "详见[文档](https://a.com/doc.png)。"].join("\n");
+  assert.ok(stripTailNavigation(md7).includes("](https://a.com/doc.png)"), "文字+图扩展链接行保留");
 });
 
 console.log(`\n${passed} passed`);

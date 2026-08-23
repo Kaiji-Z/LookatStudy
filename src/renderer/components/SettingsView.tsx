@@ -30,6 +30,7 @@ import { CustomProviderForm } from "./CustomProviderForm.js";
 import { useTheme, type ThemeMode } from "../lib/useTheme.js";
 import { useLang, setLang, getLang } from "../lib/i18n.js";
 import { sortVoicesZhFirst, systemVoiceLabel, TTS_SETTINGS_CHANGED_EVENT } from "../lib/system-tts.ts";
+import pkg from "../../../package.json";
 
 type SystemVoiceOption = SpeechSynthesisVoice;
 
@@ -548,6 +549,28 @@ export function SettingsView() {
             <div className={rowCls(true)}>
               <div className="text-label font-medium text-ink-strong mb-2">{t("settings.row.import_lang")}</div>
               <ImportPrefButtons />
+            </div>
+          </div>
+        </section>
+
+        {/* ========== 关于(版本随构建走,随时知道在用的是哪个版本) ========== */}
+        <section>
+          <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.about")}</h3>
+          <div className="surface-card overflow-hidden">
+            <div className={rowCls(false)}>
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="text-label font-medium text-ink-strong">{t("settings.row.version")}</div>
+                <a
+                  href="https://github.com/Kaiji-Z/LookatStudy/releases"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-label font-mono text-brand hover:underline"
+                  data-testid="settings-version"
+                >
+                  v{pkg.version}
+                </a>
+              </div>
+              <p className="text-label text-ink-muted mt-2">{t("settings.version.hint")}</p>
             </div>
           </div>
         </section>

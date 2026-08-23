@@ -106,4 +106,108 @@ await test("T4 结构异常:非 epub zip → 诚实报错", async () => {
   await assert.rejects(() => parseEpub(notEpub), /container\.xml|OPF/);
 });
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * 章内二次拆分与噪声清理(2026-08-23,8 本 Gutenberg 真书采样驱动;真书语料
+ * 核查在 scripts/live-test/live-test-epub-corpus.mjs,需网络。这里用合成
+ * fixture 锁拆分器核心行为,CI 无网络可跑):
+ *   采样事实:spine 文件≠章是常态(P&P 15 文件装 61 章),章号常是裸文本行
+ *   (原书 html 里章号不是标题标签),license 是尾块或整文件。
+ * ───────────────────────────────────────────────────────────────────────────── */
+import { splitChaptersInBody, sanitizeEpubBody } from "../src/main/lib/epub-parser.ts";
+
+await test("T5 裸行章标记:单文件多章(P&P 型)按标记切,标题=标记行", async () => {
+  const body = [
+    "卷头的引语段落,一点点铺垫文字。",
+    "",
+    "CHAPTER I.",
+    "",
+    "第一章的内容,足够长。第一章的内容,足够长。第一章的内容,足够长。",
+    "",
+    "CHAPTER II.",
+    "",
+    "第二章的内容,不同的文字。第二章的内容,不同的文字。第二章的内容,不同的文字。",
+    "",
+    "CHAPTER III.",
+    "",
+    "第三章的内容,又是新的一段。第三章的内容,又是新的一段。第三章的内容,又是新的一段。",
+  ].join("\n");
+  const r = splitChaptersInBody(body);
+  assert.ok(r, "应触发拆分");
+  assert.equal(r.length, 3);
+  assert.equal(r[0].title, "CHAPTER I.");
+  assert.ok(r[1].content.includes("第二章的内容"), "章内容归属正确");
+  assert.ok(!r[1].content.includes("第一章的内容"), "不串章");
+});
+
+await test("T6 heading 章标记(Moby 型)同样可切", async () => {
+  const body = "## CHAPTER 1. Loomings.\n\n开篇内容。\n\n## CHAPTER 2. The Carpet-Bag.\n\n行李章内容。";
+  const r = splitChaptersInBody(body);
+  assert.equal(r.length, 2);
+  assert.equal(r[1].title, "CHAPTER 2. The Carpet-Bag.");
+});
+
+await test("T7 罗马数字:须连续递增序列(≥3)才切,孤立数字不切", async () => {
+  const roman = "## I\n\n第一段。\n\n## II\n\n第二段。\n\n## III\n\n第三段。";
+  const r = splitChaptersInBody(roman);
+  assert.equal(r.length, 3, "heading 罗马序列应切");
+  const isolated = "正文里出现 2 这个数字,还有 5,都不是章。";
+  assert.equal(splitChaptersInBody(isolated), null, "孤立数字不切");
+  const two = "## I\n\n短。\n\n## II\n\n也短。"; // 罗马只有 2 个,不够 3
+  assert.equal(splitChaptersInBody(two), null, "罗马序列 <3 不切");
+});
+
+await test("T8 单章标记不切(一章一文件常态),minHighConf=1 时可切(license 救章)", async () => {
+  const body = "尾章引言段。\n\nCHAPTER LXI.\n\n最后一章的正文,足够长。最后一章的正文,足够长。";
+  assert.equal(splitChaptersInBody(body), null, "默认单标记不切");
+  const r = splitChaptersInBody(body, { minHighConf: 1 });
+  assert.equal(r.length, 1);
+  assert.equal(r[0].title, "CHAPTER LXI.");
+  assert.ok(r[0].content.includes("尾章引言段"), "前置短引言并入");
+});
+
+await test("T9 sanitize:license 尾截断 + PG 头段删除 + 装饰行清理 + 空标题行", async () => {
+  const body = [
+    "## The Project Gutenberg eBook of X",
+    "This eBook is for the use of anyone anywhere in the United States and most other parts of the world.",
+    "",
+    "## 正文标题",
+    "",
+    "“对话引语” \\[_Copyright 1894 by George Allen._\\]",
+    "",
+    "正文内容。",
+    "",
+    "##   ",
+    "",
+    "THE FULL PROJECT GUTENBERG™ LICENSE",
+    "",
+    "License 的长篇正文……",
+  ].join("\n");
+  const out = sanitizeEpubBody(body);
+  assert.ok(!out.includes("FULL PROJECT GUTENBERG"), "license 尾截断");
+  assert.ok(!out.includes("This eBook is for the use"), "PG 头段删除");
+  assert.ok(!out.includes("Copyright 1894"), "装饰片段清理");
+  assert.ok(!/^##\s*$/m.test(out), "空标题行清理");
+  assert.ok(out.includes("正文内容。"), "正文保留");
+});
+
+await test("T10 端到端:多章一文件 epub 拆出对齐的真章(裸行标记+歪 toc)", async () => {
+  // 一个 spine 文件装 3 章(裸行标记),toc 标签是末章(歪)
+  const multi = xhtml("CHAPTER III.", "<p>每章前的引语。</p><p>CHAPTER I.</p><p>第一章正文。</p><p>CHAPTER II.</p><p>第二章正文。</p><p>CHAPTER III.</p><p>第三章正文。</p>");
+  const containerXml = `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="b.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`;
+  const opf = `<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>多章一书</dc:title></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/></manifest><spine><itemref idref="c1"/></spine></package>`;
+  const epub = zipSync({
+    mimetype: strToU8("application/epub+zip"),
+    "META-INF/container.xml": strToU8(containerXml),
+    "b.opf": strToU8(opf),
+    "c1.xhtml": strToU8(multi),
+    "nav.xhtml": strToU8(`<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body><nav><ol><li><a href="c1.xhtml">CHAPTER III.</a></li></ol></nav></body></html>`),
+  });
+  const book = await parseEpub(epub);
+  const titles = book.chapters.map((c) => c.title);
+  assert.equal(book.chapters.length, 3, `应拆 3 章,实际 ${book.chapters.length}(${titles.join(",")})`);
+  assert.equal(titles[0], "CHAPTER I.", "首章标题=首个标记(不是 toc 的末章标签)");
+  assert.ok(book.chapters[0].markdown.startsWith("# CHAPTER I."), "H1 对齐");
+  assert.ok(book.chapters[1].markdown.includes("第二章正文"), "内容归属正确");
+});
+
 console.log(`\n${passed} passed`);

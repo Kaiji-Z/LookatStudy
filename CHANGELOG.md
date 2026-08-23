@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Fixed
+- **电子书导入的章节错位与"第N章"编造(两层失真根治,8 本真书采样驱动)** —— 用户观察:电子书课程的"第N章"标题经常错误、与内容对不上。根因两层:①`epub-parser` 假设"spine 文件=章",但 8 本 Gutenberg 真书采样显示 5/8 是多章一文件(傲慢与偏见 15 文件装 61 章、白鲸 27 装 135),章号还常是裸文本行(原书 html 里章号不是标题标签)——旧逻辑标题取文件 toc 标签(常是末章号+引语),内容从首章开始,错位;②Step4 prompt 要求"每个 section 给中文标题",对英文书 LLM 按惯例编造"第 N 章"式编号。修复:`sanitizeEpubBody`(Gutenberg 头/尾块截断+1894 插图版装饰行清理+空标题行清理)+ `splitChaptersInBody`(CH/Letter 标记 heading 或裸行两形态,裸行限行长防误切;罗马数字/裸序号须连续递增 ≥3 才切;license 文件单标记也切以救回末章,大内容保为附录;目录页/元数据小页不成课),拆后标题=首个真章标记;prompt 加"章节标题忠实原则"(大纲标题是权威,原书无编号体系不得发明"第N章")。方法沉淀:采样语料核查套件 `live-test-epub-corpus.mjs`(8 本真书,断言 H1 对齐零错位/license 零残留/章数带宽)+ verify-epub-parser T5-T10 合成 fixture 锁拆分行为(CI 无网络)。实测:P&P 71 章 71 课课课对齐(旧 15 章全错位),Metamorphosis 精确 3 章,8/8 书 license 清零;破坏验证闭环(裸行识别关掉→三测红)。
+
 ### Added
 - **导入测试补全程:真实来源一路验到课程落库** —— 此前 arXiv/网页/EPUB/docx 的真实链路核查只测获取与解析层,LLM 结构化与落库层只有手工桩(形状太理想),层与层的接缝没有真实形状流过。两层补齐:①fixture 回灌——真实拉取的 arXiv 论文(PDF 提取的作者挤行/四级标题怪形状)与网页文章 markdown 存进 `scripts/fixtures/`,verify-import-sources 新增 T8-T10 在 CI 里用真实形状跑完整管线落库并断言课程形状(章节/课数区间/正文非空/保真率);②live-test-import-sources 新增全程落库两档——无 key 降级档(arXiv URL/EPUB 真书/docx+md 文件夹→规则结构化→落库)与有 key LLM 档(按 .env 端点建 custom provider 跑真实 Step2/4,与降级档形成结构对照)。破坏验证闭环(截断分段阈值→T8/T9 红)。实测对照:arXiv 论文降级档 11 章 11 课 vs LLM 档 4 章 11 课(LLM 语义分组真实生效);顺带发现 EPUB 兜底分课会把 Gutenberg 版权页当一课(已知待修)。
 

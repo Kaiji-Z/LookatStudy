@@ -8,7 +8,7 @@
  *
  * 复习流程:点"复习该课" → 跳到讲解 tab → 底部自评(SelfRatingCard) → SRS 更新。
  */
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Shuffle } from "lucide-react";
 import { api } from "../lib/api.js";
 import { celebrate } from "../lib/celebration.js";
@@ -187,6 +187,8 @@ export function SelfRatingCard({
   nodeId: string;
   onRated?: () => void;
 }) {
+  /** v12 庆祝召唤锚:自评卡根元素 */
+  const rateRef = useRef<HTMLDivElement | null>(null);
   const t = useLang();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -199,7 +201,12 @@ export function SelfRatingCard({
       setDone(true);
       onRated?.();
       // Phase 1: SRS 自评高光 — remembered/mastered(quality≥4)答对爆发,again(≤1)柔红闪。
-      celebrate(quality >= 4 ? "correct" : "wrong");
+      // v12:记得/很熟带自评卡锚点 → 伴学飞来庆祝;忘了不召唤
+      celebrate(quality >= 4 ? "correct" : "wrong", {
+        origin: quality >= 4 && rateRef.current
+          ? (() => { const r = rateRef.current!.getBoundingClientRect(); return { x: r.right - 48, y: r.top + 24 }; })()
+          : undefined,
+      });
     } catch {
       /* 忽略 */
     } finally {
@@ -216,7 +223,7 @@ export function SelfRatingCard({
   }
 
   return (
-    <div className="border-t border-[var(--border-faint)] pt-3 mt-3" data-testid="self-rating">
+    <div ref={rateRef} className="border-t border-[var(--border-faint)] pt-3 mt-3" data-testid="self-rating">
       <div className="text-caption font-bold text-ink-muted uppercase tracking-wider mb-2 text-center">
         {t("review.selfrate.title")}
       </div>

@@ -316,16 +316,19 @@ export function initialCompanionState(now = 0): CompanionState {
 }
 
 /**
- * 当前意图指向的世界(v10:最新用户操作信号优先;无信号=roam 跨栏游走)。
+ * 当前意图指向的世界(v10:最新用户操作信号优先;无信号=roam 回左栏家)。
  * 与 state.zone 分离:zone 是"已经飞到",desired 是"应该去"——
  * 操作目标即时跟进;操作结束回 roam 要等 ZONE_RETURN_MS(别刚落输入框又抖走)。
  * 导入监工例外:importing 期间钉左栏值守。
+ * v12:listening(听写语音模式)也算 chat 在场信号——按住说话时飞来陪听写
+ * (voice 卡仍是 composer-card,锚点零改动)。
  */
 export function desiredZone(s: CompanionState, now: number): CompanionZone {
   if (s.importing) return "rail";
   const nbActive = s.zoneNbAt !== null && (s.zoneNbUntil === 0 || now < s.zoneNbUntil);
-  if (s.zoneChatAt === null && !nbActive) return "roam";
-  if (s.zoneChatAt === null) return "notebook";
+  const chatActive = s.zoneChatAt !== null || s.listening;
+  if (!chatActive && !nbActive) return "roam";
+  if (!chatActive) return "notebook";
   if (!nbActive) return "chat";
   // 双槽都在场:跟最新激活的
   return (s.zoneNbAt ?? 0) > (s.zoneChatAt ?? 0) ? "notebook" : "chat";
@@ -1122,6 +1125,21 @@ export function edgeHomeAnchor(
 ): { x: number; y: number } {
   const x = size * 0.34;
   const y = Math.min(Math.max(vh, size) * 0.46, Math.max(ceilBottom + size * 0.8, size * 0.8));
+  return { x, y };
+}
+
+/**
+ * 庆祝召唤栖位(纯,v12):答对/解锁时飞到事件源(题卡/复习卡/解锁球)的
+ * 右上上空——爆发点右上 36/-44,视口右缘与顶部禁入带钳制。
+ */
+export function celebrationPerch(
+  origin: { x: number; y: number },
+  size: number,
+  vw: number,
+  ceilBottom: number,
+): { x: number; y: number } {
+  const x = Math.min(origin.x + 36, vw - size * 0.7);
+  const y = Math.max(origin.y - 44, ceilBottom + size * 0.8);
   return { x, y };
 }
 

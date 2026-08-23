@@ -41,6 +41,12 @@ const SAMPLES = [
   ["english_intro-elements-of-python.srt", "英文原文(与简体同视频)",
     `${BASE}/english/scientific-computing-with-python/python-for-everybody/intro-elements-of-python.srt`,
     { minChars: 8000, minCjk: 0, keyword: "Python" }],
+  ["english_build-your-own-functions.srt", "英文原文(与简体真翻译同视频)",
+    `${BASE}/english/scientific-computing-with-python/python-for-everybody/build-your-own-functions.srt`,
+    { minChars: 8000, minCjk: 0, keyword: "def" }],
+  ["english_web-services-json.srt", "英文原文(Web 服务 JSON)",
+    `${BASE}/english/scientific-computing-with-python/python-for-everybody/web-services-json.srt`,
+    { minChars: 5000, minCjk: 0, keyword: "JSON" }],
 ];
 
 mkdirSync("scripts/fixtures/subtitle-corpus", { recursive: true });

@@ -71,3 +71,9 @@ memory/
 
 # epub 采样语料(live 重下,不入库;来源与重采方法见 scripts/live-test/live-test-epub-corpus.mjs)
 scripts/fixtures/epub-corpus/
+
+# goal 执行工作目录(本地,不入库)
+.goal/
+
+# PDF 语料缓存(live 重下;github release 大文件可 gh release download 代下)
+scripts/fixtures/pdf-corpus/

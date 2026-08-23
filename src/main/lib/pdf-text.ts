@@ -16,6 +16,20 @@
  * 这是文本层赛道的本质局限, 非 bug。STEM 数学密集教材的正确路径是未来的 vision 渲染喂图,
  * 不在本文件职责内。
  */
+/**
+ * 康熙部首区(U+2F00-U+2FDF)→CJK 统一表意区归一。
+ * pdf-inspector 对部分中文 PDF 的 ToUnicode 映射落在部首区(2026-08-23 d2l-zh
+ * 真书采样实测 2.3 万字符:"⼿⼀⽅"应读"手一方"),画线搜索/朗读匹配/复习检索
+ * 在部首区上全部断裂。逐字符 NFKC(部首→汉字是 Unicode 标准一对 一兼容映射,
+ * 不动其他任何字符)。两路引擎输出统一过这道。
+ */
+export function normalizeRadicals(md: string): string {
+  if (!md) return md;
+  return /[\u2F00-\u2FDF]/.test(md)
+    ? md.replace(/[\u2F00-\u2FDF]/g, (c) => c.normalize("NFKC"))
+    : md;
+}
+
 export async function parsePdfText(buf: Buffer): Promise<string> {
   if (!process.env.LOOKATSTUDY_NO_PDF_INSPECTOR) {
     try {
@@ -23,7 +37,7 @@ export async function parsePdfText(buf: Buffer): Promise<string> {
       const pi = require("@firecrawl/pdf-inspector");
       const result = await pi.processPdfAsync(buf);
       const md = (result?.markdown ?? "").trim();
-      if (md) return md;
+      if (md) return normalizeRadicals(md);
     } catch {
       /* 平台不支持 / 解析崩 → 回退 pdf-parse */
     }
@@ -34,7 +48,7 @@ export async function parsePdfText(buf: Buffer): Promise<string> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pdfParse = require("pdf-parse") as (b: Buffer) => Promise<{ text: string }>;
-    return (await pdfParse(buf)).text.trim();
+    return normalizeRadicals((await pdfParse(buf)).text.trim());
   } catch {
     return "";
   }

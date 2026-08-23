@@ -89,5 +89,32 @@ let passed = 0;
   passed++;
 }
 
-console.log(`\nverify-pdf-text: ${passed}/4 通过`);
-if (passed < 4) process.exitCode = 1;
+console.log(`\nverify-pdf-text: ${passed}/4 通过(前 4 项)`);
+
+// ── T4-T7: 康熙部首区归一(2026-08-23,d2l-zh 真书采样:inspector 输出 2.3 万部首区
+//    字符,画线/朗读/检索全断;normalizeRadicals 逐字符 NFKC 归一) ──
+{
+  const { normalizeRadicals } = await import("../src/main/lib/pdf-text.ts");
+
+  console.log("  ✓ T4 部首→汉字: ⼿⼀⽅⼼ → 手一方心");
+  assert.equal(normalizeRadicals("⼿⼀⽅⼼"), "手一方心");
+  passed++;
+
+  console.log("  ✓ T5 无部首输入原样返回(不触发替换)");
+  assert.equal(normalizeRadicals("普通中文 English 123"), "普通中文 English 123");
+  assert.equal(normalizeRadicals(""), "");
+  passed++;
+
+  console.log("  ✓ T6 部首区外的兼容区不受影响(全角数字不动)");
+  const withFullwidth = "第１章";
+  assert.equal(normalizeRadicals(withFullwidth), withFullwidth);
+  passed++;
+
+  console.log("  ✓ T7 部首与正常文本混排,只归一部首");
+  const mixed = "动⼿学深度学习"; // 第 3 字是部首 ⼿
+  assert.equal(normalizeRadicals(mixed), "动手学深度学习");
+  passed++;
+}
+
+console.log(`\nverify-pdf-text: ${passed}/8 通过`);
+if (passed < 8) process.exitCode = 1;

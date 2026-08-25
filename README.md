@@ -100,6 +100,16 @@ Grab `LookatStudy-launcher.apk` from the latest [Release](https://github.com/Kai
 
 The phone runs the server itself and Chrome talks to it over localhost, so your data stays on the phone the way it stays on your PC. No npm runs on the phone. The bundle download prefers a China friendly npm mirror and falls back to GitHub when the mirror lags. The server is one self-contained file plus the web assets. Skip the launcher if you like, the same one line works in any Termux.
 
+## Inside DeepSeek Harness (dsh)
+
+The same idea also lives as a plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), the open-source agent framework: a study tab with course map, tutor, and blackboard columns, the skill-tree gating, BKT mastery tracking, and SM-2 review carried over, and imported courses are designed by the tutor itself. One command installs it:
+
+```sh
+dsh plugin add dsh-plugin-lookatstudy
+```
+
+Plugin repo: [Kaiji-Z/dsh-plugin-lookatstudy](https://github.com/Kaiji-Z/dsh-plugin-lookatstudy) (npm: [dsh-plugin-lookatstudy](https://www.npmjs.com/package/dsh-plugin-lookatstudy)).
+
 ## What it can't do yet
 
 - The macOS build is unsigned and Apple Silicon only. First launch needs a right-click and Open, and there's no Intel package yet. The Windows exe is unsigned too, so SmartScreen will grumble the first time.

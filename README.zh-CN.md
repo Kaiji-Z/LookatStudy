@@ -101,6 +101,16 @@ npm run dev:electron
 
 手机自己跑服务,浏览器经 localhost 与它通信,数据像在电脑上一样留在本机。安装不会在手机上执行 npm,便携包的下载优先走国内 npm 镜像,镜像同步滞后或失败时自动回退 GitHub。服务是一个自包含文件加网页资源。不想用引导器也行,任何 Termux 里跑同一行命令即可。
 
+## 在 DeepSeek Harness 里也能用
+
+同一套想法还做成了 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(dsh,DeepSeek 的开源 Agent 框架)的插件:一个「学习」页签,课程、导师、黑板三栏,技能树解锁、BKT 掌握度、SM-2 复习都搬了过去,导入的课程由导师自己设计。一条命令安装:
+
+```sh
+dsh plugin add dsh-plugin-lookatstudy
+```
+
+插件仓库:[Kaiji-Z/dsh-plugin-lookatstudy](https://github.com/Kaiji-Z/dsh-plugin-lookatstudy)(npm:[dsh-plugin-lookatstudy](https://www.npmjs.com/package/dsh-plugin-lookatstudy))。
+
 ## 目前做不到的事
 
 - macOS 的包没有签名,只出 Apple Silicon 架构。首次打开要右键选打开,Intel Mac 的包还没出。Windows 的 exe 同样没签名,第一次运行 SmartScreen 会拦一下。

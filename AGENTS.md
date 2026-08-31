@@ -109,6 +109,7 @@ npm run shots             # capture README screenshots → docs/screenshots/ (he
 npx tsc --noEmit                       # typecheck renderer
 npx tsc -p tsconfig.electron.json --noEmit  # typecheck main/preload
 npx tsx scripts/live-test/live-test-teaching.mjs    # LLM teaching behavior test (needs API key)
+npx tsx scripts/live-test/live-test-mastered-proposal.mjs # LLM 收尾提议行为测试(默认思考档必须真调 mark_mastered 工具、正文不得手写「[工具调用已执行]」假标记;2026-08-31 手写标记事故的行为验收)
 npx tsx scripts/live-test/live-test-exercise.mjs    # LLM exercise quality test
 npx tsx scripts/live-test/live-test-summary.mjs     # LLM summary + Ollama test
 npx tsx scripts/live-test/live-test-hook-opener.mjs # LLM "开始学习" hook 起手式形状测试(动机层:钩子+二选一猜测+不计分)
@@ -283,6 +284,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 - `dev-docs/ARCHITECTURE.md` — design (Agent engine + Soul system + Propose/Apply + BKT + RAG)
 - `dev-docs/ROADMAP.md` — milestone roadmap
 - `dev-docs/BUILD-NOTES.md` — known environment/build pitfalls
+- `dev-docs/PROMPT-LAYERS.md` — 对话提示词四层组装协议(基座/soul/课程上下文/学习者快照的职责边界与层间契约) + 基座三级分层(红线/行为/偏好)。改 base-prompt、教学策略档位或新增状态变更工具前必读
 - `dev-docs/DESIGN-PLAN-v0.2.md` / `v0.3.md` / `v0.4-threads.md` — historical design plans. Read for intent, not current code state; the code has moved on.
 
 ## Project rules (repo hygiene)

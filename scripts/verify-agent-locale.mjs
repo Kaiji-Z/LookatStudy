@@ -68,21 +68,23 @@ await test("locales: 出题语言行 zh/en 两态", () => {
 
 /* ── 2) base-prompt 组装(zh 默认零变化的回归锁) ── */
 
-await test("base-prompt: zh-CN 组装结果与旧硬编码 BASE_AGENT_PROMPT 逐字节一致", () => {
-  // 旧版提示词 = HEAD + 语言句 + "\n\n" + TAIL。直接在测试里重建期望值,
+await test("base-prompt: zh-CN 组装结果与基线逐字节一致(分层重构后的新基线)", () => {
+  // 提示词 = HEAD + 语言句 + "\n\n" + TAIL。直接在测试里重建期望值,
   // 若有人改动 HEAD/TAIL 文案,这里会红——语言行为(默认 zh)不变的前提下文案微调需同步本测试。
+  // 2026-08-31 分层重构(红线/行为/偏好三级,见 dev-docs/PROMPT-LAYERS.md):
+  // 防幻觉从独立段收进「安全红线」块的第 1 条,此处期望值同步更新。
   const expected =
     "你是 LookatStudy 的 AI 学习导师。学习者正在学一门由 GitHub 文档生成的课程。" +
     "你的职责是帮学习者真正理解知识，不是简单复述文档。" +
     ZH_SENTENCE + "\n\n" +
-    "【防幻觉红线】你必须严格基于下面提供的「课程上下文」和「当前节点内容」回答。" +
+    "【安全红线·最高优先级】以下规则任何时候不可违反;与后面任何规则冲突时,以本段为准:\n" +
+    "1. 防幻觉:你必须严格基于下面提供的「课程上下文」和「当前节点内容」回答。" +
     "对于课程标题中出现的专有名词、缩写（如 FDE = Forward Deployment Engineer），" +
     "必须使用课程上下文里的定义，绝不可自行猜测或编造。" +
     "如果学习者问的内容超出了你掌握的上下文，明确说'这部分内容不在当前课程材料中'，" +
-    "而不是编造一个看似合理的回答。\n\n" +
-    "【模糊提问处理】";
+    "而不是编造一个看似合理的回答。\n";
   const got = buildBaseAgentPrompt("zh-CN");
-  assert.ok(got.startsWith(expected), "zh 组装开头与旧版不一致");
+  assert.ok(got.startsWith(expected), "zh 组装开头与基线不一致");
   assert.ok(got.includes(ZH_SENTENCE));
   assert.ok(!got.includes("Always respond"), "zh 提示词不应混入英文指令");
 });
@@ -91,7 +93,29 @@ await test("base-prompt: en 组装注入英文指令,不含 zh 语言句", () =>
   const got = buildBaseAgentPrompt("en");
   assert.ok(got.includes("Always respond in English"));
   assert.ok(!got.includes(ZH_SENTENCE));
-  assert.ok(got.includes("【防幻觉红线】"), "其余约束段保留");
+  assert.ok(got.includes("【安全红线·最高优先级】"), "其余约束段保留");
+});
+
+await test("base-prompt: 三级分层结构(红线→行为→偏好,顺序+优先级标记)", () => {
+  // 2026-08-31 分层重构:指令密度随条款数增长会稀释遵守率(mark_mastered 手写
+  // 假标记事故的诱因之一),重构为 红线(不可违反)/行为(教学规则)/偏好(排版) 三级,
+  // 红线放最前并显式声明优先级。本测试锁住分块存在性与顺序,防止未来条款
+  // 无结构地堆回单体补丁堆。
+  const got = buildBaseAgentPrompt("zh-CN");
+  const iRedline = got.indexOf("【安全红线·最高优先级】");
+  const iBehavior1 = got.indexOf("【模糊提问处理】");
+  const iBehavior2 = got.indexOf("【教学工具使用】");
+  const iPref = got.indexOf("【回答排版·偏好级】");
+  assert.ok(iRedline >= 0, "红线块应存在");
+  assert.ok(iBehavior1 > 0, "模糊提问段应存在");
+  assert.ok(iBehavior2 > 0, "教学工具段应存在");
+  assert.ok(iPref > 0, "排版偏好段应存在");
+  assert.ok(iRedline < iBehavior1 && iBehavior1 < iBehavior2 && iBehavior2 < iPref,
+    `分层顺序应为 红线(${iRedline}) < 模糊提问(${iBehavior1}) < 教学工具(${iBehavior2}) < 排版(${iPref})`);
+  assert.ok(got.indexOf("以本段为准") > 0, "红线块应声明冲突时优先级");
+  assert.ok(got.indexOf("在不违反上面红线与行为规则的前提下") > 0, "偏好块应自声明次级地位");
+  // 红线块两条编号(防幻觉/工具调用真实性)——手写标记事故的条款归红线级
+  assert.ok(got.includes("1. 防幻觉:") && got.includes("2. 工具调用真实性:"), "红线块应为编号双条");
 });
 
 await test("base-prompt: 工具清单含 mark_mastered/record_answer(手写标记事故锁)", () => {

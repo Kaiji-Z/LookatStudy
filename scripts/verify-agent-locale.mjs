@@ -93,7 +93,33 @@ await test("base-prompt: en 组装注入英文指令,不含 zh 语言句", () =>
   const got = buildBaseAgentPrompt("en");
   assert.ok(got.includes("Always respond in English"));
   assert.ok(!got.includes(ZH_SENTENCE));
-  assert.ok(got.includes("【安全红线·最高优先级】"), "其余约束段保留");
+  assert.ok(got.includes("SAFETY RED LINES"), "其余约束段保留(英文本体)");
+});
+
+await test("base-prompt: en 组装用英文本体(2026-08-31 i18n 落地)", () => {
+  // 弱点修复:此前非 zh locale 只追加一句英文语言指令,整套行为约束(红线/工具/排版)
+  // 仍是中文——等于让英文模型用中文指令理解规则再用英文输出,指令遵循质量隐性折损。
+  // 落地:非 zh 组装整包换英文本体,与 zh 版逐段对应(三级分层同构)。
+  // 注意:「[工具调用已执行] …」标记字样在英文版里保留原文——系统注入历史的标记
+  // 就是这个中文格式,英文 prompt 解释时必须引用原字样,模型才对得上号。
+  const got = buildBaseAgentPrompt("en");
+  // 三级分层同构(英文段名)
+  const iRedline = got.indexOf("SAFETY RED LINES — TOP PRIORITY");
+  const iBehavior1 = got.indexOf("[Handling vague questions]");
+  const iBehavior2 = got.indexOf("[Teaching tools]");
+  const iPref = got.indexOf("[Response formatting — preference level]");
+  assert.ok(iRedline >= 0, "英文红线块应存在");
+  assert.ok(iBehavior1 > 0 && iBehavior2 > 0 && iPref > 0, "英文行为/偏好段应存在");
+  assert.ok(iRedline < iBehavior1 && iBehavior1 < iBehavior2 && iBehavior2 < iPref, "英文版三级顺序同构");
+  // 红线双条 + 反伪造条款英文化
+  assert.ok(got.includes("1. No hallucination:") && got.includes("2. Tool-call authenticity:"), "红线编号双条英文化");
+  assert.ok(got.includes("[工具调用已执行]"), "标记原字样保留(系统注入格式不翻译)");
+  assert.ok(/only way .*actual tool call|actual tool call.*only way/is.test(got), "反伪造唯一途径条款英文化");
+  // 工具清单点名(与 zh 版事故锁对齐)
+  assert.ok(got.includes("mark_mastered") && got.includes("record_answer"), "英文工具清单含状态工具指引");
+  // 不得残留中文段落骨架
+  for (const zhSeg of ["【安全红线", "【模糊提问处理】", "【教学工具使用】", "【回答排版", "你是 LookatStudy 的 AI 学习导师"])
+    assert.ok(!got.includes(zhSeg), `en 本体不应含中文段: ${zhSeg}`);
 });
 
 await test("base-prompt: 三级分层结构(红线→行为→偏好,顺序+优先级标记)", () => {

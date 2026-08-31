@@ -110,6 +110,7 @@ npx tsc --noEmit                       # typecheck renderer
 npx tsc -p tsconfig.electron.json --noEmit  # typecheck main/preload
 npx tsx scripts/live-test/live-test-teaching.mjs    # LLM teaching behavior test (needs API key)
 npx tsx scripts/live-test/live-test-mastered-proposal.mjs # LLM 收尾提议行为测试(默认思考档必须真调 mark_mastered 工具、正文不得手写「[工具调用已执行]」假标记;2026-08-31 手写标记事故的行为验收)
+npx tsx scripts/live-test/live-test-lang-parity.mjs  # LLM 双语行为等价测试(zh 中文本体/en 英文本体同一收尾场景:真 tool call+零手写标记+输出语言跟随;en 组 rationale 也应英文)
 npx tsx scripts/live-test/live-test-exercise.mjs    # LLM exercise quality test
 npx tsx scripts/live-test/live-test-summary.mjs     # LLM summary + Ollama test
 npx tsx scripts/live-test/live-test-hook-opener.mjs # LLM "开始学习" hook 起手式形状测试(动机层:钩子+二选一猜测+不计分)
@@ -156,7 +157,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 
 | Service | File | What it does |
 |---------|------|-------------|
-| Agent engine | `services/agent/agent-engine.ts` | `handleAgentChatThread` — thread-based context assembly, 6 display tools (`show_concept_map` / `generate_quiz` / `compare_table` / `draw_diagram` / `show_code_walkthrough` / `pose_guess`), `chat:part` emission, mastery-based teaching strategy; 注入近期 friction 卡点(`pure/friction-context.ts` buildFrictionContext)让 AI 看见学习者挣扎点;**AI 输出语言 = 界面语言**(i18n,非课程 🌐):渲染层穿 locale → `resolveOutputLang`(`@shared/locales`,纯函数)→ `agent/base-prompt.ts` 组装提示词(zh 默认逐字节不变,非 zh 英文指令点名工具参数也跟随);exercise/exam 出题同一链 |
+| Agent engine | `services/agent/agent-engine.ts` | `handleAgentChatThread` — thread-based context assembly, 6 display tools (`show_concept_map` / `generate_quiz` / `compare_table` / `draw_diagram` / `show_code_walkthrough` / `pose_guess`), `chat:part` emission, mastery-based teaching strategy; 注入近期 friction 卡点(`pure/friction-context.ts` buildFrictionContext)让 AI 看见学习者挣扎点;**AI 输出语言 = 界面语言**(i18n,非课程 🌐):渲染层穿 locale → `resolveOutputLang`(`@shared/locales`,纯函数)→ `agent/base-prompt.ts` 组装提示词(zh 中文本体逐字节回归锁;非 zh **英文本体**——2026-08-31 i18n 落地,与中文版三级分层逐段同构,非旧版"中文约束+一句英文指令";「[工具调用已执行]」标记字样保留中文原样,系统注入格式不翻译);exercise/exam 出题同一链 |
 | Soul (教学人设) | `services/souls/soul-service.ts` + `prompt-builder.ts` | 教学人设/persona CRUD + 激活;`buildSystemPrompt(db, BASE)` 把激活 soul 的 body 拼到 base prompt 后面注入 `streamText({system})`。3 内置 soul:精讲(direct)/引导(guide)/实战(practice)。**注:soul=persona,非过程性 playbook**;真 skill(多步任务固化)是未来独立模块。`active_soul=null` 时返回 base(等价关闭,无 flag 门控) |
 | LLM client | `services/agent/llm-client.ts` | `resolveLlm` (3 protocols), `testLlmConnection` (主模型/视觉覆盖双路), `classifyLlmError` (auth/rate-limit/network), `fetchOpenRouterModels`, `fetchProviderModels`。openai-compatible 协议分家:官方 OpenAI 端点 `createOpenAI`(原生 providerOptions),第三方端点 `@ai-sdk/openai-compatible`(chat/completions 解析 `reasoning_content` → reasoning-delta,思考流进 UI;includeUsage 与官方包对齐) |
 | LLM presets | `services/agent/llm-presets.ts` | 19 provider presets (GLM standard/CodingPlan, DeepSeek, Kimi, Qwen, SiliconCloud, OpenRouter, OpenAI, Anthropic, Google, Groq, Together, Mistral, xAI, Volcano, Baidu, MiniMax, Baichuan, StepFun) |

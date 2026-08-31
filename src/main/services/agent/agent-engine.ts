@@ -28,7 +28,9 @@ import {
 } from "../../db/schema.js";
 import type { ClientEmitter } from "../../ipc/runtime.js";
 import { getDb, markDirty } from "../../db/index.js";
-import { resolveLlm, classifyLlmError, readSettingsMap, buildLanguageModel, supportsVision } from "./llm-client.js";
+import { resolveLlm, classifyLlmError, readSettingsMap, buildLanguageModel, supportsVision, resolveActiveContextWindow } from "./llm-client.js";
+import { trimHistoryToBudget } from "@shared/history-budget";
+import { estimateTokens } from "@shared/token-estimate";
 import {
   decideVisionBridge,
   visionRouting,
@@ -633,9 +635,33 @@ export async function runAgentTurn(
   }
 
   try {
+    // 历史预算裁剪(2026-08-31):装配层曾每轮全量注入对话历史,长对话成本与窗口
+    // 压力线性增长、最终撞上下文上限直接 400。从最新往回按预算保留(最旧先丢),
+    // 预算 = (窗口 - 输出预留 4096)×0.6 - 固定开销(system 三块);窗口与输入框
+    // 用量表同源(llm-client.resolveActiveContextWindow,null 未知保守 32k);
+    // minKeep=2:当前问题与最近一轮回答永不被裁。裁剪发生在 preparedMessages
+    // 构造前 → fuse 快照/attemptMessages 全部自动基于裁剪后历史,零漂移。
+    // (图片注入发生在裁剪之后,vision token 由 40% 余量覆盖)
+    const ctxWindow = resolveActiveContextWindow(db) ?? 32768;
+    const fixedCost = estimateTokens(
+      `${system}\n\n${nodeContext}${learnerSnapshot ? `\n\n${learnerSnapshot}` : ""}`,
+    );
+    const historyBudget = Math.max(1024, Math.floor((ctxWindow - 4096) * 0.6) - fixedCost);
+    const { kept: budgetedHistory, droppedCount } = trimHistoryToBudget(
+      messages,
+      historyBudget,
+      (m) => estimateTokens(m.content),
+      2,
+    );
+    if (droppedCount > 0) {
+      console.log(
+        `[history-budget] 窗口${ctxWindow} 固定${fixedCost} 预算${historyBudget}:裁掉最旧 ${droppedCount} 条历史`,
+      );
+    }
+
     // v0.8 多模态:用户问图相关问题时,主动把当前节点的图片注入到最后一条 user 消息
     // (方案 B:不依赖 tool-result vision,直接把图作为 message file-part 喂给 LLM)
-    let preparedMessages: ModelMessage[] = messages.map((m) => ({
+    let preparedMessages: ModelMessage[] = budgetedHistory.map((m) => ({
       role: m.role,
       content: m.content,
     }));

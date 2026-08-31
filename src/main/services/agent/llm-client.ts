@@ -23,10 +23,11 @@ import { settings as settingsTable } from "../../db/schema.js";
 import {
   resolveProviderConfig,
   getProviderPreset,
+  resolveModelContextWindow,
   type ProviderPreset,
   type ProviderProtocol,
 } from "./llm-presets.js";
-import { getCustomProviderRaw } from "../custom-provider-service.js";
+import { getCustomProviderRaw, getCustomProvider } from "../custom-provider-service.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -45,6 +46,25 @@ export function readSettingsMap(db: Db): Record<string, string | null> {
   const map: Record<string, string | null> = {};
   for (const r of rows) map[r.key] = r.value;
   return map;
+}
+
+/**
+ * 解析当前活动模型的上下文窗口（预设表 → custom provider modelsJson → null 未知）。
+ * 统一出口（2026-08-31）：context-usage（输入框用量表）与 agent-engine（历史预算
+ * 裁剪）共用同一解析，防"装配用的窗口"与"展示用的窗口"漂移。
+ * null = 诚实未知，调用方自定保守默认（engine 按 32k）。
+ */
+export function resolveActiveContextWindow(db: Db): number | null {
+  const settings = readSettingsMap(db);
+  const providerId = settings.active_provider ?? "glm";
+  const preset = getProviderPreset(providerId);
+  const model = settings.active_model ?? preset?.defaultModel ?? "";
+  if (preset) return resolveModelContextWindow(preset.models, model);
+  if (providerId.startsWith("custom-")) {
+    const cp = getCustomProvider(db, providerId);
+    if (cp) return resolveModelContextWindow(cp.models, model);
+  }
+  return null;
 }
 
 export interface ResolvedLlm {

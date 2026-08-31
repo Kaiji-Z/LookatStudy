@@ -94,6 +94,19 @@ await test("base-prompt: en 组装注入英文指令,不含 zh 语言句", () =>
   assert.ok(got.includes("【防幻觉红线】"), "其余约束段保留");
 });
 
+await test("base-prompt: 工具清单含 mark_mastered/record_answer(手写标记事故锁)", () => {
+  // 真实事故(2026-08-31,用户报告):默认思考档下模型没真正调用 mark_mastered,
+  // 而是在正文里手写「[工具调用已执行] mark_mastered → …」假标记冒充已发起提议——
+  // 界面只认 tool-call part,手写文本不产生确认卡片,学习者无按钮可点。
+  // 修复 = 工具清单点名这两个工具 + 反伪造条款。本测试锁住这两段文案不被误删。
+  const got = buildBaseAgentPrompt("zh-CN");
+  assert.ok(got.includes("mark_mastered"), "工具清单应含 mark_mastered 指引");
+  assert.ok(got.includes("record_answer"), "工具清单应含 record_answer 指引");
+  assert.ok(got.includes("绝不可"), "反伪造条款应存在");
+  assert.ok(got.includes("手写"), "反伪造条款应点名'手写'行为");
+  assert.ok(got.includes("唯一途径"), "应声明发起提议的唯一途径是真正的工具调用");
+});
+
 await test("base-prompt: soul 语言提醒仅非 zh 存在", () => {
   assert.strictEqual(buildSoulLangReminder("zh-CN"), undefined);
   const r = buildSoulLangReminder("en");

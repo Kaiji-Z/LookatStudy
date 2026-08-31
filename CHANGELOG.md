@@ -26,6 +26,9 @@ Entry conventions for contributors:
 - **base prompt 英文本体(非 zh 组装 i18n 落地)** —— 修复评价定位的单语弱点:此前非 zh locale 只追加一句英文语言指令,整套行为约束(红线/工具/排版)仍是中文,英文模型等于用中文指令理解规则再用英文输出,指令遵循质量隐性折损。现在 `buildBaseAgentPrompt` 非 zh 分支整包换英文本体,与中文版三级分层逐段同构;zh 中文本体逐字节回归锁不变。「[工具调用已执行]」标记字样在英文版保留中文原样(系统注入历史的标记就是这个格式,英文解释必须引用原字样才对得上号)。verify-agent-locale 新增英文本体断言(三级同构/红线双条/反伪造条款/工具清单点名/零中文段残留);新增 live-test-lang-parity 双语行为等价测试(同一收尾场景唯一变量=locale,断言双语下都真调 mark_mastered+零手写标记+输出语言跟随),实测 PASS——en 组连 tool-call rationale 也跟随英文。
 - **收尾提议行为测试(live-test-mastered-proposal)** —— 补上行为验收的洞:文案存在性断言(verify)锁不住模型行为,收尾提议场景此前零行为覆盖。默认思考档(事故档位)真实调用 LLM,断言①必须发出真正的 `mark_mastered` tool call②正文不得手写「[工具调用已执行]」标记;历史消息刻意包含工具标记行(复现事故诱因)。system prompt 从 `buildBaseAgentPrompt` 真源导入(prompt 改动自动跟随)。实测通过:默认档下模型正确走工具调用,rationale 引用 KC 掌握度/测验覆盖/费曼复述。
 
+### Added
+- **对话历史 token 预算裁剪** —— 修复评价定位的长上下文弱点:装配层此前每轮全量注入对话历史(全量消息+工具标记追加),长对话成本与窗口压力线性增长,最终撞上下文上限直接 400。`runAgentTurn` 装配时对历史**从最新往回按预算保留**(最旧先丢):预算=(窗口-输出预留4096)×0.6-固定开销(system 三块,与实发同源);窗口解析抽成 `llm-client.resolveActiveContextWindow` 统一出口(context-usage 输入框用量表与装配共用,防"装配窗口"与"展示窗口"漂移),未知(null)保守 32k;minKeep=2——当前问题与最近一轮回答永不被裁。裁剪发生在 preparedMessages 构造前,400 保险丝降级快照自动基于裁剪后历史零漂移。纯函数 `shared/history-budget.ts` + verify-history-budget 9 用例(含 minKeep 硬保底/恰好压线/纯函数契约/源级接线守卫);渲染层用量表叠加历史不裁,读到略高于实发的保守值(高估无害)。
+
 ## [0.26.0] - 2026-08-24
 
 ### Removed

@@ -9,8 +9,8 @@ import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import type { ContextUsageInfo } from "@shared/types";
 import { estimateTokens } from "@shared/token-estimate";
 import * as schema from "../../db/schema.js";
-import { readSettingsMap, supportsVision } from "./llm-client.js";
-import { getProviderPreset, resolveModelContextWindow } from "./llm-presets.js";
+import { readSettingsMap, supportsVision, resolveActiveContextWindow } from "./llm-client.js";
+import { getProviderPreset } from "./llm-presets.js";
 import { getCustomProvider } from "../custom-provider-service.js";
 import { getVisionOverride } from "./vision-bridge.js";
 import { assembleContextBlocks } from "./agent-engine.js";
@@ -27,15 +27,14 @@ export function getContextUsage(db: Db, nodeId: string, locale?: string | null):
   const preset = getProviderPreset(providerId);
   const model = settings.active_model ?? preset?.defaultModel ?? "";
 
-  let contextWindow: number | null = null;
+  // 窗口解析走 llm-client 统一出口(与 agent-engine 历史预算裁剪同源,防漂移)
+  const contextWindow = resolveActiveContextWindow(db);
   let visionCapable = false;
   if (preset) {
-    contextWindow = resolveModelContextWindow(preset.models, model);
     visionCapable = supportsVision(preset, model);
   } else if (providerId.startsWith("custom-")) {
     const cp = getCustomProvider(db, providerId);
     if (cp) {
-      contextWindow = resolveModelContextWindow(cp.models, model);
       visionCapable = cp.vision || cp.kind === "vision";
     }
   }

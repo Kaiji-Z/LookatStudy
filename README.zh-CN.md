@@ -123,7 +123,7 @@ Electron 33,React 19。数据库用 sql.js,就是把 SQLite 编译成 WASM,没�
 
 ## 状态
 
-v0.23.0。导入、跟导师学、复习、考试这条主干完整,语音和伴学也都上了,我自己每天在用。完整历史看 [CHANGELOG.md](CHANGELOG.md)(英文)。
+v0.27.0。导入、跟导师学、复习、考试这条主干完整,语音和伴学也都上了,我自己每天在用。完整历史看 [CHANGELOG.md](CHANGELOG.md)(英文)。
 
 ## 许可证
 

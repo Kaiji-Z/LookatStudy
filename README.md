@@ -122,7 +122,7 @@ Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there
 
 ## Status
 
-v0.23.0. The main loop, importing almost anything, learning with the tutor, reviewing, taking exams, reading aloud, is complete, and I use it daily. Full history in [CHANGELOG.md](CHANGELOG.md).
+v0.27.0. The main loop, importing almost anything, learning with the tutor, reviewing, taking exams, reading aloud, is complete, and I use it daily. Full history in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

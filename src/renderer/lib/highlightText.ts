@@ -15,6 +15,8 @@
  *
  * 这是不依赖 DOM 结构的方案,只要 markdown 源不变,文本就稳定。
  */
+import { displayGroupSpanAround } from "@shared/speech-text";
+
 export interface TextModel {
   text: string;
   nodes: { node: Text; start: number; end: number }[];
@@ -417,6 +419,7 @@ export function clearReadingMark(container: HTMLElement): void {
     /* 无 Highlight API 的环境 */
   }
   readingRange = null;
+  readingSentenceRange = null;
   container.querySelectorAll(`.${READING_MARK_CLASS}`).forEach((m) => {
     const parent = m.parentNode;
     if (parent) {
@@ -574,6 +577,12 @@ export function markReadingSentence(
   readingCursors.set(container, m.end);
   const range = offsetsToRange(model, m.start, m.end);
   if (!range) return null;
+  // v0.28 整显示句 Range(伴学避让用):mark 只覆盖"已播前缀"(v11.4),若避让
+  // 也只让开前缀,长句被强断成多块时伴学会压住同一句的已高亮未读行。句组跨度
+  // 由 displayGroupSpanAround 按块段边界扩展(句界判定与合成侧同源),前缀 Range
+  // 仍只管高亮——高亮"亮到进度"、避让"让开整句"各司其职。
+  const span = displayGroupSpanAround(model.text, m.start, m.end);
+  readingSentenceRange = offsetsToRange(model, span.start, span.end);
   // v8:CSS Custom Highlight API 注册式高亮(零 DOM 改动)。
   // 旧 span 包裹会改写 React 管理的 DOM,朗读逐句 setState → ReactMarkdown
   // 重渲染 reconcile 撞上外来节点 → ErrorBoundary"渲染失败"(重试又好,下一句再炸)。
@@ -588,15 +597,25 @@ export function markReadingSentence(
       /* fall through to span fallback */
     }
   }
-  const span = document.createElement("span");
-  span.className = READING_MARK_CLASS;
-  return wrapRangeWithElement(range, span) ? range : null;
+  const mark = document.createElement("span");
+  mark.className = READING_MARK_CLASS;
+  return wrapRangeWithElement(range, mark) ? range : null;
 }
 
 /** v8 当前朗读句的 Range(伴学 rAF 逐帧取 rect 跟句;Range 随 DOM/滚动自动更新)。 */
 let readingRange: Range | null = null;
 export function getReadingRange(): Range | null {
   return readingRange;
+}
+
+/**
+ * v0.28 当前朗读句**整条显示句**的 Range(可能大于已播前缀):伴学朗读避让
+ * 的障碍物取这里的行盒——"不压正在读的句"是按整句算,不是按已播片段算。
+ * 尚未登记/已清除时为 null(调用方回退 getReadingRange)。
+ */
+let readingSentenceRange: Range | null = null;
+export function getReadingSentenceRange(): Range | null {
+  return readingSentenceRange;
 }
 
 /**

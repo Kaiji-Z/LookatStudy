@@ -20,6 +20,7 @@ import {
   groupSentenceChunks,
   DISPLAY_GROUP_MAX,
   playedSentencePrefix,
+  displayGroupSpanAround,
 } from "../shared/speech-text.ts";
 
 // === T1: markdown 净化 ===
@@ -229,6 +230,50 @@ console.log("✓ v11.4 T10 高亮=合成侧权威原文(ttsAudio.sentence 下发
   assert.equal(playedSentencePrefix(["a。", void 0, "c。"], 2), "c。", "T11: 空洞块当边界不炸");
 }
 console.log("✓ v11.4 T11 已播前缀:强断句并组/逐块生长/表意终点/空洞防御");
+
+// === v0.28 T11b: displayGroupSpanAround(块段 → 整显示句跨度,伴学避让的障碍范围) ===
+{
+  // 长句中部片段:向前收到前一句句号之后、向后扩到本句句号(含)
+  const text = "第一句。这是一条很长很长的句子,中间被切成块,还没有结束。第二句。";
+  const span = displayGroupSpanAround(text, text.indexOf("这是"), text.indexOf("还没有"));
+  assert.equal(
+    text.slice(span.start, span.end),
+    "这是一条很长很长的句子,中间被切成块,还没有结束。",
+    "T11b: 块段扩到整句(句号边界,前后句不并入)",
+  );
+  // 块恰好是整句:span 恒等
+  const whole = displayGroupSpanAround("你好。", 0, 3);
+  assert.equal(whole.start, 0, "T11b: 整句块起点不变");
+  assert.equal(whole.end, 3, "T11b: 整句块终点不变");
+  // 块从句首开始:起点不越过前一句句号
+  const t2 = "第一句。第二句。";
+  const s2 = displayGroupSpanAround(t2, 4, 6);
+  assert.equal(t2.slice(s2.start, s2.end), "第二句。", "T11b: 句首块向前不吞上一句");
+  // 换行句界:整行句的行尾 \n 是显示终点
+  const t3 = "标题\n正文。";
+  const s3 = displayGroupSpanAround(t3, 3, 5);
+  assert.equal(t3.slice(s3.start, s3.end), "正文。", "T11b: 换行句界(向前收拢到 \\n 后)");
+  // emoji 句界:向前越过 emoji 序列,向后吞句号
+  const t4 = "好📚尾巴。";
+  const s4 = displayGroupSpanAround(t4, 3, 5);
+  assert.equal(t4.slice(s4.start, s4.end), "尾巴。", "T11b: emoji 序列作为向前句界(surrogate 对)");
+  // 终点块(段尾已是句终点)终点不外扩;段前无句界字符(句从文本头开始)时起点=0
+  const t5 = "他说「好了。」然后走。";
+  const s5 = displayGroupSpanAround(t5, 4, 6);
+  assert.equal(t5.slice(s5.start, s5.end), "他说「好了。」", "T11b: 段尾句终点不外扩,起点收到文本头");
+  // ASCII 小数点不当地界(3.14 不切):前扫穿过小数点直到文本头
+  const t6 = "版本2.5发布。";
+  const s6 = displayGroupSpanAround(t6, 5, 7);
+  assert.equal(t6.slice(s6.start, s6.end), "版本2.5发布。", "T11b: 小数点不是句界,span 扩到文本头");
+  // maxSpan 扫描上限:超长无标点段不无限扩张(向前保持、向后到文本尾)
+  const t7 = "x".repeat(1000);
+  const s7 = displayGroupSpanAround(t7, 900, 910);
+  assert.deepEqual([s7.start, s7.end], [900, 1000], "T11b: maxSpan 限制向前扫描,向后扩到文本尾");
+  // 空/越界防御
+  assert.deepEqual(displayGroupSpanAround("", 0, 0), { start: 0, end: 0 }, "T11b: 空文本");
+  assert.deepEqual(displayGroupSpanAround("abc", 1, 99), { start: 0, end: 3 }, "T11b: end 越界钳到文本尾");
+}
+console.log("✓ v0.28 T11b 显示句组跨度:句号/换行/emoji/闭合符边界+小数点不切+maxSpan 防御");
 
 // v0.18.1 T12 朗读滚动跟随=句子行盒(不是整段巨盒):网页存档课单"段"可达 13k 字符
 // (无空行分段,渲染成一个 3000px+ 的 <p>),整段 scrollIntoView(block:center) 对超高

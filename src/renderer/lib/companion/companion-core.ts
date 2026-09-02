@@ -1140,7 +1140,12 @@ export function edgeHomeAnchor(
 
 /**
  * 庆祝召唤栖位(纯,v12):答对/解锁时飞到事件源(题卡/复习卡/解锁球)的
- * 右上上空——爆发点右上 36/-44,视口右缘与顶部禁入带钳制。
+ * 右上上空,视口右缘与顶部禁入带钳制。
+ * v0.28 外推修正:origin 是题卡右上角内侧的点(QuizArtifact r.right-48),旧版
+ * 只偏 +36px,身体半宽(~size/2 ≥36)会把身体骑在 origin 左侧的题干文字上
+ * (实测踩过:压住选项行)。现在 x 至少外推 origin + 36 + 0.4×size,身体左缘
+ * (中心-0.5×size)恒在 origin 右侧 ≥ 36-0.1×size——源点所在行不被身体覆盖,
+ * 他悬在源的右上方,手臂向左下指向庆祝点。
  */
 export function celebrationPerch(
   origin: { x: number; y: number },
@@ -1148,7 +1153,7 @@ export function celebrationPerch(
   vw: number,
   ceilBottom: number,
 ): { x: number; y: number } {
-  const x = Math.min(origin.x + 36, vw - size * 0.7);
+  const x = Math.min(origin.x + 36 + size * 0.4, vw - size * 0.7);
   const y = Math.max(origin.y - 44, ceilBottom + size * 0.8);
   return { x, y };
 }

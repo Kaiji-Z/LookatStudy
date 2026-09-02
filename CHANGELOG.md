@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-09-02
+
 ### Fixed
 - 伴学(Companion)朗读跟句避让:障碍行盒从"已播前缀"改为**整条显示句**——长句被强断成多块时,伴学只让开正在读的小片段、身体压住同一句已高亮未读行(v11.5"生物不压正在读的句"在多行满宽句上失效,实机复现)。`shared/speech-text.ts` 新增 `displayGroupSpanAround`(句界判定与 splitSentences 同源,零第二份标点表),`highlightText.ts` 同步登记整句 Range(前缀 Range 仍只管高亮,职责分离);记笔记(writing)落点同理改为避让画线所在段落的逐行行盒,不再盖住同行/邻行正文。
 

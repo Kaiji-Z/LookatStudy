@@ -26,6 +26,10 @@ const BEZEL = "#1A1440";
 const MOON = "#FFEFC2";
 const GOLD = "#FFD75E";
 const OUT = "#221C38";
+// v0.28 外轮廓亮缘:OUT 深紫黑与左栏夜空(锁定深色)几乎同色,星尘在地图上
+// 整体隐身(实测踩过)。家族语法是"暗描边画亮身体",星尘本就是反转样本
+// (暗屏亮五官)——外轮廓跟随反转用亮缘,内部细节分隔仍用 OUT。
+const RIM = "#A79BFF";
 
 /** 月相能量核:阴影圆随 energyRatio 移出(0=新月全阴影,1=满月)。 */
 function MoonCore({ energyRatio, uid }: { energyRatio: number; uid: string }) {
@@ -123,14 +127,14 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
           <ellipse cx="100" cy="177" rx="11" ry="8" fill={streakLit ? GOLD : VIOLET} opacity="0.38" />
           <ellipse cx="100" cy="176" rx="7" ry="5" fill={streakLit ? GOLD : VIOLET} />
         </g>
-        <path d="M88,158 L112,158 L106,171 L94,171 Z" fill="#2A2248" stroke={OUT} strokeWidth="4" strokeLinejoin="round" />
+        <path d="M88,158 L112,158 L106,171 L94,171 Z" fill="#2A2248" stroke={RIM} strokeWidth="4" strokeLinejoin="round" />
         {/* 修长舱体 + cel 错位暗面 + 月相核 */}
         <g className="cp-body">
           <g clipPath={`url(#${uid}-body)`}>
             <rect x="66" y="110" width="68" height="50" rx="20" fill={VIOLET_D} />
             <rect x="66" y="110" width="68" height="50" rx="20" fill={VIOLET} transform="translate(-4 -4)" />
           </g>
-          <rect x="66" y="110" width="68" height="50" rx="20" fill="none" stroke={OUT} strokeWidth="5" />
+          <rect x="66" y="110" width="68" height="50" rx="20" fill="none" stroke={RIM} strokeWidth="5" />
           <BevelPlate id={`${uid}-body`} x={66} y={110} w={68} h={50} t={4} light="rgba(196,181,255,0.34)" dark="rgba(10,6,32,0.5)" />
           <MoonCore energyRatio={energyRatio} uid={uid} />
           <circle cx="76" cy="150" r="1.5" fill={OUT} opacity="0.5" />
@@ -140,14 +144,14 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
         <g ref={refs.head} className="cp-head">
           {/* 轨道环天线:环上月珠(streak=彗尾拖金) */}
           <g className="cp-antenna">
-            <ellipse cx="42" cy="44" rx="13" ry="5.5" fill="none" stroke={OUT} strokeWidth="3.5" transform="rotate(-24 42 44)" />
-            <circle cx="49" cy="39" r="5" fill={streakLit ? GOLD : MOON} stroke={OUT} strokeWidth="3" />
+            <ellipse cx="42" cy="44" rx="13" ry="5.5" fill="none" stroke={RIM} strokeWidth="3.5" transform="rotate(-24 42 44)" />
+            <circle cx="49" cy="39" r="5" fill={streakLit ? GOLD : MOON} stroke={RIM} strokeWidth="3" />
             {streakLit && <path d="M56,34 L68,26 M57,41 L71,38 M52,30 L58,20" stroke={GOLD} strokeWidth="2.4" strokeLinecap="round" />}
           </g>
           {/* 带环小行星耳舱 */}
-          <circle cx="44" cy="72" r="8" fill={VIOLET} stroke={OUT} strokeWidth="4" />
+          <circle cx="44" cy="72" r="8" fill={VIOLET} stroke={RIM} strokeWidth="4" />
           <ellipse cx="44" cy="72" rx="13" ry="4.5" fill="none" stroke={GOLD} strokeWidth="2.4" transform="rotate(-18 44 72)" />
-          <circle cx="156" cy="72" r="8" fill={VIOLET} stroke={OUT} strokeWidth="4" />
+          <circle cx="156" cy="72" r="8" fill={VIOLET} stroke={RIM} strokeWidth="4" />
           <ellipse cx="156" cy="72" rx="13" ry="4.5" fill="none" stroke={GOLD} strokeWidth="2.4" transform="rotate(18 156 72)" />
 
           {/* 圆顶天文台头盔 + cel 暗面 + 缀星 */}
@@ -160,7 +164,7 @@ export function AstroArt({ uid, refs, expression, viseme, openScale, energyRatio
             <circle cx="118" cy="30" r="1" fill="#FFFFFF" opacity="0.6" />
             <path d="M94,28 l1.6,3.2 3.4,0.5 -2.5,2.4 0.6,3.4 -3.1,-1.7 -3.1,1.7 0.6,-3.4 -2.5,-2.4 3.4,-0.5 Z" fill="#FFFFFF" opacity="0.85" />
           </g>
-          <path d="M48,96 L48,62 Q48,26 100,26 Q152,26 152,62 L152,96 Z" fill="none" stroke={OUT} strokeWidth="5" />
+          <path d="M48,96 L48,62 Q48,26 100,26 Q152,26 152,62 L152,96 Z" fill="none" stroke={RIM} strokeWidth="5" />
           <BevelPlate id={`${uid}-helm`} x={48} y={26} w={104} h={70} t={4} light="rgba(196,181,255,0.3)" dark="rgba(10,6,32,0.45)" />
           {/* 银河 glare(斜带) */}
           <path d="M56,40 Q88,28 110,34 L102,44 Q72,40 56,46 Z" fill="#FFFFFF" opacity="0.8" />

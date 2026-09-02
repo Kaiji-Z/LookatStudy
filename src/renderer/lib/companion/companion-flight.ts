@@ -194,6 +194,9 @@ export function bankAngle(vx: number, vy: number): number {
  * 挑待机空地(纯):在高度中部带(y∈[0.35h,0.65h])按 5×3 候选网格选
  * **离所有球最远**的点(净空最大化),同分按 seed 轮转的候选顺序先到先得
  * (确定性)。球滚动/新增后调用方周期重选即可。
+ * v0.28 净空计入**栏缘**:离左右边的距离与离球距离同台比较——旧版 0.86w 列
+ * (离缘仅 0.14w≈42px)在空旷地图常胜出,身体半宽 ~38px 直接贴死栏分界线,
+ * 观感像"挤墙角"(实测踩过)。把缘当半径 0 的障碍后,空旷时自然选中中部。
  */
 export function pickPerchBase(
   w: number,
@@ -210,7 +213,7 @@ export function pickPerchBase(
     const i = (start + k) % 15;
     const cx = w * cols[i % 5]!;
     const cy = h * rows[Math.floor(i / 5)]!;
-    let clear = Infinity;
+    let clear = Math.min(cx, w - cx);
     for (const b of balls) {
       const d = Math.hypot(cx - b.x, cy - b.y) - b.r;
       if (d < clear) clear = d;

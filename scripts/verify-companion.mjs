@@ -600,6 +600,9 @@ console.log("✓ T13 v10 zone 状态机:最新动作优先/roam 游走态/记笔
     const empty = pickPerchBase(W, H, [], 0);
     assert.ok(empty.y >= H * 0.35 && empty.y <= H * 0.65, `T14: 待机点在中部带(实测 y=${empty.y.toFixed(0)})`);
     assert.ok(empty.x >= W * 0.1 && empty.x <= W * 0.9, "T14: 待机点横向安全区内");
+    // v0.28 净空计入栏缘:空旷地图不再选中贴边列(旧 0.86w≈258,身体半宽38 直接
+    // 压栏分界线,观感"挤墙角")——空旷时必选中中部列(离缘最远)
+    assert.ok(empty.x >= W * 0.32 && empty.x <= W * 0.68, `T14: 空旷时选中部不贴栏缘(实测 x=${empty.x.toFixed(0)})`);
     // 正中一颗大球 → 待机点必须避开它(净空 ≥ 球径)
     const ball = { x: W * 0.5, y: H * 0.5, r: 28 };
     const pick = pickPerchBase(W, H, [ball], 0);
@@ -862,8 +865,11 @@ console.log("✓ T14b v11.5 朗读锚点:整句全部行盒零遮挡(右/左/正
   const ehTiny = edgeHomeAnchor(240, 76, 64);
   assert.ok(ehTiny.y < 240 && ehTiny.y > 0, "T19: 小屏也不越界/不贴顶");
   // celebrationPerch(v12 庆祝召唤栖位):事件源右上/右缘钳制/禁入带钳制
+  // v0.28 落点外推:+36 基础上再加 0.4×size,身体左缘(中心-0.5×size)不再盖住
+  // origin 左侧的题干文字(origin=题卡右上角内侧的点,旧 36px < 身体半宽实测压行)
   const cp = celebrationPerch({ x: 400, y: 300 }, 96, 1200, 64);
-  assert.ok(Math.abs(cp.x - 436) < 1e-9 && Math.abs(cp.y - 256) < 1e-9, `T19: 庆祝栖位=源右上(+36/-44),实际 ${JSON.stringify(cp)}`);
+  assert.ok(Math.abs(cp.x - 474.4) < 1e-9 && Math.abs(cp.y - 256) < 1e-9, `T19: 庆祝栖位=源右上(+36+0.4size/-44),实际 ${JSON.stringify(cp)}`);
+  assert.ok(cp.x - 96 * 0.5 >= 400 + 36 - 96 * 0.1 - 1e-9, "T19: 身体左缘在源点右侧(不盖源点所在行)");
   const cpEdge = celebrationPerch({ x: 1180, y: 100 }, 96, 1200, 64);
   assert.ok(cpEdge.x <= 1200 - 96 * 0.7 + 1e-9, `T19: 视口右缘钳制(x=${cpEdge.x})`);
   const cpCeil = celebrationPerch({ x: 400, y: 100 }, 96, 1200, 64);
@@ -925,6 +931,12 @@ console.log("✓ T19 v10 连续移动+v12 召回制:限速滑翔/roam 锁左栏/
   assert.ok(creature.includes("getReadingRange") && creature.includes("wanderInPanel"), "T15: Range 跟句 + 右栏面板徘徊");
   assert.ok(read("lib/highlightText.ts").includes("highlights") && read("lib/highlightText.ts").includes("getReadingRange"), "T15: 朗读高亮=CSS Custom Highlight API(零 DOM 改动)");
   assert.ok(css.includes("::highlight(cp-reading)"), "T15: highlight CSS");
+  // v0.28 朗读避让障碍=**整条显示句**行盒(readingSentenceRange),不是已播前缀——
+  // 长句强断多块时只让开前缀会让身体压住同一句已高亮未读行(实测踩过)
+  assert.ok(
+    creature.includes("getReadingSentenceRange() ?? readRange") && read("lib/highlightText.ts").includes("displayGroupSpanAround") && read("lib/highlightText.ts").includes("getReadingSentenceRange"),
+    "T15: v0.28 避让吃整显示句 Range(highlightText 登记 + creature 消费)",
+  );
   // v0.18 整身投影:drop-shadow 跟随剪影(中/右栏),椭圆地影已删,左栏天空无影
   assert.ok(
     css.includes('[data-zone="chat"] .cp-mascot') && css.includes("drop-shadow(4px 6px 5px") && !css.includes(".cp-shadow"),

@@ -61,7 +61,7 @@ import {
   zoneDrift,
   wanderInPanel,
 } from "../../lib/companion/companion-core.js";
-import { getReadingRange, getLastNoteMark } from "../../lib/highlightText.js";
+import { getReadingRange, getReadingSentenceRange, getLastNoteMark } from "../../lib/highlightText.js";
 import { onCelebration } from "../../lib/celebration.js";
 import { usePrefersReducedMotion } from "../../lib/usePrefersReducedMotion.js";
 
@@ -501,7 +501,6 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
       // ── karaoke 跟句(朗读时的语义位置,最高优先) ──
       const readRange = getReadingRange();
       const readMarkEl = readRange ? (readRange.startContainer.parentElement ?? null) : null;
-
       let target: { x: number; y: number } | null = null;
       let pane: CompanionPane = roamRef.current.pane;
       // v0.19 考试静栖锚:答题阶段才有 exam-timer(不在场时走常规链,绝不隐匿)
@@ -536,7 +535,12 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         // 非零矩形)——生物栖在最后一个字的右下方,指住它;窄屏也全程钳在面板内
         const host = readMarkEl.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]');
         const pr = host?.getBoundingClientRect();
-        const rects = readRange.getClientRects();
+        // v0.28 避让范围=**整条显示句**的行盒(readingSentenceRange):v11.4 起
+        // mark 只覆盖"已播前缀",长句被强断成多块时若只让开前缀,身体会压住同一句
+        // 的已高亮未读行(实测踩过:occluding=false 却整个盖住两句正文)。句组
+        // Range 未登记(旧锚残留清理窗口)时回退前缀 Range,行为同旧版。
+        const avoidRange = getReadingSentenceRange() ?? readRange;
+        const rects = avoidRange.getClientRects();
         // v11.5 障碍物=高亮句**全部行盒**(多行句每行都算,只取首末会被上半身压住中间行)
         const sentLines: Array<{ left: number; right: number; top: number; bottom: number }> = [];
         for (let i = 0; i < rects.length; i++) {
@@ -547,7 +551,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         }
         const tail = sentLines.length ? sentLines[sentLines.length - 1]! : null;
         const head = sentLines.length ? sentLines[0]! : null;
-        const fb = readRange.getBoundingClientRect();
+        const fb = avoidRange.getBoundingClientRect();
         const inChat = !!host?.closest('[data-testid="chat-stream"]');
         const zoneSize = inChat ? SIZE.chat : SIZE.notebook;
         pane = inChat ? "chat" : "notebook";
@@ -630,7 +634,29 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
           const inChat = !!host.closest('[data-testid="chat-stream"]');
           pane = inChat ? "chat" : "notebook";
           {
-            const pos = readingAnchorFlex(mr, pr, inChat ? SIZE.chat : SIZE.notebook);
+            // v0.28 障碍=画线所在**段落**的全部行盒(Range.getClientRects 逐行):
+            // 旧版只让开画线本身,身体会盖住同行/邻行正文(实测踩过)。段落盒
+            // (Element.getClientRects 对块级只回一个巨盒)不行,要用 Range 逐行。
+            const block = noteMark.closest<HTMLElement>("p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, td, th");
+            const paraLines: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+            if (block) {
+              const rg = document.createRange();
+              rg.selectNodeContents(block);
+              const rects = rg.getClientRects();
+              for (let i = 0; i < rects.length; i++) {
+                const r = rects[i]!;
+                if (r.width > 1 && r.height > 1) {
+                  paraLines.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+                }
+              }
+            }
+            const pos = readingAnchorFlex(
+              mr,
+              pr,
+              inChat ? SIZE.chat : SIZE.notebook,
+              { first: mr, last: mr },
+              paraLines.length ? paraLines : undefined,
+            );
             flightRef.current = null;
             if (reduced) {
               target = pos;
@@ -942,7 +968,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
               : reading?.dir === "down"
                 ? "pointd"
                 : snap.state.pose;
-  // 跟句时体型随 mark 所在栏(中栏对话 76/讲解栏 88),否则随 zone
+  // 跟句时体型随 mark 所在栏(中栏对话 96/讲解栏 120,同 SIZE 表),否则随 zone
   const mascotSize = reading ? SIZE[reading.pane] : SIZE[dispZone];
   return (
     <div

@@ -202,6 +202,93 @@ export function endsWithSentenceEnd(chunk: string): boolean {
  * 不是无限吞 —— 超上限就保持独立组,karaoke 高亮粒度永远可控。 */
 export const DISPLAY_GROUP_MAX = 160;
 
+/**
+ * v0.28 显示句组跨度(纯):把"TTS 块在容器文本中的匹配段 [start,end)"扩展到
+ * **整条显示句**的字符跨度——向前收拢到最近句终点之后,向后扩到最近句终点
+ * (含闭合符/emoji 修饰尾)。v11.4 起朗读 mark 只覆盖"已播前缀",而伴学避让
+ * ("生物不压正在读的句")需要整句的行盒;本函数与 splitSentences 共用同一套
+ * 句界判定(HARD/ASCII 句点/换行/emoji),零第二份标点表。maxSpan 是单侧扫描
+ * 上限,防病态无标点长文把跨度扩爆(扫不到界就停在窗口边,保守取小)。
+ */
+export function displayGroupSpanAround(
+  text: string,
+  start: number,
+  end: number,
+  maxSpan = 400,
+): { start: number; end: number } {
+  const n = text.length;
+  // text[i] 开头是否是一处句终点;是则返回该终点的 exclusive 结束下标(闭合符/
+  // emoji 修饰已吞进终点),否则 -1。判定分支与 splitSentences 逐条同构。
+  const hardEndAt = (i: number): number => {
+    if (i < 0 || i >= n) return -1;
+    const ch = text[i]!;
+    if (ch === "\n") return i + 1;
+    if (HARD.has(ch)) {
+      let j = i + 1;
+      while (j < n && (HARD.has(text[j]!) || CLOSERS.has(text[j]!))) j++;
+      return j;
+    }
+    if (ch === ".") {
+      const prev = i > 0 ? text[i - 1]! : "";
+      const next = i + 1 < n ? text[i + 1]! : "";
+      if ((next === "" || /\s/.test(next)) && !/\d/.test(prev)) {
+        let j = i + 1;
+        while (j < n && (CLOSERS.has(text[j]!) || HARD.has(text[j]!))) j++;
+        return j;
+      }
+      return -1;
+    }
+    const cp = text.codePointAt(i)!;
+    if (isEmojiCp(cp)) {
+      let j = i + (cp > 0xffff ? 2 : 1);
+      while (j < n) {
+        const cj = text.codePointAt(j)!;
+        const ul = cj > 0xffff ? 2 : 1;
+        if (cj === 0xfe0f || cj === 0x200d || (cj >= 0x1f3fb && cj <= 0x1f3ff) || isEmojiCp(cj)) {
+          j += ul;
+          continue;
+        }
+        break;
+      }
+      return j;
+    }
+    return -1;
+  };
+
+  // 向前:找 start 之前最近的句终点,span 起点落在它的 exclusive 终点处;
+  // 终点被块起点截断(e>start,理论上不该发生)时不动起点。扫到文本头都没有
+  // 句界字符(如开头就是无标点短句)时,文本头本身就是界 → 起点=0;仅当因
+  // maxSpan 提前截断才保守保持 start(界在窗口外,不外扩)。
+  let s = start;
+  {
+    let found = false;
+    for (let i = Math.min(start, n) - 1; i >= 0 && start - i <= maxSpan; i--) {
+      const e = hardEndAt(i);
+      if (e >= 0) {
+        found = true;
+        if (e <= start) s = e;
+        break;
+      }
+    }
+    if (!found && start <= maxSpan) s = 0;
+  }
+
+  // 向后:块段已以句终点结尾(终点块,含闭合符/\n/emoji 尾)则终点只吞紧随的
+  // 右闭合符(与 splitSentences"右引号并吞进句尾"一致)即止;否则找 end 起最近的
+  // 句终点(含其尾巴),span 终点=其 exclusive 结束位;扫到上限/文本尾都没终点
+  // (超长无标点段)则扩到文本尾。
+  if (endsWithSentenceEnd(text.slice(0, Math.min(end, n)))) {
+    let e = Math.min(end, n);
+    while (e < n && CLOSERS.has(text[e]!)) e++;
+    return { start: s, end: e };
+  }
+  for (let i = end; i < n && i - end <= maxSpan; i++) {
+    const e = hardEndAt(i);
+    if (e >= 0) return { start: s, end: e };
+  }
+  return { start: s, end: n };
+}
+
 /** TTS 分块序列 → 显示句组(每组合成一个真句子):[start,end] 闭区间块下标。 */
 export function groupSentenceChunks(sentences: string[]): Array<{ start: number; end: number }> {
   const groups: Array<{ start: number; end: number }> = [];

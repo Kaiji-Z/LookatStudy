@@ -975,7 +975,9 @@ export type SettingKey =
   // v0.11 桌宠模式:伴学在应用外常驻(透明置顶窗;默认关)
   | "companion_pet_mode"
   // Groq LLM preset 早已使用(设置页经 as 断言写入);入 union 让听写档零断言读取
-  | "groq_api_key";
+  | "groq_api_key"
+  // issue #14 三栏拖拽调宽:持久化像素宽(空/无效=未定制=响应式默认)
+  | "pane_width_left" | "pane_width_mid";
 
 /* ---------- IPC 事件（main → renderer，单向推送） ---------- */
 

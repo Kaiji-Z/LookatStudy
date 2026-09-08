@@ -31,6 +31,23 @@ import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
 import { useLang, useLangValue } from "./lib/i18n.js";
 import { useWindowTier } from "./lib/useWindowTier.js";
 import { t2SideFromT3, swipeTarget, type T2Side, type T3Pane } from "./lib/paneTiers.js";
+import {
+  DEFAULT_MID_CSS,
+  MID_MAX,
+  MID_MIN,
+  RAIL_DEFAULT,
+  RAIL_MAX,
+  RAIL_MIN,
+  RIGHT_MIN,
+  clampMidCandidate,
+  clampRailCandidate,
+  defaultMidWidth,
+  parseStoredWidth,
+  resizeHandlesFor,
+  solvePaneWidths,
+  useViewportWidth,
+} from "./lib/pane-resize.js";
+import { PaneResizeHandle } from "./components/PaneResizeHandle.js";
 import { useFocusTrap } from "./lib/useFocusTrap.js";
 import { CelebrationLayer } from "./components/CelebrationLayer.js";
 import { celebrate } from "./lib/celebration.js";
@@ -126,6 +143,47 @@ export default function App() {
   const showLeft = tier === 3 ? t3Pane === "rail" : tier === 2 ? t2Side === "rail" : leftPaneVisible;
   const showRight = tier === 3 ? t3Pane === "notebook" : tier === 2 ? t2Side === "notebook" : rightPaneVisible;
   const showChat = tier !== 3 || t3Pane === "chat";
+
+  /* ── 三栏拖拽调宽(issue #14)─────────────────────────────────────
+     只持久化 左栏宽/中栏宽(null=未定制=响应式默认);右栏恒 flex-1 吃剩余。
+     拖拽中宽度由手柄 imperative 直写目标元素(重树不逐帧 setState),松手提交。
+     solvePaneWidths:持久化值按当前视口重新压预算(窗口后来变小不溢出);
+     视口跟踪仅定制宽度存在时启用(档内 resize 不全 app 重渲染,与 useWindowTier 同哲学)。 */
+  const [railWidthStored, setRailWidthStored] = useState<number | null>(null);
+  const [midWidthStored, setMidWidthStored] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const [l, m] = await Promise.all([
+        api.getSetting("pane_width_left"),
+        api.getSetting("pane_width_mid"),
+      ]);
+      if (!alive) return;
+      setRailWidthStored(parseStoredWidth(l, RAIL_MIN, RAIL_MAX));
+      setMidWidthStored(parseStoredWidth(m, MID_MIN, MID_MAX));
+    })();
+    return () => { alive = false; };
+  }, []);
+  const paneSolveMode = tier === 3 ? "t3" : tier === 2 ? (showLeft ? "t2-rail" : "t2-notebook") : "t1";
+  const paneVwTracked = useViewportWidth(railWidthStored != null || midWidthStored != null);
+  const paneVw = paneVwTracked || window.innerWidth; // 0=未启用跟踪,渲染期直读
+  const solvedPaneW = solvePaneWidths(railWidthStored, midWidthStored, paneVw, paneSolveMode);
+  const paneHandles = resizeHandlesFor(tier, showLeft, showRight);
+  const midPaneRef = useRef<HTMLDivElement | null>(null); // 中|右 手柄拖拽目标(拖拽中 imperative 写宽)
+  /** 拖拽实时钳制的 reserved 预算(与 solvePaneWidths 同口径,按在场栏算):
+   *  左柄 = 同屏其余栏最小宽(T1: 右440+中栏有效宽;T2-rail: 中栏最小480);
+   *  中柄 = 右440+左栏有效宽(T2-notebook 左栏不在场不计)。 */
+  const railDragReserved = paneSolveMode === "t2-rail" ? MID_MIN : RIGHT_MIN + (solvedPaneW.mid ?? defaultMidWidth(paneVw));
+  const midDragReserved = RIGHT_MIN + (paneSolveMode === "t2-notebook" ? 0 : (solvedPaneW.rail ?? RAIL_DEFAULT));
+  const commitPaneWidth = (which: "rail" | "mid", px: number | null) => {
+    if (which === "rail") {
+      setRailWidthStored(px);
+      void api.setSetting("pane_width_left", px != null ? String(px) : "");
+    } else {
+      setMidWidthStored(px);
+      void api.setSetting("pane_width_mid", px != null ? String(px) : "");
+    }
+  };
 
   // 侧栏切换(T1=手动显隐;T2=互斥侧栏:显示左则隐右;T3=切单栏)
   const toggleLeftPane = () => {
@@ -837,6 +895,7 @@ export default function App() {
       {showLeft && (
         <MapRail
           fullWidth={tier === 3}
+          width={tier === 3 ? null : solvedPaneW.rail}
           view={view}
           onViewChange={setView}
           courseTitle={currentCourse?.title ?? null}
@@ -873,6 +932,18 @@ export default function App() {
         />
       )}
 
+      {/* 左|中 边界拖拽手柄(issue #14):T3 无;拖拽目标=MapRail nav(testid 稳定锚) */}
+      {paneHandles.rail && showChat && (
+        <PaneResizeHandle
+          side="rail"
+          ariaLabel={t("pane.resizeRailAria")}
+          tooltip={t("pane.resizeTooltip")}
+          target={() => document.querySelector<HTMLElement>('[data-testid="map-rail"]')}
+          clampLive={(px) => clampRailCandidate(px, window.innerWidth, railDragReserved)}
+          onCommit={(px) => commitPaneWidth("rail", px)}
+        />
+      )}
+
       {/* 右半区:顶栏 + 中右栏(顶栏只在中右栏上方,左栏全高独立) */}
         {/* 视图层:AI 对话 + 笔记本 */}
         <>
@@ -882,15 +953,17 @@ export default function App() {
                   1366 屏 → ~470px(下限 480 兜底,表格/代码不挤崩)
                   1920 屏 → ~680px(阅读黄金区,AI 长讲解舒服)
                   2560+  → 720px 上限(不浪费,对话不失紧凑)
-                右栏隐藏时 flex:1 撑满。 */}
+                右栏隐藏时 flex:1 撑满。
+                issue #14:用户拖宽持久化(solvedPaneW.mid,视口感知钳制);未定制维持 clamp 默认。 */}
             {showChat && (
             <div
+              ref={midPaneRef}
               className="relative flex flex-col h-full bg-surface-1 shrink-0 min-w-0 motion-safe:transition-[width] motion-safe:duration-200"
               style={
                 tier === 3
                   ? { flex: 1 } // 单栏档:对话占满
                   : showRight
-                    ? { width: "clamp(480px, 36vw, 800px)" } // 右侧有栏:阅读黄金宽(36vw/上限 800)
+                    ? { width: solvedPaneW.mid != null ? `${solvedPaneW.mid}px` : DEFAULT_MID_CSS } // 右侧有栏:定制宽 / 阅读黄金宽(36vw/上限 800)
                     : { flex: 1 } // 右侧无栏(T1 手动收起 / T2 显示了左栏):撑满
               }
               data-testid="chat-panel"
@@ -1024,6 +1097,18 @@ export default function App() {
               )}
               {/* v3 单生物:伙伴不再各栏分身,由根层 CompanionCreature 跨栏连续行动 */}
             </div>
+            )}
+
+            {/* 中|右 边界拖拽手柄(issue #14):拖拽目标=中栏对话面板 */}
+            {paneHandles.mid && showChat && (
+              <PaneResizeHandle
+                side="mid"
+                ariaLabel={t("pane.resizeChatAria")}
+                tooltip={t("pane.resizeTooltip")}
+                target={() => midPaneRef.current}
+                clampLive={(px) => clampMidCandidate(px, window.innerWidth, midDragReserved)}
+                onCommit={(px) => commitPaneWidth("mid", px)}
+              />
             )}
 
             {/* 右栏:NotebookPanel 康奈尔笔记本(讲解/笔记)。布局切换可隐藏。

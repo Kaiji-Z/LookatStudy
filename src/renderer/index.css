@@ -512,6 +512,54 @@ html.light .exam-bubble-locked {
 }
 
 /* ============================================================
+ * issue #14 三栏拖拽调宽手柄(PaneResizeHandle)——
+ * 栏间 6px 竖条,视觉握线默认隐形、hover/拖拽亮 accent;
+ * 命中区触屏 44px(触屏密度红线),细指针收窄 12px(不吃栏内容点击)。
+ * pane 分隔语汇 = surface 色阶不加描边:握线是 hover 才现身的交互
+ * affordance,不是常驻分隔线,不违反 v0.6「pane 间无 border」。
+ * ============================================================ */
+.pane-resize-handle {
+  position: relative;
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 5;
+}
+.pane-resize-handle::before {
+  /* 命中区:中线左右各半 */
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 44px;
+  transform: translateX(-50%);
+}
+@media (pointer: fine) {
+  .pane-resize-handle::before { width: 12px; }
+}
+.pane-resize-handle::after {
+  /* 视觉握线 */
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: transparent;
+  transition: background 120ms;
+}
+.pane-resize-handle:hover::after,
+.pane-resize-handle[data-dragging="true"]::after {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+/* 拖拽中:全局列宽光标 + 禁文本选择(宽度直写不经过 React) */
+body.pane-dragging { cursor: col-resize; user-select: none; }
+
+/* ============================================================
  * v0.11 触屏密度:手机 web(Termux/Custom Tab)上对话工具栏的
  * caption 级 pill 实高 ~28px,远低于 44px 手指命中下限。
  * v0.18 重做:粗指针上工具栏改**图标按钮**——文字标签/箭头隐藏

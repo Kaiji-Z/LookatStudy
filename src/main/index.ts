@@ -2546,6 +2546,150 @@ async function runUiTest(screenshot = false): Promise<void> {
     results.push({ name: "responsive tiers", ok: false, detail: String(e) });
   }
 
+  // pane-resize (issue #14 三栏拖拽调宽): 合成 PointerEvent 序列真 GUI 拖拽 →
+  // 区间/视口钳制 → 双击重置回默认 → settings 持久化(IPC 落库)→ loadFile
+  // 重载后启动读回 → T3 无手柄。拖拽事件必须异步分段派发:pointerdown 后要
+  // 等 React commit,window 级 move/up 监听才挂上(同步连发=监听未挂全丢)。
+  {
+    const resizeOk: Record<string, unknown> = {};
+    try {
+      await win.setBounds({ width: 1920, height: 800 });
+      await new Promise((r) => setTimeout(r, 600));
+      const paneWidth = (sel: string): Promise<number> =>
+        win.webContents.executeJavaScript(`
+          (function() {
+            var el = document.querySelector('${sel}');
+            return el ? Math.round(el.getBoundingClientRect().width) : -1;
+          })()
+        `).catch(() => -1);
+      const docOverflow = (): Promise<number> =>
+        win.webContents.executeJavaScript(
+          `Math.round(document.documentElement.scrollWidth - window.innerWidth)`,
+        ).catch(() => 999);
+      const dragHandle = (side: "rail" | "mid", dx: number): Promise<{ ok: boolean; reason?: string }> =>
+        win.webContents.executeJavaScript(`
+          (async function() {
+            var dx = ${dx};
+            var h = document.querySelector('[data-testid="pane-handle-${side}"]');
+            if (!h) return { ok: false, reason: "handle not found" };
+            var r = h.getBoundingClientRect();
+            var x0 = r.left + r.width / 2;
+            var fire = function(type, x) {
+              h.dispatchEvent(new PointerEvent(type, {
+                bubbles: true, cancelable: true, composed: true,
+                clientX: x, clientY: r.top + r.height / 2,
+                pointerId: 7, pointerType: "mouse", button: 0, buttons: 1, isPrimary: true,
+              }));
+            };
+            fire("pointerdown", x0);
+            await new Promise(function(r2){ setTimeout(r2, 130); }); // React commit → window 监听挂上
+            fire("pointermove", x0 + dx / 2);
+            await new Promise(function(r2){ setTimeout(r2, 130); }); // 跨 100ms 应用节流窗
+            fire("pointermove", x0 + dx);
+            await new Promise(function(r2){ setTimeout(r2, 60); });
+            fire("pointerup", x0 + dx);
+            await new Promise(function(r2){ setTimeout(r2, 300); }); // 提交 + 持久化 IPC
+            return { ok: true };
+          })()
+        `).catch((e: unknown) => ({ ok: false, error: String(e) }));
+      const dblClickHandle = (side: "rail" | "mid"): Promise<boolean> =>
+        win.webContents.executeJavaScript(`
+          (async function() {
+            var h = document.querySelector('[data-testid="pane-handle-${side}"]');
+            if (!h) return false;
+            h.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+            await new Promise(function(r2){ setTimeout(r2, 350); }); // 重置提交 + transition 恢复
+            return true;
+          })()
+        `).catch(() => false);
+
+      // 0) T1 双柄在场
+      resizeOk.handles = await win.webContents.executeJavaScript(`
+        !!document.querySelector('[data-testid="pane-handle-rail"]') &&
+        !!document.querySelector('[data-testid="pane-handle-mid"]')
+      `).catch(() => false);
+
+      // 1) 左柄 +300:300→600 → 区间上限 480(预算 1920-440-691=789 放行)
+      await dragHandle("rail", 300);
+      resizeOk.railClampedHigh = await paneWidth('[data-testid="map-rail"]');
+      // 2) 左柄 -1000:480→-520 → 区间下限 240
+      await dragHandle("rail", -1000);
+      resizeOk.railClampedLow = await paneWidth('[data-testid="map-rail"]');
+      // 3) 双击左柄 → 回默认 300
+      await dblClickHandle("rail");
+      resizeOk.railReset = await paneWidth('[data-testid="map-rail"]');
+      // 4) 中柄 +700:默认 691(36vw@1920)→1391 → 区间上限 1100(预算 1180 放行)
+      await dragHandle("mid", 700);
+      resizeOk.midClampedHigh = await paneWidth('[data-testid="chat-panel"]');
+      // 5) 中柄 -1000 → 区间下限 480
+      await dragHandle("mid", -1000);
+      resizeOk.midClampedLow = await paneWidth('[data-testid="chat-panel"]');
+      // 6) 双击中柄 → 回响应式默认 clamp(36vw)。期望值取 computed style 解析值:
+      //    经典滚动条下 vw 按 clientWidth 解析(≈innerWidth-滚动条),不能按 innerWidth 硬算
+      await dblClickHandle("mid");
+      resizeOk.midReset = await paneWidth('[data-testid="chat-panel"]');
+      resizeOk.midResetCss = await win.webContents.executeJavaScript(`
+        (function() {
+          var el = document.querySelector('[data-testid="chat-panel"]');
+          var w = el ? getComputedStyle(el).width : "";
+          return w && w.endsWith("px") ? Math.round(parseFloat(w)) : -1;
+        })()
+      `).catch(() => -1);
+      resizeOk.overAfterClamps = await docOverflow();
+
+      // 7) 持久化:左柄拖到 420 → settings 落库 "420" → loadFile 重载 → 启动读回 420
+      await dragHandle("rail", 120);
+      resizeOk.persistWidth = await paneWidth('[data-testid="map-rail"]');
+      resizeOk.settingValue = await win.webContents.executeJavaScript(
+        `window.api.getSetting("pane_width_left")`,
+      ).catch(() => null);
+      await win.webContents
+        .loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"))
+        .catch(() => {});
+      resizeOk.renderAfterReload = await waitRender();
+      resizeOk.railAfterReload = await paneWidth('[data-testid="map-rail"]');
+      // 重载后空选启动:选回课程,不污染后续考试/删除测试的课程上下文
+      resizeOk.courseResel = await selectFirstCourse();
+      // 清场:双击回默认 + settings 清空(下一轮 ui-test 零残留)
+      await dblClickHandle("rail");
+      resizeOk.railClean = await paneWidth('[data-testid="map-rail"]');
+      resizeOk.settingClean = await win.webContents.executeJavaScript(
+        `window.api.getSetting("pane_width_left")`,
+      ).catch(() => null);
+
+      // 8) T3(800px)无手柄;然后恢复 T1@1300(后续测试的工作宽度)
+      await win.setBounds({ width: 800, height: 800 });
+      await new Promise((r) => setTimeout(r, 500));
+      resizeOk.t3NoHandles = await win.webContents.executeJavaScript(`
+        !document.querySelector('[data-testid="pane-handle-rail"]') &&
+        !document.querySelector('[data-testid="pane-handle-mid"]')
+      `).catch(() => false);
+      await win.setBounds({ width: 1300, height: 800 });
+      await new Promise((r) => setTimeout(r, 500));
+    } catch (e) {
+      resizeOk.error = String(e);
+    }
+    const near = (v: unknown, target: number, tol = 4) =>
+      typeof v === "number" && Math.abs(v - target) <= tol;
+    results.push({
+      name: "pane-resize: drag clamps [240,480]/[480,1100], dblclick resets, widths persist across reload, T3 hides handles",
+      ok:
+        resizeOk.handles === true
+        && near(resizeOk.railClampedHigh, 480) && near(resizeOk.railClampedLow, 240)
+        && near(resizeOk.railReset, 300)
+        && near(resizeOk.midClampedHigh, 1100) && near(resizeOk.midClampedLow, 480)
+        && near(resizeOk.midReset, resizeOk.midResetCss as number, 2)
+        && typeof resizeOk.midReset === "number" && (resizeOk.midReset as number) >= 480 && (resizeOk.midReset as number) <= 800
+        && typeof resizeOk.overAfterClamps === "number" && (resizeOk.overAfterClamps as number) <= 1
+        && near(resizeOk.persistWidth, 420) && resizeOk.settingValue === "420"
+        && resizeOk.renderAfterReload === true && near(resizeOk.railAfterReload, 420)
+        && resizeOk.courseResel === true
+        && near(resizeOk.railClean, 300) && resizeOk.settingClean === ""
+        && resizeOk.t3NoHandles === true,
+      detail: resizeOk,
+    });
+  }
+
   // T-exam (考试答题正确性): 答题 UI 的选项显示序必须与判分端的 perm 映射配对
   // (v0.12 真实事故:渲染按自然序、判分按显示位穿置换 → 点对的选项被判成另一个)。
   // 造数:解锁第一个考试球(章节课时全部 mastery≥0.5)+ 注入 3 道已知答案的题

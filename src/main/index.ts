@@ -3395,6 +3395,190 @@ async function runUiTest(screenshot = false): Promise<void> {
         detail: m2T3,
       });
 
+      // ④d 考试陪考位复跑(v0.19 同探针):dsh 课程上重建考试流(DB 直插考试节点+题目
+      // +解锁,独立 id 不与种子考试冲突)→ 进答题 → 纸偶+盘须同样钉在计时条带旁。
+      let m2Perch: { near?: boolean; botTop?: number; timerBottom?: number; botLeft?: number; timerRight?: number; reason?: string; error?: string } = {};
+      try {
+        const db = getDb();
+        const m2Course = db.select().from(courses).all().find((c) => c.id.startsWith("dsh-"));
+        if (!m2Course) throw new Error("no dsh course");
+        const m2Section = db.select().from(contentNodes).all().find((n) => n.courseId === m2Course.id && n.type === "section");
+        if (!m2Section) throw new Error("no section in dsh course");
+        const examId = "uitest-m2-exam";
+        if (!db.select().from(contentNodes).where(eq(contentNodes.id, examId)).get()) {
+          db.insert(contentNodes).values({
+            id: examId,
+            courseId: m2Course.id,
+            parentId: m2Section.id,
+            type: "exam",
+            title: "M2 陪考位复跑考试",
+            sourcePath: null,
+            orderIdx: 99,
+            world: m2Section.world,
+            summary: null,
+            content: "",
+          }).run();
+        }
+        const M2_QS: Array<[string, string, string[]]> = [
+          ["uitest-m2-q1", "M2-选择题一", ["本地 SQLite 数据库", "云端数据库", "内存变量", "随手记文件"]],
+          ["uitest-m2-q2", "M2-选择题二", ["SM-2", "番茄钟", "手抄日历", "随机复习"]],
+          ["uitest-m2-q3", "M2-选择题三", ["BKT 掌握度", "冥想", "咖啡因", "熬夜"]],
+        ];
+        for (const [qid, prompt, options] of M2_QS) {
+          if (!db.select().from(exercisesTable).where(eq(exercisesTable.id, qid)).get()) {
+            db.insert(exercisesTable).values({
+              id: qid,
+              nodeId: examId,
+              type: "mcq",
+              prompt,
+              answer: "0",
+              optionsJson: JSON.stringify(options),
+              aiGenerated: true,
+              kcTitle: "M2 陪考",
+            }).run();
+          }
+        }
+        for (const l of db.select().from(contentNodes).all().filter((n) => n.parentId === m2Section.id && n.type === "lesson")) {
+          const has = db.select().from(progressTable).where(eq(progressTable.nodeId, l.id)).get();
+          if (!has) db.insert(progressTable).values({ nodeId: l.id, status: "mastered", mastery: 0.95 }).run();
+          else if ((has.mastery ?? 0) < 0.5) db.update(progressTable).set({ mastery: 0.95 }).where(eq(progressTable.nodeId, l.id)).run();
+        }
+        markDirty();
+        // DB 直写不发 state:changed → reload 让地图重拉(与既有考试块同款)
+        try {
+          await win.webContents.reload();
+        } catch {
+          /* headless 时序 */
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+        m2Perch = await win.webContents
+          .executeJavaScript(
+            `
+        (async function() {
+          try {
+            var q = function(s) { return document.querySelector(s); };
+            var sleep = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+            var waitFor = async function(sel, timeout) {
+              for (var t = 0; t < timeout; t += 250) {
+                var el = q(sel);
+                if (el) return el;
+                await sleep(250);
+              }
+              return null;
+            };
+            var row = await waitFor('[data-testid="course-row"]', 20000);
+            if (!row) return { reason: "no course row after reload" };
+            var rowBtn = row.querySelector("button");
+            if (!rowBtn) return { reason: "course row has no select button" };
+            rowBtn.click();
+            var ball = null;
+            for (var t = 0; t < 20000; t += 300) {
+              ball = q('button[data-testid^="exam-node-"]:enabled');
+              if (ball) break;
+              await sleep(300);
+            }
+            if (!ball) return { reason: "exam ball not unlocked/found" };
+            ball.click();
+            var entered = null;
+            for (var t2 = 0; t2 < 15000; t2 += 300) {
+              if (q('[data-testid="exam-start-btn"]')) { entered = "ready"; break; }
+              if (q('[data-testid="exam-result"]')) { entered = "result"; break; }
+              await sleep(300);
+            }
+            if (!entered) return { reason: "exam view did not mount" };
+            if (entered === "result") {
+              var retry = q('[data-testid="exam-retry-btn"]');
+              if (!retry) return { reason: "result page without retry btn" };
+              retry.click();
+            } else {
+              q('[data-testid="exam-start-btn"]').click();
+            }
+            if (!(await waitFor('[data-testid="exam-answering"]', 10000))) return { reason: "answering not shown" };
+            // v0.19 考试静栖探针(逐字同款):首题时轮询伴学是否钉在计时条带旁
+            var botPerch = null;
+            for (var p0 = 0; p0 < 20 && !botPerch; p0++) {
+              await sleep(500);
+              var tmE = q('[data-testid="exam-timer"]');
+              var boE = q(".cp-creature");
+              if (tmE && boE) {
+                var tmR = tmE.getBoundingClientRect();
+                var bR = boE.getBoundingClientRect();
+                var nearNow = Math.abs(bR.top - tmR.bottom) < 160 && Math.abs(bR.left - tmR.right) < 300;
+                if (nearNow || p0 === 19) {
+                  botPerch = {
+                    near: nearNow,
+                    botTop: Math.round(bR.top), timerBottom: Math.round(tmR.bottom),
+                    botLeft: Math.round(bR.left), timerRight: Math.round(tmR.right),
+                  };
+                }
+              }
+            }
+            // 现场清理:答题会话 active 时提前退出(走离开确认终止)
+            try {
+              var anyBall = q('button[data-testid^="map-node-"]:enabled');
+              if (anyBall && q('[data-testid="exam-answering"]')) {
+                anyBall.click();
+                await sleep(500);
+                var leaveConfirm = q('[data-testid="exam-leave-confirm"]');
+                if (leaveConfirm) { leaveConfirm.click(); await sleep(700); }
+              }
+            } catch (e3) { /* 尽力而为 */ }
+            return botPerch ?? { reason: "perch probe never sampled" };
+          } catch (e) { return { error: String(e) }; }
+        })()
+      `,
+          )
+          .catch(() => null);
+      } catch (e) {
+        m2Perch = { error: String(e) };
+      }
+      results.push({
+        name: "companion-pack M2: [custom] exam quiet perch — puppet+disc parked beside timer (same probe, rerun)",
+        ok: m2Perch?.near === true,
+        detail: m2Perch,
+      });
+
+      // ④e 拖拽复跑(v4 同契约):合成 pointer 抓取 → cp-grabbed 在场;松手后解除。
+      // 纸偶 <image> 命中=矩形(§16.5 备案),探针取 mascot 中心点恰好覆盖该语义。
+      const m2Drag = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          var m = document.querySelector('[data-testid="companion-mascot"]');
+          if (!m) return { ok: false, err: "no-mascot" };
+          var r = m.getBoundingClientRect();
+          var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+          m.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, button: 0, buttons: 1, clientX: cx, clientY: cy, isPrimary: true }));
+          var grabbed = false;
+          for (var i = 0; i < 15; i++) {
+            await new Promise(function(r2) { setTimeout(r2, 100); });
+            var c = document.querySelector('[data-testid="companion-creature"]');
+            grabbed = c ? String(c.getAttribute("class")).indexOf("cp-grabbed") >= 0 : false;
+            if (grabbed) break;
+          }
+          for (var s = 1; s <= 5; s++) {
+            window.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, buttons: 1, clientX: cx + s * 30, clientY: cy - s * 10 }));
+            await new Promise(function(r2) { setTimeout(r2, 60); });
+          }
+          window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, button: 0, clientX: cx + 150, clientY: cy - 50 }));
+          var released = false;
+          for (var j = 0; j < 15; j++) {
+            await new Promise(function(r2) { setTimeout(r2, 100); });
+            var c2 = document.querySelector('[data-testid="companion-creature"]');
+            released = c2 ? String(c2.getAttribute("class")).indexOf("cp-grabbed") < 0 : false;
+            if (released) break;
+          }
+          return { ok: grabbed === true && released === true, grabbed: grabbed, released: released };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: [custom] drag grab/release via synthetic pointer (same contract)",
+        ok: m2Drag?.ok === true,
+        detail: m2Drag,
+      });
+
       // ⑤ 持久化:重载后包与形态都还在(settings 行 + 盘上文件)
       try {
         await win.webContents.reload();

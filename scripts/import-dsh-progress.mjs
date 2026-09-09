@@ -29,6 +29,17 @@ try {
 }
 
 const args = process.argv.slice(2);
+if (args.includes("--help") || args.includes("-h")) {
+  console.log(`用法:
+  node import-dsh-progress.mjs                      # 自动探测两边路径
+  node import-dsh-progress.mjs --db <lookatstudy.db 路径> --state <state.json 路径>
+
+说明:
+  - 迁移前自动备份 LookatStudy 数据库;LookatStudy 必须处于关闭状态
+  - 幂等:重复运行只刷新进度,不建副本;XP 增量合并不重复累加
+  - 需要 Node ≥ 22(node:sqlite;22.x 会自动带 --experimental-sqlite 重跑)`);
+  process.exit(0);
+}
 const argOf = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;

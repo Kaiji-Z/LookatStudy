@@ -101,7 +101,7 @@ npx tsx scripts/live-test/live-test-subtitle-corpus.mjs # 字幕成文核查(fre
 npx tsx scripts/live-test/live-test-pptx-corpus.mjs    # PPTX 解析核查(PyPI python-pptx 真 PowerPoint fixtures 12 件含病理;表格找回/备注/图片/诚实空)
 node scripts/build-termux-voice.mjs  # Termux 语音引擎包(NDK 交叉编译,~12MB;CI termux-voice.yml 同源)
 
-npm run verify:core       # 110 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑)
+npm run verify:core       # 111 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -132,7 +132,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z` — `package.yml` (3-OS matrix) and `android-build.yml` both auto-trigger on `v*`. **Neither creates the Release**: their attach steps (`gh release upload`) fail with `release not found` until the Release object exists. So right after pushing the tag, run `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <file>` (notes drafted per human-writing + check_prose, English first). If the attach jobs already failed, `gh run rerun <id> --failed` after creating the release — builds are cached, only attach re-runs.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 110 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
+5. `ci.yml` runs oxlint + both typechecks + 111 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -208,6 +208,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | XP | `services/xp-service.ts` | Daily XP tracking (correct+10/wrong+1/mastered+50) |
 | SRS | `services/srs.ts` | SM-2 spaced repetition; `recordReviewDb`(pure/srs-db.ts, db 注入)与 BKT 闭环——答题/复习双向同步(答对推迟、答错近期重练) |
 | Streak | `services/streak.ts` | Streak + freeze transitions |
+| dsh 导入 | `services/dsh-import-service.ts` + `pure/dsh-import-map.ts` | 设置页「数据」区把 dsh-plugin-lookatstudy 的 state.json 学习进度迁入本库(全平台:importFromText 通用通道,detect/importFromPath 桌面自动探测)。兼容插件全部 state 版本(v1 字段子集直过/v2 全量/v3+ 诚实拒);课程三态 create/map/refresh(同标题同结构直写既有节点不覆盖内容),行 id `dsh-<hash8>` 确定性 → 幂等;XP 水位增量合并(`dsh_import_xp_seen`)/streak 取较大;导入前 flushDb+备份库文件;成功发 `import:done` 复用课程列表刷新链。CLI 同源脚本 `scripts/import-dsh-progress.mjs`(node:sqlite 零依赖) |
 | Export | `services/export-service.ts` | JSON + Markdown learning report export |
 | Starter prompts | `services/starter-prompts-service.ts` | 4 巩固选择(深入/举个例子/考考我/我没太懂),hook 揭晓后、对话开始后才出现(语境前零决策税);原 ? 卡点表单折进「我没太懂」(发消息+记 friction);`frictionCategory` 字段标记;每个带稳定 `key`，渲染层按界面语言查 `starter.{key}.*` 字典覆盖 label/hint/message |
 | Multimodal assets | `services/asset-service.ts` | `node_assets` CRUD — 图片/PDF 渲染图元数据(二进制存 `userData/assets/{courseId}/`,不入 DB blob);`listAssetsByNode` / `getAssetDataUrl` (base64) |

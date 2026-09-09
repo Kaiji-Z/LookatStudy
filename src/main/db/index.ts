@@ -53,6 +53,11 @@ export function getDb(): SQLJsDatabase<typeof schema> {
   return _db;
 }
 
+/** 当前库文件路径(未初始化/内存测试库为空串)。dsh 导入前备份库文件用。 */
+export function getDbFilePath(): string {
+  return _dbPath;
+}
+
 /**
  * 测试专用:注入一个内存 DB,绕过依赖 Electron app 的 initDb()。
  * 仅 verify-*.mjs 脚本使用;生产代码绝不调用。返回前一次的 db(便于还原)。

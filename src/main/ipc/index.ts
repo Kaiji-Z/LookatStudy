@@ -6,7 +6,8 @@
  */
 import type { RuntimeDeps, IpcHandlerFn } from "./runtime.js";
 import { join } from "node:path";
-import { getDb, markDirty } from "../db/index.js";
+import { getDb, markDirty, flushDb, getDbFilePath } from "../db/index.js";
+import { detectDshStateFile, importDshStateFromPath, importDshStateFromText } from "../services/dsh-import-service.js";
 import {
   courses,
   contentNodes,
@@ -1140,6 +1141,41 @@ export function registerSettingsHandlers(deps: RuntimeDeps): void {
   });
 }
 
+/* ---------- dsh 插件进度迁移(设置页;全平台) ---------- */
+
+export function registerDshImportHandlers(deps: RuntimeDeps): void {
+  handle("dsh:detect", async () => detectDshStateFile());
+
+  const runImport = (result: Awaited<ReturnType<typeof importDshStateFromText>>) => {
+    if (result.ok) {
+      markDirty();
+      // 复用 import:done 刷新链(MapRail 监听 → onCoursesChanged → App refreshAll)
+      for (const c of result.importedCourses) {
+        deps.emitter.send("import:done", {
+          ok: true,
+          courseId: c.courseId,
+          title: c.title,
+          planId: "",
+          reused: false,
+          packable: false,
+        });
+      }
+    }
+    return result;
+  };
+
+  handle("dsh:importFromPath", async (_e, path: string) => {
+    // running app 里内存库是真相:先落盘再备份,拷到的是当前状态而非陈旧快照
+    flushDb();
+    return runImport(importDshStateFromPath(getDb(), path, getDbFilePath()));
+  });
+
+  handle("dsh:importFromText", async (_e, jsonText: string) => {
+    flushDb();
+    return runImport(importDshStateFromText(getDb(), jsonText, getDbFilePath()));
+  });
+}
+
 /* ---------- Soul 系统（教学人设/persona） ---------- */
 
 export function registerSoulHandlers(): void {
@@ -1621,6 +1657,7 @@ export function registerAllHandlers(deps: RuntimeDeps): void {
   registerCanvasHandlers();
   registerThreadHandlers();
   registerSpeechHandlers(deps);
+  registerDshImportHandlers(deps);
 }
 
 /* ---------- v0.4: Thread 会话 ---------- */

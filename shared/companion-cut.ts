@@ -95,6 +95,13 @@ export interface Anchors {
    * 提供时走 vision 划分(掩码 ∩ bbox,臂盒优先于头/身),不依赖腋缝存在。
    */
   boxes?: Partial<Record<PartName, Box>>;
+  /**
+   * 头身交界折线(全图像素坐标,parse 后;parseAnchorsJson 收归一化或像素制)。
+   * 无脖子角色的弧线切头:沿头身交界左→右 8~16 点,头部 x 范围逐列插值边界 y,
+   * 线上归头、线下归身—— Bears/团子等"头圆直接坐在身上"的形态靠它出独立头件。
+   * x 范围即头宽;范围外的列不算头。≥4 个有效点才可用。
+   */
+  headBoundary?: Array<{ x: number; y: number }>;
 }
 
 export interface CutResult {
@@ -445,31 +452,41 @@ export function applyRowCuts(
   return out;
 }
 
-/* ---------------- 6. vision 划分(T1:掩码 ∩ 部件 bbox) ---------------- */
+/* ---------------- 6. vision 划分(T1:掩码 ∩ 部件 bbox / 头身折线) ---------------- */
 
 /**
- * 识图锚点划分:臂盒优先于头盒,头带(分界行以上)优先于身体,剩余 = 身体。
- * 不依赖腋缝——"部位不重叠"即可切,v7 供给承诺的 T1 实现。
+ * 折线边界取值:x 处的头身分界 y(逐列线性插值);x 在折线范围外 → null
+ * (范围外不算头)。points 就地容忍乱序/同 x(排序+去重保后值)。
  */
-export function partitionByBoxes(
+export function headBoundaryYAt(
+  points: Array<{ x: number; y: number }>,
+  x: number,
+): number | null {
+  if (points.length < 2) return null;
+  const sorted = [...points].sort((a, b) => a.x - b.x);
+  const dedup: Array<{ x: number; y: number }> = [];
+  for (const p of sorted) {
+    if (dedup.length && p.x - dedup[dedup.length - 1].x < 0.5) dedup[dedup.length - 1] = p;
+    else dedup.push(p);
+  }
+  if (x < dedup[0].x || x > dedup[dedup.length - 1].x) return null;
+  for (let i = 1; i < dedup.length; i++) {
+    const a = dedup[i - 1];
+    const b = dedup[i];
+    if (x <= b.x) {
+      const t = b.x === a.x ? 0 : (x - a.x) / (b.x - a.x);
+      return a.y + (b.y - a.y) * t;
+    }
+  }
+  return dedup[dedup.length - 1].y;
+}
+
+/** classify 驱动的部件提取核:扫描主体框,按分类收像素、算 bbox、裁剪输出。 */
+function extractParts(
   img: RgbaImage,
   fm: FigureMask,
-  headY: number | null,
-  boxes: Partial<Record<PartName, Box>>,
+  classify: (x: number, y: number) => PartName | null,
 ): CutPart[] {
-  const inBox = (b: Box, x: number, y: number) =>
-    x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
-  const classify = (x: number, y: number): PartName | null => {
-    if (!fm.mask[y * fm.width + x]) return null;
-    for (const name of ["armL", "armR"] as PartName[]) {
-      const b = boxes[name];
-      if (b && inBox(b, x, y)) return name;
-    }
-    if (headY !== null && y < headY) return "head";
-    const hb = boxes.head;
-    if (hb && inBox(hb, x, y)) return "head";
-    return "body";
-  };
   const { main } = fm;
   const out: CutPart[] = [];
   for (const name of ["head", "body", "armL", "armR"] as PartName[]) {
@@ -502,6 +519,58 @@ export function partitionByBoxes(
     out.push({ name, box: { x: minX, y: minY, w, h }, rgba });
   }
   return out;
+}
+
+/**
+ * 识图锚点划分:臂盒优先于头盒,头带(分界行以上)优先于身体,剩余 = 身体。
+ * 不依赖腋缝——"部位不重叠"即可切,v7 供给承诺的 T1 实现。
+ */
+export function partitionByBoxes(
+  img: RgbaImage,
+  fm: FigureMask,
+  headY: number | null,
+  boxes: Partial<Record<PartName, Box>>,
+): CutPart[] {
+  const inBox = (b: Box, x: number, y: number) =>
+    x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+  const classify = (x: number, y: number): PartName | null => {
+    if (!fm.mask[y * fm.width + x]) return null;
+    for (const name of ["armL", "armR"] as PartName[]) {
+      const b = boxes[name];
+      if (b && inBox(b, x, y)) return name;
+    }
+    if (headY !== null && y < headY) return "head";
+    const hb = boxes.head;
+    if (hb && inBox(hb, x, y)) return "head";
+    return "body";
+  };
+  return extractParts(img, fm, classify);
+}
+
+/**
+ * 弧线划分(无脖子角色):头=折线以上的掩码像素(臂盒仍优先),其余=身体。
+ * headBoundaryYAt 范围外不算头——折线 x 范围即头宽,收窄只会把边缘 Chin 漏给身体,
+ * 不会把身体错切给头(保守方向)。
+ */
+export function partitionByBoundary(
+  img: RgbaImage,
+  fm: FigureMask,
+  boundary: Array<{ x: number; y: number }>,
+  boxes: Partial<Record<PartName, Box>>,
+): CutPart[] {
+  const inBox = (b: Box, x: number, y: number) =>
+    x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+  const classify = (x: number, y: number): PartName | null => {
+    if (!fm.mask[y * fm.width + x]) return null;
+    for (const name of ["armL", "armR"] as PartName[]) {
+      const b = boxes[name];
+      if (b && inBox(b, x, y)) return name;
+    }
+    const by = headBoundaryYAt(boundary, x);
+    if (by !== null && y < by) return "head";
+    return "body";
+  };
+  return extractParts(img, fm, classify);
 }
 
 /* ---------------- 7. 白描边 ---------------- */
@@ -600,10 +669,14 @@ export function routeCut(img: RgbaImage, opts: RouteOptions = {}): CutResult {
 
   const fromY = neck ? neck.shoulderY : fm.main.y + Math.floor(fm.main.h * 0.4);
 
-  // T1 识图划分:部件 bbox 提供时不依赖腋缝(部位不重叠 = 必可切)
+  // T1 识图划分:部件 bbox 提供时不依赖腋缝(部位不重叠 = 必可切)。
+  // 折线优先于头盒/头行:无脖子角色的弧线切头(头圆直接坐在身上,行宽无最小)。
   if (opts.anchors?.boxes) {
-    const headY = neck ? neck.y : (opts.anchors.headY ?? null);
-    const parts = partitionByBoxes(img, fm, headY, opts.anchors.boxes);
+    const boundary = opts.anchors.headBoundary;
+    const parts =
+      boundary && boundary.length >= 4
+        ? partitionByBoundary(img, fm, boundary, opts.anchors.boxes)
+        : partitionByBoxes(img, fm, neck ? neck.y : (opts.anchors.headY ?? null), opts.anchors.boxes);
     if (parts.length >= 3) {
       return { route: "vision", parts, debug: { neck, gaps: null } };
     }
@@ -679,7 +752,52 @@ export function parseAnchorsJson(raw: string, width: number, height: number): An
   }
   if (!boxes.armL || !boxes.armR) return null;
   const headY = typeof obj.headY === "number" && Number.isFinite(obj.headY) ? Math.round(obj.headY) : undefined;
-  return { headY, boxes };
+  const headBoundary = readBoundary(obj.headBoundary ?? obj.head_boundary ?? obj.boundary, width, height);
+  return { headY, boxes, ...(headBoundary ? { headBoundary } : {}) };
+}
+
+/**
+ * 折线解析:点=二元组 [x,y] 或 {x,y};全值 ≤1 视为归一化(与 boxes 同制式判定);
+ * 垃圾点跳过,有效点 ≥4 才可用;x 排序+同 x 去重(保后值);跨度 <5% 图宽不可信
+ * (VLM 偶发的窄条输出)。键名变体 headBoundary/head_boundary/boundary。
+ */
+function readBoundary(
+  v: unknown,
+  width: number,
+  height: number,
+): Array<{ x: number; y: number }> | undefined {
+  if (!Array.isArray(v) || v.length < 4) return undefined;
+  const pts: Array<{ x: number; y: number }> = [];
+  for (const p of v) {
+    let px: number;
+    let py: number;
+    if (Array.isArray(p) && p.length >= 2) {
+      px = Number(p[0]);
+      py = Number(p[1]);
+    } else if (typeof p === "object" && p !== null) {
+      const o = p as Record<string, unknown>;
+      px = Number(o.x);
+      py = Number(o.y);
+    } else {
+      continue;
+    }
+    if (!Number.isFinite(px) || !Number.isFinite(py) || px < 0 || py < 0) continue;
+    pts.push({ x: px, y: py });
+  }
+  if (pts.length < 4) return undefined;
+  const fractional = pts.every((p) => p.x <= 1.0001 && p.y <= 1.0001);
+  const scaled = fractional
+    ? pts.map((p) => ({ x: p.x * width, y: p.y * height }))
+    : pts;
+  scaled.sort((a, b) => a.x - b.x);
+  const dedup: Array<{ x: number; y: number }> = [];
+  for (const p of scaled) {
+    if (dedup.length && p.x - dedup[dedup.length - 1].x < 0.5) dedup[dedup.length - 1] = p;
+    else dedup.push(p);
+  }
+  if (dedup.length < 4) return undefined;
+  if (dedup[dedup.length - 1].x - dedup[0].x < width * 0.05) return undefined;
+  return dedup.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
 }
 
 /* ---------------- 11. 切分包 manifest ---------------- */

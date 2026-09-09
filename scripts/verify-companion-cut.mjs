@@ -16,8 +16,17 @@
 import assert from "node:assert";
 import { createCanvas } from "@napi-rs/canvas";
 
-const { keyFigure, detectHeadBoundary, scanArmGapBands, routeCut, addWhiteOutline, buildCutManifest, parseAnchorsJson } =
-  await import("../shared/companion-cut.ts");
+const {
+  keyFigure,
+  detectHeadBoundary,
+  scanArmGapBands,
+  routeCut,
+  addWhiteOutline,
+  buildCutManifest,
+  parseAnchorsJson,
+  partitionByBoundary,
+  headBoundaryYAt,
+} = await import("../shared/companion-cut.ts");
 
 let pass = 0;
 const t = (name, fn) => {
@@ -123,6 +132,21 @@ const A_ALPHA = drawApose({ mode: "alpha" });
 const T = drawTpose();
 const MERGED = drawApose({ merged: true });
 const BEAR = drawBearMerged();
+
+/** 真无颈形态:躯干与头同宽(行宽单调,无"先收后放"颈候选),双臂低挂颈检测窗外。
+ *  BEAR 有可检出的颈缩(头圆收进躯干的局部最小+臂展跳变),不适用"无颈"用例。 */
+function drawBearWide() {
+  const [cv, c] = newCanvas(400, 600, "green");
+  c.fillStyle = SKIN;
+  c.beginPath();
+  c.arc(200, 150, 120, 0, Math.PI * 2);
+  c.fill();
+  c.fillRect(80, 210, 240, 220);
+  c.fillRect(40, 320, 44, 110);
+  c.fillRect(316, 320, 44, 110);
+  return toRgba(cv);
+}
+const BEAR_WIDE = drawBearWide();
 
 /* ---------------- 断言 ---------------- */
 
@@ -342,6 +366,97 @@ t("T26 mock 响应→锚点→切线 全链:VLM 原文解析后进路由,融合�
   const r = routeCut(BEAR, { anchors });
   assert.equal(r.route, "vision");
   assert.ok(r.parts.length >= 3, `parts=${r.parts.length}`);
+});
+
+/* ---- M2 R2:识图折线切头(headBoundary,无脖子角色弧线切) ---- */
+
+/** 融合熊的头底弧线(圆心 (200,150) r=120 的下缘,略上收 4px),归一化坐标。 */
+function bearArcBoundary() {
+  const pts = [];
+  for (let x = 82; x <= 318; x += 8) {
+    const dy = Math.sqrt(Math.max(0, 14400 - (x - 200) ** 2));
+    pts.push([x / 400, (150 + dy - 4) / 600]);
+  }
+  return pts;
+}
+
+t("T27 parseAnchorsJson 折线:{x,y}+数组混制/归一化缩放/乱序排序/垃圾点跳过", () => {
+  const raw =
+    '```json\n{"boxes": {"armL": [0.1,0.4,0.1,0.2], "armR": [0.8,0.4,0.1,0.2]}, "headBoundary": [{"x":0.5,"y":0.45},{"x":0.2,"y":0.42},"垃圾",[0.8,0.44],[0.05,0.5],[0.95,0.5],[0.35,0.44]]}\n```';
+  const a = parseAnchorsJson(raw, 400, 600);
+  assert.ok(a, "应解析成功");
+  assert.ok(a.headBoundary, "折线应存在");
+  assert.equal(a.headBoundary.length, 6, "垃圾字符串点应被跳过");
+  assert.equal(a.headBoundary[0].x, 20, "按 x 排序+归一化还原(0.05*400)");
+  assert.equal(a.headBoundary[0].y, 300);
+  assert.equal(a.headBoundary[a.headBoundary.length - 1].x, 380, "0.95*400");
+});
+
+t("T28 折线解析拒绝:有效点 <4 / 跨度过窄(<5% 图宽) → undefined", () => {
+  const a3 = parseAnchorsJson(
+    '{"boxes": {"armL": [0,0,1,1], "armR": [1,0,1,1]}, "headBoundary": [[0.1,0.5],[0.3,0.5],[0.5,0.5]]}',
+    400, 600,
+  );
+  assert.ok(a3);
+  assert.equal(a3.headBoundary, undefined, "3 点不可用");
+  const narrow = parseAnchorsJson(
+    '{"boxes": {"armL": [0,0,1,1], "armR": [1,0,1,1]}, "headBoundary": [[0.50,0.5],[0.51,0.5],[0.52,0.5],[0.53,0.5]]}',
+    400, 600,
+  );
+  assert.ok(narrow);
+  assert.equal(narrow.headBoundary, undefined, "窄条输出不可信");
+});
+
+t("T29 headBoundaryYAt:线性插值/范围外 null/乱序与同 x 去重鲁棒", () => {
+  const pts = [{ x: 200, y: 270 }, { x: 100, y: 250 }, { x: 300, y: 250 }];
+  assert.equal(headBoundaryYAt(pts, 100), 250);
+  assert.equal(headBoundaryYAt(pts, 200), 270, "乱序输入排序后命中");
+  assert.equal(headBoundaryYAt(pts, 150), 260, "线性插值中点");
+  assert.equal(headBoundaryYAt(pts, 50), null, "范围外不算头");
+  assert.equal(headBoundaryYAt(pts, 350), null);
+  assert.equal(headBoundaryYAt([{ x: 5, y: 9 }, { x: 5, y: 3 }], 5), 3, "同 x 去重保后值");
+  assert.equal(headBoundaryYAt([{ x: 0, y: 1 }], 0), null, "单点不可用");
+});
+
+t("T30 routeCut 折线弧线切:无脖子融合熊 → vision 出独立头件(判据 2 fixture)", () => {
+  const anchors = {
+    boxes: { armL: { x: 118, y: 268, w: 44, h: 124 }, armR: { x: 238, y: 268, w: 44, h: 124 } },
+    headBoundary: bearArcBoundary().map(([x, y]) => ({ x: Math.round(x * 400), y: Math.round(y * 600) })),
+  };
+  const r = routeCut(BEAR, { anchors });
+  assert.equal(r.route, "vision");
+  const head = r.parts.find((p) => p.name === "head");
+  const body = r.parts.find((p) => p.name === "body");
+  assert.ok(head && body, `parts=${r.parts.map((p) => p.name).join(",")}`);
+  assert.ok(head.box.y < 100, `头顶应接近圆顶(${head.box.y})`);
+  assert.ok(head.box.w >= 200, `头宽应≈圆径(${head.box.w})`);
+  assert.ok(body.box.y > head.box.y, "身体在头之下");
+  assert.ok(r.parts.length >= 4, `四件套=${r.parts.length}`);
+});
+
+t("T31 诚实降级:仅臂盒无折线无头盒 → 头留躯干(3 件,不炸不误报)", () => {
+  assert.equal(detectHeadBoundary(keyFigure(BEAR_WIDE)), null, "fixture 前提:宽身熊无颈候选");
+  const anchors = {
+    boxes: { armL: { x: 40, y: 320, w: 44, h: 110 }, armR: { x: 316, y: 320, w: 44, h: 110 } },
+  };
+  const r = routeCut(BEAR_WIDE, { anchors });
+  assert.equal(r.route, "vision");
+  assert.equal(r.parts.length, 3, `头不独立=${r.parts.map((p) => p.name).join(",")}`);
+  assert.ok(!r.parts.some((p) => p.name === "head"), "无折线无颈 → 头留躯干层");
+  const body = r.parts.find((p) => p.name === "body");
+  assert.ok(body, "身体件存在(含头部像素)");
+});
+
+t("T32 partitionByBoundary 直接调用:臂盒优先于折线(臂像素归臂不归头)", () => {
+  const fm = keyFigure(BEAR);
+  // 折线抬到手臂区(y=300 横线,穿过臂盒):臂盒必须赢
+  const parts = partitionByBoundary(BEAR, fm, [{ x: 0, y: 300 }, { x: 400, y: 300 }], {
+    armL: { x: 118, y: 268, w: 44, h: 124 },
+    armR: { x: 238, y: 268, w: 44, h: 124 },
+  });
+  const armL = parts.find((p) => p.name === "armL");
+  assert.ok(armL, "臂盒像素归臂");
+  assert.ok(armL.box.h >= 100, `整臂保留=${armL.box.h}`);
 });
 
 console.log(`\nverify-companion-cut: ${pass} 断言全部通过`);

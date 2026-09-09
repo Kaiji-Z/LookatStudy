@@ -94,6 +94,7 @@ import { invalidateSpeechEngines } from "../services/speech/speech-engine.js";
 import { transcribeAudio, type CustomAsrConfig } from "../services/speech/asr-service.js";
 import { synthesizeOpenaiTts } from "../services/speech/openai-tts-client.js";
 import { getCustomProviderRaw } from "../services/custom-provider-service.js";
+import { cutCompanionFigure } from "../services/companion-pack-service.js";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
 import {
   getProgress as getProgressService,
@@ -1658,6 +1659,23 @@ export function registerAllHandlers(deps: RuntimeDeps): void {
   registerThreadHandlers();
   registerSpeechHandlers(deps);
   registerDshImportHandlers(deps);
+  registerCompanionPackHandlers(deps);
+}
+
+/* ---------- CompanionPack:免费层供给管线(SPEC §15) ---------- */
+
+export function registerCompanionPackHandlers(deps: RuntimeDeps): void {
+  void deps;
+  handle("companionPack:cutFromImage", async (_e, input: { pngBase64: string; id?: string; name?: string }) => {
+    const png = Buffer.from(input.pngBase64, "base64");
+    const out = await cutCompanionFigure({ db: getDb() }, { png, id: input.id, name: input.name });
+    return {
+      route: out.route,
+      failure: out.failure,
+      manifest: out.manifest,
+      parts: out.parts.map((p) => ({ name: p.name, file: p.file, box: p.box, pngBase64: Buffer.from(p.png).toString("base64") })),
+    };
+  });
 }
 
 /* ---------- v0.4: Thread 会话 ---------- */

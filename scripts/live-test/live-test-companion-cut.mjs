@@ -44,7 +44,7 @@ const resp = await fetch("https://api.z.ai/api/coding/paas/v4/chat/completions",
   method: "POST",
   headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
   body: JSON.stringify({
-    model: "glm-4.5v",
+    model: "glm-5.3-flash",
     messages: [
       {
         role: "user",

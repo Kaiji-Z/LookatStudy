@@ -71,9 +71,20 @@ const v2State = {
               completedAt: null,
               sm2: null,
               dueAt: null,
-              friction: [],
-              memory: null,
-              notes: [],
+              friction: [
+                { category: "confused", summary: "反向传播链式法则卡住", at: "2026-09-08T11:00:00Z" },
+                { category: "blocked", summary: null, at: "2026-09-08T11:30:00Z" },
+                { category: "weird-cat", summary: "应被过滤", at: "2026-09-08T11:45:00Z" },
+              ],
+              memory: "这课的公式推导总是漏偏置项",
+              notes: [
+                { id: "n1", zone: "record", title: "", text: "线性变换=乘权重加偏置", quote: "先把输入乘上权重矩阵并加偏置", source: "content", at: "2026-09-08T10:00:00Z", pinned: true },
+                { id: "n2", zone: "understand", title: "", text: "无引文笔记", quote: null, source: "ai", at: "2026-09-08T10:05:00Z", pinned: false },
+                { id: "n3", zone: "record", title: "", text: "", quote: "空文本应被跳过", source: "chat", at: "2026-09-08T10:10:00Z", pinned: false },
+              ],
+              summary: "线性变换与非线性激活的两步结构。",
+              translation: "# Linear & Non-linear\ntranslated body",
+              translationLang: "en",
             },
             {
               id: "course:0:1",
@@ -106,6 +117,18 @@ const v2State = {
   ],
   xp: { total: 171, todayKey: "2026-09-08", todayXp: 171 },
   streak: { currentStreak: 1, longestStreak: 1, lastActiveDate: "2026-09-08", freezeCount: 2 },
+  memoryGlobal: "偏好先例子后公式",
+  memoryPatterns: { course: "这门课按章节推进效果好", "missing-course": "无处挂靠应被丢弃" },
+  artifacts: {
+    "course:0:0": [
+      { id: "a1", artifactType: "concept_map", title: "本课概念图", createdAt: "2026-09-08T09:00:00Z", hash: "h1", data: { nodes: [], edges: [] } },
+      { id: "a2", artifactType: "guess", title: "无对应类型", createdAt: "2026-09-08T09:01:00Z", hash: "h2", data: {} },
+      { id: "a3", artifactType: "compare_table", title: "对比表", createdAt: "2026-09-08T09:02:00Z", hash: "h3", data: { rows: [] } },
+    ],
+    "ghost-lesson": [
+      { id: "a4", artifactType: "diagram", title: "挂靠不存在的课", createdAt: "2026-09-08T09:03:00Z", hash: "h4", data: {} },
+    ],
+  },
 };
 
 /* ---------- 纯函数:normalizeDshState ---------- */
@@ -130,6 +153,18 @@ test("normalize v2:课/章/课行规范化,exam/practice/world/KC/SRS/星数全�
   assert.equal(l1.srs?.intervalDays, 45);
   assert.equal(l1.srs?.dueAt, "2026-09-07T01:08:36.703Z");
   assert.equal(r.state.skippedCourses.length, 1, "空课程被跳过");
+  assert.equal(r.state.memoryGlobal, "偏好先例子后公式");
+  assert.equal(r.state.memoryPatterns.length, 2);
+  assert.equal(r.state.artifacts.length, 3, "guess 被过滤");
+  assert.equal(r.state.skippedArtifacts, 1);
+  const L0 = r.state.courses[0].sections[0].lessons[0];
+  assert.equal(L0.notes.length, 2, "空文本笔记被跳过");
+  assert.equal(L0.notes[0].text, "先把输入乘上权重矩阵并加偏置", "quote 优先当画线文本");
+  assert.equal(L0.notes[0].source, "content");
+  assert.equal(L0.friction.length, 2, "坏 category 被过滤");
+  assert.equal(L0.memory, "这课的公式推导总是漏偏置项");
+  assert.equal(L0.summary, "线性变换与非线性激活的两步结构。");
+  assert.deepEqual(L0.translation, { lang: "en", content: "# Linear & Non-linear\ntranslated body" });
 });
 
 test("normalize v1(0.4.x 子集):无 kind/xp/streak/examStars 也能过,全落 study/lesson", () => {
@@ -269,6 +304,33 @@ await t("服务层:首次导入(内存库)——课程/节点/进度/KC/SRS/考�
   assert.equal(totalXp?.value, "171");
   const streak = db.select().from(schema.streaks).all()[0];
   assert.equal(streak.currentStreak, 1);
+  // 五类全量迁移
+  assert.equal(r.noteRows, 2);
+  assert.equal(r.artifactRows, 2, "挂靠不存在课的产物被丢弃");
+  assert.equal(r.skippedArtifacts, 1);
+  assert.equal(r.frictionRows, 2);
+  assert.equal(r.memoryRows, 3, "1 课级 + 1 全局 + 1 课级模式");
+  assert.equal(r.translationRows, 1);
+  const notes = db.select().from(schema.canvasItems).all().filter((c) => c.artifactType === "user_note");
+  assert.equal(notes.length, 2);
+  const withQuote = notes.find((n) => n.pinned === 1);
+  assert.equal(withQuote?.notes, "线性变换=乘权重加偏置", "quote 在时 note 正文进注释列");
+  const arts = db.select().from(schema.canvasItems).all().filter((c) => c.sourceType === "ai" && c.artifactType !== "user_note");
+  assert.equal(arts.length, 2);
+  assert.equal(arts[0].artifactType, "concept_map");
+  const fr = db.select().from(schema.frictionLog).all();
+  assert.equal(fr.length, 2);
+  assert.equal(fr[0].category, "confused");
+  const mem = db.select().from(schema.memory).all();
+  assert.equal(mem.length, 3);
+  assert.ok(mem.some((m) => m.category === "global" && m.summary === "偏好先例子后公式"));
+  assert.ok(mem.some((m) => m.category === "friction_pattern" && m.courseId));
+  assert.ok(!mem.some((m) => m.summary === "无处挂靠应被丢弃"), "missing-course 模式记忆被丢弃");
+  const tr = db.select().from(schema.contentNodeTranslations).all();
+  assert.equal(tr.length, 1);
+  assert.equal(tr[0].locale, "en");
+  const l0node = db.select().from(schema.contentNodes).all().find((n) => n.title === "线性与非线性");
+  assert.equal(l0node?.summary, "线性变换与非线性激活的两步结构。");
 });
 
 await t("服务层:重导幂等——refresh 态,XP/streak 不变,节点数不变", async () => {
@@ -284,6 +346,10 @@ await t("服务层:重导幂等——refresh 态,XP/streak 不变,节点数不�
   assert.equal(db.select().from(schema.courses).all().length, 1);
   assert.equal(db.select().from(schema.contentNodes).all().length, 6);
   assert.equal(db.select().from(schema.settings).all().find((s) => s.key === "total_xp")?.value, "171");
+  assert.equal(db.select().from(schema.canvasItems).all().length, 4, "2 笔记 + 2 产物,重导零重复");
+  assert.equal(db.select().from(schema.memory).all().length, 3);
+  assert.equal(db.select().from(schema.frictionLog).all().length, 2);
+  assert.equal(db.select().from(schema.contentNodeTranslations).all().length, 1);
 });
 
 await t("服务层:同标题同结构既有课 → map 模式直写,内容不被覆盖", async () => {
@@ -306,6 +372,12 @@ await t("服务层:同标题同结构既有课 → map 模式直写,内容不被
   assert.ok(oldContent, "旧正文保留");
   const prog = db.select().from(schema.progress).all();
   assert.equal(prog.length, 4, "进度写进既有节点");
+  const oldFirst = db.select().from(schema.contentNodes).all().find((n) => n.title === "旧课0");
+  assert.notEqual(oldFirst?.summary ?? null, "线性变换与非线性激活的两步结构。", "map 模式不写既有课摘要");
+  assert.equal(db.select().from(schema.contentNodeTranslations).all().length, 0, "map 模式不写翻译");
+  const mappedNotes = db.select().from(schema.canvasItems).all().filter((c) => c.artifactType === "user_note");
+  assert.equal(mappedNotes.length, 2, "笔记仍迁移(挂到既有节点)");
+  assert.ok(mappedNotes.every((n) => n.courseId === "existing"), "挂到既有课程");
 });
 
 await t("服务层:坏 JSON / v99 拒绝,库零写入", async () => {

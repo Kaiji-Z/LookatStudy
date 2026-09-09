@@ -17,7 +17,7 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
-- 设置页「数据」区:从 dsh 插件迁移学习进度——桌面版自动探测本机 `~/.dsh/lookatstudy-plugin/state.json` 一键导入,任何平台(含 serve/手机浏览器)可上传 state.json 文件导入;迁移内容与语义同命令行脚本(课程/进度/per-KC 掌握度/SM-2/考试星数/XP 增量合并/streak 取较大),导入前自动备份数据库,重复导入安全,兼容插件全部历史版本的 state 格式(v1/v2)。CLI 脚本(`scripts/import-dsh-progress.mjs`)保留给无 GUI 场景。
+- 设置页「数据」区:从 dsh 插件迁移学习进度——桌面版自动探测本机 `~/.dsh/lookatstudy-plugin/state.json` 一键导入,任何平台(含 serve/手机浏览器)可上传 state.json 文件导入。**全量迁移**:课程(含正文/摘要/双语翻译)、进度、per-KC 掌握度、SM-2 复习、考试星数、康奈尔笔记(画线+注释,quote 优先当画线文本)、黑板产物(概念图/对比表/流程图/代码讲解;guess 类型无画布对应,过滤并计数披露)、学习者记忆(全局风格+课级模式+课级 gap 三槽)、卡点日志、XP 增量合并、streak 取较大;map 模式(同标题同结构既有课)只写进度与笔记/卡点/记忆,不碰既有正文/摘要/翻译。导入前自动备份数据库,重复导入安全,兼容插件全部历史 state 版本(v1/v2)。与 AI 的对话历史不迁移(源数据在 dsh 侧会话存储,不在 state.json)。CLI 脚本(`scripts/import-dsh-progress.mjs`)保留给无 GUI 场景(核心进度)。
 - dsh 插件版进度迁移脚本(`scripts/import-dsh-progress.mjs`,零依赖 Node 单文件):把 dsh-plugin-lookatstudy 的 `~/.dsh/lookatstudy-plugin/state.json` 学习进度(课程结构+正文、per-KC 掌握度、SM-2 复习、考试星数、XP/streak)迁入独立版数据库。自动备份原库、幂等可重跑(重复运行只刷新进度)、同标题同结构课程直接写入不另建副本;XP 增量合并防重复累加。
 
 ## [0.29.0] - 2026-09-09

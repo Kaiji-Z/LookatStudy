@@ -80,6 +80,16 @@ export interface NormalizedDshCourse {
       kc: { id: string; kcIndex: number; mastery: number }[];
       srs: { id: string; easeFactor: number; intervalDays: number; repetitions: number; dueAt: string; lastReviewedAt: string | null } | null;
       exam: { id: string; at: string; stars: number } | null;
+      /** 摘要(lesson-summary 产物)——create/refresh 模式写 content_nodes.summary */
+      summary: string | null;
+      /** 配对翻译正文 + 语言码 → content_node_translations */
+      translation: { lang: string; content: string } | null;
+      /** 康奈尔笔记 → canvas_items(user_note);text=画线文本(quote 优先),body=笔记正文(quote 在时进注释列) */
+      notes: { key: string; title: string; text: string; body: string; quote: string | null; source: "ai" | "content" | "chat"; pinned: boolean; at: string }[];
+      /** 卡点日志 → friction_log */
+      friction: { key: string; category: "confused" | "blocked" | "frustrated"; summary: string | null; at: string }[];
+      /** 课级记忆 → memory(node 槽) */
+      memory: string | null;
     }[];
   }[];
 }
@@ -90,6 +100,14 @@ export interface NormalizedDshState {
   xp: { total: number; todayKey: string; todayXp: number } | null;
   streak: { currentStreak: number; longestStreak: number; lastActiveDate: string | null; freezeCount: number } | null;
   skippedCourses: string[];
+  /** 全局学习者记忆(风格槽)→ memory(global) */
+  memoryGlobal: string | null;
+  /** 课级学习模式记忆(键=插件 courseId)→ memory(friction_pattern, course 作用域) */
+  memoryPatterns: { courseId: string; text: string }[];
+  /** 黑板产物(键=插件 lessonId;guess 类型无 LookatStudy 画布对应,过滤计数) */
+  artifacts: { lessonId: string; key: string; artifactType: "quiz" | "compare_table" | "code_walkthrough" | "concept_map" | "diagram"; title: string; data: string; createdAt: string }[];
+  /** 被过滤的无对应类型产物数(诚实披露) */
+  skippedArtifacts: number;
 }
 
 /** sha256 前 8 位,确定性 id 生成。 */
@@ -182,6 +200,40 @@ export function normalizeDshState(raw: unknown): { ok: true; state: NormalizedDs
                 lastReviewedAt: iso(l.completedAt),
               }
             : null;
+        // 康奈尔笔记 → user_note 行计划(quote 优先当"画线文本",note.text 当注释)
+        const notesIn = Array.isArray(l.notes) ? l.notes : [];
+        const notes: NormalizedDshCourse["sections"][number]["lessons"][number]["notes"] = [];
+        notesIn.forEach((n, ni) => {
+          if (!isObj(n)) return;
+          const ntext = typeof n.text === "string" ? n.text : null;
+          if (!ntext) return;
+          const nquote = typeof n.quote === "string" && n.quote.length > 0 ? n.quote : null;
+          const nsource = str(n.source);
+          notes.push({
+            key: `dsh-note-${dshKey(lid, String(ni), typeof n.id === "string" ? n.id : "")}`,
+            title: (nquote ?? ntext).slice(0, 40) + ((nquote ?? ntext).length > 40 ? "…" : ""),
+            text: nquote ?? ntext,
+            body: ntext,
+            quote: nquote,
+            source: nsource === "content" || nsource === "chat" ? nsource : "ai",
+            pinned: n.pinned === true,
+            at: iso(n.at) ?? new Date().toISOString(),
+          });
+        });
+        // 卡点日志(confused/blocked/frustrated 与 LookatStudy friction_log 同词汇表)
+        const frictionIn = Array.isArray(l.friction) ? l.friction : [];
+        const friction: NormalizedDshCourse["sections"][number]["lessons"][number]["friction"] = [];
+        frictionIn.forEach((f, fi) => {
+          if (!isObj(f)) return;
+          const cat = str(f.category);
+          if (cat !== "confused" && cat !== "blocked" && cat !== "frustrated") return;
+          friction.push({
+            key: `dsh-fric-${dshKey(lid, String(fi), cat)}`,
+            category: cat,
+            summary: typeof f.summary === "string" ? f.summary : null,
+            at: iso(f.at) ?? new Date().toISOString(),
+          });
+        });
         const examStars = num(l.examStars);
         sec.lessons.push({
           id: lid,
@@ -207,6 +259,14 @@ export function normalizeDshState(raw: unknown): { ok: true; state: NormalizedDs
             type === "exam" && examStars != null
               ? { id: `dsh-exam-${dshKey(nodeId)}`, at: iso(l.lastAnsweredAt) ?? new Date().toISOString(), stars: Math.round(examStars) }
               : null,
+          summary: typeof l.summary === "string" && l.summary.length > 0 ? l.summary : null,
+          translation:
+            typeof l.translation === "string" && l.translation.length > 0 && str(l.translationLang)
+              ? { lang: str(l.translationLang)!, content: l.translation }
+              : null,
+          notes,
+          friction,
+          memory: str(l.memory),
         });
         lessonTotal++;
       }
@@ -226,6 +286,39 @@ export function normalizeDshState(raw: unknown): { ok: true; state: NormalizedDs
 
   const xpIn = isObj(raw.xp) ? raw.xp : null;
   const streakIn = isObj(raw.streak) ? raw.streak : null;
+  // 学习者记忆:全局风格槽 + 课级模式槽(键=插件 courseId)
+  const memoryGlobal = isObj(raw) && typeof raw.memoryGlobal === "string" && raw.memoryGlobal.length > 0 ? raw.memoryGlobal : null;
+  const memoryPatterns: NormalizedDshState["memoryPatterns"] = [];
+  if (isObj(raw.memoryPatterns)) {
+    for (const [cid, text] of Object.entries(raw.memoryPatterns)) {
+      if (typeof text === "string" && text.length > 0) memoryPatterns.push({ courseId: cid, text });
+    }
+  }
+  // 黑板产物:lessonId → StudyArtifact[];guess 无画布对应,过滤计数(诚实披露)
+  const artifacts: NormalizedDshState["artifacts"] = [];
+  let skippedArtifacts = 0;
+  if (isObj(raw.artifacts)) {
+    for (const [lessonId, list] of Object.entries(raw.artifacts)) {
+      if (!Array.isArray(list)) continue;
+      list.forEach((a, ai) => {
+        if (!isObj(a)) return;
+        const type = str(a.artifactType);
+        if (type !== "quiz" && type !== "compare_table" && type !== "code_walkthrough" && type !== "concept_map" && type !== "diagram") {
+          if (type) skippedArtifacts++;
+          return;
+        }
+        const title = str(a.title) ?? "dsh artifact";
+        artifacts.push({
+          lessonId,
+          key: `dsh-art-${dshKey(lessonId, String(ai), str(a.id) ?? "")}`,
+          artifactType: type,
+          title,
+          data: JSON.stringify(isObj(a.data) ? a.data : {}),
+          createdAt: iso(a.createdAt) ?? new Date().toISOString(),
+        });
+      });
+    }
+  }
   return {
     ok: true,
     state: {
@@ -241,6 +334,10 @@ export function normalizeDshState(raw: unknown): { ok: true; state: NormalizedDs
           }
         : null,
       skippedCourses,
+      memoryGlobal,
+      memoryPatterns,
+      artifacts,
+      skippedArtifacts,
     },
   };
 }

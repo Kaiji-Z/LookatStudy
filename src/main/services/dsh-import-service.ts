@@ -28,11 +28,16 @@ import {
   srsItems as srsItemsTable,
   streaks as streaksTable,
   settings as settingsTable,
+  canvasItems as canvasItemsTable,
+  frictionLog as frictionLogTable,
+  memory as memoryTable,
+  contentNodeTranslations as translationsTable,
 } from "../db/schema.js";
 import {
   normalizeDshState,
   mergeStreak,
   planXpMerge,
+  dshKey,
   type NormalizedDshCourse,
 } from "./pure/dsh-import-map.js";
 
@@ -56,6 +61,14 @@ export interface DshImportResult {
   skippedCourses: string[];
   /** 逐课落点(refresh/map 模式=既有课程 id,create=dsh key;驱动 import:done 刷新) */
   importedCourses: { courseId: string; title: string }[];
+  /* v2 全量迁移:笔记/黑板产物/学习者记忆/卡点/翻译 */
+  noteRows: number;
+  artifactRows: number;
+  memoryRows: number;
+  frictionRows: number;
+  translationRows: number;
+  /** 无画布对应的产物类型数(如 guess)——诚实披露 */
+  skippedArtifacts: number;
 }
 
 type Db = SQLJsDatabase<typeof schema>;
@@ -142,6 +155,12 @@ export function importDshStateFromText(
     streakMerged: false,
     skippedCourses: [],
     importedCourses: [],
+    noteRows: 0,
+    artifactRows: 0,
+    memoryRows: 0,
+    frictionRows: 0,
+    translationRows: 0,
+    skippedArtifacts: 0,
   };
 
   let parsed: unknown;
@@ -164,6 +183,10 @@ export function importDshStateFromText(
   try {
     db.run(sql`BEGIN`);
     const summary: DshImportResult = { ...base, ok: true, backupPath, stateVersion: state.version, skippedCourses: state.skippedCourses };
+    // 插件 id → 实际落点(map 模式含既有节点/课程),供黑板产物与课级模式记忆挂靠
+    const lessonNodeMap = new Map<string, string>();
+    const lessonCourseMap = new Map<string, string>();
+    const courseTargetMap = new Map<string, string>();
 
     for (const course of state.courses) {
       // 目标解析:refresh(我们建过)/ map(同标题同结构)/ create(新建)
@@ -225,15 +248,21 @@ export function importDshStateFromText(
                 content: l.content,
                 world: l.world,
                 knowledgePoints: l.knowledgePoints,
+                summary: l.summary,
               })
               .onConflictDoNothing()
               .run();
+            // refresh 重导:摘要以插件侧为准更新(仅我们自己的 dsh- 节点,map 模式不进此分支)
+            if (l.summary) {
+              db.update(contentNodesTable).set({ summary: l.summary }).where(eq(contentNodesTable.id, l.nodeId)).run();
+            }
             summary.nodes++;
           }
         });
       } else {
         summary.coursesMapped++;
       }
+      if (course.id) courseTargetMap.set(course.id, targetCourseId ?? course.key);
       summary.importedCourses.push({ courseId: targetCourseId ?? course.key, title: course.title });
 
       // map 模式:既有节点按 (章序,课序) 逐位对齐
@@ -244,6 +273,8 @@ export function importDshStateFromText(
       flat.forEach((l, i) => {
         const nodeId = mode === "map" ? nodeIds[i] : l.nodeId;
         if (!nodeId) return;
+        lessonNodeMap.set(l.id, nodeId);
+        lessonCourseMap.set(l.id, targetCourseId ?? course.key);
         db.insert(progressTable)
           .values({
             nodeId,
@@ -306,8 +337,124 @@ export function importDshStateFromText(
             .run();
           summary.examRows++;
         }
+        // 康奈尔笔记 → canvas_items(user_note):quote 当画线文本、note 正文当注释
+        for (const n of l.notes) {
+          db.insert(canvasItemsTable)
+            .values({
+              id: n.key,
+              nodeId,
+              courseId: targetCourseId ?? course.key,
+              artifactType: "user_note",
+              title: n.title,
+              data: JSON.stringify({ text: n.text }),
+              pinned: n.pinned ? 1 : 0,
+              createdAt: n.at,
+              notes: n.quote ? n.body : null,
+              sourceType: n.source,
+            })
+            .onConflictDoUpdate({
+              target: canvasItemsTable.id,
+              set: { title: n.title, data: JSON.stringify({ text: n.text }), pinned: n.pinned ? 1 : 0, notes: n.quote ? n.body : null },
+            })
+            .run();
+          summary.noteRows++;
+        }
+        // 卡点日志 → friction_log(词汇表同源:confused/blocked/frustrated)
+        for (const f of l.friction) {
+          db.insert(frictionLogTable)
+            .values({ id: f.key, nodeId, category: f.category, summary: f.summary, createdAt: f.at })
+            .onConflictDoNothing()
+            .run();
+          summary.frictionRows++;
+        }
+        // 课级记忆 → memory(node 槽)
+        if (l.memory) {
+          db.insert(memoryTable)
+            .values({
+              id: `dsh-mem-node-${l.nodeId}`,
+              nodeId,
+              summary: l.memory,
+              category: "node",
+              createdAt: now.toISOString(),
+              updatedAt: now.toISOString(),
+            })
+            .onConflictDoUpdate({ target: memoryTable.id, set: { summary: l.memory, updatedAt: now.toISOString() } })
+            .run();
+          summary.memoryRows++;
+        }
+        // 配对翻译 → content_node_translations(map 模式不碰既有课的翻译)
+        if (l.translation && mode !== "map") {
+          db.insert(translationsTable)
+            .values({
+              id: `dsh-tr-${dshKey(l.nodeId, l.translation.lang)}`,
+              nodeId,
+              courseId: course.key,
+              locale: l.translation.lang,
+              title: l.title,
+              content: l.translation.content,
+            })
+            .onConflictDoUpdate({
+              target: [translationsTable.nodeId, translationsTable.locale],
+              set: { content: l.translation.content, title: l.title },
+            })
+            .run();
+          summary.translationRows++;
+        }
       });
     }
+
+    // 黑板产物 → canvas_items(源 ai;guess 无画布对应已在 normalize 过滤计数)
+    for (const art of state.artifacts) {
+      const nodeId = lessonNodeMap.get(art.lessonId);
+      const courseIdOf = lessonCourseMap.get(art.lessonId);
+      if (!nodeId || !courseIdOf) continue; // 挂靠的课行未导入(被跳过),诚实丢弃
+      db.insert(canvasItemsTable)
+        .values({
+          id: art.key,
+          nodeId,
+          courseId: courseIdOf,
+          artifactType: art.artifactType,
+          title: art.title,
+          data: art.data,
+          createdAt: art.createdAt,
+          sourceType: "ai",
+        })
+        .onConflictDoUpdate({ target: canvasItemsTable.id, set: { title: art.title, data: art.data } })
+        .run();
+      summary.artifactRows++;
+    }
+
+    // 学习者记忆:全局风格槽 + 课级模式槽(course 作用域)
+    if (state.memoryGlobal) {
+      db.insert(memoryTable)
+        .values({
+          id: "dsh-mem-global",
+          summary: state.memoryGlobal,
+          category: "global",
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        })
+        .onConflictDoUpdate({ target: memoryTable.id, set: { summary: state.memoryGlobal, updatedAt: now.toISOString() } })
+        .run();
+      summary.memoryRows++;
+    }
+    for (const pat of state.memoryPatterns) {
+      const cid = courseTargetMap.get(pat.courseId);
+      if (!cid) continue; // 该课未被导入,模式记忆无处挂靠
+      db.insert(memoryTable)
+        .values({
+          id: `dsh-mem-pat-${dshKey(pat.courseId)}`,
+          courseId: cid,
+          summary: pat.text,
+          category: "friction_pattern",
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        })
+        .onConflictDoUpdate({ target: memoryTable.id, set: { summary: pat.text, updatedAt: now.toISOString() } })
+        .run();
+      summary.memoryRows++;
+    }
+    summary.skippedArtifacts = state.skippedArtifacts;
 
     // streak:取较大 / 日期取较晚(max 幂等)
     if (state.streak) {
@@ -402,5 +549,11 @@ function baseResult(): DshImportResult {
     streakMerged: false,
     skippedCourses: [],
     importedCourses: [],
+    noteRows: 0,
+    artifactRows: 0,
+    memoryRows: 0,
+    frictionRows: 0,
+    translationRows: 0,
+    skippedArtifacts: 0,
   };
 }

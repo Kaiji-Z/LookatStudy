@@ -1013,6 +1013,14 @@ export interface DshImportSummary {
   skippedCourses: string[];
   /** 逐课落点(refresh/map=既有课程 id,create=dsh key;成功后驱动 import:done 刷新) */
   importedCourses: { courseId: string; title: string }[];
+  /* 全量迁移:笔记/黑板产物/学习者记忆/卡点/翻译 */
+  noteRows: number;
+  artifactRows: number;
+  memoryRows: number;
+  frictionRows: number;
+  translationRows: number;
+  /** 无画布对应的产物类型数(如 guess)——诚实披露 */
+  skippedArtifacts: number;
 }
 
 /* ---------- IPC 事件（main → renderer，单向推送） ---------- */

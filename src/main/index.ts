@@ -3055,7 +3055,7 @@ async function runUiTest(screenshot = false): Promise<void> {
             {
               title: "第一章",
               lessons: [
-                { id: "uitest-dsh:0:0", title: "课一", kind: "study", status: "in_progress", mastery: 0.4, body: "# 一", concepts: [{ title: "概念A" }], conceptMastery: { "0": 0.4 } },
+                { id: "uitest-dsh:0:0", title: "课一", kind: "study", status: "in_progress", mastery: 0.4, body: "# 一", concepts: [{ title: "概念A" }], conceptMastery: { "0": 0.4 }, memory: "课一的记忆", summary: "课一摘要", friction: [{ category: "confused", summary: "卡了", at: "2026-09-08T10:00:00Z" }], notes: [{ id: "n1", zone: "record", title: "", text: "笔记正文", quote: "画线的原文", source: "content", at: "2026-09-08T10:01:00Z", pinned: false }] },
                 { id: "uitest-dsh:0:1", title: "课二", kind: "study", status: "mastered", mastery: 0.95, body: "# 二", sm2: { easeFactor: 2.5, intervalDays: 3, repetitions: 1 }, dueAt: "2026-01-01T00:00:00Z" },
               ],
             },
@@ -3064,6 +3064,9 @@ async function runUiTest(screenshot = false): Promise<void> {
       ],
       xp: { total: 33, todayKey: new Date().toISOString().slice(0, 10), todayXp: 33 },
       streak: { currentStreak: 2, longestStreak: 4, lastActiveDate: new Date().toISOString().slice(0, 10), freezeCount: 2 },
+      memoryGlobal: "全局记忆",
+      memoryPatterns: { "uitest-dsh": "课级模式" },
+      artifacts: { "uitest-dsh:0:0": [{ id: "a1", artifactType: "concept_map", title: "概念图", createdAt: "2026-09-08T09:00:00Z", hash: "h", data: { nodes: [] } }] },
     };
     const dsh = await win.webContents
       .executeJavaScript(
@@ -3093,6 +3096,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       ok:
         dsh?.r1?.ok === true && dsh?.r1?.coursesCreated === 1 && dsh?.r1?.progressRows === 2 && dsh?.r1?.srsRows === 1
         && dsh?.r1?.xpDelta === 33
+        && dsh?.r1?.noteRows === 1 && dsh?.r1?.artifactRows === 1 && dsh?.r1?.memoryRows === 3 && dsh?.r1?.frictionRows === 1
         && dsh?.inList1 === true
         && dsh?.r2?.ok === true && dsh?.r2?.coursesCreated === 0 && dsh?.r2?.coursesRefreshed === 1 && dsh?.r2?.xpDelta === 0
         && dsh?.listCount2 === 1

@@ -17,14 +17,14 @@
  *
  * 密钥边界:key 输入框 password 类型;保存只走 setSetting,渲染层永不留全量 key。
  */
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSyncExternalStore } from "react";
 import { getCompanionSnapshot, subscribeCompanion } from "../lib/companion/bus.ts";
 import { COMPANION_FORM_IDS } from "../lib/companion/forms-index.js";
 import { Mascot } from "./companion/Mascot.js";
 import { Plus, RotateCw, CheckCircle2, XCircle, Wrench, Check } from "lucide-react";
 import { api } from "../lib/api.js";
-import type { ProviderPresetInfo, CustomProvider } from "@shared/types";
+import type { ProviderPresetInfo, CustomProvider, DshImportSummary } from "@shared/types";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { CustomProviderForm } from "./CustomProviderForm.js";
 import { useTheme, type ThemeMode } from "../lib/useTheme.js";
@@ -550,6 +550,14 @@ export function SettingsView() {
               <div className="text-label font-medium text-ink-strong mb-2">{t("settings.row.import_lang")}</div>
               <ImportPrefButtons />
             </div>
+          </div>
+        </section>
+
+        {/* ========== 数据迁移(dsh 插件进度;全平台) ========== */}
+        <section>
+          <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.data")}</h3>
+          <div className="surface-card overflow-hidden">
+            <DshImportContent />
           </div>
         </section>
 
@@ -1767,6 +1775,102 @@ function SpeechContent() {
           {err === "engine-unavailable" ? t("chat.speech.engine_unavailable") : err}
         </div>
       )}
+    </div>
+  );
+}
+
+/** dsh 插件进度迁移:自动探测(桌面一键)+ 文件上传(全平台同路,含 web/手机)。
+ *  导入语义见 dsh-import-service(幂等/自动备份/同结构课程直写);成功后
+ *  import:done 事件驱动课程列表刷新,抽屉里即时给结果摘要。 */
+function DshImportContent() {
+  const t = useLang();
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [detect, setDetect] = useState<{ found: boolean; path: string | null; version: number | null } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<DshImportSummary | null>(null);
+
+  useEffect(() => {
+    api.dshImportDetect().then(setDetect).catch(() => setDetect({ found: false, path: null, version: null }));
+  }, []);
+
+  const run = (p: Promise<DshImportSummary>) => {
+    setBusy(true);
+    setResult(null);
+    p.then(setResult)
+      .catch((e: unknown) => setResult({ ok: false, error: String(e) } as DshImportSummary))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="p-4 space-y-3" data-testid="settings-dsh-import">
+      <div className="text-label font-medium text-ink-strong">{t("settings.dsh.title")}</div>
+      <p className="text-label text-ink-muted leading-relaxed">{t("settings.dsh.desc")}</p>
+
+      {detect == null ? null : detect.found ? (
+        <div className="flex flex-wrap items-center gap-2" data-testid="settings-dsh-detected">
+          <span className="text-label text-ink-strong">
+            {t("settings.dsh.detectFound", { v: detect.version ?? "?" })}
+          </span>
+          <button
+            onClick={() => run(api.dshImportFromPath(detect.path ?? ""))}
+            disabled={busy}
+            data-testid="settings-dsh-import-btn"
+            className="px-3 py-1.5 rounded-xl text-label font-bold btn-3d-brand disabled:opacity-50"
+          >
+            {busy ? t("settings.dsh.importing") : t("settings.dsh.import")}
+          </button>
+        </div>
+      ) : (
+        <div className="text-label text-ink-muted" data-testid="settings-dsh-none">
+          {t("settings.dsh.detectNone")}
+        </div>
+      )}
+
+      <div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          data-testid="settings-dsh-file-input"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (!f) return;
+            void f.text().then((text) => run(api.dshImportFromText(text)));
+            e.target.value = ""; // 同文件可重复选择(失败重试)
+          }}
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          className="px-3 py-1.5 rounded-xl text-label font-bold btn-3d-neutral disabled:opacity-50"
+        >
+          {t("settings.dsh.pickFile")}
+        </button>
+      </div>
+
+      {busy && !result ? <div className="text-label text-ink-muted">{t("settings.dsh.importing")}</div> : null}
+
+      {result?.ok ? (
+        <div
+          className="text-label text-brand leading-relaxed break-all"
+          role="status"
+          data-testid="settings-dsh-result"
+        >
+          {t("settings.dsh.done", {
+            courses: result.coursesCreated + result.coursesMapped + result.coursesRefreshed,
+            nodes: result.nodes,
+            progress: result.progressRows,
+            srs: result.srsRows,
+            xp: result.xpDelta,
+          })}
+          {result.skippedCourses.length > 0 ? ` · ${t("settings.dsh.skipped", { n: result.skippedCourses.length })}` : ""}
+        </div>
+      ) : result ? (
+        <div className="text-label text-warning break-all" role="alert" data-testid="settings-dsh-error">
+          {t("settings.dsh.failed")}: {result.error ?? "unknown"}
+        </div>
+      ) : null}
     </div>
   );
 }

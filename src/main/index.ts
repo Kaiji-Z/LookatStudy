@@ -3041,6 +3041,67 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: courseDelete,
   });
 
+  // dsh-import (设置页插件数据迁移): 真 IPC 通道端到端 —— importFromText(全平台通用路)
+  // 导入小 fixture → 断言结果摘要 + 课程真落库(listCourses 可见)+ 重导幂等(refresh)。
+  // 设置页 UI 三路入口由 verify-dsh-import 源级守卫覆盖,这里测主进程行为链。
+  {
+    const dshFixture = {
+      version: 2,
+      courses: [
+        {
+          id: "uitest-dsh",
+          title: "UI 测试 dsh 迁移课",
+          sections: [
+            {
+              title: "第一章",
+              lessons: [
+                { id: "uitest-dsh:0:0", title: "课一", kind: "study", status: "in_progress", mastery: 0.4, body: "# 一", concepts: [{ title: "概念A" }], conceptMastery: { "0": 0.4 } },
+                { id: "uitest-dsh:0:1", title: "课二", kind: "study", status: "mastered", mastery: 0.95, body: "# 二", sm2: { easeFactor: 2.5, intervalDays: 3, repetitions: 1 }, dueAt: "2026-01-01T00:00:00Z" },
+              ],
+            },
+          ],
+        },
+      ],
+      xp: { total: 33, todayKey: new Date().toISOString().slice(0, 10), todayXp: 33 },
+      streak: { currentStreak: 2, longestStreak: 4, lastActiveDate: new Date().toISOString().slice(0, 10), freezeCount: 2 },
+    };
+    const dsh = await win.webContents
+      .executeJavaScript(
+        `
+      (async function() {
+        try {
+          var fixture = ${JSON.stringify(JSON.stringify(dshFixture))};
+          var r1 = await window.api.dshImportFromText(fixture);
+          var list1 = await window.api.listCourses();
+          var r2 = await window.api.dshImportFromText(fixture);
+          var list2 = await window.api.listCourses();
+          var bad = await window.api.dshImportFromText("{broken");
+          var detected = await window.api.dshImportDetect();
+          return {
+            r1: r1, r2: r2, bad: bad,
+            detectedFound: typeof detected.found === "boolean",
+            inList1: list1.some(function(c){ return c.title === "UI 测试 dsh 迁移课"; }),
+            listCount2: list2.length,
+          };
+        } catch (e) { return { error: String(e) }; }
+      })()
+    `,
+      )
+      .catch((e: unknown) => ({ error: String(e) }));
+    results.push({
+      name: "dsh-import: importFromText imports course end-to-end (IPC), re-import refreshes, bad JSON rejected",
+      ok:
+        dsh?.r1?.ok === true && dsh?.r1?.coursesCreated === 1 && dsh?.r1?.progressRows === 2 && dsh?.r1?.srsRows === 1
+        && dsh?.r1?.xpDelta === 33
+        && dsh?.inList1 === true
+        && dsh?.r2?.ok === true && dsh?.r2?.coursesCreated === 0 && dsh?.r2?.coursesRefreshed === 1 && dsh?.r2?.xpDelta === 0
+        && dsh?.listCount2 === 1
+        && dsh?.bad?.ok === false
+        && dsh?.detectedFound === true,
+      detail: dsh,
+    });
+  }
+
   // allOk: 所有测试通过 OR 仅 knownFail 测试未通过
   const realFails = results.filter((r) => !r.ok && !r.knownFail);
   const knownFails = results.filter((r) => !r.ok && r.knownFail);

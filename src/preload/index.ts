@@ -217,6 +217,14 @@ const api = {
     ipcRenderer.invoke("settings:set", key, value)) as ApiExpose["setSetting"],
   companionPetSetClickThrough: ((passThrough: boolean) =>
     ipcRenderer.invoke("companionPet:setClickThrough", passThrough)) as ApiExpose["companionPetSetClickThrough"],
+
+  /* dsh 插件进度迁移(全平台:importFromText 通用;detect/importFromPath 桌面一键) */
+  dshImportDetect: (() =>
+    ipcRenderer.invoke("dsh:detect")) as ApiExpose["dshImportDetect"],
+  dshImportFromPath: ((path: string) =>
+    ipcRenderer.invoke("dsh:importFromPath", path)) as ApiExpose["dshImportFromPath"],
+  dshImportFromText: ((jsonText: string) =>
+    ipcRenderer.invoke("dsh:importFromText", jsonText)) as ApiExpose["dshImportFromText"],
   getXpStatus: (() =>
     ipcRenderer.invoke("xp:getStatus")) as ApiExpose["getXpStatus"],
   exportCourse: ((courseId: string, format: "json" | "markdown") =>

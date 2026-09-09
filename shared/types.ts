@@ -750,6 +750,14 @@ export interface ApiExpose {
    *  渲染层指针热区检测调用;web 运行时无桌宠窗,no-op。 */
   companionPetSetClickThrough(passThrough: boolean): Promise<void>;
 
+  /* dsh 插件进度迁移(全平台:importFromText 通用;detect/importFromPath 桌面一键) */
+  /** 探测本机(serve=服务器侧)~/.dsh/lookatstudy-plugin/state.json。 */
+  dshImportDetect(): Promise<{ found: boolean; path: string | null; version: number | null }>;
+  /** 从指定路径(通常来自 detect)导入。 */
+  dshImportFromPath(path: string): Promise<DshImportSummary>;
+  /** 从 state.json 文本导入(渲染层 <input type=file> 读文本;web/手机同路)。 */
+  dshImportFromText(jsonText: string): Promise<DshImportSummary>;
+
   /** 语音模型状态(全部;absent/downloading/ready/error) */
   getSpeechModelStatus(): Promise<SpeechModelStatusT[]>;
   /** 下载/确保语音模型(进度经 speech:modelProgress 事件推送;全源失败抛错) */
@@ -978,6 +986,34 @@ export type SettingKey =
   | "groq_api_key"
   // issue #14 三栏拖拽调宽:持久化像素宽(空/无效=未定制=响应式默认)
   | "pane_width_left" | "pane_width_mid";
+
+/* ---------- dsh 插件进度迁移(设置页) ---------- */
+
+/** 一次 dsh state 导入的结果摘要(渲染层 toast/结果行展示)。 */
+export interface DshImportSummary {
+  ok: boolean;
+  error?: string;
+  /** 导入前自动备份的库文件路径(备份失败/无文件时 null) */
+  backupPath: string | null;
+  stateVersion: number;
+  coursesCreated: number;
+  /** 写进了既有同标题同结构课程的次数(不覆盖内容) */
+  coursesMapped: number;
+  /** 刷新了我们此前导入过的课程(幂等重导) */
+  coursesRefreshed: number;
+  nodes: number;
+  progressRows: number;
+  kcRows: number;
+  srsRows: number;
+  examRows: number;
+  xpDelta: number;
+  dailyXpAdded: number;
+  streakMerged: boolean;
+  /** 结构非法被跳过的课程标题(诚实披露,不炸导入) */
+  skippedCourses: string[];
+  /** 逐课落点(refresh/map=既有课程 id,create=dsh key;成功后驱动 import:done 刷新) */
+  importedCourses: { courseId: string; title: string }[];
+}
 
 /* ---------- IPC 事件（main → renderer，单向推送） ---------- */
 

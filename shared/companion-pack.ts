@@ -276,13 +276,16 @@ export function analyzePngSpec(img: PngSpecImage, opts: PngSpecOptions = {}): Pn
     }
   }
 
-  // 连通块(4 邻域 BFS):只数 ≥ 最大块×minBlobAreaRatio 的主体
+  // 连通块(4 邻域 BFS):只数 ≥ 最大块×minBlobAreaRatio 的主体;
+  // 再做**嵌套合并**——bbox 被更大块完全包含的块(玻璃头盔的外环包着内头、
+  // 帽檐包着脑袋)视为同一角色的同心结构,不判 MULTI_BLOB(宇航员素材实测教训)。
   const visited = new Uint8Array(gw * gh);
-  const areas: number[] = [];
+  const blobs: Array<{ area: number; minX: number; maxX: number; minY: number; maxY: number }> = [];
   const stack: number[] = [];
   for (let start = 0; start < opaque.length; start++) {
     if (!opaque[start] || visited[start]) continue;
     let area = 0;
+    let bMinX = gw, bMaxX = -1, bMinY = gh, bMaxY = -1;
     stack.push(start);
     visited[start] = 1;
     while (stack.length > 0) {
@@ -290,6 +293,10 @@ export function analyzePngSpec(img: PngSpecImage, opts: PngSpecOptions = {}): Pn
       area++;
       const cx = cur % gw;
       const cy = (cur - cx) / gw;
+      if (cx < bMinX) bMinX = cx;
+      if (cx > bMaxX) bMaxX = cx;
+      if (cy < bMinY) bMinY = cy;
+      if (cy > bMaxY) bMaxY = cy;
       const push = (n: number) => {
         if (opaque[n] && !visited[n]) {
           visited[n] = 1;
@@ -301,10 +308,28 @@ export function analyzePngSpec(img: PngSpecImage, opts: PngSpecOptions = {}): Pn
       if (cy > 0) push(cur - gw);
       if (cy < gh - 1) push(cur + gw);
     }
-    areas.push(area);
+    blobs.push({ area, minX: bMinX, maxX: bMaxX, minY: bMinY, maxY: bMaxY });
   }
-  const maxArea = areas.length > 0 ? Math.max(...areas) : 0;
-  const blobCount = areas.filter((a) => a >= maxArea * minBlobAreaRatio).length;
+  const maxArea = blobs.length > 0 ? Math.max(...blobs.map((b) => b.area)) : 0;
+  const major = blobs.filter((b) => b.area >= maxArea * minBlobAreaRatio);
+  // 同角色判定:小块被大块 bbox **包含**,或与大块 bbox **显著重叠**
+  // (交叠 ≥ 小块 bbox 面积 40%——宇航员头盔:头从穹顶环里伸出来,相交但不包含)
+  type BlobBox = { minX: number; maxX: number; minY: number; maxY: number };
+  const contained = (a: BlobBox, b: BlobBox): boolean =>
+    a.minX >= b.minX && a.maxX <= b.maxX && a.minY >= b.minY && a.maxY <= b.maxY;
+  const overlapRatio = (a: BlobBox, b2: BlobBox): number => {
+    const ix = Math.min(a.maxX, b2.maxX) - Math.max(a.minX, b2.minX);
+    const iy = Math.min(a.maxY, b2.maxY) - Math.max(a.minY, b2.minY);
+    if (ix <= 0 || iy <= 0) return 0;
+    const inter = ix * iy;
+    const aA = (a.maxX - a.minX + 1) * (a.maxY - a.minY + 1);
+    const bA = (b2.maxX - b2.minX + 1) * (b2.maxY - b2.minY + 1);
+    return inter / Math.min(aA, bA);
+  };
+  const majors = major.filter(
+    (b) => !major.some((o) => o !== b && o.area >= b.area && (contained(b, o) || overlapRatio(b, o) >= 0.4)),
+  );
+  const blobCount = majors.length;
   if (blobCount >= 2) {
     issues.push(issue("MULTI_BLOB", `检出 ${blobCount} 个独立主体——请裁剪到单角色`));
   }

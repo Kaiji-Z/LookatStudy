@@ -6,10 +6,10 @@
  * 同一套 bus 信号驱动,肉眼对照"僵 vs 活",产出 PD-Mesh 是否进 M1 的证据。
  * 详见 .goal/SPEC.md §5。
  */
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { celebrate } from "../lib/celebration.js";
 import type { BotState } from "@shared/companion-pack.ts";
-import { buildSampleArt, SAMPLE_MANIFEST } from "./sample-pack.ts";
+import { buildSampleArt, SAMPLE_MANIFEST, type SampleArt } from "./sample-pack.ts";
 import { CompanionBot, MeshBot, PDLiteBot } from "./CompanionBot.tsx";
 
 const POSE_BUTTONS: Array<{ pose: BotState | null; label: string }> = [
@@ -25,12 +25,23 @@ const TIER_NOTES = [
 ] as const;
 
 export function CompanionBotLab(): React.ReactElement {
-  const art = useMemo(() => buildSampleArt(), []);
+  const [art, setArt] = useState<SampleArt | null>(null);
   const [forced, setForced] = useState<BotState | null>(null);
+  useEffect(() => {
+    let on = true;
+    buildSampleArt().then((a) => {
+      if (on) setArt(a);
+    });
+    return () => {
+      on = false;
+    };
+  }, []);
 
   const close = () => {
     location.hash = "";
   };
+
+  if (!art) return <div data-companion-bot-lab="" className="fixed inset-0 z-[70] bg-black/45" />;
 
   return (
     <div
@@ -77,21 +88,21 @@ export function CompanionBotLab(): React.ReactElement {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-xl bg-surface-2 p-4 text-center">
             <div className="flex h-[200px] items-center justify-center">
-              <CompanionBot pack={{ manifest: SAMPLE_MANIFEST, srcs: art.srcs }} size={168} poseOverride={forced} />
+              <CompanionBot pack={{ manifest: SAMPLE_MANIFEST, srcs: art.srcs }} size={148} poseOverride={forced} />
             </div>
             <h3 className="text-label mt-2 font-bold">{TIER_NOTES[0].title}</h3>
             <p className="text-caption mt-1 text-ink/60">{TIER_NOTES[0].note}</p>
           </div>
           <div className="rounded-xl bg-surface-2 p-4 text-center">
             <div className="flex h-[200px] items-center justify-center">
-              <PDLiteBot parts={art.parts} size={176} poseOverride={forced} />
+              <PDLiteBot parts={art.parts} size={156} poseOverride={forced} />
             </div>
             <h3 className="text-label mt-2 font-bold">{TIER_NOTES[1].title}</h3>
             <p className="text-caption mt-1 text-ink/60">{TIER_NOTES[1].note}</p>
           </div>
           <div className="rounded-xl bg-surface-2 p-4 text-center">
             <div className="flex h-[200px] items-center justify-center">
-              <MeshBot parts={art.parts} size={176} poseOverride={forced} />
+              <MeshBot parts={art.parts} size={156} poseOverride={forced} />
             </div>
             <h3 className="text-label mt-2 font-bold">{TIER_NOTES[2].title}</h3>
             <p className="text-caption mt-1 text-ink/60">{TIER_NOTES[2].note}</p>
@@ -100,7 +111,7 @@ export function CompanionBotLab(): React.ReactElement {
 
         <p className={`text-caption mt-4 ${art.selfSpec.ok ? "text-brand" : "text-warning"}`}>
           {art.selfSpec.ok
-            ? "✓ 样例整图通过 PNG 三行规格检测(透明底/单主体/别贴边)——analyzePngSpec 活演示"
+            ? "✓ 样例 body 件通过 PNG 三行规格检测(透明底/单主体/别贴边)——analyzePngSpec 活演示"
             : `✗ 样例未过规格:${art.selfSpec.issues.map((i) => i.code).join(", ")}`}
         </p>
       </div>

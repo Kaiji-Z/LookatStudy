@@ -7,8 +7,12 @@
  *
  * 三个渲染档:
  *   CompanionBot  贴纸级/Bongo档:整图帧替换 + CSS 呼吸 + WAAPI squash/jump
- *   PDLiteBot     纸偶档(head/body/armL/armR 四层绝对定位,肩点旋转)
- *   MeshBot       PD-Mesh(同四层,Canvas2D 网格变形,仅实验页)
+ *   PDLiteBot     纸偶档(body + 分离双手,腕点旋转)
+ *   MeshBot       PD-Mesh(同三件,Canvas2D 网格变形,仅实验页)
+ *
+ * 动效参数组(v5/v10 移植,来自 Mascot.tsx 逐键按压):拍臂 ±44°、185ms、
+ * cubic-bezier(0.2,1.5,0.4,1)、composite add;整机同拍压弹 translateY(2.5px)
+ * scale(1.045,0.93)@0.42 ease-out。
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { sideFromCode } from "../lib/companion/companion-core.ts";
@@ -16,7 +20,7 @@ import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion.ts";
 import { onCelebration } from "../lib/celebration.js";
 import type { BotState, CompanionPackManifest } from "@shared/companion-pack.ts";
 import { poseHoldMsOf } from "@shared/companion-pack.ts";
-import { PART_BOX, SHOULDER } from "./sample-pack.ts";
+import { PART_BOX, NECK_PIVOT } from "./sample-pack.ts";
 import { drawMeshWarp } from "./mesh-warp.ts";
 
 export type BotGesture = "keyL" | "keyR" | "happy" | "wrong" | "thinking" | "idle";
@@ -65,14 +69,6 @@ function usePose(): { pose: BotState; setTimed: (p: BotState, ms?: number) => vo
   return { pose, setTimed };
 }
 
-function squash(el: Element | null, reduced: boolean): void {
-  if (reduced || !el || typeof el.animate !== "function") return;
-  el.animate(
-    [{ transform: "scale(1.09, 0.88)" }, { transform: "scale(0.98, 1.03)", offset: 0.6 }, { transform: "scale(1)" }],
-    { duration: 200, easing: "cubic-bezier(0.2, 1.5, 0.4, 1)" },
-  );
-}
-
 function jump(el: Element | null, reduced: boolean): void {
   if (reduced || !el || typeof el.animate !== "function") return;
   el.animate(
@@ -89,9 +85,22 @@ function wiggle(el: Element | null, reduced: boolean): void {
   );
 }
 
+/** v5/v10 逐键按压·整机同拍压弹(参数原样移植,见文件头)。 */
+function press(el: Element | null, reduced: boolean): void {
+  if (reduced || !el || typeof el.animate !== "function") return;
+  el.animate(
+    [
+      { transform: "translateY(0px) scale(1, 1)" },
+      { transform: "translateY(2.5px) scale(1.045, 0.93)", offset: 0.42 },
+      { transform: "translateY(0px) scale(1, 1)" },
+    ],
+    { duration: 185, easing: "ease-out", composite: "add" },
+  );
+}
+
 const BOT_CSS = `
 .cbot { position: relative; display: inline-block; line-height: 0;
-  animation: cbot-breath 3.4s ease-in-out infinite; transform-origin: 50% 88%; }
+  animation: cbot-breath 3.4s ease-in-out infinite; transform-origin: 50% 62%; }
 .cbot img, .cbot canvas { display: block; user-select: none; }
 .cbot-lite img { position: absolute; pointer-events: none; }
 @keyframes cbot-breath { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.012, 1.03); } }
@@ -120,12 +129,9 @@ export function CompanionBot({
   const { pose, setTimed } = usePose();
   const imgRef = useRef<HTMLImageElement | null>(null);
   useBotGestures((g) => {
-    if (g === "keyL") {
-      setTimed("keyL", 180);
-      squash(imgRef.current, reduced);
-    } else if (g === "keyR") {
-      setTimed("keyR", 180);
-      squash(imgRef.current, reduced);
+    if (g === "keyL" || g === "keyR") {
+      setTimed(g, 180);
+      press(imgRef.current, reduced);
     } else if (g === "happy") {
       setTimed("happy", poseHoldMsOf(pack.manifest));
       jump(imgRef.current, reduced);
@@ -157,11 +163,8 @@ export function CompanionBot({
 export interface PartArt {
   head: string;
   body: string;
-  armL: string;
-  armR: string;
 }
 
-/** 部件画布全尺寸叠放(四层同一 512 坐标系,绝对位置天然对齐)。 */
 const FULL: CSSProperties = { left: 0, top: 0, width: "100%", height: "100%" };
 
 export function PDLiteBot({
@@ -179,34 +182,39 @@ export function PDLiteBot({
   const { pose, setTimed } = usePose();
   const boxRef = useRef<HTMLDivElement | null>(null);
   const headRef = useRef<HTMLImageElement | null>(null);
-  const armLRef = useRef<HTMLImageElement | null>(null);
-  const armRRef = useRef<HTMLImageElement | null>(null);
   useBotGestures((g) => {
-    const swing = (el: HTMLImageElement | null, dir: -1 | 1) => {
-      if (reduced || !el || typeof el.animate !== "function") return;
-      el.animate(
-        [{ transform: "rotate(0deg)" }, { transform: `rotate(${dir * 36}deg)`, offset: 0.5 }, { transform: "rotate(0deg)" }],
-        { duration: 220, easing: "cubic-bezier(0.2, 1.5, 0.4, 1)" },
+    // 头部颈点摆动(v5 参数:offset 0.38 + 185ms 过冲 bezier,composite add)+ 整机同拍压弹
+    const tilt = (dir: -1 | 1) => {
+      if (reduced || !headRef.current || typeof headRef.current.animate !== "function") return;
+      headRef.current.animate(
+        [
+          { transform: "rotate(0deg)" },
+          { transform: `rotate(${dir * 10}deg)`, offset: 0.38 },
+          { transform: "rotate(0deg)" },
+        ],
+        { duration: 185, easing: "cubic-bezier(0.2, 1.5, 0.4, 1)", composite: "add" },
       );
     };
     if (g === "keyL") {
-      setTimed("keyL", 200);
-      swing(armLRef.current, -1);
+      setTimed("keyL", 185);
+      tilt(-1);
+      press(boxRef.current, reduced);
     } else if (g === "keyR") {
-      setTimed("keyR", 200);
-      swing(armRRef.current, 1);
+      setTimed("keyR", 185);
+      tilt(1);
+      press(boxRef.current, reduced);
     } else if (g === "happy") {
       setTimed("happy", 1100);
       jump(boxRef.current, reduced);
     } else if (g === "thinking") {
       setTimed("thinking", 0);
       if (!reduced && headRef.current?.animate) {
-        headRef.current.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(7deg)" }], { duration: 240, fill: "forwards" });
+        headRef.current.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(9deg)" }], { duration: 260, fill: "forwards" });
       }
     } else if (g === "idle") {
       setTimed("idle", 0);
       if (!reduced && headRef.current?.animate) {
-        headRef.current.animate([{ transform: "rotate(7deg)" }, { transform: "rotate(0deg)" }], { duration: 180, fill: "forwards" });
+        headRef.current.animate([{ transform: "rotate(9deg)" }, { transform: "rotate(0deg)" }], { duration: 180, fill: "forwards" });
       }
     } else {
       wiggle(boxRef.current, reduced);
@@ -215,10 +223,8 @@ export function PDLiteBot({
   const shown = poseOverride ?? pose;
   return (
     <div className="cbot cbot-lite" ref={boxRef} data-companion-bot="pd-lite" data-bot-state={shown} style={{ width: size, height: size }}>
-      <img src={parts.armL} alt="" draggable={false} ref={armLRef} style={{ ...FULL, transformOrigin: `${SHOULDER.armL.x * 100}% ${SHOULDER.armL.y * 100}%` }} />
-      <img src={parts.armR} alt="" draggable={false} ref={armRRef} style={{ ...FULL, transformOrigin: `${SHOULDER.armR.x * 100}% ${SHOULDER.armR.y * 100}%` }} />
       <img src={parts.body} alt="" draggable={false} style={FULL} />
-      <img ref={headRef} src={parts.head} alt={label ?? "pd-lite"} draggable={false} style={FULL} />
+      <img src={parts.head} alt={label ?? "pd-lite"} draggable={false} ref={headRef} style={{ ...FULL, transformOrigin: `${NECK_PIVOT.x * 100}% ${NECK_PIVOT.y * 100}%` }} />
       <style>{BOT_CSS}</style>
     </div>
   );
@@ -228,7 +234,7 @@ export function PDLiteBot({
 
 export function MeshBot({
   parts,
-  size = 180,
+  size = 160,
   label,
   poseOverride = null,
 }: {
@@ -241,24 +247,20 @@ export function MeshBot({
   const { pose, setTimed } = usePose();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const excite = useRef(0);
-  const tilt = useRef(0);
   const shown = poseOverride ?? pose;
-  const shownRef = useRef<BotState>("idle");
-  shownRef.current = shown;
 
   useBotGestures((g) => {
     if (g === "keyL" || g === "keyR") {
       excite.current = 1;
-      setTimed(g, 200);
+      setTimed(g, 185);
+      press(canvasRef.current, reduced);
     } else if (g === "happy") {
       excite.current = 1.6;
       setTimed("happy", 1100);
       jump(canvasRef.current, reduced);
     } else if (g === "thinking") {
-      tilt.current = 1;
       setTimed("thinking", 0);
     } else if (g === "idle") {
-      tilt.current = 0;
       setTimed("idle", 0);
     } else {
       wiggle(canvasRef.current, reduced);
@@ -274,7 +276,7 @@ export function MeshBot({
     canvas.width = size * dpr;
     canvas.height = size * dpr;
 
-    const imgs: Array<HTMLImageElement> = [parts.armL, parts.armR, parts.body, parts.head].map((src) => {
+    const imgs: Array<HTMLImageElement> = [parts.head, parts.body].map((src) => {
       const im = new Image();
       im.src = src;
       return im;
@@ -291,34 +293,17 @@ export function MeshBot({
       ),
     ).then(() => {
       if (cancelled) return;
-      const boxes = [PART_BOX.armL, PART_BOX.armR, PART_BOX.body, PART_BOX.head];
       const start = performance.now();
       const frame = (now: number) => {
         if (cancelled) return;
         excite.current *= 0.92;
         const t = now - start;
         const ex = excite.current;
-        const tl = tilt.current;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.save();
         ctx.scale(dpr, dpr);
-        // 头:顶部行延迟摆动(发丝 lag)+ 呼吸鼓起 + thinking 歪头(skew 随 v 增长)
-        drawMeshWarp(ctx, imgs[3], {
-          x: PART_BOX.head.x * size,
-          y: PART_BOX.head.y * size,
-          w: PART_BOX.head.w * size,
-          h: PART_BOX.head.h * size,
-          src: { x: PART_BOX.head.x * 512, y: PART_BOX.head.y * 512, w: PART_BOX.head.w * 512, h: PART_BOX.head.h * 512 },
-          cols: 7,
-          rows: 8,
-          t,
-          deform: (_u, v, tt) => ({
-            dx: Math.sin(tt / 820) * 1.6 * (1 - v) * (1 + ex) + tl * 7 * v + Math.sin(tt / 500) * 2.4 * v * v * (1 + ex * 2),
-            dy: Math.sin(tt / 640) * 2 * (1 - v) + Math.sin(tt / 460) * 1.2 * ex * (1 - v),
-          }),
-        });
-        // 身体:侧缘呼吸鼓起(体积感的关键)
-        drawMeshWarp(ctx, imgs[2], {
+        // 身体:侧缘呼吸鼓起(体积感)+ 逐键挤压下压
+        drawMeshWarp(ctx, imgs[1], {
           x: PART_BOX.body.x * size,
           y: PART_BOX.body.y * size,
           w: PART_BOX.body.w * size,
@@ -329,30 +314,24 @@ export function MeshBot({
           t,
           deform: (u, _v, tt) => ({
             dx: Math.sin(tt / 640) * 1.1 + Math.sin(tt / 700) * 2.2 * Math.abs(u - 0.5) * 2 * (1 + ex * 0.5),
-            dy: 0,
+            dy: ex * 2.5,
           }),
         });
-        // 双臂:肩点滞后摆动(excite 放大)
-        for (const [idx, dir] of [
-          [0, -1],
-          [1, 1],
-        ] as Array<[number, number]>) {
-          const box = boxes[idx];
-          drawMeshWarp(ctx, imgs[idx], {
-            x: box.x * size,
-            y: box.y * size,
-            w: box.w * size,
-            h: box.h * size,
-            src: { x: box.x * 512, y: box.y * 512, w: box.w * 512, h: box.h * 512 },
-            cols: 4,
-            rows: 6,
-            t,
-            deform: (_u, v, tt) => ({
-              dx: Math.sin(tt / 820 + 0.6) * 2.2 * v * dir * (1 + ex * 4) + (v > 0.5 ? ex * 3 * dir * (v - 0.5) * 2 : 0),
-              dy: Math.sin(tt / 700) * 0.8 * v,
-            }),
-          });
-        }
+        // 头:怠速轻晃 + 呼吸起伏,键击时随拍摆动(excite 放大)
+        drawMeshWarp(ctx, imgs[0], {
+          x: PART_BOX.head.x * size,
+          y: PART_BOX.head.y * size,
+          w: PART_BOX.head.w * size,
+          h: PART_BOX.head.h * size,
+          src: { x: PART_BOX.head.x * 512, y: PART_BOX.head.y * 512, w: PART_BOX.head.w * 512, h: PART_BOX.head.h * 512 },
+          cols: 7,
+          rows: 7,
+          t,
+          deform: (_u, v, tt) => ({
+            dx: Math.sin(tt / 820) * 1.4 * (1 + ex * 2) + Math.sin(tt / 500) * 1.8 * v * (1 + ex * 2),
+            dy: Math.sin(tt / 640) * 1.8 * (1 - v) + Math.sin(tt / 460) * 1.4 * ex * (1 - v) + ex * 2,
+          }),
+        });
         ctx.restore();
         requestAnimationFrame(frame);
       };

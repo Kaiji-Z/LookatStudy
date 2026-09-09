@@ -139,6 +139,39 @@ check("T22 小碎屑(天线≈2%)不误报,blob=1", (() => {
   ]));
   return r.ok && r.blobCount === 1;
 })());
+check("T22b 同心结构(玻璃头盔:外环包内头)不误报,blob=1", (() => {
+  // 外环(空心方框)+ 内部独立小方块,内块 bbox 被外环 bbox 完全包含 → 嵌套合并
+  const w = 512, h = 512;
+  const rgba = new Uint8Array(w * h * 4);
+  const fill = (x, y) => { const i = (y * w + x) * 4; rgba[i] = 200; rgba[i + 1] = 120; rgba[i + 2] = 60; rgba[i + 3] = 255; };
+  for (let y = 140; y < 380; y++) for (let t = 0; t < 24; t++) { fill(120 + t, y); fill(356 - t, y); }
+  for (let x = 140; x < 380; x++) for (let t = 0; t < 24; t++) { fill(x, 140 + t); fill(x, 356 - t); }
+  for (let y = 250; y < 300; y++) for (let x = 250; x < 300; x++) fill(x, y);
+  const r = analyzePngSpec({ width: w, height: h, rgba });
+  return r.ok && r.blobCount === 1;
+})());
+check("T22c 嵌套但不相交的旁块仍判 MULTI_BLOB", (() => {
+  const w = 512, h = 512;
+  const rgba = new Uint8Array(w * h * 4);
+  const fill = (x, y) => { const i = (y * w + x) * 4; rgba[i] = 200; rgba[i + 1] = 120; rgba[i + 2] = 60; rgba[i + 3] = 255; };
+  for (let y = 140; y < 380; y++) for (let t = 0; t < 24; t++) { fill(80 + t, y); fill(316 - t, y); }
+  for (let x = 100; x < 300; x++) for (let t = 0; t < 24; t++) { fill(x, 140 + t); fill(x, 356 - t); }
+  for (let y = 250; y < 300; y++) for (let x = 250; x < 300; x++) fill(x, y);
+  for (let y = 240; y < 300; y++) for (let x = 420; x < 470; x++) fill(x, y);
+  const r = analyzePngSpec({ width: w, height: h, rgba });
+  return r.blobCount === 2;
+})());
+check("T22d 头从穹顶环伸出(相交非包含)合并为同一角色,blob=1", (() => {
+  // 模拟宇航员:穹顶环 + 从环底部伸出的头,头 bbox 与环 bbox 重叠 ~60%
+  const w = 512, h = 512;
+  const rgba = new Uint8Array(w * h * 4);
+  const fill = (x, y) => { const i = (y * w + x) * 4; rgba[i] = 200; rgba[i + 1] = 120; rgba[i + 2] = 60; rgba[i + 3] = 255; };
+  for (let y = 100; y < 240; y++) for (let t = 0; t < 20; t++) { fill(140 + t, y); fill(352 - t, y); }
+  for (let x = 140; x < 372; x++) for (let t = 0; t < 20; t++) { fill(x, 100 + t); fill(x, 220 + t); }
+  for (let y = 200; y < 380; y++) for (let x = 200; x < 312; x++) fill(x, y);
+  const r = analyzePngSpec({ width: w, height: h, rgba });
+  return r.ok && r.blobCount === 1;
+})());
 check("T23 贴边 → EDGE_TOUCH", codesOf(analyzePngSpec(makeImage(512, 512, [{ cx: 60, cy: 256, rx: 70 }]))).has("EDGE_TOUCH"));
 check("T24 短边 128 → TOO_SMALL", codesOf(analyzePngSpec(makeImage(128, 128, [{ cx: 64, cy: 64, rx: 40 }]))).has("TOO_SMALL"));
 check("T25 超长边 → TOO_LARGE(opts 收紧验证,不分配大图)", codesOf(analyzePngSpec(makeImage(1024, 1024, [{ cx: 512, cy: 512, rx: 300 }]), { maxSide: 512 })).has("TOO_LARGE"));

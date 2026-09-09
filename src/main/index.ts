@@ -1304,6 +1304,56 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: notebookCompanion === true,
   });
 
+  // ---- M0 spike(CompanionBot Lab,.goal/SPEC.md):外部角色包三档对照实验页 ----
+  // hash 门控懒挂载 + 三 bot 渲染 + 键击切帧(sticker src 变化)+ 庆祝总线驱动 happy。
+  // 结束时退出 lab(fixed 覆盖层不挡后续断言的点击)。与 CompanionCreature 零耦合:
+  // 既有 companion v* 断言(含上面这条)全部照常通过即零回归的证据。
+  const botLab = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        location.hash = "#companion-bot-lab";
+        var root = null;
+        for (var i = 0; i < 40; i++) {
+          await new Promise(function(r){ setTimeout(r, 100); });
+          root = document.querySelector('[data-companion-bot-lab]');
+          if (root) break;
+        }
+        if (!root) return { mounted: false };
+        var bots = root.querySelectorAll('[data-companion-bot]');
+        var stickerBox = root.querySelector('[data-companion-bot="bongo"]');
+        var sticker = stickerBox ? stickerBox.querySelector('img') : null;
+        if (!sticker) return { mounted: true, bots: bots.length, error: "no-sticker-img" };
+        var before = sticker.getAttribute('src');
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', bubbles: true }));
+        await new Promise(function(r){ setTimeout(r, 80); });
+        var midBox = root.querySelector('[data-companion-bot="bongo"]');
+        var mid = midBox.querySelector('img').getAttribute('src');
+        var midState = midBox.getAttribute('data-bot-state');
+        var celebrateBtn = document.querySelector('[data-testid="bot-lab-celebrate"]');
+        if (celebrateBtn) celebrateBtn.click();
+        await new Promise(function(r){ setTimeout(r, 150); });
+        var happyState = root.querySelector('[data-companion-bot="bongo"]').getAttribute('data-bot-state');
+        var unmounted = false;
+        location.hash = "";
+        for (var j = 0; j < 20; j++) {
+          await new Promise(function(r){ setTimeout(r, 100); });
+          if (!document.querySelector('[data-companion-bot-lab]')) { unmounted = true; break; }
+        }
+        return { mounted: true, bots: bots.length, changed: before !== mid, midState: midState, happyState: happyState, unmounted: unmounted };
+      } catch (e) { return { error: String(e) }; }
+    })()
+  `);
+  results.push({
+    name: "companion-bot M0: lab mounts (3 tiers) + keystroke swaps frame",
+    ok: botLab?.mounted === true && botLab?.bots === 3 && botLab?.changed === true,
+    detail: botLab,
+  });
+  results.push({
+    name: "companion-bot M0: celebration bus drives happy + lab closes clean",
+    ok: botLab?.happyState === "happy" && botLab?.unmounted === true,
+    detail: botLab,
+  });
+
   // T8e (按钮消息展示): 点「开始学习」→ 乐观 user 气泡立刻出现且只显示短动作标签,
   // 发给 LLM 的完整开场提示词不出现在 DOM(防"按钮 prompt 裸奔"回归)。
   // 断言完立即停流(chat-stop),避免 LLM 流式阻塞后续测试的节点切换。

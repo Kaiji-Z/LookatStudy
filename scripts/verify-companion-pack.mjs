@@ -1,0 +1,212 @@
+/**
+ * verify-companion-pack —— CompanionBot M0 spike 的回归断言(纯函数 + 源级守卫)。
+ *
+ * 防止回归:
+ *   - 角色包 manifest lint(structure/路径安全/文件存在性):外部包是用户供给面,
+ *     恶意/畸形包绝不许穿到加载层(路径穿越/绝对路径/隐藏文件全拒)
+ *   - PNG 三行规格检测器(透明底/单主体/别贴边):导入 UX 的分级依据全靠这些 code
+ *   - 源级守卫(T15 风格):
+ *       G1 CompanionCreature/companion-* 既有文件零 diff(新 bot 系统不碰现有伴学)
+ *       G2 CompanionBot 对 bus 只读(onCelebration 在,命令入口零调用——bot 不驱动现有生物)
+ *       G3 实验页必须懒加载(主束零增量),不许静态 import
+ *       G4 本套件已注册进 verify:core 链
+ *
+ * 运行:npx tsx scripts/verify-companion-pack.mjs
+ */
+import { readFileSync, existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import assert from "node:assert";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, "..");
+const read = (p) => readFileSync(path.resolve(root, p), "utf8");
+
+const { lintCompanionPack, analyzePngSpec, resolveStateSrc, poseHoldMsOf, BOT_STATES } = await import(
+  "../shared/companion-pack.ts"
+);
+
+let pass = 0;
+let fail = 0;
+function check(name, cond) {
+  if (cond) {
+    console.log(`✓ ${name}`);
+    pass++;
+  } else {
+    console.log(`✗ ${name}`);
+    fail++;
+  }
+}
+
+/** 挑出 issues 里的 code 集合。 */
+const codesOf = (r) => new Set(r.issues.map((i) => i.code));
+
+/** 合成 RGBA 测试图:透明底 + 若干椭圆不透明主体。 */
+function makeImage(w, h, blobs, { bgAlpha = 0 } = {}) {
+  const rgba = new Uint8Array(w * h * 4);
+  if (bgAlpha > 0) {
+    for (let i = 0; i < w * h; i++) rgba[i * 4 + 3] = bgAlpha;
+  }
+  for (const b of blobs) {
+    const { cx, cy, rx, ry = rx } = b;
+    for (let y = Math.max(0, Math.floor(cy - ry)); y <= Math.min(h - 1, Math.ceil(cy + ry)); y++) {
+      for (let x = Math.max(0, Math.floor(cx - rx)); x <= Math.min(w - 1, Math.ceil(cx + rx)); x++) {
+        const dx = (x - cx) / rx;
+        const dy = (y - cy) / ry;
+        if (dx * dx + dy * dy <= 1) {
+          const idx = (y * w + x) * 4;
+          rgba[idx] = 200;
+          rgba[idx + 1] = 120;
+          rgba[idx + 2] = 60;
+          rgba[idx + 3] = 255;
+        }
+      }
+    }
+  }
+  return { width: w, height: h, rgba };
+}
+
+/** 合规样例:512²,单主体居中,四周 ~10% 空白。 */
+const validChibi = () => makeImage(512, 512, [{ cx: 256, cy: 256, rx: 180, ry: 190 }]);
+
+/* ---------------- T 组:manifest lint ---------------- */
+
+const validManifest = (over = {}) => ({
+  formatVersion: 1,
+  id: "sample-chibi",
+  name: "样例圆团",
+  author: "lookatstudy",
+  license: "CC0-1.0",
+  tier: "sticker",
+  states: { idle: "idle.png" },
+  ...over,
+});
+const ioOK = { fileExists: () => true };
+
+check("T1 合规最小包通过", lintCompanionPack(validManifest(), ioOK).ok);
+check(
+  "T2 合规 bongo 包(idle+keyL+happy)通过",
+  lintCompanionPack(validManifest({ tier: "bongo", states: { idle: "idle.png", keyL: "keyl.png", happy: "happy.png" } }), ioOK).ok,
+);
+check("T3 非对象拒收", codesOf(lintCompanionPack("nope", ioOK)).has("NOT_OBJECT"));
+check("T4 formatVersion≠1 拒收", codesOf(lintCompanionPack(validManifest({ formatVersion: 2 }), ioOK)).has("BAD_FORMAT_VERSION"));
+check("T5 坏 id(大写/空格)拒收", codesOf(lintCompanionPack(validManifest({ id: "Sample Chibi" }), ioOK)).has("BAD_ID"));
+check("T6 缺 author 拒收", codesOf(lintCompanionPack(validManifest({ author: "" }), ioOK)).has("MISSING_FIELD"));
+check("T7 坏 tier 拒收", codesOf(lintCompanionPack(validManifest({ tier: "paperdoll" }), ioOK)).has("BAD_TIER"));
+check("T8 坏 poseHoldMs 拒收", codesOf(lintCompanionPack(validManifest({ poseHoldMs: 5 }), ioOK)).has("BAD_POSE_HOLD"));
+check("T9 缺 states.idle 拒收", codesOf(lintCompanionPack(validManifest({ states: { happy: "h.png" } }), ioOK)).has("MISSING_IDLE"));
+check("T10 未知状态槽(walk)拒收", codesOf(lintCompanionPack(validManifest({ states: { idle: "i.png", walk: "w.png" } }), ioOK)).has("UNKNOWN_STATE"));
+check(
+  "T11 状态值非字符串拒收",
+  codesOf(lintCompanionPack(validManifest({ states: { idle: "i.png", happy: 3 } }), ioOK)).has("BAD_STATE_FILE"),
+);
+check(
+  "T12 路径穿越组(../ /sub/ 反斜杠 隐藏文件)全部拒收",
+  ["../evil.png", "sub/dir.png", "C:\\evil.png", ".hidden.png", "i.png/"].every(
+    (p) => !lintCompanionPack(validManifest({ states: { idle: p } }), ioOK).ok,
+  ),
+);
+check("T13 文件缺失拒收", !lintCompanionPack(validManifest(), { fileExists: () => false }).ok);
+check("T14 bongo 档无动作帧拒收", codesOf(lintCompanionPack(validManifest({ tier: "bongo" }), ioOK)).has("BONGO_WITHOUT_POSES"));
+check("T15 未知顶层字段拒收(防拼错)", codesOf(lintCompanionPack(validManifest({ titel: "x" }), ioOK)).has("UNKNOWN_FIELD"));
+check("T16 状态回落:happy 缺省→idle;poseHoldMs 缺省 1200", (() => {
+  const m = lintCompanionPack(validManifest(), ioOK).ok ? validManifest() : null;
+  assert(m);
+  return resolveStateSrc(m, "happy") === "idle.png" && resolveStateSrc(m, "idle") === "idle.png" && poseHoldMsOf(m) === 1200;
+})());
+check("T17 BOT_STATES 词汇表五槽", BOT_STATES.join(",") === "idle,keyL,keyR,happy,thinking");
+
+/* ---------------- T 组:PNG 三行规格 ---------------- */
+
+check("T18 合规样例(居中单主体)通过,blob=1", (() => {
+  const r = analyzePngSpec(validChibi());
+  return r.ok && r.blobCount === 1 && r.opaqueRatio > 0.2 && r.opaqueRatio < 0.8;
+})());
+check("T19 全不透明 → NO_ALPHA", codesOf(analyzePngSpec(makeImage(512, 512, [{ cx: 256, cy: 256, rx: 10 }], { bgAlpha: 255 }))).has("NO_ALPHA"));
+check("T20 全透明 → ALL_TRANSPARENT", codesOf(analyzePngSpec(makeImage(512, 512, []))).has("ALL_TRANSPARENT"));
+check("T21 双主体 → MULTI_BLOB,blob=2", (() => {
+  const r = analyzePngSpec(makeImage(512, 512, [
+    { cx: 150, cy: 256, rx: 90 },
+    { cx: 380, cy: 256, rx: 90 },
+  ]));
+  return codesOf(r).has("MULTI_BLOB") && r.blobCount === 2;
+})());
+check("T22 小碎屑(天线≈2%)不误报,blob=1", (() => {
+  const r = analyzePngSpec(makeImage(512, 512, [
+    { cx: 256, cy: 280, rx: 170, ry: 180 },
+    { cx: 256, cy: 60, rx: 12, ry: 22 },
+  ]));
+  return r.ok && r.blobCount === 1;
+})());
+check("T23 贴边 → EDGE_TOUCH", codesOf(analyzePngSpec(makeImage(512, 512, [{ cx: 60, cy: 256, rx: 70 }]))).has("EDGE_TOUCH"));
+check("T24 短边 128 → TOO_SMALL", codesOf(analyzePngSpec(makeImage(128, 128, [{ cx: 64, cy: 64, rx: 40 }]))).has("TOO_SMALL"));
+check("T25 超长边 → TOO_LARGE(opts 收紧验证,不分配大图)", codesOf(analyzePngSpec(makeImage(1024, 1024, [{ cx: 512, cy: 512, rx: 300 }]), { maxSide: 512 })).has("TOO_LARGE"));
+check("T26 对抗:16K 巨图先撞尺寸守卫(零分配秒回)", (() => {
+  const r = analyzePngSpec({ width: 16000, height: 16000, rgba: new Uint8Array(0) });
+  const c = codesOf(r);
+  return c.has("TOO_LARGE") && c.has("BAD_PIXEL_BUFFER") && !c.has("TOO_SMALL");
+})());
+check("T27 对抗:NaN/0/负尺寸 → BAD_DIMENSIONS", (() => {
+  const cases = [NaN, 0, -5].map((h) => analyzePngSpec({ width: 512, height: h, rgba: new Uint8Array(512 * 4 * 4) }));
+  return cases.every((r) => codesOf(r).has("BAD_DIMENSIONS"));
+})());
+check("T28 对抗:1×1 → TOO_SMALL 不炸", codesOf(analyzePngSpec({ width: 1, height: 1, rgba: new Uint8Array(4) })).has("TOO_SMALL"));
+check("T29 对抗:rgba 缓冲长度不符 → BAD_PIXEL_BUFFER", codesOf(analyzePngSpec({ width: 512, height: 512, rgba: new Uint8Array(10) })).has("BAD_PIXEL_BUFFER"));
+check("T30 下采样路径:2000² 单主体(4M 像素,stride=2)仍 blob=1", (() => {
+  const r = analyzePngSpec(makeImage(2000, 2000, [{ cx: 1000, cy: 1000, rx: 800, ry: 850 }]));
+  return r.ok && r.blobCount === 1;
+})());
+
+/* ---------------- G 组:源级守卫(T15 风格) ---------------- */
+
+// G1 现有伴学零改动(判据 6 同款;worktree 分支上对 main diff)
+const diff = spawnSync(
+  "git",
+  ["diff", "main", "--name-only", "--", "src/renderer/components/companion", "src/renderer/lib/companion"],
+  { cwd: root, encoding: "utf8" },
+);
+check("G1 CompanionCreature/companion-* 既有文件零 diff", diff.status === 0 && diff.stdout.trim() === "");
+if (diff.status !== 0 || diff.stdout.trim() !== "") {
+  console.log("   G1 diff 输出:", JSON.stringify(diff.stdout.trim() || diff.stderr.trim()));
+}
+
+// G2 CompanionBot 对 bus 只读:订阅口在,命令入口零调用
+const labDir = path.join(root, "src/renderer/companion-bot-lab");
+const labFiles = existsSync(labDir)
+  ? ["CompanionBot.tsx", "CompanionBotLab.tsx", "sample-pack.ts", "mesh-warp.ts"]
+    .map((f) => path.join(labDir, f))
+    .filter((p) => existsSync(p))
+    .map((p) => readFileSync(p, "utf8"))
+  : [];
+const labSrc = labFiles.join("\n");
+check("G2a CompanionBot 源存在且订阅 onCelebration(只读)", labFiles.length >= 2 && labSrc.includes("onCelebration"));
+const forbiddenBusCalls = [
+  "companionPoke(",
+  "companionSetTalking(",
+  "companionSetListening(",
+  "companionSetStreaming(",
+  "companionZoneFocus(",
+  "companionSend(",
+  "companionSwat(",
+  "from \"../lib/companion/bus",
+  "from \"../lib/companion/bus.ts",
+];
+check("G2b bot 不调用 bus 命令入口(不驱动现有生物)", !forbiddenBusCalls.some((s) => labSrc.includes(s)));
+
+// G3 实验页懒加载(主束零增量)
+const appSrc = read("src/renderer/App.tsx");
+check(
+  "G3a App 以 lazy(() => import) 挂 lab",
+  /lazy\(\(\) => import\("\.\/companion-bot-lab\/CompanionBotLab/.test(appSrc),
+);
+check("G3b App 无对 lab 的静态 import", !/^import [^;]*companion-bot-lab/m.test(appSrc));
+
+// G4 本套件已注册 verify:core
+const pkg = JSON.parse(read("package.json"));
+check("G4 verify:core 链含 verify-companion-pack", pkg.scripts["verify:core"].includes("verify-companion-pack.mjs"));
+
+/* ---------------- 汇总 ---------------- */
+
+console.log(`\n${pass} passed, ${fail} failed`);
+if (fail > 0) process.exit(1);

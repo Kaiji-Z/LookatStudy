@@ -57,6 +57,9 @@ import { companionReviewing, companionSetStreaming } from "./lib/companion/bus.t
 const SettingsView = lazy(() => import("./components/SettingsView.js").then((m) => ({ default: m.SettingsView })));
 const ExamView = lazy(() => import("./components/ExamView.js").then((m) => ({ default: m.ExamView })));
 const CommandPalette = lazy(() => import("./components/CommandPalette.js").then((m) => ({ default: m.CommandPalette })));
+// M0 spike(CompanionBot Lab,.goal/SPEC.md §1.4):外部角色包三档对照实验页,
+// hash "#companion-bot-lab" 门控 + 懒加载(主束零增量);与 CompanionCreature 零耦合。
+const CompanionBotLab = lazy(() => import("./companion-bot-lab/CompanionBotLab.js").then((m) => ({ default: m.CompanionBotLab })));
 
 /**
  * v0.2 三栏布局(M1 重构):
@@ -221,6 +224,13 @@ export default function App() {
   };
   // Cmd+K 命令面板(M2)
   const [showCommandPalette, setShowCommandPalette] = useState(false);
+  // M0 spike:CompanionBot Lab 实验页的 hash 门控(#companion-bot-lab,见 .goal/SPEC.md)
+  const [botLabActive, setBotLabActive] = useState(() => location.hash === "#companion-bot-lab");
+  useEffect(() => {
+    const onHash = () => setBotLabActive(location.hash === "#companion-bot-lab");
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
   // 当前在右栏聚焦的产物 index(M2)
 
   // AI 就绪状态 + starter prompts
@@ -1241,6 +1251,12 @@ export default function App() {
       <CelebrationLayer />
       {/* v3 伴学单生物:全应用唯一一只,跨栏连续行动(左=原生物理世界/中=宠物/右=助教)。 */}
       <CompanionCreature courseId={selectedCourseId} />
+      {/* M0 spike:CompanionBot Lab(hash 门控,懒 chunk,与现有伴学零耦合,.goal/SPEC.md §1.4) */}
+      {botLabActive && (
+        <Suspense fallback={null}>
+          <CompanionBotLab />
+        </Suspense>
+      )}
     </div>
   );
 }

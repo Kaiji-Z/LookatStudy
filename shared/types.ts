@@ -491,6 +491,7 @@ import type {
   SpeechTtsDoneEvent as SpeechTtsDoneEventT,
   SpeechTtsErrorEvent as SpeechTtsErrorEventT,
 } from "./speech-types";
+import type { CutPackManifest as CompanionCutManifestT } from "./companion-cut";
 
 export interface ApiExpose {
   /* 课程 */
@@ -757,6 +758,34 @@ export interface ApiExpose {
   dshImportFromPath(path: string): Promise<DshImportSummary>;
   /** 从 state.json 文本导入(渲染层 <input type=file> 读文本;web/手机同路)。 */
   dshImportFromText(jsonText: string): Promise<DshImportSummary>;
+
+  /* 自定义纸偶包(CompanionPack M2,SPEC §16):切分→应用→渲染第 6 形态 */
+  /** 切分一张立绘 PNG(降级链 vision/geometric/l1,恒不抛;部件已加白描边)。 */
+  companionPackCutFromImage(input: {
+    pngBase64: string;
+    id?: string;
+    name?: string;
+  }): Promise<{
+    route: string;
+    failure?: string;
+    manifest: CompanionCutManifestT;
+    parts: Array<{ name: string; file: string; box: { x: number; y: number; w: number; h: number }; pngBase64: string }>;
+  }>;
+  /** 应用切分包为激活包(写 userData/companion-packs/ + settings 行;内容哈希幂等)。 */
+  companionPackApplyPack(input: {
+    name: string;
+    manifest: CompanionCutManifestT;
+    parts: Array<{ name: string; pngBase64: string }>;
+  }): Promise<{ id: string; name: string }>;
+  /** 读当前激活包(部件 dataURL 直供 <image>;无包/文件丢失 → null)。 */
+  companionPackGetActive(): Promise<{
+    id: string;
+    name: string;
+    manifest: CompanionCutManifestT;
+    srcs: Record<string, string>;
+  } | null>;
+  /** 删除激活包(companion_form 若为 custom 同时重置 ember)。 */
+  companionPackDeleteActive(): Promise<{ ok: boolean; formReset: boolean }>;
 
   /** 语音模型状态(全部;absent/downloading/ready/error) */
   getSpeechModelStatus(): Promise<SpeechModelStatusT[]>;

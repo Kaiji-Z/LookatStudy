@@ -1429,3 +1429,19 @@ html.light ::-webkit-scrollbar-thumb:hover {
   .cp-pose-flying .cp-thruster circle { animation: none; }
   .cp-halo, .cp-crown-badge, .cp-grabbed .cp-bot, .cp-shiver, .cp-huffy { animation: none; }
 }
+
+/* ---------- M2 自定义纸偶(SPEC §16):第 6 形态 custom,作用域全限 .cp-form-custom ----------
+   盘体=程序化 SVG 椭圆(accent 系),悬浮浮动+光晕脉动;姿势/表情/按压 CSS 零改动继承。 */
+.cp-form-custom .cp-disc-top { fill: var(--accent, #1cb0f6); opacity: 0.92; }
+.cp-form-custom .cp-disc-base { fill: var(--accent, #1cb0f6); opacity: 0.45; }
+.cp-form-custom .cp-disc-rim { stroke: var(--text-strong, #ffffff); opacity: 0.5; }
+.cp-form-custom .cp-disc-glow { fill: var(--accent, #1cb0f6); }
+.cp-form-custom .cp-disc-lamp { fill: #ffc800; animation: cp-disc-lamp 1.6s ease-in-out infinite alternate; }
+.cp-form-custom .cp-disc { animation: cp-disc-float 3.4s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+.cp-form-custom .cp-puppet-bot { animation: cp-puppet-hover 3.4s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: 50% 62%; }
+@keyframes cp-disc-float { from { transform: translateY(0) rotate(-1.2deg); } to { transform: translateY(-3px) rotate(1.2deg); } }
+@keyframes cp-puppet-hover { from { transform: translateY(0); } to { transform: translateY(-2.5px); } }
+@keyframes cp-disc-lamp { from { opacity: 0.4; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .cp-form-custom .cp-disc, .cp-form-custom .cp-puppet-bot, .cp-form-custom .cp-disc-lamp { animation: none; }
+}

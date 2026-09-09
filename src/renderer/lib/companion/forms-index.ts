@@ -6,7 +6,7 @@
  * components/companion/forms/registry.tsx;本文件只放可 headless 验证的
  * id 清单与设置回退逻辑——垃圾值/未设置都回退默认形态,绝不白屏。
  */
-export const COMPANION_FORM_IDS = ["ember", "frost", "moss", "astro", "ink"] as const;
+export const COMPANION_FORM_IDS = ["ember", "frost", "moss", "astro", "ink", "custom"] as const;
 
 export type CompanionFormId = (typeof COMPANION_FORM_IDS)[number];
 

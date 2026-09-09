@@ -193,13 +193,33 @@ check("T30 下采样路径:2000² 单主体(4M 像素,stride=2)仍 blob=1", (() 
 
 /* ---------------- G 组:源级守卫(T15 风格) ---------------- */
 
-// G1 现有伴学零改动(判据 6 同款;worktree 分支上对 main diff)
-const diff = spawnSync(
-  "git",
-  ["diff", "main", "--name-only", "--", "src/renderer/components/companion", "src/renderer/lib/companion"],
-  { cwd: root, encoding: "utf8" },
-);
-check("G1 CompanionCreature/companion-* 既有文件零 diff", diff.status === 0 && diff.stdout.trim() === "");
+// G1(M2 改造,SPEC §16.2/16.5):行为层守卫名单零 diff——bus/flight/core/口型/
+// 桌宠音效/壳(CompanionCreature/Mascot/PetCompanion)/五形态 shared+皮肤。
+// seam 白名单(forms-index/registry/custom-puppet/CustomPackCard/custom-pack-store/
+// SettingsView/i18n/index.css)允许 diff——M2 走「第 6 形态」路径,行为不是移植
+// 而是共享,守卫从「全目录零条」收窄为「行为文件零条」。
+const behaviorGuardFiles = [
+  "src/renderer/lib/companion/bus.ts",
+  "src/renderer/lib/companion/companion-flight.ts",
+  "src/renderer/lib/companion/companion-core.ts",
+  "src/renderer/lib/companion/use-mouth.ts",
+  "src/renderer/lib/companion/viseme-timeline.ts",
+  "src/renderer/lib/companion/pet-sfx.ts",
+  "src/renderer/components/companion/CompanionCreature.tsx",
+  "src/renderer/components/companion/Mascot.tsx",
+  "src/renderer/components/companion/PetCompanion.tsx",
+  "src/renderer/components/companion/forms/shared.tsx",
+  "src/renderer/components/companion/forms/ember.tsx",
+  "src/renderer/components/companion/forms/frost.tsx",
+  "src/renderer/components/companion/forms/moss.tsx",
+  "src/renderer/components/companion/forms/astro.tsx",
+  "src/renderer/components/companion/forms/ink.tsx",
+];
+const diff = spawnSync("git", ["diff", "main", "--name-only", "--", ...behaviorGuardFiles], {
+  cwd: root,
+  encoding: "utf8",
+});
+check("G1(M2) 行为零 diff 守卫名单(bus/flight/core/壳/五形态)零条", diff.status === 0 && diff.stdout.trim() === "");
 if (diff.status !== 0 || diff.stdout.trim() !== "") {
   console.log("   G1 diff 输出:", JSON.stringify(diff.stdout.trim() || diff.stderr.trim()));
 }
@@ -226,6 +246,19 @@ const forbiddenBusCalls = [
   "from \"../lib/companion/bus.ts",
 ];
 check("G2b bot 不调用 bus 命令入口(不驱动现有生物)", !forbiddenBusCalls.some((s) => labSrc.includes(s)));
+
+// G2c(M2,SPEC §16.5) 纸偶形态对 bus 只读:custom-puppet 只吃 store 与 refs 契约
+const puppetSrc = read("src/renderer/components/companion/forms/custom-puppet.tsx");
+check(
+  "G2c(M2) CustomPuppetArt 存在且不 import bus 命令入口(只读)",
+  puppetSrc.includes("CustomPuppetArt") && !forbiddenBusCalls.some((s) => puppetSrc.includes(s)),
+);
+
+// G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源
+check(
+  "G5(M2) 盘与纸偶零二进制资产(无静态图 import/无 http 图源)",
+  !/\.(png|jpe?g|webp|gif)["']/.test(puppetSrc) && !puppetSrc.includes("http://") && !puppetSrc.includes("https://"),
+);
 
 // G3 实验页懒加载(主束零增量)
 const appSrc = read("src/renderer/App.tsx");

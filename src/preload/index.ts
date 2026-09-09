@@ -225,6 +225,14 @@ const api = {
     ipcRenderer.invoke("dsh:importFromPath", path)) as ApiExpose["dshImportFromPath"],
   dshImportFromText: ((jsonText: string) =>
     ipcRenderer.invoke("dsh:importFromText", jsonText)) as ApiExpose["dshImportFromText"],
+  companionPackCutFromImage: ((input: { pngBase64: string; id?: string; name?: string }) =>
+    ipcRenderer.invoke("companionPack:cutFromImage", input)) as ApiExpose["companionPackCutFromImage"],
+  companionPackApplyPack: ((input: { name: string; manifest: unknown; parts: Array<{ name: string; pngBase64: string }> }) =>
+    ipcRenderer.invoke("companionPack:applyPack", input)) as ApiExpose["companionPackApplyPack"],
+  companionPackGetActive: (() =>
+    ipcRenderer.invoke("companionPack:getActive")) as ApiExpose["companionPackGetActive"],
+  companionPackDeleteActive: (() =>
+    ipcRenderer.invoke("companionPack:deleteActive")) as ApiExpose["companionPackDeleteActive"],
   getXpStatus: (() =>
     ipcRenderer.invoke("xp:getStatus")) as ApiExpose["getXpStatus"],
   exportCourse: ((courseId: string, format: "json" | "markdown") =>

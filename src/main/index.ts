@@ -1319,6 +1319,13 @@ async function runUiTest(screenshot = false): Promise<void> {
           if (root) break;
         }
         if (!root) return { mounted: false };
+        // 异步样例 art 就绪前 lab 只渲染空壳(buildSampleArt rAF/异步)——轮询等 bots,
+        // 防启动期 IPC 抖动把"root 先于 art"的竞态翻成假红
+        var bots0 = root.querySelectorAll('[data-companion-bot]');
+        for (var w = 0; w < 50 && bots0.length < 3; w++) {
+          await new Promise(function(r) { setTimeout(r, 100); });
+          bots0 = root.querySelectorAll('[data-companion-bot]');
+        }
         var bots = root.querySelectorAll('[data-companion-bot]');
         var stickerBox = root.querySelector('[data-companion-bot="bongo"]');
         var sticker = stickerBox ? stickerBox.querySelector('img') : null;
@@ -3159,6 +3166,291 @@ async function runUiTest(screenshot = false): Promise<void> {
         && dsh?.detectedFound === true,
       detail: dsh,
     });
+  }
+
+  /* ---------- M2(CompanionPack,SPEC §16):导入流 + 纸偶形态 + 行为复跑 + 持久/删除 ----------
+     判据 4:注入合成 fixture 直调 IPC(绕原生 dialog)→ cut→apply→getActive → 形态切
+     custom → 判据 1 的行为断言同款复跑(composer fly / talking→notebook / T3 标题栏,
+     断言体与既有 v3 块逐字同源)→ 重载持久 → 删除回落 ember。 */
+  {
+    // ① 程序化合成 A-pose 立绘(绿幕,几何链可切;与 verify-companion-cut fixture 同风格)
+    let m2Fixture = "";
+    try {
+      const napi = await import("@napi-rs/canvas");
+      const cv = napi.createCanvas(400, 600);
+      const c = cv.getContext("2d");
+      c.fillStyle = "#00b140";
+      c.fillRect(0, 0, 400, 600);
+      c.fillStyle = "#e8b04a";
+      c.beginPath();
+      c.arc(200, 130, 95, 0, Math.PI * 2);
+      c.fill(); // 头(底 y=225 直坐躯干,行宽有颈缩)
+      c.fillRect(140, 225, 120, 170); // 躯干
+      // 臂=肩块(与躯干重叠 2px,保证单连通块)+臂板(留 10px 腋缝→3-run 行)
+      c.fillRect(120, 228, 30, 22);
+      c.fillRect(82, 248, 46, 118);
+      c.fillRect(250, 228, 30, 22);
+      c.fillRect(272, 248, 46, 118);
+      c.fillRect(152, 395, 38, 118);
+      c.fillRect(210, 395, 38, 118);
+      m2Fixture = (await cv.encode("png")).toString("base64");
+    } catch (e) {
+      results.push({ name: "companion-pack M2: fixture 绘制", ok: false, detail: String(e) });
+    }
+
+    // ② 导入流:cut → apply → getActive(直调 IPC,ui-test 假 provider 下识图快速失败落几何链)
+    if (m2Fixture) {
+      const m2Import = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          try {
+            var png = ${JSON.stringify(m2Fixture)};
+            var cut = await window.api.companionPackCutFromImage({ pngBase64: png });
+            if (!cut || !cut.parts || cut.parts.length < 3) return { ok: false, stage: "cut", route: cut && cut.route, n: cut && cut.parts ? cut.parts.length : 0, failure: cut && cut.failure };
+            var app = await window.api.companionPackApplyPack({ name: "UI Test Puppet", manifest: cut.manifest, parts: cut.parts.map(function(p) { return { name: p.name, pngBase64: p.pngBase64 }; }) });
+            if (!app || !app.id) return { ok: false, stage: "apply" };
+            var act = await window.api.companionPackGetActive();
+            return { ok: !!act && act.id === app.id, stage: "done", route: cut.route, parts: cut.parts.length, id: app.id, srcs: act ? Object.keys(act.srcs).length : 0 };
+          } catch (e) { return { ok: false, error: String(e) }; }
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: cut→apply→getActive roundtrip (fixture inject, no dialog)",
+        ok: m2Import?.ok === true && (m2Import.parts ?? 0) >= 3,
+        detail: m2Import,
+      });
+
+      // ③ 形态切 custom:外层 data/class 契约不变 + 盘在场 + 部件 image 分层
+      const m2Render = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          await window.api.setSetting("companion_form", "custom");
+          window.dispatchEvent(new Event("companion-config-changed"));
+          var cls = "", disc = 0, imgs = 0;
+          for (var i = 0; i < 40; i++) {
+            await new Promise(function(r) { setTimeout(r, 100); });
+            var m = document.querySelector('[data-testid="companion-mascot"]');
+            cls = m ? String(m.getAttribute("class")) : "";
+            disc = document.querySelectorAll(".cp-disc").length;
+            imgs = document.querySelectorAll('[data-testid="companion-mascot"] image').length;
+            if (cls.indexOf("cp-form-custom") >= 0 && imgs >= 3) break;
+          }
+          return { ok: cls.indexOf("cp-form-custom") >= 0 && disc >= 1 && imgs >= 3, cls: cls.slice(0, 90), disc: disc, imgs: imgs };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: form=custom renders puppet (class contract + disc + part images)",
+        ok: m2Render?.ok === true,
+        detail: m2Render,
+      });
+
+      // ④ 行为断言同款复跑(form=custom;断言体与既有 companion v3 块同源)
+      // ④a 选课进节点(dsh 迁移课在场),composer 聚焦飞中栏 + typing——与 T8c2 同款。
+      // 先在主进程重建 provider(keyless 冷启动块把 provider 行删了,keyless 卡会替换
+      // composer)+ 重载:保证干净主视图与可聚焦的 chat-input
+      try {
+        const db = getDb();
+        const provs = db.select().from(customProviders).all();
+        if (!provs.some((p) => p.id === "custom-ui-test-provider")) {
+          db.insert(customProviders).values({
+            id: "custom-ui-test-provider",
+            label: "UI Test Provider",
+            baseUrl: "https://example.com/v1",
+            apiKey: "test-key",
+            defaultModel: "test-model",
+          }).run();
+        }
+        const apRow = db.select().from(settingsTable).where(eq(settingsTable.key, "active_provider")).get();
+        if (apRow) {
+          db.update(settingsTable).set({ value: "custom-ui-test-provider" }).where(eq(settingsTable.key, "active_provider")).run();
+        } else {
+          db.insert(settingsTable).values({ key: "active_provider", value: "custom-ui-test-provider" }).run();
+        }
+        markDirty();
+      } catch {
+        /* 非关键:provider 恢复失败只影响本组断言 */
+      }
+      try {
+        await win.webContents.reload();
+      } catch {
+        /* 同⑤:headless 时序 reject 不影响实际重载 */
+      }
+      await new Promise((r) => setTimeout(r, 2500));
+      win.focus();
+      win.webContents.focus();
+      await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          var row = document.querySelector('[data-testid="course-list"] button');
+          if (row) { row.click(); await new Promise(function(r) { setTimeout(r, 800); }); }
+          var btns = document.querySelectorAll('[data-testid^="map-node-"]');
+          for (var i = 0; i < btns.length; i++) { if (!btns[i].disabled) { btns[i].click(); break; } }
+          await new Promise(function(r) { setTimeout(r, 600); });
+          return true;
+        })()
+      `,
+        )
+        .catch(() => null);
+      const m2Fly = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          var input = document.querySelector('[data-testid="chat-input"]');
+          if (!input) return { ok: false, err: "no-input" };
+          input.focus();
+          var samples = [];
+          for (var i = 0; i < 12; i++) {
+            await new Promise(function(r) { setTimeout(r, 100); });
+            var c = document.querySelector('[data-testid="companion-creature"]');
+            samples.push(c ? c.dataset.zone : "none");
+            if (c && c.dataset.zone === "chat") break;
+          }
+          var c = document.querySelector('[data-testid="companion-creature"]');
+          var zone = c ? c.dataset.zone : null;
+          var cls = "";
+          for (var k = 0; k < 10; k++) {
+            await new Promise(function(r) { setTimeout(r, 300); });
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }));
+            await new Promise(function(r) { setTimeout(r, 200); });
+            var m = document.querySelector('[data-testid="companion-mascot"]');
+            cls = m ? String(m.getAttribute('class')) : '';
+            if (cls.indexOf('cp-pose-typing') >= 0) break;
+          }
+          input.blur();
+          window.dispatchEvent(new CustomEvent("companion-zone-focus", { detail: false }));
+          return { ok: zone === "chat" && cls.indexOf('cp-pose-typing') >= 0, zone: zone, cls: cls.slice(0, 90) };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: [custom] composer focus flies to chat + typing (same assertion, rerun)",
+        ok: m2Fly?.ok === true,
+        detail: m2Fly,
+      });
+
+      // ④b 朗读(talking)→ 右栏助教世界——与 v3 块的 manual 事件探针同款
+      const m2Talk = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          window.dispatchEvent(new CustomEvent("companion-talking", { detail: true }));
+          var zone = null;
+          for (var i = 0; i < 30; i++) {
+            await new Promise(function(r) { setTimeout(r, 100); });
+            var c = document.querySelector('[data-testid="companion-creature"]');
+            zone = c ? c.dataset.zone : null;
+            if (zone === "notebook") break;
+          }
+          window.dispatchEvent(new CustomEvent("companion-talking", { detail: false }));
+          await new Promise(function(r) { setTimeout(r, 4500); }); // ZONE_RETURN 防抖(3.5s)+飞行窗落定
+          return { ok: zone === "notebook", zone: zone };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: [custom] talking sends creature to notebook zone (same probe, rerun)",
+        ok: m2Talk?.ok === true,
+        detail: m2Talk,
+      });
+
+      // ④c T3 换栏持久:左栏卸载 → 标题栏栖息——与 T20d 块逐字同款探针
+      await win.setBounds({ width: 600, height: 800 });
+      const m2T3 = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          for (var i = 0; i < 30; i++) {
+            var el = document.querySelector('[data-testid="companion-creature"]');
+            if (!el) return { present: false };
+            var zone = el.dataset.zone;
+            var r = el.getBoundingClientRect();
+            var hdr = document.querySelector("header.app-header");
+            var hr = hdr ? hdr.getBoundingClientRect() : null;
+            if (zone === "titlebar" && hr && r.top >= hr.top - 6 && r.bottom <= hr.bottom + 6) {
+              return { present: true, zone: zone, inHeader: true, top: Math.round(r.top), hdrBottom: Math.round(hr.bottom) };
+            }
+            await new Promise(function(f) { setTimeout(f, 100); });
+          }
+          var el2 = document.querySelector('[data-testid="companion-creature"]');
+          var r2 = el2 ? el2.getBoundingClientRect() : null;
+          var hdr2 = document.querySelector("header.app-header");
+          return { present: !!el2, zone: el2 ? el2.dataset.zone : null, top: r2 ? Math.round(r2.top) : null, hdrBottom: hdr2 ? Math.round(hdr2.getBoundingClientRect().bottom) : null };
+        })()
+      `,
+        )
+        .catch(() => null);
+      await win.setBounds({ width: 1280, height: 800 });
+      results.push({
+        name: "companion-pack M2: [custom] T3 pane switch → titlebar habitat (same assertion, rerun)",
+        ok: m2T3?.present === true && m2T3.zone === "titlebar" && m2T3.inHeader === true,
+        detail: m2T3,
+      });
+
+      // ⑤ 持久化:重载后包与形态都还在(settings 行 + 盘上文件)
+      try {
+        await win.webContents.reload();
+      } catch {
+        /* reload 在部分 headless 时序下 reject,重载本身仍会发生 */
+      }
+      await new Promise((r) => setTimeout(r, 2500));
+      const m2Persist = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          var act = await window.api.companionPackGetActive();
+          var cls = "";
+          for (var i = 0; i < 30; i++) {
+            await new Promise(function(r) { setTimeout(r, 100); });
+            var m = document.querySelector('[data-testid="companion-mascot"]');
+            cls = m ? String(m.getAttribute("class")) : "";
+            if (cls.indexOf("cp-form-custom") >= 0) break;
+          }
+          return { ok: !!act && cls.indexOf("cp-form-custom") >= 0, id: act ? act.id : null, cls: cls.slice(0, 90) };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: pack + form persist across reload",
+        ok: m2Persist?.ok === true,
+        detail: m2Persist,
+      });
+
+      // ⑥ 删除回落:deleteActive → formReset(custom→ember)→ 纸偶退场
+      const m2Delete = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          var r = await window.api.companionPackDeleteActive();
+          if (r.formReset) window.dispatchEvent(new Event("companion-config-changed"));
+          var cls = "";
+          for (var i = 0; i < 30; i++) {
+            await new Promise(function(r2) { setTimeout(r2, 100); });
+            var m = document.querySelector('[data-testid="companion-mascot"]');
+            cls = m ? String(m.getAttribute("class")) : "";
+            if (cls.indexOf("cp-form-custom") < 0) break;
+          }
+          var act = await window.api.companionPackGetActive();
+          return { ok: r.ok === true && r.formReset === true && !act && cls.indexOf("cp-form-custom") < 0, formReset: r.formReset, cls: cls.slice(0, 90), activeLeft: !!act };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: delete → form resets to builtin, pack gone",
+        ok: m2Delete?.ok === true,
+        detail: m2Delete,
+      });
+    }
   }
 
   // allOk: 所有测试通过 OR 仅 knownFail 测试未通过

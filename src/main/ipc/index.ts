@@ -94,7 +94,13 @@ import { invalidateSpeechEngines } from "../services/speech/speech-engine.js";
 import { transcribeAudio, type CustomAsrConfig } from "../services/speech/asr-service.js";
 import { synthesizeOpenaiTts } from "../services/speech/openai-tts-client.js";
 import { getCustomProviderRaw } from "../services/custom-provider-service.js";
-import { cutCompanionFigure } from "../services/companion-pack-service.js";
+import {
+  applyCompanionPack,
+  cutCompanionFigure,
+  deleteActiveCompanionPack,
+  getActiveCompanionPack,
+} from "../services/companion-pack-service.js";
+import type { CutPackManifest } from "@shared/companion-cut";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
 import {
   getProgress as getProgressService,
@@ -1665,7 +1671,6 @@ export function registerAllHandlers(deps: RuntimeDeps): void {
 /* ---------- CompanionPack:免费层供给管线(SPEC §15) ---------- */
 
 export function registerCompanionPackHandlers(deps: RuntimeDeps): void {
-  void deps;
   handle("companionPack:cutFromImage", async (_e, input: { pngBase64: string; id?: string; name?: string }) => {
     const png = Buffer.from(input.pngBase64, "base64");
     const out = await cutCompanionFigure({ db: getDb() }, { png, id: input.id, name: input.name });
@@ -1675,6 +1680,19 @@ export function registerCompanionPackHandlers(deps: RuntimeDeps): void {
       manifest: out.manifest,
       parts: out.parts.map((p) => ({ name: p.name, file: p.file, box: p.box, pngBase64: Buffer.from(p.png).toString("base64") })),
     };
+  });
+  // M2:切分包应用/读取/删除(userData/companion-packs/ + settings 行,SPEC §16.4)
+  handle(
+    "companionPack:applyPack",
+    async (_e, input: { name: string; manifest: CutPackManifest; parts: Array<{ name: string; pngBase64: string }> }) => {
+      return applyCompanionPack(getDb(), deps.dataDir, input);
+    },
+  );
+  handle("companionPack:getActive", async () => {
+    return getActiveCompanionPack(getDb(), deps.dataDir);
+  });
+  handle("companionPack:deleteActive", async () => {
+    return deleteActiveCompanionPack(getDb(), deps.dataDir);
   });
 }
 

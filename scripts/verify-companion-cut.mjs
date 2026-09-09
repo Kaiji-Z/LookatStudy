@@ -26,6 +26,7 @@ const {
   parseAnchorsJson,
   partitionByBoundary,
   headBoundaryYAt,
+  layoutParts,
 } = await import("../shared/companion-cut.ts");
 
 let pass = 0;
@@ -457,6 +458,27 @@ t("T32 partitionByBoundary 直接调用:臂盒优先于折线(臂像素归臂不
   const armL = parts.find((p) => p.name === "armL");
   assert.ok(armL, "臂盒像素归臂");
   assert.ok(armL.box.h >= 100, `整臂保留=${armL.box.h}`);
+});
+
+t("T33 layoutParts:等比 contain 居中/部件相对位置逐像素一致/确定性", () => {
+  const stage = { x: 24, y: 22, w: 152, h: 154 };
+  const base = {
+    head: { file: "head.png", box: { x: 80, y: 30, w: 240, h: 240 } },
+    body: { file: "body.png", box: { x: 140, y: 260, w: 120, h: 180 } },
+  };
+  const a = layoutParts({ width: 400, height: 600 }, base, stage);
+  const b = layoutParts({ width: 400, height: 600 }, base, stage);
+  assert.deepEqual(a, b, "确定性");
+  const s = Math.min(152 / 400, 154 / 600);
+  assert.equal(s.toFixed(6), (154 / 600).toFixed(6), "高约束(2:3 竖图)");
+  const offX = stage.x + (stage.w - 400 * s) / 2;
+  const offY = stage.y;
+  const head = a.find((p) => p.name === "head");
+  const body = a.find((p) => p.name === "body");
+  assert.equal(head.x.toFixed(2), (offX + 80 * s).toFixed(2), "头落位");
+  assert.equal(body.y.toFixed(2), (offY + 260 * s).toFixed(2), "身落位");
+  assert.equal((head.x + head.w - (body.x + body.w)).toFixed(2), ((80 + 240 - 260) * s).toFixed(2), "部件间距=原图等比");
+  assert.equal(layoutParts({ width: 0, height: 100 }, base).length, 0, "坏尺寸诚实空");
 });
 
 console.log(`\nverify-companion-cut: ${pass} 断言全部通过`);

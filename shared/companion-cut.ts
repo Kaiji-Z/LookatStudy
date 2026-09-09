@@ -124,6 +124,45 @@ export interface CutPackManifest {
   parts: Partial<Record<PartName | "sticker", { file: string; box: Box }>>;
 }
 
+/* ---------------- 11.5 纸偶布局(切分件 → 渲染 viewBox 坐标,纯函数) ---------------- */
+
+/** 单部件在渲染舞台上的落位(viewBox 坐标)。 */
+export interface PuppetPartLayout {
+  name: PartName | "sticker";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * 把切分件的原图坐标等比 contain 到目标舞台(伴学 svg 200×200 内的子区),
+ * 居中;部件间相对位置与原图逐像素一致。确定性(同输入同输出,verify 直测)。
+ */
+export function layoutParts(
+  source: { width: number; height: number },
+  parts: Partial<Record<PartName | "sticker", { file: string; box: Box }>>,
+  target: { x: number; y: number; w: number; h: number } = { x: 24, y: 22, w: 152, h: 154 },
+): PuppetPartLayout[] {
+  if (source.width <= 0 || source.height <= 0) return [];
+  const s = Math.min(target.w / source.width, target.h / source.height);
+  const offX = target.x + (target.w - source.width * s) / 2;
+  const offY = target.y + (target.h - source.height * s) / 2;
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const out: PuppetPartLayout[] = [];
+  for (const [name, part] of Object.entries(parts) as Array<[PartName | "sticker", { file: string; box: Box }]>) {
+    if (!part) continue;
+    out.push({
+      name,
+      x: r2(offX + part.box.x * s),
+      y: r2(offY + part.box.y * s),
+      w: r2(part.box.w * s),
+      h: r2(part.box.h * s),
+    });
+  }
+  return out;
+}
+
 /* ---------------- 内部工具 ---------------- */
 
 const MAX_PIXELS = 24e6;

@@ -16,6 +16,9 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+- dsh 插件版进度迁移脚本(`scripts/import-dsh-progress.mjs`,零依赖 Node 单文件):把 dsh-plugin-lookatstudy 的 `~/.dsh/lookatstudy-plugin/state.json` 学习进度(课程结构+正文、per-KC 掌握度、SM-2 复习、考试星数、XP/streak)迁入独立版数据库。自动备份原库、幂等可重跑(重复运行只刷新进度)、同标题同结构课程直接写入不另建副本;XP 增量合并防重复累加。
+
 ## [0.29.0] - 2026-09-09
 
 ### Added

@@ -1324,11 +1324,16 @@ async function runUiTest(screenshot = false): Promise<void> {
         var sticker = stickerBox ? stickerBox.querySelector('img') : null;
         if (!sticker) return { mounted: true, bots: bots.length, error: "no-sticker-img" };
         var before = sticker.getAttribute('src');
-        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', bubbles: true }));
-        await new Promise(function(r){ setTimeout(r, 80); });
-        var midBox = root.querySelector('[data-companion-bot="bongo"]');
-        var mid = midBox.querySelector('img').getAttribute('src');
-        var midState = midBox.getAttribute('data-bot-state');
+        // 轮询等状态机切帧:期间持续补发键击(重置 180ms 驻留窗),慢时钟下必可捕获
+        var mid = before, midState = 'idle', midBox = stickerBox;
+        for (var k = 0; k < 12; k++) {
+          window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', bubbles: true }));
+          await new Promise(function(r){ setTimeout(r, 100); });
+          midBox = root.querySelector('[data-companion-bot="bongo"]');
+          mid = midBox.querySelector('img').getAttribute('src');
+          midState = midBox.getAttribute('data-bot-state');
+          if (midState !== 'idle' && mid !== before) break;
+        }
         var celebrateBtn = document.querySelector('[data-testid="bot-lab-celebrate"]');
         if (celebrateBtn) celebrateBtn.click();
         await new Promise(function(r){ setTimeout(r, 150); });

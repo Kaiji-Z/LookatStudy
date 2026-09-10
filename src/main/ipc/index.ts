@@ -1677,6 +1677,7 @@ export function registerCompanionPackHandlers(deps: RuntimeDeps): void {
     return {
       route: out.route,
       failure: out.failure,
+      visionError: out.visionError,
       manifest: out.manifest,
       parts: out.parts.map((p) => ({ name: p.name, file: p.file, box: p.box, pngBase64: Buffer.from(p.png).toString("base64") })),
     };

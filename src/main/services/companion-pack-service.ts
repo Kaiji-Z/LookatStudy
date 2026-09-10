@@ -65,6 +65,8 @@ export interface CompanionCutOutputPart {
 export interface CompanionCutOutput {
   route: CutRoute;
   failure?: string;
+  /** 识图通道尝试过但失败的原因(401/超时/解析失败等);null=未尝试或成功 */
+  visionError?: string;
   parts: CompanionCutOutputPart[];
   manifest: CutPackManifest;
 }
@@ -113,8 +115,10 @@ export async function cutCompanionFigure(
   const W = rgba.width;
   const H = rgba.height;
 
-  // T1 识图定位(key 缺失/模型不可用/解析失败 → anchors=null 落 T2)
+  // T1 识图定位(key 缺失/模型不可用/解析失败 → anchors=null 落 T2;
+  // 失败原因透出给导入卡,静默降级曾让"key 没填"藏了两天)
   let anchors: Anchors | null = null;
+  let visionError: string | undefined;
   if (!deps.skipVision) {
     const locate =
       deps.locate ??
@@ -137,8 +141,10 @@ export async function cutCompanionFigure(
     try {
       const dataUrl = `data:image/png;base64,${Buffer.from(pngBytesOf(input)).toString("base64")}`;
       anchors = parseAnchorsJson(await locate(dataUrl), W, H);
-    } catch {
+      if (!anchors) visionError = "锚点解析失败(VLM 输出不含 armL/armR 框)";
+    } catch (e) {
       anchors = null;
+      visionError = String((e as Error).message ?? e).slice(0, 200);
     }
   }
 
@@ -153,6 +159,7 @@ export async function cutCompanionFigure(
     return {
       route: "l1",
       failure: result.failure,
+      visionError,
       parts: [{ name: "sticker", file: "sticker.png", box, png }],
       manifest: {
         formatVersion: 1,
@@ -179,7 +186,7 @@ export async function cutCompanionFigure(
     source: { width: W, height: H, keyMode: mode, route: result.route },
     parts: files,
   };
-  return { route: result.route, parts: outParts, manifest };
+  return { route: result.route, visionError, parts: outParts, manifest };
 }
 
 function pngBytesOf(input: CompanionCutInput): Uint8Array {

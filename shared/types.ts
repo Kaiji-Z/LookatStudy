@@ -768,6 +768,8 @@ export interface ApiExpose {
   }): Promise<{
     route: string;
     failure?: string;
+    /** 识图通道失败原因(空=未尝试或成功);几何降级时导入卡可见 */
+    visionError?: string;
     manifest: CompanionCutManifestT;
     parts: Array<{ name: string; file: string; box: { x: number; y: number; w: number; h: number }; pngBase64: string }>;
   }>;

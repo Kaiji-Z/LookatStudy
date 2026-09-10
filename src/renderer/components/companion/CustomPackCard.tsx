@@ -15,6 +15,8 @@ import type { CutPackManifest } from "@shared/companion-cut.ts";
 interface CutPreview {
   route: string;
   failure?: string;
+  /** 识图通道失败原因(空=未尝试或成功);几何降级时导入卡可见 */
+  visionError?: string;
   manifest: CutPackManifest;
   parts: Array<{ name: string; file: string; box: { x: number; y: number; w: number; h: number }; pngBase64: string }>;
 }
@@ -53,7 +55,11 @@ export function CustomPackCard() {
       const pngBase64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
       const out = (await window.api.companionPackCutFromImage({ pngBase64 })) as CutPreview;
       setPreview(out);
-      setMsg(`${t("companion.custom.cutDone")} · ${t(ROUTE_KEY[out.route] ?? "companion.custom.routeL1")}`);
+      if (out.visionError) {
+        setMsg(`${t("companion.custom.visionFallback")} · ${out.visionError}`);
+      } else {
+        setMsg(`${t("companion.custom.cutDone")} · ${t(ROUTE_KEY[out.route] ?? "companion.custom.routeL1")}`);
+      }
     } catch (e) {
       setMsg(`${t("companion.custom.fail")}: ${String(e)}`);
     } finally {

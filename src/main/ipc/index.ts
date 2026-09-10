@@ -1673,7 +1673,19 @@ export function registerAllHandlers(deps: RuntimeDeps): void {
 export function registerCompanionPackHandlers(deps: RuntimeDeps): void {
   handle("companionPack:cutFromImage", async (_e, input: { pngBase64: string; id?: string; name?: string }) => {
     const png = Buffer.from(input.pngBase64, "base64");
-    const out = await cutCompanionFigure({ db: getDb() }, { png, id: input.id, name: input.name });
+    // ui-test 无真实 key:注入与程序化 fixture(400x600 绿幕 A-pose,head 底 y=225、
+    // 臂缝 x≈134/266)几何对齐的确定切分线,让导入流断言走 vision 划分而非 L1
+    const uiTestLocate = process.argv.includes("--ui-test")
+      ? async () =>
+          JSON.stringify({
+            cuts: {
+              headBody: [[0.03, 0.375], [0.97, 0.375]],
+              armLeft: [[0.335, 0.375], [0.335, 0.635]],
+              armRight: [[0.665, 0.375], [0.665, 0.635]],
+            },
+          })
+      : undefined;
+    const out = await cutCompanionFigure({ db: getDb(), ...(uiTestLocate ? { locate: uiTestLocate } : {}) }, { png, id: input.id, name: input.name });
     return {
       route: out.route,
       failure: out.failure,

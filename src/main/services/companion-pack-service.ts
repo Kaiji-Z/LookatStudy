@@ -1,14 +1,14 @@
 /**
- * companion-pack-service —— 免费层供给管线主进程服务(SPEC §14/§15)。
+ * companion-pack-service —— 免费层供给管线主进程服务(SPEC §17)。
  *
  * 输入一张不重叠 A-pose/T-pose 立绘 PNG,降级链产出可入库的切分包:
- *   T1 vision    — 用户配了多模态 key:VLM 指认部件 bbox(归一化坐标),管线
- *                  按 bbox 划分掩码("部位不重叠 = 必可切",不依赖腋缝);
- *   T2 geometric — 无 key:颈线 + 缝带逐行切(纯几何,见 shared/companion-cut.ts);
- *   T3 l1        — 都失败:整图 + 白描边作单件贴纸(恒成功)。
+ *   vision — 键控先行 → 键控预览(深灰底)喂 VLM → VLM 声明切分线(背景到背景
+ *            的折线)→ 机器校验链 → 栅栏 BFS 划分(臂可缺席,两件套合法);
+ *   l1     — 无 key / VLM 失败 / headBody 无效:整图 + 白描边作单件贴纸(恒成功)。
+ *   旧几何中间层已退役(SPEC §17.6)。
  *
  * 识图定位是注入式(deps.locate):生产 = resolveVisionLlm + generateTextWithTimeout,
- * verify 注入 mock 文本 —— 本文件不进 verify 导入链(它经 llm-client 连 DB)。
+ * verify/ui-test 注入 mock 文本 —— 本文件不进 verify 导入链(它经 llm-client 连 DB)。
  */
 import { resolveVisionLlm } from "./agent/llm-client.js";
 import { generateTextWithTimeout } from "./import-llm-service.js";
@@ -21,11 +21,13 @@ import {
   keyFigure,
   routeCut,
   addWhiteOutline,
-  parseAnchorsJson,
-  type Anchors,
+  composeKeyedPreview,
+  parseCutsJson,
   type Box,
   type CutPackManifest,
   type CutRoute,
+  type CutCurves,
+  type FigureMask,
   type RgbaImage,
 } from "@shared/companion-cut";
 
@@ -71,19 +73,19 @@ export interface CompanionCutOutput {
   manifest: CutPackManifest;
 }
 
-/** T1 定位 prompt:尺寸注入,要求只回 JSON。折线=无脖子角色的头身交界(SPEC §16.6)。 */
+/** vision 定位 prompt v8:切分线协议(SPEC §17.1),坐标归一化,只回 JSON。 */
 function locatePrompt(W: number, H: number): string {
   return [
-    `你是图像部件定位器。图中是一个Q版角色的站姿立绘(画布 ${W}x${H} 像素)。`,
-    `只输出一个 JSON 对象,格式:`,
-    `{"headY": <头与身体分界的y像素>, "boxes": {"head": [x,y,w,h], "armL": [x,y,w,h], "armR": [x,y,w,h]}, "headBoundary": [[x,y],...]}`,
-    `headY=头部(含头发/耳朵/头饰/兜帽)轮廓的最底缘 y 坐标,不含肩膀、手臂和衣服;`,
-    `armL=画面左侧手臂(观察者视角的左边,肩关节到指尖,含袖子)的最小外接矩形;armR=画面右侧手臂;`,
-    `head=头部(含头饰/兜帽)的最小外接矩形,框只到头底缘,绝不包含肩膀和胸部;`,
-    `headBoundary=仅当角色没有明显脖子(头直接坐在身体上,如熊/团子)时给出:沿头部轮廓的最底缘`,
-    `(兜帽/下巴的弧线,不是衣领口)从左到右均匀取 8~16 个 [x,y] 点,坐标用 0~1 小数(相对原图宽高),`,
-    `首尾点到达头部左右边缘;有脖子的角色省略 headBoundary。`,
-    `坐标基于原图尺寸;armL/armR 的矩形不得包含躯干和衣服;部件不存在则省略该键。不要输出其他文字。`,
+    `你是纸偶动画的部件切分师。深灰色背景上是刚抠好的Q版角色立绘(画布 ${W}x${H} 像素)。`,
+    `请在角色身上画出把身体分开的切分线。只输出一个 JSON 对象,格式:`,
+    `{"cuts": {"headBody": [[x,y],...], "armLeft": [[x,y],...] 或 null, "armRight": [[x,y],...] 或 null}}`,
+    `headBody:沿头部最底缘(兜帽/下巴的弧线,不是衣领口)从角色左侧的灰色背景出发,`,
+    `  经过头与身体的分界,到达右侧背景结束,取 8~16 个点。头部含头发/耳朵/头饰/兜帽。`,
+    `armLeft/armRight:沿手臂与躯干之间的缝隙走线——从手臂上方(肩外侧)的背景出发,`,
+    `  贴着手臂与躯干的分界向下,到手臂下方(手外侧)的背景结束,把整条手臂(含袖子)从躯干分开。`,
+    `  手臂与躯干完全粘连、找不到这样的缝时,该臂给 null。armLeft=画面左侧的手臂(观察者视角)。`,
+    `所有坐标用 0~1 小数(相对原图宽高),点按线的走向顺序排列。`,
+    `每条线的起点和终点都必须在没有像素的灰色背景上。不要输出其他文字。`,
   ].join("\n");
 }
 
@@ -117,11 +119,20 @@ export async function cutCompanionFigure(
   const W = rgba.width;
   const H = rgba.height;
 
-  // T1 识图定位(key 缺失/模型不可用/解析失败 → anchors=null 落 T2;
+  // 键控先行(SPEC §17.5):掩码是唯一可信几何证据,VLM 预览图由它合成。
+  // 键控失败(坏尺寸/空图)→ 直接 L1,不再尝试识图。
+  let fm: FigureMask | null = null;
+  try {
+    fm = keyFigure(rgba);
+  } catch {
+    fm = null;
+  }
+
+  // vision 切分线(key 缺失/模型不可用/解析失败 → cuts=null 落 L1;
   // 失败原因透出给导入卡,静默降级曾让"key 没填"藏了两天)
-  let anchors: Anchors | null = null;
+  let cuts: CutCurves | null = null;
   let visionError: string | undefined;
-  if (!deps.skipVision) {
+  if (fm && !deps.skipVision) {
     const locate =
       deps.locate ??
       (async (dataUrl: string) => {
@@ -141,20 +152,22 @@ export async function cutCompanionFigure(
         );
       });
     try {
-      const dataUrl = `data:image/png;base64,${Buffer.from(pngBytesOf(input)).toString("base64")}`;
-      anchors = parseAnchorsJson(await locate(dataUrl), W, H);
-      if (!anchors) visionError = "锚点解析失败(VLM 输出不含 armL/armR 框)";
+      // 喂键控预览(深灰底上的角色),不是原图 —— 与机器掩码逐像素同源
+      const previewPng = await rgbaToPng(composeKeyedPreview(rgba, fm));
+      const dataUrl = `data:image/png;base64,${Buffer.from(previewPng).toString("base64")}`;
+      cuts = parseCutsJson(await locate(dataUrl), W, H);
+      if (!cuts) visionError = "切分线解析失败(VLM 输出不含 cuts JSON)";
     } catch (e) {
-      anchors = null;
+      cuts = null;
       visionError = String((e as Error).message ?? e).slice(0, 200);
     }
   }
 
-  const result = routeCut(rgba, { anchors });
-  const mode = keyFigure(rgba).mode;
+  const result = routeCut(rgba, { cuts });
+  const mode = fm?.mode ?? "alpha";
 
   if (result.route === "l1") {
-    // T3:整图贴纸(白描边),永不出错
+    // L1:整图贴纸(白描边),永不出错
     const outlined = addWhiteOutline(rgba, Math.max(3, Math.round(Math.min(W, H) * 0.008)));
     const png = await rgbaToPng(outlined);
     const box: Box = { x: 0, y: 0, w: W, h: H };
@@ -172,7 +185,7 @@ export async function cutCompanionFigure(
     };
   }
 
-  // T1/T2:部件白描边 + PNG
+  // vision:部件白描边 + PNG
   const outlineRadius = Math.max(3, Math.round(Math.min(W, H) * 0.006));
   const files: CutPackManifest["parts"] = {};
   const outParts: CompanionCutOutputPart[] = [];
@@ -189,10 +202,6 @@ export async function cutCompanionFigure(
     parts: files,
   };
   return { route: result.route, visionError, parts: outParts, manifest };
-}
-
-function pngBytesOf(input: CompanionCutInput): Uint8Array {
-  return Buffer.isBuffer(input.png) ? new Uint8Array(input.png) : input.png;
 }
 
 /* ---------------- 持久化(userData/companion-packs/,settings 行驱动) ---------------- */

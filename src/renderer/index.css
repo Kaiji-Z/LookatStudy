@@ -1440,6 +1440,9 @@ html.light ::-webkit-scrollbar-thumb:hover {
 .cp-form-custom .cp-disc-rim { stroke: var(--text-strong, #ffffff); opacity: 0.5; }
 .cp-form-custom .cp-disc-glow { fill: var(--accent, #1cb0f6); }
 .cp-form-custom .cp-disc-lamp { fill: #ffc800; animation: cp-disc-lamp 1.6s ease-in-out infinite alternate; }
+/* 壳层装饰按形态裁剪:航灯(左红右绿)与喷焰都假设火箭机身存在——五款内置形态
+   贴着身体轮廓是"机灯",纸偶身体窄,灯悬在半空成了游离绿点(用户当脏东西)。 */
+.cp-form-custom .cp-beacons, .cp-form-custom .cp-thruster { display: none; }
 .cp-form-custom .cp-disc { animation: cp-disc-float 3.4s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
 .cp-form-custom .cp-puppet-bot { animation: cp-puppet-hover 3.4s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: 50% 62%; }
 @keyframes cp-disc-float { from { transform: translateY(0) rotate(-1.2deg); } to { transform: translateY(-3px) rotate(1.2deg); } }

@@ -259,6 +259,13 @@ check(
   "G2d(M2) 纸偶臂挂姿势 class cp-arm cp-${name}(pose CSS 命中契约)",
   puppetSrc.includes("cp-arm cp-${name}"),
 );
+// G2e(2026-09-10) 壳层"机身装饰"对纸偶裁剪:航灯(左红右绿)与喷焰假设火箭机身
+// 存在,纸偶身体窄则悬空成游离绿点(用户实测报"脏点/偏心");CSS 按形态隐藏
+const appCss = read("src/renderer/index.css");
+check(
+  "G2e(M2) custom 形态隐藏壳层航灯/喷焰(悬空绿点根因)",
+  appCss.includes(".cp-form-custom .cp-beacons") && appCss.includes(".cp-thruster { display: none; }"),
+);
 
 // G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源
 check(

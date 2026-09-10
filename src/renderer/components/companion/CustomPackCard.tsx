@@ -6,7 +6,8 @@
  * companion_form 切 custom + companion-config-changed 让 bus 重读)→ 删除回落。
  * 预览是纯本地态,应用才落盘——取消零副作用。
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 import { useLang } from "../../lib/i18n.js";
 import { refreshActivePack } from "../../lib/companion/custom-pack-store.js";
@@ -43,7 +44,16 @@ export function CustomPackCard() {
   const [preview, setPreview] = useState<CutPreview | null>(null);
   const [fileName, setFileName] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  // 识图调用实测 ~7s:无过程的等待看起来像卡死——秒表让"在工作"可见
+  useEffect(() => {
+    if (!busy) return;
+    setElapsed(0);
+    const t0 = Date.now();
+    const iv = window.setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 500);
+    return () => window.clearInterval(iv);
+  }, [busy]);
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -105,6 +115,13 @@ export function CustomPackCard() {
     <div data-testid="companion-custom-card" className="mt-3 rounded-xl border border-[var(--border-faint)] p-3">
       <div className="text-label font-medium text-ink-strong mb-2">{t("companion.custom.title")}</div>
       <div className="flex flex-wrap items-center gap-2">
+        {busy && (
+          <span className="flex items-center gap-1.5 text-label text-ink-muted" data-testid="companion-custom-busy">
+            <Loader2 size={14} className="animate-spin" />
+            {t(preview ? "companion.custom.applying" : "companion.custom.locating")}
+            <span className="tabular-nums">{elapsed}s</span>
+          </span>
+        )}
         <input
           ref={fileRef}
           type="file"

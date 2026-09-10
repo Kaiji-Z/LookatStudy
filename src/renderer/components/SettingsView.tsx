@@ -21,7 +21,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSyncExternalStore } from "react";
 import { getCompanionSnapshot, subscribeCompanion } from "../lib/companion/bus.ts";
 import { COMPANION_FORM_IDS } from "../lib/companion/forms-index.js";
-import { CustomPackCard } from "./companion/CustomPackCard.js";
+import { CustomBotsSection } from "./companion/CustomBotsSection.js";
 import { Mascot } from "./companion/Mascot.js";
 import { Plus, RotateCw, CheckCircle2, XCircle, Wrench, Check } from "lucide-react";
 import { api } from "../lib/api.js";
@@ -1024,7 +1024,7 @@ function CompanionContent() {
             })}
           </div>
         </div>
-        <CustomPackCard />
+        <CustomBotsSection />
         </>
       )}
     </div>

@@ -95,9 +95,11 @@ import { transcribeAudio, type CustomAsrConfig } from "../services/speech/asr-se
 import { synthesizeOpenaiTts } from "../services/speech/openai-tts-client.js";
 import { getCustomProviderRaw } from "../services/custom-provider-service.js";
 import {
+  activateCompanionPack,
   applyCompanionPack,
+  deleteCompanionPack,
+  listCompanionPacks,
   cutCompanionFigure,
-  deleteActiveCompanionPack,
   getActiveCompanionPack,
 } from "../services/companion-pack-service.js";
 import type { CutPackManifest } from "@shared/companion-cut";
@@ -1704,8 +1706,14 @@ export function registerCompanionPackHandlers(deps: RuntimeDeps): void {
   handle("companionPack:getActive", async () => {
     return getActiveCompanionPack(getDb(), deps.dataDir);
   });
-  handle("companionPack:deleteActive", async () => {
-    return deleteActiveCompanionPack(getDb(), deps.dataDir);
+  handle("companionPack:list", async () => {
+    return listCompanionPacks(getDb(), deps.dataDir);
+  });
+  handle("companionPack:activate", async (_e, input: { id: string }) => {
+    return activateCompanionPack(getDb(), deps.dataDir, input.id);
+  });
+  handle("companionPack:delete", async (_e, input: { id: string }) => {
+    return deleteCompanionPack(getDb(), deps.dataDir, input.id);
   });
 }
 

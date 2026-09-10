@@ -247,7 +247,7 @@ export function applyCompanionPack(
     if (!entry) continue;
     fs.writeFileSync(path.join(dir, entry.file), Buffer.from(part.pngBase64, "base64"));
   }
-  fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(input.manifest, null, 2));
+  fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ ...input.manifest, name: input.name }, null, 2));
   setSettingRaw(db, ACTIVE_ID_KEY, id);
   setSettingRaw(db, ACTIVE_NAME_KEY, input.name);
   return { id, name: input.name };
@@ -290,6 +290,7 @@ export interface CompanionPackDeleteResult {
   formReset: boolean;
 }
 
+/** 删除激活包(兼容入口:删的就是当前激活包)。 */
 export function deleteActiveCompanionPack(db: PackDb, dataDir: string): CompanionPackDeleteResult {
   const id = settingOf(db, ACTIVE_ID_KEY);
   if (id) {
@@ -302,6 +303,79 @@ export function deleteActiveCompanionPack(db: PackDb, dataDir: string): Companio
   if (settingOf(db, FORM_KEY) === "custom") {
     setSettingRaw(db, FORM_KEY, "ember");
     formReset = true;
+  }
+  return { ok: true, formReset };
+}
+
+/* ---------------- 多 bot(2026-09-11):列表/切换/按 id 删 ---------------- */
+
+export interface CompanionPackSummary {
+  id: string;
+  name: string;
+  active: boolean;
+  route: string;
+}
+
+/** 列出磁盘上全部包(目录扫描,激活指针只标 active;按 激活优先+名字 排序)。 */
+export function listCompanionPacks(db: PackDb, dataDir: string): { packs: CompanionPackSummary[] } {
+  const activeId = settingOf(db, ACTIVE_ID_KEY);
+  const activeName = settingOf(db, ACTIVE_NAME_KEY);
+  const root = path.join(dataDir, "companion-packs");
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(root);
+  } catch {
+    return { packs: [] };
+  }
+  const packs: CompanionPackSummary[] = [];
+  for (const id of entries) {
+    if (!/^custom-[a-z0-9]{8}$/.test(id)) continue;
+    let manifest: CutPackManifest;
+    try {
+      manifest = JSON.parse(fs.readFileSync(path.join(root, id, "manifest.json"), "utf8")) as CutPackManifest;
+    } catch {
+      continue;
+    }
+    packs.push({
+      id,
+      name: manifest.name ?? (id === activeId ? activeName ?? id : id),
+      active: id === activeId,
+      route: manifest.source?.route ?? "l1",
+    });
+  }
+  packs.sort((x, y) => Number(y.active) - Number(x.active) || x.name.localeCompare(y.name));
+  return { packs };
+}
+
+/** 切换激活包(包必须真实存在;名字以 manifest.name 为准)。 */
+export function activateCompanionPack(db: PackDb, dataDir: string, id: string): { ok: boolean } {
+  const dir = companionPackDir(dataDir, id);
+  const manifestPath = path.join(dir, "manifest.json");
+  if (!fs.existsSync(manifestPath)) throw new Error(`包不存在: ${id}`);
+  let name = id;
+  try {
+    name = (JSON.parse(fs.readFileSync(manifestPath, "utf8")) as CutPackManifest).name ?? id;
+  } catch {
+    /* 名字读不出就记 id */
+  }
+  setSettingRaw(db, ACTIVE_ID_KEY, id);
+  setSettingRaw(db, ACTIVE_NAME_KEY, name);
+  return { ok: true };
+}
+
+/** 按 id 删除;删的是激活包时清指针 + custom 形态回退 ember。 */
+export function deleteCompanionPack(db: PackDb, dataDir: string, id: string): CompanionPackDeleteResult {
+  const activeId = settingOf(db, ACTIVE_ID_KEY);
+  const dir = companionPackDir(dataDir, id);
+  fs.rmSync(dir, { recursive: true, force: true });
+  let formReset = false;
+  if (id === activeId) {
+    setSettingRaw(db, ACTIVE_ID_KEY, "");
+    setSettingRaw(db, ACTIVE_NAME_KEY, "");
+    if (settingOf(db, FORM_KEY) === "custom") {
+      setSettingRaw(db, FORM_KEY, "ember");
+      formReset = true;
+    }
   }
   return { ok: true, formReset };
 }

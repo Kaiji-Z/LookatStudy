@@ -195,7 +195,7 @@ check("T30 下采样路径:2000² 单主体(4M 像素,stride=2)仍 blob=1", (() 
 
 // G1(M2 改造,SPEC §16.2/16.5):行为层守卫名单零 diff——bus/flight/core/口型/
 // 桌宠音效/壳(CompanionCreature/Mascot/PetCompanion)/五形态 shared+皮肤。
-// seam 白名单(forms-index/registry/custom-puppet/CustomPackCard/custom-pack-store/
+// seam 白名单(forms-index/registry/custom-puppet/CustomBotsSection/custom-pack-store/
 // SettingsView/i18n/index.css)允许 diff——M2 走「第 6 形态」路径,行为不是移植
 // 而是共享,守卫从「全目录零条」收窄为「行为文件零条」。
 const behaviorGuardFiles = [
@@ -280,11 +280,14 @@ check(
   /PART_ORDER(?::\s*string\[\])?\s*=\s*\["body", "head", "armL", "armR", "sticker"\]/.test(puppetSrc),
 );
 // G2h(2026-09-10) rest 角补偿链路:A-pose 臂 rest 任意,固定角姿势必指偏——纸偶
-// 量测注入 --cp-rest,custom 作用域姿势按 目标角−rest 求差值(内置规则零改动)
-const restCss = '.cp-form-custom .cp-pose-point .cp-armL { transform: rotate(calc(182deg - var(--cp-rest, 90deg))); }';
+// 量测注入 --cp-rest,custom 作用域姿势按 目标角−rest 求差值(内置规则零改动)。
+// 选择器必须复合(cp-form-custom 与 cp-pose-* 同在 svg 根,后代组合器永不命中,
+// 实测踩过:姿势静默走回原固定角)——并全局禁掉该错误写法。
+const restCss = '.cp-form-custom.cp-pose-point .cp-armL { transform: rotate(calc(182deg - var(--cp-rest, 90deg))); }';
 check(
-  "G2h(M2) custom 姿势按 目标−var(--cp-rest) 求差 + 纸偶注入 rest 变量",
-  appCss.includes(restCss) && appCss.includes("cp-wave-arm-custom") && puppetSrc.includes('"--cp-rest"'),
+  "G2h(M2) custom 姿势复合选择器+目标−var(--cp-rest) 求差 + 纸偶注入 rest 变量",
+  appCss.includes(restCss) && appCss.includes("cp-wave-arm-custom") && puppetSrc.includes('"--cp-rest"') &&
+    !/\.cp-form-custom \.cp-pose-/.test(appCss),
 );
 
 // G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源

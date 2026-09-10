@@ -512,4 +512,34 @@ t("T25 armRestAngleDeg:臂 rest 角量测(竖直90/外展120/水平0/退化null)
   assert.equal(armRestAngleDeg(tiny, org), null, "退化臂=null");
 });
 
+t("T26 白描边平滑:AA 阈值抖动不再造成轮廓 ±1px 凹凸(实测熊女 96/147 交替回归锁)", () => {
+  // 底半不透明,顶缘一行 AA,alpha 按列 96/147 交替(跨旧阈值 128 两侧)
+  const W = 120, H = 80;
+  const data = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = (y * W + x) * 4;
+      data[p] = 200; data[p + 1] = 160; data[p + 2] = 120;
+      data[p + 3] = y >= 50 ? 255 : y === 49 ? (x % 2 ? 147 : 96) : 0;
+    }
+  }
+  const out = addWhiteOutline({ width: W, height: H, data }, 4);
+  // 轮廓平直:所有列首个不透明像素落在同一行(旧二值化会随 96/147 交替在 49/50 间跳)
+  const firstRow = [];
+  for (let x = 4; x < W - 4; x++) {
+    for (let y = 0; y < H; y++) {
+      if (out.data[(y * W + x) * 4 + 3] > 0) { firstRow.push(y); break; }
+    }
+  }
+  assert.equal(new Set(firstRow).size, 1, `描边外缘应齐平,实测行 ${[...new Set(firstRow)].join(",")}`);
+  // 白垫底仍在:AA 行收进部件(原像素半透明保留),其上一行是白垫底
+  const aa = (49 * W + 60) * 4;
+  assert.ok(out.data[aa] === 200 && out.data[aa + 3] === 96, "AA 行保留原像素(半透明)");
+  const white = (48 * W + 60) * 4;
+  assert.ok(out.data[white] === 255 && out.data[white + 3] === 255, "其上应是白垫底");
+  // 确定性
+  const out2 = addWhiteOutline({ width: W, height: H, data }, 4);
+  assert.deepEqual(Buffer.from(out.data).equals(Buffer.from(out2.data)), true, "同输入同输出");
+});
+
 console.log(`\nverify-companion-cut: ${pass} 断言全部通过`);

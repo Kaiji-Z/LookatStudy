@@ -102,6 +102,8 @@ export interface CutPackManifest {
   kind: "companion-cut";
   source: { width: number; height: number; keyMode: KeyMode; route: CutRoute };
   parts: Partial<Record<PartName | "sticker", { file: string; box: Box }>>;
+  /** 展示名(2026-09-11 多 bot 列表用;旧 manifest 缺省 → 回退包 id)。 */
+  name?: string;
 }
 
 /* ---------------- 11.5 纸偶布局(切分件 → 渲染 viewBox 坐标,纯函数) ---------------- */
@@ -740,11 +742,45 @@ export function partitionByCurves(img: RgbaImage, fm: FigureMask, plan: CutPlan)
 
 /* ---------------- 6. 白描边 ---------------- */
 
-/** 半径 r 的 Chebyshev 膨胀 + 白色垫底:输出与输入同尺寸,新边缘为不透明白。 */
+/** 可分离盒模糊(边界钳位):消 1px 抗锯齿台阶,供描边前平滑掩膜用。 */
+function boxBlurU8(a: Uint8Array, W: number, H: number, r: number): Uint8Array {
+  const tmp = new Uint8Array(W * H);
+  const out = new Uint8Array(W * H);
+  const win = 2 * r + 1;
+  for (let y = 0; y < H; y++) {
+    let sum = 0;
+    for (let k = -r; k <= r; k++) sum += a[y * W + Math.min(W - 1, Math.max(0, k))];
+    for (let x = 0; x < W; x++) {
+      tmp[y * W + x] = Math.round(sum / win);
+      sum += a[y * W + Math.min(W - 1, x + r + 1)] - a[y * W + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let sum = 0;
+    for (let k = -r; k <= r; k++) sum += tmp[Math.min(H - 1, Math.max(0, k)) * W + x];
+    for (let y = 0; y < H; y++) {
+      out[y * W + x] = Math.round(sum / win);
+      sum += tmp[Math.min(H - 1, y + r + 1) * W + x] - tmp[Math.max(0, y - r) * W + x];
+    }
+  }
+  return out;
+}
+
+/**
+ * 半径 r 的 Chebyshev 膨胀 + 白色垫底:输出与输入同尺寸,新边缘为不透明白。
+ * 描边前先对原始 alpha 做半径 2 盒模糊再取阈值(2026-09-11):原图轮廓是平滑弧线
+ * +1px 抗锯齿,但 AA 像素 alpha 在阈值两侧波动(实测 93~249),直接二值化会让
+ * 轮廓随机内外跳 ±1px,盒膨胀再把每级 1px 台阶放大成 radius 高的凹凸平台。
+ * 模糊后阈值取 108(模糊对 1px 渐变有稀释,取低于 128 的中位),台阶被圆化、
+ * AA 整条收进部件,膨胀无从放大。确定性:同输入同输出。
+ */
 export function addWhiteOutline(img: RgbaImage, radius = Math.max(3, Math.round(Math.min(img.width, img.height) * 0.008))): RgbaImage {
   const { width: W, height: H, data } = img;
+  const raw = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) raw[i] = data[i * 4 + 3];
+  const smooth = boxBlurU8(raw, W, H, 2);
   const a = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) a[i] = data[i * 4 + 3] > 128 ? 1 : 0;
+  for (let i = 0; i < W * H; i++) a[i] = smooth[i] >= 108 ? 1 : 0;
   // 可分离膨胀(行方向 + 列方向)
   const dil1 = new Uint8Array(W * H);
   for (let y = 0; y < H; y++) {

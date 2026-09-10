@@ -1226,6 +1226,9 @@ html.light ::-webkit-scrollbar-thumb:hover {
    下垂手臂 +92° 从 6 点扫向 9 点=向左外伸,−92° 从 6 点扫向 3 点=向右外伸。
    armL 在屏幕左侧,+92° 向左外伸(point);armR −92° 向右外伸(pointr)。
    符号写反会让手臂横穿身体从脸前掠过(藏在头后面,实测踩过)。 */
+/* 纸偶 idle 呼吸(float):整身微缩放,部件一起动不产生头身分离;盘在呼吸层外 */
+.cp-pose-float .cp-puppet-figure { transform-box: fill-box; transform-origin: 50% 100%; animation: cp-puppet-breath 3.2s ease-in-out infinite alternate; }
+@keyframes cp-puppet-breath { from { transform: scale(1, 1); } to { transform: scale(1.015, 0.988); } }
 .cp-pose-point .cp-armL { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(92deg); }
 .cp-pose-point .cp-bot { transform-box: fill-box; transform-origin: 50% 62%; transform: rotate(-3deg); }
 .cp-pose-pointr .cp-armR { transform-box: fill-box; transform-origin: 50% 12%; transform: rotate(-92deg); }

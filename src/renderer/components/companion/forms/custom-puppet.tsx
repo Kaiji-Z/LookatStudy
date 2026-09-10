@@ -3,17 +3,20 @@
  *
  * 与五款内置形态共用 Mascot 壳的全部生命系统:pose CSS 按 class 命中 .cp-bot/
  * .cp-head/.cp-armL/.cp-armR 后代,逐键 WAAPI 按压/ squash 走 refs;行为不是
- * 移植而是天生共享。本组件只做三件事:
+ * 移植而是天生共享。本组件只做四件事:
  *   1. 把切分件 <image> 按 layoutParts 落位(contain 进 200×200 舞台,层序 盘<臂<身<头);
  *   2. 关节 origin 内联覆盖:臂=近躯干上角(86%/14% × 10%)、头=底中(50% 92%)——
  *      pose 旋转/拍臂绕肩/颈,不绕图片几何中心;
- *   3. HoverDisc 载具:程序化 SVG 椭圆盘(零二进制资产),纸偶站盘上悬浮。
+ *   3. HoverDisc 载具:程序化 SVG 椭圆盘(零二进制资产),纸偶站盘上悬浮;
+ *   4. "转头看"(2026-09-10,替代旧的头图平移):壳的 gaze 经 companion-gaze
+ *      事件广播,这里把头绕颈点(头盒底中)做 ±3.5° 倾转+≤1.2px 平移——颈点
+ *      固定,头身永不分离(旧版整头平移曾出现"印度动脖子"式断层)。
+ *      refs.pupils 退化为空 g(壳的整眼平移写入无害 no-op)。
  *
- * 五官表情=暂缓:eyes/waves refs 挂空 g(壳的眨眼/麦克风弧写入无害 no-op);
- * pupils 挂头图组——视线 lerp 变成头部 ±5/3px 微平移,无五官也有活体感。
+ * 五官表情=暂缓:eyes/waves refs 挂空 g(壳的眨眼/麦克风弧写入无害 no-op)。
  * 无激活包(或包文件丢失)→ 诚实占位剪影,不白屏。
  */
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { getActivePack, subscribeActivePack } from "../../../lib/companion/custom-pack-store.js";
 import type { FormArtProps } from "./shared.js";
@@ -29,11 +32,28 @@ const PART_ORIGIN: Record<string, string> = {
 
 export function CustomPuppetArt({ refs }: FormArtProps) {
   const pack = useSyncExternalStore(subscribeActivePack, getActivePack);
+  const leanRef = useRef<SVGGElement | null>(null);
   const lay = useMemo(() => {
     const m = new Map<string, { x: number; y: number; w: number; h: number }>();
     for (const l of pack?.layout ?? []) m.set(l.name, l);
     return m;
   }, [pack]);
+
+  // "转头看":gaze(-1..1)→ 绕颈点倾转,朝向鼠标一侧;颈点=头盒底中,固定不分离
+  useEffect(() => {
+    const onGaze = (e: Event) => {
+      const g = (e as CustomEvent<{ x: number; y: number }>).detail;
+      const head = leanRef.current;
+      if (!head) return;
+      const hb = getActivePack()?.layout.find((l) => l.name === "head");
+      const cx = hb ? hb.x + hb.w / 2 : 100;
+      const cy = hb ? hb.y + hb.h * 0.92 : 170;
+      const deg = Math.max(-3.5, Math.min(3.5, g.x * 2.8)) + Math.max(-1, Math.min(1, g.y * 0.8));
+      head.setAttribute("transform", `rotate(${deg.toFixed(2)} ${cx.toFixed(1)} ${cy.toFixed(1)}) translate(${(g.x * 1.2).toFixed(2)} ${(g.y * 0.7).toFixed(2)})`);
+    };
+    window.addEventListener("companion-gaze", onGaze);
+    return () => window.removeEventListener("companion-gaze", onGaze);
+  }, []);
 
   return (
     <g ref={refs.bot} className="cp-bot cp-puppet-bot">
@@ -54,6 +74,8 @@ export function CustomPuppetArt({ refs }: FormArtProps) {
             <circle cx="46" cy="179" r="2.6" className="cp-disc-lamp" />
             <circle cx="154" cy="179" r="2.6" className="cp-disc-lamp" />
           </g>
+          {/* 呼吸层:float 姿势下整身微缩放(部件一起动,无头身分离;盘在此层外) */}
+          <g className="cp-puppet-figure">
           {/* 贴纸档(l1)=单件整图;分件档=臂/身/头分层(头压身,臂在身侧之上) */}
           {PART_ORDER.map((name) => {
             const src = pack.srcs[name];
@@ -62,7 +84,7 @@ export function CustomPuppetArt({ refs }: FormArtProps) {
             if (name === "head") {
               return (
                 <g key={name} ref={refs.head} className="cp-head" style={{ transformBox: "fill-box", transformOrigin: PART_ORIGIN.head }}>
-                  <g ref={refs.pupils}>
+                  <g ref={leanRef}>
                     <image href={src} x={box.x} y={box.y} width={box.w} height={box.h} />
                   </g>
                 </g>
@@ -82,11 +104,13 @@ export function CustomPuppetArt({ refs }: FormArtProps) {
             }
             return <image key={name} href={src} x={box.x} y={box.y} width={box.w} height={box.h} />;
           })}
+          </g>
         </>
       )}
-      {/* 壳的眨眼/麦克风弧写 transform 的挂点(五官暂缓:空 g,no-op) */}
+      {/* 壳的眨眼/麦克风弧/整眼平移写 transform 的挂点(五官暂缓:空 g,no-op) */}
       <g ref={refs.eyes} />
       <g ref={refs.waves} />
+      <g ref={refs.pupils} />
     </g>
   );
 }

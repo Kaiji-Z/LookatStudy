@@ -135,7 +135,7 @@ export async function cutCompanionFigure(
               ],
             },
           ],
-          { maxOutputTokens: 6000 }, // glm-5.3-flash 会先吐思考过程,1400 曾把 JSON 掐断在半截
+          { maxOutputTokens: 128000 }, // glm-5.3-flash 思考过程计入输出,6000 仍把 JSON 掐断;按用户实测放大到 128k
         );
       });
     try {

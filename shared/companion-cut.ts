@@ -116,15 +116,38 @@ export interface PuppetPartLayout {
 }
 
 /**
+ * 部件盒并集 = 已渲染内容的真实外接框(SPEC §17.11):标定纸偶大小时用它,
+ * 画布四周的留白不参与——AI 生成的 2:3 图人物常只占 60~70%,按整画布 contain
+ * 会让纸偶整体偏小、脚悬在悬浮盘上。无部件 → 0 尺寸框(调用方兜底)。
+ */
+export function figureBoxOfParts(
+  parts: Partial<Record<PartName | "sticker", { file: string; box: Box }>>,
+): { x: number; y: number; width: number; height: number } {
+  const boxes = Object.values(parts)
+    .map((p) => p?.box)
+    .filter((b): b is Box => !!b);
+  if (boxes.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+  const minX = Math.min(...boxes.map((b) => b.x));
+  const minY = Math.min(...boxes.map((b) => b.y));
+  const maxX = Math.max(...boxes.map((b) => b.x + b.w));
+  const maxY = Math.max(...boxes.map((b) => b.y + b.h));
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/**
  * 把切分件的原图坐标等比 contain 到目标舞台(伴学 svg 200×200 内的子区),
  * 居中;部件间相对位置与原图逐像素一致。确定性(同输入同输出,verify 直测)。
+ * source 支持带 x/y 的标定框(2026-09-10:传 figureBoxOfParts 的部件并集,
+ * 画布留白不参与缩放;不传 x/y 视为整画布,兼容老调用)。
  */
 export function layoutParts(
-  source: { width: number; height: number },
+  source: { x?: number; y?: number; width: number; height: number },
   parts: Partial<Record<PartName | "sticker", { file: string; box: Box }>>,
   target: { x: number; y: number; w: number; h: number } = { x: 24, y: 22, w: 152, h: 154 },
 ): PuppetPartLayout[] {
   if (source.width <= 0 || source.height <= 0) return [];
+  const bx = source.x ?? 0;
+  const by = source.y ?? 0;
   const s = Math.min(target.w / source.width, target.h / source.height);
   const offX = target.x + (target.w - source.width * s) / 2;
   const offY = target.y + (target.h - source.height * s) / 2;
@@ -134,8 +157,8 @@ export function layoutParts(
     if (!part) continue;
     out.push({
       name,
-      x: r2(offX + part.box.x * s),
-      y: r2(offY + part.box.y * s),
+      x: r2(offX + (part.box.x - bx) * s),
+      y: r2(offY + (part.box.y - by) * s),
       w: r2(part.box.w * s),
       h: r2(part.box.h * s),
     });
@@ -463,7 +486,7 @@ function extendEndpoint(p: { x: number; y: number }, toward: { x: number; y: num
 }
 
 /** 校验单条线:两端落地 + 线真的切到角色(≥3 墙像素)。返回修正后的折线或 null。 */
-function validateCurve(poly: Poly, fm: FigureMask): Poly | null {
+export function validateCurve(poly: Poly, fm: FigureMask): Poly | null {
   const start = extendEndpoint(poly[0], poly[1], fm);
   const end = extendEndpoint(poly[poly.length - 1], poly[poly.length - 2], fm);
   if (start.length === 0 || end.length === 0) return null;

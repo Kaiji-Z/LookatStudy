@@ -6,7 +6,7 @@
  * CustomPackCard 应用/删除后调 refreshActivePack()。布局(layoutParts)在拉取时
  * 算好缓存——切分件原图坐标 → 伴学 svg 200×200 舞台,确定性纯函数。
  */
-import { layoutParts, type CutPackManifest, type PuppetPartLayout } from "@shared/companion-cut.ts";
+import { figureBoxOfParts, layoutParts, type CutPackManifest, type PuppetPartLayout } from "@shared/companion-cut.ts";
 
 export interface ActivePackView {
   id: string;
@@ -49,7 +49,12 @@ export async function refreshActivePack(): Promise<void> {
             name: res.name,
             manifest: res.manifest,
             srcs: res.srcs,
-            layout: layoutParts(res.manifest.source, res.manifest.parts),
+            // 标定框=部件盒并集(真实人物外接框):画布留白不参与缩放,
+            // 纸偶撑满舞台、脚踩悬浮盘;老 manifest 无需重导即可享受
+            layout: layoutParts(
+              { ...figureBoxOfParts(res.manifest.parts), width: res.manifest.source.width, height: res.manifest.source.height },
+              res.manifest.parts,
+            ),
           }
         : null;
     emit();

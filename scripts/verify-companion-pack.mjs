@@ -253,6 +253,12 @@ check(
   "G2c(M2) CustomPuppetArt 存在且不 import bus 命令入口(只读)",
   puppetSrc.includes("CustomPuppetArt") && !forbiddenBusCalls.some((s) => puppetSrc.includes(s)),
 );
+// G2d(2026-09-10) 纸偶臂必须挂姿势 class(cp-armL/cp-armR):姿势 CSS(朗读指向/
+// 写字/挥手/飞行臂)按连字符类命中,漏挂则纸偶手臂对全部姿势静默(实测回归)
+check(
+  "G2d(M2) 纸偶臂挂姿势 class cp-arm cp-${name}(pose CSS 命中契约)",
+  puppetSrc.includes("cp-arm cp-${name}"),
+);
 
 // G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源
 check(

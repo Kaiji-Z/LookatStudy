@@ -1434,15 +1434,59 @@ html.light ::-webkit-scrollbar-thumb:hover {
 }
 
 /* ---------- M2 自定义纸偶(SPEC §16):第 6 形态 custom,作用域全限 .cp-form-custom ----------
-   盘体=程序化 SVG 椭圆(accent 系),悬浮浮动+光晕脉动;姿势/表情/按压 CSS 零改动继承。 */
-.cp-form-custom .cp-disc-top { fill: var(--accent, #1cb0f6); opacity: 0.92; }
-.cp-form-custom .cp-disc-base { fill: var(--accent, #1cb0f6); opacity: 0.45; }
-.cp-form-custom .cp-disc-rim { stroke: var(--text-strong, #ffffff); opacity: 0.5; }
-.cp-form-custom .cp-disc-glow { fill: var(--accent, #1cb0f6); }
-.cp-form-custom .cp-disc-lamp { fill: #ffc800; animation: cp-disc-lamp 1.6s ease-in-out infinite alternate; }
+   载具 v2(2026-09-11):机械飞行平台。金属三层面(顶/壁/底,有厚度),前沿圆形
+   仪表舱(亮底玻璃)接纳壳层胸屏内容,底部三喷口呼吸微焰、飞行加力发光。 */
+.cp-form-custom .cp-veh-top { fill: #363c4c; stroke: #20242f; stroke-width: 1.5; }
+.cp-form-custom .cp-veh-top-inset { fill: #2d3240; stroke: none; }
+.cp-form-custom .cp-veh-wall { fill: #232836; stroke: #1a1e29; stroke-width: 1; }
+.cp-form-custom .cp-veh-bottom { fill: #171a24; }
+.cp-form-custom .cp-veh-glow { fill: var(--accent, #1cb0f6); opacity: 0.16; }
+.cp-form-custom .cp-veh-vent { fill: #141824; }
+.cp-form-custom .cp-veh-energy-track { fill: #141824; }
+.cp-form-custom .cp-veh-energy-fill { fill: #58cc02; }
+.cp-form-custom .cp-veh-port-bezel { fill: #10141f; stroke: #ffc800; stroke-width: 2.5; }
+.cp-form-custom .cp-veh-port-glass { fill: #dff5fa; }
+.cp-form-custom .cp-veh-nozzle-body { fill: #141824; stroke: #0e1119; stroke-width: 1; }
+.cp-form-custom .cp-veh-flame-outer { fill: var(--accent, #1cb0f6); opacity: 0.55; }
+.cp-form-custom .cp-veh-flame-core { fill: #e8f7ff; opacity: 0.9; }
+.cp-form-custom .cp-veh-flame { transform-box: fill-box; transform-origin: 50% 0; animation: cp-veh-burn 1.5s ease-in-out infinite alternate; }
+.cp-form-custom .cp-veh-flame-core { animation-duration: 1.1s; }
+@keyframes cp-veh-burn { from { transform: scaleY(0.72); opacity: 0.55; } to { transform: scaleY(1.12); opacity: 1; } }
+/* 飞行/起飞:喷口加力——焰拉长变亮 */
+.cp-form-custom.cp-pose-flying .cp-veh-flame, .cp-form-custom.cp-takeoff .cp-veh-flame {
+  animation: cp-veh-blast 0.14s ease-in-out infinite alternate;
+}
+@keyframes cp-veh-blast { from { transform: scaleY(1.5); opacity: 0.9; } to { transform: scaleY(2.1); opacity: 1; } }
 /* 壳层装饰按形态裁剪:航灯(左红右绿)与喷焰都假设火箭机身存在——五款内置形态
    贴着身体轮廓是"机灯",纸偶身体窄,灯悬在半空成了游离绿点(用户当脏东西)。 */
 .cp-form-custom .cp-beacons, .cp-form-custom .cp-thruster { display: none; }
+/* 胸屏内容搬家(载具 v2,2026-09-11):壳层胸屏元素坐标固定在 (100,135)(行为文件
+   G1 零 diff 不可改)。Chromium 实测:独立 translate 在 g/circle 上 computed 有值
+   但渲染不动,text/rect 可用——所以分两路:
+   - 壳层装饰件(信号条组/听写波形/金环)对 custom 隐藏,载具自绘等价物
+     (cp-veh-eq,按 expression/pose class 点亮,无数据依赖);
+   - 唯一真实数据=击键字符(cp-screen-key 文字),text 的独立 translate 可用且与
+     自身 pop/flash transform 动画合成 → 平移进仪表舱玻璃。 */
+.cp-form-custom .cp-key-scope,
+.cp-form-custom .cp-screen-wave,
+.cp-form-custom .cp-core-lit { display: none; }
+.cp-form-custom .cp-screen-key { translate: 0 51.5px; font-size: 12px; }
+/* 载具自绘均衡器(listening/typing 时点亮):三根深色信号条落在亮底玻璃上 */
+.cp-form-custom .cp-veh-eq { opacity: 0; }
+.cp-form-custom.cp-expr-listening .cp-veh-eq,
+.cp-form-custom.cp-pose-typing .cp-veh-eq { opacity: 1; }
+.cp-form-custom .cp-veh-eq-bar {
+  fill: #0e2a38;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cp-veh-eq 0.9s ease-in-out infinite;
+}
+.cp-form-custom .cp-veh-eq-bar:nth-of-type(2) { animation-delay: 0.13s; }
+.cp-form-custom .cp-veh-eq-bar:nth-of-type(3) { animation-delay: 0.26s; }
+@keyframes cp-veh-eq {
+  0%, 100% { transform: scaleY(0.45); }
+  50% { transform: scaleY(1); }
+}
 /* rest 角补偿(SPEC §17.12):内置五形态臂恒竖直垂放(rest=90°),姿势固定角隐含
    该前提;纸偶臂 rest 由像素量测注入 --cp-rest,A-pose 任意夹角都按 目标−rest
    求差值。目标角 = 内置调校角的隐含目标(90+旋转):point 182°/pointr −2°/
@@ -1468,4 +1512,6 @@ html.light ::-webkit-scrollbar-thumb:hover {
 @keyframes cp-disc-lamp { from { opacity: 0.4; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .cp-form-custom .cp-disc, .cp-form-custom .cp-puppet-bot, .cp-form-custom .cp-disc-lamp { animation: none; }
+  .cp-form-custom .cp-veh-flame { animation: none; opacity: 0.6; transform: scaleY(0.9); }
+  .cp-form-custom.cp-pose-flying .cp-veh-flame, .cp-form-custom.cp-takeoff .cp-veh-flame { animation: none; transform: scaleY(1.6); }
 }

@@ -289,6 +289,14 @@ check(
   appCss.includes(restCss) && appCss.includes("cp-wave-arm-custom") && puppetSrc.includes('"--cp-rest"') &&
     !/\.cp-form-custom \.cp-pose-/.test(appCss),
 );
+// G2i(2026-09-11) 载具 v2 仪表舱:壳层胸屏装饰(key-scope/screen-wave/core-lit)对
+// custom 隐藏、击键字符 translate 入舱、载具自绘均衡器点亮——胸屏内容落载具
+// 仪表舱而非叠在用户图上(用户反馈不合理)
+check(
+  "G2i(M2) 载具仪表舱:壳层胸屏装饰隐藏+字符入舱+自绘均衡器",
+  appCss.includes(".cp-form-custom .cp-key-scope,") && appCss.includes(".cp-screen-key { translate: 0 51.5px") &&
+    appCss.includes(".cp-veh-eq-bar {") && puppetSrc.includes("cp-veh-eq"),
+);
 
 // G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源
 check(

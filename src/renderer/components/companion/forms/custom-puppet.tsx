@@ -38,7 +38,7 @@ const PART_ORIGIN: Record<string, string> = {
 /** 内置姿势 CSS 的 rest 前提=竖直 90°;量测失败时回退该值(=现状行为)。 */
 const FALLBACK_REST = 90;
 
-export function CustomPuppetArt({ refs }: FormArtProps) {
+export function CustomPuppetArt({ refs, energyRatio }: FormArtProps) {
   const pack = useSyncExternalStore(subscribeActivePack, getActivePack);
   const leanRef = useRef<SVGGElement | null>(null);
   const lay = useMemo(() => {
@@ -111,15 +111,48 @@ export function CustomPuppetArt({ refs }: FormArtProps) {
         </g>
       ) : (
         <>
-          {/* HoverDisc 载具(程序化,零资产):光晕+盘体+缘+舱灯,纸偶站盘上 */}
-          <g className="cp-disc" aria-hidden="true">
-            <ellipse cx="100" cy="188" rx="72" ry="11" className="cp-disc-glow" opacity="0.16" />
-            <ellipse cx="100" cy="186" rx="58" ry="8" className="cp-disc-glow" opacity="0.28" />
-            <ellipse cx="100" cy="182" rx="62" ry="10" className="cp-disc-base" />
-            <ellipse cx="100" cy="179" rx="62" ry="10" className="cp-disc-top" />
-            <ellipse cx="100" cy="179" rx="62" ry="10" fill="none" className="cp-disc-rim" strokeWidth="2.5" />
-            <circle cx="46" cy="179" r="2.6" className="cp-disc-lamp" />
-            <circle cx="154" cy="179" r="2.6" className="cp-disc-lamp" />
+          {/* 悬浮载具 v2(2026-09-11 重设计):机械飞行平台——顶面/侧壁/底面三层面
+              (有厚度),前沿圆形仪表舱接纳壳层胸屏内容(CSS translate 入驻,玻璃亮底
+              配深色信号条与内置形态同语言),壁上能量条+通风格栅,底部三喷口
+              (idle 呼吸微焰,飞行/起飞加力发光)。程序化 SVG,零二进制资产(G5)。 */}
+          <g className="cp-disc cp-veh" aria-hidden="true">
+            {/* 地面光晕 */}
+            <ellipse cx="100" cy="191" rx="74" ry="12" className="cp-veh-glow" />
+            {/* 三喷口 + 焰(先画,大半藏在平台后,焰从底沿探出) */}
+            {[66, 100, 134].map((nx, i) => (
+              <g key={nx} transform={`translate(${nx} ${i === 1 ? 188 : 185})`} className="cp-veh-nozzle">
+                <path d="M -7 0 L 7 0 L 5 5 L -5 5 Z" className="cp-veh-nozzle-body" />
+                <path d="M -4.5 5 Q 0 14 4.5 5 Z" className="cp-veh-flame cp-veh-flame-outer" />
+                <path d="M -2.4 5 Q 0 10.5 2.4 5 Z" className="cp-veh-flame cp-veh-flame-core" />
+              </g>
+            ))}
+            {/* 底面 */}
+            <ellipse cx="100" cy="182" rx="62" ry="10" className="cp-veh-bottom" />
+            {/* 侧壁(前带,上沿接顶面前弧,下沿接底面前弧——厚度 12) */}
+            <path
+              d="M 36 170 L 38 182 A 62 10 0 0 0 162 182 L 164 170 A 64 11 0 0 1 36 170 Z"
+              className="cp-veh-wall"
+            />
+            {/* 通风格栅(左)与能量条(右,随 energyRatio 充能) */}
+            <rect x="46" y="185" width="9" height="2.4" rx="1.2" className="cp-veh-vent" />
+            <rect x="58" y="185" width="9" height="2.4" rx="1.2" className="cp-veh-vent" />
+            <rect x="122" y="185" width="34" height="3.6" rx="1.8" className="cp-veh-energy-track" />
+            <rect x="122" y="185" width={Math.max(3, 34 * energyRatio)} height="3.6" rx="1.8" className="cp-veh-energy-fill" />
+            {/* 舷灯(沿用金色 cp-disc-lamp) */}
+            <circle cx="41" cy="179" r="2.4" className="cp-disc-lamp" />
+            <circle cx="159" cy="179" r="2.4" className="cp-disc-lamp" />
+            {/* 顶面(最后画,盖住壁上沿) */}
+            <ellipse cx="100" cy="170" rx="64" ry="11" className="cp-veh-top" />
+            <ellipse cx="100" cy="170" rx="52" ry="8" className="cp-veh-top-inset" />
+            {/* 仪表舱:亮底玻璃圆窗 + 金色舱圈;舱内均衡器自绘(listening/typing 点亮),
+                击键字符由壳层 text 经 translate 落入窗内(见 index.css) */}
+            <circle cx="100" cy="186.5" r="12" className="cp-veh-port-bezel" />
+            <circle cx="100" cy="186.5" r="10" className="cp-veh-port-glass" />
+            <g className="cp-veh-eq" aria-hidden="true">
+              <rect x="93" y="180.5" width="3.2" height="11" rx="1.6" className="cp-veh-eq-bar" />
+              <rect x="98.4" y="180.5" width="3.2" height="11" rx="1.6" className="cp-veh-eq-bar" />
+              <rect x="103.8" y="180.5" width="3.2" height="11" rx="1.6" className="cp-veh-eq-bar" />
+            </g>
           </g>
           {/* 呼吸层:float 姿势下整身微缩放(部件一起动,无头身分离;盘在此层外) */}
           <g className="cp-puppet-figure">

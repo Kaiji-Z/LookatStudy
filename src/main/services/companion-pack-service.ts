@@ -23,6 +23,7 @@ import {
   addWhiteOutline,
   composeKeyedPreview,
   parseCutsJson,
+  locatePrompt,
   type Box,
   type CutPackManifest,
   type CutRoute,
@@ -73,21 +74,7 @@ export interface CompanionCutOutput {
   manifest: CutPackManifest;
 }
 
-/** vision 定位 prompt v8:切分线协议(SPEC §17.1),坐标归一化,只回 JSON。 */
-function locatePrompt(W: number, H: number): string {
-  return [
-    `你是纸偶动画的部件切分师。深灰色背景上是刚抠好的Q版角色立绘(画布 ${W}x${H} 像素)。`,
-    `请在角色身上画出把身体分开的切分线。只输出一个 JSON 对象,格式:`,
-    `{"cuts": {"headBody": [[x,y],...], "armLeft": [[x,y],...] 或 null, "armRight": [[x,y],...] 或 null}}`,
-    `headBody:沿头部最底缘(兜帽/下巴的弧线,不是衣领口)从角色左侧的灰色背景出发,`,
-    `  经过头与身体的分界,到达右侧背景结束,取 8~16 个点。头部含头发/耳朵/头饰/兜帽。`,
-    `armLeft/armRight:沿手臂与躯干之间的缝隙走线——从手臂上方(肩外侧)的背景出发,`,
-    `  贴着手臂与躯干的分界向下,到手臂下方(手外侧)的背景结束,把整条手臂(含袖子)从躯干分开。`,
-    `  手臂与躯干完全粘连、找不到这样的缝时,该臂给 null。armLeft=画面左侧的手臂(观察者视角)。`,
-    `所有坐标用 0~1 小数(相对原图宽高),点按线的走向顺序排列。`,
-    `每条线的起点和终点都必须在没有像素的灰色背景上。不要输出其他文字。`,
-  ].join("\n");
-}
+/** vision 定位 prompt:shared 单源(v9 切分线协议,SPEC §17.1/§17.9)。 */
 
 function rgbaOfPng(png: Buffer | Uint8Array): Promise<RgbaImage> {
   return (async () => {

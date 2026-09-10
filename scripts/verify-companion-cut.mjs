@@ -26,6 +26,7 @@ const {
   parseCutsJson,
   planCutCurves,
   partitionByCurves,
+  snapCurvesToEdges,
   layoutParts,
 } = await import("../shared/companion-cut.ts");
 
@@ -265,17 +266,24 @@ t("T12 线没碰到角色(<3 墙像素)→ 作废", () => {
   assert.equal(planCutCurves(fm, cuts), null, "线悬在左上背景,未切到任何角色像素");
 });
 
-t("T13 臂线与头身线交叉 → 该臂线作废(防臂线穿头)", () => {
+t("T13 交叉守卫(2026-09-10 收窄):臂×头身交叉容忍(无颈臂根必然交叉),双臂互交→后者作废", () => {
   const fm = keyFigure(A);
-  // 臂线从左上角(头区上方)拉到左下,必然横穿 y=205 的头身线
-  // A_CUTS 是归一化坐标,统一走解析器还原成像素
-  const plan = planCutCurves(
-    fm,
-    viaParser({ headBody: A_CUTS.headBody, armLeft: [[0.05, 0.05], [0.3, 0.9]], armRight: null }),
-  );
-  assert.ok(plan, "headBody 仍应通过");
-  assert.equal(plan.armLeft, null, "与头身线交叉的臂线被丢弃");
-  assert.equal(plan.armRight, null);
+  // 臂线穿过头身线(v9 语义下无颈形态几何必然)→ 仍采纳
+  const p1 = planCutCurves(fm, {
+    headBody: toPoly([[10, 205], [390, 205]]),
+    armLeft: toPoly([[30, 30], [150, 550]]),
+    armRight: null,
+  });
+  assert.ok(p1 && p1.armLeft, "臂×头身交叉不再拒线");
+  // 双臂互交(X 形穿过躯干)→ 结构不可信,后者作废
+  const p2 = planCutCurves(fm, {
+    headBody: toPoly([[10, 205], [390, 205]]),
+    armLeft: toPoly([[50, 50], [350, 550]]),
+    armRight: toPoly([[350, 50], [50, 550]]),
+  });
+  assert.ok(p2, "计划仍成立");
+  assert.ok(p2.armLeft, "前者保留");
+  assert.equal(p2.armRight, null, "互交的后者作废");
 });
 
 /* ---------------- partitionByCurves + routeCut 全链 ---------------- */
@@ -392,6 +400,50 @@ t("T22 partitionByCurves 直接调用:墙像素(接缝)不归任何部件", () =
     for (let x = main.x; x < main.x + main.w; x++)
       if (fm.mask[y * fm.width + x]) figArea++;
   assert.ok(total >= 0.97 * figArea, `部件像素总量 ${total} / 主体 ${figArea}`);
+});
+
+
+t("T23 孤儿清理:主框内的漂浮小碎片不归任何部件(熊女孩黑斜条回归锁)", () => {
+  const [cv, c] = newCanvas(200, 300, "alpha");
+  c.fillStyle = SKIN;
+  c.beginPath(); c.arc(100, 85, 50, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(100, 195, 60, 0, Math.PI * 2); c.fill();
+  c.fillRect(146, 136, 8, 8);
+  const img = toRgba(cv);
+  const cuts = { headBody: toPoly([[20, 134], [180, 134]]), armLeft: null, armRight: null };
+  const r = routeCut(img, { cuts });
+  assert.equal(r.route, "vision");
+  const body = r.parts.find((p) => p.name === "body");
+  assert.ok(body, "body 应存在");
+  let leak = 0;
+  for (const part of r.parts) {
+    for (let y = 136; y < 144; y++) {
+      const ly = y - part.box.y;
+      if (ly < 0 || ly >= part.box.h) continue;
+      for (let x = 146; x < 154; x++) {
+        const lx = x - part.box.x;
+        if (lx >= 0 && lx < part.box.w && part.rgba[(ly * part.box.w + lx) * 4 + 3] > 128) leak++;
+      }
+    }
+  }
+  assert.equal(leak, 0, `碎片泄漏 ${leak}px(旧版并回 body 会挂成孤儿)`);
+});
+
+t("T24 梯度门控吸附:内部点吸向最近强颜色边界;平坦区不动;端点不动", () => {
+  const mk = (twoTone) => {
+    const [cv, c] = newCanvas(400, 400, "alpha");
+    c.fillStyle = "#E8B88A"; c.fillRect(0, 50, 400, 300);
+    if (twoTone) { c.fillStyle = "#3C3C3C"; c.fillRect(200, 50, 200, 300); }
+    return toRgba(cv);
+  };
+  const plan = { headBody: toPoly([[210, 100], [210, 200], [210, 300]]), armLeft: null, armRight: null };
+  const snapped = snapCurvesToEdges(mk(true), keyFigure(mk(true)), plan);
+  const mid = snapped.headBody[1];
+  assert.ok(Math.abs(mid.x - 200) <= 2, `应吸附到 x≈200,实际 ${mid.x}`);
+  assert.equal(snapped.headBody[0].x, 210, "首点不吸附");
+  assert.equal(snapped.headBody[2].x, 210, "末点不吸附");
+  const flat = snapCurvesToEdges(mk(false), keyFigure(mk(false)), plan);
+  assert.equal(flat.headBody[1].x, 210, "无强边界不应移动");
 });
 
 console.log(`\nverify-companion-cut: ${pass} 断言全部通过`);

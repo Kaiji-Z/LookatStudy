@@ -281,7 +281,35 @@ export function composeKeyedPreview(img: RgbaImage, fm: FigureMask): RgbaImage {
   return { width: fm.width, height: fm.height, data: out };
 }
 
-/* ---------------- 2. 切分线解析(VLM 原文 → CutCurves,纯函数) ---------------- */
+/* ---------------- 2. 切分线协议 prompt(单源,service/live-test/demo 共用) ---------------- */
+
+/**
+ * vision 定位 prompt v9(SPEC §17.1/§17.9):
+ *   - 切分线语义:headBody 沿头底缘;armX = 肩缝→腋窝的解剖切位(不依赖可见缝),
+ *     整条袖子归臂,腋窝黏连按解剖位置直切;
+ *   - 点数加密:headBody 12~24 点(弦切误差随点数减半),臂线 6~16 点;
+ *   - 坐标归一化,端点必须在背景。
+ */
+export function locatePrompt(W: number, H: number): string {
+  return [
+    `你是纸偶动画的部件切分师。深灰色背景上是刚抠好的Q版角色立绘(画布 ${W}x${H} 像素)。`,
+    `请在角色身上画出把身体分开的切分线。只输出一个 JSON 对象,格式:`,
+    `{"cuts": {"headBody": [[x,y],...], "armLeft": [[x,y],...] 或 null, "armRight": [[x,y],...] 或 null}}`,
+    `headBody:沿头部最底缘(含头发/耳朵/头饰/兜帽的轮廓,不是衣领口)从角色左侧的灰色背景出发,`,
+    `  经过下巴,到达右侧背景结束,取 12~24 个点(点越密线越贴合弧线)。`,
+    `armLeft/armRight:把整条手臂连同袖子从躯干上切下来,手臂以肩为轴转动,所以切线要走肩缝:`,
+    `  从肩部上方的灰色背景出发,沿肩关节的缝线向下切到腋窝(手臂与躯干交界的最凹处);`,
+    `  腋窝以下手臂若已与躯干分离,线就在腋窝处的背景里结束;若手臂与躯干仍有黏连`,
+    `  (如长袖贴着身体),沿黏连带继续向下切,直到把手臂完全分开、到达背景为止。`,
+    `  整条袖子(短袖/长袖)都归手臂;图上看不见缝时(如同色布料黏连),按解剖位置直切。`,
+    `  armLeft=画面左侧的手臂(观察者视角)。手臂根本不存在时该臂给 null。`,
+    `注意:每条线的终点必须明确落在灰色背景上才停;若腋窝处没有背景,就沿手臂与躯干的黏连带继续向下走到最近的背景。`,
+    `所有坐标用 0~1 小数(相对原图宽高),点按线的走向顺序排列。`,
+    `每条线的起点和终点都必须在没有像素的灰色背景上。不要输出其他文字。`,
+  ].join("\n");
+}
+
+/* ---------------- 3. 切分线解析(VLM 原文 → CutCurves,纯函数) ---------------- */
 
 /**
  * 解析识图模型返回的切分线 JSON(SPEC §17.1)。宽容三件事:
@@ -397,23 +425,39 @@ function polysCross(a: Poly, b: Poly): boolean {
 }
 
 /**
- * 端点落地(SPEC §17.2 校验 3):端点已在背景 → 原样;落在掩码内 → 沿首/末段
- * 方向向外逐像素找背景,半径 ≤2.5% 对角线(400x600→18px,须穿得过一个脖子宽;
- * 1664x2496→75px);出界 = 背景(墙栅栏化时界外自动忽略)。找不到 → null(该线作废)。
+ * 端点落地(SPEC §17.2 校验 3):端点已在背景 → 原样;落在掩码内 → **环形最近
+ * 背景搜索**(2026-09-10 四图验收改):先沿末段方向的前向半平面找(v9 臂线
+ * 语义下延续走向),再全向——VLM 的腋窝终点常差几个像素落在布料上,最近的
+ * 背景往往在任意方向几像素外,沿末段直找经常扑空。半径 ≤4% 对角线;
+ * 出界 = 背景。找不到 → null(该线作废)。
  */
 function extendEndpoint(p: { x: number; y: number }, toward: { x: number; y: number }, fm: FigureMask): Poly {
   if (maskAt(fm, p.x, p.y) === 0) return [p];
   let dx = p.x - toward.x;
   let dy = p.y - toward.y;
   const len = Math.hypot(dx, dy);
-  if (len < 1e-6) return [];
-  dx /= len;
-  dy /= len;
-  const radius = Math.max(4, Math.round(Math.hypot(fm.width, fm.height) * 0.025));
-  for (let i = 1; i <= radius; i++) {
-    const qx = Math.round(p.x + dx * i);
-    const qy = Math.round(p.y + dy * i);
-    if (!inBounds(fm, qx, qy) || fm.mask[qy * fm.width + qx] === 0) return [{ x: qx, y: qy }];
+  if (len < 1e-6) {
+    dx = 1;
+    dy = 0;
+  } else {
+    dx /= len;
+    dy /= len;
+  }
+  // 4% 对角线:四图实测 VLM 腋窝终点平均深入布料 ~90px(2.5% 不够),4%(1696 图 →123px)覆盖
+  const radius = Math.max(4, Math.round(Math.hypot(fm.width, fm.height) * 0.04));
+  // 两遍扫描:先只在"顺线走向的前向半平面"里找(全环距离扫完),全无才退而求
+  // 其次接受任意方向——单圈混扫会把反方向的近点提前返回,墙的延长段错过真缝
+  for (const forwardOnly of [true, false]) {
+    for (let r = 1; r <= radius; r++) {
+      for (let a = 0; a < 16; a++) {
+        const ang = (a * Math.PI) / 8;
+        const qx = Math.round(p.x + Math.cos(ang) * r);
+        const qy = Math.round(p.y + Math.sin(ang) * r);
+        if (inBounds(fm, qx, qy) && fm.mask[qy * fm.width + qx] !== 0) continue;
+        // 出界或背景都可作端点;forwardOnly 时要求与线走向同侧
+        if (!forwardOnly || dx * (qx - p.x) + dy * (qy - p.y) >= 0) return [{ x: qx, y: qy }];
+      }
+    }
   }
   return [];
 }
@@ -431,7 +475,10 @@ function validateCurve(poly: Poly, fm: FigureMask): Poly | null {
 
 /**
  * 切分线校验链(SPEC §17.2):headBody 必须通过,否则 null(→ L1);
- * 臂线独立判定,失败/与 headBody 交叉/两臂线互交(后者作废)→ null(臂留身体)。
+ * 臂线独立判定端点/碰面,失败 → null(臂留身体)。
+ * 交叉守卫(2026-09-10 四图验收收窄):臂线×headBody 不再拒线——无颈形态的
+ * 臂根就长在头底弧高度,臂线与头身线几何上必然交叉;孤儿区域清理已能消化
+ * 交叉产生的碎片。仅双臂互交仍拒(后者作废,防区域结构碎成无法标注)。
  */
 export function planCutCurves(fm: FigureMask, cuts: CutCurves): CutPlan | null {
   if (!cuts.headBody) return null;
@@ -440,8 +487,7 @@ export function planCutCurves(fm: FigureMask, cuts: CutCurves): CutPlan | null {
   const fixArm = (poly: Poly | null): Poly | null => {
     if (!poly) return null;
     const fixed = validateCurve(poly, fm);
-    if (!fixed || polysCross(fixed, headBody)) return null;
-    return fixed;
+    return fixed ?? null;
   };
   const armLeft = fixArm(cuts.armLeft);
   const armRight = fixArm(cuts.armRight);
@@ -451,15 +497,86 @@ export function planCutCurves(fm: FigureMask, cuts: CutCurves): CutPlan | null {
   return { headBody, armLeft, armRight };
 }
 
-/* ---------------- 5. 划分(切分线栅栏 BFS,SPEC §17.3) ---------------- */
+/* ---------------- 5. 梯度门控吸附(线 → 最近的可见分界,画风无关) ---------------- */
+
+/**
+ * 折线内部点向附近最近的"颜色跳变"吸附(2026-09-10,四图验收驱动)。
+ * 画风无关:描边(强)/色块异色边界(中)/阴影折痕(弱)都是颜色跳变;附近
+ * 没有强分界就不动——safe-by-construction,同色黏连处保持 VLM 原点,最坏情况
+ * = 不吸附。"最近的强边界"优先(从原点向两侧扩张取第一个过阈值的),信任
+ * VLM 的大致落点,不跨到更远的另一条边界(如下巴线不跨到衣领线)。
+ * 首末点(背景端)不动——端点位置已被校验链背书,吸进图形会破坏墙的贯通性。
+ */
+export function snapCurvesToEdges(img: RgbaImage, fm: FigureMask, plan: CutPlan): CutPlan {
+  const R = Math.max(12, Math.round(Math.min(fm.width, fm.height) * 0.02));
+  const WIN = 2; // 边界两侧采样窗(px)
+  const THRESH = 120; // 窗口颜色差阈值(Σ通道,0..765)
+  // 采样色:掩码内=原图,掩码外=键控灰 —— 图底边界(手描边外缘等)也算强边界
+  const sample = (x: number, y: number): [number, number, number] => {
+    if (x < 0 || y < 0 || x >= fm.width || y >= fm.height || !fm.mask[y * fm.width + x]) return [47, 47, 54];
+    const p = (y * img.width + x) * 4;
+    return [img.data[p], img.data[p + 1], img.data[p + 2]];
+  };
+  const windowDiff = (x: number, y: number, nx: number, ny: number): number => {
+    let ar = 0, ag = 0, ab = 0, br = 0, bg = 0, bb = 0;
+    for (let k = -1; k <= 1; k++) {
+      const tx = -ny * k;
+      const ty = nx * k;
+      const a = sample(Math.round(x + nx * WIN + tx), Math.round(y + ny * WIN + ty));
+      const b = sample(Math.round(x - nx * WIN + tx), Math.round(y - ny * WIN + ty));
+      ar += a[0]; ag += a[1]; ab += a[2];
+      br += b[0]; bg += b[1]; bb += b[2];
+    }
+    return Math.abs(ar - br) + Math.abs(ag - bg) + Math.abs(ab - bb);
+  };
+  const snapPoint = (prev: { x: number; y: number }, pt: { x: number; y: number }, next: { x: number; y: number }): { x: number; y: number } => {
+    let tx = next.x - prev.x;
+    let ty = next.y - prev.y;
+    const tl = Math.hypot(tx, ty);
+    if (tl < 1e-6) return pt;
+    tx /= tl;
+    ty /= tl;
+    const nx = -ty;
+    const ny = tx;
+    for (let t = 0; t <= R; t++) {
+      const sides = t === 0 ? [0] : [t, -t];
+      for (const s of sides) {
+        const qx = pt.x + nx * s;
+        const qy = pt.y + ny * s;
+        if (windowDiff(qx, qy, nx, ny) >= THRESH) {
+          return { x: Math.round(qx), y: Math.round(qy) };
+        }
+      }
+    }
+    return pt;
+  };
+  const snapPoly = (poly: Poly): Poly => {
+    if (poly.length < 3) return poly;
+    const out: Poly = [poly[0]];
+    for (let i = 1; i < poly.length - 1; i++) out.push(snapPoint(poly[i - 1], poly[i], poly[i + 1]));
+    out.push(poly[poly.length - 1]);
+    return out;
+  };
+  return {
+    headBody: snapPoly(plan.headBody),
+    armLeft: plan.armLeft ? snapPoly(plan.armLeft) : null,
+    armRight: plan.armRight ? snapPoly(plan.armRight) : null,
+  };
+}
+
+/* ---------------- 6. 划分(切分线栅栏 BFS,SPEC §17.3) ---------------- */
 
 /**
  * 栅栏 BFS 划分:切分线栅栏化成 1~2px 墙(墙上的掩码像素成为接缝,不归任何
  * 部件,白描边愈合),主体框内掩码 − 墙做 4-连通 BFS → 区域;标注:
  *   head   = 含主体最高掩码像素的区域
  *   body   = 含主体最低掩码像素的区域
- *   其余   = 臂候选:质心 x 在 body 左/右定 armL/armR;<4% 主体的碎片并回
- *            body;合格臂候选 >2 → 区域结构不可信,L1。
+ *   其余   = 臂候选:质心 x 在 body 左/右定 armL/armR;合格臂候选 >2 → 区域
+ *            结构不可信,L1。
+ * 孤儿清理(2026-09-10,熊女孩 body 黑斜条实证):部件=仅自身的规范区域——
+ * 小于 4% 主体的碎片区域**不归任何部件**(直接弃,白描边愈合)。旧版把碎片
+ * 并回 body,墙从描边条中间穿过时切出的"外半条描边"孤儿(10,258px,与躯干隔
+ * 背景不连通)会一直挂在 body 上。
  * 守卫:head/body 必须不同区域且面积 ≥4% 主体,否则 [](调用方降 L1)。
  */
 export function partitionByCurves(img: RgbaImage, fm: FigureMask, plan: CutPlan): CutPart[] {
@@ -533,17 +650,15 @@ export function partitionByCurves(img: RgbaImage, fm: FigureMask, plan: CutPlan)
   const minArea = figArea * 0.04;
   if (areas[headR] < minArea || areas[bodyR] < minArea) return [];
 
-  // 其余区域:小碎片并回 body;合格臂按质心 x 定左右;>2 个合格臂 = 结构不可信
+  // 其余区域:合格臂按质心 x 定左右(<4% 主体与多余区域一律弃,不归任何部件);
+  // >2 个合格臂 = 结构不可信
   const labelOf = new Map<number, PartName | null>();
   labelOf.set(headR, "head");
   labelOf.set(bodyR, "body");
   const extras: Array<{ id: number; cx: number }> = [];
   for (let id = 0; id < areas.length; id++) {
     if (id === headR || id === bodyR) continue;
-    if (areas[id] < minArea) {
-      labelOf.set(id, "body");
-      continue;
-    }
+    if (areas[id] < minArea) continue;
     extras.push({ id, cx: sumX[id] / areas[id] });
   }
   if (extras.length > 2) return [];
@@ -556,6 +671,7 @@ export function partitionByCurves(img: RgbaImage, fm: FigureMask, plan: CutPlan)
     labelOf.set(extras[1].id, "armR");
   }
 
+  // 孤儿清理:非规范区域的像素返回 null —— 不归任何部件
   return extractParts(img, fm, (x, y) => labelOf.get(region[y * W + x]) ?? null);
 }
 
@@ -634,7 +750,8 @@ export function routeCut(img: RgbaImage, opts: RouteOptions = {}): CutResult {
   if (!plan) {
     return { route: "l1", parts: [], failure: "NO_HEAD_CUT", debug: { accepted: none } };
   }
-  const parts = partitionByCurves(img, fm, plan);
+  const snapped = snapCurvesToEdges(img, fm, plan);
+  const parts = partitionByCurves(img, fm, snapped);
   const has = (n: PartName) => parts.some((p) => p.name === n);
   if (parts.length < 2 || !has("head") || !has("body")) {
     return { route: "l1", parts: [], failure: "TOO_FEW_PARTS", debug: { accepted: { headBody: true, armLeft: !!plan.armLeft, armRight: !!plan.armRight } } };

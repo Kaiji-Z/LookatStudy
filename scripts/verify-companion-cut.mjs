@@ -393,6 +393,16 @@ t("T27 parseAnchorsJson 折线:{x,y}+数组混制/归一化缩放/乱序排序/�
   assert.equal(a.headBoundary[a.headBoundary.length - 1].x, 380, "0.95*400");
 });
 
+t("T34b 左右守卫:VLM 按角色视角标注(armL 框在画面右侧)→ 自动交换", () => {
+  const a = parseAnchorsJson(
+    '{"boxes": {"armL": [1200, 1240, 400, 400], "armR": [70, 1230, 465, 430]}}',
+    1664, 2496,
+  );
+  assert.ok(a);
+  assert.ok(a.boxes.armL.x < a.boxes.armR.x, "armL 恒为画面左侧");
+  assert.deepEqual(a.boxes.armL, { x: 70, y: 1230, w: 465, h: 430 });
+});
+
 t("T28 折线解析拒绝:有效点 <4 / 跨度过窄(<5% 图宽) → undefined", () => {
   const a3 = parseAnchorsJson(
     '{"boxes": {"armL": [0,0,1,1], "armR": [1,0,1,1]}, "headBoundary": [[0.1,0.5],[0.3,0.5],[0.5,0.5]]}',

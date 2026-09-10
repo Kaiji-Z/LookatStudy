@@ -781,6 +781,13 @@ export function parseAnchorsJson(raw: string, width: number, height: number): An
     if (b) boxes[name] = b;
   }
   if (!boxes.armL || !boxes.armR) return null;
+  // 左右守卫:VLM 间歇性按"角色自身视角"标注左右(2026-09-10 熊女孩实测:
+  // armL 框出现在画面右侧)——画面左边的臂恒为 armL,反了就交换
+  if (boxes.armL.x > boxes.armR.x) {
+    const t = boxes.armL;
+    boxes.armL = boxes.armR;
+    boxes.armR = t;
+  }
   const headY = typeof obj.headY === "number" && Number.isFinite(obj.headY) ? Math.round(obj.headY) : undefined;
   const headBoundary = readBoundary(obj.headBoundary ?? obj.head_boundary ?? obj.boundary, width, height);
   return { headY, boxes, ...(headBoundary ? { headBoundary } : {}) };

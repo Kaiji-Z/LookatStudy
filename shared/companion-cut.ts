@@ -116,6 +116,46 @@ export interface PuppetPartLayout {
 }
 
 /**
+ * 臂 rest 角(2026-09-10,SPEC §17.12):从臂部件的像素量“肩原点→手尖”方向。
+ * 内置五形态臂恒竖直垂放(rest=90°),姿势 CSS 的固定旋转隐含这一前提;用户
+ * PNG 的 A-pose 臂与竖直有任意夹角,直接套固定角必然指偏。通用公式:
+ *   旋转 = 目标角 − rest 角(屏角约定 y 向下、顺时针为正:90°=垂下,0°=指右)
+ * 手尖=距肩原点最远的不透明像素带(取最远 2% 像素的单位向量均值,抗单点噪);
+ * 不透明像素不足(退化/贴纸)→ null,调用方回退 90°。
+ */
+export function armRestAngleDeg(
+  alpha: { w: number; h: number; at(x: number, y: number): number },
+  originPx: { x: number; y: number },
+): number | null {
+  let maxD2 = 0;
+  const pts: Array<{ dx: number; dy: number; d2: number }> = [];
+  for (let y = 0; y < alpha.h; y++) {
+    for (let x = 0; x < alpha.w; x++) {
+      if (alpha.at(x, y) < 0.5) continue;
+      const dx = x + 0.5 - originPx.x;
+      const dy = y + 0.5 - originPx.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > maxD2) maxD2 = d2;
+      pts.push({ dx, dy, d2 });
+    }
+  }
+  if (pts.length < 60 || maxD2 <= 0) return null;
+  // 最远带:距最远点 2% 以内(距离平方近似),单位向量均值抗单点毛刺
+  const dMax = Math.sqrt(maxD2);
+  const band = dMax * 0.02;
+  let sx = 0;
+  let sy = 0;
+  for (const p of pts) {
+    if (dMax - Math.sqrt(p.d2) > band) continue;
+    const d = Math.sqrt(p.d2) || 1;
+    sx += p.dx / d;
+    sy += p.dy / d;
+  }
+  const deg = (Math.atan2(sy, sx) * 180) / Math.PI;
+  return deg;
+}
+
+/**
  * 部件盒并集 = 已渲染内容的真实外接框(SPEC §17.11):标定纸偶大小时用它,
  * 画布四周的留白不参与——AI 生成的 2:3 图人物常只占 60~70%,按整画布 contain
  * 会让纸偶整体偏小、脚悬在悬浮盘上。无部件 → 0 尺寸框(调用方兜底)。

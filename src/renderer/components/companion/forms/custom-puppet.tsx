@@ -16,7 +16,9 @@
  * 五官表情=暂缓:eyes/waves refs 挂空 g(壳的眨眼/麦克风弧写入无害 no-op)。
  * 无激活包(或包文件丢失)→ 诚实占位剪影,不白屏。
  */
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+
+import { armRestAngleDeg } from "@shared/companion-cut.ts";
 
 import { getActivePack, subscribeActivePack } from "../../../lib/companion/custom-pack-store.js";
 import type { FormArtProps } from "./shared.js";
@@ -33,6 +35,9 @@ const PART_ORIGIN: Record<string, string> = {
   armR: "14% 10%",
 };
 
+/** 内置姿势 CSS 的 rest 前提=竖直 90°;量测失败时回退该值(=现状行为)。 */
+const FALLBACK_REST = 90;
+
 export function CustomPuppetArt({ refs }: FormArtProps) {
   const pack = useSyncExternalStore(subscribeActivePack, getActivePack);
   const leanRef = useRef<SVGGElement | null>(null);
@@ -40,6 +45,45 @@ export function CustomPuppetArt({ refs }: FormArtProps) {
     const m = new Map<string, { x: number; y: number; w: number; h: number }>();
     for (const l of pack?.layout ?? []) m.set(l.name, l);
     return m;
+  }, [pack]);
+  // rest 角(2026-09-10,SPEC §17.12):A-pose 臂与竖直有任意夹角,固定角姿势必然
+  // 指偏——从臂部件像素量"肩原点→手尖"方向,姿势 CSS 按 目标角−var(--cp-rest)
+  // 求差值。量测是确定性的(远端 2% 像素带向量均值),包不变则值不变。
+  const [restDeg, setRestDeg] = useState<{ armL: number; armR: number }>({ armL: FALLBACK_REST, armR: FALLBACK_REST });
+  useEffect(() => {
+    if (!pack) return;
+    let cancelled = false;
+    const measure = (name: "armL" | "armR") =>
+      new Promise<number>((resolve) => {
+        const im = new Image();
+        im.onload = () => {
+          const cv = document.createElement("canvas");
+          cv.width = im.naturalWidth;
+          cv.height = im.naturalHeight;
+          const ctx = cv.getContext("2d");
+          if (!ctx) return resolve(FALLBACK_REST);
+          ctx.drawImage(im, 0, 0);
+          let data: Uint8ClampedArray;
+          try {
+            data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+          } catch {
+            return resolve(FALLBACK_REST);
+          }
+          const deg = armRestAngleDeg(
+            { w: cv.width, h: cv.height, at: (x, y) => data[(y * cv.width + x) * 4 + 3] / 255 },
+            { x: cv.width * (name === "armL" ? 0.86 : 0.14), y: cv.height * 0.1 },
+          );
+          resolve(deg ?? FALLBACK_REST);
+        };
+        im.onerror = () => resolve(FALLBACK_REST);
+        im.src = pack.srcs[name] ?? "";
+      });
+    void Promise.all([measure("armL"), measure("armR")]).then(([l, r]) => {
+      if (!cancelled) setRestDeg({ armL: l, armR: r });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [pack]);
 
   // "转头看":gaze(-1..1)→ 绕颈点倾转,朝向鼠标一侧;颈点=头盒底中,固定不分离
@@ -99,7 +143,13 @@ export function CustomPuppetArt({ refs }: FormArtProps) {
                   key={name}
                   ref={name === "armL" ? refs.armL : refs.armR}
                   className={`cp-arm cp-${name}`}
-                  style={{ transformBox: "fill-box", transformOrigin: PART_ORIGIN[name] }}
+                  style={
+                    {
+                      transformBox: "fill-box",
+                      transformOrigin: PART_ORIGIN[name],
+                      "--cp-rest": `${restDeg[name]}deg`,
+                    } as CSSProperties
+                  }
                 >
                   <image href={src} x={box.x} y={box.y} width={box.w} height={box.h} />
                 </g>

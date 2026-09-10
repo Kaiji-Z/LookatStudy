@@ -1443,6 +1443,22 @@ html.light ::-webkit-scrollbar-thumb:hover {
 /* 壳层装饰按形态裁剪:航灯(左红右绿)与喷焰都假设火箭机身存在——五款内置形态
    贴着身体轮廓是"机灯",纸偶身体窄,灯悬在半空成了游离绿点(用户当脏东西)。 */
 .cp-form-custom .cp-beacons, .cp-form-custom .cp-thruster { display: none; }
+/* rest 角补偿(SPEC §17.12):内置五形态臂恒竖直垂放(rest=90°),姿势固定角隐含
+   该前提;纸偶臂 rest 由像素量测注入 --cp-rest,A-pose 任意夹角都按 目标−rest
+   求差值。目标角 = 内置调校角的隐含目标(90+旋转):point 182°/pointr −2°/
+   pointu 262°/pointd 52°/wave −18°±14°。var 缺省 90° = 与内置完全同行为。 */
+.cp-form-custom .cp-pose-point .cp-armL { transform: rotate(calc(182deg - var(--cp-rest, 90deg))); }
+.cp-form-custom .cp-pose-pointr .cp-armR { transform: rotate(calc(-2deg - var(--cp-rest, 90deg))); }
+.cp-form-custom .cp-pose-pointu .cp-armL { transform: rotate(calc(262deg - var(--cp-rest, 90deg))); }
+.cp-form-custom .cp-pose-pointd .cp-armR { transform: rotate(calc(52deg - var(--cp-rest, 90deg))); }
+.cp-form-custom .cp-pose-wave .cp-armR {
+  animation: cp-wave-arm-custom 0.38s ease-in-out 3;
+  transform: rotate(calc(-18deg - var(--cp-rest, 90deg)));
+}
+@keyframes cp-wave-arm-custom {
+  0%, 100% { transform: rotate(calc(-6deg - var(--cp-rest, 90deg))); }
+  50% { transform: rotate(calc(-34deg - var(--cp-rest, 90deg))); }
+}
 .cp-form-custom .cp-disc { animation: cp-disc-float 3.4s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
 .cp-form-custom .cp-puppet-bot { animation: cp-puppet-hover 3.4s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: 50% 62%; }
 @keyframes cp-disc-float { from { transform: translateY(0) rotate(-1.2deg); } to { transform: translateY(-3px) rotate(1.2deg); } }

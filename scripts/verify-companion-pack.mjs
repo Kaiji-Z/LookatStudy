@@ -279,6 +279,13 @@ check(
   "G2g(M2) PART_ORDER 臂在头之后(抬手可见)",
   /PART_ORDER(?::\s*string\[\])?\s*=\s*\["body", "head", "armL", "armR", "sticker"\]/.test(puppetSrc),
 );
+// G2h(2026-09-10) rest 角补偿链路:A-pose 臂 rest 任意,固定角姿势必指偏——纸偶
+// 量测注入 --cp-rest,custom 作用域姿势按 目标角−rest 求差值(内置规则零改动)
+const restCss = '.cp-form-custom .cp-pose-point .cp-armL { transform: rotate(calc(182deg - var(--cp-rest, 90deg))); }';
+check(
+  "G2h(M2) custom 姿势按 目标−var(--cp-rest) 求差 + 纸偶注入 rest 变量",
+  appCss.includes(restCss) && appCss.includes("cp-wave-arm-custom") && puppetSrc.includes('"--cp-rest"'),
+);
 
 // G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源
 check(

@@ -28,6 +28,7 @@ const {
   partitionByCurves,
   snapCurvesToEdges,
   layoutParts,
+  armRestAngleDeg,
 } = await import("../shared/companion-cut.ts");
 
 let pass = 0;
@@ -467,6 +468,48 @@ t("T24 梯度门控吸附:内部点吸向最近强颜色边界;平坦区不动;�
   assert.equal(snapped.headBody[2].x, 210, "末点不吸附");
   const flat = snapCurvesToEdges(mk(false), keyFigure(mk(false)), plan);
   assert.equal(flat.headBody[1].x, 210, "无强边界不应移动");
+});
+
+t("T25 armRestAngleDeg:臂 rest 角量测(竖直90/外展120/水平0/退化null)", () => {
+  const mk = (draw) => {
+    const cv = createCanvas(200, 200);
+    const ctx = cv.getContext("2d");
+    draw(ctx);
+    const d = ctx.getImageData(0, 0, 200, 200).data;
+    return { w: 200, h: 200, at: (x, y) => d[(y * 200 + x) * 4 + 3] / 255 };
+  };
+  const org = { x: 172, y: 20 }; // armL 肩原点(86%,10%)
+  // 竖直垂放臂:从原点向下的粗条(rest=90°)
+  const vertical = mk((ctx) => {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(160, 20, 24, 160);
+  });
+  assert.equal(Math.round(armRestAngleDeg(vertical, org)), 90, "竖直臂=90°");
+  // 外展 30° 臂:沿 120° 方向的圆头粗线(armL A-pose)
+  const splay = mk((ctx) => {
+    ctx.fillStyle = "#000";
+    ctx.lineWidth = 22;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(172, 20);
+    const rad = (120 * Math.PI) / 180;
+    ctx.lineTo(172 + Math.cos(rad) * 150, 20 + Math.sin(rad) * 150);
+    ctx.stroke();
+  });
+  const gotSplay = armRestAngleDeg(splay, org);
+  assert.ok(gotSplay != null && Math.abs(gotSplay - 120) < 4, "外展臂≈120°,实际 " + String(gotSplay));
+  // 水平右指臂(armR 语义,rest=0°)
+  const horiz = mk((ctx) => {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(28, 8, 160, 24);
+  });
+  assert.equal(Math.round(armRestAngleDeg(horiz, { x: 28, y: 20 })), 0, "水平右臂=0°");
+  // 退化:不透明像素不足 → null(调用方回退 90°)
+  const tiny = mk((ctx) => {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(170, 18, 6, 6);
+  });
+  assert.equal(armRestAngleDeg(tiny, org), null, "退化臂=null");
 });
 
 console.log(`\nverify-companion-cut: ${pass} 断言全部通过`);

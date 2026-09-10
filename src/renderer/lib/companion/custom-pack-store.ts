@@ -49,12 +49,9 @@ export async function refreshActivePack(): Promise<void> {
             name: res.name,
             manifest: res.manifest,
             srcs: res.srcs,
-            // 标定框=部件盒并集(真实人物外接框):画布留白不参与缩放,
-            // 纸偶撑满舞台、脚踩悬浮盘;老 manifest 无需重导即可享受
-            layout: layoutParts(
-              { ...figureBoxOfParts(res.manifest.parts), width: res.manifest.source.width, height: res.manifest.source.height },
-              res.manifest.parts,
-            ),
+            // 标定框=部件盒并集,原样传入(2026-09-10 修:曾把 width/height 回写成
+            // 画布尺寸——平移按部件框原点、缩放按整画布,两坐标系混杂,纸偶整体左偏)
+            layout: layoutParts(figureBoxOfParts(res.manifest.parts), res.manifest.parts),
           }
         : null;
     emit();

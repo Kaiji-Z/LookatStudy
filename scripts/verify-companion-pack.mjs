@@ -266,6 +266,19 @@ check(
   "G2e(M2) custom 形态隐藏壳层航灯/喷焰(悬空绿点根因)",
   appCss.includes(".cp-form-custom .cp-beacons") && appCss.includes(".cp-thruster { display: none; }"),
 );
+// G2f(2026-09-10) store 标定框必须原样传 figureBoxOfParts:曾把 width/height 回写成
+// 画布尺寸——平移按部件框原点、缩放按整画布,两坐标系混杂,纸偶整体左偏 20 舞台px
+const storeSrc = read("src/renderer/lib/companion/custom-pack-store.ts");
+check(
+  "G2f(M2) store 标定框=figureBox 原样传入(不得混回画布宽高)",
+  storeSrc.includes("layoutParts(figureBoxOfParts(res.manifest.parts), res.manifest.parts)") &&
+    !storeSrc.includes("width: res.manifest.source.width"),
+);
+// G2g(2026-09-10) 纸偶层序 身<头<臂:抬手(庆祝/挥手/指向/打字)的手不得被头压住
+check(
+  "G2g(M2) PART_ORDER 臂在头之后(抬手可见)",
+  /PART_ORDER(?::\s*string\[\])?\s*=\s*\["body", "head", "armL", "armR", "sticker"\]/.test(puppetSrc),
+);
 
 // G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源
 check(

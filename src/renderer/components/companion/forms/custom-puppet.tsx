@@ -21,7 +21,10 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { getActivePack, subscribeActivePack } from "../../../lib/companion/custom-pack-store.js";
 import type { FormArtProps } from "./shared.js";
 
-const PART_ORDER: string[] = ["armL", "armR", "body", "head", "sticker"];
+/* 层序 身<头<臂(2026-09-10 按用户拍板调整,旧 臂<身<头 会让抬起的手被头压住):
+   臂在最前=庆祝万岁/挥手/朗读指向/敲胸打字的手都可见;肩根裁切白边叠在身上,
+   88px 伴学尺寸下读作玩偶缝线,可接受。sticker 恒最上。 */
+const PART_ORDER: string[] = ["body", "head", "armL", "armR", "sticker"];
 
 /** 关节 origin(相对部件图 bbox;armL 近躯干=右缘,armR=左缘)。 */
 const PART_ORIGIN: Record<string, string> = {

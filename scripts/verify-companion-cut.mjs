@@ -383,6 +383,29 @@ t("T21 layoutParts:等比 contain 居中/部件相对位置逐像素一致/确�
   assert.equal(layoutParts({ width: 0, height: 100 }, base).length, 0, "坏尺寸诚实空");
 });
 
+t("T21b layoutParts:带 x/y 偏移的标定框(figureBox 并集)内容必须居中", () => {
+  // 用户实包数字(图1):曾把 width/height 回写成画布尺寸→两坐标系混杂,纸偶左偏 20 舞台px
+  const fb = { x: 198, y: 268, width: 628, height: 1023 };
+  const parts = {
+    head: { file: "head.png", box: { x: 198, y: 268, w: 626, h: 508 } },
+    body: { file: "body.png", box: { x: 243, y: 666, w: 480, h: 625 } },
+    armL: { file: "armL.png", box: { x: 198, y: 770, w: 190, h: 223 } },
+    armR: { file: "armR.png", box: { x: 636, y: 770, w: 190, h: 223 } },
+  };
+  const a = layoutParts(fb, parts);
+  const s = Math.min(152 / 628, 154 / 1023);
+  const xs = a.map((p) => p.x);
+  const xe = a.map((p) => p.x + p.w);
+  const left = Math.min(...xs);
+  const right = Math.max(...xe);
+  assert.equal((left + right) / 2, 100, "部件并集中心=舞台中心 100");
+  assert.equal((right - left).toFixed(2), (628 * s).toFixed(2), "并集宽=标定框宽×s(628,非 1024)");
+  const ys = a.map((p) => p.y);
+  const ye = a.map((p) => p.y + p.h);
+  assert.equal((Math.min(...ys) + Math.max(...ye)) / 2, 22 + 154 / 2, "纵向中心=目标框中心");
+});
+
+
 t("T22 partitionByCurves 直接调用:墙像素(接缝)不归任何部件", () => {
   const fm = keyFigure(A);
   const plan = planCutCurves(fm, viaParser(A_CUTS));

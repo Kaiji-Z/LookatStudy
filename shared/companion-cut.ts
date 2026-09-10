@@ -354,18 +354,22 @@ export interface RowCutPlan {
 }
 
 /**
- * 缝带引导逐行切分计划:臂带 = [首个 3 段行 - 缓冲, 末个 3 段行 + 缓冲],
- * 缝带内的行取中间缝隙为切线;缝带外的行(肩部融合区)由最近有效行线性插值。
- * 切线缺失率过高(>60% 臂带行无有效缝)→ null(降 L1)。
+ * 缝带引导逐行切分计划:切线**只落在真实 3-run 分离带上**——带外行(肩部融合/
+ * 投影粘连区)一律整行归 body。旧版把切线插值/外推到整条包络,在"手臂与躯干
+ * 投影粘连"的 A-pose(手贴裙摆等)会把粘连区的躯干大片切进手臂件(2026-09-10
+ * 熊女孩实测:裙子被斜切进双臂,躯干镂空)——降级可以,切坏不行。
+ * 噪声带过滤:少于 minBandRows 行的碎带(3 行的手套反光缝等)不作为切分依据。
+ * 切线缺失率过高(>60% 包络行无有效缝)→ null(降 L1,几何证据太弱)。
  */
 export function planRowCuts(fm: FigureMask, neck: NeckDetection | null, gaps: GapScan): RowCutPlan | null {
-  if (gaps.bands.length === 0) return null;
   const { main } = fm;
-  // 臂带 = 全部 3-run 行的包络(配饰会劈断缝带——学童书包把右腋劈成两段,
-  // 选"最长带"会丢上臂;包络 + 端部外推才是正确做法)
-  const first = gaps.bands[0].y0;
-  const last = gaps.bands[gaps.bands.length - 1].y1;
-  const margin = Math.max(10, Math.floor(main.h * 0.03));
+  const minBandRows = Math.max(4, Math.floor(main.h * 0.008));
+  const bands = gaps.bands.filter((b) => b.y1 - b.y0 + 1 >= minBandRows);
+  if (bands.length === 0) return null;
+  // 包络 = 过滤后全部带 ± 小缓冲(只用于数组边界,不产生带外切线)
+  const first = bands[0].y0;
+  const last = bands[bands.length - 1].y1;
+  const margin = 6;
   // 臂带顶不高于肩线半颈深(臂不会长到头上去)
   const neckFloor = neck ? neck.shoulderY - Math.floor((neck.shoulderY - neck.y) * 0.5) : main.y;
   const armTop = Math.max(main.y, first - margin, neckFloor);
@@ -374,45 +378,28 @@ export function planRowCuts(fm: FigureMask, neck: NeckDetection | null, gaps: Ga
   const len = armBottom - armTop + 1;
   const leftCut: Array<number | null> = new Array(len).fill(null);
   const rightCut: Array<number | null> = new Array(len).fill(null);
+  const leftOuter: Array<number | null> = new Array(len).fill(null);
+  const rightOuter: Array<number | null> = new Array(len).fill(null);
+  let valid = 0;
   for (let y = armTop; y <= armBottom; y++) {
     const runs = rowRuns(fm.mask, fm.width, y, main.x, main.x + main.w - 1);
     if (runs.length < 3) continue;
     leftCut[y - armTop] = Math.round((runs[0].end + runs[1].start) / 2);
-    rightCut[y - armTop] = Math.round((runs[runs.length - 2].start + runs[runs.length - 1].end) / 2);
+    // 镜像对称:中段 run 的 end 与末段 run 的 start 的中点。
+    // (历史 bug:曾写成 runs[len-2].start + runs[len-1].end——中点落进躯干/裙内,
+    //  右半身体被切进 armR;左臂因公式正确而完好,呈现"只坏右边"的不对称损伤)
+    rightCut[y - armTop] = Math.round((runs[runs.length - 2].end + runs[runs.length - 1].start) / 2);
+    leftOuter[y - armTop] = runs[0].end - runs[0].start + 1;
+    rightOuter[y - armTop] = runs[runs.length - 1].end - runs[runs.length - 1].start + 1;
+    valid++;
   }
-  // 补洞:内部空洞线性插值;端部空洞外推(肩部融合区沿用最近切位)
-  const heal = (arr: Array<number | null>) => {
-    let i = 0;
-    while (i < arr.length) {
-      if (arr[i] !== null) {
-        i++;
-        continue;
-      }
-      let j = i;
-      while (j < arr.length && arr[j] === null) j++;
-      const prev = i > 0 ? arr[i - 1] : null;
-      const next = j < arr.length ? arr[j] : null;
-      if (prev !== null && next !== null) {
-        for (let k = i; k < j; k++) {
-          const t = (k - (i - 1)) / (j - (i - 1));
-          arr[k] = Math.round((prev as number) * (1 - t) + (next as number) * t);
-        }
-      } else if (prev !== null) {
-        for (let k = i; k < j; k++) arr[k] = prev;
-      } else if (next !== null) {
-        for (let k = i; k < j; k++) arr[k] = next;
-      }
-      i = j;
-    }
-  };
-  heal(leftCut);
-  heal(rightCut);
   // 有序性守卫:任一行 leftCut ≥ rightCut = 切线交叉,几何不可信
   for (let i = 0; i < len; i++) {
     const l = leftCut[i];
     const r = rightCut[i];
     if (l !== null && r !== null && l >= r) return null;
   }
+  if (valid / len < 0.4) return null;
   return { armTop, armBottom, leftCut, rightCut };
 }
 
@@ -437,10 +424,12 @@ export function applyRowCuts(
     const rc = li >= 0 && li < plan.rightCut.length ? plan.rightCut[li] : null;
     if (name === "armL") return lc !== null && x < lc;
     if (name === "armR") return rc !== null && x > rc;
-    // body:切线之间(切线未定义的行 = 全行归 body,臂带外本来就没有臂)
+    // body:切线**之间**(2026-09-10 修正:原实现条件写反——"x≥lc 或 x≤rc 即排除"
+    // 实际排除了两切线之间的全部躯干,带行上 body 恒空,正是"身体被切掉一半"的
+    // 根因;合成 fixture 的 body 只落在无切线行,存在性断言从未抓住它)
     if (name === "body") {
-      if (lc !== null && x >= lc) return false;
-      if (rc !== null && x <= rc) return false;
+      if (lc !== null && x < lc) return false;
+      if (rc !== null && x > rc) return false;
       return true;
     }
     return false;
@@ -482,10 +471,12 @@ export function applyRowCuts(
     }
     out.push({ name: p.name, box: { x: p.minX, y: p.minY, w, h }, rgba });
   }
-  // 臂太碎(宽或高 < 主体的 8%)视为切失败 → 走 L1
-  const minSide = Math.max(main.w, main.h) * 0.08;
+  // 臂件必须成对(单侧臂 = 切线证据不可信)→ 走 L1。
+  // 尺寸下限已上移到 plan 层(噪声带过滤/有效率≥0.4/有序性)——切线只落在真实
+  // 分离带上,臂件天然有 ≥minBandRows 行证据背书;此处再做 8% 尺寸过滤会把
+  // "投影粘连 A-pose 只能手部分离"的诚实小臂件误杀(2026-09-10 熊女孩实测)。
   const arms = out.filter((p) => p.name === "armL" || p.name === "armR");
-  if (arms.length < 2 || arms.some((p) => p.box.w < minSide || p.box.h < minSide)) {
+  if (arms.length < 2) {
     return [];
   }
   return out;

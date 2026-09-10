@@ -481,4 +481,24 @@ t("T33 layoutParts:等比 contain 居中/部件相对位置逐像素一致/确�
   assert.equal(layoutParts({ width: 0, height: 100 }, base).length, 0, "坏尺寸诚实空");
 });
 
+t("T34 body 谓词:带行上躯干归 body(2026-09-10 熊女孩'身体切半'回归锁)", () => {
+  const r = routeCut(A);
+  assert.equal(r.route, "geometric");
+  const body = r.parts.find((p) => p.name === "body");
+  assert.ok(body, "body 件存在");
+  // body 在臂带行必须有像素(旧 body 谓词写反 → 带行躯干整段消失,只剩腿臀)
+  let bandRowPixels = 0;
+  for (let y = 250; y < 300; y += 10) {
+    const ly = y - body.box.y;
+    if (ly < 0 || ly >= body.box.h) continue;
+    for (let x = 0; x < body.box.w; x++) {
+      if (body.rgba[(ly * body.box.w + x) * 4 + 3] > 128) {
+        bandRowPixels++;
+        break;
+      }
+    }
+  }
+  assert.ok(bandRowPixels >= 5, `臂带行 body 覆盖 ${bandRowPixels}/6`);
+});
+
 console.log(`\nverify-companion-cut: ${pass} 断言全部通过`);

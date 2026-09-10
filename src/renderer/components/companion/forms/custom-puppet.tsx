@@ -73,7 +73,7 @@ export function CustomPuppetArt({ refs }: FormArtProps) {
                 <g
                   key={name}
                   ref={name === "armL" ? refs.armL : refs.armR}
-                  className={`cp-arm ${name}`}
+                  className={`cp-arm cp-${name}`}
                   style={{ transformBox: "fill-box", transformOrigin: PART_ORIGIN[name] }}
                 >
                   <image href={src} x={box.x} y={box.y} width={box.w} height={box.h} />

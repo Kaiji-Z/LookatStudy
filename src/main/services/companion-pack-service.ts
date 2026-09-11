@@ -45,6 +45,12 @@ async function napi(): Promise<typeof import("@napi-rs/canvas")> {
   return import("@napi-rs/canvas");
 }
 
+/** 识图定位首发的输出上限:glm-5.3-flash 开思考时推理过程计入输出,6k 曾把
+ *  JSON 掐断(用户实测放大到 128k)。部分 key 档位不允许这么大的输出上限,
+ *  端点不报错而是秒回 200 空 → 空回复自动降档 8k 重试一次(cutCompanionFigure)。 */
+const LOCATE_MAX_TOKENS = 128000;
+const LOCATE_RETRY_TOKENS = 8192;
+
 export interface CompanionCutDeps {
   db: VisionDb;
   /** 识图定位(注入;默认 = resolveVisionLlm + generateTextWithTimeout)。入参 = 图的 data URL,返回 VLM 原文。 */
@@ -143,24 +149,24 @@ export async function cutCompanionFigure(
   let cuts: CutCurves | null = null;
   let visionError: string | undefined;
   if (fm && !deps.skipVision) {
-    const locate =
-      deps.locate ??
-      (async (dataUrl: string) => {
-        const llm = resolveVisionLlm(deps.db);
-        return generateTextWithTimeout(
-          llm.languageModel,
-          [
-            {
-              role: "user",
-              content: [
-                { type: "text", text: locatePrompt(W, H) },
-                { type: "image", image: dataUrl },
-              ],
-            },
-          ],
-          { maxOutputTokens: 128000 }, // glm-5.3-flash 思考过程计入输出,6000 仍把 JSON 掐断;按用户实测放大到 128k
-        );
-      });
+    const locateAt = async (dataUrl: string, maxOutputTokens: number) => {
+      const llm = resolveVisionLlm(deps.db);
+      return generateTextWithTimeout(
+        llm.languageModel,
+        [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: locatePrompt(W, H) },
+              { type: "image", image: dataUrl },
+            ],
+          },
+        ],
+        { maxOutputTokens },
+      );
+    };
+    // 注入式 locate(verify/ui-test)维持单参签名;127k 首发见下
+    const locate = deps.locate ?? ((dataUrl: string) => locateAt(dataUrl, LOCATE_MAX_TOKENS));
     try {
       // 喂键控预览(深灰底上的角色),不是原图 —— 与机器掩码逐像素同源。
       // 预览缩到长边 ≤768(2026-09-11 手机真机排查):VLM 只回归一化坐标,
@@ -175,8 +181,16 @@ export async function cutCompanionFigure(
       }
       const previewPng = await rgbaToPng(preview);
       const dataUrl = `data:image/png;base64,${Buffer.from(previewPng).toString("base64")}`;
-      const rawReply = await locate(dataUrl);
+      let rawReply = await locate(dataUrl);
       cuts = parseCutsJson(rawReply, W, H);
+      if (!cuts && !deps.locate && rawReply.trim() === "") {
+        // 首发带 maxOutputTokens=128k:部分 key 档位不允许这么大的输出上限,
+        // 端点不报错而是秒回 200 空内容(2026-09-11 手机真机:换新 key 后
+        // 聊天看图正常、向导恒空)。空回复时降档 8k 重试一次——切分 JSON
+        // 本体只有千余 token,8k 对关闭思考的机械提取绰绰有余。
+        rawReply = await locateAt(dataUrl, LOCATE_RETRY_TOKENS);
+        cuts = parseCutsJson(rawReply, W, H);
+      }
       if (!cuts) {
         // 带出原文开头:端点秒回拒绝/空内容时,这是唯一能区分「key 档位没视觉」
         // 「端点剥离了图片」「模型答非所问」的证据(2026-09-11 手机真机排查)

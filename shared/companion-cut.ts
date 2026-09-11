@@ -104,7 +104,12 @@ export interface CutPackManifest {
   parts: Partial<Record<PartName | "sticker", { file: string; box: Box }>>;
   /** 展示名(2026-09-11 多 bot 列表用;旧 manifest 缺省 → 回退包 id)。 */
   name?: string;
+  /** 载具主题(2026-09-11,对应五形态设计语言;缺省 = 银灰 neutral)。 */
+  vehicle?: CompanionVehicleId;
 }
+
+/** 载具主题 id:silver = 中性银灰(默认/旧包),其余五款对应五形态。 */
+export type CompanionVehicleId = "silver" | "ember" | "frost" | "moss" | "astro" | "ink";
 
 /* ---------------- 11.5 纸偶布局(切分件 → 渲染 viewBox 坐标,纯函数) ---------------- */
 

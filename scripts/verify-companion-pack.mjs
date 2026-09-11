@@ -298,6 +298,20 @@ check(
     appCss.includes(".cp-veh-eq-bar {") && puppetSrc.includes("cp-veh-eq"),
 );
 
+// G2j(2026-09-11) 载具五主题换装:manifest.vehicle 随包持久化 + veh-themes 主题表
+// (silver=旧包缺省,五款对应五形态)+ VehGroup 消费 + 向导芯片。颜色全内联 TSX,
+// CSS 不持颜色(v2.2 起换主题零 CSS 分支)。
+const vehThemesSrc = read("src/renderer/lib/companion/veh-themes.ts");
+const wizardSrc = read("src/renderer/components/companion/CompanionBotWizard.tsx");
+const sharedCutSrc = read("shared/companion-cut.ts");
+check(
+  "G2j(M2) 载具五主题:manifest.vehicle+主题表+VehGroup 消费+向导芯片",
+  sharedCutSrc.includes("vehicle?: CompanionVehicleId") && vehThemesSrc.includes("VEH_PICKABLE") &&
+    vehThemesSrc.includes('import type { CompanionVehicleId }') &&
+    puppetSrc.includes("VEH_THEMES[pack.manifest.vehicle") && puppetSrc.includes("function VehGroup") &&
+    wizardSrc.includes("manifest: { ...preview.manifest, vehicle }") && wizardSrc.includes("companion-wizard-veh-"),
+);
+
 // G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源
 check(
   "G5(M2) 盘与纸偶零二进制资产(无静态图 import/无 http 图源)",

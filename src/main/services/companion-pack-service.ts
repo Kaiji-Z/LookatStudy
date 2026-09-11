@@ -321,7 +321,6 @@ export interface CompanionPackSummary {
 /** 列出磁盘上全部包(目录扫描,激活指针只标 active;按 激活优先+名字 排序)。 */
 export function listCompanionPacks(db: PackDb, dataDir: string): { packs: CompanionPackSummary[] } {
   const activeId = settingOf(db, ACTIVE_ID_KEY);
-  const activeName = settingOf(db, ACTIVE_NAME_KEY);
   const root = path.join(dataDir, "companion-packs");
   let entries: string[] = [];
   try {

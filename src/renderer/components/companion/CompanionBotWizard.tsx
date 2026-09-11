@@ -12,10 +12,11 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, X } from "lucide-react";
 
-import type { CutPackManifest } from "@shared/companion-cut.ts";
+import type { CutPackManifest, CompanionVehicleId } from "@shared/companion-cut.ts";
 
 import { useLang } from "../../lib/i18n.js";
 import { refreshActivePack } from "../../lib/companion/custom-pack-store.js";
+import { VEH_PICKABLE, VEH_THEMES } from "../../lib/companion/veh-themes.ts";
 import { useFocusTrap } from "../../lib/useFocusTrap.js";
 
 interface CutPreview {
@@ -76,6 +77,8 @@ export function CompanionBotWizard({ onClose, onSaved }: { onClose: () => void; 
   const [msg, setMsg] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
   const [name, setName] = useState("");
+  // 载具主题(2026-09-11):五款对应五形态设计语言,存 manifest.vehicle 随包持久化
+  const [vehicle, setVehicle] = useState<CompanionVehicleId>("ember");
   const fileRef = useRef<HTMLInputElement | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, true);
@@ -124,7 +127,7 @@ export function CompanionBotWizard({ onClose, onSaved }: { onClose: () => void; 
     try {
       await window.api.companionPackApplyPack({
         name: name.trim() || fileName || "My Bot",
-        manifest: preview.manifest,
+        manifest: { ...preview.manifest, vehicle },
         parts: preview.parts.map((p) => ({ name: p.name, pngBase64: p.pngBase64 })),
       });
       await refreshActivePack();
@@ -218,9 +221,39 @@ export function CompanionBotWizard({ onClose, onSaved }: { onClose: () => void; 
           />
         </div>
 
-        {/* 步骤 3:导入 + 命名 + 保存 */}
+        {/* 步骤 3:载具 + 导入 + 命名 + 保存 */}
         <div className="rounded-xl border border-[var(--border-faint)] p-3">
           <div className="text-label font-medium text-ink-strong mb-1">{t("companion.wizard.s3")}</div>
+          {/* 载具选择:五款对应五形态,色点即载具主色;选中=accent 描边 */}
+          <div className="mb-2">
+            <div className="text-caption text-ink-muted mb-1">{t("companion.wizard.vehicle")}</div>
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("companion.wizard.vehicle")}>
+              {VEH_PICKABLE.map((id) => {
+                const selected = vehicle === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-testid={`companion-wizard-veh-${id}`}
+                    onClick={() => setVehicle(id)}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-label motion-safe:transition-colors
+                      ${selected
+                        ? "border-[var(--accent)] bg-surface-2 text-ink-strong font-medium"
+                        : "border-[var(--border-faint)] hover:bg-surface-2 text-ink-muted"}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="w-3 h-3 rounded-full border border-black/20"
+                      style={{ background: VEH_THEMES[id].dot }}
+                    />
+                    {t(`companion.form.${id}.name`)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <input
               ref={fileRef}

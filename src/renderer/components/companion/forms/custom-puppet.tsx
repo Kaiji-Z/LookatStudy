@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSPro
 
 import { armRestAngleDeg } from "@shared/companion-cut.ts";
 
+import { VEH_THEMES, type VehTheme } from "../../../lib/companion/veh-themes.ts";
 import { getActivePack, subscribeActivePack } from "../../../lib/companion/custom-pack-store.js";
 import type { FormArtProps } from "./shared.js";
 
@@ -37,6 +38,81 @@ const PART_ORIGIN: Record<string, string> = {
 
 /** 内置姿势 CSS 的 rest 前提=竖直 90°;量测失败时回退该值(=现状行为)。 */
 const FALLBACK_REST = 90;
+
+/**
+ * 载具组(v2.2):几何固定一套,颜色全部由 VehTheme 内联 —— 五款形态换装
+ * 共享形状。CSS 只持动画/透明度(cp-veh-flame/glow/lamp/eq),不持颜色。
+ * glow/lamp 在 CSS 有 opacity 规则,fill 走内联 style 压过(表现属性会被类规则盖)。
+ */
+function VehGroup({ uid, energyRatio, theme: th }: { uid: string; energyRatio: number; theme: VehTheme }) {
+  return (
+    <g className="cp-disc cp-veh" aria-hidden="true">
+      <defs>
+        {/* 顶面纵向渐变 + 侧壁横向圆柱高光 */}
+        <linearGradient id={`${uid}-veh-top`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={th.top[0]} />
+          <stop offset="0.55" stopColor={th.top[1]} />
+          <stop offset="1" stopColor={th.top[2]} />
+        </linearGradient>
+        <linearGradient id={`${uid}-veh-wall`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor={th.wall[0]} />
+          <stop offset="0.5" stopColor={th.wall[1]} />
+          <stop offset="1" stopColor={th.wall[2]} />
+        </linearGradient>
+      </defs>
+      {/* 地面光晕 */}
+      <ellipse cx="100" cy="193" rx="72" ry="11" className="cp-veh-glow" style={{ fill: th.glow }} />
+      {/* 三喷口 + 焰(先画,大半藏在平台后,焰从底沿探出) */}
+      {[68, 100, 132].map((nx, i) => (
+        <g key={nx} transform={`translate(${nx} ${i === 1 ? 187.5 : 185})`} className="cp-veh-nozzle">
+          <path d="M -7 0 L 7 0 L 5 4.5 L -5 4.5 Z" className="cp-veh-nozzle-body" fill={th.nozzle} stroke={th.nozzleEdge} />
+          <path d="M -4.5 4.5 Q 0 11.5 4.5 4.5 Z" className="cp-veh-flame cp-veh-flame-outer" fill={th.flameOuter} />
+          <path d="M -2.4 4.5 Q 0 9 2.4 4.5 Z" className="cp-veh-flame cp-veh-flame-core" fill={th.flameCore} />
+        </g>
+      ))}
+      {/* 底面 */}
+      <ellipse cx="100" cy="183" rx="58" ry="8.5" className="cp-veh-bottom" fill={th.bottom} />
+      {/* 侧壁(前带,上沿接顶面前弧,下沿接底面前弧——厚度 8) */}
+      <path
+        d="M 38 175 L 40 183 A 58 8.5 0 0 0 160 183 L 162 175 A 62 9 0 0 1 38 175 Z"
+        className="cp-veh-wall"
+        fill={`url(#${uid}-veh-wall)`}
+        stroke={th.edgeWall}
+      />
+      {/* 通风格栅(左)与能量条(右,随 energyRatio 充能) */}
+      <rect x="47" y="185.6" width="9" height="2.4" rx="1.2" className="cp-veh-vent" fill={th.vent} />
+      <rect x="59" y="185.6" width="9" height="2.4" rx="1.2" className="cp-veh-vent" fill={th.vent} />
+      <rect x="122" y="185.6" width="34" height="3.6" rx="1.8" className="cp-veh-energy-track" fill={th.track} />
+      <rect x="122" y="185.6" width={Math.max(3, 34 * energyRatio)} height="3.6" rx="1.8" className="cp-veh-energy-fill" />
+      {/* 舷灯(随主题换色,闪烁动画在 CSS) */}
+      <circle cx="42" cy="180" r="2.4" className="cp-disc-lamp" style={{ fill: th.lamp }} />
+      <circle cx="158" cy="180" r="2.4" className="cp-disc-lamp" style={{ fill: th.lamp }} />
+      {/* 顶面(最后画,盖住壁上沿) + 内圈 + 高光条 */}
+      <ellipse cx="100" cy="175" rx="62" ry="9" className="cp-veh-top" fill={`url(#${uid}-veh-top)`} stroke={th.edgeTop} />
+      <ellipse cx="100" cy="175" rx="52" ry="6.5" className="cp-veh-top-inset" fill={th.inset} />
+      <ellipse cx="74" cy="172.5" rx="22" ry="2.6" className="cp-veh-specular" style={{ opacity: th.specular }} />
+      {/* 星尘专属:顶面撒星点(确定性坐标,一粒四角亮星) */}
+      {th.stars && (
+        <g className="cp-veh-stars" fill="#ffffff" aria-hidden="true">
+          <circle cx="62" cy="173.4" r="0.9" />
+          <circle cx="84" cy="177.2" r="0.7" opacity="0.8" />
+          <circle cx="118" cy="172.8" r="0.8" opacity="0.9" />
+          <circle cx="138" cy="176.4" r="0.7" opacity="0.7" />
+          <path d="M 104 173.4 l 0.55 1.35 1.35 0.55 -1.35 0.55 -0.55 1.35 -0.55 -1.35 -1.35 -0.55 1.35 -0.55 Z" />
+        </g>
+      )}
+      {/* 仪表舱:亮底玻璃圆窗 + 舱圈(浅金属圈体 + 主题描边圈);舱内均衡器自绘
+          (listening/typing 点亮),击键字符由壳层 text 经 translate 落入窗内 */}
+      <circle cx="100" cy="187" r="12" className="cp-veh-port-bezel" fill={th.inset} stroke={th.bezel} />
+      <circle cx="100" cy="187" r="10" className="cp-veh-port-glass" fill={th.glass} />
+      <g className="cp-veh-eq" aria-hidden="true">
+        <rect x="93" y="181.5" width="3.2" height="11" rx="1.6" className="cp-veh-eq-bar" />
+        <rect x="98.4" y="181.5" width="3.2" height="11" rx="1.6" className="cp-veh-eq-bar" />
+        <rect x="103.8" y="181.5" width="3.2" height="11" rx="1.6" className="cp-veh-eq-bar" />
+      </g>
+    </g>
+  );
+}
 
 export function CustomPuppetArt({ uid, refs, energyRatio }: FormArtProps) {
   const pack = useSyncExternalStore(subscribeActivePack, getActivePack);
@@ -111,64 +187,13 @@ export function CustomPuppetArt({ uid, refs, energyRatio }: FormArtProps) {
         </g>
       ) : (
         <>
-          {/* 悬浮载具 v2.1(2026-09-11):银灰反光机械平台,顶面贴脚线(布局底部锚定
-              后任何素材脚都在 y≈176)。顶面/侧壁/底面三层面(厚度 8),银灰渐变+
-              顶部高光条;前沿仪表舱(金舱圈+亮底玻璃+自绘均衡器+壳层击键字符);
-              底部三喷口 idle 呼吸微焰、flying/takeoff 加力。程序化 SVG+渐变,零资产(G5)。 */}
-          <g className="cp-disc cp-veh" aria-hidden="true">
-            <defs>
-              {/* 银灰反光:顶面纵向渐变 + 侧壁横向圆柱高光 */}
-              <linearGradient id={`${uid}-veh-top`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#eceff4" />
-                <stop offset="0.55" stopColor="#c3cad5" />
-                <stop offset="1" stopColor="#9aa2b1" />
-              </linearGradient>
-              <linearGradient id={`${uid}-veh-wall`} x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stopColor="#7d8595" />
-                <stop offset="0.5" stopColor="#d3d9e2" />
-                <stop offset="1" stopColor="#6d7584" />
-              </linearGradient>
-            </defs>
-            {/* 地面光晕 */}
-            <ellipse cx="100" cy="193" rx="72" ry="11" className="cp-veh-glow" />
-            {/* 三喷口 + 焰(先画,大半藏在平台后,焰从底沿探出) */}
-            {[68, 100, 132].map((nx, i) => (
-              <g key={nx} transform={`translate(${nx} ${i === 1 ? 187.5 : 185})`} className="cp-veh-nozzle">
-                <path d="M -7 0 L 7 0 L 5 4.5 L -5 4.5 Z" className="cp-veh-nozzle-body" />
-                <path d="M -4.5 4.5 Q 0 11.5 4.5 4.5 Z" className="cp-veh-flame cp-veh-flame-outer" />
-                <path d="M -2.4 4.5 Q 0 9 2.4 4.5 Z" className="cp-veh-flame cp-veh-flame-core" />
-              </g>
-            ))}
-            {/* 底面 */}
-            <ellipse cx="100" cy="183" rx="58" ry="8.5" className="cp-veh-bottom" />
-            {/* 侧壁(前带,上沿接顶面前弧,下沿接底面前弧——厚度 8) */}
-            <path
-              d="M 38 175 L 40 183 A 58 8.5 0 0 0 160 183 L 162 175 A 62 9 0 0 1 38 175 Z"
-              className="cp-veh-wall"
-              fill={`url(#${uid}-veh-wall)`}
-            />
-            {/* 通风格栅(左)与能量条(右,随 energyRatio 充能) */}
-            <rect x="47" y="185.6" width="9" height="2.4" rx="1.2" className="cp-veh-vent" />
-            <rect x="59" y="185.6" width="9" height="2.4" rx="1.2" className="cp-veh-vent" />
-            <rect x="122" y="185.6" width="34" height="3.6" rx="1.8" className="cp-veh-energy-track" />
-            <rect x="122" y="185.6" width={Math.max(3, 34 * energyRatio)} height="3.6" rx="1.8" className="cp-veh-energy-fill" />
-            {/* 舷灯(沿用金色 cp-disc-lamp) */}
-            <circle cx="42" cy="180" r="2.4" className="cp-disc-lamp" />
-            <circle cx="158" cy="180" r="2.4" className="cp-disc-lamp" />
-            {/* 顶面(最后画,盖住壁上沿;银灰渐变) + 高光条 */}
-            <ellipse cx="100" cy="175" rx="62" ry="9" className="cp-veh-top" fill={`url(#${uid}-veh-top)`} />
-            <ellipse cx="100" cy="175" rx="52" ry="6.5" className="cp-veh-top-inset" />
-            <ellipse cx="74" cy="172.5" rx="22" ry="2.6" className="cp-veh-specular" />
-            {/* 仪表舱:亮底玻璃圆窗 + 金色舱圈;舱内均衡器自绘(listening/typing 点亮),
-                击键字符由壳层 text 经 translate 落入窗内(见 index.css) */}
-            <circle cx="100" cy="187" r="12" className="cp-veh-port-bezel" />
-            <circle cx="100" cy="187" r="10" className="cp-veh-port-glass" />
-            <g className="cp-veh-eq" aria-hidden="true">
-              <rect x="93" y="181.5" width="3.2" height="11" rx="1.6" className="cp-veh-eq-bar" />
-              <rect x="98.4" y="181.5" width="3.2" height="11" rx="1.6" className="cp-veh-eq-bar" />
-              <rect x="103.8" y="181.5" width="3.2" height="11" rx="1.6" className="cp-veh-eq-bar" />
-            </g>
-          </g>
+          {/* 悬浮载具 v2.2(2026-09-11):机械飞行平台 + 五款形态主题换装
+              (manifest.vehicle → veh-themes.ts 调色,缺省 silver 兼容旧包)。
+              顶面贴脚线(布局底部锚定后任何素材脚都在 y≈176);顶面/侧壁/底面
+              三层面(厚度 8),前沿仪表舱(舱圈+亮底玻璃+自绘均衡器+壳层击键
+              字符);底部三喷口 idle 呼吸微焰、flying/takeoff 加力。程序化
+              SVG+渐变,零资产(G5);颜色全内联,CSS 只持动画/透明度。 */}
+          <VehGroup uid={uid} energyRatio={energyRatio} theme={VEH_THEMES[pack.manifest.vehicle ?? "silver"]} />
           {/* 呼吸层:float 姿势下整身微缩放(部件一起动,无头身分离;盘在此层外) */}
           <g className="cp-puppet-figure">
           {/* 贴纸档(l1)=单件整图;分件档=臂/身/头分层(头压身,臂在身侧之上) */}

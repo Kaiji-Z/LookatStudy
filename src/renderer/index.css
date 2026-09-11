@@ -1434,23 +1434,18 @@ html.light ::-webkit-scrollbar-thumb:hover {
 }
 
 /* ---------- M2 自定义纸偶(SPEC §16):第 6 形态 custom,作用域全限 .cp-form-custom ----------
-   载具 v2.1(2026-09-11):银灰反光机械飞行平台(用户点名换材质+下移对位脚线),
-   顶/壁/底三层面+前沿仪表舱+三喷口;渐变内联 TSX,布局底部锚定踩脚线。 */
-/* 载具 v2.1 材质:银灰反光(渐变在 TSX 内联 url(#uid-veh-*),uid 防多实例串号) */
-.cp-form-custom .cp-veh-top { stroke: #7b8393; stroke-width: 1.5; }
-.cp-form-custom .cp-veh-top-inset { fill: #aab1bf; stroke: none; }
-.cp-form-custom .cp-veh-specular { fill: #ffffff; opacity: 0.55; }
-.cp-form-custom .cp-veh-wall { stroke: #5d6472; stroke-width: 1; }
-.cp-form-custom .cp-veh-bottom { fill: #565d6b; }
-.cp-form-custom .cp-veh-glow { fill: var(--accent, #1cb0f6); opacity: 0.16; }
-.cp-form-custom .cp-veh-vent { fill: #3f4654; }
-.cp-form-custom .cp-veh-energy-track { fill: #3f4654; }
+   载具 v2.2(2026-09-11):机械飞行平台 + 五款形态主题换装(manifest.vehicle →
+   veh-themes.ts 调色,缺省 silver 兼容旧包)。颜色全部内联 TSX(渐变/填充/描边),
+   本文件只持描边宽与动画/透明度 —— 换主题零 CSS 分支。 */
+.cp-form-custom .cp-veh-top { stroke-width: 1.5; }
+.cp-form-custom .cp-veh-specular { fill: #ffffff; }
+.cp-form-custom .cp-veh-wall { stroke-width: 1; }
+.cp-form-custom .cp-veh-glow { opacity: 0.16; }
 .cp-form-custom .cp-veh-energy-fill { fill: #58cc02; }
-.cp-form-custom .cp-veh-port-bezel { fill: #f2f6fb; stroke: #ffc800; stroke-width: 2.5; }
-.cp-form-custom .cp-veh-port-glass { fill: #dff5fa; }
-.cp-form-custom .cp-veh-nozzle-body { fill: #4a5160; stroke: #333a47; stroke-width: 1; }
-.cp-form-custom .cp-veh-flame-outer { fill: var(--accent, #1cb0f6); opacity: 0.55; }
-.cp-form-custom .cp-veh-flame-core { fill: #e8f7ff; opacity: 0.9; }
+.cp-form-custom .cp-veh-port-bezel { stroke-width: 2.5; }
+.cp-form-custom .cp-veh-nozzle-body { stroke-width: 1; }
+.cp-form-custom .cp-veh-flame-outer { opacity: 0.55; }
+.cp-form-custom .cp-veh-flame-core { opacity: 0.9; }
 .cp-form-custom .cp-veh-flame { transform-box: fill-box; transform-origin: 50% 0; animation: cp-veh-burn 1.5s ease-in-out infinite alternate; }
 .cp-form-custom .cp-veh-flame-core { animation-duration: 1.1s; }
 @keyframes cp-veh-burn { from { transform: scaleY(0.72); opacity: 0.55; } to { transform: scaleY(1.12); opacity: 1; } }

@@ -234,6 +234,18 @@ await t("T5 坏 PNG 诚实抛错(pure 后端不静默)", async () => {
   }
 });
 
+/* ---------------- T5b IEND 后杂尾(手机真机现场) ---------------- */
+
+t("T5b IEND 后杂尾自动截断(生成站 PNG 常见,桌面 skia 宽容 pngjs 曾必炸)", () => {
+  const img = syntheticRgba(50, 80);
+  const clean = encodePngPure(img);
+  const junk = Buffer.concat([clean, Buffer.from([0xde, 0xad, 0xbe, 0xef]), Buffer.alloc(97, 0x20), Buffer.from("some generator metadata")]);
+  const back = decodePngPure(junk);
+  assert.ok(samePixels(img, back), "截尾后解码应与干净解码逐字节一致");
+  // 结构损坏(截半的 PNG)仍诚实抛错,不吞
+  assert.throws(() => decodePngPure(clean.subarray(0, 20)), /./);
+});
+
 /* ---------------- T6 verify:core 链含本套件 ---------------- */
 
 await t("T6 package.json verify:core 链含 verify-companion-png", () => {

@@ -31,6 +31,7 @@ import {
   type FigureMask,
   type RgbaImage,
 } from "@shared/companion-cut";
+import { decodePngPure, encodePngPure, noteFallbackOnce, resizeBox, wantPureBackend } from "./pure/png-codec.js";
 
 type VisionDb = Parameters<typeof resolveVisionLlm>[0];
 
@@ -76,22 +77,43 @@ export interface CompanionCutOutput {
 
 /** vision 定位 prompt:shared 单源(v9 切分线协议,SPEC §17.1/§17.9)。 */
 
+/**
+ * 像素进出双后端(2026-09-11,Termux 手机端可用):napi 优先(桌面字节路径零
+ * 变化),失败或 LOOKATSTUDY_PNG_BACKEND=pure 落 pngjs 纯 JS。两个后端解码逐
+ * 字节一致、编码无损 —— 切分决策只消费像素,手机端与电脑端产出相同的包
+ * (verify-companion-png T4 同 fixture 双后端全链对拍)。
+ */
 function rgbaOfPng(png: Buffer | Uint8Array): Promise<RgbaImage> {
+  const buf = Buffer.isBuffer(png) ? png : Buffer.from(png);
   return (async () => {
-    const { loadImage, createCanvas } = await napi();
-    const img = await loadImage(Buffer.isBuffer(png) ? png : Buffer.from(png));
-    const cv = createCanvas(img.width, img.height);
-    const ctx = cv.getContext("2d");
-    ctx.drawImage(img, 0, 0);
-    return { width: img.width, height: img.height, data: ctx.getImageData(0, 0, img.width, img.height).data };
+    if (!wantPureBackend()) {
+      try {
+        const { loadImage, createCanvas } = await napi();
+        const img = await loadImage(buf);
+        const cv = createCanvas(img.width, img.height);
+        const ctx = cv.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        return { width: img.width, height: img.height, data: ctx.getImageData(0, 0, img.width, img.height).data };
+      } catch (e) {
+        noteFallbackOnce(e);
+      }
+    }
+    return decodePngPure(buf);
   })();
 }
 
 async function rgbaToPng(img: RgbaImage): Promise<Uint8Array> {
-  const { createCanvas, ImageData } = await napi();
-  const cv = createCanvas(img.width, img.height);
-  cv.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
-  return new Uint8Array(await cv.encode("png"));
+  if (!wantPureBackend()) {
+    try {
+      const { createCanvas, ImageData } = await napi();
+      const cv = createCanvas(img.width, img.height);
+      cv.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
+      return new Uint8Array(await cv.encode("png"));
+    } catch (e) {
+      noteFallbackOnce(e);
+    }
+  }
+  return encodePngPure(img);
 }
 
 /**
@@ -361,21 +383,20 @@ export function listCompanionPacks(db: PackDb, dataDir: string): { packs: Compan
   return { packs };
 }
 
-/** 形象栏卡片缩略图:头件(贴纸档用整图)缩到 96px dataURL;失败返回 undefined。 */
+/** 形象栏卡片缩略图:头件(贴纸档用整图)缩到 96px dataURL;失败返回 undefined。
+ *  缩放走 resizeBox 面积平均(2026-09-11)——缩略图是双后端唯一视觉差异点,
+ *  统一纯 JS 路径后全平台逐像素一致。 */
 async function packThumb(dataDir: string, id: string): Promise<string | undefined> {
   try {
-    const { loadImage } = await napi();
     const dir = path.join(dataDir, "companion-packs", id);
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8")) as CutPackManifest;
     const pick = manifest.parts.head ?? manifest.parts.sticker ?? Object.values(manifest.parts)[0];
     if (!pick) return undefined;
-    const img = await loadImage(fs.readFileSync(path.join(dir, pick.file)));
+    const img = await rgbaOfPng(fs.readFileSync(path.join(dir, pick.file)));
     const scale = 96 / Math.max(img.width, img.height);
-    const { createCanvas } = await napi();
-    const cv = createCanvas(Math.max(1, Math.round(img.width * scale)), Math.max(1, Math.round(img.height * scale)));
-    const ctx = cv.getContext("2d");
-    ctx.drawImage(img, 0, 0, cv.width, cv.height);
-    return `data:image/png;base64,${Buffer.from(await cv.encode("png")).toString("base64")}`;
+    const small = resizeBox(img, Math.max(1, Math.round(img.width * scale)), Math.max(1, Math.round(img.height * scale)));
+    const png = await rgbaToPng(small);
+    return `data:image/png;base64,${Buffer.from(png).toString("base64")}`;
   } catch (e) {
     console.warn("[companion-pack] 缩略图生成失败:", String(e).slice(0, 160));
     return undefined;

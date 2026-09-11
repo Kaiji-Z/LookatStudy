@@ -327,6 +327,21 @@ check(
     settingsSrc.includes("companion-veh-picker") && settingsSrc.includes("await refreshActivePack()"),
 );
 
+// G2l(2026-09-11) PNG 像素进出双后端(Termux 手机端可用):@napi-rs/canvas 无
+// Android 预编译 —— rgbaOfPng/rgbaToPng napi 优先、失败落 pngjs 纯 JS
+// (png-codec.ts,LOOKATSTUDY_PNG_BACKEND=pure 可强制);packThumb 缩放统一
+// resizeBox(面积平均,全平台缩略图逐像素一致)。verify-companion-png T4 全链对拍。
+const pngCodecSrc = read("src/main/services/pure/png-codec.ts");
+const pkgJson = JSON.parse(read("package.json"));
+check(
+  "G2l(M2) PNG 双后端:解码/编码收口 png-codec(napi→pngjs 兜底)+packThumb 走 resizeBox+verify:core 链含对拍套件",
+  serviceSrc.includes("decodePngPure") && serviceSrc.includes("noteFallbackOnce") &&
+    serviceSrc.includes("resizeBox") && serviceSrc.includes("wantPureBackend") &&
+    pngCodecSrc.includes("export function decodePngPure") && pngCodecSrc.includes("export function resizeBox") &&
+    pkgJson.dependencies.pngjs != null &&
+    pkgJson.scripts["verify:core"].includes("verify-companion-png"),
+);
+
 // G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源
 check(
   "G5(M2) 盘与纸偶零二进制资产(无静态图 import/无 http 图源)",

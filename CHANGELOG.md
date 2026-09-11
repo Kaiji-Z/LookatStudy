@@ -14,6 +14,10 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Fixed
+- 自定义 bot 识图对部分 key 档位恒空回复的自动降档:定位请求首发 maxOutputTokens=128k,个别 key 档位不允许这么大的输出上限,端点不报错而是秒回 200 空内容(手机真机:聊天看图正常、向导恒空)。现在空回复时自动降档 8k 重试一次——切分 JSON 本体仅千余 token,关闭思考时绰绰有余。
 ## [0.31.5] - 2026-09-11
 
 ### Fixed

@@ -332,15 +332,25 @@ export function listCompanionPacks(db: PackDb, dataDir: string): { packs: Compan
   const packs: CompanionPackSummary[] = [];
   for (const id of entries) {
     if (!/^custom-[a-z0-9]{8}$/.test(id)) continue;
+    const manifestPath = path.join(root, id, "manifest.json");
     let manifest: CutPackManifest;
     try {
-      manifest = JSON.parse(fs.readFileSync(path.join(root, id, "manifest.json"), "utf8")) as CutPackManifest;
+      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as CutPackManifest;
     } catch {
       continue;
     }
+    // 旧包无 name 字段:回填默认名并写回(一次性,幂等)
+    if (!manifest.name) {
+      manifest.name = "自定义纸偶";
+      try {
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+      } catch {
+        /* 写不进就仅本次展示用 */
+      }
+    }
     packs.push({
       id,
-      name: manifest.name ?? (id === activeId ? activeName ?? id : id),
+      name: manifest.name,
       active: id === activeId,
       route: manifest.source?.route ?? "l1",
     });
@@ -364,7 +374,8 @@ async function packThumb(dataDir: string, id: string): Promise<string | undefine
     const ctx = cv.getContext("2d");
     ctx.drawImage(img, 0, 0, cv.width, cv.height);
     return `data:image/png;base64,${Buffer.from(await cv.encode("png")).toString("base64")}`;
-  } catch {
+  } catch (e) {
+    console.warn("[companion-pack] 缩略图生成失败:", String(e).slice(0, 160));
     return undefined;
   }
 }

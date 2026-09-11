@@ -175,11 +175,12 @@ export function CompanionBotWizard({ onClose, onSaved }: { onClose: () => void; 
           <div className="text-label font-medium text-ink-strong mb-1">{t("companion.wizard.s2")}</div>
           <p className="text-caption text-ink-muted leading-relaxed mb-2">{t("companion.wizard.s2body")}</p>
           <div className="flex flex-wrap items-center gap-2 mb-2">
+            {/* 站点直达三兄弟同款样式,只有一键复制是蓝色(accent) */}
             <a
               href="https://www.doubao.com/chat/"
               target="_blank"
               rel="noreferrer"
-              className="rounded-lg bg-brand px-3 py-1.5 text-label text-white hover:opacity-90"
+              className="rounded-lg border border-[var(--border-faint)] px-3 py-1.5 text-label hover:bg-surface-2"
             >
               {t("companion.wizard.s2doubao")}
             </a>
@@ -190,6 +191,14 @@ export function CompanionBotWizard({ onClose, onSaved }: { onClose: () => void; 
               className="rounded-lg border border-[var(--border-faint)] px-3 py-1.5 text-label hover:bg-surface-2"
             >
               {t("companion.wizard.s2jimeng")}
+            </a>
+            <a
+              href="https://chatgpt.com/"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-[var(--border-faint)] px-3 py-1.5 text-label hover:bg-surface-2"
+            >
+              {t("companion.wizard.s2chatgpt")}
             </a>
             <button
               type="button"

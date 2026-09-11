@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.31.3] - 2026-09-11
 
 ### Fixed
 - 自定义 bot 识图不可用时的兜底贴纸此前直接用原图,绿幕背景原样带上;现在键控掩码在手就先抠掉背景并裁到内容包围盒(脚线=真脚,不再被画布边距稀释)。

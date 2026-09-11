@@ -57,6 +57,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     models: [
       { id: "glm-4-flash", label: "GLM-4-Flash（免费）", contextWindow: 128000, free: true, capabilities: ["chat"], pricing: { input: 0, output: 0 } },
       { id: "glm-5.2", label: "GLM-5.2（旗舰 · 1M上下文）", contextWindow: 1000000, capabilities: ["chat", "reasoning", "tools"], pricing: { input: 0.5, output: 1.5 } },
+      { id: "glm-5.3-flash", label: "GLM-5.3-Flash（快速 · 支持看图）", contextWindow: null, capabilities: ["chat", "tools", "vision"] },
       { id: "glm-4.7", label: "GLM-4.7（均衡）", contextWindow: 200000, capabilities: ["chat", "tools"], pricing: { input: 0.14, output: 0.28 } },
       { id: "glm-4.7-flash", label: "GLM-4.7-Flash（免费）", contextWindow: 200000, free: true, capabilities: ["chat"], pricing: { input: 0, output: 0 } },
       { id: "glm-4.6", label: "GLM-4.6（编码/推理强）", contextWindow: 200000, capabilities: ["chat", "reasoning", "tools"], pricing: { input: 0.28, output: 0.84 } },
@@ -78,6 +79,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     defaultModel: "glm-5.2",
     models: [
       { id: "glm-5.2", label: "GLM-5.2（旗舰）", contextWindow: 1000000, capabilities: ["chat", "reasoning", "tools"] },
+      { id: "glm-5.3-flash", label: "GLM-5.3-Flash（快速 · 支持看图）", contextWindow: null, capabilities: ["chat", "tools", "vision"] },
       { id: "glm-4.6", label: "GLM-4.6（编码强）", contextWindow: 200000, capabilities: ["chat", "reasoning", "tools"] },
     ],
     apiKeySetting: "glm_codingplan_key",

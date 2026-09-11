@@ -19,6 +19,7 @@ import { createCanvas } from "@napi-rs/canvas";
 
 const {
   keyFigure,
+  applyFigureKey,
   composeKeyedPreview,
   routeCut,
   addWhiteOutline,
@@ -35,7 +36,8 @@ let pass = 0;
 const t = (name, fn) => {
   fn();
   pass++;
-  console.log(`  ok ${pass} - ${name}`);
+  
+console.log(`  ok ${pass} - ${name}`);
 };
 
 /* ---------------- 合成 fixture(程序化绘制,确定性) ---------------- */
@@ -541,5 +543,38 @@ t("T26 白描边平滑:AA 阈值抖动不再造成轮廓 ±1px 凹凸(实测熊�
   const out2 = addWhiteOutline({ width: W, height: H, data }, 4);
   assert.deepEqual(Buffer.from(out.data).equals(Buffer.from(out2.data)), true, "同输入同输出");
 });
+
+t("T27 键控 L1:applyFigureKey 抠背景+bbox 裁剪,box 为原图坐标", () => {
+  const img = drawApose({ mode: "green" });
+  const fm = keyFigure(img);
+  const { image: keyed, box } = applyFigureKey(img, fm);
+  assert.ok(box.w < 400 && box.h < 600 && box.x >= 0 && box.y >= 0 && box.x + box.w <= 400 && box.y + box.h <= 600);
+  let opaque = 0;
+  for (let i = 0; i < keyed.width * keyed.height; i++) if (keyed.data[i * 4 + 3] === 255) opaque++;
+  let maskCount = 0;
+  for (let i = 0; i < fm.mask.length; i++) if (fm.mask[i]) maskCount++;
+  assert.equal(opaque, maskCount);
+  let green = 0;
+  for (let i = 0; i < keyed.width * keyed.height; i++) {
+    const p = i * 4;
+    if (keyed.data[p + 3] === 255 && keyed.data[p] < 80 && keyed.data[p + 1] > 150 && keyed.data[p + 2] < 120) green++;
+  }
+  assert.equal(green, 0);
+  const outlined = addWhiteOutline(keyed, 4);
+  const cx = 200 - box.x;
+  const cy = 295 - box.y;
+  const pc = (cy * keyed.width + cx) * 4;
+  assert.equal(outlined.data[pc + 3], 255);
+});
+
+t("T28 键控 L1 全链(routeCut→applyFigureKey→addWhiteOutline)无 cuts 也出带 box 的单件", () => {
+  const img = drawTpose({ mode: "green" });
+  const fm = keyFigure(img);
+  const r = routeCut(img, {});
+  assert.equal(r.route, "l1");
+  const { box } = applyFigureKey(img, fm);
+  assert.ok(box.x <= fm.main.x && box.y <= fm.main.y && box.x + box.w >= fm.main.x + fm.main.w && box.y + box.h >= fm.main.y + fm.main.h);
+});
+
 
 console.log(`\nverify-companion-cut: ${pass} 断言全部通过`);

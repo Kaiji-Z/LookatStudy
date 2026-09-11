@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.31.1] - 2026-09-11
 
 ### Added
 - 自定义伴学 bot 手机端制作支持:切分管线的 PNG 解码/编码改为双后端(napi canvas 优先;Android 无预编译二进制,自动落 pngjs 纯 JS 实现),Termux 本机可跑完「新建 bot」三步向导全链,产出与桌面端逐像素一致;桌面路径字节零变化。缩略图缩放统一为面积平均实现(此前各平台用各自的重采样滤波),不同设备上的卡片缩略图也逐像素一致。

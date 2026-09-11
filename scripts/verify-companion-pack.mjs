@@ -270,8 +270,8 @@ check(
 // 画布尺寸——平移按部件框原点、缩放按整画布,两坐标系混杂,纸偶整体左偏 20 舞台px
 const storeSrc = read("src/renderer/lib/companion/custom-pack-store.ts");
 check(
-  "G2f(M2) store 标定框=figureBox 原样传入(不得混回画布宽高)",
-  storeSrc.includes("layoutParts(figureBoxOfParts(res.manifest.parts), res.manifest.parts)") &&
+  "G2f(M2) store 标定框=figureBox 原样传入+底部锚定(不得混回画布宽高)",
+  storeSrc.includes("layoutParts(figureBoxOfParts(res.manifest.parts), res.manifest.parts, { x: 24, y: 22, w: 152, h: 154 }, \"bottom\")") &&
     !storeSrc.includes("width: res.manifest.source.width"),
 );
 // G2g(2026-09-10) 纸偶层序 身<头<臂:抬手(庆祝/挥手/指向/打字)的手不得被头压住
@@ -294,7 +294,7 @@ check(
 // 仪表舱而非叠在用户图上(用户反馈不合理)
 check(
   "G2i(M2) 载具仪表舱:壳层胸屏装饰隐藏+字符入舱+自绘均衡器",
-  appCss.includes(".cp-form-custom .cp-key-scope,") && appCss.includes(".cp-screen-key { translate: 0 51.5px") &&
+  appCss.includes(".cp-form-custom .cp-key-scope,") && appCss.includes(".cp-screen-key { translate: 0 52px") &&
     appCss.includes(".cp-veh-eq-bar {") && puppetSrc.includes("cp-veh-eq"),
 );
 

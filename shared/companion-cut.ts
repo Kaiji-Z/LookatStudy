@@ -178,7 +178,9 @@ export function figureBoxOfParts(
 
 /**
  * 把切分件的原图坐标等比 contain 到目标舞台(伴学 svg 200×200 内的子区),
- * 居中;部件间相对位置与原图逐像素一致。确定性(同输入同输出,verify 直测)。
+ * 默认垂直居中;anchor="bottom" 时底边对齐目标框底(纸偶脚踩悬浮平台的
+ * 前提:宽扁素材若居中,脚会悬空)。部件间相对位置与原图逐像素一致。
+ * 确定性(同输入同输出,verify 直测)。
  * source 支持带 x/y 的标定框(2026-09-10:传 figureBoxOfParts 的部件并集,
  * 画布留白不参与缩放;不传 x/y 视为整画布,兼容老调用)。
  */
@@ -186,13 +188,17 @@ export function layoutParts(
   source: { x?: number; y?: number; width: number; height: number },
   parts: Partial<Record<PartName | "sticker", { file: string; box: Box }>>,
   target: { x: number; y: number; w: number; h: number } = { x: 24, y: 22, w: 152, h: 154 },
+  anchor: "center" | "bottom" = "center",
 ): PuppetPartLayout[] {
   if (source.width <= 0 || source.height <= 0) return [];
   const bx = source.x ?? 0;
   const by = source.y ?? 0;
   const s = Math.min(target.w / source.width, target.h / source.height);
   const offX = target.x + (target.w - source.width * s) / 2;
-  const offY = target.y + (target.h - source.height * s) / 2;
+  const offY =
+    anchor === "bottom"
+      ? target.y + target.h - source.height * s
+      : target.y + (target.h - source.height * s) / 2;
   const r2 = (v: number) => Math.round(v * 100) / 100;
   const out: PuppetPartLayout[] = [];
   for (const [name, part] of Object.entries(parts) as Array<[PartName | "sticker", { file: string; box: Box }]>) {

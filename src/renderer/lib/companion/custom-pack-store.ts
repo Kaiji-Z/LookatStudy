@@ -50,8 +50,9 @@ export async function refreshActivePack(): Promise<void> {
             manifest: res.manifest,
             srcs: res.srcs,
             // 标定框=部件盒并集,原样传入(2026-09-10 修:曾把 width/height 回写成
-            // 画布尺寸——平移按部件框原点、缩放按整画布,两坐标系混杂,纸偶整体左偏)
-            layout: layoutParts(figureBoxOfParts(res.manifest.parts), res.manifest.parts),
+            // 画布尺寸——平移按部件框原点、缩放按整画布,两坐标系混杂,纸偶整体左偏);
+            // 底部锚定(2026-09-11):任何宽高比素材脚都踩在舞台底线上,不悬空
+            layout: layoutParts(figureBoxOfParts(res.manifest.parts), res.manifest.parts, { x: 24, y: 22, w: 152, h: 154 }, "bottom"),
           }
         : null;
     emit();

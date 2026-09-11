@@ -14,6 +14,11 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Fixed
+- 自定义 bot 识图不可用时的兜底贴纸此前直接用原图,绿幕背景原样带上;现在键控掩码在手就先抠掉背景并裁到内容包围盒(脚线=真脚,不再被画布边距稀释)。
+- 修复「明明配了识图模型却提示不支持看图」的常见情形:GLM 预设缺 glm-5.3-flash 条目(该模型实测支持看图),已补入 GLM/CodingPlan 两个预设并标记 vision;「不支持看图」的报错改为给出可操作路径(自定义模型勾选「支持看图」/配置多模态覆盖);向导降级提示去掉过时的「几何切分」措辞。
 ## [0.31.2] - 2026-09-11
 
 ### Fixed

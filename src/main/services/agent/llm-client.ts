@@ -251,7 +251,7 @@ export function resolveVisionLlm(db: Db): ResolvedLlm {
 
   if (!supportsVision(main.provider, main.model)) {
     throw new Error(
-      `当前模型 ${main.model} 不支持看图(vision)。请在设置页的"多模态"区配置一个支持 vision 的模型(如 GLM-4V / GPT-4o / Claude / Gemini)。`,
+      `当前模型 ${main.model} 不支持看图(vision)。修法任选:自定义模型请在设置页编辑该模型并勾选「支持看图」;或在「多模态」区配一个支持 vision 的模型;预设用户请确认模型在列表里且带看图能力。`,
     );
   }
   return main;

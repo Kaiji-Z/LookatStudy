@@ -21,6 +21,7 @@ import {
   keyFigure,
   routeCut,
   addWhiteOutline,
+  applyFigureKey,
   composeKeyedPreview,
   parseCutsJson,
   locatePrompt,
@@ -176,10 +177,22 @@ export async function cutCompanionFigure(
   const mode = fm?.mode ?? "alpha";
 
   if (result.route === "l1") {
-    // L1:整图贴纸(白描边),永不出错
-    const outlined = addWhiteOutline(rgba, Math.max(3, Math.round(Math.min(W, H) * 0.008)));
+    // L1:单件贴纸(白描边),永不出错。键控掩码在手就先抠背景并裁到内容 bbox
+    // ——识图失败不该连带把绿幕背景贴出来,边距稀释也会让纸偶在舞台上缩水
+    // (底部锚定的脚线=真脚;2026-09-11 真机反馈)。掩码空等异常回原图兜底。
+    let base = rgba;
+    let box: Box = { x: 0, y: 0, w: W, h: H };
+    if (fm) {
+      try {
+        const keyed = applyFigureKey(rgba, fm);
+        base = keyed.image;
+        box = keyed.box;
+      } catch {
+        /* CUT_EMPTY 等防御性回退:原样整图 */
+      }
+    }
+    const outlined = addWhiteOutline(base, Math.max(3, Math.round(Math.min(base.width, base.height) * 0.008)));
     const png = await rgbaToPng(outlined);
-    const box: Box = { x: 0, y: 0, w: W, h: H };
     return {
       route: "l1",
       failure: result.failure,

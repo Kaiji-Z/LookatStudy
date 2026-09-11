@@ -357,6 +357,52 @@ export function composeKeyedPreview(img: RgbaImage, fm: FigureMask): RgbaImage {
   return { width: fm.width, height: fm.height, data: out };
 }
 
+/**
+ * 键控应用 + 内容 bbox 裁剪(2026-09-11,L1 兜底用):掩码内像素原样保留,
+ * 掩码外全透明,并裁到掩码内容的最小包围盒 —— 识图不可用落到单件贴纸时,
+ * 绿幕背景不再原样带上,纸偶也不再被原始画布边距稀释(底部锚定的脚线=真脚)。
+ * box 用原图坐标(与 vision 部件的 box 同约定,渲染层 layoutParts 直接消费)。
+ * 掩码为空抛 CUT_EMPTY(keyFigure 对空图已先抛,这里是防御)。
+ */
+export function applyFigureKey(img: RgbaImage, fm: FigureMask): { image: RgbaImage; box: Box } {
+  const W = fm.width;
+  const H = fm.height;
+  let minX = W;
+  let minY = H;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (fm.mask[y * W + x]) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) throw new Error("CUT_EMPTY");
+  const box: Box = { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  const cw = box.w;
+  const ch = box.h;
+  const cropped = new Uint8ClampedArray(cw * ch * 4);
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const sx = box.x + x;
+      const sy = box.y + y;
+      const s = (sy * W + sx) * 4;
+      const d = (y * cw + x) * 4;
+      if (fm.mask[sy * W + sx]) {
+        cropped[d] = img.data[s];
+        cropped[d + 1] = img.data[s + 1];
+        cropped[d + 2] = img.data[s + 2];
+        cropped[d + 3] = img.data[s + 3];
+      } // 掩码外保持 0,0,0,0
+    }
+  }
+  return { image: { width: cw, height: ch, data: cropped }, box };
+}
+
 /* ---------------- 2. 切分线协议 prompt(单源,service/live-test/demo 共用) ---------------- */
 
 /**

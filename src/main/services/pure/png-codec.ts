@@ -17,9 +17,31 @@ import { PNG } from "pngjs";
 
 import type { RgbaImage } from "@shared/companion-cut";
 
+/**
+ * 截掉 IEND 之后的杂尾字节。pngjs 的 SyncReader 是严格解析器:IEND 后还剩
+ * 任何字节就抛 "unrecognised content at end of stream"(v0.31.1 手机真机首刀
+ * 即踩:生成站出的 PNG 常在 IEND 后带元数据/填充尾巴),而桌面 skia 宽容——
+ * 这类文件在桌面正常、手机必炸。按 chunk 结构(4B length + 4B type + data +
+ * 4B CRC)走到 IEND 截断;结构走不动(截断/坏块)就原样交回,让 pngjs 抛它
+ * 自己的错,不吞真实损坏。
+ */
+function truncateAfterIend(buf: Buffer): Buffer {
+  let off = 8; // PNG 签名 8 字节
+  while (off + 12 <= buf.length) {
+    const len = buf.readUInt32BE(off);
+    const type = buf.toString("latin1", off + 4, off + 8);
+    const end = off + 12 + len;
+    if (end > buf.length) return buf;
+    if (type === "IEND") return buf.subarray(0, end);
+    off = end;
+  }
+  return buf;
+}
+
 /** 纯 JS 后端(pngjs):Buffer/Uint8Array → RGBA。palette/灰度/RGB/Adam7 全支持。 */
 export function decodePngPure(png: Buffer | Uint8Array): RgbaImage {
-  const img = PNG.sync.read(Buffer.isBuffer(png) ? png : Buffer.from(png));
+  const buf = truncateAfterIend(Buffer.isBuffer(png) ? png : Buffer.from(png));
+  const img = PNG.sync.read(buf);
   return { width: img.width, height: img.height, data: img.data };
 }
 

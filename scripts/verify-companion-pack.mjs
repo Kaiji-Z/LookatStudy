@@ -312,6 +312,21 @@ check(
     wizardSrc.includes("manifest: { ...preview.manifest, vehicle }") && wizardSrc.includes("companion-wizard-veh-"),
 );
 
+// G2k(2026-09-11) 卡片换载具入口:companionPack:setVehicle 全链(服务校验白名单/
+// summary 带 vehicle/渲染层色点+面板+激活包刷 active 缓存)
+const serviceSrc = read("src/main/services/companion-pack-service.ts");
+const settingsSrc = read("src/renderer/components/SettingsView.tsx");
+const ipcSrc = read("src/main/ipc/index.ts");
+const preloadSrc = read("src/preload/index.ts");
+check(
+  "G2k(M2) 卡片换载具:setVehicle 全链(服务白名单+summary.vehicle+色点入口+激活包刷新)",
+  serviceSrc.includes("VEHICLE_IDS") && serviceSrc.includes("setCompanionPackVehicle") &&
+    serviceSrc.includes("vehicle: manifest.vehicle") &&
+    ipcSrc.includes('"companionPack:setVehicle"') && preloadSrc.includes("companionPackSetVehicle") &&
+    settingsSrc.includes("companionPackSetVehicle") && settingsSrc.includes("companion-pack-veh-") &&
+    settingsSrc.includes("companion-veh-picker") && settingsSrc.includes("await refreshActivePack()"),
+);
+
 // G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源
 check(
   "G5(M2) 盘与纸偶零二进制资产(无静态图 import/无 http 图源)",

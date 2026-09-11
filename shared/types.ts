@@ -491,7 +491,7 @@ import type {
   SpeechTtsDoneEvent as SpeechTtsDoneEventT,
   SpeechTtsErrorEvent as SpeechTtsErrorEventT,
 } from "./speech-types";
-import type { CutPackManifest as CompanionCutManifestT } from "./companion-cut";
+import type { CutPackManifest as CompanionCutManifestT, CompanionVehicleId as CompanionVehicleIdT } from "./companion-cut";
 
 export interface ApiExpose {
   /* 课程 */
@@ -787,11 +787,13 @@ export interface ApiExpose {
     srcs: Record<string, string>;
   } | null>;
   /** 列出全部已保存纸偶包(多 bot;active=当前激活)。 */
-  companionPackList(): Promise<{ packs: Array<{ id: string; name: string; active: boolean; route: string; thumb?: string }> }>;
+  companionPackList(): Promise<{ packs: Array<{ id: string; name: string; active: boolean; route: string; thumb?: string; vehicle?: CompanionVehicleIdT }> }>;
   /** 切换激活包(companion_form=custom 由渲染层顺带处理)。 */
   companionPackActivate(input: { id: string }): Promise<{ ok: boolean }>;
   /** 删除指定包(删激活包时 companion_form 若为 custom 同时重置 ember)。 */
   companionPackDelete(input: { id: string }): Promise<{ ok: boolean; formReset: boolean }>;
+  /** 换载具主题(形象栏卡片色点入口;激活包由渲染层刷新 active 缓存。 */
+  companionPackSetVehicle(input: { id: string; vehicle: CompanionVehicleIdT }): Promise<{ ok: boolean }>;
 
   /** 语音模型状态(全部;absent/downloading/ready/error) */
   getSpeechModelStatus(): Promise<SpeechModelStatusT[]>;

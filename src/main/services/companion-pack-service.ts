@@ -316,6 +316,8 @@ export interface CompanionPackSummary {
   route: string;
   /** 主件缩略图 dataURL(形象栏卡片;生成失败缺省 → 渲染层占位)。 */
   thumb?: string;
+  /** 载具主题(卡片色点;缺省 = silver)。 */
+  vehicle?: string;
 }
 
 /** 列出磁盘上全部包(目录扫描,激活指针只标 active;按 激活优先+名字 排序)。 */
@@ -352,6 +354,7 @@ export function listCompanionPacks(db: PackDb, dataDir: string): { packs: Compan
       name: manifest.name,
       active: id === activeId,
       route: manifest.source?.route ?? "l1",
+      vehicle: manifest.vehicle,
     });
   }
   packs.sort((x, y) => Number(y.active) - Number(x.active) || x.name.localeCompare(y.name));
@@ -421,4 +424,16 @@ export function deleteCompanionPack(db: PackDb, dataDir: string, id: string): Co
     }
   }
   return { ok: true, formReset };
+}
+
+const VEHICLE_IDS: ReadonlySet<string> = new Set(["silver", "ember", "frost", "moss", "astro", "ink"]);
+
+/** 换载具主题(2026-09-11,形象栏卡片色点入口):只改 manifest.vehicle,其余不动。 */
+export function setCompanionPackVehicle(dataDir: string, id: string, vehicle: string): { ok: boolean } {
+  if (!VEHICLE_IDS.has(vehicle)) throw new Error(`未知载具主题: ${vehicle}`);
+  const manifestPath = path.join(companionPackDir(dataDir, id), "manifest.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as CutPackManifest;
+  manifest.vehicle = vehicle as CutPackManifest["vehicle"];
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  return { ok: true };
 }

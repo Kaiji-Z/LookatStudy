@@ -23,6 +23,8 @@ import { getCompanionSnapshot, subscribeCompanion } from "../lib/companion/bus.t
 import { COMPANION_FORM_IDS } from "../lib/companion/forms-index.js";
 import { CompanionBotWizard } from "./companion/CompanionBotWizard.js";
 import { refreshActivePack } from "../lib/companion/custom-pack-store.js";
+import { VEH_PICKABLE, VEH_THEMES } from "../lib/companion/veh-themes.ts";
+import type { CompanionVehicleId } from "@shared/companion-cut.ts";
 import { Mascot } from "./companion/Mascot.js";
 import { Plus, RotateCw, CheckCircle2, XCircle, Wrench, Check, X } from "lucide-react";
 import { api } from "../lib/api.js";
@@ -36,13 +38,14 @@ import pkg from "../../../package.json";
 
 type SystemVoiceOption = SpeechSynthesisVoice;
 
-/** 已保存纸偶包(形象栏卡片;thumb=主件缩略图 dataURL)。 */
+/** 已保存纸偶包(形象栏卡片;thumb=主件缩略图 dataURL,vehicle=载具主题)。 */
 interface PackSummary {
   id: string;
   name: string;
   active: boolean;
   route: string;
   thumb?: string;
+  vehicle?: CompanionVehicleId;
 }
 
 /** 语音设置落库后广播:useSpeech 实例重拉档位缓存(system 档点击时同步判定) */
@@ -982,6 +985,8 @@ function CompanionContent() {
   const [packs, setPacks] = useState<PackSummary[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [confirmingPack, setConfirmingPack] = useState<{ id: string; rect: DOMRect } | null>(null);
+  // 换载具入口(2026-09-11):点卡片左上色点 → 行下方面板选主题;激活包实时刷新
+  const [vehPickerPack, setVehPickerPack] = useState<string | null>(null);
   const loadPacks = useCallback(async () => {
     try {
       setPacks((await window.api.companionPackList()).packs);
@@ -1007,7 +1012,18 @@ function CompanionContent() {
     const r = await window.api.companionPackDelete({ id });
     if (r.formReset) window.dispatchEvent(new Event("companion-config-changed"));
     setConfirmingPack(null);
+    setVehPickerPack(null);
     void loadPacks();
+  };
+
+  /** 换载具主题:写 manifest.vehicle;是激活包就同步刷 active 缓存(伴学即时换装)。 */
+  const setPackVehicle = async (id: string, vehicle: CompanionVehicleId) => {
+    await window.api.companionPackSetVehicle({ id, vehicle });
+    await loadPacks();
+    if (packs.find((q) => q.id === id)?.active) {
+      await refreshActivePack();
+      window.dispatchEvent(new Event("companion-config-changed"));
+    }
   };
 
   if (!loaded) return null;
@@ -1094,6 +1110,18 @@ function CompanionContent() {
                   </button>
                   <button
                     type="button"
+                    aria-label={t("companion.bots.veh")}
+                    data-tooltip={t("companion.bots.veh")}
+                    data-testid={`companion-pack-veh-${p.id}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setVehPickerPack((cur) => (cur === p.id ? null : p.id));
+                    }}
+                    className="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full border border-black/25 shadow-card hover:scale-110 motion-safe:transition-transform"
+                    style={{ background: VEH_THEMES[p.vehicle ?? "silver"].dot }}
+                  />
+                  <button
+                    type="button"
                     aria-label={t("companion.custom.delete")}
                     data-tooltip={t("companion.custom.delete")}
                     onClick={(e) => {
@@ -1123,6 +1151,41 @@ function CompanionContent() {
               <span className="text-label text-ink-muted">{t("companion.bots.add")}</span>
             </button>
           </div>
+          {/* 换载具面板:点开哪张卡就改哪张;面板不自动关,连点不同色可对着伴学实时试装 */}
+          {vehPickerPack && (
+            <div
+              className="mt-2 rounded-xl border border-[var(--border-faint)] bg-surface-0 p-2.5"
+              data-testid="companion-veh-picker"
+            >
+              <div className="text-caption text-ink-muted mb-1.5">{t("companion.wizard.vehicle")}</div>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("companion.wizard.vehicle")}>
+                {(["silver", ...VEH_PICKABLE] as CompanionVehicleId[]).map((vid) => {
+                  const sel = (packs.find((q) => q.id === vehPickerPack)?.vehicle ?? "silver") === vid;
+                  return (
+                    <button
+                      key={vid}
+                      type="button"
+                      role="radio"
+                      aria-checked={sel}
+                      data-testid={`companion-veh-pick-${vid}`}
+                      onClick={() => void setPackVehicle(vehPickerPack, vid)}
+                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-label motion-safe:transition-colors
+                        ${sel
+                          ? "border-[var(--accent)] bg-surface-2 text-ink-strong font-medium"
+                          : "border-[var(--border-faint)] hover:bg-surface-2 text-ink-muted"}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="w-3 h-3 rounded-full border border-black/20"
+                        style={{ background: VEH_THEMES[vid].dot }}
+                      />
+                      {vid === "silver" ? t("companion.veh.silver") : t(`companion.form.${vid}.name`)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {confirmingPack && (
             <ConfirmCard
               anchorRect={confirmingPack.rect}

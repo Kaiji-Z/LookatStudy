@@ -99,6 +99,7 @@ import {
   applyCompanionPack,
   deleteCompanionPack,
   listCompanionPacksWithThumbs,
+  setCompanionPackVehicle,
   cutCompanionFigure,
   getActiveCompanionPack,
 } from "../services/companion-pack-service.js";
@@ -1714,6 +1715,10 @@ export function registerCompanionPackHandlers(deps: RuntimeDeps): void {
   });
   handle("companionPack:delete", async (_e, input: { id: string }) => {
     return deleteCompanionPack(getDb(), deps.dataDir, input.id);
+  });
+  // 换载具主题(形象栏卡片色点入口):只改 manifest.vehicle;激活包由渲染层刷新
+  handle("companionPack:setVehicle", async (_e, input: { id: string; vehicle: string }) => {
+    return setCompanionPackVehicle(deps.dataDir, input.id, input.vehicle);
   });
 }
 

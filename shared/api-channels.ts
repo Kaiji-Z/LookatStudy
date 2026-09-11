@@ -106,6 +106,7 @@ export const API_CHANNELS: Record<string, string> = {
   companionPackList: "companionPack:list",
   companionPackActivate: "companionPack:activate",
   companionPackDelete: "companionPack:delete",
+  companionPackSetVehicle: "companionPack:setVehicle",
   getXpStatus: "xp:getStatus",
   exportCourse: "course:export",
   canvasList: "canvas:list",

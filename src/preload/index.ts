@@ -237,6 +237,8 @@ const api = {
     ipcRenderer.invoke("companionPack:activate", input)) as ApiExpose["companionPackActivate"],
   companionPackDelete: ((input: { id: string }) =>
     ipcRenderer.invoke("companionPack:delete", input)) as ApiExpose["companionPackDelete"],
+  companionPackSetVehicle: ((input: { id: string; vehicle: string }) =>
+    ipcRenderer.invoke("companionPack:setVehicle", input)) as ApiExpose["companionPackSetVehicle"],
   getXpStatus: (() =>
     ipcRenderer.invoke("xp:getStatus")) as ApiExpose["getXpStatus"],
   exportCourse: ((courseId: string, format: "json" | "markdown") =>

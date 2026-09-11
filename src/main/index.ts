@@ -3609,22 +3609,26 @@ async function runUiTest(screenshot = false): Promise<void> {
         detail: m2Persist,
       });
 
-      // ⑥ 删除回落:deleteActive → formReset(custom→ember)→ 纸偶退场
+      // ⑥ 删除回落:按 id 删(deleteActive 已被多 bot 协议取代)→ formReset(custom→ember)→ 纸偶退场
       const m2Delete = await win.webContents
         .executeJavaScript(
           `
         (async function() {
-          var r = await window.api.companionPackDeleteActive();
-          if (r.formReset) window.dispatchEvent(new Event("companion-config-changed"));
-          var cls = "";
-          for (var i = 0; i < 30; i++) {
-            await new Promise(function(r2) { setTimeout(r2, 100); });
-            var m = document.querySelector('[data-testid="companion-mascot"]');
-            cls = m ? String(m.getAttribute("class")) : "";
-            if (cls.indexOf("cp-form-custom") < 0) break;
-          }
-          var act = await window.api.companionPackGetActive();
-          return { ok: r.ok === true && r.formReset === true && !act && cls.indexOf("cp-form-custom") < 0, formReset: r.formReset, cls: cls.slice(0, 90), activeLeft: !!act };
+          try {
+            var r = await window.api.companionPackDelete({ id: ${JSON.stringify(m2Import?.id)} });
+            if (r.formReset) window.dispatchEvent(new Event("companion-config-changed"));
+            var cls = "";
+            for (var i = 0; i < 30; i++) {
+              await new Promise(function(r2) { setTimeout(r2, 100); });
+              var m = document.querySelector('[data-testid="companion-mascot"]');
+              cls = m ? String(m.getAttribute("class")) : "";
+              if (cls.indexOf("cp-form-custom") < 0) break;
+            }
+            var act = await window.api.companionPackGetActive();
+            var lst = await window.api.companionPackList();
+            var gone = (lst.packs || []).every(function(p) { return p.id !== ${JSON.stringify(m2Import?.id)}; });
+            return { ok: r.ok === true && r.formReset === true && !act && gone && cls.indexOf("cp-form-custom") < 0, formReset: r.formReset, cls: cls.slice(0, 90), activeLeft: !!act, packsLeft: (lst.packs || []).length };
+          } catch (e) { return { ok: false, error: String(e) }; }
         })()
       `,
         )

@@ -14,6 +14,10 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Fixed
+- 手机端自定义 bot 识图「回复开头:(空)」根因修复:向导喂给 VLM 的键控预览此前与原图同分辨率(2K 图即数 MB dataURL),手机网络路径下会被端点秒回空内容。预览现缩到长边 ≤768px(VLM 只回归一化坐标,切分质量不变;真机原图 A/B 实测两种分辨率都出合法切分线),请求体 ~860KB→~110KB,桌面端 20 秒级的识图延迟也同步大降。
 ## [0.31.4] - 2026-09-11
 
 ### Changed

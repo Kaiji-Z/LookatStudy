@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.31.2] - 2026-09-11
 
 ### Fixed
 - 手机端新建 bot 对「IEND 后带杂尾」的 PNG 必报错(unrecognised content at end of stream):生成站导出的图常在结尾带元数据/填充字节,桌面解码器宽容从未复现,手机端纯 JS 解码器严格拒绝。现在解码前按 chunk 结构自动截掉 IEND 之后的杂尾;真正截断/损坏的文件仍诚实报错。

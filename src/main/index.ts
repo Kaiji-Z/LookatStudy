@@ -1304,6 +1304,68 @@ async function runUiTest(screenshot = false): Promise<void> {
     ok: notebookCompanion === true,
   });
 
+  // ---- M0 spike(CompanionBot Lab,.goal/SPEC.md):外部角色包三档对照实验页 ----
+  // hash 门控懒挂载 + 三 bot 渲染 + 键击切帧(sticker src 变化)+ 庆祝总线驱动 happy。
+  // 结束时退出 lab(fixed 覆盖层不挡后续断言的点击)。与 CompanionCreature 零耦合:
+  // 既有 companion v* 断言(含上面这条)全部照常通过即零回归的证据。
+  const botLab = await win.webContents.executeJavaScript(`
+    (async function() {
+      try {
+        location.hash = "#companion-bot-lab";
+        var root = null;
+        for (var i = 0; i < 40; i++) {
+          await new Promise(function(r){ setTimeout(r, 100); });
+          root = document.querySelector('[data-companion-bot-lab]');
+          if (root) break;
+        }
+        if (!root) return { mounted: false };
+        // 异步样例 art 就绪前 lab 只渲染空壳(buildSampleArt rAF/异步)——轮询等 bots,
+        // 防启动期 IPC 抖动把"root 先于 art"的竞态翻成假红
+        var bots0 = root.querySelectorAll('[data-companion-bot]');
+        for (var w = 0; w < 50 && bots0.length < 3; w++) {
+          await new Promise(function(r) { setTimeout(r, 100); });
+          bots0 = root.querySelectorAll('[data-companion-bot]');
+        }
+        var bots = root.querySelectorAll('[data-companion-bot]');
+        var stickerBox = root.querySelector('[data-companion-bot="bongo"]');
+        var sticker = stickerBox ? stickerBox.querySelector('img') : null;
+        if (!sticker) return { mounted: true, bots: bots.length, error: "no-sticker-img" };
+        var before = sticker.getAttribute('src');
+        // 轮询等状态机切帧:期间持续补发键击(重置 180ms 驻留窗),慢时钟下必可捕获
+        var mid = before, midState = 'idle', midBox = stickerBox;
+        for (var k = 0; k < 12; k++) {
+          window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', bubbles: true }));
+          await new Promise(function(r){ setTimeout(r, 100); });
+          midBox = root.querySelector('[data-companion-bot="bongo"]');
+          mid = midBox.querySelector('img').getAttribute('src');
+          midState = midBox.getAttribute('data-bot-state');
+          if (midState !== 'idle' && mid !== before) break;
+        }
+        var celebrateBtn = document.querySelector('[data-testid="bot-lab-celebrate"]');
+        if (celebrateBtn) celebrateBtn.click();
+        await new Promise(function(r){ setTimeout(r, 150); });
+        var happyState = root.querySelector('[data-companion-bot="bongo"]').getAttribute('data-bot-state');
+        var unmounted = false;
+        location.hash = "";
+        for (var j = 0; j < 20; j++) {
+          await new Promise(function(r){ setTimeout(r, 100); });
+          if (!document.querySelector('[data-companion-bot-lab]')) { unmounted = true; break; }
+        }
+        return { mounted: true, bots: bots.length, changed: before !== mid, midState: midState, happyState: happyState, unmounted: unmounted };
+      } catch (e) { return { error: String(e) }; }
+    })()
+  `);
+  results.push({
+    name: "companion-bot M0: lab mounts (3 tiers) + keystroke swaps frame",
+    ok: botLab?.mounted === true && botLab?.bots === 3 && botLab?.changed === true,
+    detail: botLab,
+  });
+  results.push({
+    name: "companion-bot M0: celebration bus drives happy + lab closes clean",
+    ok: botLab?.happyState === "happy" && botLab?.unmounted === true,
+    detail: botLab,
+  });
+
   // T8e (按钮消息展示): 点「开始学习」→ 乐观 user 气泡立刻出现且只显示短动作标签,
   // 发给 LLM 的完整开场提示词不出现在 DOM(防"按钮 prompt 裸奔"回归)。
   // 断言完立即停流(chat-stop),避免 LLM 流式阻塞后续测试的节点切换。
@@ -3104,6 +3166,479 @@ async function runUiTest(screenshot = false): Promise<void> {
         && dsh?.detectedFound === true,
       detail: dsh,
     });
+  }
+
+  /* ---------- M2(CompanionPack,SPEC §16):导入流 + 纸偶形态 + 行为复跑 + 持久/删除 ----------
+     判据 4:注入合成 fixture 直调 IPC(绕原生 dialog)→ cut→apply→getActive → 形态切
+     custom → 判据 1 的行为断言同款复跑(composer fly / talking→notebook / T3 标题栏,
+     断言体与既有 v3 块逐字同源)→ 重载持久 → 删除回落 ember。 */
+  {
+    // ① 程序化合成 A-pose 立绘(绿幕,几何链可切;与 verify-companion-cut fixture 同风格)
+    let m2Fixture = "";
+    try {
+      const napi = await import("@napi-rs/canvas");
+      const cv = napi.createCanvas(400, 600);
+      const c = cv.getContext("2d");
+      c.fillStyle = "#00b140";
+      c.fillRect(0, 0, 400, 600);
+      c.fillStyle = "#e8b04a";
+      c.beginPath();
+      c.arc(200, 130, 95, 0, Math.PI * 2);
+      c.fill(); // 头(底 y=225 直坐躯干,行宽有颈缩)
+      c.fillRect(140, 225, 120, 170); // 躯干
+      // 臂=肩块(与躯干重叠 2px,保证单连通块)+臂板(留 10px 腋缝→3-run 行)
+      c.fillRect(120, 228, 30, 22);
+      c.fillRect(82, 248, 46, 118);
+      c.fillRect(250, 228, 30, 22);
+      c.fillRect(272, 248, 46, 118);
+      c.fillRect(152, 395, 38, 118);
+      c.fillRect(210, 395, 38, 118);
+      m2Fixture = (await cv.encode("png")).toString("base64");
+    } catch (e) {
+      results.push({ name: "companion-pack M2: fixture 绘制", ok: false, detail: String(e) });
+    }
+
+    // ② 导入流:cut → apply → getActive(直调 IPC,ui-test 假 provider 下识图快速失败落几何链)
+    if (m2Fixture) {
+      const m2Import = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          try {
+            var png = ${JSON.stringify(m2Fixture)};
+            var cut = await window.api.companionPackCutFromImage({ pngBase64: png });
+            if (!cut || !cut.parts || cut.parts.length < 3) return { ok: false, stage: "cut", route: cut && cut.route, n: cut && cut.parts ? cut.parts.length : 0, failure: cut && cut.failure };
+            var app = await window.api.companionPackApplyPack({ name: "UI Test Puppet", manifest: cut.manifest, parts: cut.parts.map(function(p) { return { name: p.name, pngBase64: p.pngBase64 }; }) });
+            if (!app || !app.id) return { ok: false, stage: "apply" };
+            var act = await window.api.companionPackGetActive();
+            return { ok: !!act && act.id === app.id, stage: "done", route: cut.route, parts: cut.parts.length, id: app.id, srcs: act ? Object.keys(act.srcs).length : 0 };
+          } catch (e) { return { ok: false, error: String(e) }; }
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: cut→apply→getActive roundtrip (fixture inject, no dialog)",
+        ok: m2Import?.ok === true && (m2Import.parts ?? 0) >= 3,
+        detail: m2Import,
+      });
+
+      // ③ 形态切 custom:外层 data/class 契约不变 + 盘在场 + 部件 image 分层
+      const m2Render = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          await window.api.setSetting("companion_form", "custom");
+          window.dispatchEvent(new Event("companion-config-changed"));
+          var cls = "", disc = 0, imgs = 0;
+          for (var i = 0; i < 40; i++) {
+            await new Promise(function(r) { setTimeout(r, 100); });
+            var m = document.querySelector('[data-testid="companion-mascot"]');
+            cls = m ? String(m.getAttribute("class")) : "";
+            disc = document.querySelectorAll(".cp-disc").length;
+            imgs = document.querySelectorAll('[data-testid="companion-mascot"] image').length;
+            if (cls.indexOf("cp-form-custom") >= 0 && imgs >= 3) break;
+          }
+          return { ok: cls.indexOf("cp-form-custom") >= 0 && disc >= 1 && imgs >= 3, cls: cls.slice(0, 90), disc: disc, imgs: imgs };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: form=custom renders puppet (class contract + disc + part images)",
+        ok: m2Render?.ok === true,
+        detail: m2Render,
+      });
+
+      // ④ 行为断言同款复跑(form=custom;断言体与既有 companion v3 块同源)
+      // ④a 选课进节点(dsh 迁移课在场),composer 聚焦飞中栏 + typing——与 T8c2 同款。
+      // 先在主进程重建 provider(keyless 冷启动块把 provider 行删了,keyless 卡会替换
+      // composer)+ 重载:保证干净主视图与可聚焦的 chat-input
+      try {
+        const db = getDb();
+        const provs = db.select().from(customProviders).all();
+        if (!provs.some((p) => p.id === "custom-ui-test-provider")) {
+          db.insert(customProviders).values({
+            id: "custom-ui-test-provider",
+            label: "UI Test Provider",
+            baseUrl: "https://example.com/v1",
+            apiKey: "test-key",
+            defaultModel: "test-model",
+          }).run();
+        }
+        const apRow = db.select().from(settingsTable).where(eq(settingsTable.key, "active_provider")).get();
+        if (apRow) {
+          db.update(settingsTable).set({ value: "custom-ui-test-provider" }).where(eq(settingsTable.key, "active_provider")).run();
+        } else {
+          db.insert(settingsTable).values({ key: "active_provider", value: "custom-ui-test-provider" }).run();
+        }
+        markDirty();
+      } catch {
+        /* 非关键:provider 恢复失败只影响本组断言 */
+      }
+      try {
+        await win.webContents.reload();
+      } catch {
+        /* 同⑤:headless 时序 reject 不影响实际重载 */
+      }
+      await new Promise((r) => setTimeout(r, 2500));
+      win.focus();
+      win.webContents.focus();
+      await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          var row = document.querySelector('[data-testid="course-list"] button');
+          if (row) { row.click(); await new Promise(function(r) { setTimeout(r, 800); }); }
+          var btns = document.querySelectorAll('[data-testid^="map-node-"]');
+          for (var i = 0; i < btns.length; i++) { if (!btns[i].disabled) { btns[i].click(); break; } }
+          await new Promise(function(r) { setTimeout(r, 600); });
+          return true;
+        })()
+      `,
+        )
+        .catch(() => null);
+      const m2Fly = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          var input = document.querySelector('[data-testid="chat-input"]');
+          if (!input) return { ok: false, err: "no-input" };
+          input.focus();
+          var samples = [];
+          for (var i = 0; i < 12; i++) {
+            await new Promise(function(r) { setTimeout(r, 100); });
+            var c = document.querySelector('[data-testid="companion-creature"]');
+            samples.push(c ? c.dataset.zone : "none");
+            if (c && c.dataset.zone === "chat") break;
+          }
+          var c = document.querySelector('[data-testid="companion-creature"]');
+          var zone = c ? c.dataset.zone : null;
+          var cls = "";
+          for (var k = 0; k < 10; k++) {
+            await new Promise(function(r) { setTimeout(r, 300); });
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }));
+            await new Promise(function(r) { setTimeout(r, 200); });
+            var m = document.querySelector('[data-testid="companion-mascot"]');
+            cls = m ? String(m.getAttribute('class')) : '';
+            if (cls.indexOf('cp-pose-typing') >= 0) break;
+          }
+          input.blur();
+          window.dispatchEvent(new CustomEvent("companion-zone-focus", { detail: false }));
+          return { ok: zone === "chat" && cls.indexOf('cp-pose-typing') >= 0, zone: zone, cls: cls.slice(0, 90) };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: [custom] composer focus flies to chat + typing (same assertion, rerun)",
+        ok: m2Fly?.ok === true,
+        detail: m2Fly,
+      });
+
+      // ④b 朗读(talking)→ 右栏助教世界——与 v3 块的 manual 事件探针同款
+      const m2Talk = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          window.dispatchEvent(new CustomEvent("companion-talking", { detail: true }));
+          var zone = null;
+          for (var i = 0; i < 30; i++) {
+            await new Promise(function(r) { setTimeout(r, 100); });
+            var c = document.querySelector('[data-testid="companion-creature"]');
+            zone = c ? c.dataset.zone : null;
+            if (zone === "notebook") break;
+          }
+          window.dispatchEvent(new CustomEvent("companion-talking", { detail: false }));
+          await new Promise(function(r) { setTimeout(r, 4500); }); // ZONE_RETURN 防抖(3.5s)+飞行窗落定
+          return { ok: zone === "notebook", zone: zone };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: [custom] talking sends creature to notebook zone (same probe, rerun)",
+        ok: m2Talk?.ok === true,
+        detail: m2Talk,
+      });
+
+      // ④c T3 换栏持久:左栏卸载 → 标题栏栖息——与 T20d 块逐字同款探针
+      await win.setBounds({ width: 600, height: 800 });
+      const m2T3 = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          for (var i = 0; i < 30; i++) {
+            var el = document.querySelector('[data-testid="companion-creature"]');
+            if (!el) return { present: false };
+            var zone = el.dataset.zone;
+            var r = el.getBoundingClientRect();
+            var hdr = document.querySelector("header.app-header");
+            var hr = hdr ? hdr.getBoundingClientRect() : null;
+            if (zone === "titlebar" && hr && r.top >= hr.top - 6 && r.bottom <= hr.bottom + 6) {
+              return { present: true, zone: zone, inHeader: true, top: Math.round(r.top), hdrBottom: Math.round(hr.bottom) };
+            }
+            await new Promise(function(f) { setTimeout(f, 100); });
+          }
+          var el2 = document.querySelector('[data-testid="companion-creature"]');
+          var r2 = el2 ? el2.getBoundingClientRect() : null;
+          var hdr2 = document.querySelector("header.app-header");
+          return { present: !!el2, zone: el2 ? el2.dataset.zone : null, top: r2 ? Math.round(r2.top) : null, hdrBottom: hdr2 ? Math.round(hdr2.getBoundingClientRect().bottom) : null };
+        })()
+      `,
+        )
+        .catch(() => null);
+      await win.setBounds({ width: 1280, height: 800 });
+      results.push({
+        name: "companion-pack M2: [custom] T3 pane switch → titlebar habitat (same assertion, rerun)",
+        ok: m2T3?.present === true && m2T3.zone === "titlebar" && m2T3.inHeader === true,
+        detail: m2T3,
+      });
+
+      // ④d 考试陪考位复跑(v0.19 同探针):dsh 课程上重建考试流(DB 直插考试节点+题目
+      // +解锁,独立 id 不与种子考试冲突)→ 进答题 → 纸偶+盘须同样钉在计时条带旁。
+      let m2Perch: { near?: boolean; botTop?: number; timerBottom?: number; botLeft?: number; timerRight?: number; reason?: string; error?: string } = {};
+      try {
+        const db = getDb();
+        const m2Course = db.select().from(courses).all().find((c) => c.id.startsWith("dsh-"));
+        if (!m2Course) throw new Error("no dsh course");
+        const m2Section = db.select().from(contentNodes).all().find((n) => n.courseId === m2Course.id && n.type === "section");
+        if (!m2Section) throw new Error("no section in dsh course");
+        const examId = "uitest-m2-exam";
+        if (!db.select().from(contentNodes).where(eq(contentNodes.id, examId)).get()) {
+          db.insert(contentNodes).values({
+            id: examId,
+            courseId: m2Course.id,
+            parentId: m2Section.id,
+            type: "exam",
+            title: "M2 陪考位复跑考试",
+            sourcePath: null,
+            orderIdx: 99,
+            world: m2Section.world,
+            summary: null,
+            content: "",
+          }).run();
+        }
+        const M2_QS: Array<[string, string, string[]]> = [
+          ["uitest-m2-q1", "M2-选择题一", ["本地 SQLite 数据库", "云端数据库", "内存变量", "随手记文件"]],
+          ["uitest-m2-q2", "M2-选择题二", ["SM-2", "番茄钟", "手抄日历", "随机复习"]],
+          ["uitest-m2-q3", "M2-选择题三", ["BKT 掌握度", "冥想", "咖啡因", "熬夜"]],
+        ];
+        for (const [qid, prompt, options] of M2_QS) {
+          if (!db.select().from(exercisesTable).where(eq(exercisesTable.id, qid)).get()) {
+            db.insert(exercisesTable).values({
+              id: qid,
+              nodeId: examId,
+              type: "mcq",
+              prompt,
+              answer: "0",
+              optionsJson: JSON.stringify(options),
+              aiGenerated: true,
+              kcTitle: "M2 陪考",
+            }).run();
+          }
+        }
+        for (const l of db.select().from(contentNodes).all().filter((n) => n.parentId === m2Section.id && n.type === "lesson")) {
+          const has = db.select().from(progressTable).where(eq(progressTable.nodeId, l.id)).get();
+          if (!has) db.insert(progressTable).values({ nodeId: l.id, status: "mastered", mastery: 0.95 }).run();
+          else if ((has.mastery ?? 0) < 0.5) db.update(progressTable).set({ mastery: 0.95 }).where(eq(progressTable.nodeId, l.id)).run();
+        }
+        markDirty();
+        // DB 直写不发 state:changed → reload 让地图重拉(与既有考试块同款)
+        try {
+          await win.webContents.reload();
+        } catch {
+          /* headless 时序 */
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+        m2Perch = await win.webContents
+          .executeJavaScript(
+            `
+        (async function() {
+          try {
+            var q = function(s) { return document.querySelector(s); };
+            var sleep = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+            var waitFor = async function(sel, timeout) {
+              for (var t = 0; t < timeout; t += 250) {
+                var el = q(sel);
+                if (el) return el;
+                await sleep(250);
+              }
+              return null;
+            };
+            var row = await waitFor('[data-testid="course-row"]', 20000);
+            if (!row) return { reason: "no course row after reload" };
+            var rowBtn = row.querySelector("button");
+            if (!rowBtn) return { reason: "course row has no select button" };
+            rowBtn.click();
+            var ball = null;
+            for (var t = 0; t < 20000; t += 300) {
+              ball = q('button[data-testid^="exam-node-"]:enabled');
+              if (ball) break;
+              await sleep(300);
+            }
+            if (!ball) return { reason: "exam ball not unlocked/found" };
+            ball.click();
+            var entered = null;
+            for (var t2 = 0; t2 < 15000; t2 += 300) {
+              if (q('[data-testid="exam-start-btn"]')) { entered = "ready"; break; }
+              if (q('[data-testid="exam-result"]')) { entered = "result"; break; }
+              await sleep(300);
+            }
+            if (!entered) return { reason: "exam view did not mount" };
+            if (entered === "result") {
+              var retry = q('[data-testid="exam-retry-btn"]');
+              if (!retry) return { reason: "result page without retry btn" };
+              retry.click();
+            } else {
+              q('[data-testid="exam-start-btn"]').click();
+            }
+            if (!(await waitFor('[data-testid="exam-answering"]', 10000))) return { reason: "answering not shown" };
+            // v0.19 考试静栖探针(逐字同款):首题时轮询伴学是否钉在计时条带旁
+            var botPerch = null;
+            for (var p0 = 0; p0 < 20 && !botPerch; p0++) {
+              await sleep(500);
+              var tmE = q('[data-testid="exam-timer"]');
+              var boE = q(".cp-creature");
+              if (tmE && boE) {
+                var tmR = tmE.getBoundingClientRect();
+                var bR = boE.getBoundingClientRect();
+                var nearNow = Math.abs(bR.top - tmR.bottom) < 160 && Math.abs(bR.left - tmR.right) < 300;
+                if (nearNow || p0 === 19) {
+                  botPerch = {
+                    near: nearNow,
+                    botTop: Math.round(bR.top), timerBottom: Math.round(tmR.bottom),
+                    botLeft: Math.round(bR.left), timerRight: Math.round(tmR.right),
+                  };
+                }
+              }
+            }
+            // 现场清理:答题会话 active 时提前退出(走离开确认终止)
+            try {
+              var anyBall = q('button[data-testid^="map-node-"]:enabled');
+              if (anyBall && q('[data-testid="exam-answering"]')) {
+                anyBall.click();
+                await sleep(500);
+                var leaveConfirm = q('[data-testid="exam-leave-confirm"]');
+                if (leaveConfirm) { leaveConfirm.click(); await sleep(700); }
+              }
+            } catch (e3) { /* 尽力而为 */ }
+            return botPerch ?? { reason: "perch probe never sampled" };
+          } catch (e) { return { error: String(e) }; }
+        })()
+      `,
+          )
+          .catch(() => null);
+      } catch (e) {
+        m2Perch = { error: String(e) };
+      }
+      results.push({
+        name: "companion-pack M2: [custom] exam quiet perch — puppet+disc parked beside timer (same probe, rerun)",
+        ok: m2Perch?.near === true,
+        detail: m2Perch,
+      });
+
+      // ④e 拖拽复跑(v4 同契约):合成 pointer 抓取 → cp-grabbed 在场;松手后解除。
+      // 纸偶 <image> 命中=矩形(§16.5 备案),探针取 mascot 中心点恰好覆盖该语义。
+      const m2Drag = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          var m = document.querySelector('[data-testid="companion-mascot"]');
+          if (!m) return { ok: false, err: "no-mascot" };
+          var r = m.getBoundingClientRect();
+          var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+          m.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, button: 0, buttons: 1, clientX: cx, clientY: cy, isPrimary: true }));
+          var grabbed = false;
+          for (var i = 0; i < 15; i++) {
+            await new Promise(function(r2) { setTimeout(r2, 100); });
+            var c = document.querySelector('[data-testid="companion-creature"]');
+            grabbed = c ? String(c.getAttribute("class")).indexOf("cp-grabbed") >= 0 : false;
+            if (grabbed) break;
+          }
+          for (var s = 1; s <= 5; s++) {
+            window.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, buttons: 1, clientX: cx + s * 30, clientY: cy - s * 10 }));
+            await new Promise(function(r2) { setTimeout(r2, 60); });
+          }
+          window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, button: 0, clientX: cx + 150, clientY: cy - 50 }));
+          var released = false;
+          for (var j = 0; j < 15; j++) {
+            await new Promise(function(r2) { setTimeout(r2, 100); });
+            var c2 = document.querySelector('[data-testid="companion-creature"]');
+            released = c2 ? String(c2.getAttribute("class")).indexOf("cp-grabbed") < 0 : false;
+            if (released) break;
+          }
+          return { ok: grabbed === true && released === true, grabbed: grabbed, released: released };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: [custom] drag grab/release via synthetic pointer (same contract)",
+        ok: m2Drag?.ok === true,
+        detail: m2Drag,
+      });
+
+      // ⑤ 持久化:重载后包与形态都还在(settings 行 + 盘上文件)
+      try {
+        await win.webContents.reload();
+      } catch {
+        /* reload 在部分 headless 时序下 reject,重载本身仍会发生 */
+      }
+      await new Promise((r) => setTimeout(r, 2500));
+      const m2Persist = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          var act = await window.api.companionPackGetActive();
+          var cls = "";
+          for (var i = 0; i < 30; i++) {
+            await new Promise(function(r) { setTimeout(r, 100); });
+            var m = document.querySelector('[data-testid="companion-mascot"]');
+            cls = m ? String(m.getAttribute("class")) : "";
+            if (cls.indexOf("cp-form-custom") >= 0) break;
+          }
+          return { ok: !!act && cls.indexOf("cp-form-custom") >= 0, id: act ? act.id : null, cls: cls.slice(0, 90) };
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: pack + form persist across reload",
+        ok: m2Persist?.ok === true,
+        detail: m2Persist,
+      });
+
+      // ⑥ 删除回落:按 id 删(deleteActive 已被多 bot 协议取代)→ formReset(custom→ember)→ 纸偶退场
+      const m2Delete = await win.webContents
+        .executeJavaScript(
+          `
+        (async function() {
+          try {
+            var r = await window.api.companionPackDelete({ id: ${JSON.stringify(m2Import?.id)} });
+            if (r.formReset) window.dispatchEvent(new Event("companion-config-changed"));
+            var cls = "";
+            for (var i = 0; i < 30; i++) {
+              await new Promise(function(r2) { setTimeout(r2, 100); });
+              var m = document.querySelector('[data-testid="companion-mascot"]');
+              cls = m ? String(m.getAttribute("class")) : "";
+              if (cls.indexOf("cp-form-custom") < 0) break;
+            }
+            var act = await window.api.companionPackGetActive();
+            var lst = await window.api.companionPackList();
+            var gone = (lst.packs || []).every(function(p) { return p.id !== ${JSON.stringify(m2Import?.id)}; });
+            return { ok: r.ok === true && r.formReset === true && !act && gone && cls.indexOf("cp-form-custom") < 0, formReset: r.formReset, cls: cls.slice(0, 90), activeLeft: !!act, packsLeft: (lst.packs || []).length };
+          } catch (e) { return { ok: false, error: String(e) }; }
+        })()
+      `,
+        )
+        .catch(() => null);
+      results.push({
+        name: "companion-pack M2: delete → form resets to builtin, pack gone",
+        ok: m2Delete?.ok === true,
+        detail: m2Delete,
+      });
+    }
   }
 
   // allOk: 所有测试通过 OR 仅 knownFail 测试未通过

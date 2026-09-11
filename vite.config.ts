@@ -45,7 +45,9 @@ export default defineConfig({
               // rollup 解析不了 → externalize;我们只走 PPTX 路径, puppeteer 永不加载
               // @firecrawl/pdf-inspector 是 napi .node 二进制, 运行时 require, 不能 bundle
               // @napi-rs/canvas 同为 napi 二进制(pdf 公式视觉转写的整页渲染源)
-              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse", "officeparser", "@firecrawl/pdf-inspector", "sherpa-onnx-node", "node-edge-tts", "audio-decode", "@napi-rs/canvas"],
+              // canvas 是 linkedom 的可选原生依赖(commonjs 插件会把 try 里的 require
+              // 提升到顶层 → 运行时 MODULE_NOT_FOUND;external 化让 require 保持惰性)
+              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse", "officeparser", "@firecrawl/pdf-inspector", "sherpa-onnx-node", "node-edge-tts", "audio-decode", "@napi-rs/canvas", "canvas"],
               output: {
                 format: "cjs", // CJS 让 __dirname 天然可用，避免 ESM 路径坑
               },

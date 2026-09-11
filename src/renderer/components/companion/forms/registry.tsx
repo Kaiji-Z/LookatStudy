@@ -14,6 +14,7 @@ import { FrostArt } from "./frost.js";
 import { MossArt } from "./moss.js";
 import { AstroArt } from "./astro.js";
 import { InkArt } from "./ink.js";
+import { CustomPuppetArt } from "./custom-puppet.js";
 
 export const FORM_ART: Record<CompanionFormId, ComponentType<FormArtProps>> = {
   ember: EmberArt,
@@ -21,4 +22,6 @@ export const FORM_ART: Record<CompanionFormId, ComponentType<FormArtProps>> = {
   moss: MossArt,
   astro: AstroArt,
   ink: InkArt,
+  /** M2:用户导入的纸偶包(SPEC §16)——切分件 <image> 分层 + HoverDisc。 */
+  custom: CustomPuppetArt,
 };

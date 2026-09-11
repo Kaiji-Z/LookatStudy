@@ -195,7 +195,7 @@ check("T30 下采样路径:2000² 单主体(4M 像素,stride=2)仍 blob=1", (() 
 
 // G1(M2 改造,SPEC §16.2/16.5):行为层守卫名单零 diff——bus/flight/core/口型/
 // 桌宠音效/壳(CompanionCreature/Mascot/PetCompanion)/五形态 shared+皮肤。
-// seam 白名单(forms-index/registry/custom-puppet/CustomBotsSection/custom-pack-store/
+// seam 白名单(forms-index/registry/custom-puppet/CompanionBotWizard/SettingsView/custom-pack-store/
 // SettingsView/i18n/index.css)允许 diff——M2 走「第 6 形态」路径,行为不是移植
 // 而是共享,守卫从「全目录零条」收窄为「行为文件零条」。
 const behaviorGuardFiles = [

@@ -1,31 +1,30 @@
 /**
- * CustomBotsSection —— 设置页「自定义纸偶」区(多 bot,SPEC §16 扩展,2026-09-11)。
+ * CompanionBotWizard —— 新建纸偶向导(设置页形象栏「+」卡点开,2026-09-11)。
  *
- * 卡片网格:每个已保存包一张卡(名字+使用中徽标+使用/删除),末尾一张「+」卡。
- * 点「+」进入制作弹窗(本文件内 CompanionBotWizard),三步:
- *   ① 准备角色原图(不上传给 LookatStudy);
- *   ② 去免费生成站:一键复制管线优化的 chibi Prompt + 豆包/即梦直达;
- *   ③ 导入生成图 → cutFromImage 切分预览 → 命名保存 → 设为激活 + companion_form=custom。
- * 旧的单包「导入立绘 PNG」卡由本区取代(多包存储:包目录本就按内容哈希多实例)。
- * 删除走 ConfirmCard(内联确认,repo 红线:绝不 window.confirm)。
+ * 三步:①准备角色原图(不上传给 LookatStudy);②去免费生成站:一键复制
+ * 管线优化的 chibi Prompt + 豆包/即梦直达;③导入生成图 → cutFromImage 切分
+ * 预览 → 命名保存(applyPack + companion_form=custom,新卡片即出现在形象栏)。
+ *
+ * 复制实现:优先 navigator.clipboard(Electron 里可能因 clipboard-sanitized
+ * 权限被拒),失败回退 execCommand(textarea + 用户手势)——实测必成路径。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, Plus, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
+
+import type { CutPackManifest } from "@shared/companion-cut.ts";
 
 import { useLang } from "../../lib/i18n.js";
 import { refreshActivePack } from "../../lib/companion/custom-pack-store.js";
-import { ConfirmCard } from "../ConfirmCard.js";
 import { useFocusTrap } from "../../lib/useFocusTrap.js";
 
-interface PackSummary {
-  id: string;
-  name: string;
-  active: boolean;
+interface CutPreview {
   route: string;
+  failure?: string;
+  visionError?: string;
+  manifest: CutPackManifest;
+  parts: Array<{ name: string; file: string; box: { x: number; y: number; w: number; h: number }; pngBase64: string }>;
 }
-
-type CutPreview = NonNullable<Awaited<ReturnType<NonNullable<typeof window.api.companionPackCutFromImage>>>>;
 
 const ROUTE_KEY: Record<string, string> = {
   vision: "companion.custom.routeVision",
@@ -43,120 +42,32 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-export function CustomBotsSection() {
-  const t = useLang();
-  const [packs, setPacks] = useState<PackSummary[]>([]);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [confirming, setConfirming] = useState<{ id: string; rect: DOMRect } | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await window.api.companionPackList();
-      setPacks(res.packs);
-    } catch {
-      /* 列表读失败保持现状(卡片诚实空) */
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-    const onChange = () => void load();
-    window.addEventListener("companion-config-changed", onChange);
-    return () => window.removeEventListener("companion-config-changed", onChange);
-  }, [load]);
-
-  const activate = async (id: string) => {
-    await window.api.companionPackActivate({ id });
-    await refreshActivePack();
-    window.dispatchEvent(new Event("companion-config-changed"));
-    setMsg(t("companion.bots.useDone"));
-    void load();
-  };
-
-  const remove = async (id: string) => {
-    const r = await window.api.companionPackDelete({ id });
-    if (r.formReset) window.dispatchEvent(new Event("companion-config-changed"));
-    setMsg(t("companion.custom.deleted"));
-    setConfirming(null);
-    void load();
-  };
-
-  return (
-    <div data-testid="companion-custom-card" className="mt-3 rounded-xl border border-[var(--border-faint)] p-3">
-      <div className="text-label font-medium text-ink-strong mb-2">{t("companion.bots.title")}</div>
-      <div className="flex flex-wrap items-center gap-2">
-        {packs.map((p) => (
-          <div
-            key={p.id}
-            data-testid={`companion-bot-pack-${p.id}`}
-            className={`flex items-center gap-2 rounded-xl border px-2.5 py-1.5 ${
-              p.active ? "border-[var(--accent)] bg-surface-2" : "border-[var(--border-faint)]"
-            }`}
-          >
-            <span className={`text-label ${p.active ? "text-ink-strong font-medium" : "text-ink-muted"}`}>{p.name}</span>
-            {p.active ? (
-              <span className="text-caption text-accent">{t("companion.bots.inUse")}</span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void activate(p.id)}
-                className="rounded-lg border border-[var(--border-faint)] px-2 py-0.5 text-caption hover:bg-surface-2"
-              >
-                {t("companion.bots.use")}
-              </button>
-            )}
-            <button
-              type="button"
-              aria-label={t("companion.custom.delete")}
-              data-tooltip={t("companion.custom.delete")}
-              onClick={(e) => setConfirming({ id: p.id, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() })}
-              className="text-ink-muted hover:text-warning w-6 h-6 flex items-center justify-center rounded-lg hover:bg-surface-2"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ))}
-        {/* + 卡:进入制作弹窗 */}
-        <button
-          type="button"
-          data-testid="companion-bots-add"
-          title={t("companion.bots.add")}
-          aria-label={t("companion.bots.add")}
-          onClick={() => setWizardOpen(true)}
-          className="flex items-center gap-1.5 rounded-xl border border-dashed border-[var(--border-faint)] px-3 py-1.5 text-label text-ink-muted hover:bg-surface-2 hover:text-ink-strong"
-        >
-          <Plus className="w-4 h-4" />
-          {t("companion.bots.add")}
-        </button>
-        {msg && <span className="text-caption text-ink-muted" data-testid="companion-custom-msg">{msg}</span>}
-      </div>
-      {confirming && (
-        <ConfirmCard
-          anchorRect={confirming.rect}
-          message={t("companion.bots.deleteConfirm")}
-          danger
-          testid="companion-bot-delete-confirm"
-          onConfirm={() => void remove(confirming.id)}
-          onCancel={() => setConfirming(null)}
-        />
-      )}
-      {wizardOpen && (
-        <CompanionBotWizard
-          onClose={() => setWizardOpen(false)}
-          onSaved={() => {
-            setWizardOpen(false);
-            void load();
-          }}
-        />
-      )}
-    </div>
-  );
+/** 剪贴板双路径:clipboard API → execCommand 兜底(Electron 权限拒也必成)。 */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    /* 落 execCommand */
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  ta.remove();
+  return ok;
 }
 
-/* ---------------- 制作弹窗(三步) ---------------- */
-
-function CompanionBotWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+export function CompanionBotWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const t = useLang();
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -169,7 +80,7 @@ function CompanionBotWizard({ onClose, onSaved }: { onClose: () => void; onSaved
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, true);
 
-  // 识图调用实测 ~7s:秒表让"在工作"可见(与旧导入卡同款)
+  // 识图调用实测 ~7s:秒表让"在工作"可见
   useEffect(() => {
     if (!busy) return;
     setElapsed(0);
@@ -179,12 +90,12 @@ function CompanionBotWizard({ onClose, onSaved }: { onClose: () => void; onSaved
   }, [busy]);
 
   const copyPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(t("companion.wizard.prompt"));
-      setCopied(true);
+    const ok = await copyText(t("companion.wizard.prompt"));
+    setCopied(ok);
+    if (ok) {
       setTimeout(() => setCopied(false), 2400);
-    } catch {
-      setMsg(t("companion.wizard.copy"));
+    } else {
+      setMsg(t("companion.wizard.copyFail"));
     }
   };
 
@@ -219,7 +130,6 @@ function CompanionBotWizard({ onClose, onSaved }: { onClose: () => void; onSaved
       await refreshActivePack();
       await window.api.setSetting("companion_form", "custom");
       window.dispatchEvent(new Event("companion-config-changed"));
-      setMsg(t("companion.custom.applied"));
       onSaved();
     } catch (e) {
       setMsg(`${t("companion.custom.fail")}: ${String(e)}`);

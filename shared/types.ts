@@ -787,7 +787,7 @@ export interface ApiExpose {
     srcs: Record<string, string>;
   } | null>;
   /** 列出全部已保存纸偶包(多 bot;active=当前激活)。 */
-  companionPackList(): Promise<{ packs: Array<{ id: string; name: string; active: boolean; route: string }> }>;
+  companionPackList(): Promise<{ packs: Array<{ id: string; name: string; active: boolean; route: string; thumb?: string }> }>;
   /** 切换激活包(companion_form=custom 由渲染层顺带处理)。 */
   companionPackActivate(input: { id: string }): Promise<{ ok: boolean }>;
   /** 删除指定包(删激活包时 companion_form 若为 custom 同时重置 ember)。 */

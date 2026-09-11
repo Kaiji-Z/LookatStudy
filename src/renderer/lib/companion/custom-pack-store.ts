@@ -3,7 +3,7 @@
  *
  * 包文件由主进程持有(userData/companion-packs/);渲染层启动与包变更时各拉一次
  * 激活包(manifest + 部件 dataURL),CustomPuppetArt 经 useSyncExternalStore 订阅。
- * CustomBotsSection 应用/删除后调 refreshActivePack()。布局(layoutParts)在拉取时
+ * CompanionBotWizard 应用/删除后调 refreshActivePack()。布局(layoutParts)在拉取时
  * 算好缓存——切分件原图坐标 → 伴学 svg 200×200 舞台,确定性纯函数。
  */
 import { figureBoxOfParts, layoutParts, type CutPackManifest, type PuppetPartLayout } from "@shared/companion-cut.ts";
@@ -72,7 +72,7 @@ export async function activatePack(id: string): Promise<void> {
 
 // 模块自启:forms 链首次 import 即拉(启动时设置项读取走 IPC,异步到达后 emit 重渲染)
 void refreshActivePack();
-// 包激活/删除都会广播 companion-config-changed(CustomBotsSection 与 ui-test 探针同款)——
+// 包激活/删除都会广播 companion-config-changed(CompanionBotWizard 与 ui-test 探针同款)——
 // store 跟着 bus 一起自维护,渲染层任何角落都不需要手动刷新
 if (typeof window !== "undefined") {
   window.addEventListener("companion-config-changed", () => {

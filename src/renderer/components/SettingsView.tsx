@@ -21,9 +21,10 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSyncExternalStore } from "react";
 import { getCompanionSnapshot, subscribeCompanion } from "../lib/companion/bus.ts";
 import { COMPANION_FORM_IDS } from "../lib/companion/forms-index.js";
-import { CustomBotsSection } from "./companion/CustomBotsSection.js";
+import { CompanionBotWizard } from "./companion/CompanionBotWizard.js";
+import { refreshActivePack } from "../lib/companion/custom-pack-store.js";
 import { Mascot } from "./companion/Mascot.js";
-import { Plus, RotateCw, CheckCircle2, XCircle, Wrench, Check } from "lucide-react";
+import { Plus, RotateCw, CheckCircle2, XCircle, Wrench, Check, X } from "lucide-react";
 import { api } from "../lib/api.js";
 import type { ProviderPresetInfo, CustomProvider, DshImportSummary } from "@shared/types";
 import { ConfirmCard } from "./ConfirmCard.js";
@@ -34,6 +35,15 @@ import { sortVoicesZhFirst, systemVoiceLabel, TTS_SETTINGS_CHANGED_EVENT } from 
 import pkg from "../../../package.json";
 
 type SystemVoiceOption = SpeechSynthesisVoice;
+
+/** 已保存纸偶包(形象栏卡片;thumb=主件缩略图 dataURL)。 */
+interface PackSummary {
+  id: string;
+  name: string;
+  active: boolean;
+  route: string;
+  thumb?: string;
+}
 
 /** 语音设置落库后广播:useSpeech 实例重拉档位缓存(system 档点击时同步判定) */
 function notifyTtsSettingsChanged(): void {
@@ -967,6 +977,39 @@ function CompanionContent() {
     window.dispatchEvent(new Event("companion-config-changed"));
   };
 
+  /* 多 bot 形象卡(2026-09-11):每张已保存包一张卡,"+"卡进制作向导。
+     选中=当前激活包(form=custom 且包 active);点卡片=切换激活包。 */
+  const [packs, setPacks] = useState<PackSummary[]>([]);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [confirmingPack, setConfirmingPack] = useState<{ id: string; rect: DOMRect } | null>(null);
+  const loadPacks = useCallback(async () => {
+    try {
+      setPacks((await window.api.companionPackList()).packs);
+    } catch {
+      /* 列表读失败保持现状 */
+    }
+  }, []);
+  useEffect(() => {
+    void loadPacks();
+    const onChange = () => void loadPacks();
+    window.addEventListener("companion-config-changed", onChange);
+    return () => window.removeEventListener("companion-config-changed", onChange);
+  }, [loadPacks]);
+
+  const pickPack = async (id: string) => {
+    await window.api.companionPackActivate({ id });
+    if (snap.form !== "custom") await api.setSetting("companion_form", "custom");
+    await refreshActivePack();
+    window.dispatchEvent(new Event("companion-config-changed"));
+  };
+
+  const removePack = async (id: string) => {
+    const r = await window.api.companionPackDelete({ id });
+    if (r.formReset) window.dispatchEvent(new Event("companion-config-changed"));
+    setConfirmingPack(null);
+    void loadPacks();
+  };
+
   if (!loaded) return null;
 
   return (
@@ -999,7 +1042,7 @@ function CompanionContent() {
         <div>
           <div className="text-label text-ink-muted mb-2">{t("settings.companion.form")}</div>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t("settings.companion.form")}>
-            {COMPANION_FORM_IDS.map((id) => {
+            {COMPANION_FORM_IDS.filter((id) => id !== "custom").map((id) => {
               const selected = snap.form === id;
               return (
                 <button
@@ -1022,9 +1065,84 @@ function CompanionContent() {
                 </button>
               );
             })}
+            {packs.map((p) => {
+              const selected = snap.form === "custom" && p.active;
+              return (
+                <span key={p.id} className="relative inline-block">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-testid={`companion-form-pack-${p.id}`}
+                    onClick={() => { void pickPack(p.id); }}
+                    title={p.name}
+                    className={`flex flex-col items-center gap-0.5 rounded-xl p-1.5 border motion-safe:transition-colors
+                      ${selected
+                        ? "border-[var(--accent)] bg-surface-2 shadow-card"
+                        : "border-[var(--border-faint)] hover:bg-surface-2"}`}
+                  >
+                    {p.thumb ? (
+                      <img src={p.thumb} alt="" className="h-14 w-14 object-contain" />
+                    ) : (
+                      <span className="h-14 w-14 flex items-center justify-center">
+                        <span className="h-9 w-9 rounded-full bg-[#c8a06e]" />
+                      </span>
+                    )}
+                    <span className={`text-label max-w-20 truncate ${selected ? "text-ink-strong font-medium" : "text-ink-muted"}`}>
+                      {p.name}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t("companion.custom.delete")}
+                    data-tooltip={t("companion.custom.delete")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmingPack({ id: p.id, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+                    }}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-surface-1 border border-[var(--border-faint)] text-ink-muted hover:text-warning flex items-center justify-center"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              );
+            })}
+            {/* "+"卡:空=进制作;非空=追加新 bot,每保存一个持久化一张卡 */}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={false}
+              data-testid="companion-form-add"
+              aria-label={t("companion.bots.add")}
+              onClick={() => setWizardOpen(true)}
+              className="flex flex-col items-center gap-0.5 rounded-xl p-1.5 border border-dashed border-[var(--border-faint)] hover:bg-surface-2"
+            >
+              <span className="h-14 w-14 flex items-center justify-center text-ink-muted">
+                <Plus className="w-6 h-6" />
+              </span>
+              <span className="text-label text-ink-muted">{t("companion.bots.add")}</span>
+            </button>
           </div>
+          {confirmingPack && (
+            <ConfirmCard
+              anchorRect={confirmingPack.rect}
+              message={t("companion.bots.deleteConfirm")}
+              danger
+              testid="companion-pack-delete-confirm"
+              onConfirm={() => void removePack(confirmingPack.id)}
+              onCancel={() => setConfirmingPack(null)}
+            />
+          )}
+          {wizardOpen && (
+            <CompanionBotWizard
+              onClose={() => setWizardOpen(false)}
+              onSaved={() => {
+                setWizardOpen(false);
+                void loadPacks();
+              }}
+            />
+          )}
         </div>
-        <CustomBotsSection />
         </>
       )}
     </div>

@@ -98,7 +98,7 @@ import {
   activateCompanionPack,
   applyCompanionPack,
   deleteCompanionPack,
-  listCompanionPacks,
+  listCompanionPacksWithThumbs,
   cutCompanionFigure,
   getActiveCompanionPack,
 } from "../services/companion-pack-service.js";
@@ -1707,7 +1707,7 @@ export function registerCompanionPackHandlers(deps: RuntimeDeps): void {
     return getActiveCompanionPack(getDb(), deps.dataDir);
   });
   handle("companionPack:list", async () => {
-    return listCompanionPacks(getDb(), deps.dataDir);
+    return listCompanionPacksWithThumbs(getDb(), deps.dataDir);
   });
   handle("companionPack:activate", async (_e, input: { id: string }) => {
     return activateCompanionPack(getDb(), deps.dataDir, input.id);

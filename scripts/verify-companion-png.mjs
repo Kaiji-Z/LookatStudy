@@ -221,6 +221,37 @@ if (hasNapi) {
   tSkip("T4 全链对拍(Android 上 pure 即唯一后端,无可对拍对象)");
 }
 
+t("T4b 大图(>768 长边)预览降采样后切分不受影响,双后端 manifest 一致", async () => {
+  // 2× A-pose(800×1200,长边>768 触发降采样),归一化切分线与 T4 相同
+  const cv = createCanvas(800, 1200);
+  const c = cv.getContext("2d");
+  c.fillStyle = "#00B140";
+  c.fillRect(0, 0, 800, 1200);
+  c.fillStyle = "#E8B88A";
+  c.beginPath(); c.arc(400, 220, 160, 0, Math.PI * 2); c.fill();
+  c.fillRect(370, 360, 60, 90);
+  c.fillRect(300, 440, 200, 300);
+  c.lineCap = "round"; c.lineWidth = 68;
+  c.beginPath(); c.moveTo(310, 490); c.lineTo(150, 710); c.stroke();
+  c.beginPath(); c.moveTo(490, 490); c.lineTo(650, 710); c.stroke();
+  c.fillRect(330, 740, 60, 260);
+  c.fillRect(410, 740, 60, 260);
+  const pngBytes = cv.toBuffer("image/png");
+  const prev = process.env.LOOKATSTUDY_PNG_BACKEND;
+  try {
+    process.env.LOOKATSTUDY_PNG_BACKEND = "";
+    const viaNapi = await cutOnce(pngBytes);
+    process.env.LOOKATSTUDY_PNG_BACKEND = "pure";
+    const viaPure = await cutOnce(pngBytes);
+    assert.strictEqual(viaNapi.route, "vision", "降采样不得破坏归一化切分线(掉 L1 即坐标被破坏)");
+    assert.deepStrictEqual(viaPure.manifest, viaNapi.manifest);
+    assert.ok((viaNapi.parts ?? []).length >= 3);
+  } finally {
+    if (prev === undefined) delete process.env.LOOKATSTUDY_PNG_BACKEND;
+    else process.env.LOOKATSTUDY_PNG_BACKEND = prev;
+  }
+});
+
 /* ---------------- T5 坏 PNG 诚实抛错 ---------------- */
 
 await t("T5 坏 PNG 诚实抛错(pure 后端不静默)", async () => {

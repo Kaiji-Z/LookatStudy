@@ -162,8 +162,18 @@ export async function cutCompanionFigure(
         );
       });
     try {
-      // 喂键控预览(深灰底上的角色),不是原图 —— 与机器掩码逐像素同源
-      const previewPng = await rgbaToPng(composeKeyedPreview(rgba, fm));
+      // 喂键控预览(深灰底上的角色),不是原图 —— 与机器掩码逐像素同源。
+      // 预览缩到长边 ≤768(2026-09-11 手机真机排查):VLM 只回归一化坐标,
+      // 高分辨率对切分质量无益;而 2K 级原图(1664×2496,2.4MB)的几 MB
+      // dataURL 在编码端点会秒回 200 空内容(同图聊天小图正常、桌面小图
+      // 正常),顺带把桌面端 20s+ 的识图延迟砍到秒级。
+      let preview = composeKeyedPreview(rgba, fm);
+      const longest = Math.max(preview.width, preview.height);
+      if (longest > 768) {
+        const k = 768 / longest;
+        preview = resizeBox(preview, Math.max(1, Math.round(preview.width * k)), Math.max(1, Math.round(preview.height * k)));
+      }
+      const previewPng = await rgbaToPng(preview);
       const dataUrl = `data:image/png;base64,${Buffer.from(previewPng).toString("base64")}`;
       const rawReply = await locate(dataUrl);
       cuts = parseCutsJson(rawReply, W, H);

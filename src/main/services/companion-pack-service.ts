@@ -165,8 +165,14 @@ export async function cutCompanionFigure(
       // 喂键控预览(深灰底上的角色),不是原图 —— 与机器掩码逐像素同源
       const previewPng = await rgbaToPng(composeKeyedPreview(rgba, fm));
       const dataUrl = `data:image/png;base64,${Buffer.from(previewPng).toString("base64")}`;
-      cuts = parseCutsJson(await locate(dataUrl), W, H);
-      if (!cuts) visionError = "切分线解析失败(VLM 输出不含 cuts JSON)";
+      const rawReply = await locate(dataUrl);
+      cuts = parseCutsJson(rawReply, W, H);
+      if (!cuts) {
+        // 带出原文开头:端点秒回拒绝/空内容时,这是唯一能区分「key 档位没视觉」
+        // 「端点剥离了图片」「模型答非所问」的证据(2026-09-11 手机真机排查)
+        const head = rawReply.trim().slice(0, 120);
+        visionError = `切分线解析失败(VLM 输出不含 cuts JSON)。回复开头:「${head || "(空)"}」`;
+      }
     } catch (e) {
       cuts = null;
       visionError = String((e as Error).message ?? e).slice(0, 200);

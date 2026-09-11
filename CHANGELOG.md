@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.31.0] - 2026-09-11
 
 ### Added
 - **自定义伴学 bot(CompanionPack)**:设置 → 伴学形象栏「新建」进三步制作向导——①准备角色原图(只在本地,不上传);②一键复制专为切分管线优化的 Q 版立绘 Prompt(特征锁定:发型/瞳色/服装/配饰/配色 + 二头身 + A-pose 张臂 + 纯色抠像背景;豆包/即梦/ChatGPT 直达按钮);③导入生成图自动切分成头/身/双臂部件(识图折线,失败自动降级几何/L1 整图,全程本地),预览后命名即保存为伴学第 6 形态,学习行为(拍臂/口型/朗读跟句/庆祝)与内置五形态完全共享。

@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.31.4] - 2026-09-11
 
 ### Changed
 - 自定义 bot 识图「切分线解析失败」的报错现在附带 VLM 回复的原文开头:端点秒回拒绝或空内容时(常见于 key 档位没有视觉权限、端点剥离图片输入),不用再猜原因。

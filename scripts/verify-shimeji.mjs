@@ -11,6 +11,9 @@
  *   T5 真实大包增强断言(.shimeji-fixtures/ 存在才跑,否则 SKIP):
  *      巨人包 91 动作/128×128 帧/锚点;哆啦A梦 91 动作;AOT 多角色发现
  *   T6 源级守卫:shimeji 模块禁碰禁区(flight/mapPhysics/zone 状态机)
+ *   T7-T10 二期调度器(shimeji-scheduler 纯状态机,注入 rng 复现):
+ *      旧包 kind 退化 / 抓-放-扔出坠落 / 贴边 wall→ceiling→air→settle→ground
+ *      全链 / 复现性 + confirm 管线 slot 烘焙
  *
  * 纯 node(fflate + node:fs),不依赖 Electron/DB。
  */
@@ -329,6 +332,135 @@ await test("T6 守卫:shimeji 模块不 import 禁区(flight/mapPhysics/zone)", 
       assert.ok(!src.includes(bad), `${f} 引用了禁区模块 ${bad}`);
     }
   }
+});
+
+// ── 二期:调度器纯状态机(注入 rng 可复现) ──
+const { initMotion, tickShimeji, SHIMEJI_SANDBOX, THROW_MIN_SPEED } = await import(
+  "../src/renderer/lib/companion/shimeji-scheduler.ts"
+);
+
+/** mulberry32 种子 rng(verify 复现用) */
+function seeded(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function mkManifest(actions) {
+  return { id: "shimeji-t", name: "t", format: "ee", frames: [], actions, behaviors: [], archiveVersion: 1, importedAt: "" };
+}
+const pose = (img, v = [0, 0], d = 4) => ({ image: img, anchor: [64, 128], velocity: v, duration: d });
+const SLOT_ACTIONS = [
+  { name: "Stand", kind: "Stay", slot: "ground", poses: [pose("a.png")] },
+  { name: "Walk", kind: "Move", slot: "ground", poses: [pose("b.png", [2, 0])] },
+  { name: "Sit", kind: "Stay", slot: "ground", poses: [pose("c.png")] },
+  { name: "Sprawl", kind: "Stay", slot: "ground", poses: [pose("d.png")] },
+  { name: "ClimbWall", kind: "Move", slot: "wall", poses: [pose("e.png", [0, -2])] },
+  { name: "CeilingWalk", kind: "Move", slot: "ceiling", poses: [{ image: "f.png", anchor: [64, 40], velocity: [1, 0], duration: 4 }] },
+  { name: "Dragged", kind: "Embedded", slot: "interact", poses: [pose("g.png", [0, 0], 2), pose("g2.png", [0, 0], 2)] },
+  { name: "Fall", kind: "Embedded", slot: "interact", poses: [pose("h.png", [0, 0], 3)] },
+];
+const SLOT_MANIFEST = mkManifest(SLOT_ACTIONS);
+// 一期旧包:同名动作剥掉 slot
+const LEGACY_MANIFEST = mkManifest(SLOT_ACTIONS.slice(0, 3).map(({ slot, ...a }) => a));
+const tick = (m, manifest) => tickShimeji(m, manifest, { t: "tick" }, "");
+
+await test("T7 旧包退化:无 slot 按 kind 驱动,永不出地面模式;策略池动作可达", () => {
+  let m = { ...initMotion(), actionName: "Walk" };
+  const names = new Set();
+  for (let i = 0; i < 400; i++) {
+    m = tick(m, LEGACY_MANIFEST);
+    if (m.actionName) names.add(m.actionName);
+    assert.equal(m.mode, "ground", "旧包不进 wall/air 等新模式");
+    assert.ok(m.x >= SHIMEJI_SANDBOX.minX - 1e-9 && m.x <= SHIMEJI_SANDBOX.maxX + 1e-9);
+    assert.equal(m.y, SHIMEJI_SANDBOX.groundY);
+  }
+  assert.ok(names.size >= 2, `策略池可达多个动作(实际 ${[...names]})`);
+  assert.ok([...names].every((n) => ["Stand", "Walk", "Sit"].includes(n)), `池内动作合法(实际 ${[...names]})`);
+});
+
+await test("T8 抓/放:grab→dragged 冻结位置+挣扎帧;轻放→settle→ground;快扔(≥2.5)→air 重力落地", () => {
+  let m = tickShimeji(initMotion(), SLOT_MANIFEST, { t: "grab" }, "");
+  assert.equal(m.mode, "dragged");
+  assert.equal(m.actionName, "Dragged");
+  const frozen = { x: m.x, y: m.y };
+  const frames = new Set([m.poseIdx]);
+  for (let i = 0; i < 30; i++) {
+    m = tick(m, SLOT_MANIFEST);
+    frames.add(m.poseIdx);
+    assert.equal(m.mode, "dragged", "挣扎中不自行退出");
+    assert.equal(m.x, frozen.x);
+    assert.equal(m.y, frozen.y);
+  }
+  assert.ok(frames.size >= 2, "挣扎帧在推进");
+  // 轻放:直接 settle(不进 air),缓冲后回地面
+  let m2 = tickShimeji(m, SLOT_MANIFEST, { t: "release", speed: THROW_MIN_SPEED - 0.1 }, "");
+  assert.equal(m2.mode, "settle");
+  for (let i = 0; i < 40 && m2.mode !== "ground"; i++) m2 = tick(m2, SLOT_MANIFEST);
+  assert.equal(m2.mode, "ground");
+  // 快扔:air + 重力累积(vy 转正) + 不穿地不越界 + 200 tick 内落地
+  let m3 = tickShimeji(m, SLOT_MANIFEST, { t: "release", speed: THROW_MIN_SPEED + 3 }, "");
+  assert.equal(m3.mode, "air");
+  let sawGravity = false;
+  for (let i = 0; i < 200; i++) {
+    m3 = tick(m3, SLOT_MANIFEST);
+    if (m3.vy > 0) sawGravity = true;
+    assert.ok(m3.y <= SHIMEJI_SANDBOX.groundY + 1e-9, "坠落不穿地");
+    assert.ok(m3.x >= SHIMEJI_SANDBOX.minX - 1e-9 && m3.x <= SHIMEJI_SANDBOX.maxX + 1e-9, "坠落不越界");
+    if (m3.mode === "ground" || m3.mode === "settle") break;
+  }
+  assert.ok(sawGravity, "重力累积");
+  assert.ok(m3.mode === "ground" || m3.mode === "settle", "200 tick 内必落地");
+});
+
+await test("T9 贴边物理:wall→ceiling→air→settle→ground 全链 + 全程沙盒内", () => {
+  let m = {
+    ...initMotion(),
+    mode: "wall",
+    wallSide: 0,
+    x: SHIMEJI_SANDBOX.minX,
+    y: SHIMEJI_SANDBOX.groundY - 2,
+    actionName: "ClimbWall",
+    loopsLeft: 99,
+  };
+  const seq = ["wall"];
+  for (let i = 0; i < 600 && m.mode !== "ground"; i++) {
+    m = tick(m, SLOT_MANIFEST);
+    if (seq[seq.length - 1] !== m.mode) seq.push(m.mode);
+    assert.ok(m.y >= SHIMEJI_SANDBOX.ceilY - 1e-9 && m.y <= SHIMEJI_SANDBOX.groundY + 1e-9, "y 在沙盒内");
+    assert.ok(m.x >= SHIMEJI_SANDBOX.minX - 1e-9 && m.x <= SHIMEJI_SANDBOX.maxX + 1e-9, "x 在沙盒内");
+  }
+  assert.equal(m.mode, "ground");
+  assert.deepEqual(seq, ["wall", "ceiling", "air", "settle", "ground"]);
+});
+
+await test("T10 复现性:同种子 300 tick 轨迹一致 + confirm 管线烘焙 slot 进 manifest", async () => {
+  const run = () => {
+    let m = initMotion();
+    const lines = [];
+    const rng = seeded(42);
+    for (let i = 0; i < 300; i++) {
+      m = tickShimeji(m, SLOT_MANIFEST, { t: "tick" }, "", rng);
+      lines.push(`${m.mode}|${m.actionName}|${m.x.toFixed(2)}|${m.y.toFixed(2)}|${m.poseIdx}`);
+    }
+    return lines.join(nl2);
+  };
+  const nl2 = String.fromCharCode(10);
+  assert.equal(run(), run(), "同种子轨迹逐字节一致");
+
+  // slot 烘焙(真实 confirm 管线,与 T4a 同源)
+  const preview = await importShimejiZip(null, dataDir, Buffer.from(makeZip("self")).toString("base64"));
+  const packs = await confirmShimejiImport(null, dataDir, preview.importId, [preview.characters[0].ref]);
+  const manifest = await getShimejiPack(null, dataDir, packs[0].id);
+  const byName = Object.fromEntries(manifest.actions.map((a) => [a.name, a]));
+  assert.equal(byName.Stand?.slot, "ground");
+  assert.equal(byName.Walk?.slot, "ground");
+  assert.equal(byName.Dragged?.slot, "interact");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

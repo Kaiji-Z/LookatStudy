@@ -1437,20 +1437,20 @@ html.light ::-webkit-scrollbar-thumb:hover {
    载具 v2.2(2026-09-11):机械飞行平台 + 五款形态主题换装(manifest.vehicle →
    veh-themes.ts 调色,缺省 silver 兼容旧包)。颜色全部内联 TSX(渐变/填充/描边),
    本文件只持描边宽与动画/透明度 —— 换主题零 CSS 分支。 */
-.cp-form-custom .cp-veh-top { stroke-width: 1.5; }
-.cp-form-custom .cp-veh-specular { fill: #ffffff; }
-.cp-form-custom .cp-veh-wall { stroke-width: 1; }
-.cp-form-custom .cp-veh-glow { opacity: 0.16; }
-.cp-form-custom .cp-veh-energy-fill { fill: #58cc02; }
-.cp-form-custom .cp-veh-port-bezel { stroke-width: 2.5; }
-.cp-form-custom .cp-veh-nozzle-body { stroke-width: 1; }
-.cp-form-custom .cp-veh-flame-outer { opacity: 0.55; }
-.cp-form-custom .cp-veh-flame-core { opacity: 0.9; }
-.cp-form-custom .cp-veh-flame { transform-box: fill-box; transform-origin: 50% 0; animation: cp-veh-burn 1.5s ease-in-out infinite alternate; }
-.cp-form-custom .cp-veh-flame-core { animation-duration: 1.1s; }
+.cp-veh .cp-veh-top { stroke-width: 1.5; }
+.cp-veh .cp-veh-specular { fill: #ffffff; }
+.cp-veh .cp-veh-wall { stroke-width: 1; }
+.cp-veh .cp-veh-glow { opacity: 0.16; }
+.cp-veh .cp-veh-energy-fill { fill: #58cc02; }
+.cp-veh .cp-veh-port-bezel { stroke-width: 2.5; }
+.cp-veh .cp-veh-nozzle-body { stroke-width: 1; }
+.cp-veh .cp-veh-flame-outer { opacity: 0.55; }
+.cp-veh .cp-veh-flame-core { opacity: 0.9; }
+.cp-veh .cp-veh-flame { transform-box: fill-box; transform-origin: 50% 0; animation: cp-veh-burn 1.5s ease-in-out infinite alternate; }
+.cp-veh .cp-veh-flame-core { animation-duration: 1.1s; }
 @keyframes cp-veh-burn { from { transform: scaleY(0.72); opacity: 0.55; } to { transform: scaleY(1.12); opacity: 1; } }
 /* 飞行/起飞:喷口加力——焰拉长变亮 */
-.cp-form-custom.cp-pose-flying .cp-veh-flame, .cp-form-custom.cp-takeoff .cp-veh-flame {
+.cp-pose-flying .cp-veh-flame, .cp-takeoff .cp-veh-flame {
   animation: cp-veh-blast 0.14s ease-in-out infinite alternate;
 }
 @keyframes cp-veh-blast { from { transform: scaleY(1.5); opacity: 0.9; } to { transform: scaleY(2.1); opacity: 1; } }
@@ -1469,9 +1469,9 @@ html.light ::-webkit-scrollbar-thumb:hover {
 .cp-form-custom .cp-core-lit { display: none; }
 .cp-form-custom .cp-screen-key { translate: 0 52px; font-size: 12px; }
 /* 载具自绘均衡器(listening/typing 时点亮):三根深色信号条落在亮底玻璃上 */
-.cp-form-custom .cp-veh-eq { opacity: 0; }
-.cp-form-custom.cp-expr-listening .cp-veh-eq,
-.cp-form-custom.cp-pose-typing .cp-veh-eq { opacity: 1; }
+.cp-veh .cp-veh-eq { opacity: 0; }
+.cp-expr-listening .cp-veh-eq,
+.cp-pose-typing .cp-veh-eq { opacity: 1; }
 .cp-form-custom .cp-veh-eq-bar {
   fill: #0e2a38;
   transform-box: fill-box;
@@ -1490,11 +1490,11 @@ html.light ::-webkit-scrollbar-thumb:hover {
    pointu 262°/pointd 52°/wave −18°±14°。var 缺省 90° = 与内置完全同行为。
    注意 cp-form-custom 与 cp-pose-* 同在 svg 根上——必须复合选择器(无空格),
    后代组合器永不命中(实测踩过:斜着指向,姿势走的仍是原固定角)。 */
-.cp-form-custom.cp-pose-point .cp-armL { transform: rotate(calc(182deg - var(--cp-rest, 90deg))); }
-.cp-form-custom.cp-pose-pointr .cp-armR { transform: rotate(calc(-2deg - var(--cp-rest, 90deg))); }
-.cp-form-custom.cp-pose-pointu .cp-armL { transform: rotate(calc(262deg - var(--cp-rest, 90deg))); }
-.cp-form-custom.cp-pose-pointd .cp-armR { transform: rotate(calc(52deg - var(--cp-rest, 90deg))); }
-.cp-form-custom.cp-pose-wave .cp-armR {
+.cp-form-custom.cp-pose-point .cp-puppet-armL { transform: rotate(calc(182deg - var(--cp-rest, 90deg))); }
+.cp-form-custom.cp-pose-pointr .cp-puppet-armR { transform: rotate(calc(-2deg - var(--cp-rest, 90deg))); }
+.cp-form-custom.cp-pose-pointu .cp-puppet-armL { transform: rotate(calc(262deg - var(--cp-rest, 90deg))); }
+.cp-form-custom.cp-pose-pointd .cp-puppet-armR { transform: rotate(calc(52deg - var(--cp-rest, 90deg))); }
+.cp-form-custom.cp-pose-wave .cp-puppet-armR {
   animation: cp-wave-arm-custom 0.38s ease-in-out 3;
   transform: rotate(calc(-18deg - var(--cp-rest, 90deg)));
 }
@@ -1507,8 +1507,26 @@ html.light ::-webkit-scrollbar-thumb:hover {
 @keyframes cp-disc-float { from { transform: translateY(0) rotate(-1.2deg); } to { transform: translateY(-3px) rotate(1.2deg); } }
 @keyframes cp-puppet-hover { from { transform: translateY(0); } to { transform: translateY(-2.5px); } }
 @keyframes cp-disc-lamp { from { opacity: 0.4; } to { opacity: 1; } }
+/* ---------- 载具机械臂(2026-09-12 用户拍板):飞行器长臂接管手臂动作 ----------
+   refs.armL/armR 挂在 VehArms 臂组上,姿势 CSS(.cp-pose-*)与逐键 WAAPI 零接线
+   落机械臂;纸偶 PNG 臂改挂 cp-puppet-arm* 私有类不再吃姿势(rest 补偿保留)。 */
+.cp-veh-arm { transform-box: fill-box; transform-origin: 50% 12%; }
+/* shimeji:载具+机械臂只在壳层值勤姿势浮现(打字/写字/指向朗读句/飞行运输),
+   地面自主动作(走/坐/躺/爬)收起——精灵用自己身体,机器只在干活时出现。 */
+.cp-form-shimeji .cp-veh-mount { opacity: 0; transition: opacity 0.35s ease; }
+.cp-form-shimeji .cp-beacons, .cp-form-shimeji .cp-thruster { display: none; }
+.cp-form-shimeji .cp-key-scope,
+.cp-form-shimeji .cp-screen-wave,
+.cp-form-shimeji .cp-core-lit { display: none; }
+.cp-form-shimeji .cp-screen-key { translate: 0 52px; font-size: 12px; }
+.cp-form-shimeji.cp-pose-typing .cp-veh-mount,
+.cp-form-shimeji.cp-pose-writing .cp-veh-mount,
+.cp-form-shimeji.cp-pose-flying .cp-veh-mount,
+.cp-form-shimeji.cp-takeoff .cp-veh-mount,
+.cp-form-shimeji[class*="cp-pose-point"] .cp-veh-mount { opacity: 1; }
+
 @media (prefers-reduced-motion: reduce) {
   .cp-form-custom .cp-disc, .cp-form-custom .cp-puppet-bot, .cp-form-custom .cp-disc-lamp { animation: none; }
-  .cp-form-custom .cp-veh-flame { animation: none; opacity: 0.6; transform: scaleY(0.9); }
-  .cp-form-custom.cp-pose-flying .cp-veh-flame, .cp-form-custom.cp-takeoff .cp-veh-flame { animation: none; transform: scaleY(1.6); }
+  .cp-veh .cp-veh-flame { animation: none; opacity: 0.6; transform: scaleY(0.9); }
+  .cp-pose-flying .cp-veh-flame, .cp-takeoff .cp-veh-flame { animation: none; transform: scaleY(1.6); }
 }

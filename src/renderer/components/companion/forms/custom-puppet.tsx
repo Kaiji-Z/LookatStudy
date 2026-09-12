@@ -53,6 +53,8 @@ export function CustomPuppetArt({ uid, refs, energyRatio }: FormArtProps) {
     for (const l of pack?.layout ?? []) m.set(l.name, l);
     return m;
   }, [pack]);
+  // 纸偶是否带臂件(多件切分):手臂动作归 PNG 臂;L1 整图档无臂件 → 机械臂兜底
+  const hasArms = !!(pack?.srcs.armL && pack?.srcs.armR);
   // rest 角(2026-09-10,SPEC §17.12):A-pose 臂与竖直有任意夹角,固定角姿势必然
   // 指偏——从臂部件像素量"肩原点→手尖"方向,姿势 CSS 按 目标角−var(--cp-rest)
   // 求差值。量测是确定性的(远端 2% 像素带向量均值),包不变则值不变。
@@ -125,7 +127,10 @@ export function CustomPuppetArt({ uid, refs, energyRatio }: FormArtProps) {
               字符);底部三喷口 idle 呼吸微焰、flying/takeoff 加力。程序化
               SVG+渐变,零资产(G5);颜色全内联,CSS 只持动画/透明度。 */}
           <VehGroup uid={uid} energyRatio={energyRatio} theme={VEH_THEMES[pack.manifest.vehicle ?? "silver"]} />
-          <VehArms refs={refs} theme={VEH_THEMES[pack.manifest.vehicle ?? "silver"]} />
+          {/* 机械臂=L1 兜底(2026-09-12 用户拍板):能切出臂件的纸偶,手臂动作归
+              PNG 臂(rest 角补偿姿势链,见下)——纸偶手臂不能因机械臂存在而静止;
+              只有切分退化 L1(整图无臂件)才由机械臂接管。 */}
+          {!hasArms && <VehArms refs={refs} theme={VEH_THEMES[pack.manifest.vehicle ?? "silver"]} />}
           {/* 呼吸层:float 姿势下整身微缩放(部件一起动,无头身分离;盘在此层外) */}
           <g className="cp-puppet-figure">
           {/* 贴纸档(l1)=单件整图;分件档=臂/身/头分层(头压身,臂在身侧之上) */}
@@ -146,7 +151,8 @@ export function CustomPuppetArt({ uid, refs, energyRatio }: FormArtProps) {
               return (
                 <g
                   key={name}
-                  className={`cp-puppet-arm cp-puppet-${name}`}
+                  ref={name === "armL" ? refs.armL : refs.armR}
+                  className={`cp-arm cp-${name}`}
                   style={
                     {
                       transformBox: "fill-box",

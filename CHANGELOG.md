@@ -14,6 +14,13 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Added
+- 思考等级(快速/深入)扩五家:DeepSeek(V4 世代 thinking 参数,none/max)、Kimi(k2.5+ 混合思考开关)、火山豆包 Seed(与 GLM 同款 thinking.type+reasoning_effort)、阶跃 Step 3.x(enable_thinking)、xAI Grok(reasoning_effort,按模型门控——裸 grok-4 传参会报错,自动不生效)。这五家此前芯片禁用;MiniMax(官方无思考开关)与百度(预算式形状特殊)维持不支持。
+
+### Changed
+- 19 家 BYOK 预设全量刷新到 2026-09 世代:模型 id/上下文/价格/模态以 z.ai /models(真 key 实测)与 OpenRouter /models(公开端点,445 型)实时返回为准,火山/阶跃/百度/Groq/Together 按官方文档并标注低置信。要点:GLM 补 5.3/5.3-flash(看图,1.3M 上下文);DeepSeek 移除已退役的 chat/reasoner 旧名,V4.1 Flash 支持看图;Kimi k3 旗舰(1M·看图);Qwen 3.5 世代;OpenAI GPT-5.6 系列;Claude 5 世代(fable 5.1/opus 5/sonnet 5);Gemini 3.8;Grok 4.3~4.20;豆包 Seed 2.0;文心 5.0;MiniMax M2.7;Step 3.7。
 ## [0.31.8] - 2026-09-12
 
 ### Fixed

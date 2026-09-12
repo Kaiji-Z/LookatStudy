@@ -84,3 +84,8 @@ scripts/fixtures/pptx-corpus/
 
 # langdbg 调试产物
 .langdbg-*
+
+# Shimeji 真实包 fixtures(用户下载的第三方桌宠包,有版权,只本地验证用)
+.shimeji-fixtures/
+.verify-shimeji-data/
+.shimeji-research/

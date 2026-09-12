@@ -14,6 +14,11 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [0.33.2] - 2026-09-12
+
+### Fixed
+- 聊天附件缩略图在所有平台显示为裂图:渲染层 CSP 的 img-src 白名单少了 blob:——附件的乐观预览用 blob URL,被 CSP 整体拦截(控制台可见违规警告)。加入 blob: 后预览与历史缩略图均正常(历史走 data: 本就允许)。
+
 ## [0.33.1] - 2026-09-12
 
 ### Fixed

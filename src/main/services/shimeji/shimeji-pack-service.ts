@@ -203,11 +203,12 @@ export async function confirmShimejiImport(
   if (!existsSync(stagingDir)) throw new Error(`导入会话不存在或已过期: ${importId}`);
   const created: ShimejiPackSummary[] = [];
   for (const ref of characterRefs) {
-    // ref = staging 内帧目录前缀("img" 或 "<角色>/img"/"img/<品种>")
+    // ref = staging 内帧目录前缀("img" / "<角色>/img" / "img/<品种>" / "<角色>/img/<品种>")
+    // conf 在 ref 去掉 /img 与品种段的那层(引擎布局 conf 可在根或角色目录内)
     const srcImgDir = join(stagingDir, ref);
     if (!existsSync(srcImgDir)) continue;
     const name = ref.split("/").pop() ?? ref;
-    const confDir = ref.includes("/img") ? ref.replace(/\/img$/, "") : "";
+    const confDir = /\/img(\/[^/]+)?$/.test(ref) ? ref.replace(/\/img(\/[^/]+)?$/, "") : "";
     const actionsPath = ["Actions.xml", "actions.xml"]
       .map((f) => join(stagingDir, confDir, "conf", f))
       .find((p) => existsSync(p))!;

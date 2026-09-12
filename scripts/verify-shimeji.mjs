@@ -230,6 +230,27 @@ await test("T4c zip·多角色:引擎布局多品种 + 自包含多目录", asyn
   assert.equal(packs.length, 2);
 });
 
+await test("T4d zip·角色目录内引擎布局(<角色>/conf + <角色>/img/<品种>):用户真实哆啦A梦包形态", async () => {
+  // conf 不在根、也不与 img 平级为直下帧——品种目录再套一层;旧实现 confDir 推导
+  // 只认以 /img 结尾的 ref,在此布局 readFile(undefined) 必炸(实机预检抓到)
+  const nested = zipSync({
+    "Doraemon/conf/actions.xml": strToU8(EN_ACTIONS),
+    "Doraemon/conf/behaviors.xml": strToU8(JA_BEHAVIORS),
+    "Doraemon/img/icon.png": PNG_1PX,
+    "Doraemon/img/Doraemon/shime1.png": PNG_1PX,
+    "Doraemon/img/Doraemon/shime2.png": PNG_1PX,
+  });
+  const preview = await importShimejiZip(null, dataDir, Buffer.from(nested).toString("base64"));
+  assert.equal(preview.characters.length, 1);
+  assert.equal(preview.characters[0].name, "Doraemon");
+  assert.equal(preview.characters[0].frameCount, 2);
+  const packs = await confirmShimejiImport(null, dataDir, preview.importId, [preview.characters[0].ref]);
+  assert.equal(packs.length, 1);
+  const manifest = await getShimejiPack(null, dataDir, packs[0].id);
+  assert.equal(manifest.frames.length, 2);
+  assert.ok(manifest.actions.length >= 3);
+});
+
 // ── 真实大包(本地 fixtures 存在才跑) ──
 const FIXTURES = join(ROOT, ".shimeji-fixtures");
 const realPackZip = (dir) => {

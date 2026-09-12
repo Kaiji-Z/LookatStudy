@@ -20,6 +20,7 @@ import {
   parseShimejiActions,
   parseShimejiBehaviors,
   archiveOf,
+  type SceneSlot,
   type ShimejiAction,
 } from "./pure/shimeji-parse.js";
 
@@ -55,7 +56,7 @@ export interface ShimejiPackManifest {
   format: string;
   /** 角色目录内 img/ 相对帧文件 */
   frames: string[];
-  actions: ShimejiAction[];
+  actions: (ShimejiAction & { slot?: SceneSlot })[];
   behaviors: { name: string; frequency: number; next: { name: string; frequency: number }[] }[];
   archiveVersion: number;
   importedAt: string;
@@ -212,7 +213,7 @@ export async function confirmShimejiImport(
       .find((p) => existsSync(p))!;
     const xml = await readFile(actionsPath, "utf8");
     const format = detectFormat(actionsPath, xml);
-    const actions = parseShimejiActions(xml);
+    const actions = parseShimejiActions(xml).map((a) => ({ ...a, slot: archiveOf(a.name).slot }));
     const behPath = ["Behavior.xml", "behaviors.xml"].map((f) => join(stagingDir, confDir, "conf", f)).find((p) => existsSync(p));
     const behaviors = behPath ? parseShimejiBehaviors(await readFile(behPath, "utf8")) : [];
 

@@ -505,6 +505,8 @@ export interface ShimejiPackManifestT {
     name: string;
     kind: "Embedded" | "Stay" | "Move" | "Animate" | "Sequence";
     className?: string;
+    /** 88 归档表的窗口环境槽位(导入时烘焙;旧包无此字段 → 调度器按 kind 退化) */
+    slot?: "ground" | "wall" | "ceiling" | "mouse" | "panel" | "interact" | "celebrate" | "tired";
     poses: Array<{ image: string; anchor: [number, number]; velocity: [number, number]; duration: number }>;
   }>;
   behaviors: Array<{ name: string; frequency: number; next: Array<{ name: string; frequency: number }> }>;

@@ -3663,6 +3663,22 @@ async function runUiTest(screenshot = false): Promise<void> {
         <Pose Image="/shime1.png" ImageAnchor="1,1" Velocity="2,0" Duration="6" />
       </Animation>
     </Action>
+    <Action Name="Sit" Type="Stay" BorderType="Floor">
+      <Animation>
+        <Pose Image="/shime2.png" ImageAnchor="1,1" Velocity="0,0" Duration="8" />
+      </Animation>
+    </Action>
+    <Action Name="Dragged" Type="Embedded" Class="com.group_finity.mascot.action.Dragged">
+      <Animation>
+        <Pose Image="/shime1.png" ImageAnchor="1,1" Velocity="0,0" Duration="2" />
+        <Pose Image="/shime2.png" ImageAnchor="1,1" Velocity="0,0" Duration="2" />
+      </Animation>
+    </Action>
+    <Action Name="Fall" Type="Embedded" Class="com.group_finity.mascot.action.Fall">
+      <Animation>
+        <Pose Image="/shime2.png" ImageAnchor="1,1" Velocity="0,0" Duration="3" />
+      </Animation>
+    </Action>
   </ActionList>
 </Mascot>`;
   const shimejiUiBehaviorsXml = `<?xml version="1.0" encoding="UTF-8" ?>
@@ -3790,6 +3806,51 @@ async function runUiTest(screenshot = false): Promise<void> {
       name: "shimeji: 形态切 shimeji → cp-form-shimeji + 帧渲染器挂载(image≥1)",
       ok: shimejiRender?.ok === true,
       detail: shimejiRender,
+    });
+
+    // ③b 抓/放/扔语义(companion-grab 总线 → 调度器):抓=dragged 挣扎、轻放=settle 回地面、
+    // 快扔(≥2.5 与壳 throwDizzy 同阈)=air 坠落后回地面;包里合成 Dragged/Fall/Sit 动作
+    const shimejiGrab = await win.webContents
+      .executeJavaScript(
+        `
+      (async function() {
+        try {
+          var sleep = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+          var art = function() { return document.querySelector('[data-testid="shimeji-art"]'); };
+          var mode = function() { return art() ? art().dataset.mode : null; };
+          var fire = function(on, speed) {
+            window.dispatchEvent(new CustomEvent("companion-grab", { detail: { on: on, speed: speed } }));
+          };
+          var out = { ground0: mode() };
+          // 抓 → dragged(挣扎)
+          fire(true);
+          await sleep(300);
+          out.dragged = mode();
+          // 轻放 → settle/ground
+          fire(false, 0.5);
+          await sleep(200);
+          out.lightRelease = mode();
+          for (var i = 0; i < 60 && mode() !== "ground"; i++) await sleep(100);
+          out.lightBack = mode();
+          // 快扔 → air →(重力)→ settle → ground
+          fire(true);
+          await sleep(200);
+          fire(false, 5);
+          await sleep(150);
+          out.thrown = mode();
+          for (var j = 0; j < 80 && mode() !== "ground"; j++) await sleep(100);
+          out.thrownBack = mode();
+          out.ok = out.dragged === "dragged" && out.lightBack === "ground" && out.thrown === "air" && out.thrownBack === "ground";
+          return out;
+        } catch (e) { return { ok: false, error: String(e) }; }
+      })()
+    `,
+      )
+      .catch(() => null);
+    results.push({
+      name: "shimeji: 抓=dragged 挣扎 / 轻放回地面 / 快扔=air 坠落回地面",
+      ok: shimejiGrab?.ok === true,
+      detail: shimejiGrab,
     });
 
     // ④ 清理回落:删包 + 形态回 ember(不留测试包污染 userData)

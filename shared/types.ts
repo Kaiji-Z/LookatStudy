@@ -495,6 +495,25 @@ import type {
 } from "./speech-types";
 import type { CutPackManifest as CompanionCutManifestT, CompanionVehicleId as CompanionVehicleIdT } from "./companion-cut";
 
+/** Shimeji 包 manifest(渲染层运行时:帧+动作+行为,SPEC-shimeji.md §4) */
+export interface ShimejiPackManifestT {
+  id: string;
+  name: string;
+  format: string;
+  frames: string[];
+  actions: Array<{
+    name: string;
+    kind: "Embedded" | "Stay" | "Move" | "Animate" | "Sequence";
+    className?: string;
+    poses: Array<{ image: string; anchor: [number, number]; velocity: [number, number]; duration: number }>;
+  }>;
+  behaviors: Array<{ name: string; frequency: number; next: Array<{ name: string; frequency: number }> }>;
+  archiveVersion: number;
+  importedAt: string;
+}
+
+
+
 export interface ApiExpose {
   /* 课程 */
   listCourses(): Promise<Course[]>;
@@ -796,6 +815,20 @@ export interface ApiExpose {
   companionPackDelete(input: { id: string }): Promise<{ ok: boolean; formReset: boolean }>;
   /** 换载具主题(形象栏卡片色点入口;激活包由渲染层刷新 active 缓存。 */
   companionPackSetVehicle(input: { id: string; vehicle: CompanionVehicleIdT }): Promise<{ ok: boolean }>;
+
+  /* Shimeji 桌宠包(第七形态,SPEC-shimeji.md):zip 导入→角色勾选→包卡 */
+  shimejiImportZip(input: { zipBase64: string }): Promise<{
+    importId: string;
+    characters: Array<{ ref: string; name: string; iconBase64: string | null; frameCount: number; actionCount: number; format: string }>;
+  }>;
+  shimejiConfirmImport(input: { importId: string; characterRefs: string[] }): Promise<{
+    packs: Array<{ id: string; name: string; format: string; frameCount: number; actionCount: number; iconBase64: string | null; active: boolean }>;
+  }>;
+  shimejiList(): Promise<{ packs: Array<{ id: string; name: string; format: string; frameCount: number; actionCount: number; iconBase64: string | null; active: boolean }> }>;
+  shimejiGetActive(): Promise<ShimejiPackManifestT | null>;
+  shimejiGetFrame(input: { packId: string; frame: string }): Promise<string | null>;
+  shimejiActivate(input: { id: string }): Promise<{ ok: boolean }>;
+  shimejiDelete(input: { id: string }): Promise<{ ok: boolean }>;
 
   /** 语音模型状态(全部;absent/downloading/ready/error) */
   getSpeechModelStatus(): Promise<SpeechModelStatusT[]>;

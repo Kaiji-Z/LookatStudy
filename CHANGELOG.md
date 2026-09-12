@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.31.8] - 2026-09-12
 
 ### Fixed
 - 开发模式竞态:`dev:electron` 的 wait-on 只等文件存在,主仓里上一次构建的旧主束会让 electron 抢在新构建完成前启动并加载远古代码(表现为新通道 No handler registered)。现在 dev 启动前先清空 dist-electron,等待条件真正语义化;顺带不再累积上千个历史 hash 产物。

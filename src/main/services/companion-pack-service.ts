@@ -11,7 +11,7 @@
  * verify/ui-test 注入 mock 文本 —— 本文件不进 verify 导入链(它经 llm-client 连 DB)。
  */
 import { resolveVisionLlm } from "./agent/llm-client.js";
-import { generateTextWithTimeout } from "./import-llm-service.js";
+import { buildImportModel, generateTextWithTimeout } from "./import-llm-service.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
@@ -153,8 +153,14 @@ export async function cutCompanionFigure(
     const locateAt = async (dataUrl: string, maxOutputTokens: number) => {
       const llm = resolveVisionLlm(deps.db);
       usedVision = `${llm.provider.label}/${llm.model}`;
+      // 纪律回归(2026-09-12 手机真机定谳):locate 必须走 buildImportModel——
+      // 裸模型不带 thinking 字段,glm-5.3-flash 在 coding 端点默认开思考:
+      // 桌面 184s(思考吞 4k token),手机 2s 空回复直接降级。补 fast 档补丁后
+      // 桌面 15s 出合法 cuts;关思考形状的请求手机实测全通(R1-R3)。切分是
+      // 感知提取任务,下游机器校验链(围栏/吸附/BFS)不消费裸坐标,无精度损失。
+      const built = buildImportModel(llm);
       return generateTextWithTimeout(
-        llm.languageModel,
+        built.model,
         [
           {
             role: "user",
@@ -164,7 +170,7 @@ export async function cutCompanionFigure(
             ],
           },
         ],
-        { maxOutputTokens },
+        { maxOutputTokens, ...(built.providerOptions ? { providerOptions: built.providerOptions } : {}) },
       );
     };
     // 注入式 locate(verify/ui-test)维持单参签名;127k 首发见下

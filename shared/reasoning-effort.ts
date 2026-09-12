@@ -51,7 +51,55 @@ const BODY_PATCH_FAMILIES: Record<
       b.enable_thinking = true;
     },
   },
-};
+
+  // 以下五家 2026-09-12 进表(官方文档核对;除 GLM 外无 key 未实测端点,行为以文档为准):
+  // DeepSeek V4 世代:thinking 字符串参数 none/low/high/max,默认开且默认 high。
+  deepseek: {
+    fast: (b) => {
+      b.thinking = "none";
+    },
+    deep: (b) => {
+      b.thinking = "max";
+    },
+  },
+  // Moonshot Kimi:k2.5/k2.6 混合思考默认开,thinking 对象参数可关(平台文档)。
+  kimi: {
+    fast: (b) => {
+      b.thinking = { type: "disabled" };
+    },
+    deep: (b) => {
+      b.thinking = { type: "enabled" };
+    },
+  },
+  // 火山方舟豆包 Seed:与 GLM 同款方言(thinking.type + reasoning_effort,官方深度思考文档)。
+  volcano: {
+    fast: (b) => {
+      b.thinking = { type: "disabled" };
+      b.reasoning_effort = "low";
+    },
+    deep: (b) => {
+      b.thinking = { type: "enabled" };
+    },
+  },
+  // 阶跃 Step 3.x:enable_thinking 布尔(与 Qwen 同款;Step 3.7 默认关,deep 档才有感)。
+  stepfun: {
+    fast: (b) => {
+      b.enable_thinking = false;
+    },
+    deep: (b) => {
+      b.enable_thinking = true;
+    },
+  },
+  // xAI Grok:reasoning_effort(grok-4.3 none/low/medium/high 默认 high,4.5/4.6 支持;
+  // 裸 grok-4 传参报错 → 家族判定按模型门控,进不了表就落 none)。
+  "grok-effort": {
+    fast: (b) => {
+      b.reasoning_effort = "low";
+    },
+    deep: (b) => {
+      b.reasoning_effort = "high";
+    },
+  },};
 
 /** OpenAI 官方(preset id "openai"):原生 reasoningEffort。 */
 const OPENAI_EFFORT: Record<"fast" | "deep", "low" | "high"> = { fast: "low", deep: "high" };
@@ -82,6 +130,20 @@ export function llmFamilyOf(providerId: string, baseUrl?: string, model?: string
   if (url.includes("dashscope") || m.startsWith("qwen")) return "qwen";
   // SiliconCloud 托管端点
   if (url.includes("siliconflow")) return "siliconcloud";
+  // DeepSeek 官方端点或 deepseek 前缀模型(V4 世代起认 thinking 参数)
+  if (url.includes("deepseek") || m.startsWith("deepseek-")) return "deepseek";
+  // Moonshot Kimi 端点或 kimi 前缀模型
+  if (url.includes("moonshot") || m.startsWith("kimi-")) return "kimi";
+  // 火山方舟端点或 doubao 前缀模型
+  if (url.includes("volces.com") || m.startsWith("doubao-")) return "volcano";
+  // 阶跃端点或 step 前缀模型
+  if (url.includes("stepfun") || m.startsWith("step-")) return "stepfun";
+  // xAI Grok:按模型门控 —— grok-3-mini 与 grok-4.3+/4.2x 认 reasoning_effort,
+  // 裸 grok-4 / grok-3 传参报错,返回原 id 落 none(宁可不生效不瞎发参数)
+  if (url.includes("x.ai") || m.startsWith("grok-")) {
+    if (/^(grok-3-mini|grok-4\.(?:[3-9]|\d{2,}))/.test(m)) return "grok-effort";
+    return providerId;
+  }
   return providerId;
 }
 

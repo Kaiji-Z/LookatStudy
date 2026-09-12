@@ -115,12 +115,12 @@ console.log("  ✓ 无 vision capability 的模型正确返回 false");
 console.log("T12 supportsVision 有 vision capability → true");
 const openaiPreset = getProviderPreset("openai");
 if (openaiPreset) {
-  const gpt4o = openaiPreset.models.find((m) => m.id === "gpt-4o");
+  const gpt4o = openaiPreset.models.find((m) => m.id === "gpt-5.6-luna");
   if (gpt4o?.capabilities?.includes("vision")) {
-    assert.strictEqual(supportsVision(openaiPreset, "gpt-4o"), true, "gpt-4o 有 vision → true");
-    console.log("  ✓ gpt-4o 有 vision → true");
+    assert.strictEqual(supportsVision(openaiPreset, "gpt-5.6-luna"), true, "gpt-5.6-luna 有 vision → true");
+    console.log("  ✓ gpt-5.6-luna 有 vision → true");
   } else {
-    console.log("  ⚠ gpt-4o 模型条目未标记 vision,跳过");
+    console.log("  ⚠ gpt-5.6-luna 模型条目未标记 vision,跳过");
   }
 } else {
   console.log("  ⚠ openai 预设不存在,跳过");

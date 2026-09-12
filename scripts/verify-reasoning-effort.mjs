@@ -31,16 +31,22 @@ function check(name, cond) {
 check("T1a glm 支持", supportsReasoningControl("glm", "openai-compatible") === true);
 check("T1b qwen 支持", supportsReasoningControl("qwen", "openai-compatible") === true);
 check("T1c openai 官方支持", supportsReasoningControl("openai", "openai-compatible") === true);
-check("T1d deepseek 不支持(靠模型切换,不硬发参数)", supportsReasoningControl("deepseek", "openai-compatible") === false);
-check("T1e kimi 不支持", supportsReasoningControl("kimi", "openai-compatible") === false);
+check("T1d deepseek 支持(V4 世代 thinking 参数,2026-09-12 进表)", supportsReasoningControl("deepseek", "openai-compatible") === true);
+check("T1e kimi 支持(k2.5+ 混合思考,2026-09-12 进表)", supportsReasoningControl("kimi", "openai-compatible") === true);
+check("T1h volcano 支持(豆包 Seed 同 GLM 方言)", supportsReasoningControl("volcano", "openai-compatible") === true);
+check("T1i stepfun 支持(enable_thinking 同 Qwen 方言)", supportsReasoningControl("stepfun", "openai-compatible") === true);
+check("T1j minimax 不支持(官方无思考开关)", supportsReasoningControl("minimax", "openai-compatible") === false);
+check("T1k xai 裸 grok-4 不支持(传参报错,门控落 none)", supportsReasoningControl("xai", "openai-compatible", { model: "grok-4" }) === false);
+check("T1l xai grok-4.3 支持(门控进 grok-effort 家族)", supportsReasoningControl("xai", "openai-compatible", { model: "grok-4.3" }) === true);
+check("T1m custom deepseek 端点按 baseUrl 嗅探支持", supportsReasoningControl("custom-x", "openai-compatible", { baseUrl: "https://api.deepseek.com", model: "deepseek-v4.1-flash" }) === true);
 check("T1f anthropic 协议恒支持", supportsReasoningControl("anything", "anthropic") === true);
 check("T1g google 协议恒支持", supportsReasoningControl("anything", "google") === true);
 
 /* ---- T2 自动("")与不支持家族 → none ---- */
 check("T2a 自动 → none", reasoningPlanFor("glm", "openai-compatible", "").kind === "none");
 check("T2b 自动 anthropic → none", reasoningPlanFor("x", "anthropic", "").kind === "none");
-check("T2c 不支持家族 deepseek fast → none", reasoningPlanFor("deepseek", "openai-compatible", "fast").kind === "none");
-check("T2d 不支持家族 kimi deep → none", reasoningPlanFor("kimi", "openai-compatible", "deep").kind === "none");
+check("T2c baidu fast → none(thinking_budget 形状特殊,未进表)", reasoningPlanFor("baidu", "openai-compatible", "fast").kind === "none");
+check("T2d minimax deep → none(官方无思考开关)", reasoningPlanFor("minimax", "openai-compatible", "deep").kind === "none");
 
 /* ---- T3 原生 providerOptions 协议 ---- */
 {
@@ -103,6 +109,37 @@ check("T2d 不支持家族 kimi deep → none", reasoningPlanFor("kimi", "openai
   const body = { model: "glm-4.6", temperature: 0.3 };
   if (p.kind === "bodyPatch") p.patch(body);
   check("T4f patch 保留原有字段", body.model === "glm-4.6" && body.temperature === 0.3);
+}
+
+/* ---- T4b 2026-09-12 新进表家族的 bodyPatch 形状 ---- */
+{
+  const p = reasoningPlanFor("deepseek", "openai-compatible", "fast");
+  const b = {}; p.kind === "bodyPatch" && p.patch(b);
+  check("T4b-a deepseek fast → thinking none", b.thinking === "none");
+}
+{
+  const p = reasoningPlanFor("kimi", "openai-compatible", "fast");
+  const b = {}; p.kind === "bodyPatch" && p.patch(b);
+  check("T4b-b kimi fast → thinking disabled", (b.thinking || {}).type === "disabled");
+}
+{
+  const p = reasoningPlanFor("volcano", "openai-compatible", "fast");
+  const b = {}; p.kind === "bodyPatch" && p.patch(b);
+  check("T4b-c volcano fast → thinking disabled + reasoning_effort low", (b.thinking || {}).type === "disabled" && b.reasoning_effort === "low");
+}
+{
+  const p = reasoningPlanFor("stepfun", "openai-compatible", "deep");
+  const b = {}; p.kind === "bodyPatch" && p.patch(b);
+  check("T4b-d stepfun deep → enable_thinking true", b.enable_thinking === true);
+}
+{
+  const p = reasoningPlanFor("xai", "openai-compatible", "fast", { model: "grok-4.3" });
+  const b = {}; p.kind === "bodyPatch" && p.patch(b);
+  check("T4b-e grok-4.3 fast → reasoning_effort low", b.reasoning_effort === "low");
+}
+{
+  const p = reasoningPlanFor("xai", "openai-compatible", "fast", { model: "grok-4" });
+  check("T4b-f 裸 grok-4 fast → none(门控)", p.kind === "none");
 }
 
 /* ---- T5 withBodyPatch(fetch 包装) ---- */

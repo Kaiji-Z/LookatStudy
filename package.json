@@ -11,7 +11,7 @@
   "main": "dist-electron/main/index.js",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "concurrently -k \"npm:dev:vite\" \"npm:dev:electron:wait\"",
+    "dev:electron": "node -e \"require('fs').rmSync('dist-electron',{recursive:true,force:true})\" && concurrently -k \"npm:dev:vite\" \"npm:dev:electron:wait\"",
     "serve": "node scripts/serve-dev.mjs",
     "build:mobile": "node scripts/build-mobile.mjs",
     "dev:vite": "vite",

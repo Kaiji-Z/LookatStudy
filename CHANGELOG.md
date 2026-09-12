@@ -14,6 +14,11 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Added
+- Shimeji 桌宠作为伴学伙伴第 7 形态(一期):设置页伴学区新增「Shimeji 桌宠」区块,+ 号卡片导入 zip——双格式通吃(日版原版 Group Finity 与 Shimeji-ee,标签/字段一一对应解析),zip 内多角色(自包含目录布局与引擎布局都认)弹出角色勾选窗,勾选后落盘为包。激活后到伴学形象选择器选 Shimeji 即可换装:帧动画渲染器 + 独立调度循环,动作按包内定义播放(静止类循环两轮、移动类水平步行后折返),表情联动到对应动作。原有五形态与自定义纸偶行为零改动,随时切回。
+
 ## [0.33.2] - 2026-09-12
 
 ### Fixed

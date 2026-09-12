@@ -237,6 +237,20 @@ const api = {
     ipcRenderer.invoke("companionPack:activate", input)) as ApiExpose["companionPackActivate"],
   companionPackDelete: ((input: { id: string }) =>
     ipcRenderer.invoke("companionPack:delete", input)) as ApiExpose["companionPackDelete"],
+  shimejiImportZip: ((input: { zipBase64: string }) =>
+    ipcRenderer.invoke("shimeji:importZip", input)) as ApiExpose["shimejiImportZip"],
+  shimejiConfirmImport: ((input: { importId: string; characterRefs: string[] }) =>
+    ipcRenderer.invoke("shimeji:confirmImport", input)) as ApiExpose["shimejiConfirmImport"],
+  shimejiList: (() =>
+    ipcRenderer.invoke("shimeji:list")) as ApiExpose["shimejiList"],
+  shimejiGetActive: (() =>
+    ipcRenderer.invoke("shimeji:getActive")) as ApiExpose["shimejiGetActive"],
+  shimejiGetFrame: ((input: { packId: string; frame: string }) =>
+    ipcRenderer.invoke("shimeji:getFrame", input)) as ApiExpose["shimejiGetFrame"],
+  shimejiActivate: ((input: { id: string }) =>
+    ipcRenderer.invoke("shimeji:activate", input)) as ApiExpose["shimejiActivate"],
+  shimejiDelete: ((input: { id: string }) =>
+    ipcRenderer.invoke("shimeji:delete", input)) as ApiExpose["shimejiDelete"],
   companionPackSetVehicle: ((input: { id: string; vehicle: string }) =>
     ipcRenderer.invoke("companionPack:setVehicle", input)) as ApiExpose["companionPackSetVehicle"],
   getXpStatus: (() =>

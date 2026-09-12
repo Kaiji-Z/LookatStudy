@@ -15,6 +15,7 @@ import { MossArt } from "./moss.js";
 import { AstroArt } from "./astro.js";
 import { InkArt } from "./ink.js";
 import { CustomPuppetArt } from "./custom-puppet.js";
+import { ShimejiArt } from "./shimeji-form.js";
 
 export const FORM_ART: Record<CompanionFormId, ComponentType<FormArtProps>> = {
   ember: EmberArt,
@@ -24,4 +25,6 @@ export const FORM_ART: Record<CompanionFormId, ComponentType<FormArtProps>> = {
   ink: InkArt,
   /** M2:用户导入的纸偶包(SPEC §16)——切分件 <image> 分层 + HoverDisc。 */
   custom: CustomPuppetArt,
+  /** 第 7 形态:导入的 Shimeji 桌宠包(帧动画+独立调度,SPEC-shimeji.md)。 */
+  shimeji: ShimejiArt,
 };

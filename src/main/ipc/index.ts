@@ -103,6 +103,15 @@ import {
   cutCompanionFigure,
   getActiveCompanionPack,
 } from "../services/companion-pack-service.js";
+import {
+  importShimejiZip,
+  confirmShimejiImport,
+  listShimejiPacks,
+  getActiveShimejiPack,
+  getShimejiFrameDataUrl,
+  activateShimejiPack,
+  deleteShimejiPack,
+} from "../services/shimeji/shimeji-pack-service.js";
 import type { CutPackManifest } from "@shared/companion-cut";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
 import {
@@ -1721,6 +1730,31 @@ export function registerCompanionPackHandlers(deps: RuntimeDeps): void {
   // 换载具主题(形象栏卡片色点入口):只改 manifest.vehicle;激活包由渲染层刷新
   handle("companionPack:setVehicle", async (_e, input: { id: string; vehicle: string }) => {
     return setCompanionPackVehicle(deps.dataDir, input.id, input.vehicle);
+  });
+
+  // Shimeji 桌宠包(第七形态,SPEC-shimeji.md §4):zip 唯一入口,多角色勾选
+  handle("shimeji:importZip", async (_e, input: { zipBase64: string }) => {
+    return importShimejiZip(getDb(), deps.dataDir, input.zipBase64);
+  });
+  handle("shimeji:confirmImport", async (_e, input: { importId: string; characterRefs: string[] }) => {
+    return { packs: await confirmShimejiImport(getDb(), deps.dataDir, input.importId, input.characterRefs) };
+  });
+  handle("shimeji:list", async () => {
+    return { packs: await listShimejiPacks(getDb(), deps.dataDir) };
+  });
+  handle("shimeji:getActive", async () => {
+    return getActiveShimejiPack(getDb(), deps.dataDir);
+  });
+  handle("shimeji:getFrame", async (_e, input: { packId: string; frame: string }) => {
+    return getShimejiFrameDataUrl(getDb(), deps.dataDir, input.packId, input.frame);
+  });
+  handle("shimeji:activate", async (_e, input: { id: string }) => {
+    await activateShimejiPack(getDb(), input.id);
+    return { ok: true };
+  });
+  handle("shimeji:delete", async (_e, input: { id: string }) => {
+    await deleteShimejiPack(getDb(), deps.dataDir, input.id);
+    return { ok: true };
   });
 }
 

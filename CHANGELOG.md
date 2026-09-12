@@ -14,6 +14,16 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Added
+- 看图模型区的自定义 provider 现在可以删除:在身覆盖卡与选用列表都有删除入口(确认弹窗);删除在身覆盖时先自动解除覆盖再删行。
+
+### Fixed
+- 手机窄屏下自定义 provider 表单的模型/API key 输入框溢出容器(flex 子项固有最小宽拒绝收缩,补 min-w-0)。
+
+### Changed
+- 自定义 bot 识图失败信息现在披露实际使用的识图通道(覆盖名/模型)——主模型正常而覆盖损坏时一眼可见(手机真机排查的产物)。
 ## [0.31.6] - 2026-09-12
 
 ### Fixed

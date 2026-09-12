@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.32.0] - 2026-09-12
 
 ### Added
 - 思考等级(快速/深入)扩五家:DeepSeek(V4 世代 thinking 参数,none/max)、Kimi(k2.5+ 混合思考开关)、火山豆包 Seed(与 GLM 同款 thinking.type+reasoning_effort)、阶跃 Step 3.x(enable_thinking)、xAI Grok(reasoning_effort,按模型门控——裸 grok-4 传参会报错,自动不生效)。这五家此前芯片禁用;MiniMax(官方无思考开关)与百度(预算式形状特殊)维持不支持。

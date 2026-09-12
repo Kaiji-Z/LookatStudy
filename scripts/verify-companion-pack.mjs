@@ -342,6 +342,15 @@ check(
     pkgJson.scripts["verify:core"].includes("verify-companion-png"),
 );
 
+// G2m(2026-09-12) locate 调用纪律:必须走 buildImportModel(fast 思考档+家族感知上限),
+// 禁裸 languageModel——裸模型无 thinking 字段,glm 系端点默认开思考(桌面 184s/手机 2s 空,
+// 真机定谳);与 import 管线 8 处调用同源(AGENTS: LLM 调用纪律与导入同源)。
+check(
+  "G2m(M2) 识图 locate 走 buildImportModel(思考纪律,禁裸模型)",
+  serviceSrc.includes("buildImportModel(llm)") && !serviceSrc.includes("llm.languageModel,"),
+);
+
+
 // G5(M2) 盘与纸偶零二进制资产:全程序化 SVG,无静态图 import、无 http 图源
 check(
   "G5(M2) 盘与纸偶零二进制资产(无静态图 import/无 http 图源)",

@@ -18,6 +18,10 @@ Entry conventions for contributors:
 
 ### Fixed
 - 开发模式竞态:`dev:electron` 的 wait-on 只等文件存在,主仓里上一次构建的旧主束会让 electron 抢在新构建完成前启动并加载远古代码(表现为新通道 No handler registered)。现在 dev 启动前先清空 dist-electron,等待条件真正语义化;顺带不再累积上千个历史 hash 产物。
+## [Unreleased]
+
+### Fixed
+- 自定义 bot 识图定位回归 LLM 调用纪律(走 buildImportModel,与导入管线同源):此前向导识图把裸模型直接发给端点,不带思考开关——glm-5.3-flash 在 coding 端点默认开思考,手机上表现为约 2 秒空回复后静默降级,桌面端则慢到 3 分钟。补 fast 思考档后桌面实测 15~26 秒出合法切分线,关思考形状的请求在手机实测全通(逐字节复刻验证)。切分质量不受影响:坐标提取是感知任务,且下游机器校验链(围栏检查/边缘吸附/栅栏划分)不消费裸坐标。
 ## [0.31.7] - 2026-09-12
 
 ### Added

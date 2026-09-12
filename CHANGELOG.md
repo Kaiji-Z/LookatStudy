@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.31.7] - 2026-09-12
 
 ### Added
 - 看图模型区的自定义 provider 现在可以删除:在身覆盖卡与选用列表都有删除入口(确认弹窗);删除在身覆盖时先自动解除覆盖再删行。

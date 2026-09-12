@@ -81,3 +81,6 @@ scripts/fixtures/pdf-corpus/
 # 字幕语料缓存(live 重下,jsdelivr)
 scripts/fixtures/subtitle-corpus/
 scripts/fixtures/pptx-corpus/
+
+# langdbg 调试产物
+.langdbg-*

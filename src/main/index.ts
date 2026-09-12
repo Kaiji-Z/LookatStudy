@@ -3231,17 +3231,19 @@ async function runUiTest(screenshot = false): Promise<void> {
         (async function() {
           await window.api.setSetting("companion_form", "custom");
           window.dispatchEvent(new Event("companion-config-changed"));
-          var cls = "", disc = 0, imgs = 0, arms = 0;
+          var cls = "", disc = 0, imgs = 0, vehArms = 0, pngArms = 0;
           for (var i = 0; i < 40; i++) {
             await new Promise(function(r) { setTimeout(r, 100); });
             var m = document.querySelector('[data-testid="companion-mascot"]');
             cls = m ? String(m.getAttribute("class")) : "";
             disc = document.querySelectorAll(".cp-disc").length;
             imgs = document.querySelectorAll('[data-testid="companion-mascot"] image').length;
-            arms = document.querySelectorAll('[data-testid="companion-mascot"] .cp-veh-arm').length;
+            vehArms = document.querySelectorAll('[data-testid="companion-mascot"] .cp-veh-arm').length;
+            pngArms = document.querySelectorAll('[data-testid="companion-mascot"] .cp-armL, [data-testid="companion-mascot"] .cp-armR').length;
             if (cls.indexOf("cp-form-custom") >= 0 && imgs >= 3) break;
           }
-          return { ok: cls.indexOf("cp-form-custom") >= 0 && disc >= 1 && imgs >= 3 && arms >= 2, cls: cls.slice(0, 90), disc: disc, imgs: imgs, arms: arms };
+          // L1 兜底制(2026-09-12):M2 fixture 多件切分带臂件 → PNG 臂在场吃姿势、机械臂不渲染
+          return { ok: cls.indexOf("cp-form-custom") >= 0 && disc >= 1 && imgs >= 3 && pngArms >= 2 && vehArms === 0, cls: cls.slice(0, 90), disc: disc, imgs: imgs, pngArms: pngArms, vehArms: vehArms };
         })()
       `,
         )

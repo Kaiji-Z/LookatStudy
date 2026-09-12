@@ -253,13 +253,15 @@ check(
   "G2c(M2) CustomPuppetArt 存在且不 import bus 命令入口(只读)",
   puppetSrc.includes("CustomPuppetArt") && !forbiddenBusCalls.some((s) => puppetSrc.includes(s)),
 );
-// G2d(2026-09-10,2026-09-12 机械臂接管改) 姿势 class 契约:纸偶 PNG 臂改挂
-// cp-puppet-arm*(私有类不吃姿势),姿势接管权在载具机械臂(vehicle.tsx VehArms
-// 挂 cp-armL/cp-armR,姿势 CSS 与逐键 WAAPI 零接线落机械臂)
+// G2d(2026-09-10;2026-09-12 二次修正=L1 兜底制) 纸偶臂必须挂姿势 class
+// (cp-armL/cp-armR,rest 补偿姿势链继续生效——纸偶手臂不能因机械臂存在而静止);
+// 机械臂(vehicle.tsx VehArms 挂 cp-armL/cp-armR)只在 L1 无臂件时渲染接管
 const vehicleSrc = read("src/renderer/components/companion/forms/vehicle.tsx");
 check(
-  "G2d(M2) 姿势 class 契约:纸偶臂私有类 cp-puppet-arm cp-puppet-${name} + 机械臂挂 cp-${name}",
-  puppetSrc.includes("cp-puppet-arm cp-puppet-${name}") && vehicleSrc.includes("cp-veh-arm cp-${side}"),
+  "G2d(M2) 纸偶臂挂姿势 class cp-arm cp-${name} + 机械臂 L1 条件兜底(!hasArms)",
+  puppetSrc.includes("cp-arm cp-${name}") && puppetSrc.includes("!hasArms && <VehArms") &&
+    puppetSrc.includes("hasArms = !!(pack?.srcs.armL && pack?.srcs.armR)") &&
+    vehicleSrc.includes("cp-veh-arm cp-${side}"),
 );
 // G2e(2026-09-10) 壳层"机身装饰"对纸偶裁剪:航灯(左红右绿)与喷焰假设火箭机身
 // 存在,纸偶身体窄则悬空成游离绿点(用户实测报"脏点/偏心");CSS 按形态隐藏
@@ -285,7 +287,7 @@ check(
 // 量测注入 --cp-rest,custom 作用域姿势按 目标角−rest 求差值(内置规则零改动)。
 // 选择器必须复合(cp-form-custom 与 cp-pose-* 同在 svg 根,后代组合器永不命中,
 // 实测踩过:姿势静默走回原固定角)——并全局禁掉该错误写法。
-const restCss = '.cp-form-custom.cp-pose-point .cp-puppet-armL { transform: rotate(calc(182deg - var(--cp-rest, 90deg))); }';
+const restCss = '.cp-form-custom.cp-pose-point .cp-armL { transform: rotate(calc(182deg - var(--cp-rest, 90deg))); }';
 check(
   "G2h(M2) custom 姿势复合选择器+目标−var(--cp-rest) 求差 + 纸偶注入 rest 变量",
   appCss.includes(restCss) && appCss.includes("cp-wave-arm-custom") && puppetSrc.includes('"--cp-rest"') &&

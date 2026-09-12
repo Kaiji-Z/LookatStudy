@@ -53,8 +53,8 @@ const LOCATE_RETRY_TOKENS = 8192;
 
 export interface CompanionCutDeps {
   db: VisionDb;
-  /** 识图定位(注入;默认 = resolveVisionLlm + generateTextWithTimeout)。入参 = 图的 data URL,返回 VLM 原文。 */
-  locate?: (imageDataUrl: string) => Promise<string>;
+  /** 识图定位(注入;默认 = resolveVisionLlm + generateTextWithTimeout)。入参 = 预览 PNG 字节,返回 VLM 原文。 */
+  locate?: (imageBytes: Uint8Array) => Promise<string>;
   /** 跳过 T1(未配多模态 key / 测试) */
   skipVision?: boolean;
 }
@@ -150,7 +150,7 @@ export async function cutCompanionFigure(
   let visionError: string | undefined;
   if (fm && !deps.skipVision) {
     let usedVision = ""; // 失败行披露实际识图通道(覆盖/主模型),坏覆盖一眼可见
-    const locateAt = async (dataUrl: string, maxOutputTokens: number) => {
+    const locateAt = async (imageBytes: Uint8Array, maxOutputTokens: number) => {
       const llm = resolveVisionLlm(deps.db);
       usedVision = `${llm.provider.label}/${llm.model}`;
       // 纪律回归(2026-09-12 手机真机定谳):locate 必须走 buildImportModel——
@@ -166,7 +166,7 @@ export async function cutCompanionFigure(
             role: "user",
             content: [
               { type: "text", text: locatePrompt(W, H) },
-              { type: "image", image: dataUrl },
+              { type: "image", image: imageBytes },
             ],
           },
         ],
@@ -174,7 +174,7 @@ export async function cutCompanionFigure(
       );
     };
     // 注入式 locate(verify/ui-test)维持单参签名;127k 首发见下
-    const locate = deps.locate ?? ((dataUrl: string) => locateAt(dataUrl, LOCATE_MAX_TOKENS));
+    const locate = deps.locate ?? ((bytes: Uint8Array) => locateAt(bytes, LOCATE_MAX_TOKENS));
     try {
       // 喂键控预览(深灰底上的角色),不是原图 —— 与机器掩码逐像素同源。
       // 预览缩到长边 ≤768(2026-09-11 手机真机排查):VLM 只回归一化坐标,
@@ -188,15 +188,20 @@ export async function cutCompanionFigure(
         preview = resizeBox(preview, Math.max(1, Math.round(preview.width * k)), Math.max(1, Math.round(preview.height * k)));
       }
       const previewPng = await rgbaToPng(preview);
-      const dataUrl = `data:image/png;base64,${Buffer.from(previewPng).toString("base64")}`;
-      let rawReply = await locate(dataUrl);
+      // 喂字节不喂 data URL(2026-09-12 手机真机定谳):字符串会被 AI SDK 当 URL 走
+      // downloadAsset→node fetch(data:)——undici 仅部分版本支持 data: scheme,
+      // 手机 node 24.18 直接抛 AI_DownloadError(客户端炸,请求从未发出,表现为
+      // 秒回空+降级 L1;桌面 24.13 支持所以"只有手机坏")。bytes 走 base64 直编码,
+      // 与 node 版本无关。聊天附件链路(bytes 注入)一直正常,也是同因旁证。
+      const imageBytes = new Uint8Array(previewPng);
+      let rawReply = await locate(imageBytes);
       cuts = parseCutsJson(rawReply, W, H);
       if (!cuts && !deps.locate && rawReply.trim() === "") {
         // 首发带 maxOutputTokens=128k:部分 key 档位不允许这么大的输出上限,
         // 端点不报错而是秒回 200 空内容(2026-09-11 手机真机:换新 key 后
         // 聊天看图正常、向导恒空)。空回复时降档 8k 重试一次——切分 JSON
         // 本体只有千余 token,8k 对关闭思考的机械提取绰绰有余。
-        rawReply = await locateAt(dataUrl, LOCATE_RETRY_TOKENS);
+        rawReply = await locateAt(imageBytes, LOCATE_RETRY_TOKENS);
         cuts = parseCutsJson(rawReply, W, H);
       }
       if (!cuts) {

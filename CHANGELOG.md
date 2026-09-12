@@ -14,6 +14,11 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [0.33.1] - 2026-09-12
+
+### Fixed
+- 手机(Termux/部分 Node 环境)自定义 bot 向导识图必失败的根治:喂给视觉模型的预览图从 data URL 字符串改为直接字节。字符串形态会被 AI SDK 当作待下载的 URL 走其内置下载器(带 SSRF 防护的特殊 fetch),该路径在部分 undici 版本上直接抛下载错误,请求从未发出,表现为约 2 秒空回复后降级单件贴纸,且失败文案只显示"回复开头(空)"。字节形态由 SDK 直接 base64 编码,不经过下载器,与 Node 版本无关。同因旁证:聊天传图走的是 file+base64 形态所以一直正常。
+
 ## [0.33.0] - 2026-09-12
 
 ### Added

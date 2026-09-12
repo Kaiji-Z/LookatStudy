@@ -9,6 +9,7 @@
  * 5. dev 模式从 vite dev server 加载，生产从打包文件加载
  */
 import { app, BrowserWindow, session, shell } from "electron";
+import { zipSync, strToU8 } from "fflate";
 import { join, resolve } from "node:path";
 import { writeFileSync, appendFileSync, mkdirSync, existsSync, statSync } from "node:fs";
 import { initDb, getDb, markDirty } from "./db/index.js";
@@ -3639,6 +3640,188 @@ async function runUiTest(screenshot = false): Promise<void> {
         detail: m2Delete,
       });
     }
+  }
+
+  // ── Shimeji 桌宠(第七形态,SPEC-shimeji.md 判据③):协议全流程 + 第七形态选择项 + 帧渲染器挂载 ──
+  // 合成迷你包(自包含布局,ee 格式):icon.png 不计帧,shime1/2 两帧(与 verify-shimeji T4 同构)
+  const shimejiUiPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const shimejiUiActionsXml = `<?xml version="1.0" encoding="UTF-8" ?>
+<Mascot xmlns="http://www.group-finity.com/Mascot">
+  <ActionList>
+    <Action Name="Look" Type="Embedded" Class="com.group_finity.mascot.action.Look" />
+    <Action Name="Stand" Type="Stay" BorderType="Floor">
+      <Animation>
+        <Pose Image="/shime1.png" ImageAnchor="1,1" Velocity="0,0" Duration="150" />
+        <Pose Image="/shime2.png" ImageAnchor="1,1" Velocity="0,0" Duration="4" />
+      </Animation>
+    </Action>
+    <Action Name="Walk" Type="Move" BorderType="Floor">
+      <Animation>
+        <Pose Image="/shime1.png" ImageAnchor="1,1" Velocity="2,0" Duration="6" />
+      </Animation>
+    </Action>
+  </ActionList>
+</Mascot>`;
+  const shimejiUiBehaviorsXml = `<?xml version="1.0" encoding="UTF-8" ?>
+<マスコット>
+  <行動リスト>
+    <行動 名前="歩く" 頻度="40">
+      <次の行動リスト 追加="false">
+        <行動参照 名前="立つ" 頻度="100" />
+      </次の行動リスト>
+    </行動>
+  </行動リスト>
+</マスコット>`;
+  const shimejiZipB64 = Buffer.from(
+    zipSync({
+      "UiTestJi/conf/actions.xml": strToU8(shimejiUiActionsXml),
+      "UiTestJi/conf/behaviors.xml": strToU8(shimejiUiBehaviorsXml),
+      "UiTestJi/img/icon.png": new Uint8Array(shimejiUiPng),
+      "UiTestJi/img/shime1.png": new Uint8Array(shimejiUiPng),
+      "UiTestJi/img/shime2.png": new Uint8Array(shimejiUiPng),
+    }),
+  ).toString("base64");
+
+  // ① 协议全流程:importZip→角色清单→confirmImport→list→activate→getFrame
+  const shimejiFlow = await win.webContents
+    .executeJavaScript(
+      `
+    (async function() {
+      try {
+        var prev = await window.api.shimejiImportZip({ zipBase64: ${JSON.stringify(shimejiZipB64)} });
+        if (!prev || !prev.importId || !prev.characters || prev.characters.length !== 1)
+          return { ok: false, stage: "import", n: prev && prev.characters ? prev.characters.length : -1 };
+        var ch = prev.characters[0];
+        if (ch.frameCount !== 2 || ch.format !== "ee") return { ok: false, stage: "discover", frameCount: ch.frameCount, fmt: ch.format };
+        var conf = await window.api.shimejiConfirmImport({ importId: prev.importId, characterRefs: [ch.ref] });
+        var pk = conf && conf.packs && conf.packs[0];
+        if (!pk || !pk.id) return { ok: false, stage: "confirm" };
+        var lst = await window.api.shimejiList();
+        var found = (lst.packs || []).filter(function(p) { return p.id === pk.id; })[0];
+        if (!found || found.frameCount !== 2 || found.actionCount < 2) return { ok: false, stage: "list", found: found };
+        var act = await window.api.shimejiActivate({ id: pk.id });
+        var ga = await window.api.shimejiGetActive();
+        var fr = await window.api.shimejiGetFrame({ packId: pk.id, frame: "shime1.png" });
+        return {
+          ok: act.ok === true && !!ga && ga.id === pk.id && typeof fr === "string" && fr.length > 60,
+          id: pk.id, name: pk.name, format: pk.format, actions: pk.actionCount, frames: ga && ga.frames ? ga.frames.join(",") : null
+        };
+      } catch (e) { return { ok: false, error: String(e) }; }
+    })()
+  `,
+    )
+    .catch(() => null);
+  results.push({
+    name: "shimeji: importZip→角色清单→confirmImport→list→activate→getFrame 协议全流程",
+    ok: shimejiFlow?.ok === true,
+    detail: shimejiFlow,
+  });
+
+  if (shimejiFlow?.ok === true) {
+    // ② 设置页 DOM:第七形态选择项 + Shimeji 区块 + 导入卡(开抽屉直查,零对话框)
+    const shimejiDom = await win.webContents
+      .executeJavaScript(
+        `
+      (async function() {
+        try {
+          var q = function(s) { return document.querySelector(s); };
+          var gear = q('[data-testid="header-settings"]');
+          if (!gear) return { ok: false, reason: "no header-settings" };
+          gear.click();
+          var drawer = null;
+          for (var i = 0; i < 20; i++) {
+            await new Promise(function(r) { setTimeout(r, 250); });
+            drawer = q('[data-testid="settings-drawer"]');
+            if (drawer) break;
+          }
+          if (!drawer) return { ok: false, reason: "no settings drawer" };
+          // SettingsView 是 React.lazy(v0.22 入口包瘦身),抽屉壳先出现、内容 chunk 后到——轮询等伴学区渲染
+          var out = { formBtn: false, section: false, importCard: false, ok: false };
+          for (var j = 0; j < 30; j++) {
+            await new Promise(function(r) { setTimeout(r, 200); });
+            out.formBtn = !!q('[data-testid="companion-form-shimeji"]');
+            out.section = !!q('[data-testid="shimeji-section"]');
+            out.importCard = !!q('[data-testid="shimeji-import"]');
+            if (out.formBtn && out.section && out.importCard) break;
+          }
+          var close = q('[data-testid="settings-close"]');
+          if (close) close.click();
+          await new Promise(function(r) { setTimeout(r, 400); });
+          out.ok = out.formBtn && out.section && out.importCard;
+          return out;
+        } catch (e) { return { ok: false, error: String(e) }; }
+      })()
+    `,
+      )
+      .catch(() => null);
+    results.push({
+      name: "shimeji: 设置页第七形态选择项 + Shimeji 区块 + 导入卡",
+      ok: shimejiDom?.ok === true,
+      detail: shimejiDom,
+    });
+
+    // ③ 帧渲染器挂载:形态切 shimeji → cp-form-shimeji 外壳 + shimeji-art(挂载拉包→帧 image 在位)
+    const shimejiRender = await win.webContents
+      .executeJavaScript(
+        `
+      (async function() {
+        try {
+          await window.api.setSetting("companion_form", "shimeji");
+          window.dispatchEvent(new Event("companion-config-changed"));
+          var cls = "", art = false, imgs = 0;
+          for (var i = 0; i < 60; i++) {
+            await new Promise(function(r) { setTimeout(r, 100); });
+            var m = document.querySelector('[data-testid="companion-mascot"]');
+            cls = m ? String(m.getAttribute("class")) : "";
+            art = !!document.querySelector('[data-testid="shimeji-art"]');
+            imgs = document.querySelectorAll('[data-testid="shimeji-art"] image').length;
+            if (cls.indexOf("cp-form-shimeji") >= 0 && art && imgs >= 1) break;
+          }
+          return { ok: cls.indexOf("cp-form-shimeji") >= 0 && art && imgs >= 1, cls: cls.slice(0, 90), art: art, images: imgs };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      })()
+    `,
+      )
+      .catch(() => null);
+    results.push({
+      name: "shimeji: 形态切 shimeji → cp-form-shimeji + 帧渲染器挂载(image≥1)",
+      ok: shimejiRender?.ok === true,
+      detail: shimejiRender,
+    });
+
+    // ④ 清理回落:删包 + 形态回 ember(不留测试包污染 userData)
+    const shimejiCleanup = await win.webContents
+      .executeJavaScript(
+        `
+      (async function() {
+        try {
+          var del = await window.api.shimejiDelete({ id: ${JSON.stringify(shimejiFlow.id)} });
+          await window.api.setSetting("companion_form", "ember");
+          window.dispatchEvent(new Event("companion-config-changed"));
+          var cls = "";
+          for (var i = 0; i < 30; i++) {
+            await new Promise(function(r) { setTimeout(r, 100); });
+            var m = document.querySelector('[data-testid="companion-mascot"]');
+            cls = m ? String(m.getAttribute("class")) : "";
+            if (cls.indexOf("cp-form-shimeji") < 0) break;
+          }
+          var lst = await window.api.shimejiList();
+          var gone = (lst.packs || []).every(function(p) { return p.id !== ${JSON.stringify(shimejiFlow.id)}; });
+          var ga = await window.api.shimejiGetActive();
+          return { ok: del.ok === true && gone && !ga && cls.indexOf("cp-form-shimeji") < 0, packsLeft: (lst.packs || []).length };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      })()
+    `,
+      )
+      .catch(() => null);
+    results.push({
+      name: "shimeji: delete → 包消失 + 激活清空 + 形态回落 ember",
+      ok: shimejiCleanup?.ok === true,
+      detail: shimejiCleanup,
+    });
   }
 
   // allOk: 所有测试通过 OR 仅 knownFail 测试未通过

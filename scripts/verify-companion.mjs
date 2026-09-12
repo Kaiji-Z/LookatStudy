@@ -367,7 +367,7 @@ console.log("✓ T11 麦克风:attack快/release慢/收敛 + 声波弧 4 档量�
   // id 清单:唯一、有序、默认在列
   assert.strictEqual(new Set(COMPANION_FORM_IDS).size, COMPANION_FORM_IDS.length, "T12: 形象 id 必须唯一");
   assert.ok(COMPANION_FORM_IDS.includes(DEFAULT_COMPANION_FORM), "T12: 默认形象必须在清单内");
-  assert.strictEqual(COMPANION_FORM_IDS.length, 6, "T12: 六款形象(小焰/霜绒/苔芽/星尘/墨墨/纸偶,M2 §16)");
+  assert.strictEqual(COMPANION_FORM_IDS.length, 7, "T12: 七款形象(小焰/霜绒/苔芽/星尘/墨墨/纸偶/Shimeji)");
   // 设置回退:合法值直通,空/垃圾值回默认(绝不在渲染层炸)
   for (const id of COMPANION_FORM_IDS) assert.strictEqual(formIdFromSetting(id), id, `T12: ${id} 直通`);
   assert.strictEqual(formIdFromSetting(null), DEFAULT_COMPANION_FORM, "T12: 未设置→默认");

@@ -3231,16 +3231,17 @@ async function runUiTest(screenshot = false): Promise<void> {
         (async function() {
           await window.api.setSetting("companion_form", "custom");
           window.dispatchEvent(new Event("companion-config-changed"));
-          var cls = "", disc = 0, imgs = 0;
+          var cls = "", disc = 0, imgs = 0, arms = 0;
           for (var i = 0; i < 40; i++) {
             await new Promise(function(r) { setTimeout(r, 100); });
             var m = document.querySelector('[data-testid="companion-mascot"]');
             cls = m ? String(m.getAttribute("class")) : "";
             disc = document.querySelectorAll(".cp-disc").length;
             imgs = document.querySelectorAll('[data-testid="companion-mascot"] image').length;
+            arms = document.querySelectorAll('[data-testid="companion-mascot"] .cp-veh-arm').length;
             if (cls.indexOf("cp-form-custom") >= 0 && imgs >= 3) break;
           }
-          return { ok: cls.indexOf("cp-form-custom") >= 0 && disc >= 1 && imgs >= 3, cls: cls.slice(0, 90), disc: disc, imgs: imgs };
+          return { ok: cls.indexOf("cp-form-custom") >= 0 && disc >= 1 && imgs >= 3 && arms >= 2, cls: cls.slice(0, 90), disc: disc, imgs: imgs, arms: arms };
         })()
       `,
         )
@@ -3788,6 +3789,7 @@ async function runUiTest(screenshot = false): Promise<void> {
           await window.api.setSetting("companion_form", "shimeji");
           window.dispatchEvent(new Event("companion-config-changed"));
           var cls = "", art = false, imgs = 0;
+          var veh = function() { return document.querySelector('[data-testid="shimeji-veh"]'); };
           for (var i = 0; i < 60; i++) {
             await new Promise(function(r) { setTimeout(r, 100); });
             var m = document.querySelector('[data-testid="companion-mascot"]');
@@ -3796,7 +3798,21 @@ async function runUiTest(screenshot = false): Promise<void> {
             imgs = document.querySelectorAll('[data-testid="shimeji-art"] image').length;
             if (cls.indexOf("cp-form-shimeji") >= 0 && art && imgs >= 1) break;
           }
-          return { ok: cls.indexOf("cp-form-shimeji") >= 0 && art && imgs >= 1, cls: cls.slice(0, 90), art: art, images: imgs };
+          var mountHidden = veh() ? parseFloat(getComputedStyle(veh()).opacity) < 0.2 : false;
+          var arms = document.querySelectorAll('[data-testid="shimeji-art"] .cp-veh-arm').length;
+          // 值勤姿势(打字)→ 载具浮现:走真实打字链(chat-input 聚焦→keydown)
+          var input = document.querySelector('[data-testid="chat-input"]');
+          if (input) input.focus();
+          var mountShown = false;
+          for (var j = 0; j < 40; j++) {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }));
+            await new Promise(function(r) { setTimeout(r, 250); });
+            var mm = document.querySelector('[data-testid="companion-mascot"]');
+            if (String(mm ? mm.getAttribute("class") : "").indexOf("cp-pose-typing") >= 0 && veh() && parseFloat(getComputedStyle(veh()).opacity) > 0.8) { mountShown = true; break; }
+          }
+          if (input) input.blur();
+          window.dispatchEvent(new CustomEvent("companion-zone-focus", { detail: false }));
+          return { ok: cls.indexOf("cp-form-shimeji") >= 0 && art && imgs >= 1 && mountHidden && arms >= 2 && mountShown, cls: cls.slice(0, 90), art: art, images: imgs, mountHidden: mountHidden, arms: arms, mountShown: mountShown };
         } catch (e) { return { ok: false, error: String(e) }; }
       })()
     `,

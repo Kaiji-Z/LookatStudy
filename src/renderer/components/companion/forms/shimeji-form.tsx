@@ -30,6 +30,8 @@ import {
   type ShimejiSignal,
 } from "../../../lib/companion/shimeji-scheduler.ts";
 import type { FormArtProps } from "./shared.js";
+import { VehArms, VehGroup } from "./vehicle.js";
+import { VEH_THEMES } from "../../../lib/companion/veh-themes.ts";
 
 const TICK_MS = 50;
 
@@ -41,6 +43,10 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
   exprRef.current = expression;
   const manifestRef = useRef(manifest);
   manifestRef.current = manifest;
+  // 值勤钉扎:壳层值勤姿势(打字/写字/指向/飞行)时精灵收步归中、脚踩平台顶面——
+  // 与载具机械臂对位;地面自主动作(调度器策略)不受影响
+  const rootRef = useRef<SVGGElement | null>(null);
+  const dutyRef = useRef(false);
 
   // 挂载即拉激活包(store 单例,inflight 去重)——设置页之外激活的包(重启后/协议直调)也能到位
   useEffect(() => {
@@ -64,7 +70,21 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
   useEffect(() => {
     if (!manifest) return;
     const timer = setInterval(() => {
-      setRt((prev) => tickShimeji(prev, manifest, { t: "tick" }, exprRef.current));
+      const cls = rootRef.current?.ownerSVGElement?.getAttribute("class") ?? "";
+      const duty = /cp-pose-(typing|writing|flying)|cp-pose-point|cp-takeoff/.test(cls);
+      dutyRef.current = duty;
+      setRt((prev) => {
+        const next = tickShimeji(prev, manifest, { t: "tick" }, exprRef.current);
+        if (!duty || next.mode !== "ground") return next;
+        const action = manifest.actions.find((a) => a.name === next.actionName);
+        const pinned = {
+          ...next,
+          x: next.x + (100 - next.x) * 0.25,
+          y: 179,
+          actionName: action?.kind === "Move" ? (manifest.actions.find((a) => a.kind === "Stay")?.name ?? next.actionName) : next.actionName,
+        };
+        return pinned;
+      });
     }, TICK_MS);
     return () => clearInterval(timer);
   }, [manifest]);
@@ -89,8 +109,13 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
   const ay = pose?.anchor[1] ?? 128;
 
   return (
-    <g className="cp-shimeji" data-testid="shimeji-art" data-mode={rt.mode} data-action={rt.actionName ?? ""}>
-      {/* 壳的姿势/表情/口型 refs 全挂空 g(写入无害 no-op) */}
+    <g ref={rootRef} className="cp-shimeji" data-testid="shimeji-art" data-mode={rt.mode} data-action={rt.actionName ?? ""}>
+      {/* 值勤载具+机械臂(用户拍板 2026-09-12):打字/写字/指向/飞行等壳层值勤姿势时
+          浮现(CSS .cp-form-shimeji .cp-veh-mount 门控),地面自主动作(走/坐/躺/爬)时
+          收起。refs.armL/armR 挂机械臂——壳的逐键拍打与指向姿势零接线落机械臂。 */}
+      <g className="cp-veh-mount" data-testid="shimeji-veh">
+        <VehGroup uid={`${uid}-shimeji-veh`} energyRatio={energyRatio} theme={VEH_THEMES.silver} />
+      </g>
       <g ref={refs.bot} data-shimeji-body>
         <g transform={`translate(${rt.x} ${rt.y}) scale(${rt.facing} 1)`}>
           {src ? (
@@ -108,9 +133,8 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
           )}
         </g>
       </g>
+      <VehArms refs={refs} theme={VEH_THEMES.silver} />
       <g ref={refs.head} />
-      <g ref={refs.armL} />
-      <g ref={refs.armR} />
       <g ref={refs.eyes} />
       <g ref={refs.waves} />
       <g ref={refs.pupils} />

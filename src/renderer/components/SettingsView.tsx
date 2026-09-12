@@ -486,6 +486,7 @@ export function SettingsView() {
               activeModel={activeModel}
               presets={presets}
               customProviders={customProviders}
+              onProvidersChanged={() => void load()}
             />
           </div>
         </section>
@@ -683,11 +684,14 @@ function MultimodalContent({
   activeModel,
   presets,
   customProviders,
+  onProvidersChanged,
 }: {
   activeProvider: string;
   activeModel: string;
   presets: ProviderPresetInfo[];
   customProviders: CustomProvider[];
+  /** 增删 provider 后刷新父级列表(看图区删除按钮用) */
+  onProvidersChanged?: () => void;
 }) {
   const t = useLang();
   const [enabled, setEnabled] = useState(false);
@@ -738,6 +742,24 @@ function MultimodalContent({
     await api.setSetting("vision_model_override", "");
     setOverrideProvider("");
     setShowForm(false);
+  };
+
+  /** 删除看图区自定义 provider(2026-09-12,手机真机反馈"没有删除按钮"):
+      在身覆盖一并清掉再删行;父级列表经 onProvidersChanged 刷新。 */
+  const [confirmVisionDelete, setConfirmVisionDelete] = useState<{ id: string; label: string; rect: DOMRect } | null>(null);
+  const handleDeleteVisionCustom = async (id: string) => {
+    try {
+      if (overrideProvider === id) {
+        await api.setSetting("vision_provider_override", "");
+        await api.setSetting("vision_model_override", "");
+        setOverrideProvider("");
+      }
+      await api.deleteCustomProvider(id);
+    } catch {
+      /* 删除失败保持现状 */
+    } finally {
+      onProvidersChanged?.();
+    }
   };
 
   /** 测识图覆盖:测的就是生效链路(覆盖优先,缺省回落主模型) */
@@ -819,6 +841,16 @@ function MultimodalContent({
                       <button onClick={() => void handleStopOverride()} className="text-label text-ink-muted hover:text-ink-strong">
                         {t("settings.multimodal.stop_override")}
                       </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmVisionDelete({ id: overrideCustom.id, label: overrideCustom.label, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+                        }}
+                        data-testid={`vision-delete-${overrideCustom.id}`}
+                        className="text-label text-ink-muted hover:text-warning"
+                      >
+                        {t("action.delete")}
+                      </button>
                       {visionTestResult && (
                         <span className={`text-label inline-flex items-center gap-1 ${visionTestResult.ok ? "text-brand" : "text-warning"}`}>
                           {visionTestResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
@@ -842,15 +874,29 @@ function MultimodalContent({
                 {!overrideCustom && !overrideLegacyPreset && (
                   <>
                     {visionCustoms.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => void handleCustomSaved(c)}
-                        className="w-full text-left px-3 py-2 rounded-lg bg-surface-1 hover:bg-surface-3 transition-colors"
-                        data-testid={`vision-pick-${c.id}`}
-                      >
-                        <span className="text-label font-medium text-ink-strong">{c.label}</span>
-                        <span className="text-label text-ink-faint font-mono break-all ml-2">{c.defaultModel}</span>
-                      </button>
+                      <span key={c.id} className="relative block">
+                        <button
+                          onClick={() => void handleCustomSaved(c)}
+                          className="w-full text-left px-3 py-2 rounded-lg bg-surface-1 hover:bg-surface-3 transition-colors"
+                          data-testid={`vision-pick-${c.id}`}
+                        >
+                          <span className="text-label font-medium text-ink-strong">{c.label}</span>
+                          <span className="text-label text-ink-faint font-mono break-all ml-2">{c.defaultModel}</span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={t("action.delete")}
+                          data-tooltip={t("action.delete")}
+                          data-testid={`vision-delete-${c.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmVisionDelete({ id: c.id, label: c.label, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+                          }}
+                          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full text-ink-muted hover:text-warning flex items-center justify-center hover:bg-surface-2"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
                     ))}
                     {(showForm || visionCustoms.length === 0) && (
                       <CustomProviderForm
@@ -886,6 +932,18 @@ function MultimodalContent({
             </div>
           </div>
       </div>
+          {/* 删除看图自定义 provider 内联确认(与主模型区同款) */}
+      {confirmVisionDelete && (
+        <ConfirmCard
+          anchorRect={confirmVisionDelete.rect}
+          message={t("settings.delete_custom_confirm", { name: confirmVisionDelete.label })}
+          danger
+          confirmLabel={t("action.delete")}
+          testid="vision-provider-delete-confirm"
+          onConfirm={() => { void handleDeleteVisionCustom(confirmVisionDelete.id); setConfirmVisionDelete(null); }}
+          onCancel={() => setConfirmVisionDelete(null)}
+        />
+      )}
     </>
   );
 }

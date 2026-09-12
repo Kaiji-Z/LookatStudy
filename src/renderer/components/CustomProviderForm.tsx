@@ -102,7 +102,7 @@ export function CustomProviderForm({
           onChange={(e) => setLabel(e.target.value)}
           placeholder={t("settings.custom.label_ph")}
           data-testid={`${testPrefix}-label`}
-          className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+          className={`${fieldCls} min-w-0 flex-1 px-2.5 py-1.5`}
         />
         {showProtocol && (
           <select
@@ -132,7 +132,7 @@ export function CustomProviderForm({
           onChange={(e) => setModel(e.target.value)}
           placeholder={t(modelPhKey)}
           data-testid={`${testPrefix}-model`}
-          className={`${fieldCls} flex-1 px-2.5 py-1.5 font-mono`}
+          className={`${fieldCls} min-w-0 flex-1 px-2.5 py-1.5 font-mono`}
         />
         <input
           type="password"
@@ -140,7 +140,7 @@ export function CustomProviderForm({
           onChange={(e) => setApiKey(e.target.value)}
           placeholder={t("settings.custom.apikey_ph")}
           data-testid={`${testPrefix}-apikey`}
-          className={`${fieldCls} flex-1 px-2.5 py-1.5`}
+          className={`${fieldCls} min-w-0 flex-1 px-2.5 py-1.5`}
         />
       </div>
       {/* 看图能力开关:仅 kind=llm 有效;kind=vision 天生支持 */}

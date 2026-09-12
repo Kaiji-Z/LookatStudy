@@ -149,8 +149,10 @@ export async function cutCompanionFigure(
   let cuts: CutCurves | null = null;
   let visionError: string | undefined;
   if (fm && !deps.skipVision) {
+    let usedVision = ""; // 失败行披露实际识图通道(覆盖/主模型),坏覆盖一眼可见
     const locateAt = async (dataUrl: string, maxOutputTokens: number) => {
       const llm = resolveVisionLlm(deps.db);
+      usedVision = `${llm.provider.label}/${llm.model}`;
       return generateTextWithTimeout(
         llm.languageModel,
         [
@@ -195,7 +197,7 @@ export async function cutCompanionFigure(
         // 带出原文开头:端点秒回拒绝/空内容时,这是唯一能区分「key 档位没视觉」
         // 「端点剥离了图片」「模型答非所问」的证据(2026-09-11 手机真机排查)
         const head = rawReply.trim().slice(0, 120);
-        visionError = `切分线解析失败(VLM 输出不含 cuts JSON)。回复开头:「${head || "(空)"}」`;
+        visionError = `切分线解析失败(VLM 输出不含 cuts JSON;识图通道 ${usedVision || "?"})。回复开头:「${head || "(空)"}」`;
       }
     } catch (e) {
       cuts = null;

@@ -59,12 +59,53 @@ const BASE_AGENT_PROMPT_TAIL =
   "- 避免长段落(超过 4 行就考虑拆分或转列表)。" +
   "好的排版 = 学习者更容易抓住重点,这是教学效果的一部分。";
 
-/** 组装基座提示词:zh=中文本体(逐字节回归锁);非 zh=英文本体(2026-08-31 i18n 落地)。 */
-export function buildBaseAgentPrompt(locale: string): string {
+/** 组装基座提示词:zh=中文本体(逐字节回归锁);非 zh=英文本体(2026-08-31 i18n 落地)。
+ *  v0.33:语言学习课程传 targetLang → 语言指令后追加【语言教学姿态】块(默认不传=零变化)。 */
+export function buildBaseAgentPrompt(locale: string, targetLang?: string | null): string {
+  const targetBlock = buildLanguageTeachingBlock(locale, targetLang);
   if (isZhLocale(locale)) {
-    return BASE_AGENT_PROMPT_HEAD + buildLanguageDirective(locale) + "\n\n" + BASE_AGENT_PROMPT_TAIL;
+    return (
+      BASE_AGENT_PROMPT_HEAD +
+      buildLanguageDirective(locale, targetLang) +
+      (targetBlock ? "\n\n" + targetBlock : "") +
+      "\n\n" +
+      BASE_AGENT_PROMPT_TAIL
+    );
   }
-  return BASE_AGENT_PROMPT_HEAD_EN + buildLanguageDirective(locale) + "\n\n" + BASE_AGENT_PROMPT_TAIL_EN;
+  return (
+    BASE_AGENT_PROMPT_HEAD_EN +
+    buildLanguageDirective(locale, targetLang) +
+    (targetBlock ? "\n\n" + targetBlock : "") +
+    "\n\n" +
+    BASE_AGENT_PROMPT_TAIL_EN
+  );
+}
+
+/**
+ * v0.33 语言教学姿态块(仅语言学习课程注入,courses.language_target 非空):
+ * 双轴=教学语言(界面语言)教目标语言(课程语言)。没有这块,语言指令的"全部跟随
+ * 界面语言"会把目标语言素材整体翻译掉——issue #15"学英语被翻成中文出题"的根。
+ */
+function buildLanguageTeachingBlock(locale: string, targetLang?: string | null): string | null {
+  if (!targetLang) return null;
+  const t = localeToLanguageName(targetLang);
+  if (isZhLocale(locale)) {
+    return (
+      `【语言教学姿态】这门课程教的是${t}——中文是教学语言,${t}是学习对象:\n` +
+      `- 讲解、指令、反馈一律用中文;课文引用、例句、题目素材保持${t}原文,考察目标语言本身;\n` +
+      `- 学习者用${t}造句或表达时,先肯定再纠正其中的语言错误(语法/用词/拼写),用中文讲清错在哪;\n` +
+      `- 新词首次出现可附中文注释,注释是辅助不是替代——不要整段给出中文翻译;\n` +
+      `- 随掌握度上升,渐进提高${t}素材的占比,把学习者往"直接用${t}读"带。`
+    );
+  }
+  const name = localeToLanguageName(locale);
+  return (
+    `[Language-teaching posture] This course teaches ${t} — ${name} is the medium of instruction, ${t} is the subject:\n` +
+    `- Explanations, instructions, and feedback in ${name}; quoted passages, example sentences, and quiz material stay in ${t}, testing the target language itself;\n` +
+    `- When the learner writes in ${t}, acknowledge the attempt first, then correct language errors (grammar/word choice/spelling), explaining the reason in ${name};\n` +
+    `- Gloss new words on first appearance — a gloss is an aid, not a substitute; never hand out full translations of passages;\n` +
+    `- Raise the share of ${t} material as mastery grows, guiding the learner toward reading ${t} directly.`
+  );
 }
 
 /**

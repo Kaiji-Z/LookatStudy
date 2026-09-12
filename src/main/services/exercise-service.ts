@@ -20,7 +20,7 @@ import { generateText } from "ai";
 import { eq } from "drizzle-orm";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../db/schema.js";
-import { contentNodes, exercises } from "../db/schema.js";
+import { contentNodes, courses, exercises } from "../db/schema.js";
 import { resolveLlm } from "./agent/llm-client.js";
 import { questionLanguageLine } from "@shared/locales";
 import { resolveOutputLang } from "@shared/locales";
@@ -52,7 +52,12 @@ export async function generateExercise(
   const llm = resolveLlm(db);
 
   const outLang = resolveOutputLang(locale);
-  const prompt = buildGenerationPrompt(node.title, node.content ?? "(无内容，基于标题出题)", exerciseType, outLang);
+  // v0.33 语言学习课程:题中语言素材保持目标语言原文(questionLanguageLine 双轴)
+  const courseRow = node.courseId
+    ? db.select().from(courses).where(eq(courses.id, node.courseId)).get()
+    : undefined;
+  const languageTarget = courseRow?.languageTarget ?? null;
+  const prompt = buildGenerationPrompt(node.title, node.content ?? "(无内容，基于标题出题)", exerciseType, outLang, languageTarget);
 
   const result = await generateText({
     model: llm.languageModel,
@@ -155,7 +160,7 @@ function rowToExercise(row: typeof exercises.$inferSelect): Exercise {
   };
 }
 
-function buildGenerationPrompt(title: string, content: string, type: ExerciseType, outLang: string): string {
+function buildGenerationPrompt(title: string, content: string, type: ExerciseType, outLang: string, languageTarget?: string | null): string {
   const typeSpec = {
     mcq: `出一道四选一选择题。options 是 4 个选项的数组，answer 是正确选项的下标（"0"/"1"/"2"/"3"）。
 干扰项设计要求：基于学习者常犯的真实误解（不是明显错误的凑数选项），让认真学过的人能排除，没学懂的人会选错。
@@ -177,7 +182,7 @@ function buildGenerationPrompt(title: string, content: string, type: ExerciseTyp
     `出题红线:`,
     `- 答案必须在提供的学习内容中有依据，不可编造内容里没有的知识`,
     `- 数学表达式用行内 $..$ 或行间 $$..$$ 的 LaTeX 记法书写，不要用纯文本近似（界面会渲染成公式）`,
-    questionLanguageLine(outLang),
+    questionLanguageLine(outLang, languageTarget),
     `- 干扰项 plausible 但 definitely wrong（不能有争议）`,
     ``,
     `严格按以下 JSON 格式返回，不要加任何 markdown 代码块标记、不要解释：`,

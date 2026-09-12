@@ -147,10 +147,6 @@ export function assembleContextBlocks(
   node: typeof contentNodes.$inferSelect | undefined;
   nodeProgress: typeof progressTable.$inferSelect | undefined;
 } {
-  // AI 输出语言 = 界面语言(用户偏好什么界面就偏好什么输出);未传 → zh-CN
-  const outLang = resolveOutputLang(locale);
-  const system = buildSystemPrompt(db, buildBaseAgentPrompt(outLang), buildSoulLangReminder(outLang));
-
   // 当前节点上下文（只读，给 agent 看）
   const node = db
     .select()
@@ -168,6 +164,17 @@ export function assembleContextBlocks(
   const course = courseId
     ? db.select().from(courses).where(eq(courses.id, courseId)).get()
     : null;
+
+  // AI 输出语言 = 界面语言(用户偏好什么界面就偏好什么输出);未传 → zh-CN。
+  // v0.33 双轴:语言学习课程(course.language_target 非空)额外注入目标语言
+  // carve-out + 语言教学姿态块 —— 教学语言=界面语言,被考语言=课程目标语言。
+  const outLang = resolveOutputLang(locale);
+  const system = buildSystemPrompt(
+    db,
+    buildBaseAgentPrompt(outLang, course?.languageTarget ?? null),
+    buildSoulLangReminder(outLang),
+  );
+
   const courseSections = courseId
     ? db
         .select()

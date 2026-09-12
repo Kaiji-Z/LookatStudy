@@ -27,6 +27,8 @@ export const courses = sqliteTable("courses", {
     .default("doc"),
   /** 仓库原文语言 (en / zh-CN / zh-TW / ...), LLM Step 2 判断; null=未知按 en 处理 */
   sourceLang: text("source_lang"),
+  /** v0.33 语言学习课程的目标语言;null = 非语言课程 */
+  languageTarget: text("language_target"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS courses (
   lab_type TEXT NOT NULL DEFAULT 'doc' CHECK (lab_type IN ('doc', 'code', 'notebook')),
   -- 仓库原文语言 (BCP-47 子集: en / zh-CN / zh-TW / ja / ...), LLM 在 Step 2 判断
   source_lang TEXT,
+  -- v0.33 语言学习课程的目标语言(被教的语言,BCP-47);NULL = 非语言课程。
+  -- 与 source_lang 语义不同:中文写的英语教材 source_lang=zh-CN、language_target=en
+  language_target TEXT,
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 

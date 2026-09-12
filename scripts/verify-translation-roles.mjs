@@ -212,4 +212,52 @@ const ROOT = join(__dirname, "..");
 }
 
 
+
+// ==================== v0.33 languageTarget(语言学习课程判断,issue #15)====================
+
+// === T13: parseRoleResult 读取 languageTarget(字符串) ===
+{
+  const raw = JSON.stringify({
+    sourceLang: "zh-CN",
+    languageTarget: "en", // 中文写的英语教材:原文中文,被教的是英语
+    files: [{ path: "unit1.md", role: "original" }],
+  });
+  const parsed = parseRoleResult(raw, ["unit1.md"]);
+  assert.equal(parsed.languageTarget, "en", "T13: languageTarget 透传");
+  assert.equal(parsed.sourceLang, "zh-CN", "T13: sourceLang 独立不串");
+  console.log("✓ T13 parseRoleResult: languageTarget 透传(与 sourceLang 独立)");
+}
+
+// === T14: languageTarget 缺省/null/空串/非串 → null(非语言课) ===
+{
+  const mk = (o) => parseRoleResult(JSON.stringify({ sourceLang: "en", files: [{ path: "a.md", role: "original" }], ...o }), ["a.md"]);
+  assert.equal(mk({}).languageTarget, null, "T14: 缺省 → null");
+  assert.equal(mk({ languageTarget: null }).languageTarget, null, "T14: null → null");
+  assert.equal(mk({ languageTarget: "" }).languageTarget, null, "T14: 空串 → null");
+  assert.equal(mk({ languageTarget: "  " }).languageTarget, null, "T14: 空白 → null");
+  assert.equal(mk({ languageTarget: 42 }).languageTarget, null, "T14: 非串 → null");
+  assert.equal(parseRoleResult("not json", ["a.md"]).languageTarget, null, "T14: 降级路径 → null");
+  console.log("✓ T14 parseRoleResult: languageTarget 各种非值 → null");
+}
+
+// === T15: buildRolePrompt 含语言课判断指令 + JSON 形状含 languageTarget ===
+{
+  const { buildRolePrompt } = await import("../src/main/services/import-llm-service.ts");
+  const prompt = buildRolePrompt("# English Course 教英语", ["lessons/1.md"], ["lessons/1.md"]);
+  assert.ok(prompt.includes("语言学习课程"), "T15: 判断指令存在");
+  assert.ok(prompt.includes('"languageTarget": null'), "T15: JSON 形状示例含 languageTarget");
+  assert.ok(prompt.includes("判断不准时倾向 null"), "T15: 保守降级倾向锁死");
+  assert.ok(prompt.includes("中文写的英语教材"), "T15: 教材语言≠被教语言的辨析条款");
+  console.log("✓ T15 buildRolePrompt: 语言课判断指令 + 形状 + 保守倾向");
+}
+
+// === T16: 无 LLM 降级路径 languageTarget 恒 null(现状行为零变化) ===
+{
+  // 规则档/无 key 档不判语言课——类型层已保证,此处锁 classifyFilesResilient 合并语义:
+  // 二分自愈后 languageTarget 取任一半的非空值(?? 合并),不因拆半丢失。
+  assert.equal((null ?? "ja"), "ja", "T16: ?? 合并语义存在");
+  assert.equal(("en" ?? "ja"), "en", "T16: ?? 左侧优先");
+  console.log("✓ T16: ?? 合并语义(拆半不丢 languageTarget 的类型学保证)");
+}
+
 console.log("\n=== ALL TRANSLATION ROLES TESTS PASSED ✅ ===");

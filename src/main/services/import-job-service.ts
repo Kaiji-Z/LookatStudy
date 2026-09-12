@@ -123,6 +123,7 @@ function rolesToPlan(r: FileClassificationResult): PlanClassification {
     languages: r.languages,
     sourceLang: r.sourceLang,
     translationLayout: r.translationLayout,
+    languageTarget: r.languageTarget,
   };
 }
 
@@ -137,6 +138,8 @@ function planToRoles(p: PlanClassification): FileClassificationResult {
     languages: p.languages,
     sourceLang: p.sourceLang,
     translationLayout: p.translationLayout,
+    // 旧版快照无此字段 → undefined,统一压成 null(非语言课,现状行为)
+    languageTarget: p.languageTarget ?? null,
   };
 }
 
@@ -523,10 +526,10 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       let roles: FileClassificationResult;
       if (plan.classification) {
         roles = planToRoles(plan.classification);
-        send(`✓ 文件分类:复用快照(${roles.original.length} 原文 · ${roles.practice.length} 实操 · 原文语言 ${roles.sourceLang})`);
+        send(`✓ 文件分类:复用快照(${roles.original.length} 原文 · ${roles.practice.length} 实操 · 原文语言 ${roles.sourceLang}${roles.languageTarget ? ` · 语言课 ${roles.languageTarget}` : ""})`);
       } else {
         roles = await (deps.classify ?? classifyFileRoles)(db, readmeMd, fileList, fullTree, send, { signal: cancelCtl.signal });
-        send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
+        send(`✓ 文件分类:${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}${roles.languageTarget ? ` · 语言课 ${roles.languageTarget}` : ""}`);
         plan.classification = rolesToPlan(roles);
         plan.reachedStep = 2;
         savePlan();
@@ -607,6 +610,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
           translationPairs: roles.translationPairs,
           sourceLang: roles.sourceLang,
           translationLayout: roles.translationLayout,
+          languageTarget: roles.languageTarget,
           shouldAbort,
           markDirty,
         },

@@ -181,6 +181,13 @@ export interface FileClassificationResult {
   sourceLang: string;
   /** 检测到的翻译布局约定 (microsoft/parallel/suffix/none) */
   translationLayout: "microsoft" | "parallel" | "suffix" | "none";
+  /**
+   * v0.33 语言学习课程的目标语言(BCP-47,如 "en"/"ja"/"ko"/"zh-CN"),LLM 判断;
+   * null = 不是语言学习课程(教的是知识/技术,语言只是载体)。
+   * 注意与 sourceLang 语义不同:中文母语者写的英语教材仓库 sourceLang=zh-CN、
+   * languageTarget=en。规则降级/无 key 档恒 null(= 现状行为,零变化)。
+   */
+  languageTarget: string | null;
 }
 
 /**
@@ -261,7 +268,8 @@ export async function classifyFileRoles(
   // ── LLM 判断剩余文件 + sourceLang ──
   const ready = isLlmReady(db);
   if (!ready.ready || remaining.length === 0) {
-    // 无 key 或无待判文件: 所有 remaining 当 original, sourceLang 规则推断
+    // 无 key 或无待判文件: 所有 remaining 当 original, sourceLang 规则推断;
+    // 语言课程判断只有 LLM 能做 → null(= 非语言课,行为不变)
     return {
       original: remaining,
       translations,
@@ -271,6 +279,7 @@ export async function classifyFileRoles(
       languages: validLangs,
       sourceLang: detectSourceLangByRule(readmeMd),
       translationLayout: layoutResult.layout,
+      languageTarget: null,
     };
   }
 
@@ -287,6 +296,7 @@ export async function classifyFileRoles(
   const allPathSet = new Set(allPaths);
   const llmLangs = new Set<string>();
   let sourceLang = "";
+  let languageTarget: string | null = null;
 
   for (let i = 0; i < remaining.length; i += CHUNK_SIZE) {
     const chunk = remaining.slice(i, i + CHUNK_SIZE);
@@ -306,8 +316,9 @@ export async function classifyFileRoles(
       shouldAbort: () => opts?.signal?.aborted === true,
     });
 
-    // sourceLang 取第一块的（整个仓库一致）
+    // sourceLang/languageTarget 取第一块的（整个仓库一致）
     if (!sourceLang && parsed.sourceLang) sourceLang = parsed.sourceLang;
+    if (languageTarget === null && parsed.languageTarget) languageTarget = parsed.languageTarget;
 
     for (const { path, role, lang, translates } of parsed.files) {
       if (role === "translation") {
@@ -328,7 +339,6 @@ export async function classifyFileRoles(
   }
 
   if (!sourceLang) sourceLang = detectSourceLangByRule(readmeMd);
-
   // LLM 判出的翻译语言并入语言列表（供 resolveImportLang 决策 + 用户选择）
   for (const code of llmLangs) {
     if (!validLangs.some((l) => l.code === code)) {
@@ -336,7 +346,7 @@ export async function classifyFileRoles(
     }
   }
 
-  return { original, translations, translationPairs, practice, skip, languages: validLangs, sourceLang, translationLayout: layoutResult.layout };
+  return { original, translations, translationPairs, practice, skip, languages: validLangs, sourceLang, translationLayout: layoutResult.layout, languageTarget };
 }
 
 /**
@@ -435,7 +445,7 @@ export function buildRolePrompt(readmeMd: string, filePaths: string[], fullTree:
 
   return `你是课程仓库分析专家。下面是一个学习仓库的 README（前3000字）、完整目录树和待分类的文件列表。
 
-请完成两个任务:
+请完成三个任务:
 
 1. 判断 README 的**原文语言**（不是翻译语言）。看 README 正文是什么语言写的:
    - 英文 → "en"
@@ -451,6 +461,15 @@ export function buildRolePrompt(readmeMd: string, filePaths: string[], fullTree:
      xxx.en.md、zh-CN/guide.md）。必须同时给 "lang"(BCP-47 语言码，如 "zh-CN"/"en")
      和 "translates"(它翻译的原文文件路径，必须是文件列表或目录树里真实存在的文件)
    - **skip**: 噪声（纯配置、空文件、非学习内容）
+
+3. 判断这个仓库**是不是语言学习课程**——即课程教的科目就是一门语言本身（教英语/日语/韩语/中文…的
+   词汇、语法、听说读写），而不是"用某种语言写的知识/技术教程"。依据 README 与目录树的明显特征:
+   - 是语言课 → "languageTarget" 填**被教的那门语言**的 BCP-47 码（教英语 → "en"，教日语 → "ja"…）。
+     注意:教材的书写语言不等于被教的语言——中文写的英语教材仓库，languageTarget 是 "en"
+   - 语言课的典型特征: 词汇表/词根词缀、语法点讲解、对话/课文、句子-翻译对、
+     水平分级标记（N5/N1、TOEFL/IELTS、HSK、JLPT…）、发音/音标内容
+   - 不是语言课（编程/数学/科学教程、用英文写的技術文档等）→ "languageTarget": null
+   - 判断不准时倾向 null（宁可按普通课程处理，不可把普通课程当语言课）
 
 ${readmeSection}
 
@@ -478,6 +497,7 @@ ${fileList}
 严格返回如下形状的 JSON 对象:
 {
   "sourceLang": "en",
+  "languageTarget": null,
   "files": [
     { "path": "lessons/1-Intro/README.md", "role": "original" },
     { "path": "lessons/2-Symbolic/Animals.ipynb", "role": "practice" },
@@ -489,6 +509,8 @@ ${fileList}
 
 export function parseRoleResult(raw: string, validPaths: string[]): {
   sourceLang: string;
+  /** v0.33 语言学习课程的目标语言;LLM 未给/不是语言课 → null */
+  languageTarget: string | null;
   files: { path: string; role: FileRole; lang?: string; translates?: string }[];
   /** true = JSON 截断/形状不对走了兜底(全部当 original)—— 调用方据此拆半重试 */
   degraded: boolean;
@@ -501,21 +523,25 @@ export function parseRoleResult(raw: string, validPaths: string[]): {
     // 解析失败: 所有文件当 original（安全降级）。degraded 标记让上层拆半重试救回。
     return {
       sourceLang: "",
+      languageTarget: null,
       files: validPaths.map((p) => ({ path: p, role: "original" as FileRole })),
       degraded: true,
     };
   }
   // 兼容: LLM 可能返回数组（旧格式）或对象（新格式）
   let sourceLang = "";
+  let languageTarget: string | null = null;
   let filesRaw: unknown[];
   if (Array.isArray(obj)) {
     filesRaw = obj;
   } else if (obj && typeof obj === "object" && Array.isArray((obj as Record<string, unknown>).files)) {
     const o = obj as Record<string, unknown>;
     if (typeof o.sourceLang === "string") sourceLang = o.sourceLang;
+    // languageTarget: 非空字符串才算(空串/null/undefined/其他类型 → null)
+    if (typeof o.languageTarget === "string" && o.languageTarget.trim()) languageTarget = o.languageTarget.trim();
     filesRaw = o.files as unknown[];
   } else {
-    return { sourceLang: "", files: validPaths.map((p) => ({ path: p, role: "original" as FileRole })), degraded: true };
+    return { sourceLang: "", languageTarget: null, files: validPaths.map((p) => ({ path: p, role: "original" as FileRole })), degraded: true };
   }
   const validSet = new Set(validPaths);
   const files = (filesRaw as Array<Record<string, unknown>>)
@@ -527,7 +553,7 @@ export function parseRoleResult(raw: string, validPaths: string[]): {
       lang: typeof item.lang === "string" ? item.lang : undefined,
       translates: typeof item.translates === "string" ? item.translates : undefined,
     }));
-  return { sourceLang, files, degraded: false };
+  return { sourceLang, languageTarget, files, degraded: false };
 }
 
 /**
@@ -564,6 +590,7 @@ export async function classifyFilesResilient(
     const right = await recurse(chunk.slice(mid));
     return {
       sourceLang: left.sourceLang || right.sourceLang,
+      languageTarget: left.languageTarget ?? right.languageTarget,
       files: [...left.files, ...right.files],
       degraded: false,
     };

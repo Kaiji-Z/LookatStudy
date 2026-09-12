@@ -199,6 +199,76 @@ await test("startLearningPrompt: en 模板完整、{title} 插值、无中文残
   assert.ok(!/[一-鿿]/.test(enGot), "en 模板不应含中文");
 });
 
+
+/* ── 5. v0.33 语言学习双轴(目标语言 carve-out,issue #15)── */
+
+await test("双轴: zh+目标语言 指令=旧句开头+carve-out(默认路径逐字节不变)", () => {
+  // 不传 target = 非语言课程,行为与旧版完全一致(上面已有逐字节锁,这里再锁一次默认参数形态)
+  assert.strictEqual(buildLanguageDirective("zh-CN", null), ZH_SENTENCE);
+  assert.strictEqual(buildLanguageDirective("zh-CN", undefined), ZH_SENTENCE);
+  const d = buildLanguageDirective("zh-CN", "en");
+  assert.ok(d.startsWith(ZH_SENTENCE), "carve-out 应追加在旧句之后,不改动原句");
+  assert.ok(d.includes("这是一门English学习课程"), d);
+  assert.ok(d.includes("保持English原文"), "必须点名语言素材保持原文");
+  assert.ok(d.includes("不要把目标语言材料翻译成中文"), "必须禁止翻译目标语言材料出题");
+});
+
+await test("双轴: zh 界面学日语/韩语 carve-out 渲染目标语言名", () => {
+  const ja = buildLanguageDirective("zh-CN", "ja");
+  assert.ok(ja.includes("日本語") && ja.includes("保持日本語原文"), ja);
+  const ko = buildLanguageDirective("zh-CN", "ko");
+  assert.ok(ko.includes("한국어"), ko);
+});
+
+await test("双轴: 非h界面+目标语言 英文carve-out", () => {
+  // 日本界面学中文:教学语言日本語,素材保持中文原文
+  const d = buildLanguageDirective("ja", "zh-CN");
+  assert.ok(d.includes("Always respond in 日本語"), d);
+  assert.ok(d.includes("This course teaches 中文"), "英文载体句点名目标语言");
+  assert.ok(d.includes("remain in original 中文"), "素材保持目标语言原文");
+});
+
+await test("双轴: 出题语言行 zh 界面带目标语言", () => {
+  const zh = questionLanguageLine("zh-CN", "en");
+  assert.ok(zh.includes("English语言学习测验"), zh);
+  assert.ok(zh.includes("用English原文出题"), "语言素材用目标语言原文");
+  assert.ok(zh.includes("指令性文字和解析用中文"), "指令与解析用界面语言");
+  // 默认路径逐字节不变
+  assert.strictEqual(questionLanguageLine("zh-CN"), "- 题干和选项用中文,清晰无歧义");
+});
+
+await test("双轴: 出题语言行 非h界面带目标语言", () => {
+  const en = questionLanguageLine("en", "ja");
+  assert.ok(en.includes("日本語 language-learning test"), en);
+  assert.ok(en.includes("must be in 日本語"), en);
+  assert.ok(en.includes("in English"), "指令与解析用界面语言");
+  assert.strictEqual(questionLanguageLine("en"), "- Write the question stem and options in English, clear and unambiguous");
+});
+
+await test("双轴: base-prompt 注入【语言教学姿态】块,默认不注入", () => {
+  const def = buildBaseAgentPrompt("zh-CN");
+  assert.ok(!def.includes("语言教学姿态"), "非语言课程零变化");
+  const got = buildBaseAgentPrompt("zh-CN", "en");
+  assert.ok(got.includes("【语言教学姿态】"), "语言课程注入教学姿态块");
+  assert.ok(got.includes("这门课程教的是English"), got);
+  assert.ok(got.includes("先肯定再纠正其中的语言错误"), "纠错姿态条款");
+  assert.ok(got.includes("注释是辅助不是替代"), "整段翻译禁令");
+  // 位置:在语言句之后、红线块之前(同为语言层指令)
+  const iLang = got.indexOf(ZH_SENTENCE);
+  const iTeach = got.indexOf("【语言教学姿态】");
+  const iRedline = got.indexOf("【安全红线");
+  assert.ok(iLang < iTeach && iTeach < iRedline, "教学姿态块应在语言句与红线块之间");
+});
+
+await test("双轴: base-prompt en+目标语言 英文教学姿态块", () => {
+  const def = buildBaseAgentPrompt("en");
+  assert.ok(!def.includes("Language-teaching posture"), "非语言课程零变化");
+  const got = buildBaseAgentPrompt("en", "ko");
+  assert.ok(got.includes("[Language-teaching posture] This course teaches 한국어"), got);
+  assert.ok(got.includes("medium of instruction"), "双轴语义(教学语言/学习对象)明确声明");
+  assert.ok(got.includes("never hand out full translations"), "整段翻译禁令(英文)");
+});
+
 /* ── 汇总 ── */
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

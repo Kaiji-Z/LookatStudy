@@ -402,7 +402,7 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
       const { classifyFileRoles } = await import("../services/import-llm-service.js");
       console.error("[import] Step 2: LLM 文件角色分类 + 原文语言判断…");
       const roles = await classifyFileRoles(getDb(), inventory.readmeMd, inventory.fileList, inventory.fullTree, send);
-      send(`✓ 文件分类: ${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}`);
+      send(`✓ 文件分类: ${roles.original.length} 原文 · ${roles.practice.length} 实操 · ${roles.skip.length} 跳过 · 原文语言 ${roles.sourceLang}${roles.languageTarget ? ` · 语言课 ${roles.languageTarget}` : ""}`);
       console.error(`[import] Step 2 完成: ${roles.original.length} original, ${roles.practice.length} practice, ${roles.skip.length} skip, sourceLang=${roles.sourceLang}, ${roles.languages.length} 翻译语言`);
 
       // 读用户语言偏好，按 sourceLang 模型自动决定导入语言（不弹窗）
@@ -428,6 +428,7 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
         readmeMd: inventory.readmeMd,
         branch: inventory.branch,
         sourceLang: roles.sourceLang,
+        languageTarget: roles.languageTarget,
         languages: roles.languages,
         selectedLang,
         importReason: reason,
@@ -491,6 +492,7 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
           translationPairs: translationPairsMap,
           sourceLang: analysis.sourceLang,
           translationLayout: analysis.translationLayout,
+          languageTarget: analysis.languageTarget,
           markDirty,
         },
         send,

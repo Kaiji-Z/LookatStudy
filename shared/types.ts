@@ -84,6 +84,8 @@ export interface RepoAnalysis {
   branch: string;
   /** 仓库原文语言 (en / zh-CN / zh-TW / ...), LLM Step 2 判断 */
   sourceLang: string;
+  /** v0.33 语言学习课程的目标语言(被教的语言);null = 非语言课程 */
+  languageTarget: string | null;
   /** 检测到的翻译语言列表 */
   languages: { code: string; name: string }[];
   /** 导入时自动选定的语言 (null=用原文不拉翻译), 由 pref_lang + sourceLang 匹配得出 */

@@ -182,6 +182,7 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("exercises", "kc_title", "TEXT");
   // 仓库原文语言 (LLM Step 2 判断)
   addColumnIfMissing("courses", "source_lang", "TEXT");
+  addColumnIfMissing("courses", "language_target", "TEXT");
   // v0.15 三模型区:custom_providers 分用途(llm/vision/tts/asr),老行默认 llm
   addColumnIfMissing("custom_providers", "kind", "TEXT NOT NULL DEFAULT 'llm'");
   addColumnIfMissing("custom_providers", "vision", "INTEGER NOT NULL DEFAULT 0");

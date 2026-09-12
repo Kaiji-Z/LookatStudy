@@ -27,6 +27,7 @@ import { eq } from "drizzle-orm";
 import * as schema from "../db/schema.js";
 import {
   contentNodes,
+  courses,
   exercises as exercisesTable,
   progress as progressTable,
   examAttempts,
@@ -284,8 +285,13 @@ async function generateExamBank(db: Db, examNodeId: string, locale?: string | nu
     setGenerating(examNodeId, kcs.length);
 
     const llm = resolveLlm(db);
-    // 题库语言在生成时定格:界面语言(未传 → zh-CN)
+    // 题库语言在生成时定格:界面语言(未传 → zh-CN);
+    // v0.33 语言学习课程:语言素材保持目标语言原文(questionLanguageLine 双轴)
     const outLang = resolveOutputLang(locale);
+    const courseRow = node.courseId
+      ? db.select().from(courses).where(eq(courses.id, node.courseId)).get()
+      : undefined;
+    const languageTarget = courseRow?.languageTarget ?? null;
     const collected: Array<ParsedExamQuestion & { kcTitle: string }> = [];
     let lastError: string | null = null;
     let done = 0;
@@ -300,7 +306,7 @@ async function generateExamBank(db: Db, examNodeId: string, locale?: string | nu
         .map((l) => ({ title: l.title, content: (l.content ?? "").slice(0, 800) }));
       for (let attempt = 0; attempt <= BATCH_RETRY; attempt++) {
         try {
-          const prompt = buildKcBatchPrompt(node.title, batch, lessonContents, outLang);
+          const prompt = buildKcBatchPrompt(node.title, batch, lessonContents, outLang, languageTarget);
           const result = await generateText({ model: llm.languageModel, prompt });
           const parsed = parseExamJson(result.text.trim(), batch.quota, allowedKcs);
           if (!parsed.ok) throw new Error(`出题格式错误: ${parsed.error}`);
@@ -599,6 +605,7 @@ function buildKcBatchPrompt(
   batch: { kcs: ChapterKc[]; quota: number },
   lessonContents: Array<{ title: string; content: string }>,
   outLang: string,
+  languageTarget?: string | null,
 ): string {
   const kcList = batch.kcs
     .map((k) => `- ${k.title}:${k.description || "(见下方课时内容)"}(来自课时《${k.lessonTitle}》)`)
@@ -625,7 +632,7 @@ function buildKcBatchPrompt(
     `- 干扰项 plausible 但 definitely wrong(基于学习者常犯的真实误解)`,
     `- 答案必须在提供的课程内容中有依据`,
     `- 数学表达式用行内 $..$ 或行间 $$..$$ 的 LaTeX 记法书写,不要用纯文本近似(界面会渲染成公式)`,
-    questionLanguageLine(outLang),
+    questionLanguageLine(outLang, languageTarget),
     ``,
     `严格按以下 JSON 格式返回,不要加 markdown 代码块标记、不要解释:`,
     `{`,

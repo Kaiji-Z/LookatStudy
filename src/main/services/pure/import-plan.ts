@@ -48,6 +48,8 @@ export interface PlanClassification {
   languages: { code: string; name: string }[];
   sourceLang: string;
   translationLayout: "microsoft" | "parallel" | "suffix" | "none";
+  /** v0.33 语言学习课程目标语言;可缺省=旧版快照(视为 null,非语言课) */
+  languageTarget?: string | null;
 }
 
 export interface ImportPlan {

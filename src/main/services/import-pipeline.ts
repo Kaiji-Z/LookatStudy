@@ -56,6 +56,8 @@ export async function executeImport(
     translationPairs?: Map<string, string> | null;
     sourceLang: string;
     translationLayout?: "microsoft" | "parallel" | "suffix" | "none";
+    /** v0.33 语言学习课程目标语言;null/缺省 = 非语言课程 */
+    languageTarget?: string | null;
     /** 后台导入的取消信号：返回 true 时在拉取阶段抛"导入已取消"（写库前，零残留） */
     shouldAbort?: () => boolean;
     markDirty: () => void;
@@ -156,6 +158,7 @@ export async function executeImport(
       version: 1,
       labType: "doc",
       sourceLang: opts.sourceLang,
+      languageTarget: opts.languageTarget ?? null,
     }).run();
 
     for (const sec of structure.sections) {

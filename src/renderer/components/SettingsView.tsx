@@ -22,6 +22,7 @@ import { useSyncExternalStore } from "react";
 import { getCompanionSnapshot, subscribeCompanion } from "../lib/companion/bus.ts";
 import { COMPANION_FORM_IDS } from "../lib/companion/forms-index.js";
 import { CompanionBotWizard } from "./companion/CompanionBotWizard.js";
+import { SettingsShimejiSection } from "./SettingsShimejiSection.js";
 import { refreshActivePack } from "../lib/companion/custom-pack-store.js";
 import { VEH_PICKABLE, VEH_THEMES } from "../lib/companion/veh-themes.ts";
 import type { CompanionVehicleId } from "@shared/companion-cut.ts";
@@ -1254,6 +1255,7 @@ function CompanionContent() {
               onCancel={() => setConfirmingPack(null)}
             />
           )}
+          <SettingsShimejiSection />
           {wizardOpen && (
             <CompanionBotWizard
               onClose={() => setWizardOpen(false)}

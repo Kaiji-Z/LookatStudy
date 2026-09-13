@@ -49,6 +49,7 @@ interface ShimejiPackSummary {
   actionCount: number;
   iconBase64: string | null;
   active: boolean;
+  vehicle?: CompanionVehicleId;
 }
 
 interface PackSummary {
@@ -1064,6 +1065,7 @@ function CompanionContent() {
   const [shimejiImportOpen, setShimejiImportOpen] = useState(false);
   const [shimejiPacks, setShimejiPacks] = useState<ShimejiPackSummary[]>([]);
   const [confirmingShimeji, setConfirmingShimeji] = useState<{ id: string; rect: DOMRect } | null>(null);
+  const [shimejiVehPicker, setShimejiVehPicker] = useState<string | null>(null);
   // 换载具入口(2026-09-11):点卡片左上色点 → 行下方面板选主题;激活包实时刷新
   const [vehPickerPack, setVehPickerPack] = useState<string | null>(null);
   const loadPacks = useCallback(async () => {
@@ -1097,6 +1099,12 @@ function CompanionContent() {
     if (snap.form !== "shimeji") await api.setSetting("companion_form", "shimeji");
     window.dispatchEvent(new Event("companion-config-changed"));
     await loadShimejiPacks();
+    await refreshActiveShimeji();
+  };
+  const setShimejiVehicle = async (id: string, vehicle: CompanionVehicleId) => {
+    await window.api.shimejiSetVehicle({ id, vehicle });
+    await loadShimejiPacks();
+    // 激活包换装实时生效(refresh 拉 manifest,ShimejiArt 即刻换肤)
     await refreshActiveShimeji();
   };
   const removeShimejiPack = async (id: string) => {
@@ -1405,6 +1413,18 @@ function CompanionContent() {
                         </button>
                         <button
                           type="button"
+                          aria-label={t("companion.bots.veh")}
+                          data-tooltip={t("companion.bots.veh")}
+                          data-testid={`shimeji-pack-veh-${p.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShimejiVehPicker((cur) => (cur === p.id ? null : p.id));
+                          }}
+                          className="absolute top-1.5 -left-1.5 w-5 h-5 rounded-full border border-black/25 shadow-card hover:scale-110 motion-safe:transition-transform"
+                          style={{ background: VEH_THEMES[p.vehicle ?? "silver"].dot }}
+                        />
+                        <button
+                          type="button"
                           aria-label={t("settings.shimeji.delete")}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1416,6 +1436,33 @@ function CompanionContent() {
                         </button>
                       </div>
                     ))}
+                  </div>
+                )}
+                {shimejiVehPicker && (
+                  <div className="mt-2.5 rounded-xl border border-[var(--border-faint)] bg-surface-0 p-2.5" data-testid="shimeji-veh-picker">
+                    <div className="text-caption text-ink-muted mb-1.5">{t("companion.wizard.vehicle")}</div>
+                    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("companion.wizard.vehicle")}>
+                      {(["silver", ...VEH_PICKABLE] as CompanionVehicleId[]).map((vid) => {
+                        const sel = (shimejiPacks.find((q) => q.id === shimejiVehPicker)?.vehicle ?? "silver") === vid;
+                        return (
+                          <button
+                            key={vid}
+                            type="button"
+                            role="radio"
+                            aria-checked={sel}
+                            data-testid={`shimeji-veh-pick-${vid}`}
+                            onClick={() => void setShimejiVehicle(shimejiVehPicker, vid)}
+                            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-label motion-safe:transition-colors
+                              ${sel
+                                ? "border-[var(--accent)] bg-surface-2 text-ink-strong font-medium"
+                                : "border-[var(--border-faint)] hover:bg-surface-2 text-ink-muted"}`}
+                          >
+                            <span aria-hidden="true" className="w-3 h-3 rounded-full border border-black/20" style={{ background: VEH_THEMES[vid].dot }} />
+                            {vid === "silver" ? t("companion.veh.silver") : t(`companion.form.${vid}.name`)}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>

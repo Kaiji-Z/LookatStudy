@@ -111,6 +111,7 @@ import {
   getShimejiFrameDataUrl,
   activateShimejiPack,
   deleteShimejiPack,
+  setVehicleShimeji,
 } from "../services/shimeji/shimeji-pack-service.js";
 import type { CutPackManifest } from "@shared/companion-cut";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
@@ -1755,6 +1756,9 @@ export function registerCompanionPackHandlers(deps: RuntimeDeps): void {
   handle("shimeji:delete", async (_e, input: { id: string }) => {
     await deleteShimejiPack(getDb(), deps.dataDir, input.id);
     return { ok: true };
+  });
+  handle("shimeji:setVehicle", async (_e, input: { id: string; vehicle: string }) => {
+    return setVehicleShimeji(getDb(), deps.dataDir, input.id, input.vehicle);
   });
 }
 

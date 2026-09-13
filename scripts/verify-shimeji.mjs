@@ -40,7 +40,7 @@ async function test(name, fn) {
 const { parseShimejiActions, parseShimejiBehaviors, ACTION_ARCHIVE, archiveOf } = await import(
   "../src/main/services/shimeji/pure/shimeji-parse.ts"
 );
-const { importShimejiZip, confirmShimejiImport, getShimejiPack, getShimejiFrameDataUrl } = await import(
+const { importShimejiZip, confirmShimejiImport, getShimejiPack, getShimejiFrameDataUrl, listShimejiPacks, setVehicleShimeji } = await import(
   "../src/main/services/shimeji/shimeji-pack-service.ts"
 );
 
@@ -509,6 +509,21 @@ await test("T12 动态沙盒覆盖(墙对齐可见容器边的机制):传入 san
     if (Math.abs(m.x - box.minX) < 1e-6 || Math.abs(m.x - box.maxX) < 1e-6) sawClamp = true;
   }
   assert.ok(sawClamp, "确实触及过覆盖边界");
+});
+
+await test("T13 换载具(机械臂同链):manifest.vehicle 持久化 + list 透传 + 非法主题/包守卫", async () => {
+  const preview = await importShimejiZip(null, dataDir, Buffer.from(makeZip("self")).toString("base64"));
+  const packs = await confirmShimejiImport(null, dataDir, preview.importId, [preview.characters[0].ref]);
+  const id = packs[0].id;
+  assert.equal((await setVehicleShimeji(null, dataDir, id, "astro")).ok, true);
+  const manifest = await getShimejiPack(null, dataDir, id);
+  assert.equal(manifest?.vehicle, "astro", "主题写回 manifest");
+  const listed = (await listShimejiPacks(null, dataDir)).find((p) => p.id === id);
+  assert.equal(listed?.vehicle, "astro", "list 透传 vehicle");
+  assert.equal((await setVehicleShimeji(null, dataDir, id, "rainbow")).ok, false, "非法主题拒绝");
+  assert.equal((await setVehicleShimeji(null, dataDir, "../../etc", "ink")).ok, false, "路径穿越拒绝");
+  const m2 = await getShimejiPack(null, dataDir, id);
+  assert.equal(m2?.vehicle, "astro", "非法调用不改动 manifest");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

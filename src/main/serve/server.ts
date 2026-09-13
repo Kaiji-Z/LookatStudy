@@ -12,7 +12,7 @@ import { createServer, type IncomingMessage, type Server as HttpServer, type Ser
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { parseClientFrame, WS_PROTOCOL_VERSION, type WsServerFrame } from "@shared/ws-protocol";
 import { collectHandlers } from "../ipc/index.js";
@@ -187,7 +187,12 @@ export async function startServe(opts: ServeOptions): Promise<ServeInstance> {
   const wss = new WebSocketServer({ server: httpServer });
   wss.on("connection", (ws, req) => {
     const url = new URL(req.url ?? "/", "http://localhost");
-    if (!opts.skipAuth && url.searchParams.get("token") !== token) {
+    // 恒时比较(2026-09-13 审计 B7:理论计时侧信道,顺手修)
+    const given = url.searchParams.get("token") ?? "";
+    const tokenOk =
+      opts.skipAuth ||
+      (token.length === given.length && timingSafeEqual(Buffer.from(given), Buffer.from(token)));
+    if (!tokenOk) {
       ws.close(4001, "invalid token");
       return;
     }

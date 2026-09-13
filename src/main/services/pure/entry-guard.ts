@@ -18,3 +18,20 @@ export function safeEntryDest(rootDir: string, entryName: string): string | null
   if (dest !== root && !dest.startsWith(root + sep)) return null;
   return dest;
 }
+
+/** fflate unzipSync 的 zip-bomb 滤网(2026-09-13 审计 P2):按 zip 元数据里的
+ *  声明解压尺寸(originalSize)/条目数限额,超限条目不解压(filter 返回 false
+ *  即跳过该条目)。42KB 的 zip 可声明数十 GB——unzipSync 同步全解压会直接
+ *  OOM 主进程(= 整个应用挂,含 sql.js 内存库未 flush 数据)。 */
+export function unzipGuardFilter(
+  maxTotalBytes: number,
+  maxEntries: number,
+): (file: { originalSize: number }) => boolean {
+  let total = 0;
+  let count = 0;
+  return (file) => {
+    if (++count > maxEntries) return false;
+    total += file.originalSize;
+    return total <= maxTotalBytes;
+  };
+}

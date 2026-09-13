@@ -716,7 +716,6 @@ function PartRenderer({
         <ReactMarkdown
           remarkPlugins={mdPipeline.remarkPlugins}
           rehypePlugins={mdPipeline.rehypePlugins}
-          urlTransform={(url) => url}
           components={markdownComponents}
         >
           {normalizeMathNotation(part.text)}

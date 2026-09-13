@@ -895,18 +895,21 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
       }
       try {
         db.delete(srsItems).where(inArray(srsItems.nodeId, nodeIds)).run();
-      } catch {
-        /* 忽略 */
+      } catch (e) {
+        // 表可能为空是常态,但真实 SQL 错误不该被吞成静默孤儿行(2026-09-13 审计 F21)
+        console.error("[course:delete] 级联删除步骤失败(可能留孤儿行):", e instanceof Error ? e.message : e);
       }
       try {
         db.delete(exercises).where(inArray(exercises.nodeId, nodeIds)).run();
-      } catch {
-        /* 忽略 */
+      } catch (e) {
+        // 表可能为空是常态,但真实 SQL 错误不该被吞成静默孤儿行(2026-09-13 审计 F21)
+        console.error("[course:delete] 级联删除步骤失败(可能留孤儿行):", e instanceof Error ? e.message : e);
       }
       try {
         db.delete(chatSessions).where(inArray(chatSessions.nodeId, nodeIds)).run();
-      } catch {
-        /* 忽略 */
+      } catch (e) {
+        // 表可能为空是常态,但真实 SQL 错误不该被吞成静默孤儿行(2026-09-13 审计 F21)
+        console.error("[course:delete] 级联删除步骤失败(可能留孤儿行):", e instanceof Error ? e.message : e);
       }
     }
     markDirty();

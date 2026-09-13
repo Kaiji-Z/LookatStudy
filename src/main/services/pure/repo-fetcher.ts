@@ -813,9 +813,8 @@ export async function fetchRepoImages(
     const results = await Promise.allSettled(
       batch.map(async (ref) => {
         const url = cdnUrl(owner, repo, branch, ref.repoPath);
-        const r = await fetchFn(url);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const buf = Buffer.from(await r.arrayBuffer());
+        // 10MB/图上限(2026-09-13 审计 P2:旧实现无上限,仓库 README 引用大文件即 OOM)
+        const buf = await downloadToBuffer(url, fetchFn, { maxBytes: 10 * 1024 * 1024 });
         const ext = ref.repoPath.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "png";
         return {
           repoPath: ref.repoPath,
@@ -1094,11 +1093,16 @@ export function sanitizeTranslatedMarkdown(md: string): string {
     s = s + "\n" + fence + "\n";
   }
 
-  // 2. 去除危险 HTML 标签(script/style/iframe/object/embed)
-  // react-markdown 默认不渲染 raw HTML(除非 rehype-raw),但保险起见仍剥离
+  // 2. 粗滤危险 HTML(2026-09-13 审计修正:黑名单从 5 标签扩到事件属性/javascript: 协议)。
+  // 注意这是**不完整的黑名单**,真正的净化职责在渲染层 rehype-sanitize schema——
+  // 此处只为主进程侧消费方兜底,不要把它当安全边界。
   s = s.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
   s = s.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
-  s = s.replace(/<\/?(iframe|object|embed)\b[^>]*>/gi, "");
+  s = s.replace(/<\/?(iframe|object|embed|video|audio|source|form|base)\b[^>]*>/gi, "");
+  s = s.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, "");
+  s = s.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, "");
+  s = s.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "");
+  s = s.replace(/(\s(?:href|src)\s*=\s*["']?)\s*javascript:[^"'\s>]*/gi, "$1#");
 
   return s.trim();
 }
@@ -1524,9 +1528,27 @@ export async function downloadToBuffer(
   const maxBytes = opts.maxBytes ?? 64 * 1024 * 1024;
   const r = await fetchFn(url, { signal: opts.signal, headers: opts.headers });
   if (!r.ok) throw new Error(`下载失败(HTTP ${r.status}):${url}`);
-  const buf = Buffer.from(await r.arrayBuffer());
+  // 流式累计截断(2026-09-13 审计 P2):旧实现先 r.arrayBuffer() 全量进内存才查
+  // 上限,恶意/超大响应直接 OOM——上限形同虚设。超限即断流。
+  const chunks: Buffer[] = [];
+  let total = 0;
+  if (r.body) {
+    const reader = r.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`文件超过 ${Math.round(maxBytes / 1024 / 1024)}MB 上限,放弃导入`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } else {
+    chunks.push(Buffer.from(await r.arrayBuffer()));
+  }
+  const buf = Buffer.concat(chunks);
   if (buf.length === 0) throw new Error(`下载内容为空:${url}`);
-  if (buf.length > maxBytes) throw new Error(`文件超过 ${Math.round(maxBytes / 1024 / 1024)}MB 上限,放弃导入`);
   return buf;
 }
 

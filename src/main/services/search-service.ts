@@ -50,13 +50,15 @@ export function searchContent(
   const clauses = terms
     .map(
       () =>
-        "(LOWER(content_nodes.title) LIKE ? OR LOWER(IFNULL(content_nodes.content,'')) LIKE ?)",
+        "(LOWER(content_nodes.title) LIKE ? ESCAPE '\\' OR LOWER(IFNULL(content_nodes.content,'')) LIKE ? ESCAPE '\\')",
     )
     .join(" AND ");
-  const params: (string | number)[] = terms.flatMap((t) => [
-    `%${t.toLowerCase()}%`,
-    `%${t.toLowerCase()}%`,
-  ]);
+  // LIKE 通配符转义(2026-09-13 审计 P3):用户搜 % 或 _ 不再全表/任意单字符匹配
+  const esc = (t: string) => t.replace(/[\\%_]/g, (c) => `\\${c}`);
+  const params: (string | number)[] = terms.flatMap((t) => {
+    const pat = `%${esc(t.toLowerCase())}%`;
+    return [pat, pat];
+  });
   params.push(limit);
 
   const rows = sqljs.exec(

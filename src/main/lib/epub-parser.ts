@@ -12,6 +12,7 @@
  * 纯 JS(fflate/turndown),无原生编译;EPUB2(ncx toc)与 EPUB3(nav.xhtml)都认。
  */
 import { unzipSync } from "fflate";
+import { unzipGuardFilter } from "../services/pure/entry-guard.js";
 import { htmlToMarkdown } from "../services/pure/html-article.js";
 
 export interface EpubChapter {
@@ -221,7 +222,8 @@ export function sanitizeEpubBody(body: string): string {
 }
 
 export async function parseEpub(buf: Uint8Array): Promise<EpubBook> {
-  const entries = unzipSync(buf);
+  // zip-bomb 滤网(2026-09-13 审计):2GB 声明解压总量/20000 条目,超限条目不解压
+  const entries = unzipSync(buf, { filter: unzipGuardFilter(2 * 1024 ** 3, 20_000) });
   const read = (p: string): string => {
     const data = entries[p];
     return data ? decoder.decode(data) : "";

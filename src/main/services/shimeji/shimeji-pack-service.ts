@@ -10,7 +10,7 @@ import { mkdir, readFile, writeFile, rm, readdir, cp } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { unzipSync } from "fflate";
-import { safeEntryDest } from "../pure/entry-guard.js";
+import { safeEntryDest, unzipGuardFilter } from "../pure/entry-guard.js";
 import type { CompanionVehicleId } from "../../../../shared/companion-cut.js";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../../db/schema.js";
@@ -158,7 +158,10 @@ function detectFormat(actionsXmlPath: string, xml: string): string {
  */
 export async function importShimejiZip(db: Db, dataDir: string, zipBase64: string): Promise<ShimejiImportPreview> {
   const zipBuf = Buffer.from(zipBase64, "base64");
-  const entries = unzipSync(new Uint8Array(zipBuf));
+  const entries = unzipSync(new Uint8Array(zipBuf), {
+    // zip-bomb 滤网(2026-09-13 审计):2GB 声明解压总量/20000 条目,超限条目不解压
+    filter: unzipGuardFilter(2 * 1024 ** 3, 20_000),
+  });
   const files: Record<string, Uint8Array> = {};
   for (const [path, data] of Object.entries(entries)) {
     if (!path.startsWith("__MACOSX") && !path.endsWith("/")) files[path.replace(/\\/g, "/")] = data;

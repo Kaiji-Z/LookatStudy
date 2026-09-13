@@ -196,16 +196,21 @@ export function hasWebToken(): boolean {
   }
 }
 
-/** 令牌门提交:存 localStorage 并清掉 URL 参数(避免留在地址栏历史里) */
+/** 令牌门提交:存 localStorage 并把 token 从地址栏真正清掉。
+ *  (2026-09-13 审计 C3 修正:旧注释声称"清掉 URL 参数",实现却是把 token 写回
+ *  地址栏——进浏览器历史/跨设备同步/肩窥。现改为:localStorage 存成功即
+ *  replaceState 移除参数;隐私模式存不了才保留 URL 参数供本次会话刷新。) */
 export function setWebToken(token: string): void {
+  let stored = true;
   try {
     window.localStorage.setItem(TOKEN_KEY, token);
   } catch {
-    /* 隐私模式存不了:带参刷新,本次会话仍可用 */
+    stored = false;
   }
   const url = new URL(window.location.href);
-  url.searchParams.set("token", token);
-  window.location.replace(url.toString());
+  if (stored) url.searchParams.delete("token");
+  else url.searchParams.set("token", token);
+  window.history.replaceState(null, "", url.toString());
 }
 
 /** token 被拒(4001)时广播 —— main.tsx 监听后切回令牌门让用户重输 */

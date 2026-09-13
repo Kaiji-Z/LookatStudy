@@ -1058,6 +1058,8 @@ function CompanionContent() {
   // 设置页整合(2026-09-12 用户拍板):入口统一到「新建 +」卡 → 选择 自制/Shimeji;
   // shimeji 包卡与纸偶包卡混排进同一形象区,点卡=激活包+切形态
   const [createOpen, setCreateOpen] = useState(false);
+  const [customPickOpen, setCustomPickOpen] = useState(false);
+  const [shimejiPickOpen, setShimejiPickOpen] = useState(false);
   const [createHover, setCreateHover] = useState<"self" | "shimeji" | null>(null);
   const [shimejiImportOpen, setShimejiImportOpen] = useState(false);
   const [shimejiPacks, setShimejiPacks] = useState<ShimejiPackSummary[]>([]);
@@ -1161,7 +1163,7 @@ function CompanionContent() {
         <div>
           <div className="text-label text-ink-muted mb-2">{t("settings.companion.form")}</div>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t("settings.companion.form")}>
-            {COMPANION_FORM_IDS.filter((id) => id !== "custom").map((id) => {
+            {COMPANION_FORM_IDS.filter((id) => id !== "custom" && id !== "shimeji").map((id) => {
               const selected = snap.form === id;
               return (
                 <button
@@ -1184,100 +1186,59 @@ function CompanionContent() {
                 </button>
               );
             })}
-            {packs.map((p) => {
-              const selected = snap.form === "custom" && p.active;
-              return (
-                <span key={p.id} className="relative inline-block">
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    data-testid={`companion-form-pack-${p.id}`}
-                    onClick={() => { void pickPack(p.id); }}
-                    title={p.name}
-                    className={`flex flex-col items-center gap-0.5 rounded-xl p-1.5 border motion-safe:transition-colors
-                      ${selected
-                        ? "border-[var(--accent)] bg-surface-2 shadow-card"
-                        : "border-[var(--border-faint)] hover:bg-surface-2"}`}
-                  >
-                    {p.thumb ? (
-                      <img src={p.thumb} alt="" className="h-14 w-14 object-contain" />
-                    ) : (
-                      <span className="h-14 w-14 flex items-center justify-center">
-                        <span className="h-9 w-9 rounded-full bg-[#c8a06e]" />
-                      </span>
-                    )}
-                    <span className={`text-label max-w-20 truncate ${selected ? "text-ink-strong font-medium" : "text-ink-muted"}`}>
-                      {p.name}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={t("companion.bots.veh")}
-                    data-tooltip={t("companion.bots.veh")}
-                    data-testid={`companion-pack-veh-${p.id}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setVehPickerPack((cur) => (cur === p.id ? null : p.id));
-                    }}
-                    className="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full border border-black/25 shadow-card hover:scale-110 motion-safe:transition-transform"
-                    style={{ background: VEH_THEMES[p.vehicle ?? "silver"].dot }}
-                  />
-                  <button
-                    type="button"
-                    aria-label={t("companion.custom.delete")}
-                    data-tooltip={t("companion.custom.delete")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmingPack({ id: p.id, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
-                    }}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-surface-1 border border-[var(--border-faint)] text-ink-muted hover:text-warning flex items-center justify-center"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              );
-            })}
-            {shimejiPacks.map((p) => {
-              const selected = snap.form === "shimeji" && p.active;
-              return (
-                <span key={p.id} className="relative inline-block">
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    data-testid="shimeji-pack-card"
-                    onClick={() => { void pickShimejiPack(p.id); }}
-                    title={`${p.name} · ${p.format} · ${p.frameCount}f`}
-                    className={`flex flex-col items-center gap-0.5 rounded-xl p-1.5 border motion-safe:transition-colors
-                      ${selected
-                        ? "border-[var(--accent)] bg-surface-2 shadow-card"
-                        : "border-[var(--border-faint)] hover:bg-surface-2"}`}
-                  >
-                    {p.iconBase64 ? (
-                      <img src={`data:image/png;base64,${p.iconBase64}`} alt="" className="h-14 w-14 object-contain" />
-                    ) : (
-                      <span className="h-14 w-14 flex items-center justify-center text-caption text-ink-muted">Shimeji</span>
-                    )}
-                    <span className={`text-label max-w-20 truncate ${selected ? "text-ink-strong font-medium" : "text-ink-muted"}`}>
-                      {p.name}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={t("settings.shimeji.delete")}
-                    data-tooltip={t("settings.shimeji.delete")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmingShimeji({ id: p.id, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
-                    }}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-surface-1 border border-[var(--border-faint)] text-ink-muted hover:text-warning flex items-center justify-center"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              );
-            })}
+            {/* 自制来源卡(2026-09-12 二次整合):一张卡代表"自制"形态,点击弹出
+                已制作包列表选择,选中即激活持久化;卡面显示当前激活包 */}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={snap.form === "custom" && packs.some((p) => p.active)}
+              data-testid="companion-card-custom"
+              onClick={() => setCustomPickOpen(true)}
+              title={t("companion.pick.custom.title")}
+              className={`flex flex-col items-center gap-0.5 rounded-xl p-1.5 border motion-safe:transition-colors
+                ${snap.form === "custom" && packs.some((p) => p.active)
+                  ? "border-[var(--accent)] bg-surface-2 shadow-card"
+                  : "border-[var(--border-faint)] hover:bg-surface-2"}`}
+            >
+              {(() => {
+                const act = packs.find((p) => p.active);
+                return act?.thumb ? (
+                  <img src={act.thumb} alt="" className="h-14 w-14 object-contain" />
+                ) : (
+                  <span className="h-14 w-14 flex items-center justify-center">
+                    <span className="h-9 w-9 rounded-full bg-[#c8a06e]" />
+                  </span>
+                );
+              })()}
+              <span className={`text-label max-w-20 truncate ${snap.form === "custom" && packs.some((p) => p.active) ? "text-ink-strong font-medium" : "text-ink-muted"}`}>
+                {packs.find((p) => p.active)?.name ?? t("companion.create.self.name")}
+              </span>
+            </button>
+            {/* Shimeji 来源卡:一张卡代表"Shimeji"形态,点击弹出已导入包列表选择 */}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={snap.form === "shimeji" && shimejiPacks.some((p) => p.active)}
+              data-testid="companion-card-shimeji"
+              onClick={() => setShimejiPickOpen(true)}
+              title={t("companion.pick.shimeji.title")}
+              className={`flex flex-col items-center gap-0.5 rounded-xl p-1.5 border motion-safe:transition-colors
+                ${snap.form === "shimeji" && shimejiPacks.some((p) => p.active)
+                  ? "border-[var(--accent)] bg-surface-2 shadow-card"
+                  : "border-[var(--border-faint)] hover:bg-surface-2"}`}
+            >
+              {(() => {
+                const act = shimejiPacks.find((p) => p.active);
+                return act?.iconBase64 ? (
+                  <img src={`data:image/png;base64,${act.iconBase64}`} alt="" className="h-14 w-14 object-contain" />
+                ) : (
+                  <span className="h-14 w-14 flex items-center justify-center text-caption text-ink-muted">Shimeji</span>
+                );
+              })()}
+              <span className={`text-label max-w-20 truncate ${snap.form === "shimeji" && shimejiPacks.some((p) => p.active) ? "text-ink-strong font-medium" : "text-ink-muted"}`}>
+                {shimejiPacks.find((p) => p.active)?.name ?? "Shimeji"}
+              </span>
+            </button>
             {/* "+"卡:空=进制作;非空=追加新 bot,每保存一个持久化一张卡 */}
             <button
               type="button"
@@ -1294,41 +1255,6 @@ function CompanionContent() {
               <span className="text-label text-ink-muted">{t("companion.bots.add")}</span>
             </button>
           </div>
-          {/* 换载具面板:点开哪张卡就改哪张;面板不自动关,连点不同色可对着伴学实时试装 */}
-          {vehPickerPack && (
-            <div
-              className="mt-2 rounded-xl border border-[var(--border-faint)] bg-surface-0 p-2.5"
-              data-testid="companion-veh-picker"
-            >
-              <div className="text-caption text-ink-muted mb-1.5">{t("companion.wizard.vehicle")}</div>
-              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("companion.wizard.vehicle")}>
-                {(["silver", ...VEH_PICKABLE] as CompanionVehicleId[]).map((vid) => {
-                  const sel = (packs.find((q) => q.id === vehPickerPack)?.vehicle ?? "silver") === vid;
-                  return (
-                    <button
-                      key={vid}
-                      type="button"
-                      role="radio"
-                      aria-checked={sel}
-                      data-testid={`companion-veh-pick-${vid}`}
-                      onClick={() => void setPackVehicle(vehPickerPack, vid)}
-                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-label motion-safe:transition-colors
-                        ${sel
-                          ? "border-[var(--accent)] bg-surface-2 text-ink-strong font-medium"
-                          : "border-[var(--border-faint)] hover:bg-surface-2 text-ink-muted"}`}
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="w-3 h-3 rounded-full border border-black/20"
-                        style={{ background: VEH_THEMES[vid].dot }}
-                      />
-                      {vid === "silver" ? t("companion.veh.silver") : t(`companion.form.${vid}.name`)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
           {confirmingPack && (
             <ConfirmCard
               anchorRect={confirmingPack.rect}
@@ -1338,6 +1264,162 @@ function CompanionContent() {
               onConfirm={() => void removePack(confirmingPack.id)}
               onCancel={() => setConfirmingPack(null)}
             />
+          )}
+          {/* 自制包选择弹窗:点项=激活+切形态;色点=换载具(面板在弹窗内);×=删除 */}
+          {customPickOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+              data-noswipe=""
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("companion.pick.custom.title")}
+              onClick={() => setCustomPickOpen(false)}
+            >
+              <div
+                className="relative w-full max-w-md rounded-2xl bg-surface-0 border border-[var(--border)] shadow-elevated p-4"
+                data-testid="custom-pack-list"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="text-body font-medium text-ink-strong mb-3">{t("companion.pick.custom.title")}</div>
+                {packs.length === 0 ? (
+                  <p className="text-label text-ink-muted py-4 text-center">{t("companion.pick.empty.custom")}</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {packs.map((p) => (
+                      <div key={p.id} className="relative">
+                        <button
+                          type="button"
+                          data-testid={`custom-pack-option-${p.id}`}
+                          onClick={() => { void pickPack(p.id); setCustomPickOpen(false); }}
+                          className={`w-full flex items-center gap-2.5 rounded-xl border p-2 text-left motion-safe:transition-colors
+                            ${p.active && snap.form === "custom" ? "border-[var(--accent)] bg-surface-2" : "border-[var(--border-faint)] hover:bg-surface-2"}`}
+                        >
+                          {p.thumb ? (
+                            <img src={p.thumb} alt="" className="w-10 h-10 rounded-lg object-contain bg-surface-2" />
+                          ) : (
+                            <span className="w-10 h-10 rounded-lg bg-surface-2 inline-block" />
+                          )}
+                          <span className="text-body text-ink-strong flex-1 truncate">{p.name}</span>
+                          {p.active && snap.form === "custom" && (
+                            <span className="text-caption text-brand font-medium">{t("settings.shimeji.active")}</span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={t("companion.bots.veh")}
+                          data-tooltip={t("companion.bots.veh")}
+                          data-testid={`companion-pack-veh-${p.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setVehPickerPack((cur) => (cur === p.id ? null : p.id));
+                          }}
+                          className="absolute top-1.5 -left-1.5 w-5 h-5 rounded-full border border-black/25 shadow-card hover:scale-110 motion-safe:transition-transform"
+                          style={{ background: VEH_THEMES[p.vehicle ?? "silver"].dot }}
+                        />
+                        <button
+                          type="button"
+                          aria-label={t("companion.custom.delete")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmingPack({ id: p.id, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+                          }}
+                          className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-ink-faint hover:text-warning"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {vehPickerPack && (
+                  <div className="mt-2.5 rounded-xl border border-[var(--border-faint)] bg-surface-0 p-2.5" data-testid="companion-veh-picker">
+                    <div className="text-caption text-ink-muted mb-1.5">{t("companion.wizard.vehicle")}</div>
+                    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("companion.wizard.vehicle")}>
+                      {(["silver", ...VEH_PICKABLE] as CompanionVehicleId[]).map((vid) => {
+                        const sel = (packs.find((q) => q.id === vehPickerPack)?.vehicle ?? "silver") === vid;
+                        return (
+                          <button
+                            key={vid}
+                            type="button"
+                            role="radio"
+                            aria-checked={sel}
+                            data-testid={`companion-veh-pick-${vid}`}
+                            onClick={() => void setPackVehicle(vehPickerPack, vid)}
+                            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-label motion-safe:transition-colors
+                              ${sel
+                                ? "border-[var(--accent)] bg-surface-2 text-ink-strong font-medium"
+                                : "border-[var(--border-faint)] hover:bg-surface-2 text-ink-muted"}`}
+                          >
+                            <span aria-hidden="true" className="w-3 h-3 rounded-full border border-black/20" style={{ background: VEH_THEMES[vid].dot }} />
+                            {vid === "silver" ? t("companion.veh.silver") : t(`companion.form.${vid}.name`)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {/* Shimeji 包选择弹窗:点项=激活+切形态;×=删除 */}
+          {shimejiPickOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+              data-noswipe=""
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("companion.pick.shimeji.title")}
+              onClick={() => setShimejiPickOpen(false)}
+            >
+              <div
+                className="relative w-full max-w-md rounded-2xl bg-surface-0 border border-[var(--border)] shadow-elevated p-4"
+                data-testid="shimeji-pack-list"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="text-body font-medium text-ink-strong mb-3">{t("companion.pick.shimeji.title")}</div>
+                {shimejiPacks.length === 0 ? (
+                  <p className="text-label text-ink-muted py-4 text-center">{t("companion.pick.empty.shimeji")}</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {shimejiPacks.map((p) => (
+                      <div key={p.id} className="relative">
+                        <button
+                          type="button"
+                          data-testid={`shimeji-pack-option-${p.id}`}
+                          onClick={() => { void pickShimejiPack(p.id); setShimejiPickOpen(false); }}
+                          className={`w-full flex items-center gap-2.5 rounded-xl border p-2 text-left motion-safe:transition-colors
+                            ${p.active && snap.form === "shimeji" ? "border-[var(--accent)] bg-surface-2" : "border-[var(--border-faint)] hover:bg-surface-2"}`}
+                        >
+                          {p.iconBase64 ? (
+                            <img src={`data:image/png;base64,${p.iconBase64}`} alt="" className="w-10 h-10 rounded-lg object-contain bg-surface-2" />
+                          ) : (
+                            <span className="w-10 h-10 rounded-lg bg-surface-2 inline-block" />
+                          )}
+                          <span className="flex flex-col flex-1 min-w-0">
+                            <span className="text-body text-ink-strong truncate">{p.name}</span>
+                            <span className="text-caption text-ink-muted">{p.format} · {p.frameCount}f · {p.actionCount}</span>
+                          </span>
+                          {p.active && snap.form === "shimeji" && (
+                            <span className="text-caption text-brand font-medium">{t("settings.shimeji.active")}</span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={t("settings.shimeji.delete")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmingShimeji({ id: p.id, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+                          }}
+                          className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-ink-faint hover:text-warning"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           )}
           {createOpen && (
             <div

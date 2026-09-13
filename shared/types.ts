@@ -512,6 +512,8 @@ export interface ShimejiPackManifestT {
   behaviors: Array<{ name: string; frequency: number; next: Array<{ name: string; frequency: number }> }>;
   archiveVersion: number;
   importedAt: string;
+  /** 载具主题(shimeji 机械臂同链换装;缺省 silver,2026-09-12 用户拍板) */
+  vehicle?: CompanionVehicleIdT;
 }
 
 
@@ -826,7 +828,8 @@ export interface ApiExpose {
   shimejiConfirmImport(input: { importId: string; characterRefs: string[] }): Promise<{
     packs: Array<{ id: string; name: string; format: string; frameCount: number; actionCount: number; iconBase64: string | null; active: boolean }>;
   }>;
-  shimejiList(): Promise<{ packs: Array<{ id: string; name: string; format: string; frameCount: number; actionCount: number; iconBase64: string | null; active: boolean }> }>;
+  shimejiList(): Promise<{ packs: Array<{ id: string; name: string; format: string; frameCount: number; actionCount: number; iconBase64: string | null; active: boolean; vehicle?: CompanionVehicleIdT }> }>;
+  shimejiSetVehicle(input: { id: string; vehicle: CompanionVehicleIdT }): Promise<{ ok: boolean }>;
   shimejiGetActive(): Promise<ShimejiPackManifestT | null>;
   shimejiGetFrame(input: { packId: string; frame: string }): Promise<string | null>;
   shimejiActivate(input: { id: string }): Promise<{ ok: boolean }>;

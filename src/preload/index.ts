@@ -251,6 +251,8 @@ const api = {
     ipcRenderer.invoke("shimeji:activate", input)) as ApiExpose["shimejiActivate"],
   shimejiDelete: ((input: { id: string }) =>
     ipcRenderer.invoke("shimeji:delete", input)) as ApiExpose["shimejiDelete"],
+  shimejiSetVehicle: ((input: { id: string; vehicle: string }) =>
+    ipcRenderer.invoke("shimeji:setVehicle", input)) as ApiExpose["shimejiSetVehicle"],
   companionPackSetVehicle: ((input: { id: string; vehicle: string }) =>
     ipcRenderer.invoke("companionPack:setVehicle", input)) as ApiExpose["companionPackSetVehicle"],
   getXpStatus: (() =>

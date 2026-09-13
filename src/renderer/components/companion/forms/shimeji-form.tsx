@@ -141,6 +141,8 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
   const ax = pose?.anchor[0] ?? 64;
   const ay = pose?.anchor[1] ?? 128;
   const hideVeh = rt.mode === "wall" || rt.mode === "ceiling";
+  // 载具主题(机械臂同链):包 manifest.vehicle,设置页色点换装即改 manifest
+  const vehTheme = VEH_THEMES[active.manifest.vehicle ?? "silver"];
 
   return (
     <g ref={rootRef} className="cp-shimeji" data-testid="shimeji-art" data-mode={rt.mode} data-action={rt.actionName ?? ""}>
@@ -148,7 +150,7 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
           仅爬墙/爬顶(rt.mode wall/ceiling)时收起——贴边攀爬时平台碍事。
           refs.armL/armR 挂机械臂——壳的逐键拍打与指向姿势零接线落机械臂。 */}
       <g className={`cp-veh-mount${hideVeh ? " cp-veh-hide" : ""}`} data-testid="shimeji-veh">
-        <VehGroup uid={`${uid}-shimeji-veh`} energyRatio={energyRatio} theme={VEH_THEMES.silver} />
+        <VehGroup uid={`${uid}-shimeji-veh`} energyRatio={energyRatio} theme={vehTheme} />
       </g>
       <g ref={refs.bot} data-shimeji-body>
         <g transform={`translate(${rt.x} ${rt.y}) scale(${rt.facing} 1)`}>
@@ -167,7 +169,7 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
           )}
         </g>
       </g>
-      <VehArmsGate refs={refs} theme={VEH_THEMES.silver} hide={hideVeh} />
+      <VehArmsGate refs={refs} theme={vehTheme} hide={hideVeh} />
       <g ref={refs.head} />
       <g ref={refs.eyes} />
       <g ref={refs.waves} />

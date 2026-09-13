@@ -10,6 +10,7 @@ import { mkdir, readFile, writeFile, rm, readdir, cp } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { unzipSync } from "fflate";
+import type { CompanionVehicleId } from "../../../../shared/companion-cut.js";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../../db/schema.js";
 import { settings } from "../../db/schema.js";
@@ -60,6 +61,8 @@ export interface ShimejiPackManifest {
   behaviors: { name: string; frequency: number; next: { name: string; frequency: number }[] }[];
   archiveVersion: number;
   importedAt: string;
+  /** 载具主题(机械臂同链换装;缺省 silver) */
+  vehicle?: CompanionVehicleId;
 }
 
 export interface ShimejiPackSummary {
@@ -68,6 +71,7 @@ export interface ShimejiPackSummary {
   format: string;
   frameCount: number;
   actionCount: number;
+  vehicle?: CompanionVehicleId;
   iconBase64: string | null;
   active: boolean;
 }
@@ -259,10 +263,10 @@ export async function getShimejiPack(_db: Db, dataDir: string, packId: string): 
 }
 
 /** 包清单列表(设置页包卡) */
-export async function listShimejiPacks(db: Db, dataDir: string): Promise<ShimejiPackSummary[]> {
+export async function listShimejiPacks(db: Db | null, dataDir: string): Promise<ShimejiPackSummary[]> {
   const root = packsRoot(dataDir);
   if (!existsSync(root)) return [];
-  const activeId = getSetting(db, "shimeji_active_pack") ?? null;
+  const activeId = db ? (getSetting(db, "shimeji_active_pack") ?? null) : null;
   const out: ShimejiPackSummary[] = [];
   for (const dir of (await readdir(root, { withFileTypes: true })).filter((d) => d.isDirectory() && !d.name.startsWith("."))) {
     const manifest = await readJson<ShimejiPackManifest>(join(root, dir.name, "manifest.json"));
@@ -281,6 +285,7 @@ export async function listShimejiPacks(db: Db, dataDir: string): Promise<Shimeji
       actionCount: manifest.actions.length,
       iconBase64,
       active: manifest.id === activeId,
+      vehicle: manifest.vehicle,
     });
   }
   return out;
@@ -289,6 +294,21 @@ export async function listShimejiPacks(db: Db, dataDir: string): Promise<Shimeji
 /** 激活包(settings;帧渲染层经 shimeji:getActive 取 manifest) */
 export async function activateShimejiPack(db: Db, packId: string): Promise<void> {
   setSetting(db, "shimeji_active_pack", packId);
+}
+
+const VEH_WHITELIST: ReadonlySet<string> = new Set(["silver", "ember", "frost", "moss", "astro", "ink"]);
+
+/** 换载具主题(机械臂同链):写回包 manifest.json;激活包即时换装由渲染层 refresh 驱动 */
+export async function setVehicleShimeji(db: Db, dataDir: string, packId: string, vehicle: string): Promise<{ ok: boolean }> {
+  if (!/^shimeji-[0-9a-f]{8}$/.test(packId)) return { ok: false };
+  if (!VEH_WHITELIST.has(vehicle)) return { ok: false };
+  const file = join(packsRoot(dataDir), packId, "manifest.json");
+  const manifest = await readJson<ShimejiPackManifest>(file);
+  if (!manifest) return { ok: false };
+  manifest.vehicle = vehicle as CompanionVehicleId;
+  await writeFile(file, JSON.stringify(manifest));
+  void db;
+  return { ok: true };
 }
 
 export async function deleteShimejiPack(db: Db, dataDir: string, packId: string): Promise<void> {

@@ -113,6 +113,7 @@ export const API_CHANNELS: Record<string, string> = {
   shimejiGetFrame: "shimeji:getFrame",
   shimejiActivate: "shimeji:activate",
   shimejiDelete: "shimeji:delete",
+  shimejiSetVehicle: "shimeji:setVehicle",
   companionPackSetVehicle: "companionPack:setVehicle",
   getXpStatus: "xp:getStatus",
   exportCourse: "course:export",

@@ -3806,10 +3806,35 @@ async function runUiTest(screenshot = false): Promise<void> {
               if (st === "shimeji") { out.picked = true; break; }
             }
           }
+          // 换载具(机械臂同链):重开列表 → 色点 → 色板选 astro → manifest.vehicle 持久化
+          var scard2 = q('[data-testid="companion-card-shimeji"]');
+          if (scard2) scard2.click();
+          for (var n2 = 0; n2 < 20; n2++) {
+            await new Promise(function(r) { setTimeout(r, 200); });
+            if (q('[data-testid="shimeji-pack-list"]')) break;
+          }
+          var dot = q('[data-testid="shimeji-pack-list"] [data-testid^="shimeji-pack-veh-"]');
+          if (dot) {
+            dot.click();
+            var astro = null;
+            for (var n3 = 0; n3 < 10; n3++) {
+              astro = q('[data-testid="shimeji-veh-pick-astro"]');
+              if (astro) break;
+              await new Promise(function(r) { setTimeout(r, 200); });
+            }
+            if (astro) {
+              astro.click();
+              for (var n4 = 0; n4 < 20; n4++) {
+                await new Promise(function(r) { setTimeout(r, 200); });
+                var ga2 = await window.api.shimejiGetActive();
+                if (ga2 && ga2.vehicle === "astro") { out.rethemed = true; break; }
+              }
+            }
+          }
           var close = q('[data-testid="settings-close"]');
           if (close) close.click();
           await new Promise(function(r) { setTimeout(r, 400); });
-          out.ok = out.formBtn && out.addCard && out.selfOpt && out.shimejiOpt && out.importCard && out.shimejiList && out.listHasPack && out.picked;
+          out.ok = out.formBtn && out.addCard && out.selfOpt && out.shimejiOpt && out.importCard && out.shimejiList && out.listHasPack && out.picked && out.rethemed;
           return out;
         } catch (e) { return { ok: false, error: String(e) }; }
       })()

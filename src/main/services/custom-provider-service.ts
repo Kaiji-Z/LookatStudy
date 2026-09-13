@@ -93,7 +93,12 @@ export function updateCustomProvider(
   if (input.label !== undefined) patch.label = input.label;
   if (input.kind !== undefined) patch.kind = input.kind;
   if (input.protocol !== undefined) patch.protocol = input.protocol;
-  if (input.baseUrl !== undefined) patch.baseUrl = input.baseUrl;
+  if (input.baseUrl !== undefined) {
+    patch.baseUrl = input.baseUrl;
+    // 改向防偷 key(2026-09-13 审计 P1):baseUrl 变更而未同时提供新 key → 清空旧 key,
+    // 否则旧 key 会被 Authorization: Bearer 发往新地址(testConnection/下次对话即外泄)。
+    if (input.apiKey === undefined && input.baseUrl !== existing.baseUrl) patch.apiKey = null;
+  }
   if (input.apiKey !== undefined) patch.apiKey = input.apiKey || null;
   if (input.defaultModel !== undefined) patch.defaultModel = input.defaultModel;
   if (input.models !== undefined) patch.modelsJson = JSON.stringify(input.models);

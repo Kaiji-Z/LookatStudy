@@ -147,8 +147,8 @@ export function SettingsView() {
       if (!p.startsWith("custom-")) {
         const preset = ps.find((x) => x.id === p);
         if (preset) {
-          const existingKey = await api.getSetting(preset.apiKeySetting as Parameters<typeof api.getSetting>[0]);
-          setKeyMasked(existingKey ? `${existingKey.slice(0, 4)}…${existingKey.slice(-4)}` : null);
+          const hasKey = await api.hasSetting(preset.apiKeySetting as Parameters<typeof api.hasSetting>[0]);
+          setKeyMasked(hasKey ? t("settings.key.configured") : null);
         }
       } else {
         const cp = cps.find((c) => c.id === p);
@@ -176,8 +176,8 @@ export function SettingsView() {
     setKeyInput("");
     const preset = presets.find((p) => p.id === newProvider);
     if (preset) {
-      const existingKey = await api.getSetting(preset.apiKeySetting as Parameters<typeof api.getSetting>[0]);
-      setKeyMasked(existingKey ? `${existingKey.slice(0, 4)}…${existingKey.slice(-4)}` : null);
+      const hasKey = await api.hasSetting(preset.apiKeySetting as Parameters<typeof api.hasSetting>[0]);
+      setKeyMasked(hasKey ? t("settings.key.configured") : null);
       setActiveModel(activeModel || preset.defaultModel);
     }
   };

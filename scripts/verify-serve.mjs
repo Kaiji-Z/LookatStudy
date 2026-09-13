@@ -105,6 +105,28 @@ try {
     ok("T2 WS token 鉴权拒绝(4001)");
   } catch (e) { fail("T2 WS token", e); }
 
+  // ── T2b 畸形百分号编码 URL:400 且进程存活(2026-09-13 审计 A1:一个 GET 不许打崩 serve) ──
+  try {
+    const s = await fetch(`http://127.0.0.1:${port}/%E0%A4%A`).then((r) => r.status);
+    assert.equal(s, 400, `畸形 URL 应回 400,实际 ${s}`);
+    assert.equal(await httpGet("/"), 200, "畸形 URL 后进程应仍存活");
+    ok("T2b 畸形 URL 400 + 进程存活");
+  } catch (e) { fail("T2b 畸形 URL", e); }
+
+  // ── T2c CSWSH:跨站 Origin 的 WS 即使持有 token 也被 4001 拒(2026-09-13 审计 A3) ──
+  try {
+    const evil = new WebSocket(`ws://127.0.0.1:${port}/?token=${token}`, {
+      headers: { Origin: "http://evil.example" },
+    });
+    const code = await Promise.race([
+      once(evil, "close").then(([c]) => c),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("跨 Origin 连接 5s 未被关闭(CSWSH 回归?)")), 5000)),
+    ]);
+    assert.equal(code, 4001, `跨 Origin 应被 4001 关闭,实际 ${code}`);
+    evil.terminate();
+    ok("T2c 跨 Origin WS 拒绝(4001)");
+  } catch (e) { fail("T2c 跨 Origin WS", e); }
+
   // ── T3 WS req/res:种子课程 + 未知通道 ──
   try {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/?token=${token}`);

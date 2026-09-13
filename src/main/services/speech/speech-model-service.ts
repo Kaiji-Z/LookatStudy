@@ -39,13 +39,8 @@ import {
 import { httpsGet } from "../pure/repo-fetcher";
 import { nativeRequire } from "./native-require";
 
-const CERT_RETRY_CODES = new Set([
-  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
-  "SELF_SIGNED_CERT_IN_CHAIN",
-  "DEPTH_ZERO_SELF_SIGNED_CERT",
-  "CERT_HAS_EXPIRED",
-  "ERR_TLS_CERT_ALTNAME_INVALID",
-]);
+// (2026-09-13 审计移除)旧 CERT_RETRY_CODES 证书错误自动降级重试已删:证书异常一律
+// fail hard——主动 MITM 打挂严格 TLS 即可投毒模型字节/假列表,静默降级=任意文件写前置。
 
 export interface EnsureSpeechModelHooks {
   onProgress?: (e: SpeechDownloadProgress) => void;
@@ -163,25 +158,20 @@ function httpsStream(
   });
 }
 
-/** 带重定向跟随 + 证书降级重试的流式 GET(下载大文件用) */
+/** 带重定向跟随的流式 GET(下载大文件用)。
+ *  TLS 恒严格(2026-09-13 审计 P1 修复):旧实现在证书错误(自签/过期/altname)时自动
+ *  rejectUnauthorized:false 重试——主动 MITM 打挂严格 TLS 即可投毒模型字节+假列表,
+ *  配合列表 Path 穿越曾是任意文件写。证书异常环境应修环境,不应静默降级。 */
 async function httpsStreamFollow(
   url: string,
   signal: AbortSignal | undefined,
   depth = 0,
-  lax = false,
 ): Promise<StreamResp> {
   if (depth > 5) throw new Error("too many redirects");
-  let r: StreamResp;
-  try {
-    r = await httpsStream(url, { rejectUnauthorized: !lax, signal });
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code ?? "";
-    if (!lax && CERT_RETRY_CODES.has(code)) return httpsStreamFollow(url, signal, depth, true);
-    throw e;
-  }
+  const r = await httpsStream(url, { signal });
   if ([301, 302, 303, 307, 308].includes(r.status) && r.location) {
     r.stream.resume(); // 排空响应体再追下一跳
-    return httpsStreamFollow(new URL(r.location, url).toString(), signal, depth + 1, lax);
+    return httpsStreamFollow(new URL(r.location, url).toString(), signal, depth + 1);
   }
   return r;
 }
@@ -258,9 +248,8 @@ async function fetchModelscopeListing(
   signal?: AbortSignal,
 ): Promise<ModelscopeListingFile[]> {
   const url = `https://modelscope.cn/api/v1/models/${repo}/repo/files?Recursive=true&Revision=${encodeURIComponent(revision)}`;
-  // 列表 JSON 数百 KB 上限:两档尝试(严格证书 → 降级),与 repo-fetcher 同款理由
-  let r = await httpsGet(url, { deadlineMs: 60_000, signal });
-  if (!r.ok) r = await httpsGet(url, { rejectUnauthorized: false, deadlineMs: 60_000, signal });
+  // TLS 恒严格(2026-09-13 审计):列表决定下载落盘路径,MITM 假列表=任意文件写前置
+  const r = await httpsGet(url, { deadlineMs: 60_000, signal });
   if (!r.ok || !r.body) throw new Error(`listing HTTP ${r.status ?? r.error}`);
   const data = JSON.parse(r.body) as { Data?: { Files?: ModelscopeListingFile[] } };
   const files = data.Data?.Files;

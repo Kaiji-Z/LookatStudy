@@ -43,6 +43,8 @@ export function planModelscopeFiles(
     .filter((f) => !f.Path.endsWith("/"))
     .filter((f) => (include ? include.has(f.Path) : !exclude.has(f.Path)))
     .filter((f) => !f.Path.startsWith("."))
+    // 穿越守卫(2026-09-13 审计 P1):Path 来自网络列表 JSON,是下载落盘的路径成分
+    .filter((f) => !f.Path.startsWith("/") && !/^[A-Za-z]:/.test(f.Path) && !f.Path.split("/").includes(".."))
     .map((f) => ({ path: f.Path, bytes: f.Size }))
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }

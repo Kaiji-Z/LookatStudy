@@ -95,6 +95,7 @@ export const API_CHANNELS: Record<string, string> = {
   getMemory: "memory:get",
   consolidateMemory: "consolidate:run",
   getSetting: "settings:get",
+  hasSetting: "settings:has",
   setSetting: "settings:set",
   companionPetSetClickThrough: "companionPet:setClickThrough",
   dshImportDetect: "dsh:detect",

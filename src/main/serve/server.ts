@@ -10,8 +10,8 @@
  */
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
-import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { extname, join, normalize, resolve } from "node:path";
+import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
+import { extname, join, normalize, resolve, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { parseClientFrame, WS_PROTOCOL_VERSION, type WsServerFrame } from "@shared/ws-protocol";
@@ -80,6 +80,11 @@ function loadOrCreateToken(dataDir: string): string {
   const token = randomBytes(24).toString("hex");
   mkdirSync(dataDir, { recursive: true });
   writeFileSync(tokenPath, token, "utf8");
+  try {
+    chmodSync(tokenPath, 0o600); // 多用户主机上其他本地用户不可读(Windows 上 no-op)
+  } catch {
+    /* 平台不支持则忽略 */
+  }
   return token;
 }
 
@@ -147,9 +152,17 @@ export async function startServe(opts: ServeOptions): Promise<ServeInstance> {
 
   const requestHandler = (req: IncomingMessage, res: ServerResponse) => {
     // 静态文件 + SPA 回退。token 不用于静态资源(渲染层不是秘密,API 面全在 WS)
-    const urlPath = decodeURIComponent((req.url ?? "/").split("?")[0]!);
+    let urlPath: string;
+    try {
+      urlPath = decodeURIComponent((req.url ?? "/").split("?")[0]!);
+    } catch {
+      // 畸形百分号编码:一个 GET 不许打崩整个 serve 进程(2026-09-13 审计 A1)
+      res.writeHead(400).end();
+      return;
+    }
     let filePath = normalize(join(webRoot, urlPath));
-    if (!filePath.startsWith(webRoot)) {
+    // 前缀校验带分隔符:webRoot=C:\web 时兄弟目录 C:\web-secret 不许蒙混(旧 startsWith(webRoot) 可)
+    if (filePath !== webRoot && !filePath.startsWith(webRoot + sep)) {
       res.writeHead(403).end();
       return;
     }
@@ -177,6 +190,22 @@ export async function startServe(opts: ServeOptions): Promise<ServeInstance> {
     if (!opts.skipAuth && url.searchParams.get("token") !== token) {
       ws.close(4001, "invalid token");
       return;
+    }
+    // CSWSH 防线(2026-09-13 审计 A3):浏览器跨站页面可对本地端口发 WS,token 之外
+    // 再校验 Origin——无 Origin(非浏览器客户端)或与请求 host 同源放行,其余拒绝。
+    // Termux Custom Tab/浏览器直开都是同源场景,不受影响。
+    const origin = req.headers.origin;
+    if (!opts.skipAuth && origin) {
+      let sameOrigin = false;
+      try {
+        sameOrigin = new URL(origin).host === (req.headers.host ?? "");
+      } catch {
+        sameOrigin = false;
+      }
+      if (!sameOrigin) {
+        ws.close(4001, "invalid origin");
+        return;
+      }
     }
     clients.add(ws);
     ws.on("message", (data) => {

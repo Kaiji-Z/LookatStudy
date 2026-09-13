@@ -561,9 +561,8 @@ export function docsToDiscoveredFiles(docs: { path: string; title?: string }[]):
  */
 /**
  * 用 Node 的 https 模块拉取（可单独控制 SSL 验证）。
- * GitHub Tree API 的证书链在部分环境（Node 内置 CA）验证失败（中间证书缺失），
- * 对这一个获取公开文件树的请求用 rejectUnauthorized:false 绕过。
- * 风险可控：获取的是公开文件路径列表（无敏感数据），且只用于此请求。
+ * TLS 恒严格(2026-09-13 审计):调用方不得传 rejectUnauthorized:false——文件树/列表
+ * 决定导入哪些内容,MITM 可改写即污染课程;旧注释"公开文件树无敏感"不成立。
  */
 export function httpsGet(
   url: string,
@@ -620,7 +619,7 @@ export async function fetchRepoFileTree(
     // 大仓库树 JSON 可达 2-4MB;部分网络直连 GitHub 被限速 ~24KB/s(实测 40s 才 948KB),
     // "活着但爬行"的传输不该被总截止掐掉 —— 树扫描单独放宽到 240s(该速度下覆盖 ~5.7MB),
     // 真挂死仍由 20s 空闲超时兜底。取消由 signal 即时撕断,不受 240s 拖累。
-    const r = await httpsGet(apiUrl, { rejectUnauthorized: false, deadlineMs: 240_000, signal });
+    const r = await httpsGet(apiUrl, { deadlineMs: 240_000, signal });
     console.error(`[import] GitHub Tree API: HTTP ${r.status ?? r.error}`);
     if (r.ok && r.body) {
       const data = JSON.parse(r.body) as { tree?: Array<{ path: string; type: string }> };
@@ -635,7 +634,7 @@ export async function fetchRepoFileTree(
   try {
     const r2 = await httpsGet(
       `https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${branch}?structure=flat`,
-      { rejectUnauthorized: false, signal },
+      { signal },
     );
     if (r2.ok && r2.body) {
       const data = JSON.parse(r2.body) as { files?: Array<{ name: string }> };

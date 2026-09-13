@@ -1112,20 +1112,28 @@ export function registerStreakHandlers(): void {
 /* ---------- 设置 ---------- */
 
 export function registerSettingsHandlers(deps: RuntimeDeps): void {
+  // 密钥类设置永不回传明文(2026-09-13 审计 P1):渲染层展示不可信课程内容,
+  // XSS+settings:get 曾是"一次 invoke 打包外传全部厂商 key"的原语,serve 模式下
+  // 更是 WS 信道。已配置态一律走 hasSetting 布尔,改 key 须整体重输。
+  const isSecretKey = (key: string) => /_api_key$/.test(key);
   handle(
     "settings:get",
     async (_e, key: SettingKey): Promise<string | null> => {
       const db = getDb();
+      if (isSecretKey(key)) return null;
       const row = db
         .select()
         .from(settingsTable)
         .where(eq(settingsTable.key, key))
         .get();
-      // v0.1: API key 类敏感字段用 electron safeStorage 加密（M2 接入）
-      // 这里先明文返回，因为设置页本身就在本地
       return row?.value ?? null;
     },
   );
+  handle("settings:has", async (_e, key: SettingKey): Promise<boolean> => {
+    const db = getDb();
+    const row = db.select().from(settingsTable).where(eq(settingsTable.key, key)).get();
+    return !!row?.value;
+  });
 
   handle(
     "settings:set",

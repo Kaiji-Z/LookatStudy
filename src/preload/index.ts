@@ -213,6 +213,8 @@ const api = {
   /* 设置 */
   getSetting: ((key: SettingKey) =>
     ipcRenderer.invoke("settings:get", key)) as ApiExpose["getSetting"],
+  hasSetting: ((key: SettingKey) =>
+    ipcRenderer.invoke("settings:has", key)) as ApiExpose["hasSetting"],
   setSetting: ((key: SettingKey, value: string) =>
     ipcRenderer.invoke("settings:set", key, value)) as ApiExpose["setSetting"],
   companionPetSetClickThrough: ((passThrough: boolean) =>

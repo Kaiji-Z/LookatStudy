@@ -496,5 +496,17 @@ await test("T11 不原地起爬(实测反馈回归):居中静止的精灵永不�
   assert.ok(SHIMEJI_SANDBOX.minX >= 64 && SHIMEJI_SANDBOX.maxX <= 136);
 });
 
+await test("T12 动态沙盒覆盖(墙对齐可见容器边的机制):传入 sandbox 后边界生效", () => {
+  let m = { ...initMotion(), actionName: "Walk", loopsLeft: 99 };
+  const box = { minX: 90, maxX: 110, ceilY: 100 };
+  let sawClamp = false;
+  for (let i = 0; i < 400; i++) {
+    m = tickShimeji(m, SLOT_MANIFEST, { t: "tick" }, "", seeded(i + 3), box);
+    assert.ok(m.x >= box.minX - 1e-9 && m.x <= box.maxX + 1e-9, "x 被钳在覆盖沙盒内");
+    if (Math.abs(m.x - box.minX) < 1e-6 || Math.abs(m.x - box.maxX) < 1e-6) sawClamp = true;
+  }
+  assert.ok(sawClamp, "确实触及过覆盖边界");
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

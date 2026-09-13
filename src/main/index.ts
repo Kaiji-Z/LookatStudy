@@ -3800,7 +3800,7 @@ async function runUiTest(screenshot = false): Promise<void> {
             imgs = document.querySelectorAll('[data-testid="shimeji-art"] image').length;
             if (cls.indexOf("cp-form-shimeji") >= 0 && art && imgs >= 1) break;
           }
-          var mountHidden = veh() ? parseFloat(getComputedStyle(veh()).opacity) < 0.2 : false;
+          var mountVisible = veh() ? parseFloat(getComputedStyle(veh()).opacity) > 0.8 : false;
           var arms = document.querySelectorAll('[data-testid="shimeji-art"] .cp-veh-arm').length;
           // 值勤姿势(打字)→ 载具浮现:走真实打字链(chat-input 聚焦→keydown)
           var input = document.querySelector('[data-testid="chat-input"]');
@@ -3814,7 +3814,7 @@ async function runUiTest(screenshot = false): Promise<void> {
           }
           if (input) input.blur();
           window.dispatchEvent(new CustomEvent("companion-zone-focus", { detail: false }));
-          return { ok: cls.indexOf("cp-form-shimeji") >= 0 && art && imgs >= 1 && mountHidden && arms >= 2 && mountShown, cls: cls.slice(0, 90), art: art, images: imgs, mountHidden: mountHidden, arms: arms, mountShown: mountShown };
+          return { ok: cls.indexOf("cp-form-shimeji") >= 0 && art && imgs >= 1 && mountVisible && arms >= 2 && mountShown, cls: cls.slice(0, 90), art: art, images: imgs, mountVisible: mountVisible, arms: arms, mountShown: mountShown };
         } catch (e) { return { ok: false, error: String(e) }; }
       })()
     `,

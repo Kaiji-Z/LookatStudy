@@ -1511,19 +1511,17 @@ html.light ::-webkit-scrollbar-thumb:hover {
    refs.armL/armR 挂在 VehArms 臂组上,姿势 CSS(.cp-pose-*)与逐键 WAAPI 零接线
    落机械臂;纸偶 PNG 臂改挂 cp-puppet-arm* 私有类不再吃姿势(rest 补偿保留)。 */
 .cp-veh-arm { transform-box: fill-box; transform-origin: 50% 12%; }
-/* shimeji:载具+机械臂只在壳层值勤姿势浮现(打字/写字/指向朗读句/飞行运输),
-   地面自主动作(走/坐/躺/爬)收起——精灵用自己身体,机器只在干活时出现。 */
-.cp-form-shimeji .cp-veh-mount { opacity: 0; transition: opacity 0.35s ease; }
+/* shimeji:载具+机械臂常驻(2026-09-12 三次拍板:bot 本就悬浮,脚下没平台没道理),
+   仅爬墙/爬顶时收起(贴边攀爬时平台碍事)——由 shimeji-art 的 data-mode 驱动
+   cp-veh-hide 类(wall/ceiling),淡出保留。 */
+.cp-form-shimeji .cp-veh-mount { transition: opacity 0.35s ease; }
+.cp-form-shimeji .cp-veh-mount.cp-veh-hide { opacity: 0; }
 .cp-form-shimeji .cp-beacons, .cp-form-shimeji .cp-thruster { display: none; }
 .cp-form-shimeji .cp-key-scope,
 .cp-form-shimeji .cp-screen-wave,
 .cp-form-shimeji .cp-core-lit { display: none; }
+/* 击键字符入舱(与 custom 同链):胸屏位(100,135)→ 平台仪表舱玻璃(100,187) */
 .cp-form-shimeji .cp-screen-key { translate: 0 52px; font-size: 12px; }
-.cp-form-shimeji.cp-pose-typing .cp-veh-mount,
-.cp-form-shimeji.cp-pose-writing .cp-veh-mount,
-.cp-form-shimeji.cp-pose-flying .cp-veh-mount,
-.cp-form-shimeji.cp-takeoff .cp-veh-mount,
-.cp-form-shimeji[class*="cp-pose-point"] .cp-veh-mount { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
   .cp-form-custom .cp-disc, .cp-form-custom .cp-puppet-bot, .cp-form-custom .cp-disc-lamp { animation: none; }

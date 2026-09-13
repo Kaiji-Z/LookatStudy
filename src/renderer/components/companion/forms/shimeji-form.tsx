@@ -27,19 +27,21 @@ import {
   initMotion,
   tickShimeji,
   type ShimejiMotion,
+  type ShimejiSandbox,
   type ShimejiSignal,
 } from "../../../lib/companion/shimeji-scheduler.ts";
 import type { FormArtProps } from "./shared.js";
 import { VehArms, VehGroup } from "./vehicle.js";
-import { VEH_THEMES } from "../../../lib/companion/veh-themes.ts";
+import { VEH_THEMES, type VehTheme } from "../../../lib/companion/veh-themes.ts";
 import type { FormRefs } from "./shared.js";
-import type { VehTheme } from "../../../lib/companion/veh-themes.ts";
 
 /** 前景机械臂(画在精灵之后,操作在身前可见)——与平台同受 .cp-veh-mount 门控。
-    修:曾移出门控容器导致"平台收起而机械臂常显"(实测反馈 2026-09-12)。 */
-function VehArmsGate({ refs, theme }: { refs: Pick<FormRefs, "armL" | "armR">; theme: VehTheme }) {
+    修:曾移出门控容器导致"平台收起而机械臂常显"(实测反馈 2026-09-12)。
+    门控语义(2026-09-12 三次拍板):载具常驻(bot 本就悬浮,脚下没平台没道理),
+    仅爬墙/爬顶时收起(贴边攀爬时平台碍事)。 */
+function VehArmsGate({ refs, theme, hide }: { refs: Pick<FormRefs, "armL" | "armR">; theme: VehTheme; hide: boolean }) {
   return (
-    <g className="cp-veh-mount">
+    <g className={`cp-veh-mount${hide ? " cp-veh-hide" : ""}`}>
       <VehArms refs={refs} theme={theme} />
     </g>
   );
@@ -81,12 +83,32 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
   // 调度循环:50ms tick 步进(纯函数替换状态,StrictMode 双调安全)
   useEffect(() => {
     if (!manifest) return;
+    // 墙对齐可见容器边缘(2026-09-12 拍板):量 composer 卡/讲解面板的屏幕矩形,
+    // 换算成舞台局部坐标当左右墙与顶棚;容器不可见/过小时回退舞台默认沙盒
+    const measureSandbox = (): Partial<ShimejiSandbox> | null => {
+      const svg = rootRef.current?.ownerSVGElement;
+      if (!svg) return null;
+      const stage = svg.getBoundingClientRect();
+      if (stage.width < 40 || stage.height < 40) return null;
+      const cont = document.querySelector('[data-testid="composer-card"], [data-testid="notebook-panel"]');
+      if (!cont) return null;
+      const r = cont.getBoundingClientRect();
+      if (r.width < 120 || r.height < 80) return null;
+      const toX = (sx: number) => ((sx - stage.left) / stage.width) * 200;
+      const toY = (sy: number) => ((sy - stage.top) / stage.height) * 192;
+      const clampN = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+      const minX = clampN(toX(r.left), 40, 100);
+      const maxX = clampN(toX(r.right), 100, 160);
+      if (maxX - minX < 24) return null;
+      return { minX, maxX, ceilY: clampN(toY(r.top), 24, 150) };
+    };
     const timer = setInterval(() => {
       const cls = rootRef.current?.ownerSVGElement?.getAttribute("class") ?? "";
       const duty = /cp-pose-(typing|writing|flying)|cp-pose-point|cp-takeoff/.test(cls);
       dutyRef.current = duty;
+      const box = measureSandbox();
       setRt((prev) => {
-        const next = tickShimeji(prev, manifest, { t: "tick" }, exprRef.current);
+        const next = tickShimeji(prev, manifest, { t: "tick" }, exprRef.current, Math.random, box ?? undefined);
         if (!duty || next.mode !== "ground") return next;
         const action = manifest.actions.find((a) => a.name === next.actionName);
         const pinned = {
@@ -119,13 +141,14 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
   // anchor=帧内脚底点 → 平移到脚底位置;scale(-1 1) 绕锚点镜像(锚点局部原点)
   const ax = pose?.anchor[0] ?? 64;
   const ay = pose?.anchor[1] ?? 128;
+  const hideVeh = rt.mode === "wall" || rt.mode === "ceiling";
 
   return (
     <g ref={rootRef} className="cp-shimeji" data-testid="shimeji-art" data-mode={rt.mode} data-action={rt.actionName ?? ""}>
-      {/* 值勤载具+机械臂(用户拍板 2026-09-12):打字/写字/指向/飞行等壳层值勤姿势时
-          浮现(CSS .cp-form-shimeji .cp-veh-mount 门控),地面自主动作(走/坐/躺/爬)时
-          收起。refs.armL/armR 挂机械臂——壳的逐键拍打与指向姿势零接线落机械臂。 */}
-      <g className="cp-veh-mount" data-testid="shimeji-veh">
+      {/* 载具+机械臂常驻(2026-09-12 三次拍板):bot 本就悬浮,脚下没平台没道理;
+          仅爬墙/爬顶(rt.mode wall/ceiling)时收起——贴边攀爬时平台碍事。
+          refs.armL/armR 挂机械臂——壳的逐键拍打与指向姿势零接线落机械臂。 */}
+      <g className={`cp-veh-mount${hideVeh ? " cp-veh-hide" : ""}`} data-testid="shimeji-veh">
         <VehGroup uid={`${uid}-shimeji-veh`} energyRatio={energyRatio} theme={VEH_THEMES.silver} />
       </g>
       <g ref={refs.bot} data-shimeji-body>
@@ -145,7 +168,7 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
           )}
         </g>
       </g>
-      <VehArmsGate refs={refs} theme={VEH_THEMES.silver} />
+      <VehArmsGate refs={refs} theme={VEH_THEMES.silver} hide={hideVeh} />
       <g ref={refs.head} />
       <g ref={refs.eyes} />
       <g ref={refs.waves} />

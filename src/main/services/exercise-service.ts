@@ -28,6 +28,7 @@ import { createProposal, applyProposal, type LearningOperation } from "./proposa
 import { recordReviewDb } from "./pure/srs-db.js";
 import type { ReviewQuality } from "@shared/types";
 import { addXpCorrect, addXpWrong } from "./xp-service.js";
+import { markHumanObservation } from "./human-observation.js";
 import type { Exercise, ExerciseType } from "@shared/types";
 
 type Db = SQLJsDatabase<typeof schema>;
@@ -121,6 +122,9 @@ export function submitExerciseAnswer(
 
   // 累加 XP（答对+10，答错+1）
   const xpGained = correct ? addXpCorrect(db) : addXpWrong(db);
+
+  // IP3 人工观测置位:练习提交判分是确定性人工判分,该节点的 AI 观测封顶自此解除。
+  markHumanObservation(db, ex.nodeId);
 
   // 自动 create + apply update_mastery（不再留 pending 等人确认）
   const ops: LearningOperation[] = [

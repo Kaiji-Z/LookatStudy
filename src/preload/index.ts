@@ -220,6 +220,10 @@ const api = {
   companionPetSetClickThrough: ((passThrough: boolean) =>
     ipcRenderer.invoke("companionPet:setClickThrough", passThrough)) as ApiExpose["companionPetSetClickThrough"],
 
+  /* 应用更新(轻量检查:只提示,不自动安装) */
+  getUpdateInfo: (() =>
+    ipcRenderer.invoke("app:getUpdateInfo")) as ApiExpose["getUpdateInfo"],
+
   /* dsh 插件进度迁移(全平台:importFromText 通用;detect/importFromPath 桌面一键) */
   dshImportDetect: (() =>
     ipcRenderer.invoke("dsh:detect")) as ApiExpose["dshImportDetect"],

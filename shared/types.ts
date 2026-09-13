@@ -778,6 +778,10 @@ export interface ApiExpose {
    *  渲染层指针热区检测调用;web 运行时无桌宠窗,no-op。 */
   companionPetSetClickThrough(passThrough: boolean): Promise<void>;
 
+  /* 应用更新(v0.35 安全后续:轻量检查通道,只提示不自动安装) */
+  /** 启动/首次选课时查询;null=离线/已最新/该版本已提示过 → 渲染层零动作。 */
+  getUpdateInfo(): Promise<UpdateInfo | null>;
+
   /* dsh 插件进度迁移(全平台:importFromText 通用;detect/importFromPath 桌面一键) */
   /** 探测本机(serve=服务器侧)~/.dsh/lookatstudy-plugin/state.json。 */
   dshImportDetect(): Promise<{ found: boolean; path: string | null; version: number | null }>;
@@ -1064,7 +1068,17 @@ export type SettingKey =
   // Groq LLM preset 早已使用(设置页经 as 断言写入);入 union 让听写档零断言读取
   | "groq_api_key"
   // issue #14 三栏拖拽调宽:持久化像素宽(空/无效=未定制=响应式默认)
-  | "pane_width_left" | "pane_width_mid";
+  | "pane_width_left" | "pane_width_mid"
+  // v0.35 更新检查:24h 结果缓存 + 每版本只提示一次的已见标记(主进程读写)
+  | "update_check_cache" | "update_prompt_seen";
+
+/** 轻量更新检查结果(只提示,不自动下载安装)。 */
+export interface UpdateInfo {
+  current: string;
+  latest: string;
+  hasUpdate: boolean;
+  releaseUrl: string;
+}
 
 /* ---------- dsh 插件进度迁移(设置页) ---------- */
 

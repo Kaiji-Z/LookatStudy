@@ -29,6 +29,7 @@ import {
   applyProposal,
 } from "../src/main/services/proposal-service.ts";
 import { getProgress } from "../src/main/services/progress-service.ts";
+import { markHumanObservation } from "../src/main/services/human-observation.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -141,6 +142,9 @@ for (let i = 0; i < 15; i++) updateKcMastery(db, NODE_ID, 1, true);
 for (let i = 0; i < 15; i++) updateKcMastery(db, NODE_ID, 2, true);
 const allHigh = getKcMastery(db, NODE_ID);
 assert.ok(allHigh.every((r) => r.mastery > 0.9), `T7: 所有 KC > 0.9`);
+// IP3:直接 updateKcMastery 刷高模拟的是人工观测时代的数据(生产里 KC 直写只来自
+// 带 cap 的 proposal 路径)——置位人工观测标记再触发聚合,与生产语义对齐
+markHumanObservation(db, NODE_ID);
 // 再答对一次触发 auto-mastered
 const prop7 = createProposal(db, {
   nodeId: NODE_ID,

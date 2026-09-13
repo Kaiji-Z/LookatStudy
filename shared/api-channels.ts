@@ -98,6 +98,7 @@ export const API_CHANNELS: Record<string, string> = {
   hasSetting: "settings:has",
   setSetting: "settings:set",
   companionPetSetClickThrough: "companionPet:setClickThrough",
+  getUpdateInfo: "app:getUpdateInfo",
   dshImportDetect: "dsh:detect",
   dshImportFromPath: "dsh:importFromPath",
   dshImportFromText: "dsh:importFromText",

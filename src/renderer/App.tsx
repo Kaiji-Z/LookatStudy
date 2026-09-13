@@ -691,6 +691,27 @@ export default function App() {
     return off;
   }, [selectedNodeId, tree, toast, t]);
 
+  // v0.35 更新检查(轻量:只提示不自动安装)。首次选中课程后查一次;
+  // 离线/已最新/该版本已提示过 → 主进程返回 null 零打扰;空态不查(别在欢迎页打扰新用户)。
+  const updateCheckedRef = useRef(false);
+  useEffect(() => {
+    if (!selectedCourseId || updateCheckedRef.current) return;
+    updateCheckedRef.current = true;
+    void api
+      .getUpdateInfo()
+      .then((info) => {
+        if (!info?.hasUpdate) return;
+        toast.show(t("update.available", { version: info.latest }), {
+          severity: "info",
+          duration: 8000,
+          action: { label: t("update.download"), onClick: () => window.open(info.releaseUrl) },
+        });
+        // 提示了才算"见过"这个版本(检查失败下轮再试,不在这里写)
+        void api.setSetting("update_prompt_seen", info.latest).catch(() => {});
+      })
+      .catch(() => {});
+  }, [selectedCourseId, toast, t]);
+
   // 删除课程(当前课也可删):MapRail 的 ConfirmCard 确认后调用。
   // 删除后 refreshAll 检测选中课程消失 → 自动清空选中态(回到未选课初始态)。
   const handleDeleteCourse = useCallback(

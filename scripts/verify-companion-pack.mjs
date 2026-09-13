@@ -302,7 +302,7 @@ check(
   vehicleSrc.includes("ref={refs[side]}") && vehicleSrc.includes("cp-veh-arm cp-${side}") &&
     puppetSrc.includes("<VehArms refs={refs}") && puppetSrc.includes('<VehGroup uid={uid}') &&
     shimejiSrc.includes('<VehArms refs={refs}') && shimejiSrc.includes('cp-veh-mount') &&
-    appCss.includes(".cp-veh-arm {") && appCss.includes(".cp-form-shimeji.cp-pose-typing .cp-veh-mount") &&
+    appCss.includes(".cp-veh-arm {") && appCss.includes(".cp-form-shimeji .cp-veh-mount.cp-veh-hide { opacity: 0; }") &&
     appCss.includes(".cp-veh .cp-veh-flame {"),
 );
 // G2i(2026-09-11) 载具 v2 仪表舱:壳层胸屏装饰(key-scope/screen-wave/core-lit)对

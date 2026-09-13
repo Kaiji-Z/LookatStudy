@@ -20,15 +20,25 @@ export type ShimejiActionT = ShimejiPackManifestT["actions"][number];
 
 export type ShimejiMode = "ground" | "wall" | "ceiling" | "air" | "dragged" | "settle";
 
-/** 舞台局部沙盒(SVG 舞台 200×192;脚底线 y=192,顶棚 y=40)。
-    x 边界收紧到 64..136(2026-09-12 实测反馈"偏移到外部"):脚点±36=精灵半宽,
-    保证 128 宽帧图任何时刻完整在舞台内(旧 28..172 贴边时半身出血)。 */
-export const SHIMEJI_SANDBOX = {
+/** 沙盒四界(舞台局部坐标:200×192,脚底线 192)。 */
+export interface ShimejiSandbox {
+  groundY: number;
+  ceilY: number;
+  minX: number;
+  maxX: number;
+}
+
+/** 默认沙盒(SVG 舞台局部;墙=舞台边)。
+    x 收紧到 64..136(2026-09-12 实测反馈"偏移到外部"):脚点±36=精灵半宽,
+    保证 128 宽帧图任何时刻完整在舞台内(旧 28..172 贴边时半身出血)。
+    运行时由 shimeji-form 每 tick 测量可见容器(composer 卡/讲解面板)边缘,
+    按 2026-09-12 用户拍板把"墙"对齐到可见容器边缘后经 tickShimeji 覆盖。 */
+export const SHIMEJI_SANDBOX: ShimejiSandbox = {
   groundY: 192,
   ceilY: 40,
   minX: 64,
   maxX: 136,
-} as const;
+};
 
 /** 快扔阈值,单位 px/ms(与壳 CompanionCreature throwDizzy 的 2.5 同阈同语义) */
 export const THROW_MIN_SPEED = 2.5;
@@ -220,9 +230,12 @@ export function tickShimeji(
   signal: ShimejiSignal,
   expression: string,
   rng: () => number = Math.random,
+  /** 运行时沙盒覆盖(2026-09-12 拍板:墙对齐可见容器边缘——form 每 tick 测
+      composer 卡/讲解面板缘换算舞台坐标喂入;缺省=舞台局部默认沙盒) */
+  sandboxOverride?: Partial<ShimejiSandbox>,
 ): ShimejiMotion {
   const pools = poolsFor(manifest);
-  const S = SHIMEJI_SANDBOX;
+  const S: ShimejiSandbox = sandboxOverride ? { ...SHIMEJI_SANDBOX, ...sandboxOverride } : SHIMEJI_SANDBOX;
 
   // ── 交互信号(最高优先;仅 dragged 中响应 release,避免误伤其它模式)──
   if (signal.t === "grab") {

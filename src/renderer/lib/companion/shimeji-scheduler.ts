@@ -390,6 +390,13 @@ export function tickShimeji(
         }
       }
       const p = advancePose(prev, action);
+      // rest 居中(2026-09-12 实测反馈"躺下半身出平台"):躺/坐帧横向铺满帧宽,
+      // 散步范围(±36)保证不了落在台面内——rest 动作期间身体缓移回台面中心
+      // (中心 100 处任何 ≤124px 宽的角色像素都在台面 38..162 内),像躺下前挪了挪
+      if (action && pools.rest.some((a) => a.name === action.name)) {
+        x = x + (100 - x) * 0.15;
+        vx = 0;
+      }
       if (p.loopsLeft <= 0) {
         // 爬墙/爬顶入口关闭(2026-09-12 用户拍板方案 B):壳层把 bot 悬浮在锚点上空,
         // 没有贴边物理支撑,攀爬帧=飘着爬空气墙(归档与 wall/ceiling 代码路径保留,

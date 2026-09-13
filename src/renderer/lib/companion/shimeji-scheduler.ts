@@ -31,10 +31,13 @@ export interface ShimejiSandbox {
 /** 默认沙盒(SVG 舞台局部;墙=舞台边)。
     x 收紧到 64..136(2026-09-12 实测反馈"偏移到外部"):脚点±36=精灵半宽,
     保证 128 宽帧图任何时刻完整在舞台内(旧 28..172 贴边时半身出血)。
+    groundY=172(实测反馈"最低点与平台重合"):脚点=载具顶面椭圆(cy=175)中部
+    略后——精灵"立在台面上",平台前沿(175..184)完整露在脚下;旧 192(舞台底)
+    会把精灵沉到平台底下交叠。
     运行时由 shimeji-form 每 tick 测量可见容器(composer 卡/讲解面板)边缘,
     按 2026-09-12 用户拍板把"墙"对齐到可见容器边缘后经 tickShimeji 覆盖。 */
 export const SHIMEJI_SANDBOX: ShimejiSandbox = {
-  groundY: 192,
+  groundY: 172,
   ceilY: 40,
   minX: 64,
   maxX: 136,

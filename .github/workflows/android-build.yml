@@ -115,6 +115,18 @@ jobs:
         with:
           path: assets
 
+      # 完整性 sidecar(2026-09-13 审计后续):Termux 安装器 GitHub 回退链逐跳校验的期望值来源。
+      # 内容=纯 hex 小写(与 install-termux.sh gh_asset_sha256 的消费约定一致)。
+      - name: Generate sha256 sidecars
+        run: |
+          cd assets
+          for f in lookatstudy-mobile-zip/lookatstudy-mobile.zip \
+                   lookatstudy-mobile-zip/install-termux.sh \
+                   LookatStudy-launcher-apk/LookatStudy-launcher.apk; do
+            sha256sum "$f" | awk '{print $1}' > "$f.sha256"
+            cat "$f.sha256"
+          done
+
       - name: Attach mobile assets to the GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -123,4 +135,11 @@ jobs:
           # 并发竞态兜底:release 不存在就建壳(与 package.yml 同款)
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "LookatStudy $TAG" --notes ""
-          gh release upload "$TAG" assets/lookatstudy-mobile-zip/lookatstudy-mobile.zip assets/lookatstudy-mobile-zip/install-termux.sh assets/LookatStudy-launcher-apk/LookatStudy-launcher.apk --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" \
+            assets/lookatstudy-mobile-zip/lookatstudy-mobile.zip \
+            assets/lookatstudy-mobile-zip/lookatstudy-mobile.zip.sha256 \
+            assets/lookatstudy-mobile-zip/install-termux.sh \
+            assets/lookatstudy-mobile-zip/install-termux.sh.sha256 \
+            assets/LookatStudy-launcher-apk/LookatStudy-launcher.apk \
+            assets/LookatStudy-launcher-apk/LookatStudy-launcher.apk.sha256 \
+            --repo "$GITHUB_REPOSITORY" --clobber

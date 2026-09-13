@@ -61,6 +61,12 @@ if (!isShotsRun) {
   app.disableHardwareAcceleration();
 }
 
+// Electron 44/Windows(v0.35 升级实测):Chromium 的原生窗口遮挡计算会把透明窗/
+// 挪屏外窗/被遮窗标成 visibilityState=hidden —— 页面级 rAF 全停(伴学动画冻结,
+// ui-test 插桩 rafTicks=0 + visState=hidden 实锤;33 无此行为)。桌宠透明窗与
+// ui-test 隐身窗都依赖"show 着但视觉不可见仍产帧",关掉该遮挡计算。
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
@@ -227,7 +233,10 @@ app.whenReady().then(async () => {
   if (process.argv.includes("--ui-test")) {
     const screenshot = process.argv.includes("--screenshot");
     await runUiTest(screenshot);
-    app.quit();
+    // Electron 44:经历 hide/show 解卡的半隐窗后 app.quit() 的优雅退出链可能挂起
+    // (33 无此问题;run5 实测写完结果 40 分钟不退)。ui-test 用一次性临时 DB,
+    // 无需优雅落盘——直接硬退出,stdio 也随之冲刷。
+    app.exit(typeof process.exitCode === "number" ? process.exitCode : 0);
     return;
   }
 
@@ -433,7 +442,7 @@ async function runShots(mode: "zh" | "en"): Promise<void> {
   await win.loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"));
 
   const js = (code: string): Promise<unknown> =>
-    win.webContents.executeJavaScript(code).catch(() => null);
+    jsTimeout(win.webContents, code).catch(() => null);
   const sizes: Record<string, number> = {};
   const capture = async (): Promise<Buffer> => {
     try {
@@ -640,6 +649,45 @@ app.on("window-all-closed", () => {
  * 与 self-test 互补：self-test 只测主进程 DB；本函数测渲染层 + IPC + UI 结构。
  * 需要 npm run build 先跑（加载 dist/renderer/index.html）。
  */
+/**
+ * Electron 44(2026-09-14 Windows 实测):连续 setBounds 后 native 窗口已变,但合成器
+ * 视口(innerWidth / resize 事件)可能停更——直到窗口经历一次 hide/show 才恢复;
+ * re-setBounds / setSize / setContentSize / setOpacity 均救不回(TIERDBG-NUDGE 逐项
+ * 实测,33 无此问题)。所有 ui-test 窗口改宽统一走本等待器:轮询视口到位,超时用
+ * hide/show 解卡再等一轮;真用户窗口(opacity=1、用户手动 resize)不受影响。
+ */
+
+/**
+ * Electron 44 半隐窗(ui-test 的 opacity≈0 窗口)上 executeJavaScript 偶发永不
+ * settle——run10/11/12 同点冻死(页面已加载、无报错,Promise 就是不回来;33 无此
+ * 问题)。统一 30s 竞速兜底:超时回 null,断言按失败计,进程绝不挂死。
+ */
+const jsTimeout = (wc: Electron.WebContents, code: string, timeoutMs = 30_000): Promise<any> =>
+  Promise.race([
+    wc.executeJavaScript(code).catch(() => null),
+    new Promise((r) => setTimeout(r, timeoutMs, null)),
+  ]);
+
+async function resizeViewport(win: BrowserWindow, width: number, height: number): Promise<boolean> {
+  const iw = (): Promise<number> =>
+    jsTimeout(win.webContents, "window.innerWidth").catch(() => -1);
+  const ok = async () => Math.abs((await iw()) - width) <= 60;
+  // 全形 bounds(含 x/y):部分形 {width,height} 在 44 上疑似更容易触发停滞
+  const cur = win.getBounds();
+  win.setBounds({ x: cur.x, y: cur.y, width, height });
+  for (let i = 0; i < 12; i++) {
+    if (await ok()) return true;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  win.hide();
+  win.show();
+  for (let i = 0; i < 12; i++) {
+    if (await ok()) return true;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return false;
+}
+
 async function runUiTest(screenshot = false): Promise<void> {
   const results: Array<{ name: string; ok: boolean; detail?: unknown; knownFail?: boolean; knownFailReason?: string }> = [];
 
@@ -659,13 +707,23 @@ async function runUiTest(screenshot = false): Promise<void> {
     },
   });
   setupIpc(win);
+  // 渲染层 console 转发(默认不进主进程日志;bail/FATAL 行对排障关键——
+  // 2026-09-14 Electron 44 适配期靠它抓到 rAF 停摆的实锤)
+  win.webContents.on("console-message", (_e, _lvl, msg) => {
+    const s = String(msg);
+    if (s.includes("bail") || s.includes("[FATAL")) console.error("[renderer] " + s.slice(0, 300));
+  });
   if (!screenshot) {
     // 透明 show:从未 show 的窗口拿不到合成器 begin-frame,rAF 被降到 ~1s/帧
     // 甚至完全停摆(2026-08-23 实测:frame16@16.1s 后全停,伴学冻死在 roam
     // 半路,exam-perch 断言假红)。backgroundThrottling:false 只救定时器救不了
-    // 合成器。透明 show 让合成器全速,视觉上仍然"无头"。
+    // 合成器。show 让合成器全速。
     win.show();
-    win.setOpacity(0);
+    // Electron 44(2026-09-14 定谳):setOpacity(0.01) 的近零透明窗在页面重载后
+    // 会被 Chromium 标记 visibilityState=hidden —— rAF 全停(伴学冻 0,0/roam 停摆/
+    // 依赖动画的断言全线假红,插桩 rafTicks=0+visState=hidden 实锤)。33 时代用
+    // opacity≈0 隐身;44 改为挪屏外:窗口保持可见性与 begin-frame,桌面上也不可见。
+    win.setPosition(-3000, 0);
   }
 
   // M2 测试造数：造一条 pending proposal，让 T8 能测 listPending→reject→空 的回路
@@ -824,7 +882,9 @@ async function runUiTest(screenshot = false): Promise<void> {
   // 加载构建产物（不依赖 vite dev server，CI 友好）
   // v0.11 三档布局:ui-test 断言主体跑在 T1(三栏)——窗口默认 800 落在 T3 单栏,
   // 先拉宽再加载(渲染层初始化即测得 1280);末尾有专门的跨档行为测试。
-  await win.setBounds({ width: 1280, height: 800 });
+  // 加载前只能用裸 setBounds——resizeViewport 要 executeJavaScript 轮询视口,
+  // 对未加载任何页面的 webContents 在 44 上会永不 settle(run5/6/7 同点冻死)。
+  win.setBounds({ width: 1280, height: 800 });
   await win.loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"));
 
   // 等渲染层拉完数据 + React 渲染完。轮询所有关键 testid 都出现——
@@ -833,7 +893,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   const waitRender = async (timeoutMs = 10000): Promise<boolean> => {
     const deadline = Date.now() + timeoutMs;
     const checkAll = () =>
-      win.webContents.executeJavaScript(`
+      jsTimeout(win.webContents, `
         document.querySelector('[data-testid="map-rail"]') !== null &&
         document.querySelector('[data-testid="chat-panel"]') !== null &&
         document.querySelector('[data-testid="notebook-panel"]') !== null &&
@@ -853,7 +913,7 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   /** 模拟用户手动选课(空选启动后):点课程列表第一行 → 等地图节点渲染。reload 后复用。 */
   const selectFirstCourse = (): Promise<boolean> =>
-    win.webContents.executeJavaScript(`
+    jsTimeout(win.webContents, `
       (async function() {
         var row = document.querySelector('[data-testid="course-list"] button');
         if (!row) return false;
@@ -884,7 +944,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   }
 
   // T0 (课程空选启动): 不自动选课 —— 中栏选课引导空态 + 地图零节点 + 导入面板课程列表可见。
-  const emptyStart = await win.webContents.executeJavaScript(`
+  const emptyStart = await jsTimeout(win.webContents, `
     (function() {
       var noCourse = document.querySelector('[data-testid="chat-no-course"]');
       var mapNodes = document.querySelectorAll('[data-testid^="map-node-"]').length;
@@ -902,7 +962,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // transform 由 rAF 写入(左上角卡死 bug 的回归探针:effect 首跑时 ref 未挂,
   // deps 不变则 rAF 永不启动,creature 停在 DOM 默认 0,0)。
   // v13 空态的家=标题栏栖息地(左缘停靠退役):判据=在场+栖身标题栏带内。
-  const emptyCreature = await win.webContents.executeJavaScript(`
+  const emptyCreature = await jsTimeout(win.webContents, `
     (async function() {
       window.__cpErr = [];
       window.addEventListener("error", function(e) { window.__cpErr.push(String(e.message).slice(0, 200)); });
@@ -953,7 +1013,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T1: soul-picker(教学人设药丸行)里应有 3 个内置 soul(direct/guide/practice)
-  const optionCount = await win.webContents.executeJavaScript(
+  const optionCount = await jsTimeout(win.webContents, 
     `document.querySelectorAll('[data-testid^="soul-pill-"]').length`,
   );
   results.push({
@@ -963,7 +1023,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T2: map-rail 至少有 1 个视图切换项 + path overview 有节点
-  const navNodeCount = await win.webContents.executeJavaScript(
+  const navNodeCount = await jsTimeout(win.webContents, 
     `document.querySelectorAll('[data-testid^="map-node-"]').length`,
   );
   results.push({
@@ -975,7 +1035,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // T2c (companion v3): 选课 + 默认开 → 单生物在场且在左栏原生物理世界(zone=rail)
   // v13 轮询:v12 召回制家=左栏,但岛注册/可见性到位前会短暂栖标题栏——
   // 轮询最多 4s 等他飞进左栏,容忍瞬态不误报
-  const railProbe = await win.webContents.executeJavaScript(`
+  const railProbe = await jsTimeout(win.webContents, `
     (async function() {
       function readPos() {
         var el = document.querySelector('[data-testid="companion-creature"]');
@@ -1016,7 +1076,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T3: 三栏都在(chat-panel + notebook-panel + map-rail)
-  const threePane = await win.webContents.executeJavaScript(`
+  const threePane = await jsTimeout(win.webContents, `
     document.querySelector('[data-testid="map-rail"]') !== null &&
     document.querySelector('[data-testid="chat-panel"]') !== null &&
     document.querySelector('[data-testid="notebook-panel"]') !== null
@@ -1027,7 +1087,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T4: streak badge 渲染（说明 getStreak IPC roundtrip 成功）
-  const streakPresent = await win.webContents.executeJavaScript(
+  const streakPresent = await jsTimeout(win.webContents, 
     `document.querySelector('[data-testid="streak-badge"]') !== null`,
   );
   results.push({
@@ -1036,7 +1096,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T4a (P4 能力感): 等级徽章 + freeze 徽章(庆祝粒子层 CelebrationLayer 由 motion-infra 套件覆盖)
-  const competenceBadges = await win.webContents.executeJavaScript(`
+  const competenceBadges = await jsTimeout(win.webContents, `
     (function() {
       var lvl = document.querySelector('[data-testid="level-badge"]');
       var frz = document.querySelector('[data-testid="freeze-badge"]');
@@ -1056,7 +1116,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // T4b (P2.3 待复习顶出): 播的逾期 srs 项 → map-review-badge 显示待复习数。
   // 等 due 数据 + panel 切换(courseId useEffect → setPanel("map"))异步完成。
   await new Promise((r) => setTimeout(r, 800));
-  const dueBadge = await win.webContents.executeJavaScript(`
+  const dueBadge = await jsTimeout(win.webContents, `
     (function() {
       var b = document.querySelector('[data-testid="map-review-badge"]');
       return { present: !!b, text: b ? (b.textContent || "").trim() : null };
@@ -1069,7 +1129,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T4c (P2.4 交错复习): 打开复习抽屉 → 交错复习按钮在;然后关掉抽屉不影响后续。
-  const interleave = await win.webContents.executeJavaScript(`
+  const interleave = await jsTimeout(win.webContents, `
     (async function() {
       var badge = document.querySelector('[data-testid="map-review-badge"]');
       if (!badge) return { ok: false, reason: "no badge" };
@@ -1091,7 +1151,7 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   // T_nextlabel: 节点名牌仅选中态显示(干净地图原则);首可学不再常显 label,
   // 节点名靠 hover GlobalTooltip(data-tooltip)。验证 map-next-label 不存在。
-  const nextLabel = await win.webContents.executeJavaScript(
+  const nextLabel = await jsTimeout(win.webContents, 
     `document.querySelector('[data-testid="map-next-label"]') !== null`,
   );
   results.push({
@@ -1102,7 +1162,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // T5: 点击一个未锁的 map-node → 触发 markNodeAttempted → 联动右栏
   let clickResult: { clicked?: boolean; totalBtns?: number; enabledCount?: number; error?: string } = {};
   try {
-    clickResult = await win.webContents.executeJavaScript(`
+    clickResult = await jsTimeout(win.webContents, `
       (function() {
         try {
           var btns = document.querySelectorAll('[data-testid^="map-node-"]');
@@ -1129,7 +1189,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T6: 点 soul 药丸 → setActiveSoul IPC roundtrip(点按钮触发 onClick)
-  const soulSelect = await win.webContents.executeJavaScript(`
+  const soulSelect = await jsTimeout(win.webContents, `
     (function() {
       const pill = document.querySelector('[data-testid="soul-pill-direct"]');
       if (!pill) return { ok: false, reason: "soul-pill not found" };
@@ -1145,7 +1205,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T7 (M2): isAgentReady 在未配 key 时返回 ready:false（渲染层只见布尔，不见 key）
-  const readyState = await win.webContents.executeJavaScript(
+  const readyState = await jsTimeout(win.webContents, 
     `window.api.isAgentReady()`,
   );
   results.push({
@@ -1156,7 +1216,7 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   // T8 (M2): proposal IPC 完整回路 —— listPending（应含 1 条 seed）
   //   → reject → listPending（应空）。验证 M2 接线 + proposal-service 真生效。
-  const proposalRoundtrip = await win.webContents.executeJavaScript(`
+  const proposalRoundtrip = await jsTimeout(win.webContents, `
     (async function() {
       try {
         const before = await window.api.listPendingProposals();
@@ -1183,7 +1243,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T8a (v0.2 三栏): chat-stream + composer 都在(中栏完整)
-  const midPane = await win.webContents.executeJavaScript(`
+  const midPane = await jsTimeout(win.webContents, `
     (function() {
       const stream = document.querySelector('[data-testid="chat-stream"]');
       const composer = document.querySelector('[data-testid="composer"], [data-testid="composer-nokey"]');
@@ -1200,7 +1260,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T8b (v0.4 联动): map-node 点击 → ThreadSwitcher 焦点节点 + thread 创建/切换
-  const linkage = await win.webContents.executeJavaScript(`
+  const linkage = await jsTimeout(win.webContents, `
     (async function() {
       try {
         const btns = document.querySelectorAll('[data-testid^="map-node-"]');
@@ -1283,7 +1343,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T8d (P1 启动沉浸): 选中节点后,空会话显示问候 + 开始学习按钮(agentReady=true 路径)
-  const startState = await win.webContents.executeJavaScript(`
+  const startState = await jsTimeout(win.webContents, `
     (function() {
       var empty = document.querySelector('[data-testid="chat-empty-state"]');
       var txt = empty ? (empty.textContent || "") : "";
@@ -1302,7 +1362,7 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   // T8f (companion v3): 学习中(节点已选中) → 单生物仍在场(单例连续体,不论在哪
   // 个世界都不消失;此刻默认在左栏老家)
-  const notebookCompanion = await win.webContents.executeJavaScript(
+  const notebookCompanion = await jsTimeout(win.webContents, 
     `document.querySelector('[data-testid="companion-creature"]') !== null`,
   );
   results.push({
@@ -1314,7 +1374,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // hash 门控懒挂载 + 三 bot 渲染 + 键击切帧(sticker src 变化)+ 庆祝总线驱动 happy。
   // 结束时退出 lab(fixed 覆盖层不挡后续断言的点击)。与 CompanionCreature 零耦合:
   // 既有 companion v* 断言(含上面这条)全部照常通过即零回归的证据。
-  const botLab = await win.webContents.executeJavaScript(`
+  const botLab = await jsTimeout(win.webContents, `
     (async function() {
       try {
         location.hash = "#companion-bot-lab";
@@ -1375,7 +1435,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // T8e (按钮消息展示): 点「开始学习」→ 乐观 user 气泡立刻出现且只显示短动作标签,
   // 发给 LLM 的完整开场提示词不出现在 DOM(防"按钮 prompt 裸奔"回归)。
   // 断言完立即停流(chat-stop),避免 LLM 流式阻塞后续测试的节点切换。
-  const actionDisplay = await win.webContents.executeJavaScript(`
+  const actionDisplay = await jsTimeout(win.webContents, `
     (async function() {
       try {
         var btn = document.querySelector('[data-testid="start-learning-btn"]');
@@ -1422,7 +1482,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // 断言后恢复注入前的原文(共享现场纪律)。
   let shikiRes: { ok?: boolean; [k: string]: unknown } = {};
   try {
-    shikiRes = await win.webContents.executeJavaScript(`
+    shikiRes = await jsTimeout(win.webContents, `
       (async function() {
         var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
         // 讲解 tab 是第一个 tab 按钮(前面步骤可能把面板停在其他 tab)
@@ -1496,7 +1556,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // dagre——挂 warn 探针再开笔记 tab,探针没捕到该 warn 即 ELK 真接管。
   let mermaidElkRes: { ok?: boolean; [k: string]: unknown } = {};
   try {
-    mermaidElkRes = await win.webContents.executeJavaScript(`
+    mermaidElkRes = await jsTimeout(win.webContents, `
       (async function() {
         var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
         // 先挂 warn 探针(渲染发生在图卡 mount,必须先于 tab 点击)
@@ -1542,7 +1602,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // → model-missing → 错误浮层出现(降级断言)。收尾:切回键盘并断言输入框复位。
   let asrInput: { branch?: string; ok?: boolean; error?: string; [k: string]: unknown } = {};
   try {
-    asrInput = await win.webContents.executeJavaScript(`
+    asrInput = await jsTimeout(win.webContents, `
       (async function() {
         var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
         function q(sel){ return document.querySelector(sel); }
@@ -1615,7 +1675,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // whisper 模型下拉 + 讲解 tab 🔊(provider 下拉已退役;新库无 azure/groq 旧值 pill)。
   let voiceSettings: { ok?: boolean; error?: string; [k: string]: unknown } = {};
   try {
-    voiceSettings = await win.webContents.executeJavaScript(`
+    voiceSettings = await jsTimeout(win.webContents, `
       (async function() {
         var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
         function q(sel){ return document.querySelector(sel); }
@@ -1667,7 +1727,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   let speechLoop: { branch?: string; ok?: boolean; error?: string; [k: string]: unknown } = {};
   try {
     // 1) 点第一个可用课时球,拿 nodeId
-    const pick = await win.webContents.executeJavaScript(`
+    const pick = await jsTimeout(win.webContents, `
       (async function() {
         var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
         var balls = Array.prototype.slice.call(document.querySelectorAll('button[data-testid^="map-node-"]:enabled'))
@@ -1713,7 +1773,7 @@ async function runUiTest(screenshot = false): Promise<void> {
         console.error("[lookatstudy] ui-test speech seed failed:", e);
       }
       // 3) 换节点再换回(强制 useThreads reload)→ 断言朗读环
-      speechLoop = await win.webContents.executeJavaScript(`
+      speechLoop = await jsTimeout(win.webContents, `
         (async function() {
           var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
           function q(sel){ return document.querySelector(sel); }
@@ -1810,7 +1870,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // 现场清理:恢复原 content(状态卫生,不污染后续步骤)。
   let mathRender: { ok?: boolean; error?: string; [k: string]: unknown } = {};
   try {
-    const pick = await win.webContents.executeJavaScript(`
+    const pick = await jsTimeout(win.webContents, `
       (async function() {
         var balls = Array.prototype.slice.call(document.querySelectorAll('button[data-testid^="map-node-"]:enabled'))
           .filter(function(b){ return !/exam/.test(b.getAttribute('data-testid') || ''); });
@@ -1830,7 +1890,7 @@ async function runUiTest(screenshot = false): Promise<void> {
         }).where(eq(contentNodes.id, fullNodeId)).run();
         markDirty();
         try {
-          mathRender = await win.webContents.executeJavaScript(`
+          mathRender = await jsTimeout(win.webContents, `
             (async function() {
               var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
               try {
@@ -1850,7 +1910,7 @@ async function runUiTest(screenshot = false): Promise<void> {
           getDb().update(contentNodes).set({ content: orig }).where(eq(contentNodes.id, fullNodeId)).run();
           markDirty();
           // 恢复后再切一次,让界面回到原正文
-          await win.webContents.executeJavaScript(`
+          await jsTimeout(win.webContents, `
             (async function() {
               var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
               var balls = Array.prototype.slice.call(document.querySelectorAll('button[data-testid^="map-node-"]:enabled'))
@@ -1879,7 +1939,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // 巩固选择的"内容"由 verify-starter-prompts 覆盖;"语境前不出现"由 App 的 prop 门控(tsc 保证)。
 
   // T8c (v0.2 设置抽屉): 点 header settings → settings-drawer 出现
-  const settingsDrawer = await win.webContents.executeJavaScript(`
+  const settingsDrawer = await jsTimeout(win.webContents, `
     (async function() {
       try {
         const btn = document.querySelector('[data-testid="header-settings"]');
@@ -1906,9 +1966,9 @@ async function runUiTest(screenshot = false): Promise<void> {
   // 560 保护)分别开设置/复习抽屉,断言抽屉滚动容器零水平溢出(布局在手机端
   // 不破);测完立即恢复 1280 宽,不污染后续断言。
   {
-    await win.setBounds({ width: 420, height: 800 });
+    await resizeViewport(win, 420, 800);
     await new Promise((r) => setTimeout(r, 400));
-    const narrowDrawers = await win.webContents.executeJavaScript(`
+    const narrowDrawers = await jsTimeout(win.webContents, `
       (async function() {
         function overflowOf(sel) {
           var root = document.querySelector(sel);
@@ -1949,7 +2009,7 @@ async function runUiTest(screenshot = false): Promise<void> {
         return out;
       })()
     `).catch(() => null);
-    await win.setBounds({ width: 1280, height: 800 });
+    await resizeViewport(win, 1280, 800);
     await new Promise((r) => setTimeout(r, 400));
     const sOk = narrowDrawers?.settings?.present === true
       && narrowDrawers.settings.sw <= narrowDrawers.settings.cw + 1
@@ -1965,7 +2025,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   }
 
   // T9 (M3): 切到 dashboard 视图 → 仪表盘渲染（3 stat 卡 + 热力图行）
-  const dashboardOk = await win.webContents.executeJavaScript(`
+  const dashboardOk = await jsTimeout(win.webContents, `
     (async function() {
       try {
         // 点 map-tab-map 切到地图视图
@@ -1991,7 +2051,7 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   // T9b (种子双语): 种子课程自带 en 翻译 → 🌐 切换器可见,切到 English 后按钮标签跟随。
   // 翻译内容的正确性由 verify-seed-bilingual.mjs 在 DB 层断言,这里测渲染链路(IPC→状态→DOM)。
-  const langSwitch = await win.webContents.executeJavaScript(`
+  const langSwitch = await jsTimeout(win.webContents, `
     (async function() {
       try {
         const btn = document.querySelector('[data-testid="lang-switcher-btn"]');
@@ -2021,7 +2081,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T10 (release): getProviderPresets IPC 返回 ≥5 个 provider
-  const presetsCheck = await win.webContents.executeJavaScript(
+  const presetsCheck = await jsTimeout(win.webContents, 
     `window.api.getProviderPresets().then(p => ({count: p.length})).catch(e => ({count: 0, error: String(e)}))`,
   );
   results.push({
@@ -2032,7 +2092,7 @@ async function runUiTest(screenshot = false): Promise<void> {
 
   // T11 (release): 导入课程视图渲染 URL 输入 + markdown 切换 + 课程列表
   // v0.7: 导入改左栏 tab → 点 map-tab-import 切面板 → 点"导入新课程"展开表单
-  const importOk = await win.webContents.executeJavaScript(`
+  const importOk = await jsTimeout(win.webContents, `
     (async function() {
       try {
         document.querySelector('[data-testid="map-tab-import"]').click();
@@ -2062,7 +2122,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T12 (v0.2): 设置移到 Header 齿轮 + 左栏导航三视图 + 中栏 chat-stream
-  const layoutOk = await win.webContents.executeJavaScript(`
+  const layoutOk = await jsTimeout(win.webContents, `
     (async function() {
       try {
         document.querySelector('[data-testid="map-tab-map"]').click();
@@ -2083,7 +2143,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T13 (M2): Cmd+K 命令面板能打开 + 命令列表渲染
-  const cmdPalette = await win.webContents.executeJavaScript(`
+  const cmdPalette = await jsTimeout(win.webContents, `
     (async function() {
       try {
         // 切回地图视图(确保命令面板能用)
@@ -2110,7 +2170,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T14 (M2): notebook tabs 容器存在(讲解/笔记 两标签结构在)
-  const artifactTabs = await win.webContents.executeJavaScript(`
+  const artifactTabs = await jsTimeout(win.webContents, `
     document.querySelector('[data-testid="notebook-tabs"]') !== null &&
     document.querySelector('[data-testid="tab-notes"]') !== null
   `);
@@ -2123,7 +2183,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // 验证:defaultOpen=false 生效(箭头带 -rotate-90 表示折叠态)
   let zoneCollapse: { switched?: boolean; zones?: number; collapsed?: number; titles?: string[]; error?: string } = {};
   try {
-    zoneCollapse = await win.webContents.executeJavaScript(`
+    zoneCollapse = await jsTimeout(win.webContents, `
       (function() {
         try {
           var tabBtn = document.querySelector('[data-testid="tab-notes"]');
@@ -2134,7 +2194,7 @@ async function runUiTest(screenshot = false): Promise<void> {
     `);
     await new Promise((r) => setTimeout(r, 400));
     // 等 React 渲染后,检查三区 toggle 的折叠状态
-    const zoneDetail = await win.webContents.executeJavaScript(`
+    const zoneDetail = await jsTimeout(win.webContents, `
       (function() {
         var ids = ["zone-understand-toggle", "zone-note-toggle", "zone-practice-toggle"];
         var toggles = ids.map(function(id){ return document.querySelector('[data-testid="' + id + '"]'); });
@@ -2163,7 +2223,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // T16 (v0.8 a11y): 设置抽屉打开后具备 role=dialog + aria-modal(焦点管理语义)
   let drawerA11y: { opened?: boolean; roleDialog?: boolean; ariaModal?: boolean; error?: string } = {};
   try {
-    drawerA11y = await win.webContents.executeJavaScript(`
+    drawerA11y = await jsTimeout(win.webContents, `
       (async function() {
         try {
           var gear = document.querySelector('[data-testid="header-settings"]');
@@ -2186,7 +2246,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
 
   // T17 (v0.8 a11y): notebook 标签具备 role=tablist + role=tab(键盘语义)
-  const tabRoles = await win.webContents.executeJavaScript(`
+  const tabRoles = await jsTimeout(win.webContents, `
     document.querySelector('[data-testid="notebook-tabs"] [role="tablist"]') !== null &&
     document.querySelector('[data-testid="tab-content"][role="tab"]') !== null
   `);
@@ -2198,7 +2258,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // T18 (v0.8 i18n): 切到 en 后 map-tab-map 文本变 "Course Map"(响应式 store + en 字典 + 组件订阅)
   let enI18n: { switched?: boolean; mapTabText?: string; error?: string } = {};
   try {
-    enI18n = await win.webContents.executeJavaScript(`
+    enI18n = await jsTimeout(win.webContents, `
       (async function() {
         try {
           // 设置抽屉应已由 T16 打开;点 en 语言按钮
@@ -2218,7 +2278,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   });
   // 切回 zh-CN 恢复默认语言(不污染后续会话)
   try {
-    await win.webContents.executeJavaScript(`
+    await jsTimeout(win.webContents, `
       (async function(){
         var z = document.querySelector('[data-testid="lang-zh-CN"]');
         if (z) z.click();
@@ -2229,7 +2289,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // T19 (v0.8 a11y): zone toggle 具备 aria-expanded(屏幕阅读器可读折叠状态)
   let zoneAria: { found?: number; withAriaExpanded?: number; error?: string } = {};
   try {
-    zoneAria = await win.webContents.executeJavaScript(`
+    zoneAria = await jsTimeout(win.webContents, `
       (function() {
         var ids = ["zone-understand-toggle", "zone-note-toggle", "zone-practice-toggle"];
         var toggles = ids.map(function(id){ return document.querySelector('[data-testid="' + id + '"]'); }).filter(Boolean);
@@ -2257,7 +2317,7 @@ async function runUiTest(screenshot = false): Promise<void> {
     const reloaded = await waitRender();
     // reload 后回到空选初始态(选择不持久化) → 重新手动选课,再点节点
     const reselected = await selectFirstCourse();
-    const clicked = await win.webContents.executeJavaScript(`
+    const clicked = await jsTimeout(win.webContents, `
       (function() {
         var btns = document.querySelectorAll('[data-testid^="map-node-"]');
         for (var i = 0; i < btns.length; i++) { if (!btns[i].disabled) { btns[i].click(); return true; } }
@@ -2265,7 +2325,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       })()
     `);
     await new Promise((r) => setTimeout(r, 700));
-    const dom = await win.webContents.executeJavaScript(`
+    const dom = await jsTimeout(win.webContents, `
       (async function() {
         var ready = await window.api.isAgentReady();
         return {
@@ -2290,7 +2350,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // LookatStudy」含"欢迎"且必定可点(首课初始 available)。
   let courseSearch: { btn?: boolean; panel?: boolean; allRows?: number; lockedRow?: boolean; filteredRows?: number; jumped?: boolean; ring?: boolean; closed?: boolean; error?: string } = {};
   try {
-    courseSearch = await win.webContents.executeJavaScript(`
+    courseSearch = await jsTimeout(win.webContents, `
       (async function() {
         try {
           var btn = document.querySelector('[data-testid="map-search-btn"]');
@@ -2360,7 +2420,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // T8b2 (物理地图指针路径): 真实 PointerEvent 序列(非合成 click)覆盖
   // setPointerCapture 重定向 click 的场景 —— pointerup 自路由必须仍能进课;
   // 锁定球是 static 刚体,指针拖拽后 transform 必须分毫不动。
-  const pointerProbe = await win.webContents.executeJavaScript(`
+  const pointerProbe = await jsTimeout(win.webContents, `
     (async function() {
       try {
         function fire(el, type, x, y) {
@@ -2427,7 +2487,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // T20c (三档响应式布局): resize 跨档 → 自动收/互斥/单栏按钮组/拉宽弹回
   const tierSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
   const paneState = () =>
-    win.webContents.executeJavaScript(`
+    jsTimeout(win.webContents, `
       (function() {
         var rail = document.querySelector('[data-testid="map-rail"]');
         var chat = document.querySelector('[data-testid="chat-panel"]');
@@ -2444,7 +2504,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   try {
     // 轮询等档位渲染到位(跨档 = resize 事件 + React 重渲染 + 物理岛重建,
     // 固定睡眠会跟提交竞速 —— 实测偶发超时,改成谓词轮询)
-    const waitForPane = async (pred: (st: NonNullable<Awaited<ReturnType<typeof paneState>>>) => boolean, timeoutMs = 3000) => {
+    const waitForPane = async (pred: (st: NonNullable<Awaited<ReturnType<typeof paneState>>>) => boolean, timeoutMs = 8000) => {
       const t0 = Date.now();
       for (;;) {
         const st = await paneState();
@@ -2454,16 +2514,16 @@ async function runUiTest(screenshot = false): Promise<void> {
       }
     };
     // → T2 (1000px):左栏自动隐,中+右双栏,无按钮组
-    await win.setBounds({ width: 1000, height: 800 });
+    await resizeViewport(win, 1000, 800);
     const t2Default = await waitForPane((st) => !st.rail && st.chat && st.nb && !st.switcher);
     // T2 互斥:点"显示左栏" → 左栏出、右栏隐
-    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="layout-toggle-left"]').click()`);
+    await jsTimeout(win.webContents, `document.querySelector('[data-testid="layout-toggle-left"]').click()`);
     const t2Left = await waitForPane((st) => st.rail && st.chat && !st.nb);
     // → T3 (800px):单栏(对话)+ 按钮组;点地图按钮 → 地图全宽单栏
-    await win.setBounds({ width: 800, height: 800 });
+    await resizeViewport(win, 800, 800);
     const t3Chat = await waitForPane((st) => !st.rail && st.chat && !st.nb && st.switcher);
     // 切换组必须常驻 header(居中槽,非 fixed 浮层)——否则 T3 切到左栏时 header 连带消失,回不来
-    const t3SwitcherDocked = await win.webContents.executeJavaScript(`
+    const t3SwitcherDocked = await jsTimeout(win.webContents, `
       (function() {
         var el = document.querySelector('[data-testid="t3-pane-switcher"]');
         if (!el) return false;
@@ -2474,14 +2534,14 @@ async function runUiTest(screenshot = false): Promise<void> {
         return Math.abs((r.left + r.right) / 2 - window.innerWidth / 2) <= 2;
       })()
     `).catch(() => false);
-    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-rail"]').click()`);
+    await jsTimeout(win.webContents, `document.querySelector('[data-testid="t3-btn-rail"]').click()`);
     const t3Rail = await waitForPane((st) => st.rail && !st.chat && st.railW >= 700);
     // T3 极窄(600px):三 pane 逐一切换,各自都不许横向溢出窗口。
     // (回归:chat pane 曾被 composer 工具栏固有宽度顶出 ~633px 下限;左栏曾被
     //  物理球 wrapper 顶出横向滚动条 —— min-w-0 / overflow-x-hidden 修)
-    await win.setBounds({ width: 600, height: 800 });
+    await resizeViewport(win, 600, 800);
     const overflowState = (sel: string) =>
-      win.webContents.executeJavaScript(`
+      jsTimeout(win.webContents, `
         (function() {
           var el = document.querySelector('${sel}');
           if (!el) return null;
@@ -2506,16 +2566,16 @@ async function runUiTest(screenshot = false): Promise<void> {
     };
     // rail 查 .map-path 自身:横向滚动条是它内部的(外层 nav overflow-hidden 裁不到文档级)
     const narrowRail = await waitFits('[data-testid="map-rail"] .map-path');
-    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-notebook"]').click()`);
+    await jsTimeout(win.webContents, `document.querySelector('[data-testid="t3-btn-notebook"]').click()`);
     await waitForPane((st) => !st.rail && !st.chat && st.nb);
     const narrowNb = await waitFits('[data-testid="notebook-panel"]');
-    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="t3-btn-chat"]').click()`);
+    await jsTimeout(win.webContents, `document.querySelector('[data-testid="t3-btn-chat"]').click()`);
     await waitForPane((st) => !st.rail && st.chat && !st.nb);
     const narrowChat = await waitFits('[data-testid="chat-panel"]');
     // T20d (companion v3): T3 单栏切换 = 单生物连续体不消失(组件仍在场,
     // 随栏可见性自适应显隐);v13 加断言:左栏卸载后家=标题栏栖息地
     // (zone=titlebar 且栖身 header 带内,滑翔在途时轮询等待)
-    const t3Creature = await win.webContents.executeJavaScript(`
+    const t3Creature = await jsTimeout(win.webContents, `
       (async function() {
         for (var i = 0; i < 30; i++) {
           var el = document.querySelector('[data-testid="companion-creature"]');
@@ -2567,7 +2627,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       detail: formSwitch,
     });
     {
-      const dbg = await win.webContents.executeJavaScript(`
+      const dbg = await jsTimeout(win.webContents, `
         (function() {
           var el = document.querySelector('[data-testid="notebook-panel"]');
           if (!el) return "nb不存在";
@@ -2590,12 +2650,12 @@ async function runUiTest(screenshot = false): Promise<void> {
       console.error("NB_DEBUG=" + JSON.stringify(dbg));
     }
     // 拉宽弹回 → T1 (1300px):三栏全恢复、按钮组消失、左栏回 300
-    await win.setBounds({ width: 1300, height: 800 });
+    await resizeViewport(win, 1300, 800);
     const t1Back = await waitForPane((st) => st.rail && st.chat && st.nb && !st.switcher);
     // T1 回来后左栏回到 284px 内容盒。球被拖到墙边时 wrapper(110px,> 球 56px)会伸出
     // 内容盒 → 溢出依赖拖球行为,headless 无法确定性复现,直接守修复本身:
     // map-path 必须裁掉横向溢出(computed overflowX=hidden;未修时为 auto → 出滚动条)
-    const railClip = await win.webContents.executeJavaScript(
+    const railClip = await jsTimeout(win.webContents, 
       `getComputedStyle(document.querySelector('[data-testid="map-rail"] .map-path')).overflowX`,
     ).catch(() => "");
     const t1RailFits = await waitFits('[data-testid="map-rail"] .map-path');
@@ -2621,21 +2681,21 @@ async function runUiTest(screenshot = false): Promise<void> {
   {
     const resizeOk: Record<string, unknown> = {};
     try {
-      await win.setBounds({ width: 1920, height: 800 });
+      await resizeViewport(win, 1920, 800);
       await new Promise((r) => setTimeout(r, 600));
       const paneWidth = (sel: string): Promise<number> =>
-        win.webContents.executeJavaScript(`
+        jsTimeout(win.webContents, `
           (function() {
             var el = document.querySelector('${sel}');
             return el ? Math.round(el.getBoundingClientRect().width) : -1;
           })()
         `).catch(() => -1);
       const docOverflow = (): Promise<number> =>
-        win.webContents.executeJavaScript(
+        jsTimeout(win.webContents, 
           `Math.round(document.documentElement.scrollWidth - window.innerWidth)`,
         ).catch(() => 999);
       const dragHandle = (side: "rail" | "mid", dx: number): Promise<{ ok: boolean; reason?: string }> =>
-        win.webContents.executeJavaScript(`
+        jsTimeout(win.webContents, `
           (async function() {
             var dx = ${dx};
             var h = document.querySelector('[data-testid="pane-handle-${side}"]');
@@ -2661,7 +2721,7 @@ async function runUiTest(screenshot = false): Promise<void> {
           })()
         `).catch((e: unknown) => ({ ok: false, error: String(e) }));
       const dblClickHandle = (side: "rail" | "mid"): Promise<boolean> =>
-        win.webContents.executeJavaScript(`
+        jsTimeout(win.webContents, `
           (async function() {
             var h = document.querySelector('[data-testid="pane-handle-${side}"]');
             if (!h) return false;
@@ -2672,7 +2732,7 @@ async function runUiTest(screenshot = false): Promise<void> {
         `).catch(() => false);
 
       // 0) T1 双柄在场
-      resizeOk.handles = await win.webContents.executeJavaScript(`
+      resizeOk.handles = await jsTimeout(win.webContents, `
         !!document.querySelector('[data-testid="pane-handle-rail"]') &&
         !!document.querySelector('[data-testid="pane-handle-mid"]')
       `).catch(() => false);
@@ -2696,7 +2756,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       //    经典滚动条下 vw 按 clientWidth 解析(≈innerWidth-滚动条),不能按 innerWidth 硬算
       await dblClickHandle("mid");
       resizeOk.midReset = await paneWidth('[data-testid="chat-panel"]');
-      resizeOk.midResetCss = await win.webContents.executeJavaScript(`
+      resizeOk.midResetCss = await jsTimeout(win.webContents, `
         (function() {
           var el = document.querySelector('[data-testid="chat-panel"]');
           var w = el ? getComputedStyle(el).width : "";
@@ -2708,12 +2768,13 @@ async function runUiTest(screenshot = false): Promise<void> {
       // 7) 持久化:左柄拖到 420 → settings 落库 "420" → loadFile 重载 → 启动读回 420
       await dragHandle("rail", 120);
       resizeOk.persistWidth = await paneWidth('[data-testid="map-rail"]');
-      resizeOk.settingValue = await win.webContents.executeJavaScript(
+      resizeOk.settingValue = await jsTimeout(win.webContents, 
         `window.api.getSetting("pane_width_left")`,
       ).catch(() => null);
-      await win.webContents
-        .loadFile(join(PROJECT_ROOT, "dist/renderer/index.html"))
-        .catch(() => {});
+      await Promise.race([
+        win.webContents.loadFile(join(PROJECT_ROOT, "dist/renderer/index.html")).catch(() => {}),
+        new Promise((r) => setTimeout(r, 5000)),
+      ]);
       resizeOk.renderAfterReload = await waitRender();
       resizeOk.railAfterReload = await paneWidth('[data-testid="map-rail"]');
       // 重载后空选启动:选回课程,不污染后续考试/删除测试的课程上下文
@@ -2721,18 +2782,25 @@ async function runUiTest(screenshot = false): Promise<void> {
       // 清场:双击回默认 + settings 清空(下一轮 ui-test 零残留)
       await dblClickHandle("rail");
       resizeOk.railClean = await paneWidth('[data-testid="map-rail"]');
-      resizeOk.settingClean = await win.webContents.executeJavaScript(
+      resizeOk.settingClean = await jsTimeout(win.webContents, 
         `window.api.getSetting("pane_width_left")`,
       ).catch(() => null);
 
-      // 8) T3(800px)无手柄;然后恢复 T1@1300(后续测试的工作宽度)
-      await win.setBounds({ width: 800, height: 800 });
-      await new Promise((r) => setTimeout(r, 500));
-      resizeOk.t3NoHandles = await win.webContents.executeJavaScript(`
+      // 8) T3(800px)无手柄(档位翻转在 44 上滞后,轮询 8s);然后恢复 T1@1300
+      await resizeViewport(win, 800, 800);
+      for (let i = 0; i < 40; i++) {
+        const gone = await jsTimeout(win.webContents, `
+          !document.querySelector('[data-testid="pane-handle-rail"]') &&
+          !document.querySelector('[data-testid="pane-handle-mid"]')
+        `).catch(() => false);
+        if (gone) break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      resizeOk.t3NoHandles = await jsTimeout(win.webContents, `
         !document.querySelector('[data-testid="pane-handle-rail"]') &&
         !document.querySelector('[data-testid="pane-handle-mid"]')
       `).catch(() => false);
-      await win.setBounds({ width: 1300, height: 800 });
+      await resizeViewport(win, 1300, 800);
       await new Promise((r) => setTimeout(r, 500));
     } catch (e) {
       resizeOk.error = String(e);
@@ -2829,8 +2897,13 @@ async function runUiTest(screenshot = false): Promise<void> {
       }
       markDirty();
       // DB 直写不发 state:changed → 已渲染的地图还认为考试球锁定;reload 让进度重拉
-      await win.webContents.loadURL(win.webContents.getURL());
-      examIntegrity = await win.webContents.executeJavaScript(`
+      // 44:半隐窗的 loadURL promise 偶发不 settle(run10/11 同点冻死)——竞速 5s
+      // 后继续,页面重载本身通常已完成,只是事件没回来。
+      await Promise.race([
+        win.webContents.loadURL(win.webContents.getURL()),
+        new Promise((r) => setTimeout(r, 5000)),
+      ]);
+      examIntegrity = await jsTimeout(win.webContents, `
         (async function() {
           try {
             var q = function(s) { return document.querySelector(s); };
@@ -3032,7 +3105,7 @@ async function runUiTest(screenshot = false): Promise<void> {
             };
           } catch (e) { return { ok: false, error: String(e) }; }
         })()
-      `);
+      `, 150_000); // 脚本内部就有 20s+10s 轮询+逐题作答循环,默认 30s 不够
     }
   } catch (e) {
     examIntegrity = { error: String(e) };
@@ -3070,7 +3143,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // 中栏回到未选课空态 + 课程列表少一门。ui-test 用临时 DB,删种子课不影响下次运行。
   let courseDelete: { trash?: boolean; card?: boolean; noCourse?: boolean; before?: number; after?: number; importPanel?: boolean; error?: string } = {};
   try {
-    courseDelete = await win.webContents.executeJavaScript(`
+    courseDelete = await jsTimeout(win.webContents, `
       (async function() {
         try {
           var trash = document.querySelector('[data-testid="course-delete-btn"]');
@@ -3456,7 +3529,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       });
 
       // ④c T3 换栏持久:左栏卸载 → 标题栏栖息——与 T20d 块逐字同款探针
-      await win.setBounds({ width: 600, height: 800 });
+      await resizeViewport(win, 600, 800);
       const m2T3 = await win.webContents
         .executeJavaScript(
           `
@@ -3481,7 +3554,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       `,
         )
         .catch(() => null);
-      await win.setBounds({ width: 1280, height: 800 });
+      await resizeViewport(win, 1280, 800);
       results.push({
         name: "companion-pack M2: [custom] T3 pane switch → titlebar habitat (same assertion, rerun)",
         ok: m2T3?.present === true && m2T3.zone === "titlebar" && m2T3.inHeader === true,
@@ -4142,8 +4215,8 @@ async function runHighlightTest(): Promise<void> {
 
   await win.loadURL("about:blank");
   // 先注入编译好的函数,验证 HL 全局挂载成功
-  await win.webContents.executeJavaScript(jsSrc);
-  const hlReady = await win.webContents.executeJavaScript("typeof window.HL === 'object' && typeof window.HL.getTextModel === 'function'");
+  await jsTimeout(win.webContents, jsSrc);
+  const hlReady = await jsTimeout(win.webContents, "typeof window.HL === 'object' && typeof window.HL.getTextModel === 'function'");
   if (!hlReady) {
     const errResult = { overall: false, results: [{ name: "HL global mounted", ok: false, detail: "window.HL.getTextModel not a function" }] };
     writeFileSync(join(process.cwd(), ".highlight-test-result.json"), JSON.stringify(errResult, null, 2));
@@ -4153,7 +4226,7 @@ async function runHighlightTest(): Promise<void> {
 
   const runCase = async (name: string, html: string, selections: { desc: string; startText: string; len: number }[]) => {
     for (const sel of selections) {
-      const result = await win.webContents.executeJavaScript(`(function() {
+      const result = await jsTimeout(win.webContents, `(function() {
         try {
           const container = document.body;
           container.innerHTML = ${JSON.stringify(html)};

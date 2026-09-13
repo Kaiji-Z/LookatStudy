@@ -89,6 +89,8 @@ export function ensureKcRows(db: Db, nodeId: string): void {
 
 /**
  * 更新单个 KC 的 BKT mastery。
+ * @param cap 可选封顶(纯 AI 观测路径传 AI_MASTERY_CAP;人工观测路径不传)。
+ *   BKT 后钳制,存下的 KC 值不越封顶——人工观测解封后从真实值续涨,无跳变。
  * @returns 该 KC 更新后的 mastery 值
  */
 export function updateKcMastery(
@@ -96,6 +98,7 @@ export function updateKcMastery(
   nodeId: string,
   kcIndex: number,
   correct: boolean,
+  cap?: number,
 ): number {
   const row = db
     .select()
@@ -108,7 +111,10 @@ export function updateKcMastery(
     )
     .get();
   const prevMastery = row?.mastery ?? BKT_DEFAULTS.pInit;
-  const newMastery = updateMastery(prevMastery, correct, BKT_DEFAULTS);
+  const raw = updateMastery(prevMastery, correct, BKT_DEFAULTS);
+  // 单调封顶:cap 只抑制新膨胀;prev 已高于 cap(legacy)时持平不回撤
+  const ceiling = cap !== undefined ? Math.max(cap, prevMastery) : Infinity;
+  const newMastery = Math.min(raw, ceiling);
   if (row) {
     db.update(knowledgeComponentMastery)
       .set({ mastery: newMastery, testedCount: row.testedCount + 1 })

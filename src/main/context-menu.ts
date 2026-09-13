@@ -10,7 +10,7 @@
  * 图片操作走 IPC(asset:saveToFile / asset:copyToClipboard),
  * 因为图片文件在 userData/assets/,需要 main 进程读。
  */
-import { Menu, BrowserWindow, clipboard, nativeImage, dialog } from "electron";
+import { Menu, BrowserWindow, clipboard, ClipboardItem, nativeImage, dialog } from "electron";
 import { getAssetById, getAssetFilePath } from "./services/asset-service.js";
 import { getDb } from "./db/index.js";
 import { readFile } from "node:fs/promises";
@@ -98,8 +98,10 @@ async function copyImageToClipboard(assetId: string): Promise<void> {
   const filePath = getAssetFilePath(asset.courseId, asset.filename);
   if (!existsSync(filePath)) return;
   const buf = await readFile(filePath);
-  const img = nativeImage.createFromBuffer(buf);
-  clipboard.writeImage(img);
+  // Electron 44 剪贴板改 W3C 异步 ClipboardItem 模型(writeImage/write({image}) 均已移除):
+  // 统一转 PNG(平台剪贴板事实标准,nativeImage 顺带把 jpg/webp/gif 归一)后按 MIME 写入
+  const png = nativeImage.createFromBuffer(buf).toPNG();
+  await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
 }
 
 /** 保存图片到文件(系统保存对话框) */

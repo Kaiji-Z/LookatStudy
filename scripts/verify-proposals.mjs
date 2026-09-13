@@ -22,6 +22,7 @@ import {
   listPendingProposals,
 } from "../src/main/services/proposal-service.ts";
 import { getProgress } from "../src/main/services/progress-service.ts";
+import { markHumanObservation } from "../src/main/services/human-observation.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -140,9 +141,25 @@ assert.ok(px1mastery >= 0.5, `T9: 课1 mastery 应 ≥0.5, 实际 ${px1mastery}`
 assert.strictEqual(px2status, "available", "T9: proposal update_mastery 级联 → 课2 应解锁 available");
 console.log(`✓ T9 proposal 级联解锁: update_mastery(px-1)→mastery=${px1mastery.toFixed(2)}→px-2 unlocked`);
 
-// === T10 (P4 毕业检测): update_mastery 反复答对让 mastery 跨过 0.9 → 自动 status=mastered + crown=5。
+// === T10 (P4 毕业检测 · IP3 语义更新): 反复答对的 mastery 累积分两段——
+//     纯 AI 观测(无人工判分标记)封顶 0.85,永不毕业;人工观测置位后(quiz 点选/
+//     exercise 判分的等价模拟)继续答对跨过 0.9 → 自动 status=mastered + crown=5。
 //     quiz:recordAnswer 的 mastered flag 就是检测这个过渡(本次从非mastered→mastered)。 ===
 const { db: dbG } = await makeDb();
+// 段一:纯 AI 观测 10 次 → 封顶内,不毕业
+for (let i = 0; i < 10; i++) {
+  const pg = createProposal(dbG, {
+    nodeId: "n1",
+    operations: [{ type: "update_mastery", nodeId: "n1", correct: true }],
+  });
+  applyProposal(dbG, pg.id);
+}
+const capped = getProgress(dbG, "n1");
+assert.ok(capped && capped.mastery !== null, "T10: AI 观测应有进度行");
+assert.ok(capped.mastery <= 0.85 + 1e-9, `T10: 纯 AI 观测封顶 0.85, 实际 ${capped.mastery}`);
+assert.notStrictEqual(capped.status, "mastered", "T10: 纯 AI 观测不得毕业");
+// 段二:人工观测置位 → 解封 → 继续答对到毕业
+markHumanObservation(dbG, "n1");
 let masteredAt = -1;
 for (let i = 0; i < 10; i++) {
   const pg = createProposal(dbG, {
@@ -155,11 +172,11 @@ for (let i = 0; i < 10; i++) {
     break;
   }
 }
-assert.ok(masteredAt >= 0, "T10: 反复答对应最终毕业(status=mastered)");
+assert.ok(masteredAt >= 0, "T10: 人工观测解封后反复答对应最终毕业(status=mastered)");
 const gm = getProgress(dbG, "n1");
 assert.strictEqual(gm.status, "mastered", "T10: 毕业后 status=mastered");
 assert.strictEqual(gm.crownLevel, 5, "T10: 毕业后 crown=5");
 assert.ok(gm.mastery && gm.mastery >= 0.9, `T10: 毕业后 mastery≥0.9, 实际 ${gm.mastery}`);
-console.log(`✓ T10 毕业过渡: ${masteredAt + 1} 次答对后 status=mastered, crown=5, mastery=${gm.mastery.toFixed(3)}`);
+console.log(`✓ T10 毕业过渡(IP3 封顶后): AI 观测卡 0.85 → 人工解封 → ${masteredAt + 1} 次答对毕业, mastery=${gm.mastery.toFixed(3)}`);
 
 console.log("\n=== ALL PROPOSAL TESTS PASSED ✅ ===");

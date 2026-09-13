@@ -20,6 +20,13 @@ import {
 } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import {
+  APP_VERSION,
+  buildUpdateInfo,
+  fetchLatestTag,
+  UPDATE_CACHE_TTL_MS,
+  type UpdateInfo,
+} from "../lib/update-check.js";
 import { createPlanStore } from "../services/import-plan-store.js";
 import { runSmartImport, planIdOf } from "../services/import-job-service.js";
 import { routeImportUrl } from "../services/pure/url-route.js";
@@ -156,6 +163,8 @@ import {
 } from "../services/proposal-service.js";
 // Per-KC BKT: KC 标题 → 下标解析
 import { getKnowledgePoints } from "../services/kc-service.js";
+// IP3 人工观测标记:quiz 人工判分路径置位(update_mastery 封顶解除)
+import { markHumanObservation } from "../services/human-observation.js";
 // M3：仪表盘 + 检索 + 记忆
 import { getDashboard as getDashboardService } from "../services/dashboard-service.js";
 import { searchContent as searchContentService } from "../services/search-service.js";
@@ -1401,6 +1410,8 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
     // P4: 记录应用前 status,用于检测"毕业时刻"过渡(mastered flag 驱动庆祝)。
     const prevRow = getDb().select().from(progressTable).where(eq(progressTable.nodeId, nodeId)).get();
     const wasMastered = prevRow?.status === "mastered";
+    // IP3 人工观测置位:quiz 产物点选是确定性人工判分,本节点的 AI 观测封顶自此解除。
+    markHumanObservation(getDb(), nodeId);
     const proposal = createProposalService(getDb(), {
       nodeId,
       operations: [{ type: "update_mastery", nodeId, correct, kcIndex }],
@@ -1678,12 +1689,50 @@ export function registerSpeechHandlers(deps: RuntimeDeps): void {
   });
 }
 
+/* ---------- 应用更新(轻量检查:只提示,不自动下载) ---------- */
+
+export function registerAppHandlers(): void {
+  handle("app:getUpdateInfo", async (): Promise<UpdateInfo | null> => {
+    const db = getDb();
+    const now = Date.now();
+    // 24h 结果缓存:{tag, fetchedAt};坏缓存当无(重新拉)
+    let tag: string | null = null;
+    const cacheRow = db.select().from(settingsTable).where(eq(settingsTable.key, "update_check_cache")).get();
+    if (cacheRow?.value) {
+      try {
+        const o = JSON.parse(cacheRow.value) as { tag?: string; fetchedAt?: number };
+        if (o.tag && typeof o.fetchedAt === "number" && now - o.fetchedAt < UPDATE_CACHE_TTL_MS) tag = o.tag;
+      } catch {
+        /* 坏缓存当无 */
+      }
+    }
+    if (!tag) {
+      tag = await fetchLatestTag();
+      if (tag) {
+        db.insert(settingsTable)
+          .values({ key: "update_check_cache", value: JSON.stringify({ tag, fetchedAt: now }), isSecret: false })
+          .onConflictDoUpdate({ target: settingsTable.key, set: { value: JSON.stringify({ tag, fetchedAt: now }) } })
+          .run();
+        markDirty();
+      }
+    }
+    if (!tag) return null; // 离线/被墙/超时:零打扰
+    const info = buildUpdateInfo(APP_VERSION, tag);
+    if (!info.hasUpdate) return null;
+    // 每版本只提示一次:已弹过这个 tag 就不再打扰(标记由渲染层真正弹出时写)
+    const seenRow = db.select().from(settingsTable).where(eq(settingsTable.key, "update_prompt_seen")).get();
+    if (seenRow?.value === tag) return null;
+    return info;
+  });
+}
+
 export function registerAllHandlers(deps: RuntimeDeps): void {
   registerCourseHandlers(deps);
   registerProgressHandlers();
   registerSrsHandlers();
   registerStreakHandlers();
   registerSettingsHandlers(deps);
+  registerAppHandlers();
   registerSoulHandlers();
   registerAgentHandlers(deps);
   registerM3Handlers();

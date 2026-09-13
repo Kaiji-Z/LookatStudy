@@ -36,6 +36,8 @@ import { addXpMastered } from "./xp-service.js";
 import { unlockNextLessonIfEligible } from "./progress-service.js";
 import { MASTERED_MASTERY_THRESHOLD } from "@shared/types";
 import { emitStateChange } from "../lib/state-emitter.js";
+import { AI_MASTERY_CAP, capMasteryValue } from "./pure/mastery-cap.js";
+import { hasHumanObservation } from "./human-observation.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -204,6 +206,12 @@ function executeOperation(db: Db, op: LearningOperation): void {
         .get();
       const correct = op.correct ?? false;
 
+      // IP3 防假毕业:纯 AI 观测(节点从无人工判分记录)时,BKT 写入封顶 0.85——
+      // AI 单方面重复"答对"推不动 mastered(≥0.9);quiz/exercise 人工判分一发生,
+      // 标记置位、封顶解除,后续(含 AI 提议)按真实观测续涨。
+      const humanObserved = hasHumanObservation(db, op.nodeId);
+      const kcCap = humanObserved ? undefined : AI_MASTERY_CAP;
+
       // Per-KC BKT: 如果 lesson 有知识组件定义，走 per-KC 路径。
       const kps = getKnowledgePoints(db, op.nodeId);
       let newMastery: number;
@@ -212,19 +220,25 @@ function executeOperation(db: Db, op: LearningOperation): void {
         ensureKcRows(db, op.nodeId);
         if (op.kcIndex !== undefined && op.kcIndex >= 0 && op.kcIndex < kps.length) {
           // 精准更新指定 KC
-          updateKcMastery(db, op.nodeId, op.kcIndex, correct);
+          updateKcMastery(db, op.nodeId, op.kcIndex, correct, kcCap);
         } else {
           // 无 kcIndex：保守更新所有 KC（观测未标注具体 KC 时）
           for (let i = 0; i < kps.length; i++) {
-            updateKcMastery(db, op.nodeId, i, correct);
+            updateKcMastery(db, op.nodeId, i, correct, kcCap);
           }
         }
         // 课级 mastery = min(各 KC)——最薄弱环节决定整体
         newMastery = computeAggregateMastery(db, op.nodeId) ?? BKT_DEFAULTS.pInit;
+        // 聚合也过单调封顶(KC 行可能来自 legacy 高值:持平不回撤)
+        newMastery = capMasteryValue(newMastery, humanObserved, existing?.mastery ?? undefined);
       } else {
-        // 无 KC 定义：回退到单值 BKT（向后兼容）
+        // 无 KC 定义：回退到单值 BKT（向后兼容;单调封顶防 legacy 回撤）
         const prevMastery = existing?.mastery ?? null;
-        newMastery = updateMastery(prevMastery, correct, BKT_DEFAULTS);
+        newMastery = capMasteryValue(
+          updateMastery(prevMastery, correct, BKT_DEFAULTS),
+          humanObserved,
+          prevMastery ?? undefined,
+        );
       }
 
       // 自动毕业:聚合 mastery ≥ 0.9 → 全部 KC 都达标 → status 转 mastered

@@ -3758,11 +3758,12 @@ async function runUiTest(screenshot = false): Promise<void> {
           }
           if (!drawer) return { ok: false, reason: "no settings drawer" };
           // SettingsView 是 React.lazy(v0.22 入口包瘦身),抽屉壳先出现、内容 chunk 后到——轮询等伴学区渲染。
-          // 2026-09-12 整合后:入口统一到 + 卡 → 新建选择弹窗(自制/Shimeji,悬停介绍)→ Shimeji 弹窗内导入
-          var out = { formBtn: false, addCard: false, selfOpt: false, shimejiOpt: false, importCard: false, ok: false };
+          // 2026-09-12 固定卡排版:5 原形 + Shimeji 卡 + 自制卡 + 加号卡;入口 + → 选择 → 导入;
+          // 点 Shimeji 卡 → 包列表弹窗(含协议导入的包)→ 点包项 = 激活+切形态持久化
+          var out = { formBtn: false, addCard: false, selfOpt: false, shimejiOpt: false, importCard: false, shimejiList: false, listHasPack: false, picked: false, ok: false };
           for (var j = 0; j < 30; j++) {
             await new Promise(function(r) { setTimeout(r, 200); });
-            out.formBtn = !!q('[data-testid="companion-form-shimeji"]');
+            out.formBtn = !!q('[data-testid="companion-card-shimeji"]') && !!q('[data-testid="companion-card-custom"]');
             out.addCard = !!q('[data-testid="companion-form-add"]');
             if (out.formBtn && out.addCard) break;
           }
@@ -3786,10 +3787,29 @@ async function runUiTest(screenshot = false): Promise<void> {
           }
           var dclose = q('[data-testid="shimeji-dialog-close"]');
           if (dclose) dclose.click();
+          await new Promise(function(r) { setTimeout(r, 300); });
+          // 固定卡排版:点 Shimeji 来源卡 → 包列表弹窗(协议已导入的包在列)→ 点包项持久化
+          var scard = q('[data-testid="companion-card-shimeji"]');
+          if (scard) scard.click();
+          for (var n = 0; n < 20; n++) {
+            await new Promise(function(r) { setTimeout(r, 200); });
+            out.shimejiList = !!q('[data-testid="shimeji-pack-list"]');
+            if (out.shimejiList) break;
+          }
+          var opt2 = q('[data-testid="shimeji-pack-list"] button[data-testid^="shimeji-pack-option-"]');
+          if (opt2) {
+            out.listHasPack = true;
+            opt2.click();
+            for (var p2 = 0; p2 < 20; p2++) {
+              await new Promise(function(r) { setTimeout(r, 200); });
+              var st = await window.api.getSetting("companion_form");
+              if (st === "shimeji") { out.picked = true; break; }
+            }
+          }
           var close = q('[data-testid="settings-close"]');
           if (close) close.click();
           await new Promise(function(r) { setTimeout(r, 400); });
-          out.ok = out.formBtn && out.addCard && out.selfOpt && out.shimejiOpt && out.importCard;
+          out.ok = out.formBtn && out.addCard && out.selfOpt && out.shimejiOpt && out.importCard && out.shimejiList && out.listHasPack && out.picked;
           return out;
         } catch (e) { return { ok: false, error: String(e) }; }
       })()
@@ -3797,7 +3817,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       )
       .catch(() => null);
     results.push({
-      name: "shimeji: 设置页第七形态选择项 + 新建选择弹窗(自制/Shimeji)→ 导入弹窗",
+      name: "shimeji: 固定卡排版(Shimeji/自制卡)+ 新建流程 + 包列表选择持久化",
       ok: shimejiDom?.ok === true,
       detail: shimejiDom,
     });
@@ -3897,7 +3917,12 @@ async function runUiTest(screenshot = false): Promise<void> {
         `
       (async function() {
         try {
-          var del = await window.api.shimejiDelete({ id: ${JSON.stringify(shimejiFlow.id)} });
+          // 清场:删除全部 shimeji 包(ui-test DB 跨轮共享,历史轮次有残留)
+          var lst0 = await window.api.shimejiList();
+          for (var q = 0; q < (lst0.packs || []).length; q++) {
+            await window.api.shimejiDelete({ id: lst0.packs[q].id });
+          }
+          var del = { ok: true };
           await window.api.setSetting("companion_form", "ember");
           window.dispatchEvent(new Event("companion-config-changed"));
           var cls = "";
@@ -3908,7 +3933,7 @@ async function runUiTest(screenshot = false): Promise<void> {
             if (cls.indexOf("cp-form-shimeji") < 0) break;
           }
           var lst = await window.api.shimejiList();
-          var gone = (lst.packs || []).every(function(p) { return p.id !== ${JSON.stringify(shimejiFlow.id)}; });
+          var gone = (lst.packs || []).length === 0;
           var ga = await window.api.shimejiGetActive();
           return { ok: del.ok === true && gone && !ga && cls.indexOf("cp-form-shimeji") < 0, packsLeft: (lst.packs || []).length };
         } catch (e) { return { ok: false, error: String(e) }; }

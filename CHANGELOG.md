@@ -14,6 +14,11 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Added
+- Shimeji 导入弹窗的下载指引从纯文本站点名升级为可点击的外链按钮(shimeji.org / shimejis.xyz / Cachomon / DeviantArt 搜索页),点击经系统浏览器打开;链接排在拖放区下方,拖放按钮改用 ref 定位文件选择器(原 nextElementSibling 链路会被插入的链接排截断)。
+
 ## [0.34.0] - 2026-09-13
 
 ### Added

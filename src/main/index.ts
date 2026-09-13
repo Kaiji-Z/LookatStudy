@@ -3844,7 +3844,7 @@ async function runUiTest(screenshot = false): Promise<void> {
           // SettingsView 是 React.lazy(v0.22 入口包瘦身),抽屉壳先出现、内容 chunk 后到——轮询等伴学区渲染。
           // 2026-09-12 固定卡排版:5 原形 + Shimeji 卡 + 自制卡 + 加号卡;入口 + → 选择 → 导入;
           // 点 Shimeji 卡 → 包列表弹窗(含协议导入的包)→ 点包项 = 激活+切形态持久化
-          var out = { formBtn: false, addCard: false, selfOpt: false, shimejiOpt: false, importCard: false, shimejiList: false, listHasPack: false, picked: false, ok: false };
+          var out = { formBtn: false, addCard: false, selfOpt: false, shimejiOpt: false, importCard: false, links: false, shimejiList: false, listHasPack: false, picked: false, ok: false };
           for (var j = 0; j < 30; j++) {
             await new Promise(function(r) { setTimeout(r, 200); });
             out.formBtn = !!q('[data-testid="companion-card-shimeji"]') && !!q('[data-testid="companion-card-custom"]');
@@ -3869,6 +3869,12 @@ async function runUiTest(screenshot = false): Promise<void> {
             out.importCard = !!q('[data-testid="shimeji-import"]');
             if (out.importCard) break;
           }
+          // 下载站点外链排:4 站点(shimeji.org/shimejis.xyz/Cachomon/DeviantArt 搜索),href 必须真站外链
+          var linkRows = document.querySelectorAll('[data-testid="shimeji-download-links"] a');
+          out.links = linkRows.length === 4
+            && !!q('[data-testid="shimeji-link-cachomon"]')
+            && linkRows[0].getAttribute("href") === "https://shimeji.org/"
+            && linkRows[3].getAttribute("href") === "https://www.deviantart.com/search?q=shimeji";
           var dclose = q('[data-testid="shimeji-dialog-close"]');
           if (dclose) dclose.click();
           await new Promise(function(r) { setTimeout(r, 300); });
@@ -3918,7 +3924,7 @@ async function runUiTest(screenshot = false): Promise<void> {
           var close = q('[data-testid="settings-close"]');
           if (close) close.click();
           await new Promise(function(r) { setTimeout(r, 400); });
-          out.ok = out.formBtn && out.addCard && out.selfOpt && out.shimejiOpt && out.importCard && out.shimejiList && out.listHasPack && out.picked && out.rethemed;
+          out.ok = out.formBtn && out.addCard && out.selfOpt && out.shimejiOpt && out.importCard && out.links && out.shimejiList && out.listHasPack && out.picked && out.rethemed;
           return out;
         } catch (e) { return { ok: false, error: String(e) }; }
       })()

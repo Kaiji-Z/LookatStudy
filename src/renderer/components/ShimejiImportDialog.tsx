@@ -8,7 +8,7 @@
  * overlay/focus-trap 与 CompanionBotWizard 同款。
  */
 import { useRef, useState } from "react";
-import { X } from "lucide-react";
+import { ExternalLink, X } from "lucide-react";
 
 import { useLang } from "../lib/i18n.js";
 import { useFocusTrap } from "../lib/useFocusTrap.js";
@@ -23,9 +23,19 @@ interface CharacterPreview {
   format: string;
 }
 
+// 社区分发站点(通用指引,不分发任何具体包,合规红线 SPEC §4)。
+// target=_blank 由主进程 setWindowOpenHandler 接住 → shell.openExternal 系统浏览器。
+const SHIMEJI_SITES = [
+  { id: "shimejiorg", label: "shimeji.org", url: "https://shimeji.org/" },
+  { id: "shimejisxyz", label: "shimejis.xyz", url: "https://shimejis.xyz/" },
+  { id: "cachomon", label: "Cachomon", url: "https://cachomon.com/" },
+  { id: "deviantart", label: "DeviantArt", url: "https://www.deviantart.com/search?q=shimeji" },
+];
+
 export function ShimejiImportDialog({ onClose, onImported }: { onClose: () => void; onImported: () => Promise<void> | void }) {
   const t = useLang();
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   useFocusTrap(panelRef, true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,21 +118,36 @@ export function ShimejiImportDialog({ onClose, onImported }: { onClose: () => vo
         <p className="text-label text-ink-muted mb-3">{t("settings.shimeji.desc")}</p>
 
         {!preview && (
-          <button
-            type="button"
-            data-testid="shimeji-import"
-            disabled={busy}
-            onClick={(e) => {
-              const input = e.currentTarget.nextElementSibling as HTMLInputElement | null;
-              input?.click();
-            }}
-            className="w-full rounded-xl border border-dashed border-[var(--border)] py-6 flex flex-col items-center gap-1.5 text-ink-faint hover:text-ink-muted hover:bg-surface-2 disabled:opacity-50"
-          >
-            <span className="text-label font-medium">{busy ? t("settings.shimeji.importing") : t("settings.shimeji.import")}</span>
-            <span className="text-caption">{t("settings.shimeji.guide")}</span>
-          </button>
+          <>
+            <button
+              type="button"
+              data-testid="shimeji-import"
+              disabled={busy}
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full rounded-xl border border-dashed border-[var(--border)] py-6 flex flex-col items-center gap-1.5 text-ink-faint hover:text-ink-muted hover:bg-surface-2 disabled:opacity-50"
+            >
+              <span className="text-label font-medium">{busy ? t("settings.shimeji.importing") : t("settings.shimeji.import")}</span>
+              <span className="text-caption">{t("settings.shimeji.guide")}</span>
+            </button>
+            {/* 链接排在拖放区外——a 不能嵌进 button(嵌套交互元素,点击会先触发选文件) */}
+            <div className="flex flex-wrap gap-1.5 mt-2" data-testid="shimeji-download-links">
+              {SHIMEJI_SITES.map((s) => (
+                <a
+                  key={s.id}
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid={`shimeji-link-${s.id}`}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-faint)] px-2 py-1 text-caption text-ink-muted hover:text-ink-strong hover:bg-surface-2 motion-safe:transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" />
+                  {s.label}
+                </a>
+              ))}
+            </div>
+          </>
         )}
-        <input type="file" accept=".zip" className="hidden" onChange={(e) => void onFile(e)} />
+        <input ref={fileInputRef} type="file" accept=".zip" className="hidden" onChange={(e) => void onFile(e)} />
 
         {error && (
           <p className="text-caption text-warning mt-2" role="alert">

@@ -3,15 +3,36 @@
  * serve(无头手机端)不走这里;两个壳消费 collectHandlers() 的同一张表。
  */
 import { ipcMain, dialog, app, type BrowserWindow } from "electron";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { mkdirSync } from "node:fs";
 import { collectHandlers } from "./index.js";
 import { syncPetWindow, setPetClickThrough } from "../pet-window.js";
 import type { IpcHandlerFn } from "./runtime.js";
+
+/** 测试模式文件目录隔离(2026-09-12 事故修复):--ui-test 的 DB 用临时库,但
+    dataDir(shimeji-packs/companion-packs/attachments 等文件根)曾直接用真实
+    userData——ui-test 清理块"删除全部 shimeji 包"曾把用户 dev 导入的包当
+    测试残留全量误删。与 initDb 的临时库条件对齐:测试模式文件也走 tmp。
+    注意语音模型在 userData 下另建,不受此影响(voice 测试依赖它做双分支)。 */
+function resolveDataDir(): string {
+  if (process.argv.includes("--ui-test") || process.argv.includes("--shots") || process.argv.includes("--shots-en")) {
+    const dir = join(tmpdir(), "lookatstudy-uitest-files");
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch {
+      /* 已存在 */
+    }
+    return dir;
+  }
+  return app.getPath("userData");
+}
 
 export function setupIpc(mainWindow: BrowserWindow | null): void {
   const table = collectHandlers({
     pet: { sync: syncPetWindow, setClickThrough: setPetClickThrough },
     ui: "electron",
-    dataDir: app.getPath("userData"),
+    dataDir: resolveDataDir(),
     emitter: {
       send(channel, ...args) {
         if (!mainWindow || mainWindow.isDestroyed()) return;

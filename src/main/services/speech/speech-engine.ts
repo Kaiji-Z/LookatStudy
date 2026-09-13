@@ -141,17 +141,36 @@ function loadSherpa(): SherpaModule {
   return mod;
 }
 
-/** 取 TTS 引擎;模型未就绪抛错(调用方先查状态) */
+/** 取 TTS 引擎;模型未就绪抛错(调用方先查状态)。
+ *  per-dir Promise 去重(2026-09-13 审计 P3):await createAsync 期间第二个调用者
+ *  进来会再建一个原生实例,先建的那个永不 release(kokoro 常驻数百 MB 原生内存)——
+ *  同款纪律抄自 ensureSpeechModelEmitting 的 activeEnsures。 */
+const ttsCreating = new Map<string, Promise<OfflineTts>>();
 export async function getTtsEngine(dataDir: string): Promise<OfflineTts> {
   const dir = speechModelDir(dataDir, "tts-kokoro");
   if (ttsHolder?.dir === dir) return ttsHolder.tts;
-  if (ttsHolder) ttsHolder.tts.release?.();
-  const sherpa = loadSherpa();
-  ttsHolder = { dir, tts: await sherpa.OfflineTts.createAsync(buildTtsConfig(dir)) };
-  return ttsHolder.tts;
+  let p = ttsCreating.get(dir);
+  if (!p) {
+    const gen = engineGeneration;
+    p = (async () => {
+      if (ttsHolder) { ttsHolder.tts.release?.(); ttsHolder = null; }
+      const sherpa = loadSherpa();
+      const tts = await sherpa.OfflineTts.createAsync(buildTtsConfig(dir));
+      if (gen !== engineGeneration) {
+        tts.release?.(); // 等待期间模型被重下/删除:不缓存陈旧引擎
+        throw new Error("tts 引擎已失效(模型重下),请重试");
+      }
+      ttsHolder = { dir, tts };
+      return tts;
+    })().finally(() => ttsCreating.delete(dir));
+    ttsCreating.set(dir, p);
+  }
+  return p;
 }
 
-/** 取 Whisper 识别器(按 模型目录+语言 缓存);模型未就绪抛错(调用方先查状态) */
+/** 取 Whisper 识别器(按 模型目录+语言 缓存);模型未就绪抛错(调用方先查状态)。
+ *  per-key Promise 去重(2026-09-13 审计 P3,同 getTtsEngine)。 */
+const whisperCreating = new Map<string, Promise<OfflineRecognizer>>();
 export async function getWhisperRecognizer(
   dataDir: string,
   entry: SpeechModelEntry,
@@ -160,19 +179,37 @@ export async function getWhisperRecognizer(
   const dir = speechModelDir(dataDir, entry.id);
   const key = `${dir}|${language ?? ""}`;
   if (whisperHolder?.key === key) return whisperHolder.recognizer;
-  if (whisperHolder) whisperHolder.recognizer.release?.();
-  const variant = resolveWhisperVariant(dataDir, entry);
-  if (!variant) throw new Error("asr model not ready");
-  const sherpa = loadSherpa();
-  const recognizer = await sherpa.OfflineRecognizer.createAsync(
-    buildWhisperConfig(dir, whisperPrefix(entry.id), variant, language),
-  );
-  whisperHolder = { key, recognizer };
-  return recognizer;
+  let p = whisperCreating.get(key);
+  if (!p) {
+    const gen = engineGeneration;
+    p = (async () => {
+      if (whisperHolder) { whisperHolder.recognizer.release?.(); whisperHolder = null; }
+      const variant = resolveWhisperVariant(dataDir, entry);
+      if (!variant) throw new Error("asr model not ready");
+      const sherpa = loadSherpa();
+      const recognizer = await sherpa.OfflineRecognizer.createAsync(
+        buildWhisperConfig(dir, whisperPrefix(entry.id), variant, language),
+      );
+      if (gen !== engineGeneration) {
+        recognizer.release?.();
+        throw new Error("asr 引擎已失效(模型重下),请重试");
+      }
+      whisperHolder = { key, recognizer };
+      return recognizer;
+    })().finally(() => whisperCreating.delete(key));
+    whisperCreating.set(key, p);
+  }
+  return p;
 }
+
+/** 引擎代际:invalidate 递增,在途创建落定时对照——过期实例立即释放不缓存 */
+let engineGeneration = 0;
 
 /** 模型目录变化(重下/删除)后失效缓存;app 退出时释放 */
 export function invalidateSpeechEngines(): void {
+  engineGeneration++;
+  ttsCreating.clear();
+  whisperCreating.clear();
   ttsHolder?.tts.release?.();
   ttsHolder = null;
   whisperHolder?.recognizer.release?.();

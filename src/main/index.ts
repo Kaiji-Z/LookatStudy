@@ -15,6 +15,7 @@ import { writeFileSync, appendFileSync, mkdirSync, existsSync, statSync } from "
 import { initDb, getDb, markDirty } from "./db/index.js";
 import { setupIpc } from "./ipc/electron-wiring.js";
 import { setupContextMenu } from "./context-menu.js";
+import { isAllowedExternalUrl } from "./lib/external-url.js";
 import { ensureSeedCourse } from "./services/seed.js";
 import { ensureExamNodesForExistingCourses } from "./services/course-generator.js";
 import { loadEnv, getZaiConfig } from "./services/env.js";
@@ -96,9 +97,12 @@ function createWindow(): void {
 
   mainWindow.on("ready-to-show", () => mainWindow?.show());
 
-  // 外链走系统浏览器:window.open / target=_blank
+  // 外链走系统浏览器:window.open / target=_blank。
+  // 协议白名单(2026-09-13 审计修复):渲染层展示不可信课程内容,ms-msdt:/search-ms:
+  // 等系统协议处理器是本地 RCE 历史入口——非 http(s)/mailto 一律拒绝交 OS 处理。
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (isAllowedExternalUrl(url)) void shell.openExternal(url);
+    else console.warn(`[security] 拒绝外部打开非白名单协议链接: ${url}`);
     return { action: "deny" };
   });
 
@@ -112,7 +116,8 @@ function createWindow(): void {
       url.startsWith("about:");
     if (!isInternal) {
       event.preventDefault();
-      shell.openExternal(url);
+      if (isAllowedExternalUrl(url)) void shell.openExternal(url);
+      else console.warn(`[security] 拒绝外部打开非白名单协议链接: ${url}`);
     }
   });
 

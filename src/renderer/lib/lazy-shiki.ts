@@ -147,7 +147,7 @@ export async function highlightCodeBlock(code: string, lang: string): Promise<st
 }
 
 const escapeHtml = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 /**
  * 逐行 token 高亮(代码逐段讲解用):每行返回内联 span 序列的 HTML 片段,

@@ -74,6 +74,9 @@ export interface ImportPlan {
   createdAt: string;
   updatedAt: string;
   /** 已完成的最后一步(1=清单 2=分类 3=大纲 4=结构);Step5 成功另有 courseId 回填 */
+  /** Step5 完全成功的盖章(含翻译落库);缺省=中断在途——resume 凭 courseId+无 completedAt
+   *  跳过重建,已完成的重导则照常复制新课程(2026-09-13 审计 F18 的完成/崩溃区分) */
+  completedAt?: string;
   reachedStep: 1 | 2 | 3 | 4;
   /** Step5 成功后回填(plan 保留,作为课程包源 + 同仓库再导入的复用依据) */
   courseId?: string;
@@ -128,7 +131,9 @@ export function parsePlan(raw: string): ImportPlan | null {
     const o = JSON.parse(raw) as ImportPlan;
     if (!o || typeof o !== "object") return null;
     if (o.formatVersion !== IMPORT_PLAN_FORMAT_VERSION) return null;
-    if (typeof o.planId !== "string" || !PLAN_KINDS.has(o.kind)) return null;
+    // planId 会进 import-plan-store 的路径拼接(课程包是分享面):形状闸防穿越投毒(2026-09-13 审计)
+    if (typeof o.planId !== "string" || !/^[0-9a-f-]{8,64}$/.test(o.planId)) return null;
+    if (!PLAN_KINDS.has(o.kind)) return null;
     if (!Array.isArray(o.fullTree) || typeof o.treeHash !== "string") return null;
     return o;
   } catch {

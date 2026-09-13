@@ -771,6 +771,8 @@ export interface ApiExpose {
 
   /* 设置 */
   getSetting(key: SettingKey): Promise<string | null>;
+  /** 密钥类配置的存在性布尔(v0.35 安全修复:getSetting 对 *_api_key 恒 null,永不回传明文)。 */
+  hasSetting(key: SettingKey): Promise<boolean>;
   setSetting(key: SettingKey, value: string): Promise<void>;
   /** v0.11 桌宠:切换桌宠窗点击穿透(true=穿透还原桌面操作,false=可交互生物)。
    *  渲染层指针热区检测调用;web 运行时无桌宠窗,no-op。 */

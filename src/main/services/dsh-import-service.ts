@@ -177,7 +177,15 @@ export function importDshStateFromText(
   if (dbFilePath && existsSync(dbFilePath)) {
     const stamp = `${now.toISOString().replace(/[:.]/g, "-").slice(0, 19)}-${now.getTime() % 1000}`;
     backupPath = `${dbFilePath}.bak-dsh-import-${stamp}`;
-    copyFileSync(dbFilePath, backupPath);
+    try {
+      copyFileSync(dbFilePath, backupPath);
+    } catch (e) {
+      // 备份失败必须中止导入(数据安全优先),走结构化错误而非裸 rejection(2026-09-13 审计 F10)
+      return {
+        ...base,
+        error: `导入前备份库文件失败，已中止（磁盘满/目录只读?）: ${e instanceof Error ? e.message : e}`,
+      };
+    }
   }
 
   try {

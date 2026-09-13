@@ -55,9 +55,11 @@ await test("T1 computeTreeHash 顺序无关,集合敏感", () => {
 });
 
 await test("T2 serialize/parse 往返 + 版本守卫", () => {
+  // planId 用生产形状(randomUUID)——parsePlan 自 2026-09-13 审计起对 planId 做形状闸
+  const planId = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
   const plan = {
     formatVersion: IMPORT_PLAN_FORMAT_VERSION,
-    planId: "p1",
+    planId,
     kind: "github",
     github: { owner: "o", repo: "r", branch: "main" },
     treeHash: "h",
@@ -71,10 +73,11 @@ await test("T2 serialize/parse 往返 + 版本守卫", () => {
     structure: { courseTitle: "T", sections: [{ title: "S", world: "study", lessons: [{ title: "L", file: "a.md", world: "study" }] }] },
   };
   const back = parsePlan(serializePlan(plan));
-  assert.equal(back?.planId, "p1", "往返保 planId");
+  assert.equal(back?.planId, planId, "往返保 planId");
   assert.equal(back?.structure?.sections.length, 1, "往返保结构");
   assert.equal(parsePlan(JSON.stringify({ ...plan, formatVersion: 99 })), null, "版本不符 → null");
   assert.equal(parsePlan("{bad json"), null, "坏 JSON → null");
+  assert.equal(parsePlan(JSON.stringify({ ...plan, planId: "../../evil" })), null, "穿越 planId → null(审计形状闸)");
 });
 
 await test("T3 身份键:github 大小写不敏感,folder 按 absPath", () => {

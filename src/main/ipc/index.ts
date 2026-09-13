@@ -895,18 +895,21 @@ export function registerCourseHandlers(deps: RuntimeDeps): void {
       }
       try {
         db.delete(srsItems).where(inArray(srsItems.nodeId, nodeIds)).run();
-      } catch {
-        /* 忽略 */
+      } catch (e) {
+        // 表可能为空是常态,但真实 SQL 错误不该被吞成静默孤儿行(2026-09-13 审计 F21)
+        console.error("[course:delete] 级联删除步骤失败(可能留孤儿行):", e instanceof Error ? e.message : e);
       }
       try {
         db.delete(exercises).where(inArray(exercises.nodeId, nodeIds)).run();
-      } catch {
-        /* 忽略 */
+      } catch (e) {
+        // 表可能为空是常态,但真实 SQL 错误不该被吞成静默孤儿行(2026-09-13 审计 F21)
+        console.error("[course:delete] 级联删除步骤失败(可能留孤儿行):", e instanceof Error ? e.message : e);
       }
       try {
         db.delete(chatSessions).where(inArray(chatSessions.nodeId, nodeIds)).run();
-      } catch {
-        /* 忽略 */
+      } catch (e) {
+        // 表可能为空是常态,但真实 SQL 错误不该被吞成静默孤儿行(2026-09-13 审计 F21)
+        console.error("[course:delete] 级联删除步骤失败(可能留孤儿行):", e instanceof Error ? e.message : e);
       }
     }
     markDirty();
@@ -1112,20 +1115,28 @@ export function registerStreakHandlers(): void {
 /* ---------- 设置 ---------- */
 
 export function registerSettingsHandlers(deps: RuntimeDeps): void {
+  // 密钥类设置永不回传明文(2026-09-13 审计 P1):渲染层展示不可信课程内容,
+  // XSS+settings:get 曾是"一次 invoke 打包外传全部厂商 key"的原语,serve 模式下
+  // 更是 WS 信道。已配置态一律走 hasSetting 布尔,改 key 须整体重输。
+  const isSecretKey = (key: string) => /_api_key$/.test(key);
   handle(
     "settings:get",
     async (_e, key: SettingKey): Promise<string | null> => {
       const db = getDb();
+      if (isSecretKey(key)) return null;
       const row = db
         .select()
         .from(settingsTable)
         .where(eq(settingsTable.key, key))
         .get();
-      // v0.1: API key 类敏感字段用 electron safeStorage 加密（M2 接入）
-      // 这里先明文返回，因为设置页本身就在本地
       return row?.value ?? null;
     },
   );
+  handle("settings:has", async (_e, key: SettingKey): Promise<boolean> => {
+    const db = getDb();
+    const row = db.select().from(settingsTable).where(eq(settingsTable.key, key)).get();
+    return !!row?.value;
+  });
 
   handle(
     "settings:set",
@@ -1538,6 +1549,7 @@ async function autoStructureCourse(
     // Per-KC BKT: 提取知识点(KC) + 摘要 → per-KC BKT 毕业门控的基础
     send("AI 正在提取知识点…");
     await generateLessonSummaries(getDb(), courseId).catch(() => {});
+    markDirty(); // KC/摘要批量落库即标脏(2026-09-13 审计 F7:LLM 产物曾随强杀全丢=重复计费)
     send("知识点提取完成");
     return;
   }
@@ -1554,6 +1566,7 @@ async function autoStructureCourse(
   // Per-KC BKT: 提取知识点(KC) + 摘要
   send("AI 正在提取知识点…");
   await generateLessonSummaries(getDb(), courseId).catch(() => {});
+  markDirty(); // KC/摘要批量落库即标脏(2026-09-13 审计 F7:LLM 产物曾随强杀全丢=重复计费)
   send("知识点提取完成");
 }
 
@@ -1862,12 +1875,12 @@ export function registerExerciseHandlers(): void {
 export function registerExamHandlers(): void {
   // 幂等启动题目生成(后台进行,进度走 exam:status 事件)
   handle("exam:prepare", (_e, examNodeId: string, locale?: string | null) => {
-    return prepareExam(getDb(), examNodeId, locale);
+    return prepareExam(getDb(), examNodeId, locale, markDirty);
   });
 
   // 重新生成题库:删旧题重启生成(在飞 no-op;悬挂 attempt 判死;历史星数保留)
   handle("exam:regenerate", (_e, examNodeId: string, locale?: string | null) => {
-    return regenerateExam(getDb(), examNodeId, locale);
+    return regenerateExam(getDb(), examNodeId, locale, markDirty);
   });
 
   // 查状态 + 就绪元信息 + 最新 attempt(悬挂 attempt 在此自动判死)

@@ -10,28 +10,12 @@
     <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' http://localhost:5173 ws://localhost:5173"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' http://localhost:5173 ws://localhost:5173; base-uri 'none'; form-action 'none'"
     />
     <title>LookatStudy</title>
-    <script>
-      // 防主题闪烁(FOUC):在 React mount 前就读 localStorage 设 <html> class。
-      // useTheme hook mount 时会再同步一次,这里只是消除首帧的默认(无 class)闪烁。
-      // CSP 允许 'unsafe-inline' 脚本(见上 meta),所以这段能跑。
-      (function () {
-        try {
-          var mode = localStorage.getItem("lookatstudy-theme") || "auto";
-          var resolved =
-            mode === "auto"
-              ? window.matchMedia("(prefers-color-scheme: dark)").matches
-                ? "dark"
-                : "light"
-              : mode;
-          document.documentElement.classList.add(resolved);
-        } catch (e) {
-          document.documentElement.classList.add("dark"); // 兜底:无法读 localStorage 时用深色
-        }
-      })();
-    </script>
+    <!-- FOUC 脚本外联化:script-src 已去掉 'unsafe-inline'(2026-09-13 审计,
+         该指令曾把任何 HTML 注入点直接升级为脚本执行) -->
+    <script src="./fouc.js"></script>
   </head>
   <body>
     <!-- 全局 SVG 滤镜定义:节点球积雪边缘的有机扭曲(feTurbulence fractalNoise + feDisplacementMap)。

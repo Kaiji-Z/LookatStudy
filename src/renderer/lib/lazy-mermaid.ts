@@ -42,7 +42,10 @@ export function loadMermaid(): Promise<Mermaid> {
       mermaid.initialize({
         startOnLoad: false,
         theme: "base",
-        securityLevel: "loose", // 允许 label 带 HTML/特殊字符(学习内容常有)
+        securityLevel: "strict", // XSS 链斩断(2026-09-13 审计):loose 允许 label 携带 HTML
+        // 经 foreignObject 进 SVG,产物直接 dangerouslySetInnerHTML,配合 CSP
+        // unsafe-inline 曾构成"恶意课程内容→脚本执行"完整链。strict 编码 label,
+        // 语法性失败走既有 LLM 修复回路兜底。
         themeVariables: mermaidThemeVariables(),
         flowchart: { useMaxWidth: true, htmlLabels: true, curve: "basis", nodeSpacing: 42, rankSpacing: 54, padding: 10 },
         sequence: { useMaxWidth: true, boxMargin: 8, noteMargin: 8, messageMargin: 32 },

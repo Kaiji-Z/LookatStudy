@@ -86,6 +86,15 @@ interface ActiveSpeech {
 
 let active: ActiveSpeech | null = null;
 
+// edge 熔断(2026-09-13 审计 P3):edge 被网络环境永久屏蔽时,旧实现每场朗读固定
+// 先撞 1-2 个注定失败的 edge 请求才落 local。连续 5 次合成失败后本进程直接走
+// local(重启恢复;5 连败=环境判定,已足够尊重显式选择)。
+const EDGE_CIRCUIT_TRIP = 5;
+let edgeFailStreak = 0;
+function noteEdgeFailure(): void { edgeFailStreak++; }
+function noteEdgeSuccess(): void { edgeFailStreak = 0; }
+function edgeCircuitOpen(): boolean { return edgeFailStreak >= EDGE_CIRCUIT_TRIP; }
+
 interface SynthOut {
   bytes: ArrayBuffer;
   mime: TtsAudioMime;
@@ -223,6 +232,10 @@ export async function speakMessage(
 
   let engine: TtsEngineTier = cfg.engine;
   let fellBackTo: "local" | undefined;
+  if (engine === "edge" && edgeCircuitOpen() && isLocalReady(dataDir)) {
+    engine = "local";
+    fellBackTo = "local"; // 熔断开门:本进程内 edge 连续失败已证明环境不可达
+  }
 
   // 句级预取(深度 2):合成是缓存优先的 Promise,不预热的句子是 sync 命中
   const inflight = new Map<number, Promise<SynthOut>>();
@@ -248,8 +261,10 @@ export async function speakMessage(
       try {
         if (i + 1 < sentences.length) void ensure(i + 1).catch(() => {}); // 预热下一句(错误在 await 时统一处理)
         out = await ensure(i);
+        if (engine === "edge") noteEdgeSuccess(); // 熔断计数:成功即清零
       } catch (e) {
         if (engine === "edge" && isLocalReady(dataDir)) {
+          noteEdgeFailure(); // 熔断计数
           // edge 通道抖动 → 剩余句子(含当前句)落 local
           engine = "local";
           fellBackTo = "local";

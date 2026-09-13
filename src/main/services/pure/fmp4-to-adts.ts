@@ -76,6 +76,7 @@ export function fmp4ToAdts(bytes: Uint8Array): Uint8Array {
     for (const traf of sub(moof).filter((b) => b.type === "traf")) {
       for (const tfhd of sub(traf).filter((b) => b.type === "tfhd")) {
         const v = new DataView(bytes.buffer, bytes.byteOffset + tfhd.body, tfhd.end - tfhd.body);
+        if (v.byteLength < 8) continue; // 空/畸形 box:防 RangeError(2026-09-13 审计 P3)
         const flags = (v.getUint8(1) << 16) | (v.getUint8(2) << 8) | v.getUint8(3);
         let p = 4 + 4; // version/flags + trackId
         if (flags & 0x000001) { // base-data-offset(64 位绝对偏移)
@@ -90,6 +91,7 @@ export function fmp4ToAdts(bytes: Uint8Array): Uint8Array {
       }
       for (const trun of sub(traf).filter((b) => b.type === "trun")) {
         const v = new DataView(bytes.buffer, bytes.byteOffset + trun.body, trun.end - trun.body);
+        if (v.byteLength < 8) continue; // 空/畸形 box:防 RangeError(2026-09-13 审计 P3)
         const flags = (v.getUint8(1) << 16) | (v.getUint8(2) << 8) | v.getUint8(3);
         const count = v.getUint32(4);
         let p = 8;

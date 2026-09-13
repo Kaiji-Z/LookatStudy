@@ -10,6 +10,7 @@ import { mkdir, readFile, writeFile, rm, readdir, cp } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { unzipSync } from "fflate";
+import { safeEntryDest, unzipGuardFilter } from "../pure/entry-guard.js";
 import type { CompanionVehicleId } from "../../../../shared/companion-cut.js";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import * as schema from "../../db/schema.js";
@@ -157,7 +158,10 @@ function detectFormat(actionsXmlPath: string, xml: string): string {
  */
 export async function importShimejiZip(db: Db, dataDir: string, zipBase64: string): Promise<ShimejiImportPreview> {
   const zipBuf = Buffer.from(zipBase64, "base64");
-  const entries = unzipSync(new Uint8Array(zipBuf));
+  const entries = unzipSync(new Uint8Array(zipBuf), {
+    // zip-bomb 滤网(2026-09-13 审计):2GB 声明解压总量/20000 条目,超限条目不解压
+    filter: unzipGuardFilter(2 * 1024 ** 3, 20_000),
+  });
   const files: Record<string, Uint8Array> = {};
   for (const [path, data] of Object.entries(entries)) {
     if (!path.startsWith("__MACOSX") && !path.endsWith("/")) files[path.replace(/\\/g, "/")] = data;
@@ -168,9 +172,11 @@ export async function importShimejiZip(db: Db, dataDir: string, zipBase64: strin
   const importId = randomUUID().slice(0, 8);
   const stagingDir = join(stagingRoot(dataDir), importId);
   await mkdir(stagingDir, { recursive: true });
-  // staging 保留完整解压树(confirm 时从这拷选中角色)
+  // staging 保留完整解压树(confirm 时从这拷选中角色)。
+  // 条目名是 zip 内攻击者可控字符串:穿越/绝对路径/盘符一律丢弃(2026-09-13 审计 P0 修复)
   for (const [path, data] of Object.entries(files)) {
-    const target = join(stagingDir, path);
+    const target = safeEntryDest(stagingDir, path);
+    if (!target) continue;
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, data);
   }
@@ -203,14 +209,15 @@ export async function confirmShimejiImport(
   importId: string,
   characterRefs: string[],
 ): Promise<ShimejiPackSummary[]> {
+  if (!/^[0-9a-f]{8}$/.test(importId)) throw new Error(`非法导入会话 id: ${importId}`);
   const stagingDir = join(stagingRoot(dataDir), importId);
   if (!existsSync(stagingDir)) throw new Error(`导入会话不存在或已过期: ${importId}`);
   const created: ShimejiPackSummary[] = [];
   for (const ref of characterRefs) {
     // ref = staging 内帧目录前缀("img" / "<角色>/img" / "img/<品种>" / "<角色>/img/<品种>")
     // conf 在 ref 去掉 /img 与品种段的那层(引擎布局 conf 可在根或角色目录内)
-    const srcImgDir = join(stagingDir, ref);
-    if (!existsSync(srcImgDir)) continue;
+    const srcImgDir = safeEntryDest(stagingDir, ref);
+    if (!srcImgDir || !existsSync(srcImgDir)) continue;
     const name = ref.split("/").pop() ?? ref;
     const confDir = /\/img(\/[^/]+)?$/.test(ref) ? ref.replace(/\/img(\/[^/]+)?$/, "") : "";
     const actionsPath = ["Actions.xml", "actions.xml"]

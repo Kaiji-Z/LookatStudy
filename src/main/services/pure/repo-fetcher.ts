@@ -561,9 +561,8 @@ export function docsToDiscoveredFiles(docs: { path: string; title?: string }[]):
  */
 /**
  * 用 Node 的 https 模块拉取（可单独控制 SSL 验证）。
- * GitHub Tree API 的证书链在部分环境（Node 内置 CA）验证失败（中间证书缺失），
- * 对这一个获取公开文件树的请求用 rejectUnauthorized:false 绕过。
- * 风险可控：获取的是公开文件路径列表（无敏感数据），且只用于此请求。
+ * TLS 恒严格(2026-09-13 审计):调用方不得传 rejectUnauthorized:false——文件树/列表
+ * 决定导入哪些内容,MITM 可改写即污染课程;旧注释"公开文件树无敏感"不成立。
  */
 export function httpsGet(
   url: string,
@@ -620,7 +619,7 @@ export async function fetchRepoFileTree(
     // 大仓库树 JSON 可达 2-4MB;部分网络直连 GitHub 被限速 ~24KB/s(实测 40s 才 948KB),
     // "活着但爬行"的传输不该被总截止掐掉 —— 树扫描单独放宽到 240s(该速度下覆盖 ~5.7MB),
     // 真挂死仍由 20s 空闲超时兜底。取消由 signal 即时撕断,不受 240s 拖累。
-    const r = await httpsGet(apiUrl, { rejectUnauthorized: false, deadlineMs: 240_000, signal });
+    const r = await httpsGet(apiUrl, { deadlineMs: 240_000, signal });
     console.error(`[import] GitHub Tree API: HTTP ${r.status ?? r.error}`);
     if (r.ok && r.body) {
       const data = JSON.parse(r.body) as { tree?: Array<{ path: string; type: string }> };
@@ -635,7 +634,7 @@ export async function fetchRepoFileTree(
   try {
     const r2 = await httpsGet(
       `https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${branch}?structure=flat`,
-      { rejectUnauthorized: false, signal },
+      { signal },
     );
     if (r2.ok && r2.body) {
       const data = JSON.parse(r2.body) as { files?: Array<{ name: string }> };
@@ -814,9 +813,8 @@ export async function fetchRepoImages(
     const results = await Promise.allSettled(
       batch.map(async (ref) => {
         const url = cdnUrl(owner, repo, branch, ref.repoPath);
-        const r = await fetchFn(url);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const buf = Buffer.from(await r.arrayBuffer());
+        // 10MB/图上限(2026-09-13 审计 P2:旧实现无上限,仓库 README 引用大文件即 OOM)
+        const buf = await downloadToBuffer(url, fetchFn, { maxBytes: 10 * 1024 * 1024 });
         const ext = ref.repoPath.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "png";
         return {
           repoPath: ref.repoPath,
@@ -1095,11 +1093,16 @@ export function sanitizeTranslatedMarkdown(md: string): string {
     s = s + "\n" + fence + "\n";
   }
 
-  // 2. 去除危险 HTML 标签(script/style/iframe/object/embed)
-  // react-markdown 默认不渲染 raw HTML(除非 rehype-raw),但保险起见仍剥离
+  // 2. 粗滤危险 HTML(2026-09-13 审计修正:黑名单从 5 标签扩到事件属性/javascript: 协议)。
+  // 注意这是**不完整的黑名单**,真正的净化职责在渲染层 rehype-sanitize schema——
+  // 此处只为主进程侧消费方兜底,不要把它当安全边界。
   s = s.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
   s = s.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
-  s = s.replace(/<\/?(iframe|object|embed)\b[^>]*>/gi, "");
+  s = s.replace(/<\/?(iframe|object|embed|video|audio|source|form|base)\b[^>]*>/gi, "");
+  s = s.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, "");
+  s = s.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, "");
+  s = s.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "");
+  s = s.replace(/(\s(?:href|src)\s*=\s*["']?)\s*javascript:[^"'\s>]*/gi, "$1#");
 
   return s.trim();
 }
@@ -1525,9 +1528,27 @@ export async function downloadToBuffer(
   const maxBytes = opts.maxBytes ?? 64 * 1024 * 1024;
   const r = await fetchFn(url, { signal: opts.signal, headers: opts.headers });
   if (!r.ok) throw new Error(`下载失败(HTTP ${r.status}):${url}`);
-  const buf = Buffer.from(await r.arrayBuffer());
+  // 流式累计截断(2026-09-13 审计 P2):旧实现先 r.arrayBuffer() 全量进内存才查
+  // 上限,恶意/超大响应直接 OOM——上限形同虚设。超限即断流。
+  const chunks: Buffer[] = [];
+  let total = 0;
+  if (r.body) {
+    const reader = r.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`文件超过 ${Math.round(maxBytes / 1024 / 1024)}MB 上限,放弃导入`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } else {
+    chunks.push(Buffer.from(await r.arrayBuffer()));
+  }
+  const buf = Buffer.concat(chunks);
   if (buf.length === 0) throw new Error(`下载内容为空:${url}`);
-  if (buf.length > maxBytes) throw new Error(`文件超过 ${Math.round(maxBytes / 1024 / 1024)}MB 上限,放弃导入`);
   return buf;
 }
 

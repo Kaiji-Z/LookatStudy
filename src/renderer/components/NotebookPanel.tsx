@@ -648,7 +648,6 @@ function ContentTab({
           <ReactMarkdown
             remarkPlugins={mdPipeline.remarkPlugins}
             rehypePlugins={mdPipeline.rehypePlugins}
-            urlTransform={(url) => url}
             components={{
               // 代码块(shiki 高亮)——与对话流同一共享组件(v0.21)
               pre({ children, ...props }) {

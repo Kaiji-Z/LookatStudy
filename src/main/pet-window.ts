@@ -10,8 +10,9 @@
  * 窗口生命周期由设置 companion_pet_mode 驱动(settings:set 钩子 →
  * syncPetWindow)。Electron 壳专属,serve(手机/浏览器)没有这个窗。
  */
-import { BrowserWindow, app, screen } from "electron";
+import { BrowserWindow, app, screen, shell } from "electron";
 import { join, resolve } from "node:path";
+import { isAllowedExternalUrl } from "./lib/external-url.js";
 
 declare const __dirname: string;
 
@@ -54,6 +55,19 @@ export function syncPetWindow(enabled: boolean): void {
     },
   });
   petWin.setAlwaysOnTop(true, "screen-saver");
+  // 与主窗同款的两道导航防线(2026-09-13 审计修复):此窗挂全量 preload,
+  // 却曾缺 setWindowOpenHandler/will-navigate——被内容诱导导航/弹窗即整窗失守。
+  petWin.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternalUrl(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  petWin.webContents.on("will-navigate", (event, url) => {
+    const isInternal = url.startsWith("file://") || url.startsWith(DEV_SERVER_URL) || url.startsWith("about:");
+    if (!isInternal) {
+      event.preventDefault();
+      if (isAllowedExternalUrl(url)) void shell.openExternal(url);
+    }
+  });
   petWin.once("ready-to-show", () => {
     if (!petWin || petWin.isDestroyed()) return;
     petWin.showInactive();

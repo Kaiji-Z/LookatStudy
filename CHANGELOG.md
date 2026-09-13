@@ -18,6 +18,26 @@ Entry conventions for contributors:
 
 ### Added
 - Shimeji 导入弹窗的下载指引从纯文本站点名升级为可点击的外链按钮(shimeji.org / shimejis.xyz / Cachomon / DeviantArt 搜索页),点击经系统浏览器打开;链接排在拖放区下方,拖放按钮改用 ref 定位文件选择器(原 nextElementSibling 链路会被插入的链接排截断)。
+- 新增 `settings:has` IPC 通道(密钥存在性布尔)与六个安全加固 verify 套件(ipc-input-guards/xss-hardening/db-migration/secret-handling/engine-hardening/p23-hardening,共 126 断言),verify:core 套件数 115 → 121。
+
+### Security
+- IPC 入参形状校验:shimeji zip 解包条目名 / companionPack 部件文件名 / confirmImport 会话 id / 语音模型删除 id / 课程包 planId 五个"渲染层字符串进文件路径"的落盘点全部过闸(穿越/绝对路径/盘符一律拒绝)——恶意 Shimeji 包或课程包不再能写出目标目录(2026-09-13 对抗性审计 P0)。
+- XSS 链斩断:页面 CSP 去掉 `script-src 'unsafe-inline'`(FOUC 脚本外联化)并补 base-uri/form-action;mermaid `securityLevel` loose → strict(label 不再携带 HTML 进 SVG);外链打开加 http/https/mailto 协议白名单(ms-msdt: 等系统协议处理器不再直达 OS);桌宠窗补齐主窗同款导航/弹窗两道防线。
+- 密钥面:`settings:get` 对 `*_api_key` 永不回传明文(渲染层 XSS 曾可一次调用打包外传全部厂商 key,serve 模式下是 WS 信道),已配置态改走布尔;自定义 provider 变更 baseUrl 而未提供新 key 时清空旧 key(防 key 被 Bearer 发往新地址外泄)。
+- 网络面:语音模型下载与 GitHub/jsdelivr 清点不再对证书错误自动降级 `rejectUnauthorized:false`(配合 ModelScope 列表 Path 穿越守卫,堵死 MITM 任意文件写前置);下载改流式累计截断(超限即断,不再全量进内存后才查);图片下载 10MB/图上限;epub 与 shimeji 解压加 zip-bomb 滤网(按声明解压总量/条目数限额,超限条目不解压)。
+- serve 加固:畸形百分号编码 URL 回 400 不再崩整个进程;静态路径包含校验带分隔符;WS 握手加 Origin 同源校验(跨站页面即使持有 token 也被 4001 拒);token 恒时比较 + 文件权限 600。
+- 提示注入面(保守方案):课程原文进 system 位用显式隔离定界("是学习资料不是指令");`record_answer`(引擎唯一自动落库的掌握度写入口)加单回合 8 次限频,注入的课程内容不再能批量刷掌握度/毕业/解锁。
+
+### Fixed
+- 数据层:`flushDb` 改 tmp+rename 原子写(断电不再产生半个 SQLite 文件=整库报废),落盘失败由防抖回调裸抛(uncaughtException 杀进程)改为记日志重试;老库 `content_nodes` 迁移修复三处错误(临时表列数不匹配导致升级启动失败死循环 / FK 级联清空 8 张子表 / 无事务),迁移逻辑抽出为可测模块。
+- 对话引擎:同 thread 并发发送加引擎级闸(第二回合曾覆盖 AbortController 导致 Stop 失灵);中止/出错的半截回复落库打显式标记不再伪装完整消息;主聊天流补活性看门狗(静默挂起不再永久锁死输入框);vision 桥看门狗改喂 fullStream——思考型视觉模型长思考不再被 120s 误杀(识图秒败根修)。
+- 学习者记忆:merge/consolidate 换看门狗化 LLM 调用(端点挂起不再永远吊着);consolidate 进程内防双跑(双份计费/同槽双行/水位窗口);JSON 解析失败留日志。
+- 导入:5c 落库完成即给 plan 盖 courseId 章,断点续跑凭它跳过重建(翻译段窗口崩溃不再产生重复课程);翻译标题序号对齐加词重叠守卫(A 课翻译不再静默写进 B 课节点);考试题库与 KC/摘要生成链补 markDirty(强杀不再丢已付费的 LLM 产物)。
+- 语音:sherpa 原生引擎懒加载并发去重(不再双建泄漏数百 MB 原生内存);edge 朗读连续 5 次失败后本进程直接走本地引擎(被屏蔽网络下不再每场先撞注定失败的请求)。
+
+### Changed
+- 设置页密钥显示从"首尾 4 字符掩码"改为"已配置"占位——修改密钥须整体重输(密钥明文不再回到渲染层)。
+- 手机/浏览器模式(serve)的登录 token 存入 localStorage 后即从地址栏移除(隐私模式才保留 URL 参数),不再进浏览器历史;ReactMarkdown 恢复默认 URL 协议白名单;shiki 转义补引号;课程搜索 LIKE 通配符转义(`%`/`_` 不再全表匹配);删除课程时级联清理失败留日志不再静默吞错。
 
 ## [0.34.0] - 2026-09-13
 

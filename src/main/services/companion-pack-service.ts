@@ -294,6 +294,10 @@ export function companionPackDir(dataDir: string, id: string): string {
   return path.join(dataDir, "companion-packs", id);
 }
 
+/** 部件文件名白名单:manifest.parts[].file 参与 path.join,而 manifest 整体来自渲染层
+ *  (applyPack IPC 入参)——只许裸 png 文件名,杜绝穿越(2026-09-13 审计 P0 修复)。 */
+const SAFE_PART_FILE = /^[\w.-]+\.png$/;
+
 export interface CompanionPackApplyInput {
   name: string;
   manifest: CutPackManifest;
@@ -307,7 +311,8 @@ export interface CompanionPackApplyResult {
 
 /**
  * 应用切分包:写盘 + settings 行记激活。id=内容哈希(同名同图重应用=幂等覆盖)。
- * 部件名白名单(PartName|sticker),文件名不做任何用户输入拼接。
+ * 部件名白名单(PartName|sticker);entry.file 再过 SAFE_PART_FILE——manifest 是渲染层
+ * 传入的 IPC 入参,旧注释声称"文件名不做任何用户输入拼接"与实现相反,已修正(2026-09-13 审计)。
  */
 export function applyCompanionPack(
   db: PackDb,
@@ -323,6 +328,7 @@ export function applyCompanionPack(
     if (!validNames.has(part.name)) throw new Error(`部件名不在 manifest 内: ${part.name}`);
     const entry = input.manifest.parts[part.name as keyof typeof input.manifest.parts];
     if (!entry) continue;
+    if (!SAFE_PART_FILE.test(entry.file)) throw new Error(`非法部件文件名: ${entry.file}`);
     fs.writeFileSync(path.join(dir, entry.file), Buffer.from(part.pngBase64, "base64"));
   }
   fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ ...input.manifest, name: input.name }, null, 2));
@@ -354,6 +360,7 @@ export function getActiveCompanionPack(db: PackDb, dataDir: string): ActiveCompa
   }
   const srcs: Record<string, string> = {};
   for (const [name, entry] of Object.entries(manifest.parts) as Array<[string, { file: string }]>) {
+    if (!SAFE_PART_FILE.test(entry.file)) continue;
     const file = path.join(dir, entry.file);
     if (!fs.existsSync(file)) continue;
     srcs[name] = `data:image/png;base64,${fs.readFileSync(file).toString("base64")}`;

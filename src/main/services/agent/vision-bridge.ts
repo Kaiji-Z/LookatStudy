@@ -263,7 +263,7 @@ export async function describeImagesViaBridge(
   userAbortSignal?.addEventListener("abort", onUserAbort);
   wd.signal.addEventListener("abort", onWdAbort);
   try {
-    const { textStream } = streamText({
+    const result = streamText({
       model: vision.languageModel,
       messages: [
         {
@@ -281,8 +281,11 @@ export async function describeImagesViaBridge(
       abortSignal: combined.signal,
     });
     let text = "";
-    for await (const delta of textStream) {
-      text += delta;
+    // fullStream 而非 textStream(2026-09-13 审计 P2):思考型视觉模型的推理增量走
+    // reasoning-delta 不进 textStream,思考 >120s 必被 inactive 看门狗误杀——
+    // import-llm-service 已修同款并写明原因,桥漏了同步(正是识图长思考秒败的那条链)。
+    for await (const part of result.fullStream) {
+      if (part.type === "text-delta") text += part.text;
       wd.touch();
     }
     const description = text.trim();

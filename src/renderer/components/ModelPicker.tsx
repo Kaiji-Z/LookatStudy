@@ -48,7 +48,7 @@ export function ModelPicker({ onGotoSettings }: ModelPickerProps) {
       const cur = provider ?? "glm";
       // 已配置密钥的 preset(并行查 key)+ 当前 provider(即使没 key 也要展示当前值)
       const keyedFlags = await Promise.all(
-        presets.map(async (p) => (await api.getSetting(p.apiKeySetting as SettingKey)) != null),
+        presets.map(async (p) => await api.hasSetting(p.apiKeySetting as SettingKey)),
       );
       const usable = new Set<string>();
       presets.forEach((p, i) => {

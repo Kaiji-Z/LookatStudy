@@ -3178,7 +3178,91 @@ async function runUiTest(screenshot = false): Promise<void> {
     let m2Fixture = "";
     try {
       const napi = await import("@napi-rs/canvas");
-      const cv = napi.createCanvas(400, 600);
+    // ── 地图切课(2026-09-12 用户拍板):点地图顶部课程名 → 课程列表 → 切换 ──
+    // 此刻流程已把唯一 seed 课删除,先造第二门课(dsh 通道,两门课 state,确定性无 LLM),
+    // 再走导入面板选课 → 地图头部课程名 → 菜单 → 切到另一门。
+    const mapSwitch = await win.webContents
+      .executeJavaScript(
+        `
+      (async function() {
+        try {
+          var q = function(s) { return document.querySelector(s); };
+          var sleep = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+          var dclose = q('[data-testid="settings-close"]');
+          if (dclose) { dclose.click(); await sleep(400); }
+          // ① 造第二/三门课(最小 dsh state,两门)
+          var courses0 = (await window.api.listCourses()).length;
+          if (courses0 < 2) {
+            var mk = function(id, title) {
+              return { id: id, title: title, sections: [{ title: "第一章", lessons: [
+                { id: id + ":0:0", title: "课一", kind: "study", status: "in_progress", mastery: 0.4, body: "# 一" },
+                { id: id + ":0:1", title: "课二", kind: "study", status: "mastered", mastery: 0.9, body: "# 二" }
+              ] }] };
+            };
+            var state = { version: 2, courses: [mk("uitest-sw-a", "切课测试甲"), mk("uitest-sw-b", "切课测试乙")], xp: { total: 0, todayKey: new Date().toISOString().slice(0, 10), todayXp: 0 }, streak: { currentStreak: 0, longestStreak: 0, lastActiveDate: new Date().toISOString().slice(0, 10), freezeCount: 0 } };
+            await window.api.dshImportFromText(JSON.stringify(state));
+            for (var w = 0; w < 30; w++) {
+              await sleep(300);
+              if ((await window.api.listCourses()).length >= 2) break;
+            }
+          }
+          var count = (await window.api.listCourses()).length;
+          if (count < 2) return { ok: false, reason: "still single course", count: count };
+          // ② 导入面板点第一行选课(未选课时地图头部无切换按钮;ImportPanel 选课自动切回地图)
+          var tabImport = q('[data-testid="map-tab-import"]');
+          if (tabImport) tabImport.click();
+          await sleep(400);
+          var row = q('[data-testid="course-list"] button');
+          if (!row) {
+            var rows = document.querySelectorAll('[data-testid="course-list"] button, [data-testid="import-panel"] button');
+            row = rows[0] || null;
+          }
+          if (!row) return { ok: false, reason: "no course row", count: count };
+          row.click();
+          var btn = null;
+          for (var i = 0; i < 20; i++) {
+            await sleep(250);
+            btn = q('[data-testid="map-course-switch"]');
+            if (btn) break;
+          }
+          if (!btn) return { ok: false, reason: "no map-course-switch", count: count };
+          var before = btn.textContent.trim();
+          btn.click();
+          var menu = null;
+          for (var j = 0; j < 20; j++) {
+            await sleep(200);
+            menu = q('[data-testid="map-course-menu"]');
+            if (menu) break;
+          }
+          if (!menu) return { ok: false, reason: "no menu", before: before };
+          var opts = menu.querySelectorAll('button[data-testid^="map-course-option-"]');
+          var target = null;
+          for (var j2 = 0; j2 < opts.length; j2++) {
+            if (opts[j2].textContent.trim() !== before) { target = opts[j2]; break; }
+          }
+          if (!target) return { ok: false, reason: "no other course option", before: before, count: opts.length };
+          var targetName = target.textContent.trim();
+          target.click();
+          var after = "";
+          for (var k = 0; k < 20; k++) {
+            await sleep(250);
+            var b2 = q('[data-testid="map-course-switch"]');
+            after = b2 ? b2.textContent.trim() : "";
+            if (after === targetName) break;
+          }
+          return { ok: after === targetName && after !== before, before: before, after: after, count: opts.length };
+        } catch (e) { return { ok: false, error: String(e) }; }
+      })()
+    `,
+      )
+      .catch(() => null);
+    results.push({
+      name: "map: 点击地图课程名弹出列表并切换课程",
+      ok: mapSwitch?.ok === true,
+      detail: mapSwitch,
+    });
+
+    const cv = napi.createCanvas(400, 600);
       const c = cv.getContext("2d");
       c.fillStyle = "#00b140";
       c.fillRect(0, 0, 400, 600);

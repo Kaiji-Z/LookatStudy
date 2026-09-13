@@ -369,6 +369,17 @@ export default function App() {
     refreshAll();
   }, [refreshAll]);
 
+  // 轻量刷新:只拉全局 due 集合(复习徽章数据源)。
+  // 复习自评/quiz 答题只发 state:changed "xp"、不发 mastery(自评不动 BKT),
+  // 不在这里补刷的话,复习完成后地图上的复习徽章会一直挂着。
+  const refreshDue = useCallback(async () => {
+    try {
+      setDueNodeIds(new Set(await api.getDueReviews()));
+    } catch {
+      /* 徽章数据拉取失败不打扰用户,下次事件再试 */
+    }
+  }, []);
+
   // 检查 AI 就绪 + 监听配置变更
   const checkReady = useCallback(async () => {
     try {
@@ -422,11 +433,13 @@ export default function App() {
           // 首次跨越 100 → 能量充满庆祝(prev<100 防已超 100 后重复触发)
           if (prevXpRef.current < 100 && x.todayXp >= 100) celebrate("energy-full");
         }).catch(() => {});
+        void refreshDue();
       } else if (kind === "streak") {
         api.getStreak().then((s) => {
           setStreak(s);
           if (s.currentStreak > prevStreakRef.current) celebrate("streak");
         }).catch(() => {});
+        void refreshDue();
       } else if (kind === "mastery") {
         // mastery 变化(答题毕业/proposal apply)→ 加冕庆祝 + 刷新 xp/streak/due + 重载进度图
         celebrate("mastery");
@@ -435,7 +448,7 @@ export default function App() {
       }
     });
     return off;
-  }, [refreshAll, reloadCourseProgress]);
+  }, [refreshAll, refreshDue, reloadCourseProgress]);
 
   useEffect(() => {
     if (!selectedCourseId) return;

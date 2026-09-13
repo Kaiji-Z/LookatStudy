@@ -8,7 +8,7 @@
 import type { ContentNode, Progress, Course } from "@shared/types";
 import { UNLOCK_MASTERY_THRESHOLD } from "@shared/types";
 import { useState, useEffect, useRef, type CSSProperties, Suspense, lazy } from "react";
-import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic, Loader2 } from "lucide-react";
+import { Map as MapIcon, FileText, BookOpen, Target, Plus, FolderDown, Link as LinkIcon, Trash2, Check, Globe, Wrench, Search, Package, Mic, Loader2, ChevronDown } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { companionBallTap, companionImportDone, companionImporting, companionRailRegister, companionRailUnregister, companionRailWorld, companionWhistle } from "../lib/companion/bus.ts";
 import {
@@ -166,6 +166,8 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean; width?: num
 
   /** 删除课程确认浮层(导入面板课程行 + 地图头当前课删除按钮共用,Portal 到 body) */
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string; rect: DOMRect } | null>(null);
+  // 课程切换浮层(2026-09-12 用户拍板):切课不必去导入页,点地图顶部课程名即弹列表
+  const [courseSwitchOpen, setCourseSwitchOpen] = useState(false);
 
   // Phase 2: 检测节点从 locked→available 的解锁瞬间,触发 celebrate("unlock") 粒子(完成 7 触点闭环)。
   // 比较 progressMap 前后状态;首次加载(prev 为空)不触发,防误报。
@@ -225,11 +227,26 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean; width?: num
         </div>
         {/* 标题/进度条(仅地图面板显示) */}
         {panel === "map" && (
-          <div className="px-3 py-2 rounded-lg pointer-events-auto" style={{ background: "rgb(var(--surface-rail-rgb) / 0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
+          <div className="relative px-3 py-2 rounded-lg pointer-events-auto" style={{ background: "rgb(var(--surface-rail-rgb) / 0.55)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
             <div className="flex items-center gap-1.5">
-              <h2 className="text-body font-extrabold text-white truncate flex-1" data-tooltip={props.courseTitle ?? ""}>
-                {props.courseTitle ?? t("map.course.none")}
-              </h2>
+              {props.courseId && props.courses.length > 0 ? (
+                <button
+                  type="button"
+                  data-testid="map-course-switch"
+                  onClick={() => setCourseSwitchOpen((v) => !v)}
+                  data-tooltip={t("map.course.switch")}
+                  className="flex-1 min-w-0 flex items-center gap-1 text-left rounded-md px-1 -mx-1 py-0.5 hover:bg-white/10 motion-safe:transition-colors"
+                >
+                  <h2 className="text-body font-extrabold text-white truncate flex-1" data-tooltip={props.courseTitle ?? ""}>
+                    {props.courseTitle ?? t("map.course.none")}
+                  </h2>
+                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-white/50 motion-safe:transition-transform ${courseSwitchOpen ? "rotate-180" : ""}`} />
+                </button>
+              ) : (
+                <h2 className="text-body font-extrabold text-white truncate flex-1" data-tooltip={props.courseTitle ?? ""}>
+                  {props.courseTitle ?? t("map.course.none")}
+                </h2>
+              )}
               {props.availableLanguages.length > 0 && (
                 <LanguageSwitcher
                   available={props.availableLanguages}
@@ -253,6 +270,32 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean; width?: num
                 </button>
               )}
             </div>
+            {/* 课程切换浮层:列出全部课程,当前课标亮,点选即切(onSelectCourse 与导入页同源) */}
+            {courseSwitchOpen && (
+              <>
+                <div className="fixed inset-0 z-40" data-noswipe="" onClick={() => setCourseSwitchOpen(false)} />
+                <div
+                  className="absolute left-3 right-3 top-full mt-1 z-50 rounded-lg border border-white/10 bg-[#141a26]/95 backdrop-blur-xl shadow-elevated overflow-hidden"
+                  data-testid="map-course-menu"
+                >
+                  {props.courses.map((c) => {
+                    const sel = c.id === props.courseId;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        data-testid={`map-course-option-${c.id}`}
+                        onClick={() => { props.onSelectCourse(c.id); setCourseSwitchOpen(false); }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-left text-label transition-colors ${sel ? "text-brand bg-brand/10 font-bold" : "text-white/80 hover:bg-white/10"}`}
+                      >
+                        <span className="flex-1 truncate">{c.title}</span>
+                        {sel && <Check className="w-3.5 h-3.5 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
             <div className="mt-1.5 flex items-center gap-2">
               <div className="flex-1 h-2.5 bg-black/40 rounded-full overflow-hidden ring-1 ring-white/10">
                 <div className={`h-full rounded-full transition-all duration-500 ${masteryPct >= 100 ? "bg-gold" : "bg-brand"}`} style={{ width: `${Math.max(3, masteryPct)}%` }} />

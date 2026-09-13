@@ -15,6 +15,7 @@
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
+import { eq } from "drizzle-orm";
 import * as schema from "../db/schema.js";
 import { executeImport } from "./import-pipeline.js";
 import {
@@ -598,6 +599,22 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         ? new Map([[selectedLang, roles.translations.get(selectedLang) ?? []]])
         : null;
 
+      // 2026-09-13 审计 F18:5c 落库后、翻译段窗口崩溃 → plan 已被 onCoursePersisted
+      // 盖章。resume 时课程在库就跳过整个 Step5,不再产生同内容第二门课。
+      if (plan.courseId) {
+        const existingCourse = db
+          .select({ id: schema.courses.id })
+          .from(schema.courses)
+          .where(eq(schema.courses.id, plan.courseId))
+          .get();
+        if (existingCourse) {
+          plan.updatedAt = now();
+          store.save(plan);
+          send("✓ 检测到已落库课程，断点续跑跳过重建");
+          return { courseId: plan.courseId, title: plan.courseTitle ?? "", planId, reused: true };
+        }
+      }
+
       const result = await executeImport(
         db,
         structure,
@@ -613,6 +630,13 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
           languageTarget: roles.languageTarget,
           shouldAbort,
           markDirty,
+          onCoursePersisted: (courseId) => {
+            // 5c 落库完成即盖章:翻译段是 crash 窗口,崩了 resume 也不再重跑 Step5
+            plan.courseId = courseId;
+            plan.courseTitle = structure.courseTitle?.trim() || repoName;
+            plan.updatedAt = now();
+            store.save(plan);
+          },
         },
         send,
       );

@@ -61,6 +61,9 @@ export async function executeImport(
     /** 后台导入的取消信号：返回 true 时在拉取阶段抛"导入已取消"（写库前，零残留） */
     shouldAbort?: () => boolean;
     markDirty: () => void;
+    /** 5c 落库段完成即回调(2026-09-13 审计 F18):调用方此时给 plan 盖 courseId 章,
+     *  翻译段崩溃后 resume 凭它跳过重建,不再产生重复课程。 */
+    onCoursePersisted?: (courseId: string) => void;
   },
   onProgress?: (msg: string) => void,
 ): Promise<ImportPipelineResult> {
@@ -238,6 +241,9 @@ export async function executeImport(
     db.delete(courses).where(eq(courses.id, courseId)).run();
     throw e;
   }
+
+  // 5c 落库完成:向调用方盖章(翻译段是 crash 窗口,2026-09-13 审计 F18)
+  opts.onCoursePersisted?.(courseId);
 
   // ── 翻译落库 ──
   if (opts.langCode && opts.translationFiles) {

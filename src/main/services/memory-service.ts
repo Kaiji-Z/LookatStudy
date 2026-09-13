@@ -198,13 +198,15 @@ function upsertSlot(
  */
 export function defaultLlmMerge(llm: unknown): MergeFn {
   return async (existing, incoming) => {
-    const { generateText } = await import("ai");
+    // generateTextWithTimeout(动态 import,测试 stub 不触此链):裸 generateText
+    // 不可 abort、无看门狗,端点挂起时 fire-and-forget 的记忆合并永远吊着(2026-09-13 审计 P2)
+    const { generateTextWithTimeout } = await import("./import-llm-service.js");
     const prompt = existing
       ? `你是记忆合并器。现有学习者记忆:\n${existing}\n\n新观察到的事实:\n${incoming}\n\n` +
         `合并成一条简洁中文 summary:去重(意思一样的并起来)、解冲突(矛盾处以新事实为准,但持久事实如背景/目标别丢)、控制在 3-5 句内。只输出 summary 正文,不要前后缀。`
       : `把以下事实整理成一条简洁中文 summary(学习者记忆,3-5 句内,只输出正文):\n${incoming}`;
-    const res = await generateText({ model: llm as never, prompt });
-    return (res.text || incoming).trim();
+    const text = await generateTextWithTimeout(llm as never, prompt);
+    return (text || incoming).trim();
   };
 }
 
@@ -245,7 +247,26 @@ export type ConsolidateFn = (
  * 触发无关:window 由调用方采集传入;合并由 consolidateFn 做(它收到 existing)。
  * @returns 实际写入的类别 summary(未返回的类别不写)
  */
+// 进程内防双跑(2026-09-13 审计 P3):里程碑 fire-and-forget 与手动 consolidate:run
+// 并发时,双份 LLM 调用烧钱 + upsertSlot 同槽双行 + watermark 差值窗口丢增量。
+let consolidateInFlight: Promise<ConsolidatedMemory> | null = null;
+
 export async function consolidate(
+  db: Db,
+  win: ConsolidationWindow,
+  fn: ConsolidateFn,
+): Promise<ConsolidatedMemory> {
+  if (consolidateInFlight) return consolidateInFlight;
+  const run = runConsolidate(db, win, fn);
+  consolidateInFlight = run;
+  try {
+    return await run;
+  } finally {
+    consolidateInFlight = null;
+  }
+}
+
+async function runConsolidate(
   db: Db,
   win: ConsolidationWindow,
   fn: ConsolidateFn,
@@ -384,7 +405,8 @@ export function setConsolidationWatermark(db: Db, courseId: string): string {
  */
 export function defaultLlmConsolidate(llm: unknown): ConsolidateFn {
   return async (win, existing) => {
-    const { generateText } = await import("ai");
+    // 同 defaultLlmMerge:看门狗化(动态 import 保测试链干净)
+    const { generateTextWithTimeout } = await import("./import-llm-service.js");
     const prompt =
       `你是学习者记忆固化器。从下面的原始数据提炼/更新学习者记忆(跨会话用)。\n\n` +
       `【原始数据】\n对话:\n${win.conversation.map((m) => `- ${m.role}: ${m.content}`).join("\n") || "(无)"}\n` +
@@ -395,16 +417,18 @@ export function defaultLlmConsolidate(llm: unknown): ConsolidateFn {
       `- global=学习风格/偏好/目标(从对话推);node=本节点(${win.nodeId ?? "?"})具体缺口;friction_pattern=跨节点反复模式\n` +
       `- 把新观察和 existing 合并、去重;某类有 existing 但本次无新观察→输出 existing 原值(保留);既无 existing 也无新观察→省略该键\n` +
       `- 只输出 JSON,不要前后缀。如 {"global":"...","friction_pattern":"..."}`;
-    const res = await generateText({ model: llm as never, prompt });
+    const text = await generateTextWithTimeout(llm as never, prompt);
     try {
-      const parsed = JSON.parse(res.text.trim().replace(/^```json\s*|\s*```$/g, ""));
+      const parsed = JSON.parse(text.trim().replace(/^```json\s*|\s*```$/g, ""));
       const out: ConsolidatedMemory = {};
       for (const k of ["global", "node", "friction_pattern"] as const) {
         if (typeof parsed[k] === "string" && parsed[k].trim()) out[k] = parsed[k].trim();
       }
       return out;
-    } catch {
-      return {}; // LLM 返回非合法 JSON → 不写(保守,不破坏现有 memory)
+    } catch (e) {
+      // 静默 no-op 是对的(保守,不破坏现有 memory),但完全不可观测不对(2026-09-13 审计 P2)
+      console.error("[memory] consolidate 返回非合法 JSON,本次固化跳过:", e instanceof Error ? e.message : e);
+      return {};
     }
   };
 }

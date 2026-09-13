@@ -15,6 +15,7 @@
  * 本模块的可测部分（system prompt 装配 + 工具 schema + proposal 创建）由 verify-agent.mjs 覆盖。
  */
 import { streamText, tool, stepCountIs, type ToolSet, type ModelMessage } from "ai";
+import { createStreamWatchdog, type StreamWatchdog } from "../pure/stream-watchdog.js";
 import { z } from "zod";
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import { eq } from "drizzle-orm";
@@ -641,6 +642,15 @@ export async function runAgentTurn(
     });
   }
 
+  // 声明在 try 外:catch 收尾(看门狗断开/中止)也要引用——try 块级 let 对 catch 不可见。
+  // 活性看门狗(2026-09-13 审计 P2):端点 accept 后静默挂起时 chat:done 永不到达,
+  // 渲染层输入框永久锁死。消费 fullStream——思考模型 reasoning 增量也喂狗
+  // (import-llm-service 既修方案同款);360s inactive / 20min 硬上限,慢思考不误杀。
+  const CHAT_WD_INACTIVE_MS = 360_000;
+  const CHAT_WD_HARD_CAP_MS = 20 * 60_000;
+  let chatWd: StreamWatchdog | null = null;
+  let accParts: ChatMessagePart[] = [];
+
   try {
     // 历史预算裁剪(2026-08-31):装配层曾每轮全量注入对话历史,长对话成本与窗口
     // 压力线性增长、最终撞上下文上限直接 400。从最新往回按预算保留(最旧先丢),
@@ -857,28 +867,29 @@ export async function runAgentTurn(
     let attemptMessages = preparedMessages;
     let fuseUsed = false;
     let full = "";
-    let sawError = false;
-    let accParts: ChatMessagePart[] = [];
+  let sawError = false;
     const emit = (sp: ChatStreamPart) => {
       events.onPart?.(sp);
       accParts = accumulatePart(accParts, sp);
     };
 
     while (true) {
-      const result = streamText({
-        model: chatModel,
-        ...(providerOptions ? { providerOptions } : {}),
-        system: `${system}\n\n${nodeContext}${
-          learnerSnapshot ? `\n\n${learnerSnapshot}` : ""
-        }`,
-        messages: attemptMessages,
-        tools,
-        stopWhen: stepCountIs(6),
-        abortSignal,
-      });
+    chatWd = createStreamWatchdog(CHAT_WD_INACTIVE_MS, CHAT_WD_HARD_CAP_MS);
+    const result = streamText({
+      model: chatModel,
+      ...(providerOptions ? { providerOptions } : {}),
+      system: `${system}\n\n${nodeContext}${
+        learnerSnapshot ? `\n\n${learnerSnapshot}` : ""
+      }`,
+      messages: attemptMessages,
+      tools,
+      stopWhen: stepCountIs(6),
+      abortSignal: abortSignal ? AbortSignal.any([abortSignal, chatWd.signal]) : chatWd.signal,
+    });
 
       let fuseBreak = false;
       for await (const part of result.fullStream) {
+        chatWd.touch(); // 任何 part 都算活性(含 reasoning-delta)
         if (part.type === "text-delta") {
           full += part.text;
           events.onTextDelta?.(part.text);
@@ -902,6 +913,8 @@ export async function runAgentTurn(
           events.onError?.(classified.detail);
         }
       }
+      chatWd.dispose();
+      chatWd = null;
       if (!fuseBreak) break;
 
       // 降级:重建消息,桥接(有 vision 覆盖)或跳过图片
@@ -952,6 +965,18 @@ export async function runAgentTurn(
     }
     return { text: full, parts: accParts };
   } catch (e) {
+    const wdWhy = chatWd?.reason() ?? null;
+    chatWd?.dispose();
+    chatWd = null;
+    if (wdWhy) {
+      // 看门狗断开是错误,不是用户停止(2026-09-13 审计 P2)
+      const msg =
+        wdWhy === "inactive"
+          ? "模型连接 6 分钟无输出（疑似挂起），已自动断开。可重试或更换模型。"
+          : "模型连接超过 20 分钟硬上限，已自动断开。";
+      events.onError?.(msg);
+      return { text: `(Agent 出错：${msg})`, parts: accParts };
+    }
     // AbortError 是正常的停止，不报错
     if (e instanceof Error && (e.name === "AbortError" || abortSignal?.aborted)) {
       return { text: "(已停止)", parts: [] };
@@ -980,8 +1005,12 @@ export async function handleAgentChat(
   const history = loadChatHistory(db, nodeId);
   history.push({ role: "user", content: userMessage });
 
-  // 为本次回复建 AbortController，登记到 map（abortAgentChat 可调）
+  // 为本次回复建 AbortController，登记到 map（abortAgentChat 可调）。
+  // 并发闸 + 中止标记(2026-09-13 审计 P1):同 thread 版同款。
   const controller = new AbortController();
+  if (abortControllers.has(nodeId)) {
+    throw new Error("该对话正在回复中，请先停止或等待本轮结束");
+  }
   abortControllers.set(nodeId, controller);
 
   const reply = await runAgentTurn(
@@ -1002,7 +1031,11 @@ export async function handleAgentChat(
     },
     controller.signal,
     locale,
-  ).then((r) => r.text);
+  ).then((r) =>
+    controller.signal.aborted && r.text && r.text !== "(已停止)"
+      ? `${r.text}\n\n（本轮已被用户中止，内容可能不完整。）`
+      : r.text,
+  );
 
   abortControllers.delete(nodeId);
 
@@ -1172,11 +1205,20 @@ export async function handleAgentChatThread(
     .get();
   const focusNodeId = threadRow?.focusNodeId ?? threadId; // fallback:无焦点就用 threadId(不理想,但防崩)
 
-  // AbortController 按 threadId 登记
+  // AbortController 按 threadId 登记。
+  // 引擎级并发闸(2026-09-13 审计 P1):渲染层 bucket 只防单客户端——serve 模式
+  // 多浏览器端/双 tab 可对同一 thread 并发,旧实现第二次 set 覆盖 controller,
+  // 第一回合结束把第二回合的 controller 误删,此后 Stop 失灵只能烧完。
+  const ctrlKey = `thread:${threadId}`;
+  if (abortControllers.has(ctrlKey)) {
+    throw new Error("该对话正在回复中，请先停止或等待本轮结束");
+  }
   const controller = new AbortController();
-  abortControllers.set(`thread:${threadId}`, controller);
+  abortControllers.set(ctrlKey, controller);
 
-  const { text: reply, parts } = await runAgentTurn(
+  let turn: Awaited<ReturnType<typeof runAgentTurn>>;
+  try {
+    turn = await runAgentTurn(
     db,
     focusNodeId,
     history,
@@ -1195,8 +1237,17 @@ export async function handleAgentChatThread(
     locale,
     imageAtts.map((a) => ({ mediaType: a.mime, base64: a.data })),
   );
+  } finally {
+    abortControllers.delete(ctrlKey);
+  }
 
-  abortControllers.delete(`thread:${threadId}`);
+  // 中止的半截回复不伪装成完整消息进下轮上下文(2026-09-13 审计 P1):
+  // 落库时打显式标记,下轮装配原样带给模型。
+  let reply = turn.text;
+  if (controller.signal.aborted && reply && reply !== "(已停止)") {
+    reply = `${reply}\n\n（本轮已被用户中止，内容可能不完整。）`;
+  }
+  const parts = turn.parts;
 
   // assistant 回复入库 —— 同时持久化 parts_json(产物/提议卡/思考过程),
   // 让切走再回来的消息能复原全部 part,不再只剩纯文本。

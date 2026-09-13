@@ -517,8 +517,10 @@ export default function App() {
           thread.setActiveId(list[nextIdx]!.id);
         }
       }
-      // 数字键切换视图(非输入框焦点)
-      if (!e.target || !(e.target as HTMLElement).matches("input, textarea, select")) {
+      // 数字键切换视图(非输入框焦点)。instanceof Element 守卫:合成事件/无焦点时
+      // target 可能是 window/document(无 .matches),裸调会抛 TypeError(测试装置
+      // dispatchEvent 实测踩到,33 时代就存在只是日志没转发)。
+      if (!(e.target instanceof Element) || !e.target.matches("input, textarea, select")) {
         if (e.key === "1") setView("map");
         if (e.key === "2") setView("import");
         if (e.key === "s" && (e.ctrlKey || e.metaKey)) {

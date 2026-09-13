@@ -74,6 +74,9 @@ export interface ImportPlan {
   createdAt: string;
   updatedAt: string;
   /** 已完成的最后一步(1=清单 2=分类 3=大纲 4=结构);Step5 成功另有 courseId 回填 */
+  /** Step5 完全成功的盖章(含翻译落库);缺省=中断在途——resume 凭 courseId+无 completedAt
+   *  跳过重建,已完成的重导则照常复制新课程(2026-09-13 审计 F18 的完成/崩溃区分) */
+  completedAt?: string;
   reachedStep: 1 | 2 | 3 | 4;
   /** Step5 成功后回填(plan 保留,作为课程包源 + 同仓库再导入的复用依据) */
   courseId?: string;

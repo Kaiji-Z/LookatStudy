@@ -600,8 +600,10 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
         : null;
 
       // 2026-09-13 审计 F18:5c 落库后、翻译段窗口崩溃 → plan 已被 onCoursePersisted
-      // 盖章。resume 时课程在库就跳过整个 Step5,不再产生同内容第二门课。
-      if (plan.courseId) {
+      // 盖章(courseId,无 completedAt)。resume 时课程在库就跳过整个 Step5,不再产生
+      // 同内容第二门课;**已完成的重导**(completedAt 在)不进此分支——产品语义是
+      // 复制一门新课程(verify-import-plan T8 锁定)。
+      if (plan.courseId && !plan.completedAt) {
         const existingCourse = db
           .select({ id: schema.courses.id })
           .from(schema.courses)
@@ -643,6 +645,7 @@ export async function runSmartImport(spec: ImportSpec, deps: RunImportDeps): Pro
       plan.courseId = result.courseId;
       plan.courseTitle = result.title;
       plan.updatedAt = now();
+      plan.completedAt = now(); // 完成章:与崩溃在途(只有 onCoursePersisted 的 courseId)区分
       store.save(plan);
       console.error(`[import-plan] course stamped id=${planId.slice(0, 8)} course=${result.courseId}`);
       markDirty();

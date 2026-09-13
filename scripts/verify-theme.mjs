@@ -180,9 +180,15 @@ check(/auto.*light.*dark|ThemeMode/.test(themeHookSrc), "T4 useTheme 三态类�
 check(themeHookSrc.includes("theme-changed"), "T4 useTheme 派发 theme-changed 事件");
 check(themeHookSrc.includes("matchMedia"), "T4 useTheme 监听系统主题");
 
-// T5: index.html
+// T5: index.html(FOUC 脚本 2026-09-13 审计外联化:script-src 去 unsafe-inline,
+//     内联脚本迁 public/fouc.js,行为不变——断言改为 外联引用 + fouc.js 含主题逻辑)
 check(!/class="dark"/.test(indexHtml), "T5 index.html 不再硬编码 class=dark");
-check(/localStorage.*lookatstudy-theme/.test(indexHtml), "T5 index.html 有 FOUC 防闪烁脚本");
+check(indexHtml.includes('<script src="./fouc.js"></script>'), "T5 index.html 外联引用 fouc.js");
+check(
+  existsSync("src/renderer/public/fouc.js") &&
+    /localStorage.*lookatstudy-theme/.test(readFileSync("src/renderer/public/fouc.js", "utf8")),
+  "T5 public/fouc.js 有 FOUC 防闪烁脚本",
+);
 
 // T6: GlobalTooltip 用 CSS 变量
 check(/var\(--surface-0-rgb\)/.test(tooltipSrc), "T6 GlobalTooltip 用 surface-0-rgb 变量");

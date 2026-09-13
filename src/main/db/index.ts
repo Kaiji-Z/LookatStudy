@@ -14,9 +14,10 @@
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import { drizzle, type SQLJsDatabase } from "drizzle-orm/sql-js";
 import { join, dirname } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as schema from "./schema.js";
+import { ensureExamTypeAllowed } from "./migrate-content-nodes.js";
 
 // vite ?raw import：构建时把 schema.sql 内容内联成字符串。
 // 这是 schema 的唯一来源 —— schema.ts 和 verify-db.mjs 都从此派生。
@@ -77,15 +78,26 @@ export function markDirty(): void {
   _saveTimer = setTimeout(flushDb, 500);
 }
 
-/** 立即同步到磁盘（app 退出前必调） */
+/** 立即同步到磁盘（app 退出前必调）。
+ *  tmp+rename 原子写(2026-09-13 审计 P0 修复):裸 writeFileSync 截断覆盖,写盘中途
+ *  断电=半个 SQLite 文件=整库报废;同目录 rename 在 NTFS/ext4 上原子。
+ *  落盘失败(磁盘满/杀毒瞬时锁)不再裸抛——旧实现在防抖回调里抛=uncaughtException
+ *  杀进程,这里改为记日志+2s 后重试(2026-09-13 审计 P1)。 */
 export function flushDb(): void {
   if (!_sqljs || !_dbPath) return;
   if (_saveTimer) {
     clearTimeout(_saveTimer);
     _saveTimer = null;
   }
-  const data = _sqljs.export();
-  writeFileSync(_dbPath, Buffer.from(data));
+  const tmp = `${_dbPath}.tmp`;
+  try {
+    const data = _sqljs.export();
+    writeFileSync(tmp, Buffer.from(data));
+    renameSync(tmp, _dbPath);
+  } catch (e) {
+    console.error("[db] flushDb 落盘失败,2s 后重试:", e);
+    _saveTimer = setTimeout(flushDb, 2000);
+  }
 }
 
 export async function initDb(opts?: { dataDir?: string }): Promise<void> {
@@ -249,31 +261,3 @@ function migrateSoulRename(db: Database): void {
   db.run(`DELETE FROM settings WHERE key='flag_skill_system'`);
 }
 
-/** 重建 content_nodes 表以加入 'exam' 到 type CHECK 约束(SQLite 不能直接改 CHECK)。
- *  幂等:若现有 CHECK 已含 'exam' 则跳过。 */
-function ensureExamTypeAllowed(db: Database): void {
-  // 查现有表 schema,看 CHECK 里有没有 'exam'
-  const schemaRows = db.exec(`SELECT sql FROM sqlite_master WHERE type='table' AND name='content_nodes'`);
-  if (schemaRows.length === 0) return; // 表不存在(新库由 schema.sql 建,已含 exam)
-  const currentSchema = String(schemaRows[0].values[0][0] ?? "");
-  if (currentSchema.includes("'exam'")) return; // 已有 exam 约束,无需迁移
-
-  // SQLite 重建表标准流程:建临时表 → 复制 → 删旧 → 重命名。
-  // 外键引用(threads.focus_node_id 等)在 sql.js 下不受影响(没有 ON UPDATE CASCADE 需求,id 不变)。
-  db.run(`CREATE TABLE content_nodes_new (
-    id TEXT PRIMARY KEY,
-    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-    parent_id TEXT,
-    type TEXT NOT NULL CHECK (type IN ('section', 'lesson', 'concept', 'exam')),
-    title TEXT NOT NULL,
-    source_path TEXT,
-    order_idx INTEGER NOT NULL DEFAULT 0,
-    content TEXT
-  )`);
-  db.run(`INSERT INTO content_nodes_new SELECT * FROM content_nodes`);
-  db.run(`DROP TABLE content_nodes`);
-  db.run(`ALTER TABLE content_nodes_new RENAME TO content_nodes`);
-  // 重建索引(原索引随 DROP TABLE 消失)
-  db.run(`CREATE INDEX IF NOT EXISTS idx_content_nodes_course ON content_nodes(course_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_content_nodes_parent ON content_nodes(parent_id)`);
-}

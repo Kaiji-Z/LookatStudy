@@ -81,7 +81,7 @@ const BATCH_RETRY = 1;
  * 否则后台启动(不阻塞,进度走 exam:status 事件),立即返回 generating。
  */
 /** locale: 界面语言(i18n)——用户偏好什么界面就偏好什么输出;null/缺省 = zh-CN。题库一次性生成,语言在生成时定格。 */
-export function prepareExam(db: Db, examNodeId: string, locale?: string | null): ExamStatus {
+export function prepareExam(db: Db, examNodeId: string, locale?: string | null, markDirty?: () => void): ExamStatus {
   const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
   if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
 
@@ -101,7 +101,7 @@ export function prepareExam(db: Db, examNodeId: string, locale?: string | null):
 
   // 启动后台生成。generateExamBank 的同步前缀(节点检查+KC 收集+setGenerating)
   // 在本函数返回前执行完,因此这里 peek 一定拿到 generating 态。
-  const p = generateExamBank(db, examNodeId, locale);
+  const p = generateExamBank(db, examNodeId, locale, markDirty);
   setPromise(examNodeId, p);
   const state = peek(examNodeId);
   return state
@@ -116,7 +116,7 @@ export function prepareExam(db: Db, examNodeId: string, locale?: string | null):
  * - attempt 档案与 progress.crownLevel(历史星数)保留——重新出题不否定历史成绩
  * - 旧题删除后,历史 attempt 的逐题回顾靠判分时快照的 prompt/options 自包含
  */
-export function regenerateExam(db: Db, examNodeId: string, locale?: string | null): ExamStatus {
+export function regenerateExam(db: Db, examNodeId: string, locale?: string | null, markDirty?: () => void): ExamStatus {
   const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
   if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
 
@@ -136,9 +136,10 @@ export function regenerateExam(db: Db, examNodeId: string, locale?: string | nul
   }
 
   db.delete(exercisesTable).where(eq(exercisesTable.nodeId, examNodeId)).run();
+  markDirty?.(); // 删旧题立即标脏(2026-09-13 审计 F6:题库链路曾整体零 markDirty,强杀丢题库=重新计费)
 
   // generateExamBank 的同步前缀里 setGenerating 会覆盖 store 旧条目(ready/failed 复位)
-  const p = generateExamBank(db, examNodeId, locale);
+  const p = generateExamBank(db, examNodeId, locale, markDirty);
   setPromise(examNodeId, p);
   const state = peek(examNodeId);
   return state
@@ -270,7 +271,7 @@ function batchKcs(kcs: ChapterKc[], quotas: number[]): Array<{ kcs: ChapterKc[];
  * 全批完成后一次性落库:要么完整题库要么没有(崩溃恢复语义干净,不会半截题库)。
  * 批失败重试一次仍失败 → 跳过该批继续(累计 <3 题才算整体失败)。
  */
-async function generateExamBank(db: Db, examNodeId: string, locale?: string | null): Promise<void> {
+async function generateExamBank(db: Db, examNodeId: string, locale?: string | null, markDirty?: () => void): Promise<void> {
   try {
     const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
     if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
@@ -340,6 +341,7 @@ async function generateExamBank(db: Db, examNodeId: string, locale?: string | nu
         })
         .run();
     }
+    markDirty?.(); // 题库落库完成立即标脏(后台生成,handler 返回时的 markDirty 管不到这里)
     setReady(examNodeId);
   } catch (e) {
     setFailed(examNodeId, e instanceof Error ? e.message : String(e));

@@ -1538,6 +1538,7 @@ async function autoStructureCourse(
     // Per-KC BKT: 提取知识点(KC) + 摘要 → per-KC BKT 毕业门控的基础
     send("AI 正在提取知识点…");
     await generateLessonSummaries(getDb(), courseId).catch(() => {});
+    markDirty(); // KC/摘要批量落库即标脏(2026-09-13 审计 F7:LLM 产物曾随强杀全丢=重复计费)
     send("知识点提取完成");
     return;
   }
@@ -1554,6 +1555,7 @@ async function autoStructureCourse(
   // Per-KC BKT: 提取知识点(KC) + 摘要
   send("AI 正在提取知识点…");
   await generateLessonSummaries(getDb(), courseId).catch(() => {});
+  markDirty(); // KC/摘要批量落库即标脏(2026-09-13 审计 F7:LLM 产物曾随强杀全丢=重复计费)
   send("知识点提取完成");
 }
 
@@ -1862,12 +1864,12 @@ export function registerExerciseHandlers(): void {
 export function registerExamHandlers(): void {
   // 幂等启动题目生成(后台进行,进度走 exam:status 事件)
   handle("exam:prepare", (_e, examNodeId: string, locale?: string | null) => {
-    return prepareExam(getDb(), examNodeId, locale);
+    return prepareExam(getDb(), examNodeId, locale, markDirty);
   });
 
   // 重新生成题库:删旧题重启生成(在飞 no-op;悬挂 attempt 判死;历史星数保留)
   handle("exam:regenerate", (_e, examNodeId: string, locale?: string | null) => {
-    return regenerateExam(getDb(), examNodeId, locale);
+    return regenerateExam(getDb(), examNodeId, locale, markDirty);
   });
 
   // 查状态 + 就绪元信息 + 最新 attempt(悬挂 attempt 在此自动判死)

@@ -46,7 +46,7 @@ Renderer (React) ──IPC──→ Main (Node.js) ──→ SQLite / LLM API / 
 - **IPC contract is `shared/types.ts` → `ApiExpose` interface.** Editing it = editing the protocol; both ends (preload + main handlers) must sync.
 - **Channel naming: `domain:action`** (e.g. `course:list`, `soul:setActive`, `proposal:apply`, `thread:create`, `canvas:save`, `xp:getStatus`, `asset:listByNode`, `asset:getDataUrl`). Handlers in `src/main/ipc/index.ts`, grouped by domain.
 - **Native context menu** (`src/main/context-menu.ts`): right-click copy text / copy+save images / editable roles. Registered in `index.ts` via `setupContextMenu(mainWindow)`.
-- **LLM calls and API keys stay in main process.** CSP in `src/renderer/index.html` forbids renderer-side LLM endpoints; renderer only sees booleans for key presence (`agent:isReady`).
+- **LLM calls and API keys stay in main process.** CSP in `src/renderer/index.html` forbids renderer-side LLM endpoints; renderer only sees booleans for key presence (`agent:isReady`;2026-09-13 审计后 `settings:get` 对 `*_api_key` 恒 null——存在性走 `settings:has` 布尔,密钥明文永不回渲染层/serve WS)。
 - **AI persistent-state mutations go through Proposal (Propose→Apply).** AI drafts state changes, human applies/rejects — never let AI write learner state directly (see `proposal-service.ts`).
 - **Custom providers** (`custom_providers` table) bypass preset key settings — their API key is stored in the table row, resolved by `resolveLlm()` when `active_provider` starts with `custom-`。v0.16 `vision` 列:kind=llm 行由用户显式声明"支持看图"(勾选 → capabilities 含 vision → 直通;不勾选 → 保守 false → 配了覆盖走桥接、没配走 reject);kind=vision 天生支持。
 - **Third runtime: serve (mobile/web).** `src/main/serve/server.ts` runs the SAME 125-handler table (`ipc/runtime.ts` `collectHandlers(deps)`) behind a WebSocket dispatcher — Electron's `ipcMain` and serve share one registry, zero drift. Protocol in `shared/ws-protocol.ts`; channel names ARE the IPC `domain:action` names. Renderer web mode: `src/renderer/lib/api-web.ts` (`installWebApi`) builds `window.api` from `shared/api-channels.ts` when preload is absent (`main.tsx` boot fork + token gate). Token auth (`dataDir/serve-token`, persisted), WS rejects with close 4001. Portable bundle via `scripts/build-mobile.mjs` (esbuild CJS, electron + pdf-inspector + @napi-rs/canvas external, companion wasm/seed beside server.cjs).
@@ -102,7 +102,7 @@ npx tsx scripts/live-test/live-test-subtitle-corpus.mjs # 字幕成文核查(fre
 npx tsx scripts/live-test/live-test-pptx-corpus.mjs    # PPTX 解析核查(PyPI python-pptx 真 PowerPoint fixtures 12 件含病理;表格找回/备注/图片/诚实空)
 node scripts/build-termux-voice.mjs  # Termux 语音引擎包(NDK 交叉编译,~12MB;CI termux-voice.yml 同源)
 
-npm run verify:core       # 115 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑)
+npm run verify:core       # 121 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑;六个安全加固套件 ipc-input-guards/xss-hardening/db-migration/secret-handling/engine-hardening/p23-hardening 守 2026-09-13 审计修复面)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -133,7 +133,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z` — `package.yml` (3-OS matrix) and `android-build.yml` both auto-trigger on `v*`. **Neither creates the Release**: their attach steps (`gh release upload`) fail with `release not found` until the Release object exists. So right after pushing the tag, run `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <file>` (notes drafted per human-writing + check_prose, English first). If the attach jobs already failed, `gh run rerun <id> --failed` after creating the release — builds are cached, only attach re-runs.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 115 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
+5. `ci.yml` runs oxlint + both typechecks + 121 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -196,6 +196,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | EPUB parser | `lib/epub-parser.ts` | fflate 手解 zip + container.xml→OPF→manifest/spine/toc(EPUB3 nav 与 EPUB2 ncx 都认)+ `htmlToMarkdown` 每章转 markdown;**章内二次拆分(2026-08-23,8 本 Gutenberg 真书采样:spine 文件≠章是常态,章号常是裸文本行)**:`sanitizeEpubBody` 清 Gutenberg 头/尾块+装饰行,`splitChaptersInBody` 按 CH/Letter 标记(heading 或裸行,裸行限行长防误切)切真章,罗马/裸序号须连续递增序列才切;license 文件单标记救章、大 body 保附录;目录页/元数据小页不成课;每章一虚拟文件(`chapters/nn-标题.md`,`# 标题` 开头,标题=首个章标记而非歪 toc);verify T5-T15 合成 fixture 锁行为(含出版社形态三修:扉页配对/兜底停编造"第N章"→"未命名章节"交 Step4 命名/版权页著录字段密度+目录页链接密度过滤,2026-08-23 沉思录真书驱动),真书语料核查在 live-test-epub-corpus(9 书,含本地缓存-only 的沉思录);officeparser 的 epub AST 丢章节边界(spike 实测)故不用;`parseEpubFlat` 供文件夹路径压平 |
 | Code parser | `services/pure/code-parser.ts` | 代码文件(.py/.js/.go 等 30+ 语言) → markdown: docstring/注释块提取为正文 + 代码体围栏包裹。纯函数 |
 | Translation layout | `services/pure/translation-layout.ts` | `detectTranslationLayout`(tree) — 自动检测翻译约定: microsoft(translations/{lang}/) / parallel({lang}/) / suffix({file}.{lang}.md|.txt|.html)。返回 pathResolver；`excludeSuffixTranslations`(规则分流成对双语,孤儿保守留原文) + `resolveSuffixTranslationPath`(剥原文自带语言后缀,与落库共用单一实现) |
+| 路径守卫 | `services/pure/entry-guard.ts` | `safeEntryDest`(IPC 落盘路径穿越守卫:绝对路径/盘符/`..` 拒绝,resolve 后包含校验)+ `unzipGuardFilter`(zip-bomb 滤网:按声明解压总量/条目数限额,fflate filter 超限条目不解压)。**纪律:凡渲染层字符串进文件路径的 IPC 落盘点(shimeji 解包/部件文件名/导入会话 id/模型删除 id/课程包 planId…)一律过闸**,verify-ipc-input-guards 守卫名单 |
 | Local scanner | `services/pure/local-folder-scanner.ts` | `scanFolder` (递归扫文档格式含 .epub(`parseEpubFlat` 压平,章标题降 H2 给 Step4 拆课) + 30+ 代码格式; `dedupByLang` **同语言内部去重,双语配对保留**——分流交分类层,不再"中文优先"吞英文原稿) + `buildLocalInventory` (本地清点: docs + images + translations + README + fullTree + standaloneImages) |
 | File classifier | `services/pure/file-classifier.ts` | Rule-based `classifyFile` — high-confidence noise filter (translations/notebook/lab/example/section-intro/meta) + uncertain flag for LLM |
 | Exercise | `services/exercise-service.ts` | AI exercise generation (mcq/fill_blank/true_false) + grading |
@@ -245,7 +246,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (115 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (121 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

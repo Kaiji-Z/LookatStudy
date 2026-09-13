@@ -114,7 +114,6 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
         const pinned = {
           ...next,
           x: next.x + (100 - next.x) * 0.25,
-          y: 179,
           actionName: action?.kind === "Move" ? (manifest.actions.find((a) => a.kind === "Stay")?.name ?? next.actionName) : next.actionName,
         };
         return pinned;

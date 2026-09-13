@@ -526,5 +526,23 @@ await test("T13 换载具(机械臂同链):manifest.vehicle 持久化 + list 透
   assert.equal(m2?.vehicle, "astro", "非法调用不改动 manifest");
 });
 
+await test("T14 rest 居中(实测反馈回归):躺/坐在远端时身体收回台面中心带", () => {
+  // 从最右端直接进入 Sit:躺/坐帧横向铺满,中心 100 处才保证像素都在台面(38..162)内
+  let m = { ...initMotion(), x: SHIMEJI_SANDBOX.maxX, actionName: "Sit", loopsLeft: 9999 };
+  for (let i = 0; i < 600; i++) {
+    m = tick(m, SLOT_MANIFEST);
+    assert.ok(m.x >= SHIMEJI_SANDBOX.minX - 1e-9 && m.x <= SHIMEJI_SANDBOX.maxX + 1e-9);
+  }
+  assert.ok(Math.abs(m.x - 100) <= 10, `rest 后应收敛到台面中心带(实际 x=${m.x.toFixed(1)})`);
+  // Walk 不受影响:仍可到达散步边界
+  let w = { ...initMotion(), x: 100, actionName: "Walk", loopsLeft: 9999 };
+  let sawEdge = false;
+  for (let i = 0; i < 400; i++) {
+    w = tick(w, SLOT_MANIFEST);
+    if (w.x <= SHIMEJI_SANDBOX.minX + 1 || w.x >= SHIMEJI_SANDBOX.maxX - 1) sawEdge = true;
+  }
+  assert.ok(sawEdge, "散步仍能走到边界");
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

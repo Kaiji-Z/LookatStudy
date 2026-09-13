@@ -82,7 +82,9 @@ jobs:
           # 并发竞态兜底:release 不存在就建壳(与 package.yml 同款)
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "LookatStudy $TAG" --notes ""
-          gh release upload "$TAG" .termux-build/lookatstudy-termux-voice.tar.gz --clobber
+          # 完整性 sidecar(2026-09-13 审计后续):Termux 安装器 GitHub 回退链逐跳校验的期望值(纯 hex)
+          sha256sum .termux-build/lookatstudy-termux-voice.tar.gz | awk '{print $1}' > .termux-build/lookatstudy-termux-voice.tar.gz.sha256
+          gh release upload "$TAG" .termux-build/lookatstudy-termux-voice.tar.gz .termux-build/lookatstudy-termux-voice.tar.gz.sha256 --clobber
           gh release view "$TAG" --json assets --jq '.assets[].name'
 
       # npm 分发(npmmirror 自动同步,Termux 安装器主源)。

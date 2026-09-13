@@ -13,8 +13,9 @@ set -euo pipefail
 PORT="${LOOKATSTUDY_PORT:-17890}"
 APP_DIR="$HOME/lookatstudy"
 DATA_DIR="$HOME/.lookatstudy"
-GH_ASSET="https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/lookatstudy-mobile.zip"
-GH_VOICE="https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/lookatstudy-termux-voice.tar.gz"
+GH_RELEASE="https://github.com/Kaiji-Z/LookatStudy/releases/latest/download"
+GH_ASSET="${GH_RELEASE}/lookatstudy-mobile.zip"
+GH_VOICE="${GH_RELEASE}/lookatstudy-termux-voice.tar.gz"
 # 直连优先,失败再走代理前缀(镜像只做回退:KaijiBot 教训是镜像同步延迟会坏事,大头收益在 apt 的 TUNA)
 DL_PREFIXES=("" "https://gh-proxy.com/" "https://ghproxy.net/" "https://ghfast.top/")
 
@@ -37,7 +38,9 @@ npm_tarball() {
       return 0
     fi
   fi
-  printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p'
+  printf '%s\n%s\n' \
+    "$(printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p')" \
+    "$(printf '%s' "$json" | sed -n 's/.*"integrity":"\([^"]*\)".*/\1/p')"
 }
 
 # npm 官方源(权威、零同步滞后):镜像未命中/滞后时的第一兜底,先于 GitHub 链。
@@ -45,7 +48,9 @@ npm_tarball() {
 npm_tarball_official() {
   local json
   json=$(curl -sfL --connect-timeout 8 --max-time 20 "https://registry.npmjs.org/$1/latest" || true)
-  printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p'
+  printf '%s\n%s\n' \
+    "$(printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p')" \
+    "$(printf '%s' "$json" | sed -n 's/.*"integrity":"\([^"]*\)".*/\1/p')"
 }
 
 # GitHub 最新 release 版本号(仅数字串;空=探测失败)。releases/latest/download 会 302 到
@@ -63,6 +68,64 @@ ver_ge() {
   a=$(printf '%s' "$1" | tr -d 'v' | awk -F. '{printf "%02d%02d%02d", $1, $2, $3}')
   b=$(printf '%s' "$2" | tr -d 'v' | awk -F. '{printf "%02d%02d%02d", $1, $2, $3}')
   [ -n "$a" ] && [ -n "$b" ] && [ "$a" -ge "$b" 2>/dev/null ]
+}
+
+
+# ── 下载完整性(2026-09-13 审计后续)─────────────────────────
+# npm tgz 走 registry dist.integrity(sha512,与 tarball 同一次元数据带回);
+# GitHub 直连/代理资产走同 Release 的 <asset>.sha256 sidecar。校验不过/拿不到
+# 期望值一律拒装;唯一逃逸口 LOOKATSTUDY_SKIP_VERIFY=1(用户显式自担风险)。
+
+# 文件 sha256(小写 hex;失败空输出)
+sha256_of() { sha256sum < "$1" 2>/dev/null | awk '{print $1}' || true; }
+
+# npm tgz 强校验:期望值=registry 元数据 dist.integrity("sha512-<base64>")
+verify_npm_tgz() { # <file> <integrity>
+  if [ "${LOOKATSTUDY_SKIP_VERIFY:-0}" = "1" ]; then
+    info "LOOKATSTUDY_SKIP_VERIFY=1:跳过 npm 包完整性校验(用户显式自担风险)"
+    return 0
+  fi
+  [ -n "$2" ] || { warn "registry 元数据缺 integrity,视为不可信"; return 1; }
+  local got
+  got=$(node -e "const c=require('crypto'),f=require('fs');process.stdout.write('sha512-'+c.createHash('sha512').update(f.readFileSync(process.argv[1])).digest('base64'))" "$1" 2>/dev/null || true)
+  if [ -n "$got" ] && [ "$got" = "$2" ]; then return 0; fi
+  warn "npm 包 sha512 完整性校验失败(下载损坏或镜像被篡改),换下一源"
+  return 1
+}
+
+# GitHub Release 资产的期望 sha256(同 Release 的 .sha256 sidecar;直连优先代理兜底)
+# 契约:恒 exit 0,空输出=校验源不可达。
+gh_asset_sha256() { # <asset-filename>
+  local p raw sum
+  for p in "${DL_PREFIXES[@]}"; do
+    raw=$(curl -sfL --connect-timeout 8 --max-time 20 "${p}${GH_RELEASE}/$1.sha256" 2>/dev/null || true)
+    sum=$(printf '%s' "$raw" | tr -d ' \r\n' | tr 'A-F' 'a-f')
+    case "$sum" in
+      ''|*[!0-9a-f]*) ;; # 空或非 hex:这一跳拿不到/坏,试下一跳
+      *) printf '%s' "$sum"; return 0 ;;
+    esac
+  done
+  return 0
+}
+
+# GH 资产强校验:期望值拿不到或对不上都拒装(防代理篡改/下载损坏)
+verify_gh_download() { # <file> <asset-filename> <label>
+  if [ "${LOOKATSTUDY_SKIP_VERIFY:-0}" = "1" ]; then
+    info "LOOKATSTUDY_SKIP_VERIFY=1:跳过 $3 完整性校验(用户显式自担风险)"
+    return 0
+  fi
+  local exp got
+  exp=$(gh_asset_sha256 "$2")
+  if [ -z "$exp" ]; then
+    warn "$3 的 sha256 校验源不可达(.sha256 sidecar 拿不到),拒装防篡改;稍后重跑,或自担风险:LOOKATSTUDY_SKIP_VERIFY=1 bash 本脚本"
+    return 1
+  fi
+  got=$(sha256_of "$1")
+  if [ "$got" != "$exp" ]; then
+    warn "$3 sha256 不匹配(期望 ${exp:0:12}…实际 ${got:0:12}…),已拒装(下载损坏或被篡改)"
+    return 1
+  fi
+  ok "$3 sha256 校验通过"
 }
 
 info() { printf '\033[1m[*]\033[0m %s\n' "$*"; }
@@ -119,22 +182,31 @@ download_bundle() {
   cd "$APP_DIR"
   info "下载便携包(约 5MB)..."
   # 主源:npm 镜像(npmmirror 同步 npm 发布,国内直连快;tgz 需剥 package/ 前缀)
-  local tb
-  tb=$(npm_tarball lookatstudy-mobile)
-  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb"; then
+  # meta 两行 = tarball URL + dist.integrity(sha512);下载后强校验,不过=换下一源
+  local meta tb itg
+  meta=$(npm_tarball lookatstudy-mobile)
+  tb=$(printf '%s' "$meta" | sed -n 1p)
+  itg=$(printf '%s' "$meta" | sed -n 2p)
+  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb" \
+     && verify_npm_tgz mobile.tgz "$itg"; then
     tar -xzf mobile.tgz --strip-components=1
     rm -f mobile.tgz
-    ok "便携包就位(npm 镜像): $APP_DIR"
+    ok "便携包就位(npm 镜像,sha512 校验通过): $APP_DIR"
     return 0
   fi
+  rm -f mobile.tgz
   # 次选:npm 官方源(权威零滞后,接住镜像同步窗口)
-  tb=$(npm_tarball_official lookatstudy-mobile)
-  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb"; then
+  meta=$(npm_tarball_official lookatstudy-mobile)
+  tb=$(printf '%s' "$meta" | sed -n 1p)
+  itg=$(printf '%s' "$meta" | sed -n 2p)
+  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb" \
+     && verify_npm_tgz mobile.tgz "$itg"; then
     tar -xzf mobile.tgz --strip-components=1
     rm -f mobile.tgz
-    ok "便携包就位(npm 官方源): $APP_DIR"
+    ok "便携包就位(npm 官方源,sha512 校验通过): $APP_DIR"
     return 0
   fi
+  rm -f mobile.tgz
   info "npm 源未命中,回退 GitHub 直连+代理链..."
   local dl_ok=0 p=""
   for p in "${DL_PREFIXES[@]}"; do
@@ -148,6 +220,7 @@ download_bundle() {
     echo "下载失败。请手动下载 $GH_ASSET 放到 $APP_DIR/ls.zip 后重跑本脚本。"
     exit 1
   fi
+  verify_gh_download ls.zip lookatstudy-mobile.zip "便携包" || { rm -f ls.zip; exit 1; }
   unzip -o ls.zip
   rm -f ls.zip
   ok "便携包就位: $APP_DIR"
@@ -157,24 +230,32 @@ install_voice() {
   mkdir -p "$APP_DIR/node_modules"
   info "下载 Termux 语音引擎包(约 12MB)..."
   # 主源:npm 镜像(tgz 剥 package/ 前缀,解出 sherpa-onnx-node/ 目录)
-  local tb
-  tb=$(npm_tarball lookatstudy-termux-voice)
-  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o voice.tgz "$tb"; then
+  local meta tb itg
+  meta=$(npm_tarball lookatstudy-termux-voice)
+  tb=$(printf '%s' "$meta" | sed -n 1p)
+  itg=$(printf '%s' "$meta" | sed -n 2p)
+  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o voice.tgz "$tb" \
+     && verify_npm_tgz voice.tgz "$itg"; then
     tar -xzf voice.tgz --strip-components=1 -C "$APP_DIR/node_modules"
     rm -f voice.tgz
-    ok "语音引擎就位(npm 镜像): $APP_DIR/node_modules/sherpa-onnx-node"
+    ok "语音引擎就位(npm 镜像,sha512 校验通过): $APP_DIR/node_modules/sherpa-onnx-node"
     info "语音模型在应用内按需下载(设置 → 语音能力):朗读本地档约 430MB;听写建议云档(Groq/Azure),本地 Whisper 约 360MB~1GB"
     info "装完模型重启服务生效: bash ~/lookatstudy/start.sh"
     return 0
   fi
+  rm -f voice.tgz
   # 次选:npm 官方源(权威零滞后,接住镜像同步窗口)
-  tb=$(npm_tarball_official lookatstudy-termux-voice)
-  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o voice.tgz "$tb"; then
+  meta=$(npm_tarball_official lookatstudy-termux-voice)
+  tb=$(printf '%s' "$meta" | sed -n 1p)
+  itg=$(printf '%s' "$meta" | sed -n 2p)
+  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o voice.tgz "$tb" \
+     && verify_npm_tgz voice.tgz "$itg"; then
     tar -xzf voice.tgz --strip-components=1 -C "$APP_DIR/node_modules"
     rm -f voice.tgz
-    ok "语音引擎就位(npm 官方源): $APP_DIR/node_modules/sherpa-onnx-node"
+    ok "语音引擎就位(npm 官方源,sha512 校验通过): $APP_DIR/node_modules/sherpa-onnx-node"
     return 0
   fi
+  rm -f voice.tgz
   info "npm 源未命中,回退 GitHub 直连+代理链..."
   local dl_ok=0 p=""
   for p in "${DL_PREFIXES[@]}"; do
@@ -189,6 +270,7 @@ install_voice() {
     rm -f voice.tar.gz
     return 1
   fi
+  verify_gh_download voice.tar.gz lookatstudy-termux-voice.tar.gz "语音引擎包" || { rm -f voice.tar.gz; return 1; }
   tar -xzf voice.tar.gz -C "$APP_DIR/node_modules"
   rm -f voice.tar.gz
   ok "语音引擎就位: $APP_DIR/node_modules/sherpa-onnx-node"
@@ -287,10 +369,59 @@ EOS
 {
   printf '#!/data/data/com.termux/files/usr/bin/bash\n'
   printf 'set -euo pipefail\n'
-  printf 'APP_DIR=%q PORT=%q GH_ASSET=%q\n\n' "$APP_DIR" "$PORT" "$GH_ASSET"
+  printf 'APP_DIR=%q PORT=%q GH_ASSET=%q GH_RELEASE=%q\n' "$APP_DIR" "$PORT" "$GH_ASSET" "$GH_RELEASE"
+  printf 'DL_PREFIXES=("" "https://gh-proxy.com/" "https://ghproxy.net/" "https://ghfast.top/")\n\n'
   cat <<'UPDATE_EOF'
 # 更新便携包并重启(下载链与 install-termux.sh 同源:npmmirror+滞后守卫 → npm 官方 → GitHub 直连 → gh 代理)
 info() { printf '\033[1m[*]\033[0m %s\n' "$*"; }
+warn() { printf '\033[33m[!]\033[0m %s\n' "$*"; }
+ok()   { printf '\033[38;2;0,229,204m[✓]\033[0m %s\n' "$*"; }
+
+# ↓↓ 完整性校验四件(与 install-termux.sh 逐字同源)↓↓
+sha256_of() { sha256sum < "$1" 2>/dev/null | awk '{print $1}' || true; }
+verify_npm_tgz() { # <file> <integrity>
+  if [ "${LOOKATSTUDY_SKIP_VERIFY:-0}" = "1" ]; then
+    info "LOOKATSTUDY_SKIP_VERIFY=1:跳过 npm 包完整性校验(用户显式自担风险)"
+    return 0
+  fi
+  [ -n "$2" ] || { warn "registry 元数据缺 integrity,视为不可信"; return 1; }
+  local got
+  got=$(node -e "const c=require('crypto'),f=require('fs');process.stdout.write('sha512-'+c.createHash('sha512').update(f.readFileSync(process.argv[1])).digest('base64'))" "$1" 2>/dev/null || true)
+  if [ -n "$got" ] && [ "$got" = "$2" ]; then return 0; fi
+  warn "npm 包 sha512 完整性校验失败(下载损坏或镜像被篡改),换下一源"
+  return 1
+}
+gh_asset_sha256() { # <asset-filename>
+  local p raw sum
+  for p in "${DL_PREFIXES[@]}"; do
+    raw=$(curl -sfL --connect-timeout 8 --max-time 20 "${p}${GH_RELEASE}/$1.sha256" 2>/dev/null || true)
+    sum=$(printf '%s' "$raw" | tr -d ' \r\n' | tr 'A-F' 'a-f')
+    case "$sum" in
+      ''|*[!0-9a-f]*) ;;
+      *) printf '%s' "$sum"; return 0 ;;
+    esac
+  done
+  return 0
+}
+verify_gh_download() { # <file> <asset-filename> <label>
+  if [ "${LOOKATSTUDY_SKIP_VERIFY:-0}" = "1" ]; then
+    info "LOOKATSTUDY_SKIP_VERIFY=1:跳过 $3 完整性校验(用户显式自担风险)"
+    return 0
+  fi
+  local exp got
+  exp=$(gh_asset_sha256 "$2")
+  if [ -z "$exp" ]; then
+    warn "$3 的 sha256 校验源不可达(.sha256 sidecar 拿不到),拒装防篡改;稍后重跑,或自担风险:LOOKATSTUDY_SKIP_VERIFY=1 bash 本脚本"
+    return 1
+  fi
+  got=$(sha256_of "$1")
+  if [ "$got" != "$exp" ]; then
+    warn "$3 sha256 不匹配(期望 ${exp:0:12}…实际 ${got:0:12}…),已拒装(下载损坏或被篡改)"
+    return 1
+  fi
+  ok "$3 sha256 校验通过"
+}
+# ↑↑ 完整性校验四件结束 ↑↑
 
 # ↓↓ 与 install-termux.sh 逐字同源的四个函数(契约:恒 exit 0,空输出=未命中)↓↓
 npm_tarball() {
@@ -305,12 +436,16 @@ npm_tarball() {
       return 0
     fi
   fi
-  printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p'
+  printf '%s\n%s\n' \
+    "$(printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p')" \
+    "$(printf '%s' "$json" | sed -n 's/.*"integrity":"\([^"]*\)".*/\1/p')"
 }
 npm_tarball_official() {
   local json
   json=$(curl -sfL --connect-timeout 8 --max-time 20 "https://registry.npmjs.org/$1/latest" || true)
-  printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p'
+  printf '%s\n%s\n' \
+    "$(printf '%s' "$json" | sed -n 's/.*"tarball":"\([^"]*\)".*/\1/p')" \
+    "$(printf '%s' "$json" | sed -n 's/.*"integrity":"\([^"]*\)".*/\1/p')"
 }
 gh_latest_version() {
   local final
@@ -332,14 +467,22 @@ pkill -f "server.cjs --port $PORT" 2>/dev/null || true
 sleep 1
 echo "==> 下载最新便携包..."
 src=""
-tb=$(npm_tarball lookatstudy-mobile)
-if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb"; then
+meta=$(npm_tarball lookatstudy-mobile)
+tb=$(printf '%s' "$meta" | sed -n 1p)
+itg=$(printf '%s' "$meta" | sed -n 2p)
+if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb" \
+   && verify_npm_tgz mobile.tgz "$itg"; then
   src="npm 镜像"
 else
-  tb=$(npm_tarball_official lookatstudy-mobile)
-  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb"; then
+  rm -f mobile.tgz
+  meta=$(npm_tarball_official lookatstudy-mobile)
+  tb=$(printf '%s' "$meta" | sed -n 1p)
+  itg=$(printf '%s' "$meta" | sed -n 2p)
+  if [ -n "$tb" ] && curl -fL --connect-timeout 10 --retry 2 -o mobile.tgz "$tb" \
+     && verify_npm_tgz mobile.tgz "$itg"; then
     src="npm 官方源"
   fi
+  rm -f mobile.tgz
 fi
 if [ -n "$src" ]; then
   tar -xzf mobile.tgz --strip-components=1 && rm -f mobile.tgz
@@ -351,6 +494,7 @@ else
     echo "    ${p:-GitHub 直连}失败,换下一个源..."
   done
   [ "$dl_ok" = 1 ] || { echo "下载失败,保持原版本。"; exit 1; }
+  verify_gh_download ls.zip lookatstudy-mobile.zip "便携包" || { rm -f ls.zip; echo "校验失败,保持原版本。"; exit 1; }
   unzip -o ls.zip && rm -f ls.zip
 fi
 echo "==> 重启..."

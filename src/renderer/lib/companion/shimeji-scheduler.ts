@@ -388,20 +388,9 @@ export function tickShimeji(
       }
       const p = advancePose(prev, action);
       if (p.loopsLeft <= 0) {
-        // 动作耗尽:贴着边界时才可能起爬(走到边上再爬,治"原地抓空气"——
-        // 旧版策略随机直接把精灵贴到隐形墙上开爬);边界不可见,先离墙留距离
-        const atEdge = prev.x <= S.minX + 1 || prev.x >= S.maxX - 1;
-        if (atEdge && pools.climb.length && rng() < 0.45) {
-          const climb = pickFirst(pools.climb);
-          const base = startMotion(prev, climb, "wall");
-          return {
-            ...base,
-            wallSide: prev.x <= (S.minX + S.maxX) / 2 ? 0 : 1,
-            x: prev.x,
-            y: S.groundY,
-            facing: prev.x <= (S.minX + S.maxX) / 2 ? -1 : 1,
-          };
-        }
+        // 爬墙/爬顶入口关闭(2026-09-12 用户拍板方案 B):壳层把 bot 悬浮在锚点上空,
+        // 没有贴边物理支撑,攀爬帧=飘着爬空气墙(归档与 wall/ceiling 代码路径保留,
+        // 待"爬墙锚点旁路"方案 A 立项后重开:沿容器边缘插值壳悬停目标点,PD 照常追)
         const next = nextGround(manifest, pools, expression, rng);
         const base = startMotion(prev, next, "ground");
         return { ...base, x, y: S.groundY, vx, facing };

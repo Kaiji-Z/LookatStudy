@@ -484,13 +484,16 @@ await test("T10 复现性:同种子 300 tick 轨迹一致 + confirm 管线烘焙
   assert.equal(byName.Dragged?.slot, "interact");
 });
 
-await test("T11 不原地起爬(实测反馈回归):居中静止的精灵永不被贴墙", () => {
-  let m = { ...initMotion(), actionName: "Stand", loopsLeft: 9999 };
-  const rng = seeded(7);
-  for (let i = 0; i < 600; i++) {
-    m = tick(m, SLOT_MANIFEST);
-    assert.notEqual(m.mode, "wall", "远离边界不得进 wall");
-    assert.ok(m.x >= SHIMEJI_SANDBOX.minX - 1e-9 && m.x <= SHIMEJI_SANDBOX.maxX + 1e-9);
+await test("T11 爬墙入口关闭(2026-09-12 拍板方案 B):任意起步永不被贴墙/爬顶", () => {
+  for (const [x0, a0] of [[SHIMEJI_SANDBOX.minX, "Walk"], [100, "Stand"], [SHIMEJI_SANDBOX.maxX, "Walk"]]) {
+    let m = { ...initMotion(), x: x0, actionName: a0, loopsLeft: 9999 };
+    const rng = seeded(7);
+    for (let i = 0; i < 600; i++) {
+      m = tick(m, SLOT_MANIFEST);
+      assert.notEqual(m.mode, "wall", "wall 入口已关(壳无贴边物理,攀爬帧=飘着爬空气墙)");
+      assert.notEqual(m.mode, "ceiling", "ceiling 只能从 wall 进入,同样不可达");
+      assert.ok(m.x >= SHIMEJI_SANDBOX.minX - 1e-9 && m.x <= SHIMEJI_SANDBOX.maxX + 1e-9);
+    }
   }
   // 沙盒收紧:脚点范围 ±36=精灵半宽,帧图(128 宽)不出舞台
   assert.ok(SHIMEJI_SANDBOX.minX >= 64 && SHIMEJI_SANDBOX.maxX <= 136);

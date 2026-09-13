@@ -128,7 +128,9 @@ export function parsePlan(raw: string): ImportPlan | null {
     const o = JSON.parse(raw) as ImportPlan;
     if (!o || typeof o !== "object") return null;
     if (o.formatVersion !== IMPORT_PLAN_FORMAT_VERSION) return null;
-    if (typeof o.planId !== "string" || !PLAN_KINDS.has(o.kind)) return null;
+    // planId 会进 import-plan-store 的路径拼接(课程包是分享面):形状闸防穿越投毒(2026-09-13 审计)
+    if (typeof o.planId !== "string" || !/^[0-9a-f-]{8,64}$/.test(o.planId)) return null;
+    if (!PLAN_KINDS.has(o.kind)) return null;
     if (!Array.isArray(o.fullTree) || typeof o.treeHash !== "string") return null;
     return o;
   } catch {

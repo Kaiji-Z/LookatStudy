@@ -24,6 +24,7 @@ import type {
   SpeechModelId,
   SpeechModelStatus,
 } from "@shared/speech-types";
+import { SPEECH_MODELS_MANIFEST } from "./speech-model-manifest";
 
 import {
   archiveCandidateUrls,
@@ -104,6 +105,11 @@ export function readSpeechModelStatus(
 }
 
 export async function deleteSpeechModel(dataDir: string, id: SpeechModelId): Promise<void> {
+  // id 来自渲染层且是删除目标的路径成分:只认清单内条目,与 ensure 路径同款纪律
+  // (2026-09-13 审计修正:旧实现接受任意字符串直接 rm 递归)
+  if (!SPEECH_MODELS_MANIFEST.models.some((m) => m.id === id)) {
+    throw new Error(`未知语音模型 id: ${id}`);
+  }
   await fsp.rm(speechModelDir(dataDir, id), { recursive: true, force: true });
 }
 

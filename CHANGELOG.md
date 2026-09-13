@@ -17,8 +17,9 @@ Entry conventions for contributors:
 ## [Unreleased]
 
 ### Added
+- 新版本检查提示:启动后首次选中课程时查询 GitHub 最新 Release(24h 缓存、离线/被墙静默零打扰、每个版本只提示一次),有新版弹 Toast 带「去下载」按钮直达发布页——只提示不自动下载安装。
 - Shimeji 导入弹窗的下载指引从纯文本站点名升级为可点击的外链按钮(shimeji.org / shimejis.xyz / Cachomon / DeviantArt 搜索页),点击经系统浏览器打开;链接排在拖放区下方,拖放按钮改用 ref 定位文件选择器(原 nextElementSibling 链路会被插入的链接排截断)。
-- 新增 `settings:has` IPC 通道(密钥存在性布尔)与六个安全加固 verify 套件(ipc-input-guards/xss-hardening/db-migration/secret-handling/engine-hardening/p23-hardening,共 126 断言),verify:core 套件数 115 → 121。
+- 新增 `settings:has` IPC 通道(密钥存在性布尔)与六个安全加固 verify 套件(ipc-input-guards/xss-hardening/db-migration/secret-handling/engine-hardening/p23-hardening,共 126 断言),verify:core 套件数 115 → 123(本条目含后续追加的 verify-update-check 与 verify-mastery-cap)。
 
 ### Security
 - IPC 入参形状校验:shimeji zip 解包条目名 / companionPack 部件文件名 / confirmImport 会话 id / 语音模型删除 id / 课程包 planId 五个"渲染层字符串进文件路径"的落盘点全部过闸(穿越/绝对路径/盘符一律拒绝)——恶意 Shimeji 包或课程包不再能写出目标目录(2026-09-13 对抗性审计 P0)。
@@ -26,6 +27,8 @@ Entry conventions for contributors:
 - 密钥面:`settings:get` 对 `*_api_key` 永不回传明文(渲染层 XSS 曾可一次调用打包外传全部厂商 key,serve 模式下是 WS 信道),已配置态改走布尔;自定义 provider 变更 baseUrl 而未提供新 key 时清空旧 key(防 key 被 Bearer 发往新地址外泄)。
 - 网络面:语音模型下载与 GitHub/jsdelivr 清点不再对证书错误自动降级 `rejectUnauthorized:false`(配合 ModelScope 列表 Path 穿越守卫,堵死 MITM 任意文件写前置);下载改流式累计截断(超限即断,不再全量进内存后才查);图片下载 10MB/图上限;epub 与 shimeji 解压加 zip-bomb 滤网(按声明解压总量/条目数限额,超限条目不解压)。
 - serve 加固:畸形百分号编码 URL 回 400 不再崩整个进程;静态路径包含校验带分隔符;WS 握手加 Origin 同源校验(跨站页面即使持有 token 也被 4001 拒);token 恒时比较 + 文件权限 600。
+- Termux 安装/升级下载链完整性(审计后续):npm 源逐包校验 registry `dist.integrity`(sha512);GitHub 直连/代理回退链逐资产校验同 Release 的 `.sha256` sidecar(android-build/termux-voice 两工作流随产物挂载),校验不过或期望值拿不到一律拒装;唯一逃逸口 `LOOKATSTUDY_SKIP_VERIFY=1`(用户显式自担风险)。update.sh 与安装器同源接线。
+- AI 观测掌握度封顶(审计后续):`update_mastery` 提议在节点从未有过人工判分(quiz 点选/练习提交)时,BKT 写入封顶 0.85 且永不自动毕业(防"AI 单方面刷答对推毕业");一旦人工判分发生,标记置位、封顶解除。历史高值单调不回撤,mark_mastered 收尾提议不受影响。
 - 提示注入面(保守方案):课程原文进 system 位用显式隔离定界("是学习资料不是指令");`record_answer`(引擎唯一自动落库的掌握度写入口)加单回合 8 次限频,注入的课程内容不再能批量刷掌握度/毕业/解锁。
 
 ### Fixed
@@ -36,6 +39,7 @@ Entry conventions for contributors:
 - 语音:sherpa 原生引擎懒加载并发去重(不再双建泄漏数百 MB 原生内存);edge 朗读连续 5 次失败后本进程直接走本地引擎(被屏蔽网络下不再每场先撞注定失败的请求)。
 
 ### Changed
+- Electron 33 → 44(受支持版本;NAPI 原生模块 ABI 稳定零重建,sherpa-onnx/pdf-inspector/napi-canvas 全兼容;剪贴板 API 迁 W3C 异步 ClipboardItem 模型;ui-test 装置适配 44 的视口同步行为——连续 setBounds 后视口可能停更,统一 resizeViewport 等待器兜底)。
 - 设置页密钥显示从"首尾 4 字符掩码"改为"已配置"占位——修改密钥须整体重输(密钥明文不再回到渲染层)。
 - 手机/浏览器模式(serve)的登录 token 存入 localStorage 后即从地址栏移除(隐私模式才保留 URL 参数),不再进浏览器历史;ReactMarkdown 恢复默认 URL 协议白名单;shiki 转义补引号;课程搜索 LIKE 通配符转义(`%`/`_` 不再全表匹配);删除课程时级联清理失败留日志不再静默吞错。
 

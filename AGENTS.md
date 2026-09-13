@@ -24,7 +24,7 @@ Electron app, local SQLite (sql.js), BYO LLM API key. Light/dark theme.
 ## Tech stack (locked — do not change)
 
 - **TypeScript** full-stack · **React 19 + Vite 6 + Tailwind v3** (renderer)
-- **Electron 33** main process — **CJS output, not ESM** (see gotchas)
+- **Electron 44** main process — **CJS output, not ESM** (see gotchas;v0.35 从 33 升级:NAPI 模块 ABI 稳定零重建,剪贴板 API 迁 W3C 异步 ClipboardItem 模型)
 - **Vercel AI SDK v5** (`ai` + `@ai-sdk/openai` + `@ai-sdk/openai-compatible` + `@ai-sdk/anthropic` + `@ai-sdk/google`) · **zod v3** for tool schemas
 - **sql.js** (SQLite compiled to WASM, pure JS) + **Drizzle ORM** — *not* better-sqlite3
 - **pdfjs-dist** (PDF rendering, pure WASM/JS) — for PDF text + image extraction, no canvas dependency
@@ -102,7 +102,7 @@ npx tsx scripts/live-test/live-test-subtitle-corpus.mjs # 字幕成文核查(fre
 npx tsx scripts/live-test/live-test-pptx-corpus.mjs    # PPTX 解析核查(PyPI python-pptx 真 PowerPoint fixtures 12 件含病理;表格找回/备注/图片/诚实空)
 node scripts/build-termux-voice.mjs  # Termux 语音引擎包(NDK 交叉编译,~12MB;CI termux-voice.yml 同源)
 
-npm run verify:core       # 121 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑;六个安全加固套件 ipc-input-guards/xss-hardening/db-migration/secret-handling/engine-hardening/p23-hardening 守 2026-09-13 审计修复面)
+npm run verify:core       # 123 pure-Node/tsx logic test suites (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑;六个安全加固套件 ipc-input-guards/xss-hardening/db-migration/secret-handling/engine-hardening/p23-hardening 守 2026-09-13 审计修复面)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -133,7 +133,7 @@ npm run verify:core && npx vite build && npm run self-test
 2. Push tag `vX.Y.Z` — `package.yml` (3-OS matrix) and `android-build.yml` both auto-trigger on `v*`. **Neither creates the Release**: their attach steps (`gh release upload`) fail with `release not found` until the Release object exists. So right after pushing the tag, run `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <file>` (notes drafted per human-writing + check_prose, English first). If the attach jobs already failed, `gh run rerun <id> --failed` after creating the release — builds are cached, only attach re-runs.
 3. To backfill or rebuild installers on an **existing** release, dispatch `gh workflow run package.yml --ref main -f release_tag=vX.Y.Z` — the attach happens from CI. Don't download/upload big artifacts locally; the network path to GitHub is unreliable.
 4. Release notes are bilingual (English first, then 简体中文), edited via `gh release edit vX.Y.Z --notes-file <file>`.
-5. `ci.yml` runs oxlint + both typechecks + 121 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
+5. `ci.yml` runs oxlint + both typechecks + 123 verify suites + vite build + mobile bundle on every PR and push to main — never merge a red PR. `android-build.yml` (tag `v*` or dispatch with `release_tag`) builds `LookatStudy-launcher.apk` + `lookatstudy-mobile.zip` and attaches them to the Release.
 
 Config already wired into the workflows (don't undo these): `electron-builder --publish never` (it auto-publishes inside GH Actions and dies hunting GH_TOKEN), `permissions: contents: write` (default GITHUB_TOKEN is read-only → 403 on release upload), mac `identity: null` (unsigned, arm64 only — first open needs right-click → Open), `author.email` in package.json (deb metadata requires it). Runners are Node 22; tsx breaks on Node 20, so the engines floor is 22.
 
@@ -210,6 +210,8 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | XP | `services/xp-service.ts` | Daily XP tracking (correct+10/wrong+1/mastered+50) |
 | SRS | `services/srs.ts` | SM-2 spaced repetition; `recordReviewDb`(pure/srs-db.ts, db 注入)与 BKT 闭环——答题/复习双向同步(答对推迟、答错近期重练) |
 | Streak | `services/streak.ts` | Streak + freeze transitions |
+| 更新检查 | `src/main/lib/update-check.ts` | 轻量新版本提示(v0.35 审计后续):`fetchLatestTag` 走 releases/latest 重定向(8s 超时,离线/被墙恒 null 零打扰)+ 24h 缓存(`update_check_cache`)+ 每版本只提示一次(`update_prompt_seen` 由渲染层真正弹出时写);IPC `app:getUpdateInfo`,App.tsx 首次选课查一次,Toast 带「去下载」action(外链经 setWindowOpenHandler 白名单);空态不查。只提示不自动下载安装 |
+| 人工观测封顶 | `services/human-observation.ts` + `pure/mastery-cap.ts` | 防假毕业(v0.35 审计后续):update_mastery 提议在节点无人工判分记录(settings `human_obs:{nodeId}`)时 BKT 写入封顶 0.85(KC 行与聚合都过**单调**封顶——legacy 高值持平不回撤),永不自动毕业;quiz 点选/练习提交判分即置位标记、封顶解除。mark_mastered(收尾提议)不受影响 |
 | dsh 导入 | `services/dsh-import-service.ts` + `pure/dsh-import-map.ts` | 设置页「数据」区把 dsh-plugin-lookatstudy 的 state.json 学习进度迁入本库(全平台:importFromText 通用通道,detect/importFromPath 桌面自动探测)。**全量迁移**:课程(正文/摘要/翻译)+进度+KC+SM-2+考试星数+康奈尔笔记(canvas_items user_note:quote 当画线文本、正文当注释)+黑板产物(guess 无对应,过滤计数)+学习者记忆三槽(memory 表 global/node/friction_pattern)+卡点(friction_log);对话历史不迁(源在 dsh 会话存储)。兼容插件全部 state 版本(v1 字段子集直过/v2 全量/v3+ 诚实拒);课程三态 create/map/refresh(同标题同结构直写既有节点;map 不碰正文/摘要/翻译),行 id `dsh-<hash8>` 确定性 → 幂等;XP 水位增量合并(`dsh_import_xp_seen`)/streak 取较大;导入前 flushDb+备份库文件;成功发 `import:done` 复用课程列表刷新链。CLI 同源脚本 `scripts/import-dsh-progress.mjs`(node:sqlite 零依赖,核心进度) |
 | CompanionPack | `services/companion-pack-service.ts` + `shared/companion-cut.ts` + `renderer/lib/companion/custom-pack-store.ts` + `renderer/lib/companion/veh-themes.ts` | 自定义纸偶第 6 形态:cutFromImage 切分(vision 折线→几何→L1 降级,白描边平滑+figureBox 底部锚定)+ 协议七通道(apply/getActive/list/activate/delete/setVehicle/cutFromImage;包目录 userData/companion-packs/custom-<hash8>,manifest 增 name/vehicle 字段);渲染=custom-puppet.tsx 分件 image+rest 角补偿+五主题载具(已抽共享 `forms/vehicle.tsx`);设置页多 bot 包卡(色点换载具)+三步制作向导 |
 | Shimeji 桌宠 | `services/shimeji/pure/shimeji-parse.ts` + `services/shimeji/shimeji-pack-service.ts` + `renderer/lib/companion/shimeji-pack-store.ts` + `components/companion/forms/shimeji-form.tsx` | 第 7 形态(独立精灵图路线,不走纸偶切分):双格式解析(日版原版 動作/ポーズ 标签 + Shimeji-ee Action/Pose,同构一一映射)+ 91 动作全归档表 ACTION_ARCHIVE(en/ja 名对 + scene/slot:ground/wall/ceiling/mouse/panel);zip 唯一入口(unzipSync)双布局角色发现(自包含 `<角色>/conf/Actions.xml+img/` 直下帧 vs 引擎布局 img/<品种>/,icon.png 不计帧)+ staging 角色勾选 → confirm 落盘 `userData/shimeji-packs/shimeji-<hash8>/`;协议七通道(shimeji:importZip/confirmImport/list/getActive/getFrame/activate/delete);渲染=ShimejiArt 帧动画(50ms 调度循环,anchor 底中对齐,expression→动作偏好表,挂载即 refreshActiveShimeji 拉激活包);二期调度器=`renderer/lib/companion/shimeji-scheduler.ts` 纯状态机(地面 idle/步行/坐/躺 + 爬墙→爬顶→坠落→落地 settle 全链 + 被抓 dragged 挣扎;slot 由 confirm 从 88 归档表烘焙进 manifest,旧包按 kind 退化;拖拽经 companion-grab 总线消费——抓=挣扎跟手/松手 speed≥2.5(与壳 throwDizzy 同阈)=扔出 air 重力坠落,壳负责屏幕运输、调度器只管动作语义与舞台局部运动学,SPEC 停止条件:飞行器跨栏手感留用户拍板);设置页整合(2026-09-12):入口统一「新建 +」卡 → 选择弹窗(自制/Shimeji,悬停介绍)→ ShimejiImportDialog 弹窗导入(原 SettingsShimejiSection 独立区块退役);形象区固定 7 卡(5 原形+Shimeji 卡+自制卡+新建卡),点来源卡弹包列表选择(选中持久化,列表内删除/换载具;shimeji 换装走 shimeji:setVehicle→manifest.vehicle,机械臂同链,VehArmsGate/VehGroup 共吃 vehTheme);**机械臂接管**(2026-09-12 用户拍板):共享载具组件 vehicle.tsx(VehGroup+VehArms 机械臂对),refs.armL/armR 直挂臂组——逐键 WAAPI 拍打/姿势 CSS(指向朗读句等)零接线落机械臂;机械臂=L1 兜底制(同日二次拍板):**能切出臂件的纸偶手臂动作仍归 PNG 臂**(refs/姿势链不变),仅 L1 整图档(无臂件)由机械臂接管(`!hasArms` 条件渲染);shimeji 载具+臂**常驻**(三次拍板:bot 本就悬浮),仅 wall/ceiling 模式经 `cp-veh-hide` 收起(贴边攀爬平台碍事);**墙对齐可见容器边缘**——form 每 tick 测 composer 卡/讲解面板矩形换算舞台坐标,经 `tickShimeji` 的 sandboxOverride 参数喂入(调度器纯函数默认沙盒不变,verify T12 锁);值勤时精灵钉到平台中心,载具动画规则泛化 `.cp-veh` 作用域 |
@@ -246,7 +248,7 @@ item CRUD), `useFontSize` (3-tier A-/A+), `useLang` (reactive i18n subscription)
 
 ## Verification discipline
 
-- **Tests live in `scripts/verify-*.mjs`** (121 suites) — run via `tsx`, import real TS source.
+- **Tests live in `scripts/verify-*.mjs`** (123 suites) — run via `tsx`, import real TS source.
 - **Live tests in `scripts/live-test/`** — call real LLM, need API key, gate with `Z_AI_API_KEY` env or opencode config. `readApiKey` is unified in `_load-env.mjs`; `verify-live-test-smoke.mjs` does static checks (no key needed) to catch path/import rot.
 - **Closed-loop required:** after writing a feature + its test, prove the test catches regressions by temporarily breaking the source.
 - **Adversarial testing:** test edge cases (empty/NaN/huge/special-char inputs) — see `verify-xp.mjs` and `verify-export.mjs` for patterns.

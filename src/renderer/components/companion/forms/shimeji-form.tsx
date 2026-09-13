@@ -32,6 +32,18 @@ import {
 import type { FormArtProps } from "./shared.js";
 import { VehArms, VehGroup } from "./vehicle.js";
 import { VEH_THEMES } from "../../../lib/companion/veh-themes.ts";
+import type { FormRefs } from "./shared.js";
+import type { VehTheme } from "../../../lib/companion/veh-themes.ts";
+
+/** 前景机械臂(画在精灵之后,操作在身前可见)——与平台同受 .cp-veh-mount 门控。
+    修:曾移出门控容器导致"平台收起而机械臂常显"(实测反馈 2026-09-12)。 */
+function VehArmsGate({ refs, theme }: { refs: Pick<FormRefs, "armL" | "armR">; theme: VehTheme }) {
+  return (
+    <g className="cp-veh-mount">
+      <VehArms refs={refs} theme={theme} />
+    </g>
+  );
+}
 
 const TICK_MS = 50;
 
@@ -133,7 +145,7 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
           )}
         </g>
       </g>
-      <VehArms refs={refs} theme={VEH_THEMES.silver} />
+      <VehArmsGate refs={refs} theme={VEH_THEMES.silver} />
       <g ref={refs.head} />
       <g ref={refs.eyes} />
       <g ref={refs.waves} />

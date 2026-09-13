@@ -20,12 +20,14 @@ export type ShimejiActionT = ShimejiPackManifestT["actions"][number];
 
 export type ShimejiMode = "ground" | "wall" | "ceiling" | "air" | "dragged" | "settle";
 
-/** 舞台局部沙盒(SVG 舞台 200×192;脚底线 y=192,顶棚 y=40) */
+/** 舞台局部沙盒(SVG 舞台 200×192;脚底线 y=192,顶棚 y=40)。
+    x 边界收紧到 64..136(2026-09-12 实测反馈"偏移到外部"):脚点±36=精灵半宽,
+    保证 128 宽帧图任何时刻完整在舞台内(旧 28..172 贴边时半身出血)。 */
 export const SHIMEJI_SANDBOX = {
   groundY: 192,
   ceilY: 40,
-  minX: 28,
-  maxX: 172,
+  minX: 64,
+  maxX: 136,
 } as const;
 
 /** 快扔阈值,单位 px/ms(与壳 CompanionCreature throwDizzy 的 2.5 同阈同语义) */
@@ -154,7 +156,10 @@ function byName(manifest: ShimejiPackManifestT, re: RegExp): ShimejiActionT | nu
   return manifest.actions.find((a) => re.test(a.name)) ?? null;
 }
 
-/** 地面策略:表情偏好 → 50% idle / 25% walk / 15% rest(坐/躺) / 10% climb(无墙池落 idle) */
+/** 地面策略:表情偏好 → 50% idle / 30% walk / 20% rest(坐/躺)。
+    climb 不在随机策略里(2026-09-12 实测反馈"原地抓空气"):舞台沙盒边缘没有
+    可见墙面,随机贴墙=对着空气爬;起爬只由 tick 里"走到边界时"触发
+    (至少有走过去的铺垫)。墙对齐可见容器边(输入卡/面板缘)是后续方向。 */
 function nextGround(
   manifest: ShimejiPackManifestT,
   pools: ShimejiPools,
@@ -166,9 +171,8 @@ function nextGround(
   if (prefHit) return prefHit;
   const roll = rng();
   if (roll < 0.5 && pools.idle.length) return pickFirst(pools.idle);
-  if (roll < 0.75 && pools.walk.length) return pickFirst(pools.walk);
-  if (roll < 0.9 && pools.rest.length) return pickFirst(pools.rest);
-  if (pools.climb.length) return pickFirst(pools.climb);
+  if (roll < 0.8 && pools.walk.length) return pickFirst(pools.walk);
+  if (pools.rest.length) return pickFirst(pools.rest);
   if (pools.idle.length) return pickFirst(pools.idle);
   return manifest.actions[0] ?? null;
 }
@@ -371,19 +375,22 @@ export function tickShimeji(
       }
       const p = advancePose(prev, action);
       if (p.loopsLeft <= 0) {
-        const next = nextGround(manifest, pools, expression, rng);
-        const base = startMotion(prev, next, "ground");
-        if (next?.slot === "wall") {
-          // 从地面就近贴墙开爬
+        // 动作耗尽:贴着边界时才可能起爬(走到边上再爬,治"原地抓空气"——
+        // 旧版策略随机直接把精灵贴到隐形墙上开爬);边界不可见,先离墙留距离
+        const atEdge = prev.x <= S.minX + 1 || prev.x >= S.maxX - 1;
+        if (atEdge && pools.climb.length && rng() < 0.45) {
+          const climb = pickFirst(pools.climb);
+          const base = startMotion(prev, climb, "wall");
           return {
             ...base,
-            mode: "wall",
-            wallSide: prev.x < (S.minX + S.maxX) / 2 ? 0 : 1,
+            wallSide: prev.x <= (S.minX + S.maxX) / 2 ? 0 : 1,
             x: prev.x,
             y: S.groundY,
-            facing: prev.facing,
+            facing: prev.x <= (S.minX + S.maxX) / 2 ? -1 : 1,
           };
         }
+        const next = nextGround(manifest, pools, expression, rng);
+        const base = startMotion(prev, next, "ground");
         return { ...base, x, y: S.groundY, vx, facing };
       }
       return { ...prev, ...p, x, vx, facing, y: S.groundY };

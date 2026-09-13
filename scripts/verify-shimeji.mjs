@@ -484,5 +484,17 @@ await test("T10 复现性:同种子 300 tick 轨迹一致 + confirm 管线烘焙
   assert.equal(byName.Dragged?.slot, "interact");
 });
 
+await test("T11 不原地起爬(实测反馈回归):居中静止的精灵永不被贴墙", () => {
+  let m = { ...initMotion(), actionName: "Stand", loopsLeft: 9999 };
+  const rng = seeded(7);
+  for (let i = 0; i < 600; i++) {
+    m = tick(m, SLOT_MANIFEST);
+    assert.notEqual(m.mode, "wall", "远离边界不得进 wall");
+    assert.ok(m.x >= SHIMEJI_SANDBOX.minX - 1e-9 && m.x <= SHIMEJI_SANDBOX.maxX + 1e-9);
+  }
+  // 沙盒收紧:脚点范围 ±36=精灵半宽,帧图(128 宽)不出舞台
+  assert.ok(SHIMEJI_SANDBOX.minX >= 64 && SHIMEJI_SANDBOX.maxX <= 136);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

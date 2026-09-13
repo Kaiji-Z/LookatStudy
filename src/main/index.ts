@@ -3757,19 +3757,39 @@ async function runUiTest(screenshot = false): Promise<void> {
             if (drawer) break;
           }
           if (!drawer) return { ok: false, reason: "no settings drawer" };
-          // SettingsView 是 React.lazy(v0.22 入口包瘦身),抽屉壳先出现、内容 chunk 后到——轮询等伴学区渲染
-          var out = { formBtn: false, section: false, importCard: false, ok: false };
+          // SettingsView 是 React.lazy(v0.22 入口包瘦身),抽屉壳先出现、内容 chunk 后到——轮询等伴学区渲染。
+          // 2026-09-12 整合后:入口统一到 + 卡 → 新建选择弹窗(自制/Shimeji,悬停介绍)→ Shimeji 弹窗内导入
+          var out = { formBtn: false, addCard: false, selfOpt: false, shimejiOpt: false, importCard: false, ok: false };
           for (var j = 0; j < 30; j++) {
             await new Promise(function(r) { setTimeout(r, 200); });
             out.formBtn = !!q('[data-testid="companion-form-shimeji"]');
-            out.section = !!q('[data-testid="shimeji-section"]');
-            out.importCard = !!q('[data-testid="shimeji-import"]');
-            if (out.formBtn && out.section && out.importCard) break;
+            out.addCard = !!q('[data-testid="companion-form-add"]');
+            if (out.formBtn && out.addCard) break;
           }
+          var add = q('[data-testid="companion-form-add"]');
+          if (add) add.click();
+          for (var k = 0; k < 20; k++) {
+            await new Promise(function(r) { setTimeout(r, 200); });
+            out.selfOpt = !!q('[data-testid="companion-create-self"]');
+            out.shimejiOpt = !!q('[data-testid="companion-create-shimeji"]');
+            if (out.shimejiOpt) break;
+          }
+          var opt = q('[data-testid="companion-create-shimeji"]');
+          if (opt) {
+            opt.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+            opt.click();
+          }
+          for (var m = 0; m < 20; m++) {
+            await new Promise(function(r) { setTimeout(r, 200); });
+            out.importCard = !!q('[data-testid="shimeji-import"]');
+            if (out.importCard) break;
+          }
+          var dclose = q('[data-testid="shimeji-dialog-close"]');
+          if (dclose) dclose.click();
           var close = q('[data-testid="settings-close"]');
           if (close) close.click();
           await new Promise(function(r) { setTimeout(r, 400); });
-          out.ok = out.formBtn && out.section && out.importCard;
+          out.ok = out.formBtn && out.addCard && out.selfOpt && out.shimejiOpt && out.importCard;
           return out;
         } catch (e) { return { ok: false, error: String(e) }; }
       })()
@@ -3777,7 +3797,7 @@ async function runUiTest(screenshot = false): Promise<void> {
       )
       .catch(() => null);
     results.push({
-      name: "shimeji: 设置页第七形态选择项 + Shimeji 区块 + 导入卡",
+      name: "shimeji: 设置页第七形态选择项 + 新建选择弹窗(自制/Shimeji)→ 导入弹窗",
       ok: shimejiDom?.ok === true,
       detail: shimejiDom,
     });

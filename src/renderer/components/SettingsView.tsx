@@ -22,7 +22,8 @@ import { useSyncExternalStore } from "react";
 import { getCompanionSnapshot, subscribeCompanion } from "../lib/companion/bus.ts";
 import { COMPANION_FORM_IDS } from "../lib/companion/forms-index.js";
 import { CompanionBotWizard } from "./companion/CompanionBotWizard.js";
-import { SettingsShimejiSection } from "./SettingsShimejiSection.js";
+import { ShimejiImportDialog } from "./ShimejiImportDialog.js";
+import { refreshActiveShimeji } from "../lib/companion/shimeji-pack-store.js";
 import { refreshActivePack } from "../lib/companion/custom-pack-store.js";
 import { VEH_PICKABLE, VEH_THEMES } from "../lib/companion/veh-themes.ts";
 import type { CompanionVehicleId } from "@shared/companion-cut.ts";
@@ -40,6 +41,16 @@ import pkg from "../../../package.json";
 type SystemVoiceOption = SpeechSynthesisVoice;
 
 /** 已保存纸偶包(形象栏卡片;thumb=主件缩略图 dataURL,vehicle=载具主题)。 */
+interface ShimejiPackSummary {
+  id: string;
+  name: string;
+  format: string;
+  frameCount: number;
+  actionCount: number;
+  iconBase64: string | null;
+  active: boolean;
+}
+
 interface PackSummary {
   id: string;
   name: string;
@@ -1044,6 +1055,13 @@ function CompanionContent() {
   const [packs, setPacks] = useState<PackSummary[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [confirmingPack, setConfirmingPack] = useState<{ id: string; rect: DOMRect } | null>(null);
+  // 设置页整合(2026-09-12 用户拍板):入口统一到「新建 +」卡 → 选择 自制/Shimeji;
+  // shimeji 包卡与纸偶包卡混排进同一形象区,点卡=激活包+切形态
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createHover, setCreateHover] = useState<"self" | "shimeji" | null>(null);
+  const [shimejiImportOpen, setShimejiImportOpen] = useState(false);
+  const [shimejiPacks, setShimejiPacks] = useState<ShimejiPackSummary[]>([]);
+  const [confirmingShimeji, setConfirmingShimeji] = useState<{ id: string; rect: DOMRect } | null>(null);
   // 换载具入口(2026-09-11):点卡片左上色点 → 行下方面板选主题;激活包实时刷新
   const [vehPickerPack, setVehPickerPack] = useState<string | null>(null);
   const loadPacks = useCallback(async () => {
@@ -1053,12 +1071,38 @@ function CompanionContent() {
       /* 列表读失败保持现状 */
     }
   }, []);
+  const loadShimejiPacks = useCallback(async () => {
+    try {
+      setShimejiPacks((await window.api.shimejiList()).packs);
+    } catch {
+      /* lab 环境:静默 */
+    }
+  }, []);
   useEffect(() => {
     void loadPacks();
-    const onChange = () => void loadPacks();
+    void loadShimejiPacks();
+    const onChange = () => {
+      void loadPacks();
+      void loadShimejiPacks();
+    };
     window.addEventListener("companion-config-changed", onChange);
     return () => window.removeEventListener("companion-config-changed", onChange);
-  }, [loadPacks]);
+  }, [loadPacks, loadShimejiPacks]);
+
+  /** 点 shimeji 包卡 = 激活包 + 切形态(与纸偶包卡同款一步到位) */
+  const pickShimejiPack = async (id: string) => {
+    await api.shimejiActivate({ id });
+    if (snap.form !== "shimeji") await api.setSetting("companion_form", "shimeji");
+    window.dispatchEvent(new Event("companion-config-changed"));
+    await loadShimejiPacks();
+    await refreshActiveShimeji();
+  };
+  const removeShimejiPack = async (id: string) => {
+    await window.api.shimejiDelete({ id });
+    setConfirmingShimeji(null);
+    await loadShimejiPacks();
+    await refreshActiveShimeji();
+  };
 
   const pickPack = async (id: string) => {
     await window.api.companionPackActivate({ id });
@@ -1194,6 +1238,46 @@ function CompanionContent() {
                 </span>
               );
             })}
+            {shimejiPacks.map((p) => {
+              const selected = snap.form === "shimeji" && p.active;
+              return (
+                <span key={p.id} className="relative inline-block">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-testid="shimeji-pack-card"
+                    onClick={() => { void pickShimejiPack(p.id); }}
+                    title={`${p.name} · ${p.format} · ${p.frameCount}f`}
+                    className={`flex flex-col items-center gap-0.5 rounded-xl p-1.5 border motion-safe:transition-colors
+                      ${selected
+                        ? "border-[var(--accent)] bg-surface-2 shadow-card"
+                        : "border-[var(--border-faint)] hover:bg-surface-2"}`}
+                  >
+                    {p.iconBase64 ? (
+                      <img src={`data:image/png;base64,${p.iconBase64}`} alt="" className="h-14 w-14 object-contain" />
+                    ) : (
+                      <span className="h-14 w-14 flex items-center justify-center text-caption text-ink-muted">Shimeji</span>
+                    )}
+                    <span className={`text-label max-w-20 truncate ${selected ? "text-ink-strong font-medium" : "text-ink-muted"}`}>
+                      {p.name}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t("settings.shimeji.delete")}
+                    data-tooltip={t("settings.shimeji.delete")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmingShimeji({ id: p.id, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+                    }}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-surface-1 border border-[var(--border-faint)] text-ink-muted hover:text-warning flex items-center justify-center"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              );
+            })}
             {/* "+"卡:空=进制作;非空=追加新 bot,每保存一个持久化一张卡 */}
             <button
               type="button"
@@ -1201,7 +1285,7 @@ function CompanionContent() {
               aria-checked={false}
               data-testid="companion-form-add"
               aria-label={t("companion.bots.add")}
-              onClick={() => setWizardOpen(true)}
+              onClick={() => setCreateOpen(true)}
               className="flex flex-col items-center gap-0.5 rounded-xl p-1.5 border border-dashed border-[var(--border-faint)] hover:bg-surface-2"
             >
               <span className="h-14 w-14 flex items-center justify-center text-ink-muted">
@@ -1255,7 +1339,67 @@ function CompanionContent() {
               onCancel={() => setConfirmingPack(null)}
             />
           )}
-          <SettingsShimejiSection />
+          {createOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+              data-noswipe=""
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("companion.create.title")}
+              onClick={() => setCreateOpen(false)}
+            >
+              <div
+                className="relative w-full max-w-md rounded-2xl bg-surface-0 border border-[var(--border)] shadow-elevated p-4"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="text-body font-medium text-ink-strong mb-3">{t("companion.create.title")}</div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {([
+                    { key: "self" as const, testid: "companion-create-self", name: t("companion.create.self.name"), hover: t("companion.create.self.hover"), open: () => { setCreateOpen(false); setWizardOpen(true); } },
+                    { key: "shimeji" as const, testid: "companion-create-shimeji", name: t("companion.create.shimeji.name"), hover: t("companion.create.shimeji.hover"), open: () => { setCreateOpen(false); setShimejiImportOpen(true); } },
+                  ]).map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      data-testid={opt.testid}
+                      onMouseEnter={() => setCreateHover(opt.key)}
+                      onMouseLeave={() => setCreateHover((cur) => (cur === opt.key ? null : cur))}
+                      onFocus={() => setCreateHover(opt.key)}
+                      onBlur={() => setCreateHover((cur) => (cur === opt.key ? null : cur))}
+                      onClick={opt.open}
+                      className={`flex flex-col items-center gap-1.5 rounded-xl border p-4 motion-safe:transition-colors
+                        ${createHover === opt.key
+                          ? "border-[var(--accent)] bg-surface-2 shadow-card"
+                          : "border-[var(--border-faint)] hover:bg-surface-2"}`}
+                    >
+                      <span className="text-body font-medium text-ink-strong">{opt.name}</span>
+                      {/* 悬停介绍两者区别(2026-09-12 用户拍板):hover/focus 展开描述 */}
+                      <span className={`text-caption text-ink-muted text-center leading-snug ${createHover === opt.key ? "" : "opacity-0 h-0 overflow-hidden"} motion-safe:transition-all`}>
+                        {opt.hover}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-caption text-ink-faint mt-3 text-center">{t("companion.create.hint")}</p>
+              </div>
+            </div>
+          )}
+          {shimejiImportOpen && (
+            <ShimejiImportDialog
+              onClose={() => setShimejiImportOpen(false)}
+              onImported={async () => { await loadShimejiPacks(); }}
+            />
+          )}
+          {confirmingShimeji && (
+            <ConfirmCard
+              anchorRect={confirmingShimeji.rect}
+              message={t("settings.shimeji.deleteConfirm", { name: shimejiPacks.find((p) => p.id === confirmingShimeji.id)?.name ?? "" })}
+              danger
+              testid="shimeji-delete-confirm"
+              onConfirm={() => void removeShimejiPack(confirmingShimeji.id)}
+              onCancel={() => setConfirmingShimeji(null)}
+            />
+          )}
           {wizardOpen && (
             <CompanionBotWizard
               onClose={() => setWizardOpen(false)}

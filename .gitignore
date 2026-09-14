@@ -89,3 +89,4 @@ scripts/fixtures/pptx-corpus/
 .shimeji-fixtures/
 .verify-shimeji-data/
 .shimeji-research/
+.highlight-test-result.json

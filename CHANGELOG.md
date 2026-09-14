@@ -16,6 +16,17 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+
+- 开屏导师（boot guide）：未选课态中栏改为 bot 主持的冷启动/回访引导——初次四步向导（欢迎与换装提示 → API Key 指引 → 三问画像卡流 → 试玩题）+ 回访建议卡（继续上次/复习到期/火焰告急/卡点回访/快毕业/考试中断，`shared/boot-guide.ts` 纯函数状态机，台词全本地双语零 LLM），引导屏不是 gate，一键出口；boot 向导看完即置位永不重播
+- 学习者画像（声明侧）：MBTI 快捷入口展开为 style 四维真源（讲解起点/互动密度/反馈风格/节奏，16 型 × 双语展开表），settings 表 `learner_profile` JSON 存储（**未加新表**），经 `profile:get/set` 结构化通道读写；注入对话提示词第④层（独立于 node-bound 快照，空画像零变化，带防注入标注与合意困难条款）
+- AI 对话补画像：新 agent 工具 `update_learner_profile`（Propose→Apply 确认卡；证据≥2 次才提议），apply 合并入库 + 手改仲裁（提议发起后用户手编 → 判 stale 不覆盖）
+- 会话恢复：settings `last_session` 持久化，启动 resume_last 一键回到上次课程与节点（课程被删优雅回落）
+- 右栏学习回顾（未选课态）：累积总 XP/已掌握课数/连续天数 + 最近在学（知识增长显化），空数据回落学习 tips 日轮换兜底卡
+- `boot:getState` 聚合通道：一次往返返回状态机全部输入 + 动作目标 + 回顾数据（db 注入式 `boot-state-service`）
+- 伴学空态剧本：无课时坐镇开屏引导卡旁（chatAnchor 兜底锚），答题表情爆发；隔天回归星星眼复用既有情境反应
+- 验证：verify-learner-profile / verify-boot-guide / verify-boot-quiz 三套件（含 DB 级与源级守卫，均过破坏-恢复闭环）；live-test-profile-teaching（画像注入教学风格 A/B 行为验收）与 live-test-profile-update（真工具调用、无手写假标记）两场景；ui-test 新增五断言组（引导屏/向导入库/不重播/resume/右栏两态）
+
 ## [0.35.1] - 2026-09-14
 
 ### Fixed

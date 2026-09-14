@@ -30,7 +30,10 @@ export function BootRecapPanel() {
   const hasData = !!recap && (recap.totalXp > 0 || recap.masteredCount > 0 || recap.streakDays > 0);
 
   return (
-    <div className="h-full overflow-y-auto px-5 py-8" data-testid="boot-recap" data-mode={hasData ? "recap" : "tips"}>
+    /* notebook-panel:未选课态右栏 pane 身份锚(ui-test waitRender/T3 断言依赖;
+       与 NotebookPanel 互斥渲染,selectedCourseId 翻转时二者只有一个在场,无重复) */
+    <div className="h-full overflow-y-auto px-5 py-8" data-testid="notebook-panel">
+    <div className="h-full overflow-y-auto" data-testid="boot-recap" data-mode={hasData ? "recap" : "tips"}>
       <div className="mx-auto max-w-sm flex flex-col gap-4">
         {hasData && recap ? (
           <section className="surface-card rounded-2xl p-5 shadow-card flex flex-col gap-4" data-testid="boot-recap-card">
@@ -74,6 +77,7 @@ export function BootRecapPanel() {
           </section>
         )}
       </div>
+    </div>
     </div>
   );
 }

@@ -192,7 +192,7 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
     >
       <div className="mx-auto max-w-md flex flex-col gap-4" data-testid="boot-guide" data-companion-anchor="boot-guide">
         {guide.welcomeBack && !editing && (
-          <div className="text-center text-body text-gold font-bold" data-testid="boot-welcome-back">
+          <div className="text-center text-body text-accent font-bold" data-testid="boot-welcome-back">
             {decorateVars("boot.welcome_back")}
           </div>
         )}

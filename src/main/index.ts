@@ -4163,6 +4163,170 @@ async function runUiTest(screenshot = false): Promise<void> {
       detail: shimejiCleanup,
     });
   }
+  // ── v0.36 开屏导师(boot guide)──────────────────────────────────────
+  // T-b1 引导屏出现:未选课态中栏 = 开屏导师(向导欢迎场景),异步 boot:getState 回来后渲染。
+  const bootAppear = await jsTimeout(win.webContents, `
+    (async function() {
+      for (var i = 0; i < 40; i++) {
+        var el = document.querySelector('[data-testid="boot-guide"]');
+        if (el) return { scene: el.getAttribute("data-scene"), bootDone: el.getAttribute("data-boot-done") };
+        await new Promise(function(r){ setTimeout(r, 250); });
+      }
+      return { scene: null };
+    })()
+  `);
+  results.push({
+    name: "boot: guide panel appears (welcome_intro on fresh DB)",
+    ok: bootAppear?.scene === "welcome_intro" && bootAppear?.bootDone === "0",
+    detail: bootAppear,
+  });
+
+  // T-b2 三问卡流走完:欢迎→跳过 key→填称呼+选 MBTI→选目标→试玩题→完成;
+  // 经 window.api 断言画像入库 + boot_done 置位(DB 真值,非仅 UI)。
+  const wizardRun = await jsTimeout(win.webContents, `
+    (async function() {
+      var q = function(sel){ return document.querySelector(sel); };
+      var click = function(sel){
+        for (var i = 0; i < 40; i++) { var b = q(sel); if (b) { b.click(); return true; } }
+        return false;
+      };
+      var type = function(sel, text){
+        for (var i = 0; i < 40; i++) { var inp = q(sel); if (inp) { inp.value = text; inp.dispatchEvent(new Event("input", { bubbles: true })); return true; } }
+        return false;
+      };
+      try {
+        click('[data-testid="boot-action-wizard_next"]');            // 欢迎下一步 → key
+        click('[data-testid="boot-action-wizard_next"]');            // key 先跳过 → 三问
+        type('[data-testid="boot-wizard-name"]', "ui测试员");
+        click('[data-testid="boot-mbti-ENTP"]');
+        await new Promise(function(r){ setTimeout(r, 300); });       // MBTI 翻转反馈
+        click('[data-testid="boot-wizard-next1"]');                  // → 目标卡
+        click('[data-testid="boot-wizard-goal-curiosity"]');
+        click('[data-testid="boot-wizard-next2"]');                  // → 试玩题
+        click('[data-testid="boot-wizard-quiz-a"]');
+        await new Promise(function(r){ setTimeout(r, 300); });       // 揭晓
+        click('[data-testid="boot-wizard-finish"]');                 // 完成 → course_pick
+        await new Promise(function(r){ setTimeout(r, 400); });
+        var el = q('[data-testid="boot-guide"]');
+        var profile = await window.api.profileGet();
+        var bootDone = await window.api.getSetting("boot_done");
+        return { scene: el ? el.getAttribute("data-scene") : null, name: profile && profile.name, mbti: profile && profile.mbti, goal: profile && profile.goal, pacing: profile && profile.style && profile.style.pacing, bootDone: bootDone };
+      } catch (e) { return { error: String(e) }; }
+    })()
+  `);
+  results.push({
+    name: "boot: wizard walkthrough persists profile + boot_done (ENTP expanded)",
+    ok: wizardRun?.scene === "course_pick" && wizardRun?.name === "ui测试员" &&
+        wizardRun?.mbti === "ENTP" && wizardRun?.goal === "curiosity" &&
+        wizardRun?.pacing === "exploratory" && wizardRun?.bootDone === "1",
+    detail: wizardRun,
+  });
+
+  // T-b3 不重播:reload 后 boot_done=1 → 不再回到向导(ready_room:有课无进度默认态)。
+  const noReplay = await jsTimeout(win.webContents, `
+    (async function() {
+      location.reload();
+      return "reloading";
+    })()
+  `);
+  await new Promise((r) => setTimeout(r, 4000));
+  const afterReload = await jsTimeout(win.webContents, `
+    (async function() {
+      for (var i = 0; i < 60; i++) {
+        var el = document.querySelector('[data-testid="boot-guide"]');
+        if (el && el.getAttribute("data-scene")) {
+          return { scene: el.getAttribute("data-scene"), bootDone: el.getAttribute("data-boot-done") };
+        }
+        await new Promise(function(r){ setTimeout(r, 250); });
+      }
+      return { scene: null };
+    })()
+  `);
+  results.push({
+    name: "boot: boot_done never replays wizard (ready_room after reload)",
+    ok: afterReload?.scene === "ready_room" && afterReload?.bootDone === "1",
+    detail: { noReplay, afterReload },
+  });
+
+  // T-b4 resume_last:写 last_session 指向真实课程+节点 → reload → 一键恢复进课程。
+  const resumeRun = await jsTimeout(win.webContents, `
+    (async function() {
+      try {
+        var courses = await window.api.listCourses();
+        if (!courses.length) return { error: "no course" };
+        var courseId = courses[0].id;
+        var tree = await window.api.getCourseTree(courseId);
+        var lesson = tree.find(function(n){ return n.type === "lesson"; });
+        await window.api.setSetting("last_session", JSON.stringify({ courseId: courseId, nodeId: lesson ? lesson.id : null }));
+        location.reload();
+        return "reloading";
+      } catch (e) { return { error: String(e) }; }
+    })()
+  `);
+  await new Promise((r) => setTimeout(r, 4000));
+  const resumeScene = await jsTimeout(win.webContents, `
+    (async function() {
+      for (var i = 0; i < 60; i++) {
+        var el = document.querySelector('[data-testid="boot-guide"]');
+        if (el && el.getAttribute("data-scene") === "resume_last") return { scene: "resume_last" };
+        await new Promise(function(r){ setTimeout(r, 250); });
+      }
+      return { scene: document.querySelector('[data-testid="boot-guide"]') ? document.querySelector('[data-testid="boot-guide"]').getAttribute("data-scene") : null };
+    })()
+  `);
+  const resumeClicked = await jsTimeout(win.webContents, `
+    (async function() {
+      var btn = document.querySelector('[data-testid="boot-action-resume"]');
+      if (!btn) return { clicked: false };
+      btn.click();
+      for (var i = 0; i < 80; i++) {
+        await new Promise(function(r){ setTimeout(r, 250); });
+        if (document.querySelector('[data-testid="chat-panel"]') && !document.querySelector('[data-testid="chat-no-course"]')) {
+          return { clicked: true, restored: true };
+        }
+      }
+      return { clicked: true, restored: false };
+    })()
+  `);
+  results.push({
+    name: "boot: resume_last one-click restores course session",
+    ok: resumeScene?.scene === "resume_last" && resumeClicked?.restored === true,
+    detail: { resumeRun, resumeScene, resumeClicked },
+  });
+
+  // T-b5 右栏学习回顾两态:清 total_xp/进度后 reload = tips 兜底;写 total_xp = recap 卡。
+  // (resume 后处于选课态,右栏是 NotebookPanel —— 回退未选课态再测)
+  const recapRun = await jsTimeout(win.webContents, `
+    (async function() {
+      try {
+        await window.api.deleteCourse((await window.api.listCourses())[0].id);
+        await window.api.setSetting("total_xp", "860");
+        location.reload();
+        return "reloading";
+      } catch (e) { return { error: String(e) }; }
+    })()
+  `);
+  await new Promise((r) => setTimeout(r, 4000));
+  const recapState = await jsTimeout(win.webContents, `
+    (async function() {
+      for (var i = 0; i < 60; i++) {
+        var el = document.querySelector('[data-testid="boot-recap"]');
+        if (el && el.getAttribute("data-mode")) {
+          var xpEl = document.querySelector('[data-testid="boot-recap-xp"]');
+          var tipEl = document.querySelector('[data-testid="boot-tip-text"]');
+          return { mode: el.getAttribute("data-mode"), xpText: xpEl ? xpEl.textContent : null, tipText: tipEl ? tipEl.textContent.slice(0, 40) : null };
+        }
+        await new Promise(function(r){ setTimeout(r, 250); });
+      }
+      return { mode: null };
+    })()
+  `);
+  results.push({
+    name: "boot: right-pane recap card (recap mode with xp>0)",
+    ok: recapState?.mode === "recap" && /860/.test(recapState?.xpText ?? ""),
+    detail: { recapRun, recapState },
+  });
+
 
   // allOk: 所有测试通过 OR 仅 knownFail 测试未通过
   const realFails = results.filter((r) => !r.ok && !r.knownFail);

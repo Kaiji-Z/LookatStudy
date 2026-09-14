@@ -1059,6 +1059,7 @@ export default function App() {
               {!selectedCourseId ? (
                 /* 未选课程(启动初始态 / 删除已选课程后):中栏=开屏导师(bot 主持的
                    冷启动向导 + 回访建议 + 就绪教室),不再是静态选课占位。 */
+                <div className="flex-1 flex flex-col min-h-0" data-testid="chat-no-course">
                 <BootGuidePanel
                   onResume={(courseId, nodeId) => guardedNav(() => handleBootResume(courseId, nodeId))}
                   onOpenReview={() => guardedNav(() => setShowReviewDrawer(true))}
@@ -1067,6 +1068,7 @@ export default function App() {
                   onPickCourse={handleBootPickCourse}
                   onProfileChanged={() => { /* 画像变化:boot 态下次拉取即见 */ }}
                 />
+                </div>
               ) : selectedNode?.type === "exam" ? (
                 /* 考试节点:渲染 ExamView 替代 chat(关底 boss,独立 UI) */
                 <Suspense fallback={null}>

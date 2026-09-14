@@ -1280,6 +1280,24 @@ html.light ::-webkit-scrollbar-thumb:hover {
 @keyframes cp-thruster-pulse { from { opacity: 0.85; } to { opacity: 1; } }
 /* v8 朗读句高亮(CSS Custom Highlight API,零 DOM 改动) */
 ::highlight(cp-reading) { background-color: rgba(28, 176, 246, 0.2); }
+/* v0.35.1 持久画线(Highlight API 通道;与旧 <mark> 通道同观感:绿下划线无底色)。
+   ::highlight() 只支持 color/background/text-decoration/text-shadow 系,下划线
+   用 text-decoration 实现(border 方案是 <mark> 通道专属)。 */
+::highlight(cp-user-note) {
+  color: inherit;
+  background-color: transparent;
+  text-decoration-line: underline;
+  text-decoration-color: rgb(34, 197, 94);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+/* 溯源跳转闪烁:淡黄底 + 加粗绿线,1.5s 后由 JS 撤注册 */
+::highlight(cp-user-note-flash) {
+  background-color: rgba(250, 204, 21, 0.35);
+  text-decoration-line: underline;
+  text-decoration-color: rgb(34, 197, 94);
+  text-decoration-thickness: 4px;
+}
 /* v7 航灯:左红右绿导航灯(航空惯例),常态慢呼吸,飞行/起飞时急闪交错 */
 .cp-beacons circle { fill: currentColor; opacity: 0.55; }
 /* v10 胸屏键入字符:打字时身体圆屏显示按键,弹入定格 */

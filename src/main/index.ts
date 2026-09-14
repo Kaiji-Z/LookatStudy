@@ -4229,6 +4229,12 @@ async function runHighlightTest(): Promise<void> {
       target: "es2020",
     });
     jsSrc = new TextDecoder().decode(out.outputFiles[0].contents);
+    // iife 注入页没有模块系统:esbuild 会把源里的 import 转成
+    // `var import_x = require("@shared/...")`,页面无 require → 整个 iife 抛错、
+    // HL 挂载失败(v0.28 引入 @shared import 起本 harness 就没绿过——双重既有坏)。
+    // 剥掉 require 行;被测面(rangeToOffsets/画线通道)不引用这些模块
+    // (markReadingSentence 内部的 displayGroupSpanAround 在本页不被调用)。
+    jsSrc = jsSrc.replace(/^\s*var\s+import_\w+\s*=\s*require\([^)]*\)\s*;\s*$/gm, "");
   } catch (e) {
     const errResult = { overall: false, results: [{ name: "esbuild compile", ok: false, detail: String(e) }] };
     writeFileSync(join(process.cwd(), ".highlight-test-result.json"), JSON.stringify(errResult, null, 2));
@@ -4284,7 +4290,9 @@ async function runHighlightTest(): Promise<void> {
           const marks = window.HL.applyPersistentMarks(container, [{ noteId: "n1", startOffset: offsets.start, endOffset: offsets.end }]);
           const markEl = marks.get("n1");
           if (!markEl) return { ok: false, reason: "no mark", offsets };
-          const markText = markEl.textContent;
+          // 跨元素选区会被拆成多个克隆 <mark>(首元素只含首段文字),断言比联合文本
+          const markText = Array.from(container.querySelectorAll("mark.lookatstudy-underline"))
+            .map((m) => m.textContent).join("");
           if (markText !== expectedText) {
             return { ok: false, reason: "mark text mismatch", expected: expectedText, actual: markText };
           }
@@ -4339,6 +4347,68 @@ async function runHighlightTest(): Promise<void> {
     { desc: "Quoted", startText: "Quoted", len: 6 },
     { desc: "inside", startText: "inside", len: 6 },
   ]);
+
+  // v0.35.1 持久画线 Highlight API 通道(16:23 DOMException 根修的行为闭环):
+  // 核心断言 = 画完线 DOM 零改动(无 mark 元素、文本节点不拆分)——这正是
+  // "React 重渲染永不冲突"的构造性证明;另验 Range 命中文字、注册表、
+  // 重渲染后重放、溯源查询与兜底通道共存。
+  {
+    const hlCase = await jsTimeout(win.webContents, `(async function() {
+      const out = {};
+      try {
+        const HTML = '<p>前文 <a href="https://example.com">链接文字</a> 中段,然后是可画线正文。</p>';
+        const container = document.body;
+        // ── 1. 主通道:画线后 DOM 必须零改动 ──
+        container.innerHTML = HTML;
+        const domBefore = container.innerHTML;
+        const notes = [{ noteId: "n1", text: "链接文字" }, { noteId: "n2", text: "可画线正文" }];
+        const ranges = window.HL.applyPersistentMarksHighlight(container, notes);
+        out.zeroDomChange = container.innerHTML === domBefore;
+        out.noMarkElements = container.querySelectorAll("mark.lookatstudy-underline").length === 0;
+        out.rangeCount = ranges.size;
+        out.n1Text = ranges.get("n1") ? ranges.get("n1").toString() : null;
+        // 注册表:Highlight 已登记,包含两条 Range
+        const hl = (window.CSS && window.CSS.highlights) ? window.CSS.highlights.get("cp-user-note") : null;
+        out.registered = !!hl;
+        out.registeredSize = hl ? hl.size : -1;
+        // ── 2. 溯源查询 ──
+        out.hasN1 = window.HL.hasNoteMark("n1");
+        out.hasGhost = window.HL.hasNoteMark("ghost");
+        // ── 3. 模拟 React 重渲染(整树重建)后重放:无异常、注册表更新 ──
+        container.innerHTML = HTML; // 旧 Range 全部悬空
+        const ranges2 = window.HL.applyPersistentMarksHighlight(container, [{ noteId: "n1", text: "链接文字" }]);
+        out.reapplyOk = ranges2.size === 1 && ranges2.get("n1").toString() === "链接文字";
+        out.prunedGhost = !window.HL.hasNoteMark("n2"); // n2 不在新 notes 里,应被摘除
+        // ── 4. 双容器共存(讲解区+对话流同屏):互不冲掉 ──
+        const box2 = document.createElement("div");
+        container.appendChild(box2);
+        box2.innerHTML = '<p>对话流里的画线目标文本。</p>';
+        window.HL.applyPersistentMarksHighlight(box2, [{ noteId: "n3", text: "画线目标文本" }]);
+        const hl2 = window.CSS.highlights.get("cp-user-note");
+        out.coexistSize = hl2 ? hl2.size : -1;
+        // ── 5. 兜底通道仍在(DOM 包裹,无 API 环境用)──
+        container.innerHTML = HTML;
+        const marks = window.HL.applyPersistentMarksByText(container, notes);
+        out.fallbackMarks = container.querySelectorAll("mark.lookatstudy-underline").length;
+        out.fallbackMap = marks.size;
+        out.fallbackText = marks.get("n1") ? marks.get("n1").textContent : null;
+        // 清场
+        window.CSS.highlights.delete("cp-user-note");
+        window.CSS.highlights.delete("cp-user-note-flash");
+        container.innerHTML = "";
+      } catch (e) {
+        out.exception = String(e && e.message || e);
+      }
+      return out;
+    })()`);
+    const o = (hlCase || {}) as Record<string, unknown>;
+    results.push({ name: "note-highlight: 主通道画线后 DOM 零改动", ok: o.zeroDomChange === true && o.noMarkElements === true, detail: o });
+    results.push({ name: "note-highlight: Range 命中 + 注册表登记", ok: o.rangeCount === 2 && o.n1Text === "链接文字" && o.registered === true && o.registeredSize === 2, detail: { rangeCount: o.rangeCount, n1Text: o.n1Text, registered: o.registered, registeredSize: o.registeredSize } });
+    results.push({ name: "note-highlight: 溯源查询 + 幽灵 id 拒绝", ok: o.hasN1 === true && o.hasGhost === false, detail: { hasN1: o.hasN1, hasGhost: o.hasGhost } });
+    results.push({ name: "note-highlight: 重渲染后重放 + 死 Range 修剪", ok: o.reapplyOk === true && o.prunedGhost === true, detail: { reapplyOk: o.reapplyOk, prunedGhost: o.prunedGhost } });
+    results.push({ name: "note-highlight: 双容器共存不互冲", ok: o.coexistSize === 2, detail: { coexistSize: o.coexistSize } });
+    results.push({ name: "note-highlight: DOM 兜底通道仍工作", ok: o.fallbackMarks === 2 && o.fallbackMap === 2 && o.fallbackText === "链接文字", detail: { fallbackMarks: o.fallbackMarks, fallbackMap: o.fallbackMap, fallbackText: o.fallbackText, exception: o.exception } });
+  }
 
   win.close();
   const passed = results.filter((r) => r.ok).length;

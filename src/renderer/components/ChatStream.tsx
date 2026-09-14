@@ -21,7 +21,7 @@ import { useMarkdownPipeline } from "../lib/math-plugins.js";
 import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square } from "lucide-react";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
-import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, centerReadingRangeInView } from "../lib/highlightText.js";
+import { applyPersistentMarksByText, applyPersistentMarksHighlight, supportsHighlightMarks, getNoteRange, flashNoteRange, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, centerReadingRangeInView } from "../lib/highlightText.js";
 import { normalizeMathNotation } from "../lib/math-normalize.js";
 import { playedSentencePrefix } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
@@ -187,7 +187,9 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       for (const [msgId, notes] of byMsg) {
         const msgEl = scrollRef.current.querySelector(`[data-msg-id="${msgId}"]`) as HTMLElement | null;
         if (msgEl) {
-          applyPersistentMarksByText(msgEl, notes);
+          // v0.35.1 主通道 = Highlight API(零 DOM 改动);老环境回退 DOM 包裹
+          if (supportsHighlightMarks()) applyPersistentMarksHighlight(msgEl, notes);
+          else applyPersistentMarksByText(msgEl, notes);
         }
       }
     }, 150);
@@ -199,6 +201,11 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
     const handler = (e: Event) => {
       const noteId = (e as CustomEvent<string>).detail;
       if (!noteId) return;
+      if (supportsHighlightMarks()) {
+        const range = getNoteRange(noteId);
+        if (range) flashNoteRange(range);
+        return;
+      }
       const mark = scrollRef.current?.querySelector(`mark[data-note-id="${noteId}"]`) as HTMLElement | null;
       if (mark) flashMark(mark);
     };

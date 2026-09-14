@@ -1421,8 +1421,8 @@ console.log("✓ T21 v11 桌宠接线(穿透切换/协议/bus 隐身/设置开�
     "T22: karaoke 句子匹配收全文本(含画线 mark——划线落在朗读句里不再断高亮)",
   );
   assert.ok(
-    hl.includes("lastNoteMarkText") && hl.includes("isConnected"),
-    "T22: 画线锚点重渲染自愈(元素悬空按文本找回)",
+    hl.includes("lastNoteRangeText") && hl.includes("isConnected"),
+    "T22: 画线锚点重渲染自愈(Range 悬空按文本找回;v0.35.1 双通道重构)",
   );
   const creatureSrc = read("components/companion/CompanionCreature.tsx");
   assert.ok(

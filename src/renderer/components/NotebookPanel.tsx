@@ -16,7 +16,7 @@ import ReactMarkdown from "react-markdown";
 import { useMarkdownPipeline } from "../lib/math-plugins.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { api } from "../lib/api.js";
-import { applyPersistentMarksByText, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, setLastNoteMark, centerReadingRangeInView } from "../lib/highlightText.js";
+import { applyPersistentMarksByText, applyPersistentMarksHighlight, supportsHighlightMarks, getNoteRange, getLastNoteRangeInContainer, flashNoteRange, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, setLastNoteMark, centerReadingRangeInView } from "../lib/highlightText.js";
 import { normalizeMathNotation } from "../lib/math-normalize.js";
 import { playedSentencePrefix } from "@shared/speech-text";
 import { selectionPopoverPosition } from "../lib/selection-popover.js";
@@ -352,18 +352,25 @@ function ContentTab({
       }
     }
     const t = setTimeout(() => {
-      if (proseRef.current) {
-        applyPersistentMarksByText(proseRef.current, notes);
-      }
+      if (!proseRef.current) return;
+      // v0.35.1 主通道 = Highlight API 注册(零 DOM 改动,React 重渲染零冲突,
+      // 16:23 DOMException 根修);无 API 老环境回退 DOM 包裹。
+      if (supportsHighlightMarks()) applyPersistentMarksHighlight(proseRef.current, notes);
+      else applyPersistentMarksByText(proseRef.current, notes);
     }, 80);
     return () => clearTimeout(t);
   }, [content, contentNotes]);
 
-  // 监听溯源跳转事件:按 noteId 找到对应画线 mark,scrollIntoView + 闪烁
+  // 监听溯源跳转事件:按 noteId 找到对应画线,scrollIntoView + 闪烁
   useEffect(() => {
     const handler = (e: Event) => {
       const noteId = (e as CustomEvent<string>).detail;
       if (!noteId) return;
+      if (supportsHighlightMarks()) {
+        const range = getNoteRange(noteId);
+        if (range) flashNoteRange(range);
+        return;
+      }
       const mark = proseRef.current?.querySelector(`mark[data-note-id="${noteId}"]`) as HTMLElement | null;
       if (mark) flashMark(mark);
     };
@@ -554,7 +561,13 @@ function ContentTab({
     // v10:落点=这条新画线(apply 80ms 防抖后 mark 才上 DOM,稍等再登记)
     companionNote();
     setTimeout(() => {
-      const marks = proseRef.current?.querySelectorAll("mark.lookatstudy-underline");
+      if (!proseRef.current) return;
+      if (supportsHighlightMarks()) {
+        const range = getLastNoteRangeInContainer(proseRef.current);
+        if (range) setLastNoteMark(range);
+        return;
+      }
+      const marks = proseRef.current.querySelectorAll("mark.lookatstudy-underline");
       const last = marks && marks.length > 0 ? (marks[marks.length - 1] as HTMLElement) : null;
       if (last) setLastNoteMark(last);
     }, 200);

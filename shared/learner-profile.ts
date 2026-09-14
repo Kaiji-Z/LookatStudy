@@ -73,6 +73,11 @@ export function expandMbtiToStyle(mbti: MbtiType): LearnerStyle {
   };
 }
 
+/** AI 提议的画像 patch(update_learner_profile 工具输入;apply 侧走 applyProfilePatch)。 */
+export type LearnerProfilePatch = Partial<Omit<LearnerProfile, "style" | "updatedAt">> & {
+  style?: Partial<LearnerStyle>;
+};
+
 /** 画像是否有任何可用信息（全空 → 不注入/空态兜底）。 */
 export function hasProfileContent(p: LearnerProfile): boolean {
   return Boolean(

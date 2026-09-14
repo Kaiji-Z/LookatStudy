@@ -22,6 +22,7 @@ import {
   proposals as proposalsTable,
   progress as progressTable,
   srsItems,
+  settings as settingsTable,
 } from "../db/schema.js";
 import { randomUUID } from "node:crypto";
 import { updateMastery, BKT_DEFAULTS } from "./pure/bkt.js";
@@ -37,6 +38,7 @@ import { unlockNextLessonIfEligible } from "./progress-service.js";
 import { MASTERED_MASTERY_THRESHOLD } from "@shared/types";
 import { emitStateChange } from "../lib/state-emitter.js";
 import { AI_MASTERY_CAP, capMasteryValue } from "./pure/mastery-cap.js";
+import { parseProfileJson, emptyProfile, applyProfilePatch, serializeProfile, type LearnerProfilePatch } from "@shared/learner-profile";
 import { hasHumanObservation } from "./human-observation.js";
 
 type Db = SQLJsDatabase<typeof schema>;
@@ -49,6 +51,7 @@ export type OperationType =
   | "update_mastery"
   | "mark_mastered"
   | "set_node_status"
+  | "update_learner_profile"
   | "add_to_srs";
 
 export interface LearningOperation {
@@ -62,6 +65,8 @@ export interface LearningOperation {
   quality?: number;
   // update_mastery: 考察的知识组件下标(per-KC BKT)。不传=无 KC 回退或更新全部。
   kcIndex?: number;
+  // update_learner_profile: 画像 patch(只含要改的字段;nodeId 仅作提议归属,不参与语义)
+  profilePatch?: LearnerProfilePatch;
 }
 
 export interface Proposal {
@@ -151,7 +156,7 @@ export function applyProposal(db: Db, id: string): Proposal {
 
   for (const op of operations) {
     try {
-      executeOperation(db, op);
+      executeOperation(db, op, row.createdAt);
     } catch (e) {
       firstError = firstError ?? (e instanceof Error ? e.message : String(e));
       // 继续尝试后续操作（部分应用语义）
@@ -196,7 +201,7 @@ export function rejectProposal(db: Db, id: string): Proposal {
 
 /* ---------- 单操作执行 ---------- */
 
-function executeOperation(db: Db, op: LearningOperation): void {
+function executeOperation(db: Db, op: LearningOperation, proposalCreatedAt?: string): void {
   switch (op.type) {
     case "update_mastery": {
       const existing = db
@@ -266,6 +271,25 @@ function executeOperation(db: Db, op: LearningOperation): void {
       unlockNextLessonIfEligible(db, op.nodeId);
       emitStateChange("mastery");
       break;
+    }
+    case "update_learner_profile": {
+      // v0.36 画像 patch apply:合并入库(applyProfilePatch 只合并给定字段)。
+      // 仲裁(SPEC §4):提议发起后用户手改过画像(updatedAt 晚于提议创建)→ 丢弃该
+      // 提议防覆盖手编——throw 走 applyProposal 的 stale 语义(不改任何状态)。
+      if (op.profilePatch) {
+        const prow = db.select().from(settingsTable).where(eq(settingsTable.key, "learner_profile")).get();
+        const current = parseProfileJson(prow?.value ?? null) ?? emptyProfile();
+        if (proposalCreatedAt && current.updatedAt > proposalCreatedAt) {
+          throw new Error("画像已在提议发起后被用户手动修改,该提议已过期");
+        }
+        const next = applyProfilePatch(current, op.profilePatch);
+        const value = serializeProfile(next);
+        db.insert(settingsTable)
+          .values({ key: "learner_profile", value, isSecret: false })
+          .onConflictDoUpdate({ target: settingsTable.key, set: { value, isSecret: false } })
+          .run();
+      }
+      return;
     }
     case "mark_mastered": {
       const existing = db

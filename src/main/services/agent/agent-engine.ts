@@ -57,7 +57,7 @@ import {
 } from "../thread-service.js";
 import { buildSystemPrompt } from "../souls/prompt-builder.js";
 import { resolveOutputLang } from "@shared/locales";
-import { buildProfileInjection, parseProfileJson, emptyProfile } from "@shared/learner-profile";
+import { buildProfileInjection, parseProfileJson, emptyProfile, MBTI_TYPES } from "@shared/learner-profile";
 import { buildBaseAgentPrompt, buildSoulLangReminder } from "./base-prompt.js";
 import {
   createProposal,
@@ -452,6 +452,43 @@ export async function runAgentTurn(
           `提议标记为已掌握：${rationale}`,
         );
         return { proposalId: proposal.id, status: "pending", message: rationale };
+      },
+    }),
+    update_learner_profile: tool({
+      description:
+        "提议更新学习者画像（称呼/MBTI/教学风格偏好/学习目标）。生成 Proposal 等人确认（人可以拒绝）。" +
+        "只有当你观察到与现有画像不符的学习模式、且证据出现了至少 2 次时才调用；" +
+        "学习者拒绝后不要在同一问题上重复纠缠。",
+      inputSchema: z.object({
+        rationale: z.string().describe("观察依据（引用至少两次具体证据）"),
+        patch: z
+          .object({
+            name: z.string().nullable().optional().describe("称呼"),
+            mbti: z.enum(MBTI_TYPES).nullable().optional().describe("MBTI 四字母（如 ENTP）"),
+            goal: z.enum(["interview", "project", "career", "curiosity"]).nullable().optional().describe("学习目标"),
+            goalNote: z.string().nullable().optional().describe("目标补充（如面试时间线）"),
+            freeNote: z.string().nullable().optional().describe("画像自述"),
+            style: z
+              .object({
+                start: z.enum(["analogy", "framework"]).nullable().optional(),
+                interaction: z.enum(["dialogue", "lecture"]).nullable().optional(),
+                feedback: z.enum(["direct", "encouraging"]).nullable().optional(),
+                pacing: z.enum(["sequential", "exploratory"]).nullable().optional(),
+              })
+              .optional()
+              .describe("教学风格四维（只传要改的维度）"),
+          })
+          .describe("要修改的字段，只传要改的，其余保持不变"),
+      }),
+      execute: async (input) => {
+        events.onToolCall?.("update_learner_profile", { rationale: input.rationale });
+        const proposal = createProposal(db, {
+          nodeId,
+          operations: [{ type: "update_learner_profile", nodeId, profilePatch: input.patch }],
+          rationale: input.rationale,
+        });
+        events.onProposalCreated?.(proposal.id, `提议更新学习者画像：${input.rationale}`);
+        return { proposalId: proposal.id, status: "pending", message: input.rationale };
       },
     }),
     // ===== v0.2 展示型 tool(Generative UI)=====

@@ -224,5 +224,74 @@ test("T22 源级:assembleContextBlocks 返回类型含 profileBlock(接线完整
   assert.ok(engine.includes("profileBlock, node, nodeProgress } = assembleContextBlocks"), "调用点解构");
 });
 
+/* ============================================================
+ * update_learner_profile 工具链(proposal apply 语义,DB 级直测)
+ * ============================================================ */
+import { readFileSync as rf } from "node:fs";
+import { join as pj, dirname as pdir } from "node:path";
+import { fileURLToPath as pfurl } from "node:url";
+import initSqlJs from "sql.js";
+import { drizzle } from "drizzle-orm/sql-js";
+import * as schema2 from "../src/main/db/schema.ts";
+import { createProposal, applyProposal } from "../src/main/services/proposal-service.ts";
+import { parseProfileJson as ppj } from "../shared/learner-profile.ts";
+
+const PROOT = pj(pdir(pfurl(import.meta.url)), "..");
+const SQL2 = await initSqlJs({ locateFile: (f) => pj(PROOT, "node_modules/sql.js/dist", f) });
+function propDb() {
+  const sqljs = new SQL2.Database();
+  sqljs.run(rf(pj(PROOT, "src/main/db/schema.sql"), "utf8"));
+  sqljs.run("PRAGMA foreign_keys = ON;");
+  sqljs.run("INSERT INTO courses (id, repo_url, repo_name, title, version) VALUES ('pc', '', 'r', '课', 1)");
+  sqljs.run("INSERT INTO content_nodes (id, course_id, type, title, source_path, order_idx) VALUES ('pn', 'pc', 'lesson', '节', 'a.md', 0)");
+  sqljs.run("INSERT INTO progress (node_id, status) VALUES ('pn', 'available')");
+  return { db: drizzle(sqljs, { schema: schema2 }), raw: sqljs };
+}
+
+test("T23 proposal apply:画像 patch 合并入库(只改给定字段)", async () => {
+  const { db, raw } = propDb();
+  raw.run("INSERT INTO settings (key, value) VALUES ('learner_profile', '{\"name\":\"旧名\",\"mbti\":\"INTJ\",\"style\":{\"start\":\"framework\"},\"updatedAt\":\"2026-09-14T00:00:00.000Z\"}')");
+  const proposal = createProposal(db, {
+    nodeId: "pn",
+    operations: [{ type: "update_learner_profile", nodeId: "pn", profilePatch: { style: { pacing: "exploratory" } } }],
+    rationale: "观察到学习者两次跳课",
+  });
+  const applied = applyProposal(db, proposal.id);
+  if (applied.applyError) throw new Error(applied.applyError);
+  const row = raw.exec("SELECT value FROM settings WHERE key = 'learner_profile'")[0].values[0][0];
+  const after = ppj(String(row));
+  assert.equal(after.name, "旧名"); // 未给的字段保持
+  assert.equal(after.mbti, "INTJ");
+  assert.equal(after.style.start, "framework");
+  assert.equal(after.style.pacing, "exploratory"); // patch 字段生效
+});
+
+test("T24 仲裁:提议发起后用户手改画像 → apply 判 stale,不覆盖手编", () => {
+  const { db, raw } = propDb();
+  raw.run("INSERT INTO settings (key, value) VALUES ('learner_profile', '{\"updatedAt\":\"2026-09-14T00:00:00.000Z\"}')");
+  const proposal = createProposal(db, {
+    nodeId: "pn",
+    operations: [{ type: "update_learner_profile", nodeId: "pn", profilePatch: { name: "AI 起的名" } }],
+    rationale: "test",
+  });
+  // 提议创建后、apply 前用户手改(updatedAt 晚于提议创建时间)
+  raw.run("UPDATE settings SET value = '{\"name\":\"手编名\",\"updatedAt\":\"2999-01-01T00:00:00.000Z\"}' WHERE key = 'learner_profile'");
+  const applied = applyProposal(db, proposal.id);
+  assert.equal(applied.status, "stale");
+  assert.ok(applied.applyError);
+  const row = raw.exec("SELECT value FROM settings WHERE key = 'learner_profile'")[0].values[0][0];
+  const after = ppj(String(row));
+  assert.equal(after.name, "手编名", "手编不被 AI 提议覆盖");
+});
+
+test("T25 源级:引擎工具定义 + 基座 zh/en 条目(PROMPT-LAYERS 契约1:④的行为①有指引)", () => {
+  const engine = rf(pj(PROOT, "src/main/services/agent/agent-engine.ts"), "utf8");
+  assert.ok(engine.includes("update_learner_profile: tool({"), "工具定义存在");
+  assert.ok(engine.includes("证据出现了至少 2 次"), "证据门槛写在 description");
+  const bp = rf(pj(PROOT, "src/main/services/agent/base-prompt.ts"), "utf8");
+  assert.ok(bp.includes("- update_learner_profile:提议更新学习者画像"), "zh 工具清单条目");
+  assert.ok(bp.includes("- update_learner_profile: propose updating the learner profile"), "en 工具清单条目(同构)");
+});
+
 console.log(`\n${passed} passed`);
 if (process.exitCode) console.error("FAILED");

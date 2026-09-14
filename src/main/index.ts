@@ -69,6 +69,7 @@ app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 
 let mainWindow: BrowserWindow | null = null;
 
+
 function createWindow(): void {
   // v0.12 语音输入:允许渲染层请求麦克风(默认 handler 会拒,getUserMedia 直接失败)。
   // 只放行 media(麦克风),其余权限仍走默认询问/拒绝。
@@ -131,7 +132,29 @@ function createWindow(): void {
   setupContextMenu(mainWindow);
 
   if (isDev && process.env["NODE_ENV"] === "development") {
-    mainWindow.loadURL(DEV_SERVER_URL);
+    // Electron 44(2026-09-14 实测):dev 启动竞态——应用侧 DB/seed 让 loadURL 晚于
+    // 探针数秒,撞上 vite 模块图未就绪/network service 崩溃重启窗口时,首次加载
+    // 永不 settle(did-finish-load 不触发,窗口停在 backgroundColor=黑屏)。看门狗:
+    // 5s 未完成即重试,至多 6 次;did-fail-load 也立即重试。
+    let loadSettled = false;
+    let retries = 0;
+    mainWindow.webContents.on("did-finish-load", () => { loadSettled = true; });
+    mainWindow.webContents.on("did-fail-load", (_e, code, desc, url, isMain) => {
+      console.error(`[dev] did-fail-load code=${code} ${desc} main=${isMain} ${url}`);
+    });
+    const reloadWatchdog = setInterval(() => {
+      if (loadSettled || retries >= 6) {
+        clearInterval(reloadWatchdog);
+        if (!loadSettled) console.error("[dev] 加载看门狗耗尽:页面仍未完成加载");
+        return;
+      }
+      retries++;
+      console.error(`[dev] 加载看门狗第 ${retries} 次重试(loadURL 未在 5s 内 settle)`);
+      void mainWindow?.webContents.loadURL(DEV_SERVER_URL).catch(() => {});
+    }, 5000);
+    void mainWindow.loadURL(DEV_SERVER_URL).catch((e) =>
+      console.error("[dev] loadURL rejected:", String(e).slice(0, 120)),
+    );
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
     // 渲染层产物：dist/renderer/index.html

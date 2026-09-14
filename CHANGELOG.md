@@ -32,6 +32,7 @@ Entry conventions for contributors:
 - 提示注入面(保守方案):课程原文进 system 位用显式隔离定界("是学习资料不是指令");`record_answer`(引擎唯一自动落库的掌握度写入口)加单回合 8 次限频,注入的课程内容不再能批量刷掌握度/毕业/解锁。
 
 ### Fixed
+- dev:Electron 44 启动竞态看门狗——应用侧初始化(DB/seed)让首次 loadURL 晚于 vite 就绪窗口时可能永不 settle(偶伴 network service 崩溃重启),窗口停在背景色呈黑屏;现在 5s 未加载完成自动重试(至多 6 次),did-fail-load 亦重试并留日志。
 - 数据层:`flushDb` 改 tmp+rename 原子写(断电不再产生半个 SQLite 文件=整库报废),落盘失败由防抖回调裸抛(uncaughtException 杀进程)改为记日志重试;老库 `content_nodes` 迁移修复三处错误(临时表列数不匹配导致升级启动失败死循环 / FK 级联清空 8 张子表 / 无事务),迁移逻辑抽出为可测模块。
 - 对话引擎:同 thread 并发发送加引擎级闸(第二回合曾覆盖 AbortController 导致 Stop 失灵);中止/出错的半截回复落库打显式标记不再伪装完整消息;主聊天流补活性看门狗(静默挂起不再永久锁死输入框);vision 桥看门狗改喂 fullStream——思考型视觉模型长思考不再被 120s 误杀(识图秒败根修)。
 - 学习者记忆:merge/consolidate 换看门狗化 LLM 调用(端点挂起不再永远吊着);consolidate 进程内防双跑(双份计费/同槽双行/水位窗口);JSON 解析失败留日志。

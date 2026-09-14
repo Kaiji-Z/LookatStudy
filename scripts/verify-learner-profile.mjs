@@ -293,5 +293,14 @@ test("T25 源级:引擎工具定义 + 基座 zh/en 条目(PROMPT-LAYERS 契约1:
   assert.ok(bp.includes("- update_learner_profile: propose updating the learner profile"), "en 工具清单条目(同构)");
 });
 
+test("T26 源级:右栏回顾卡两态分支(recap 有数据 / tips 兜底)与数据边界", () => {
+  const recap = rf(pj(PROOT, "src/renderer/components/BootRecapPanel.tsx"), "utf8");
+  assert.ok(recap.includes('data-mode={hasData ? "recap" : "tips"}'), "两态分支存在(recap/tips)");
+  assert.ok(recap.includes('data-testid="boot-recap-xp"'), "recap 态 XP 卡锚");
+  assert.ok(recap.includes('data-testid="boot-tip-text"'), "tips 态文案锚");
+  assert.ok(recap.includes("recap.totalXp > 0 || recap.masteredCount > 0 || recap.streakDays > 0"), "hasData 边界=任一累积信号");
+  assert.ok(recap.includes('data-testid="notebook-panel"'), "pane 身份锚(ui-test waitRender)");
+});
+
 console.log(`\n${passed} passed`);
 if (process.exitCode) console.error("FAILED");

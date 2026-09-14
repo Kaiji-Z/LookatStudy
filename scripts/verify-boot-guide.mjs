@@ -358,6 +358,23 @@ test("T50 端到端:全信号库 → computeBootGuide(gather) 得 resume_last(�
   assert.equal(guide.welcomeBack, true);
 });
 
+test("T52 recap:total_xp/mastered 数/streak 天聚合(右栏学习回顾数据源)", () => {
+  const { db, raw } = freshDb();
+  seedCourse(raw, "c1");
+  raw.run("INSERT INTO settings (key, value) VALUES ('total_xp', '860')");
+  raw.run("INSERT INTO progress (node_id, status, mastery) VALUES ('n1', 'mastered', 0.95)");
+  raw.run("INSERT INTO progress (node_id, status, mastery) VALUES ('n2', 'in_progress', 0.4)");
+  raw.run("UPDATE streaks SET current_streak = 7 WHERE id = 'singleton'");
+  const st = gatherBootState(db, NOW);
+  assert.deepEqual(st.recap, { totalXp: 860, masteredCount: 1, streakDays: 7 });
+});
+
+test("T53 recap 空库:全零(渲染层据此落到 tips 兜底卡)", () => {
+  const { db } = freshDb();
+  const st = gatherBootState(db, NOW);
+  assert.deepEqual(st.recap, { totalXp: 0, masteredCount: 0, streakDays: 0 });
+});
+
 test("T51 boot_done='1' 与 learner_profile 解析(画像填充度/称呼)", () => {
   const { db, raw } = freshDb();
   raw.run("INSERT INTO settings (key, value) VALUES ('boot_done', '1')");

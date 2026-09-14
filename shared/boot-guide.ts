@@ -307,7 +307,15 @@ export interface BootTargets {
   examNodeId: string | null;
 }
 
-/** gatherBootState 的返回:状态机输入 + 执行目标。 */
+/** 未选课态右栏「学习回顾」卡的数据(知识增长的显化)。 */
+export interface BootRecap {
+  totalXp: number;
+  masteredCount: number;
+  streakDays: number;
+}
+
+/** gatherBootState 的返回:状态机输入 + 执行目标 + 右栏回顾数据。 */
 export interface BootStateResult extends BootGuideInputs {
   targets: BootTargets;
+  recap: BootRecap;
 }

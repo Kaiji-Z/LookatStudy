@@ -86,5 +86,37 @@ test("T7 locale 取词:zh 取中文题,en 取英文题", () => {
   assert.notEqual(zh.q, en.q);
 });
 
+/* ---------- 学习 tips 库(未选课态右栏兜底卡) ---------- */
+import { BOOT_TIPS, pickBootTip } from "../shared/boot-tips.ts";
+
+test("T10 tips 库 ≥8 条且 id 唯一、双语非空", () => {
+  assert.ok(BOOT_TIPS.length >= 8);
+  assert.equal(new Set(BOOT_TIPS.map((x) => x.id)).size, BOOT_TIPS.length);
+  for (const tipItem of BOOT_TIPS) {
+    assert.ok(tipItem.zh && tipItem.zh.length > 5, `${tipItem.id}.zh`);
+    assert.ok(tipItem.en && tipItem.en.length > 5, `${tipItem.id}.en`);
+  }
+});
+
+test("T11 pickBootTip 确定性 + 双语取词 + 界内", () => {
+  const a = pickBootTip("2026-09-15", "zh-CN");
+  const b = pickBootTip("2026-09-15", "zh-CN");
+  assert.equal(a.id, b.id);
+  assert.equal(a.text, b.text);
+  const en = pickBootTip("2026-09-15", "en");
+  assert.equal(en.id, a.id);
+  const ids = new Set(BOOT_TIPS.map((x) => x.id));
+  assert.ok(ids.has(a.id));
+});
+
+test("T12 tips 轮换覆盖:一年至少命中 60% 条目", () => {
+  const seen = new Set();
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(Date.UTC(2026, 0, 1) + i * 86400000).toISOString().slice(0, 10);
+    seen.add(pickBootTip(d, "zh-CN").id);
+  }
+  assert.ok(seen.size >= Math.ceil(BOOT_TIPS.length * 0.6), `命中 ${seen.size}/${BOOT_TIPS.length}`);
+});
+
 console.log(`\n${passed} passed`);
 if (process.exitCode) console.error("FAILED");

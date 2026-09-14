@@ -18,6 +18,7 @@ import { MapRail, type MapView } from "./components/MapRail.js";
 import { GlobalTooltip } from "./components/GlobalTooltip.js";
 import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
 import { BootGuidePanel } from "./components/BootGuidePanel.js";
+import { BootRecapPanel } from "./components/BootRecapPanel.js";
 import { useCanvas } from "./lib/useCanvas.js";
 import { hasNoteMark } from "./lib/highlightText.js";
 import { useFontSize } from "./lib/useFontSize.js";
@@ -1205,6 +1206,10 @@ export default function App() {
                 v0.7 宽度:flex-1 弹性吃中栏剩余,加 min-w 防内容(笔记卡/表格)被挤。 */}
             {showRight && (
             <main className={tier === 3 ? "flex-1 min-w-0 bg-surface-2" : "flex-1 min-w-[440px] bg-surface-2"} data-testid={tier === 3 ? "notebook-pane-full" : undefined}>
+              {!selectedCourseId ? (
+                /* 未选课态右栏:学习回顾/tips 兜底(有课=NotebookPanel 不变) */
+                <BootRecapPanel />
+              ) : (
               <NotebookPanel
                 selectedNode={selectedNode}
                 items={canvas.items}
@@ -1241,6 +1246,7 @@ export default function App() {
                 isReviewing={isReviewing}
                 onReviewDone={() => setIsReviewing(false)}
               />
+              )}
             </main>
             )}
         </>

@@ -218,6 +218,14 @@ const translations: Record<Lang, Record<string, string>> = {
     "boot.profile.edit": "编辑",
     "boot.profile.save": "保存",
     "boot.profile.cancel": "取消",
+
+    /* 未选课态右栏:学习回顾/tips */
+    "boot.recap.title": "你的学习回顾",
+    "boot.recap.total_xp": "总经验",
+    "boot.recap.mastered": "已掌握课",
+    "boot.recap.streak_days": "连续天数",
+    "boot.recap.recent": "最近在学",
+    "boot.recap.tips_title": "学习小贴士",
     "import.success.md": "生成成功",
     "import.success.folder": "导入成功",
     "import.error.network": "\n\n网络受限或私有仓库请改用「Markdown」方式。",
@@ -1059,6 +1067,14 @@ const translations: Record<Lang, Record<string, string>> = {
     "boot.profile.edit": "Edit",
     "boot.profile.save": "Save",
     "boot.profile.cancel": "Cancel",
+
+    /* Right pane (no course): recap / tips */
+    "boot.recap.title": "Your learning recap",
+    "boot.recap.total_xp": "Total XP",
+    "boot.recap.mastered": "Lessons mastered",
+    "boot.recap.streak_days": "Day streak",
+    "boot.recap.recent": "Recently studying",
+    "boot.recap.tips_title": "Study tip",
     "import.success.md": "Generated",
     "import.success.folder": "Imported",
     "import.error.network": "\n\nFor restricted networks or private repos, use the Markdown method.",

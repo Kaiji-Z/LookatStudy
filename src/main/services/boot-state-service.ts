@@ -161,7 +161,17 @@ export function gatherBootState(db: Db, now: Date = new Date()): BootStateResult
   /* 隔天回归(lastActiveDate 存在且早于今天) */
   const returningAfterDays = lastActiveDate != null && lastActiveDate < today;
 
+  /* 右栏「学习回顾」:总 XP(settings total_xp,与 xp-service 同键) + 已掌握课数 + streak 天 */
+  const totalXpRaw = settings.get("total_xp");
+  const totalXp = Number.isFinite(Number(totalXpRaw)) ? Math.max(0, parseInt(totalXpRaw ?? "0", 10) || 0) : 0;
+  const masteredCount = db
+    .select({ nodeId: progressTable.nodeId })
+    .from(progressTable)
+    .where(eq(progressTable.status, "mastered"))
+    .all().length;
+
   return {
+    recap: { totalXp, masteredCount, streakDays: currentStreak },
     hasKey,
     bootDone,
     wizardStep: 0, // 渲染层持有步进,每步喂回;聚合端只给初值 0

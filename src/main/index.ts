@@ -4199,34 +4199,35 @@ async function runUiTest(screenshot = false): Promise<void> {
   const wizardRun = await jsTimeout(win.webContents, `
     (async function() {
       var q = function(sel){ return document.querySelector(sel); };
-      var click = function(sel){
-        for (var i = 0; i < 40; i++) { var b = q(sel); if (b) { b.click(); return true; } }
-        return false;
-      };
-      var type = function(sel, text){
-        for (var i = 0; i < 40; i++) {
-          var inp = q(sel);
-          if (inp) {
-            var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-            setter.call(inp, text);
-            inp.dispatchEvent(new Event("input", { bubbles: true }));
-            return true;
-          }
+      var waitFor = async function(sel, tries){
+        for (var i = 0; i < (tries || 60); i++) {
+          var el = q(sel);
+          if (el) return el;
+          await new Promise(function(r){ setTimeout(r, 150); });
         }
-        return false;
+        return null;
+      };
+      var click = async function(sel){ var b = await waitFor(sel); if (b) { b.click(); return true; } return false; };
+      var type = async function(sel, text){
+        var inp = await waitFor(sel);
+        if (!inp) return false;
+        var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        setter.call(inp, text);
+        inp.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
       };
       try {
-        click('[data-testid="boot-action-wizard_next"]');            // 欢迎下一步 → key
-        click('[data-testid="boot-action-wizard_next"]');            // key 先跳过 → 三问
-        type('[data-testid="boot-wizard-name"]', "ui测试员");
-        click('[data-testid="boot-mbti-ENTP"]');
+        await click('[data-testid="boot-action-wizard_next"]');            // 欢迎下一步 → key
+        await click('[data-testid="boot-action-wizard_next"]');            // key 先跳过 → 三问
+        await type('[data-testid="boot-wizard-name"]', "ui测试员");
+        await click('[data-testid="boot-mbti-ENTP"]');
         await new Promise(function(r){ setTimeout(r, 300); });       // MBTI 翻转反馈
-        click('[data-testid="boot-wizard-next1"]');                  // → 目标卡
-        click('[data-testid="boot-wizard-goal-curiosity"]');
-        click('[data-testid="boot-wizard-next2"]');                  // → 试玩题
-        click('[data-testid="boot-wizard-quiz-a"]');
+        await click('[data-testid="boot-wizard-next1"]');                  // → 目标卡
+        await click('[data-testid="boot-wizard-goal-curiosity"]');
+        await click('[data-testid="boot-wizard-next2"]');                  // → 试玩题
+        await click('[data-testid="boot-wizard-quiz-a"]');
         await new Promise(function(r){ setTimeout(r, 300); });       // 揭晓
-        click('[data-testid="boot-wizard-finish"]');                 // 完成 → course_pick
+        await click('[data-testid="boot-wizard-finish"]');                 // 完成 → course_pick
         await new Promise(function(r){ setTimeout(r, 400); });
         var el = q('[data-testid="boot-guide"]');
         var profile = await window.api.profileGet();

@@ -17,6 +17,7 @@ import { Sparkles, KeyRound, GraduationCap, Play, BookOpen, Flame, ClipboardList
 import { api } from "../lib/api.js";
 import { useLang, useLangValue } from "../lib/i18n.js";
 import { celebrate } from "../lib/celebration.js";
+import { companionZoneFocus, companionNodePoint } from "../lib/companion/bus.js";
 import {
   computeBootGuide,
   BOOT_WIZARD_STEPS,
@@ -86,6 +87,13 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
   /** 就绪教室的编辑模式(全字段一张表单) */
   const [editing, setEditing] = useState(false);
   const keyPromptCounted = useRef(false);
+
+  /* companion 空态剧本:挂载=召唤到中栏坐镇引导卡旁(锚点=chatAnchor 兜底),
+     卸载=放手回家;答题/选 MBTI 的表情爆发走 companionNodePoint(既有 bus 命令)。 */
+  useEffect(() => {
+    companionZoneFocus(true);
+    return () => companionZoneFocus(false);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -356,7 +364,7 @@ function ProfileEditCard({ t, locale, profile, onSave, onCancel }: {
         locale={locale}
         value={p.mbti}
         style={p.style}
-        onPick={(mbti) => patch({ mbti, style: expandMbtiToStyle(mbti) })}
+        onPick={(mbti) => { companionNodePoint(); patch({ mbti, style: expandMbtiToStyle(mbti) }); }}
         onSceneAnswer={setSceneAnswer}
       />
 
@@ -496,7 +504,7 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
           locale={locale}
           value={profile.mbti}
           style={profile.style}
-          onPick={(mbti) => onPatch({ mbti, style: expandMbtiToStyle(mbti) })}
+          onPick={(mbti) => { companionNodePoint(); onPatch({ mbti, style: expandMbtiToStyle(mbti) }); }}
           onSceneAnswer={(dim, value) => onPatch({ style: { [dim]: value } as Partial<LearnerProfile["style"]> })}
         />
         <button className="btn-3d-brand self-start" onClick={() => setCard(1)} data-testid="boot-wizard-next1">

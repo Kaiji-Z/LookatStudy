@@ -896,6 +896,11 @@ console.log("✓ T19 v10 连续移动+v12 召回制:限速滑翔/roam 锁左栏/
   assert.ok(creature.includes("createFlightWorld") && creature.includes("BallProbe"), "T15: 生物接飞行物理+球探针");
   assert.ok(bus.includes("companionZoneFocus") && bus.includes("companionNote") && bus.includes("getRailWorld"), "T15: bus 提供 zone 命令+世界注册表");
   assert.ok(composer.includes("companionZoneFocus(true)") && composer.includes("companionZoneFocus(false)"), "T15: 输入框聚焦/失焦接线");
+  // v0.36 开屏导师空态剧本:引导卡兜底锚 + BootGuidePanel 召唤/表情接线
+  assert.ok(creature.includes('data-companion-anchor="boot-guide"'), "T15: 空态锚点兜底到开屏引导卡");
+  const bootPanel = read("components/BootGuidePanel.tsx");
+  assert.ok(bootPanel.includes("companionZoneFocus(true)") && bootPanel.includes("companionZoneFocus(false)"), "T15: 开屏面板挂载召唤/卸载放手");
+  assert.ok(bootPanel.includes("companionNodePoint()"), "T15: 答题表情爆发接线");
   assert.ok(notebook.includes("companionNote()"), "T15: 划线记笔记接线");
   assert.ok(mapRail.includes("companionRailRegister") && mapRail.includes('visible: panel === "map"'), "T15: 左栏世界注册(岛+可见性)");
   assert.ok(bus.includes('fire("companion-zone-focus"') && bus.includes('fire("companion-rail-register"'), "T15: 组件→bus 触发全部走 window 事件(防打包双实例)");

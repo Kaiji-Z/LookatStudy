@@ -178,7 +178,7 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
   /* 称呼插值:{name}今天… → name 为空时模板自然收干净(name 已含后缀逗号或空) */
   const namePrefix = (boot.name ?? "").trim();
   const decorateVars = (key: string, vars?: Record<string, string | number>) => {
-    const v = { ...(vars ?? {}) };
+    const v = { ...vars };
     if ("name" in v) v.name = namePrefix ? `${namePrefix}，` : "";
     return t(key, v);
   };
@@ -264,7 +264,7 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
             t={t}
             locale={locale}
             profile={profile}
-            onPatch={(patch) => saveProfile({ ...profile, ...patch, style: { ...profile.style, ...(patch.style ?? {}) }, updatedAt: new Date().toISOString() })}
+            onPatch={(patch) => saveProfile({ ...profile, ...patch, style: { ...profile.style, ...patch.style }, updatedAt: new Date().toISOString() })}
             onFinish={() => { finishBoot(); setWizardStep(3); }}
           />
         ) : null}

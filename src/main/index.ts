@@ -4164,12 +4164,25 @@ async function runUiTest(screenshot = false): Promise<void> {
     });
   }
   // ── v0.36 开屏导师(boot guide)──────────────────────────────────────
-  // T-b1 引导屏出现:未选课态中栏 = 开屏导师(向导欢迎场景),异步 boot:getState 回来后渲染。
+  // T-b1 引导屏出现:先重置 boot 状态(套件前段已选过课→boot_done=1/last_session 有值),
+  // 清 boot_done/learner_profile/last_session 后 reload,回到"第一次打开"的向导态。
+  const bootReset = await jsTimeout(win.webContents, `
+    (async function() {
+      try {
+        await window.api.setSetting("boot_done", "");
+        await window.api.setSetting("learner_profile", "");
+        await window.api.setSetting("last_session", "");
+        location.reload();
+        return "reloading";
+      } catch (e) { return { error: String(e) }; }
+    })()
+  `);
+  await new Promise((r) => setTimeout(r, 4000));
   const bootAppear = await jsTimeout(win.webContents, `
     (async function() {
       for (var i = 0; i < 40; i++) {
         var el = document.querySelector('[data-testid="boot-guide"]');
-        if (el) return { scene: el.getAttribute("data-scene"), bootDone: el.getAttribute("data-boot-done") };
+        if (el && el.getAttribute("data-scene")) return { scene: el.getAttribute("data-scene"), bootDone: el.getAttribute("data-boot-done") };
         await new Promise(function(r){ setTimeout(r, 250); });
       }
       return { scene: null };
@@ -4178,7 +4191,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   results.push({
     name: "boot: guide panel appears (welcome_intro on fresh DB)",
     ok: bootAppear?.scene === "welcome_intro" && bootAppear?.bootDone === "0",
-    detail: bootAppear,
+    detail: { bootReset, bootAppear },
   });
 
   // T-b2 三问卡流走完:欢迎→跳过 key→填称呼+选 MBTI→选目标→试玩题→完成;
@@ -4191,7 +4204,15 @@ async function runUiTest(screenshot = false): Promise<void> {
         return false;
       };
       var type = function(sel, text){
-        for (var i = 0; i < 40; i++) { var inp = q(sel); if (inp) { inp.value = text; inp.dispatchEvent(new Event("input", { bubbles: true })); return true; } }
+        for (var i = 0; i < 40; i++) {
+          var inp = q(sel);
+          if (inp) {
+            var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+            setter.call(inp, text);
+            inp.dispatchEvent(new Event("input", { bubbles: true }));
+            return true;
+          }
+        }
         return false;
       };
       try {

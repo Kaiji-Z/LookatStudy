@@ -217,6 +217,12 @@ const api = {
     ipcRenderer.invoke("settings:has", key)) as ApiExpose["hasSetting"],
   setSetting: ((key: SettingKey, value: string) =>
     ipcRenderer.invoke("settings:set", key, value)) as ApiExpose["setSetting"],
+  profileGet: (() =>
+    ipcRenderer.invoke("profile:get")) as ApiExpose["profileGet"],
+  profileSet: ((profile: unknown) =>
+    ipcRenderer.invoke("profile:set", profile)) as ApiExpose["profileSet"],
+  bootGetState: (() =>
+    ipcRenderer.invoke("boot:getState")) as ApiExpose["bootGetState"],
   companionPetSetClickThrough: ((passThrough: boolean) =>
     ipcRenderer.invoke("companionPet:setClickThrough", passThrough)) as ApiExpose["companionPetSetClickThrough"],
 

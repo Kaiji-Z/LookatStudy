@@ -83,10 +83,19 @@ function chatAnchor(): ZoneAnchor | null {
     card ??
     document.querySelector<HTMLElement>('[data-testid="composer"]') ??
     document.querySelector<HTMLElement>('[data-testid="composer-nokey"]');
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  // 悬在卡片上缘之上(完整可见),右侧避开文字;无卡(nokey 横幅)同款悬停
-  return { x: r.right - 78, y: r.top - 44 };
+  if (el) {
+    const r = el.getBoundingClientRect();
+    // 悬在卡片上缘之上(完整可见),右侧避开文字;无卡(nokey 横幅)同款悬停
+    return { x: r.right - 78, y: r.top - 44 };
+  }
+  // v0.36 开屏导师:未选课态没有输入卡 → 兜底锚到引导卡列(BootGuidePanel
+  // 挂载即 companionZoneFocus 召唤,生物坐镇中栏当冷启动主持人;卸载即放手回家)
+  const boot = document.querySelector<HTMLElement>('[data-companion-anchor="boot-guide"]');
+  if (boot) {
+    const r = boot.getBoundingClientRect();
+    return { x: r.right - 64, y: r.top + 96 };
+  }
+  return null;
 }
 
 /** notebook 锚点:面板右上、标签行之下(正文列居中,右上肩是留白)。朗读跟句时会被

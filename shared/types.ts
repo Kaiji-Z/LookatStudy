@@ -494,6 +494,8 @@ import type {
   SpeechTtsErrorEvent as SpeechTtsErrorEventT,
 } from "./speech-types";
 import type { CutPackManifest as CompanionCutManifestT, CompanionVehicleId as CompanionVehicleIdT } from "./companion-cut";
+import type { LearnerProfile } from "./learner-profile";
+import type { BootStateResult } from "./boot-guide";
 
 /** Shimeji 包 manifest(渲染层运行时:帧+动作+行为,SPEC-shimeji.md §4) */
 export interface ShimejiPackManifestT {
@@ -774,6 +776,13 @@ export interface ApiExpose {
   /** 密钥类配置的存在性布尔(v0.35 安全修复:getSetting 对 *_api_key 恒 null,永不回传明文)。 */
   hasSetting(key: SettingKey): Promise<boolean>;
   setSetting(key: SettingKey, value: string): Promise<void>;
+  /* 学习者画像(声明侧;settings 表 learner_profile 键的结构化通道,主进程宽容解析) */
+  /** 读画像;从未设置/坏 JSON → null(渲染层按空画像兜底)。 */
+  profileGet(): Promise<LearnerProfile | null>;
+  /** 整体写入画像(主进程 parse-then-serialize 归一化,坏值字段丢弃)。 */
+  profileSet(profile: LearnerProfile): Promise<void>;
+  /** 开屏输入聚合(单往返):状态机输入 + 动作目标 id;只读。 */
+  bootGetState(): Promise<BootStateResult>;
   /** v0.11 桌宠:切换桌宠窗点击穿透(true=穿透还原桌面操作,false=可交互生物)。
    *  渲染层指针热区检测调用;web 运行时无桌宠窗,no-op。 */
   companionPetSetClickThrough(passThrough: boolean): Promise<void>;
@@ -1070,7 +1079,9 @@ export type SettingKey =
   // issue #14 三栏拖拽调宽:持久化像素宽(空/无效=未定制=响应式默认)
   | "pane_width_left" | "pane_width_mid"
   // v0.35 更新检查:24h 结果缓存 + 每版本只提示一次的已见标记(主进程读写)
-  | "update_check_cache" | "update_prompt_seen";
+  | "update_check_cache" | "update_prompt_seen"
+  // 开屏导师(v0.36):画像 JSON / boot 向导一次性 / key 提示节流 / 上次会话
+  | "learner_profile" | "boot_done" | "key_prompt_count" | "last_session";
 
 /** 轻量更新检查结果(只提示,不自动下载安装)。 */
 export interface UpdateInfo {

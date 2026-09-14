@@ -17,6 +17,8 @@ import { estimateTokens } from "@shared/token-estimate";
 import { MapRail, type MapView } from "./components/MapRail.js";
 import { GlobalTooltip } from "./components/GlobalTooltip.js";
 import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
+import { BootGuidePanel } from "./components/BootGuidePanel.js";
+import { BootRecapPanel } from "./components/BootRecapPanel.js";
 import { useCanvas } from "./lib/useCanvas.js";
 import { hasNoteMark } from "./lib/highlightText.js";
 import { useFontSize } from "./lib/useFontSize.js";
@@ -108,6 +110,8 @@ export default function App() {
 
   // 选中节点(联动三栏)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // 开屏导师:resume/goto_node 的跨树跳转中转(选课 → 树加载后落地节点)
+  const [pendingBootNode, setPendingBootNode] = useState<string | null>(null);
   // 章节考试会话(ExamView 上报;active 时导航需先弹离开警告——未答=错计分)
   const examSessionRef = useRef<{ active: boolean; terminate: (() => Promise<void>) | null }>({ active: false, terminate: null });
   // 离开考试警告模态:pendingAction = 确认终止后要执行的导航
@@ -584,6 +588,44 @@ export default function App() {
     [proceedLessonClick, selectedNodeId],
   );
 
+  /* ── 开屏导师(v0.36)──────────────────────────────────────────
+     引导屏的一键出口:恢复上次会话/跳卡点节点/去左栏选课。
+     选课即置 boot_done(向导被离场也算"看过仪式",永不重播)。 */
+  const handleBootResume = useCallback((courseId: string, nodeId: string | null) => {
+    setSelectedCourseId(courseId);
+    setPendingBootNode(nodeId);
+    refreshAll();
+  }, [refreshAll]);
+
+  const handleBootGotoNode = useCallback((nodeId: string, target: "friction" | "near_mastery" | "exam") => {
+    // 卡点/快毕业目标在最近课程的树里;考试节点可能不在当前树 → 走恢复链
+    const node = tree.find((n) => n.id === nodeId);
+    if (node) {
+      handleLessonClick(node);
+      return;
+    }
+    void target; // 树里找不到(理论少见:聚合端已按在场课程过滤) → 由 pendingBootNode 兜底不可行,静默
+  }, [tree, handleLessonClick]);
+
+  const handleBootPickCourse = useCallback(() => {
+    setView("import");
+    if (tier === 3) setT3Pane("rail");
+  }, [tier]);
+
+  // resume 选课 → 树异步加载后落地到上次节点(一次即清)
+  useEffect(() => {
+    if (!pendingBootNode || !selectedCourseId || tree.length === 0) return;
+    const node = tree.find((n) => n.id === pendingBootNode);
+    setPendingBootNode(null);
+    if (node) handleLessonClick(node);
+  }, [pendingBootNode, tree, selectedCourseId, handleLessonClick]);
+
+  // last_session 持久化:选课/切节点即写(boot:getState 的 resume 输入源)
+  useEffect(() => {
+    if (!selectedCourseId) return;
+    void api.setSetting("last_session", JSON.stringify({ courseId: selectedCourseId, nodeId: selectedNodeId })).catch(() => {});
+  }, [selectedCourseId, selectedNodeId]);
+
   // ExamView 上报考试会话(active 时导航被 guardedNav 拦截)
   const handleExamSessionChange = useCallback(
     (s: { active: boolean; terminate: (() => Promise<void>) | null }) => {
@@ -965,7 +1007,7 @@ export default function App() {
             if (tier === 3) setT3Pane("chat");
           }}
           onOpenReview={() => setShowReviewDrawer(true)}
-          onSelectCourse={(id) => guardedNav(() => { setSelectedCourseId(id); refreshAll(); })}
+                onSelectCourse={(id) => guardedNav(() => { setSelectedCourseId(id); refreshAll(); void api.setSetting("boot_done", "1").catch(() => {}); })}
           onDeleteCourse={(id) => guardedNav(() => { void handleDeleteCourse(id); })}
           onCoursesChanged={() => { refreshAll(); }}
           availableLanguages={availableLanguages}
@@ -1015,13 +1057,17 @@ export default function App() {
               data-testid="chat-panel"
             >
               {!selectedCourseId ? (
-                /* 未选课程(启动初始态 / 删除已选课程后):中栏显示选课引导,不渲染对话 UI */
-                <div className="flex-1 flex items-center justify-center px-6" data-testid="chat-no-course">
-                  <div className="text-center max-w-sm">
-                    <div className="text-5xl mb-4 opacity-30">📚</div>
-                    <div className="text-title font-bold text-ink mb-2">{t("course.empty.title")}</div>
-                    <div className="text-body text-ink-muted leading-relaxed">{t("course.empty.desc")}</div>
-                  </div>
+                /* 未选课程(启动初始态 / 删除已选课程后):中栏=开屏导师(bot 主持的
+                   冷启动向导 + 回访建议 + 就绪教室),不再是静态选课占位。 */
+                <div className="flex-1 flex flex-col min-h-0" data-testid="chat-no-course">
+                <BootGuidePanel
+                  onResume={(courseId, nodeId) => guardedNav(() => handleBootResume(courseId, nodeId))}
+                  onOpenReview={() => guardedNav(() => setShowReviewDrawer(true))}
+                  onOpenSettings={() => setShowSettings(true)}
+                  onGotoNode={(nodeId, target) => guardedNav(() => handleBootGotoNode(nodeId, target))}
+                  onPickCourse={handleBootPickCourse}
+                  onProfileChanged={() => { /* 画像变化:boot 态下次拉取即见 */ }}
+                />
                 </div>
               ) : selectedNode?.type === "exam" ? (
                 /* 考试节点:渲染 ExamView 替代 chat(关底 boss,独立 UI) */
@@ -1162,6 +1208,10 @@ export default function App() {
                 v0.7 宽度:flex-1 弹性吃中栏剩余,加 min-w 防内容(笔记卡/表格)被挤。 */}
             {showRight && (
             <main className={tier === 3 ? "flex-1 min-w-0 bg-surface-2" : "flex-1 min-w-[440px] bg-surface-2"} data-testid={tier === 3 ? "notebook-pane-full" : undefined}>
+              {!selectedCourseId ? (
+                /* 未选课态右栏:学习回顾/tips 兜底(有课=NotebookPanel 不变) */
+                <BootRecapPanel />
+              ) : (
               <NotebookPanel
                 selectedNode={selectedNode}
                 items={canvas.items}
@@ -1198,6 +1248,7 @@ export default function App() {
                 isReviewing={isReviewing}
                 onReviewDone={() => setIsReviewing(false)}
               />
+              )}
             </main>
             )}
         </>

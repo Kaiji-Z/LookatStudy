@@ -108,8 +108,10 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
     return () => { alive = false; };
   }, []);
 
+  // 向导语义保持:一旦走进步进(step≥1)就以向导场景渲染直到离场——quiz 完成即置
+  // boot_done(重开 app 不重播),但 course_pick 收尾步仍然展示;离场后 step 归零走回访逻辑。
   const guide = useMemo(
-    () => (boot ? computeBootGuide({ ...boot, wizardStep }) : null),
+    () => (boot ? computeBootGuide({ ...boot, bootDone: boot.bootDone && wizardStep === 0, wizardStep }) : null),
     [boot, wizardStep],
   );
 

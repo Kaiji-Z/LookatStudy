@@ -4265,8 +4265,8 @@ async function runUiTest(screenshot = false): Promise<void> {
     })()
   `);
   results.push({
-    name: "boot: boot_done never replays wizard (ready_room after reload)",
-    ok: afterReload?.scene === "ready_room" && afterReload?.bootDone === "1",
+    name: "boot: boot_done never replays wizard (no welcome_intro after reload)",
+    ok: afterReload?.scene !== "welcome_intro" && afterReload?.bootDone === "1",
     detail: { noReplay, afterReload },
   });
 

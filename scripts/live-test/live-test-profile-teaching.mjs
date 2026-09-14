@@ -83,8 +83,7 @@ const isInteractive = (t) => /[？?]/.test(t) || t.includes("你猜") || t.inclu
 if (!isInteractive(entp)) {
   console.log("(首答无互动标记,重试一次)");
   const retry = await run(systemEntp, "ENTP 画像档(重试)");
-  if (isInteractive(retry)) entp = retry + "
-[首答无互动标记,已用重试样本]";
+  if (isInteractive(retry)) entp = retry + " [retry sample: 首答无互动标记]";
 }
 const plain = await run(systemPlain, "无画像档(基线)");
 

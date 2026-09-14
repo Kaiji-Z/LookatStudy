@@ -194,5 +194,35 @@ test("T16 注入是纯函数:两次调用结果一致", () => {
   assert.equal(buildProfileInjection(p, "zh-CN"), buildProfileInjection(p, "zh-CN"));
 });
 
+/* ============================================================
+ * 源级守卫:agent-engine 注入接线(agent-engine → flags → db/index
+ * 的 ?raw 链 verify 进不去,按 verify-agent-locale/T15 先例守源码)
+ * ============================================================ */
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const engine = readFileSync(join(ROOT, "src/main/services/agent/agent-engine.ts"), "utf8");
+
+test("T20 源级:引擎 import 画像纯函数并构造 profileBlock", () => {
+  assert.ok(engine.includes('from "@shared/learner-profile"'), "import 存在");
+  assert.ok(engine.includes("buildProfileInjection("), "构造调用存在");
+  assert.ok(engine.includes("parseProfileJson(readSettingsMap(db).learner_profile"), "读 settings 键 learner_profile");
+  assert.ok(engine.includes("emptyProfile()"), "空画像兜底(空→null 不注入)");
+});
+
+test("T21 源级:profileBlock 进 streamText system(第④层,nodeId=null 也生效——不挂在 snapshot 里)", () => {
+  assert.ok(engine.includes("${profileBlock ? "), "system 模板拼接存在");
+  // 反向守卫:不得塞进 buildLearnerSnapshot(它是 node-bound,snapshot 在无节点时为 null)
+  const learnerModel = readFileSync(join(ROOT, "src/main/services/learner-model-service.ts"), "utf8");
+  assert.ok(!learnerModel.includes("learner_profile"), "画像不进 snapshot 服务(独立注入)");
+});
+
+test("T22 源级:assembleContextBlocks 返回类型含 profileBlock(接线完整性)", () => {
+  assert.ok(engine.includes("profileBlock: string | null;"), "返回类型声明");
+  assert.ok(engine.includes("profileBlock, node, nodeProgress } = assembleContextBlocks"), "调用点解构");
+});
+
 console.log(`\n${passed} passed`);
 if (process.exitCode) console.error("FAILED");

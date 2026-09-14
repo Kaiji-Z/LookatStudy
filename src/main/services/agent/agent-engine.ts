@@ -57,6 +57,7 @@ import {
 } from "../thread-service.js";
 import { buildSystemPrompt } from "../souls/prompt-builder.js";
 import { resolveOutputLang } from "@shared/locales";
+import { buildProfileInjection, parseProfileJson, emptyProfile } from "@shared/learner-profile";
 import { buildBaseAgentPrompt, buildSoulLangReminder } from "./base-prompt.js";
 import {
   createProposal,
@@ -145,6 +146,8 @@ export function assembleContextBlocks(
   system: string;
   nodeContext: string;
   learnerSnapshot: string | null;
+  /** v0.36 学习者画像(声明侧)注入块:独立于 snapshot(画像全局生效,nodeId=null 也要注入) */
+  profileBlock: string | null;
   node: typeof contentNodes.$inferSelect | undefined;
   nodeProgress: typeof progressTable.$inferSelect | undefined;
 } {
@@ -231,7 +234,14 @@ export function assembleContextBlocks(
     courseId: node?.courseId,
   });
 
-  return { system, nodeContext, learnerSnapshot, node, nodeProgress };
+  // 学习者画像(声明侧,第④层):style 四维+MBTI+目标的权威背景事实,带防注入标注
+  // 与合意困难条款(shared/learner-profile.ts buildProfileInjection)。空画像→null 零变化。
+  const profileBlock = buildProfileInjection(
+    parseProfileJson(readSettingsMap(db).learner_profile ?? null) ?? emptyProfile(),
+    outLang,
+  );
+
+  return { system, nodeContext, learnerSnapshot, profileBlock, node, nodeProgress };
 }
 
 /**
@@ -254,7 +264,7 @@ export async function runAgentTurn(
   attachments?: Array<{ mediaType: string; base64: string }>,
 ): Promise<{ text: string; parts: ChatMessagePart[] }> {
   const llm = resolveLlm(db);
-  const { system, nodeContext, learnerSnapshot, node, nodeProgress } = assembleContextBlocks(db, nodeId, locale);
+  const { system, nodeContext, learnerSnapshot, profileBlock, node, nodeProgress } = assembleContextBlocks(db, nodeId, locale);
 
   // v0.11 看图通道路由(拍在工具注册之前,工具注册要看它):
   //   native = 主模型直看;bridge = 纯文本主模型 + vision 覆盖 → 视觉模型转译;reject = 看不了。
@@ -897,7 +907,7 @@ export async function runAgentTurn(
       ...(providerOptions ? { providerOptions } : {}),
       system: `${system}\n\n${nodeContext}${
         learnerSnapshot ? `\n\n${learnerSnapshot}` : ""
-      }`,
+      }${profileBlock ? `\n\n${profileBlock}` : ""}`,
       messages: attemptMessages,
       tools,
       stopWhen: stepCountIs(6),

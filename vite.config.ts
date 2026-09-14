@@ -47,7 +47,10 @@ export default defineConfig({
               // @napi-rs/canvas 同为 napi 二进制(pdf 公式视觉转写的整页渲染源)
               // canvas 是 linkedom 的可选原生依赖(commonjs 插件会把 try 里的 require
               // 提升到顶层 → 运行时 MODULE_NOT_FOUND;external 化让 require 保持惰性)
-              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse", "officeparser", "@firecrawl/pdf-inspector", "sherpa-onnx-node", "node-edge-tts", "audio-decode", "@napi-rs/canvas", "canvas"],
+              external: ["sql.js", "drizzle-orm/sql-js", "electron", "pdf-parse", "officeparser", "@firecrawl/pdf-inspector", "sherpa-onnx-node", "node-edge-tts", "audio-decode", "@napi-rs/canvas", "canvas", 
+              // esbuild JS API 被打包后自拒运行("cannot be bundled"),且只在
+              // test:highlight(dev-only)运行时动态 import —— external 保持惰性 require
+              "esbuild"],
               output: {
                 format: "cjs", // CJS 让 __dirname 天然可用，避免 ESM 路径坑
               },

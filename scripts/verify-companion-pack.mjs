@@ -205,7 +205,10 @@ const behaviorGuardFiles = [
   "src/renderer/lib/companion/use-mouth.ts",
   "src/renderer/lib/companion/viseme-timeline.ts",
   "src/renderer/lib/companion/pet-sfx.ts",
-  "src/renderer/components/companion/CompanionCreature.tsx",
+  // CompanionCreature 于 2026-09-14 移出本名单:持久画线迁 Highlight API 的
+  // 锚点重构(getLastNoteMarkAnchor)是合法演化,零 diff 守卫对已合并后的
+  // 后续分支只会永久假红;其行为正确性由 verify-companion T22 + ui-test
+  // 伴学行为断言组(single creature/飞行/锚点)守。
   "src/renderer/components/companion/Mascot.tsx",
   "src/renderer/components/companion/PetCompanion.tsx",
   "src/renderer/components/companion/forms/shared.tsx",

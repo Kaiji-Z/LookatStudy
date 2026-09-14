@@ -1,0 +1,259 @@
+{
+  "overall": true,
+  "results": [
+    {
+      "name": "simple paragraph — 开头 deploying",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "Deploying"
+      }
+    },
+    {
+      "name": "simple paragraph — 中间 GPT-4",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "GPT-4"
+      }
+    },
+    {
+      "name": "simple paragraph — 结尾 production",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "production"
+      }
+    },
+    {
+      "name": "simple paragraph — 跨空格 GPT-4 in",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "GPT-4 in"
+      }
+    },
+    {
+      "name": "nested spans — The quick",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "The quick"
+      }
+    },
+    {
+      "name": "nested spans — quick brown",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "quick brown"
+      }
+    },
+    {
+      "name": "nested spans — fox jumps",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "fox jumps"
+      }
+    },
+    {
+      "name": "list items — First",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "First"
+      }
+    },
+    {
+      "name": "list items — Second",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "Second"
+      }
+    },
+    {
+      "name": "list items — 跨 li item there",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "item there"
+      }
+    },
+    {
+      "name": "code block — const x",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "const x"
+      }
+    },
+    {
+      "name": "code block — 跨行 x + 1",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "x + 1"
+      }
+    },
+    {
+      "name": "heading + paragraph — Section",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "Section"
+      }
+    },
+    {
+      "name": "heading + paragraph — body text",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "body text"
+      }
+    },
+    {
+      "name": "heading + paragraph — 跨元素 Title Some",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "TitleSome "
+      }
+    },
+    {
+      "name": "whitespace nodes — Hello",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "Hello"
+      }
+    },
+    {
+      "name": "whitespace nodes — world",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "world"
+      }
+    },
+    {
+      "name": "chinese text — 大语言",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "大语言"
+      }
+    },
+    {
+      "name": "chinese text — 注意力机制",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "注意力机制"
+      }
+    },
+    {
+      "name": "chinese text — 序列数据",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "序列数据"
+      }
+    },
+    {
+      "name": "emoji mixed — Correct",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "Correct"
+      }
+    },
+    {
+      "name": "emoji mixed — answer is",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "answer is"
+      }
+    },
+    {
+      "name": "blockquote — Quoted",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "Quoted"
+      }
+    },
+    {
+      "name": "blockquote — inside",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "expected": "inside"
+      }
+    },
+    {
+      "name": "note-highlight: 主通道画线后 DOM 零改动",
+      "ok": true,
+      "detail": {
+        "zeroDomChange": true,
+        "noMarkElements": true,
+        "rangeCount": 2,
+        "n1Text": "链接文字",
+        "registered": true,
+        "registeredSize": 2,
+        "hasN1": true,
+        "hasGhost": false,
+        "reapplyOk": true,
+        "prunedGhost": true,
+        "coexistSize": 2,
+        "fallbackMarks": 2,
+        "fallbackMap": 2,
+        "fallbackText": "链接文字"
+      }
+    },
+    {
+      "name": "note-highlight: Range 命中 + 注册表登记",
+      "ok": true,
+      "detail": {
+        "rangeCount": 2,
+        "n1Text": "链接文字",
+        "registered": true,
+        "registeredSize": 2
+      }
+    },
+    {
+      "name": "note-highlight: 溯源查询 + 幽灵 id 拒绝",
+      "ok": true,
+      "detail": {
+        "hasN1": true,
+        "hasGhost": false
+      }
+    },
+    {
+      "name": "note-highlight: 重渲染后重放 + 死 Range 修剪",
+      "ok": true,
+      "detail": {
+        "reapplyOk": true,
+        "prunedGhost": true
+      }
+    },
+    {
+      "name": "note-highlight: 双容器共存不互冲",
+      "ok": true,
+      "detail": {
+        "coexistSize": 2
+      }
+    },
+    {
+      "name": "note-highlight: DOM 兜底通道仍工作",
+      "ok": true,
+      "detail": {
+        "fallbackMarks": 2,
+        "fallbackMap": 2,
+        "fallbackText": "链接文字"
+      }
+    }
+  ]
+}

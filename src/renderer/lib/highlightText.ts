@@ -246,6 +246,132 @@ export function applyPersistentMarksByText(
   return result;
 }
 
+/* ============================================================
+ * 持久画线 · CSS Custom Highlight API 通道(2026-09-14,16:23 DOMException 根修)
+ *
+ * 根因:applyPersistentMarksByText 会拆分文本节点、插入 <mark> —— 改写了
+ * ReactMarkdown 管理的 DOM。之后任何一次 React 重渲染(选词浮层/字号/主题/
+ * 切语言/内容刷新)reconcile 撞上外来节点就抛 DOMException(16:23 实测落在
+ * markdown <a> 上),ErrorBoundary 拦下后整树重建。朗读高亮 v8 已为同一坑
+ * 迁到 Highlight API;持久画线走同一路线:Range 注册进 CSS.highlights,
+ * DOM 一个节点都不动,React 永远无感。无 API 的老 webview 保留上面的
+ * DOM 包裹通道(applyPersistentMarksByText)。
+ * ============================================================ */
+
+export const USER_NOTE_HIGHLIGHT_NAME = "cp-user-note";
+export const USER_NOTE_FLASH_HIGHLIGHT_NAME = "cp-user-note-flash";
+
+/** 当前环境是否支持注册式画线主通道(Highlight 构造器 + CSS.highlights)。 */
+export function supportsHighlightMarks(): boolean {
+  return (
+    typeof Highlight !== "undefined" &&
+    !!(CSS as unknown as { highlights?: Map<string, unknown> }).highlights
+  );
+}
+
+/** 全局活体画线:noteId → Range。CSS.highlights 是 document 级单例,讲解区与
+ *  对话流必须共用一个 Highlight;重放时先摘除本容器的旧条目、按连接性修剪
+ *  死 Range(切节点/卸载后旧 Range 挂在死节点上,渲染为零宽,注册表只增不剪
+ *  会无限膨胀)。 */
+const liveNoteRanges = new Map<string, Range>();
+const noteRangeOwners = new WeakMap<HTMLElement, Set<string>>();
+
+function rebuildNoteHighlight(): void {
+  const cssLike = CSS as unknown as { highlights?: Map<string, unknown> };
+  for (const [id, r] of liveNoteRanges) {
+    if (!r.startContainer.isConnected) liveNoteRanges.delete(id);
+  }
+  try {
+    if (liveNoteRanges.size === 0) {
+      cssLike.highlights?.delete(USER_NOTE_HIGHLIGHT_NAME);
+    } else {
+      cssLike.highlights?.set(USER_NOTE_HIGHLIGHT_NAME, new Highlight(...liveNoteRanges.values()));
+    }
+  } catch {
+    /* 无 API 环境不会走到这(supportsHighlightMarks 已门控) */
+  }
+}
+
+/** Highlight 通道画线:文本搜索定位 → Range 注册,DOM 零改动。
+ *  返回本容器命中的 noteId→Range(供保存流/伴学锚点)。 */
+export function applyPersistentMarksHighlight(
+  container: HTMLElement,
+  notes: { noteId: string; text: string; surrounding?: string }[],
+): Map<string, Range> {
+  const result = new Map<string, Range>();
+  const owned = noteRangeOwners.get(container);
+  if (owned) for (const id of owned) liveNoteRanges.delete(id);
+  // Highlight 通道 DOM 里没有 mark,getTextModel 天然干净(不再需要 includeMarks 逻辑)
+  const model = getTextModel(container);
+  for (const note of notes) {
+    const pos = findTextWithDisambig(model.text, note.text, note.surrounding);
+    if (pos < 0) continue;
+    const range = offsetsToRange(model, pos, pos + note.text.length);
+    if (!range) continue;
+    result.set(note.noteId, range);
+    liveNoteRanges.set(note.noteId, range);
+  }
+  noteRangeOwners.set(container, new Set(result.keys()));
+  rebuildNoteHighlight();
+  return result;
+}
+
+/** 溯源跳转:按 noteId 取活体 Range(无 DOM 查询;死 Range 顺带修剪)。 */
+export function getNoteRange(noteId: string): Range | null {
+  const r = liveNoteRanges.get(noteId) ?? null;
+  if (r && !r.startContainer.isConnected) {
+    liveNoteRanges.delete(noteId);
+    rebuildNoteHighlight();
+    return null;
+  }
+  return r;
+}
+
+/** App.tsx 溯源轮询用:该 noteId 是否已有可跳转的画线(Highlight 或 DOM 兜底任一)。 */
+export function hasNoteMark(noteId: string): boolean {
+  if (liveNoteRanges.has(noteId)) return true;
+  return !!document.querySelector(`mark[data-note-id="${CSS.escape(noteId)}"]`);
+}
+
+let noteFlashTimer: ReturnType<typeof setTimeout> | null = null;
+/** 溯源跳转高亮:滚到线首行 + 临时 flash Highlight 1.5s(零 DOM)。 */
+export function flashNoteRange(range: Range): void {
+  range.startContainer.parentElement?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  const cssLike = CSS as unknown as { highlights?: Map<string, unknown> };
+  try {
+    cssLike.highlights?.set(USER_NOTE_FLASH_HIGHLIGHT_NAME, new Highlight(range));
+    if (noteFlashTimer) clearTimeout(noteFlashTimer);
+    noteFlashTimer = setTimeout(() => {
+      cssLike.highlights?.delete(USER_NOTE_FLASH_HIGHLIGHT_NAME);
+      noteFlashTimer = null;
+    }, 1500);
+  } catch {
+    /* 无 API 环境不会走到这 */
+  }
+}
+
+/** 容器内"视觉最后一条"画线 Range(保存流给伴学锚点用,与旧版取 DOM 末位
+ *  mark 的语义对齐):按文档序比较 start,取最大。 */
+export function getLastNoteRangeInContainer(container: HTMLElement): Range | null {
+  const owned = noteRangeOwners.get(container);
+  if (!owned || owned.size === 0) return null;
+  let best: Range | null = null;
+  for (const id of owned) {
+    const r = liveNoteRanges.get(id);
+    if (!r || !r.startContainer.isConnected) continue;
+    if (!best) {
+      best = r;
+      continue;
+    }
+    try {
+      if (r.compareBoundaryPoints(Range.START_TO_START, best) > 0) best = r;
+    } catch {
+      /* 跨文档等病态情况,保留现有 best */
+    }
+  }
+  return best;
+}
+
 /** 在 text 里搜索 searchText,用 surroundingText 消歧(选最近的出现)。
  *  返回起始 offset,找不到返回 -1。 */
 function findTextWithDisambig(text: string, searchText: string, surrounding?: string): number {
@@ -648,32 +774,66 @@ export function centerReadingRangeInView(range: Range, scroller: HTMLElement | n
 }
 
 /**
- * v10 最近一次新增笔记的画线 mark(伴学"飞来记笔记"的落点)。
- * v11 自愈:保存笔记会触发正文重渲染,ReactMarkdown 会把 mark span 整个换掉,
- * 存元素引用随即悬空(加笔记时伴学凭空隐身的根因)。这里同时记文本,取用时
- * 元素已脱离 DOM 就按文本在当前 DOM 找回同一条线——与画线定位同思路,
- * 不依赖 DOM 节点身份的稳定性。
+ * v10 最近一次新增笔记的画线(伴学"飞来记笔记"的落点)。
+ * v0.35.1 双通道:Highlight 通道存 Range,DOM 兜底通道存 <mark> 元素(折算成
+ * 内容 Range 对外统一)。v11 自愈保留:ReactMarkdown 重渲染换掉文本节点后
+ * Range 悬空,按记住的线文本在登记容器里重找一次——不依赖节点身份的稳定性。
  */
-let lastNoteMark: HTMLElement | null = null;
-let lastNoteMarkText: string | null = null;
-export function setLastNoteMark(el: HTMLElement | null): void {
-  lastNoteMark = el;
-  lastNoteMarkText = el?.textContent ?? null;
+let lastNoteRange: Range | null = null;
+let lastNoteRangeText: string | null = null;
+let lastNoteRangeHostEl: HTMLElement | null = null;
+
+export function setLastNoteMark(anchor: HTMLElement | Range | null): void {
+  if (!anchor) {
+    lastNoteRange = null;
+    lastNoteRangeText = null;
+    lastNoteRangeHostEl = null;
+    return;
+  }
+  if (anchor instanceof Range) {
+    lastNoteRange = anchor;
+    lastNoteRangeText = anchor.toString();
+    lastNoteRangeHostEl = anchor.startContainer.parentElement;
+  } else {
+    const range = document.createRange();
+    range.selectNodeContents(anchor);
+    lastNoteRange = range;
+    lastNoteRangeText = anchor.textContent;
+    lastNoteRangeHostEl = anchor;
+  }
 }
-export function getLastNoteMark(): HTMLElement | null {
-  if (lastNoteMarkEl_isLive(lastNoteMark)) return lastNoteMark;
-  if (lastNoteMarkText) {
-    for (const m of document.querySelectorAll<HTMLElement>("mark.lookatstudy-underline")) {
-      if (m.textContent === lastNoteMarkText) {
-        lastNoteMark = m;
-        return m;
+
+export interface NoteMarkAnchor {
+  range: Range;
+  /** 线起点所在元素(伴学判宿主面板;Range 自身没有 closest)。 */
+  host: HTMLElement | null;
+  /** 画线所在段落块元素(伴学避让取整段行盒)。 */
+  block: HTMLElement | null;
+}
+
+/** 伴学"记笔记"锚点:最近画线的 Range + 宿主/段落推导。
+ *  Range 失效(重渲染换节点)且登记容器还活着时按文本重找一次。 */
+export function getLastNoteMarkAnchor(): NoteMarkAnchor | null {
+  const hostEl = lastNoteRangeHostEl;
+  if (lastNoteRange && !lastNoteRange.startContainer.isConnected && hostEl && lastNoteRangeText) {
+    try {
+      const model = getTextModel(hostEl);
+      const pos = findTextWithDisambig(model.text, lastNoteRangeText);
+      if (pos >= 0) {
+        const r = offsetsToRange(model, pos, pos + lastNoteRangeText.length);
+        if (r) lastNoteRange = r;
       }
+    } catch {
+      /* 容器已脱离 DOM 等情况:下方 isConnected 判定兜底 */
     }
   }
-  return null;
-}
-function lastNoteMarkEl_isLive(el: HTMLElement | null): el is HTMLElement {
-  return !!el && el.isConnected;
+  if (!lastNoteRange || !lastNoteRange.startContainer.isConnected) return null;
+  const startEl = lastNoteRange.startContainer.parentElement ?? null;
+  return {
+    range: lastNoteRange,
+    host: startEl?.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]') ?? null,
+    block: startEl?.closest<HTMLElement>("p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, td, th") ?? null,
+  };
 }
 
 /** 闪烁某个持久画线 mark(溯源跳转时用):加粗下划线 + 淡黄背景高亮,1.5s 后恢复。 */

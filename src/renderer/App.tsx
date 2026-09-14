@@ -18,6 +18,7 @@ import { MapRail, type MapView } from "./components/MapRail.js";
 import { GlobalTooltip } from "./components/GlobalTooltip.js";
 import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
 import { useCanvas } from "./lib/useCanvas.js";
+import { hasNoteMark } from "./lib/highlightText.js";
 import { useFontSize } from "./lib/useFontSize.js";
 import { ChatStream, extractArtifacts } from "./components/ChatStream.js";
 import { ChatComposer } from "./components/ChatComposer.js";
@@ -262,8 +263,8 @@ export default function App() {
       if (noteId) {
         // 轮询等 ContentTab mount + 画线渲染完,再发跳转事件
         const tryJump = (attempts: number) => {
-          const mark = document.querySelector(`mark[data-note-id="${noteId}"]`);
-          if (mark) {
+          // v0.35.1:Highlight 通道没有 DOM mark,统一查注册表(兜底通道也覆盖)
+          if (hasNoteMark(noteId)) {
             window.dispatchEvent(new CustomEvent("lookatstudy-jump-to-note", { detail: noteId }));
           } else if (attempts > 0) {
             setTimeout(() => tryJump(attempts - 1), 150);
@@ -278,8 +279,7 @@ export default function App() {
       }
       if (noteId) {
         const tryJump = (attempts: number) => {
-          const mark = document.querySelector(`mark[data-note-id="${noteId}"]`);
-          if (mark) {
+          if (hasNoteMark(noteId)) {
             window.dispatchEvent(new CustomEvent("lookatstudy-jump-to-chat-note", { detail: noteId }));
           } else if (attempts > 0) {
             setTimeout(() => tryJump(attempts - 1), 150);

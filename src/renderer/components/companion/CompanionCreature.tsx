@@ -61,7 +61,7 @@ import {
   zoneDrift,
   wanderInPanel,
 } from "../../lib/companion/companion-core.js";
-import { getReadingRange, getReadingSentenceRange, getLastNoteMark } from "../../lib/highlightText.js";
+import { getReadingRange, getReadingSentenceRange, getLastNoteMarkAnchor } from "../../lib/highlightText.js";
 import { onCelebration } from "../../lib/celebration.js";
 import { usePrefersReducedMotion } from "../../lib/usePrefersReducedMotion.js";
 
@@ -618,16 +618,16 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
           setOccluding(false);
         }
         // v10 记笔记:pose=writing 期间,锚点=用户刚画的那条线(飞到线旁拿出本笔记录)
-        const noteMark = st.pose === "writing" ? getLastNoteMark() : null;
+        // v0.35.1:画线主通道迁 Highlight API(无 DOM mark),锚点改 anchor 结构
+        // {range, host, block}(host/block 由线起点元素推导,Range 提供 rect)。
+        const noteAnchor = st.pose === "writing" ? getLastNoteMarkAnchor() : null;
         const zone = st.zone;
-        // 锚点有效性先判定:mark 重渲染悬空(无宿主/零宽)时不再消费分支链,
+        // 锚点有效性先判定:Range 重渲染悬空(无宿主/零宽)时不再消费分支链,
         // 让下方 zone 分支接住栏内游弋——修复"加笔记时伴学隐身"(target 空=opacity 0)
-        const noteHost = noteMark
-          ? noteMark.closest<HTMLElement>('[data-testid="notebook-panel"], [data-testid="chat-stream"]')
-          : null;
-        const noteRect = noteMark?.getBoundingClientRect();
+        const noteHost = noteAnchor?.host ?? null;
+        const noteRect = noteAnchor?.range.getBoundingClientRect();
         const noteAnchored = !!(noteHost && noteRect && noteRect.width > 0);
-        if (noteMark && noteAnchored) {
+        if (noteAnchor && noteAnchored) {
           const host = noteHost;
           const pr = host.getBoundingClientRect();
           const mr = noteRect;
@@ -637,7 +637,7 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
             // v0.28 障碍=画线所在**段落**的全部行盒(Range.getClientRects 逐行):
             // 旧版只让开画线本身,身体会盖住同行/邻行正文(实测踩过)。段落盒
             // (Element.getClientRects 对块级只回一个巨盒)不行,要用 Range 逐行。
-            const block = noteMark.closest<HTMLElement>("p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, td, th");
+            const block = noteAnchor.block;
             const paraLines: Array<{ left: number; right: number; top: number; bottom: number }> = [];
             if (block) {
               const rg = document.createRange();

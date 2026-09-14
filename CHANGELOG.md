@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-09-14
+
 ### Fixed
 - 画线重渲染崩溃根修:持久画线从"改写 React 管的 DOM"(拆文本节点/插 <mark>)迁到 CSS Custom Highlight API 注册式高亮(零 DOM 改动)——此前在讲解区画线后,任何一次界面重渲染都可能撞出 DOMException 被错误边界拦成错误卡(渲染层 <a> 组件实测);溯源跳转/伴学记笔记锚点同步走注册表,无 API 老 webview 保留原 DOM 兜底。顺修 test:highlight 自 v0.28 起从未能运行的双重装置坏,30/30 首次全绿。
 

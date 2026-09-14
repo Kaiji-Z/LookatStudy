@@ -121,6 +121,7 @@ import {
   setVehicleShimeji,
 } from "../services/shimeji/shimeji-pack-service.js";
 import type { CutPackManifest } from "@shared/companion-cut";
+import { parseProfileJson, serializeProfile, emptyProfile } from "@shared/learner-profile";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
 import {
   getProgress as getProgressService,
@@ -1164,6 +1165,36 @@ export function registerSettingsHandlers(deps: RuntimeDeps): void {
       if (key === "companion_pet_mode") deps.pet?.sync(value === "1");
     },
   );
+
+  // 学习者画像(声明侧):settings 表 learner_profile 键的结构化通道。
+  // get=宽容解析(坏 JSON→null 渲染层兜底);set=parse-then-serialize 归一化(坏值字段丢弃),
+  // DB 里永远只存合法画像 JSON —— AI 提议 apply 与用户手编走同一闸门。
+  handle("profile:get", async (): Promise<unknown> => {
+    const db = getDb();
+    const row = db
+      .select()
+      .from(settingsTable)
+      .where(eq(settingsTable.key, "learner_profile"))
+      .get();
+    return row?.value ? parseProfileJson(row.value) : null;
+  });
+
+  handle("profile:set", async (_e, profile: unknown): Promise<void> => {
+    const db = getDb();
+    const normalized = parseProfileJson(
+      typeof profile === "string" ? profile : serializeProfile({ ...emptyProfile(), ...(profile as object) }),
+    );
+    if (!normalized) throw new Error("profile:set 收到无法解析的画像");
+    // 写入即修改:统一盖当前时间(updatedAt=最后一次写入;AI 提议的"用户手改>提议"
+    // 仲裁在 apply 前比较 profile.updatedAt vs 提议发起时间,不依赖写入侧)。
+    normalized.updatedAt = new Date().toISOString();
+    const value = serializeProfile(normalized);
+    db.insert(settingsTable)
+      .values({ key: "learner_profile", value, isSecret: false })
+      .onConflictDoUpdate({ target: settingsTable.key, set: { value, isSecret: false } })
+      .run();
+    markDirty();
+  });
 
   // v0.11 桌宠:渲染层热区检测 → 切换桌宠窗点击穿透(离开热区恢复穿透)
   handle("companionPet:setClickThrough", (_e, passThrough: boolean) => {

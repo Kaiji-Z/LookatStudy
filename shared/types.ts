@@ -495,6 +495,7 @@ import type {
 } from "./speech-types";
 import type { CutPackManifest as CompanionCutManifestT, CompanionVehicleId as CompanionVehicleIdT } from "./companion-cut";
 import type { LearnerProfile } from "./learner-profile";
+import type { BootStateResult } from "./boot-guide";
 
 /** Shimeji 包 manifest(渲染层运行时:帧+动作+行为,SPEC-shimeji.md §4) */
 export interface ShimejiPackManifestT {
@@ -780,6 +781,8 @@ export interface ApiExpose {
   profileGet(): Promise<LearnerProfile | null>;
   /** 整体写入画像(主进程 parse-then-serialize 归一化,坏值字段丢弃)。 */
   profileSet(profile: LearnerProfile): Promise<void>;
+  /** 开屏输入聚合(单往返):状态机输入 + 动作目标 id;只读。 */
+  bootGetState(): Promise<BootStateResult>;
   /** v0.11 桌宠:切换桌宠窗点击穿透(true=穿透还原桌面操作,false=可交互生物)。
    *  渲染层指针热区检测调用;web 运行时无桌宠窗,no-op。 */
   companionPetSetClickThrough(passThrough: boolean): Promise<void>;

@@ -122,6 +122,7 @@ import {
 } from "../services/shimeji/shimeji-pack-service.js";
 import type { CutPackManifest } from "@shared/companion-cut";
 import { parseProfileJson, serializeProfile, emptyProfile } from "@shared/learner-profile";
+import { gatherBootState } from "../services/boot-state-service.js";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
 import {
   getProgress as getProgressService,
@@ -1195,6 +1196,9 @@ export function registerSettingsHandlers(deps: RuntimeDeps): void {
       .run();
     markDirty();
   });
+
+  // 开屏输入聚合(只读单往返):computeBootGuide 的全部输入 + 动作目标
+  handle("boot:getState", async () => gatherBootState(getDb()));
 
   // v0.11 桌宠:渲染层热区检测 → 切换桌宠窗点击穿透(离开热区恢复穿透)
   handle("companionPet:setClickThrough", (_e, passThrough: boolean) => {

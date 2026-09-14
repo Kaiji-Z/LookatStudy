@@ -99,6 +99,7 @@ export const API_CHANNELS: Record<string, string> = {
   setSetting: "settings:set",
   profileGet: "profile:get",
   profileSet: "profile:set",
+  bootGetState: "boot:getState",
   companionPetSetClickThrough: "companionPet:setClickThrough",
   getUpdateInfo: "app:getUpdateInfo",
   dshImportDetect: "dsh:detect",

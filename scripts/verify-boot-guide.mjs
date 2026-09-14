@@ -197,5 +197,176 @@ test("T33 全场景 i18n key 前缀纪律:lines/actions 的 key 均为 boot.*", 
   }
 });
 
+/* ============================================================
+ * gatherBootState DB 级测试(内存 sql.js;boot-state-service 为 db 注入式,
+ * import 链不触达 db/index 的 ?raw 链 —— 与 verify-translations 同模式)
+ * ============================================================ */
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import initSqlJs from "sql.js";
+import { drizzle } from "drizzle-orm/sql-js";
+import * as schema from "../src/main/db/schema.ts";
+import { gatherBootState } from "../src/main/services/boot-state-service.ts";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, "..");
+const wasmPath = join(ROOT, "node_modules/sql.js/dist");
+const SQL = await initSqlJs({ locateFile: (f) => join(wasmPath, f) });
+
+function freshDb() {
+  const sqljs = new SQL.Database();
+  sqljs.run(readFileSync(join(ROOT, "src/main/db/schema.sql"), "utf8"));
+  sqljs.run("PRAGMA foreign_keys = ON;");
+  // raw 走 sqljs.run(drizzle 的 .run 吃 SQL 包装器,与 verify-translations 同款)
+  const db = drizzle(sqljs, { schema });
+  return { db, raw: sqljs };
+}
+
+const NOW = new Date("2026-09-15T10:00:00");
+
+function seedCourse(raw, courseId) {
+  raw.run("INSERT INTO courses (id, repo_url, repo_name, title, version) VALUES (?, '', 'r', 'ML 入门', 1)", [courseId]);
+  raw.run("INSERT INTO content_nodes (id, course_id, type, title, source_path, order_idx) VALUES ('n1', ?, 'lesson', '梯度下降', 'a.md', 0)", [courseId]);
+  raw.run("INSERT INTO content_nodes (id, course_id, type, title, source_path, order_idx) VALUES ('n2', ?, 'lesson', '反向传播', 'b.md', 1)", [courseId]);
+  raw.run("INSERT INTO content_nodes (id, course_id, type, title, source_path, order_idx) VALUES ('n3', ?, 'exam', '期末考', 'c.md', 2)", [courseId]);
+}
+
+test("T40 gatherBootState:空库 → ready_room 输入(无 key 无课无信号,不炸)", () => {
+  const { db, raw } = freshDb();
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.hasKey, false);
+  assert.equal(st.hasCourses, false);
+  assert.equal(st.bootDone, false);
+  assert.equal(st.dueCount, 0);
+  assert.equal(st.lastSession, null);
+  assert.equal(st.targets.resume, null);
+  assert.equal(computeBootGuide({ ...st, bootDone: true }).scene, "ready_room");
+});
+
+test("T41 last_session 有效 → resume 目标带 id;课程被删 → 优雅回落", () => {
+  const { db, raw } = freshDb();
+  seedCourse(raw, "c1");
+  raw.run("INSERT INTO settings (key, value) VALUES ('last_session', '{\"courseId\":\"c1\",\"nodeId\":\"n1\"}')");
+  const st = gatherBootState(db, NOW);
+  assert.deepEqual(st.lastSession, { courseTitle: "ML 入门", nodeTitle: "梯度下降" });
+  assert.deepEqual(st.targets.resume, { courseId: "c1", nodeId: "n1" });
+  raw.run("DELETE FROM courses WHERE id = 'c1'");
+  const st2 = gatherBootState(db, NOW);
+  assert.equal(st2.lastSession, null);
+  assert.equal(st2.targets.resume, null);
+});
+
+test("T42 坏 last_session JSON → 静默回落不抛", () => {
+  const { db, raw } = freshDb();
+  raw.run("INSERT INTO settings (key, value) VALUES ('last_session', '{oops')");
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.lastSession, null);
+});
+
+test("T43 SRS 到期计数 + 快毕业探测(0.7≤mastery<0.9 未 mastered)", () => {
+  const { db, raw } = freshDb();
+  seedCourse(raw, "c1");
+  raw.run("INSERT INTO srs_items (id, node_id, due_at) VALUES ('s1', 'n1', '2026-09-14T00:00:00.000Z')");
+  raw.run("INSERT INTO srs_items (id, node_id, due_at) VALUES ('s2', 'n2', '2027-01-01T00:00:00.000Z')");
+  raw.run("INSERT INTO progress (node_id, status, mastery) VALUES ('n2', 'in_progress', 0.75)");
+  raw.run("INSERT INTO settings (key, value) VALUES ('last_session', '{\"courseId\":\"c1\",\"nodeId\":\"n1\"}')");
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.dueCount, 1);
+  assert.equal(st.nearMasteryNodeTitle, "反向传播");
+  assert.equal(st.targets.nearMasteryNodeId, "n2");
+});
+
+test("T44 快毕业边界:已 mastered 或 <0.7 不算", () => {
+  const { db, raw } = freshDb();
+  seedCourse(raw, "c1");
+  raw.run("INSERT INTO progress (node_id, status, mastery) VALUES ('n1', 'mastered', 0.95)");
+  raw.run("INSERT INTO progress (node_id, status, mastery) VALUES ('n2', 'in_progress', 0.4)");
+  raw.run("INSERT INTO settings (key, value) VALUES ('last_session', '{\"courseId\":\"c1\",\"nodeId\":\"n1\"}')");
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.nearMasteryNodeTitle, null);
+});
+
+test("T45 friction 卡点(frustrated/confused 计数,agent_error 排除)", () => {
+  const { db, raw } = freshDb();
+  seedCourse(raw, "c1");
+  raw.run("INSERT INTO friction_log (id, node_id, category, summary) VALUES ('f1', 'n2', 'frustrated', 's1')");
+  raw.run("INSERT INTO friction_log (id, node_id, category, summary) VALUES ('f2', 'n2', 'confused', 's2')");
+  raw.run("INSERT INTO friction_log (id, node_id, category, summary) VALUES ('f3', 'n1', 'agent_error', 'e')");
+  raw.run("INSERT INTO settings (key, value) VALUES ('last_session', '{\"courseId\":\"c1\",\"nodeId\":\"n1\"}')");
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.topFrictionNodeTitle, "反向传播");
+  assert.equal(st.targets.frictionNodeId, "n2");
+});
+
+test("T46 streak:昨日活跃+无冻结 → atRisk+returningAfterDays;freeze 余量则不告急", () => {
+  const { db, raw } = freshDb();
+  raw.run("UPDATE streaks SET current_streak = 3, last_active_date = '2026-09-14', freeze_count = 0 WHERE id = 'singleton'");
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.streak.todayDone, false);
+  assert.equal(st.streak.atRisk, true);
+  assert.ok(st.streak.hoursLeft >= 1 && st.streak.hoursLeft <= 24);
+  assert.equal(st.returningAfterDays, true);
+  raw.run("UPDATE streaks SET freeze_count = 1 WHERE id = 'singleton'");
+  const st2 = gatherBootState(db, NOW);
+  assert.equal(st2.streak.atRisk, false);
+  raw.run("UPDATE streaks SET last_active_date = '2026-09-15' WHERE id = 'singleton'");
+  const st3 = gatherBootState(db, NOW);
+  assert.equal(st3.streak.todayDone, true);
+  assert.equal(st3.streak.atRisk, false);
+  assert.equal(st3.returningAfterDays, false);
+});
+
+test("T47 考试中断:未结未终止 attempt → 目标节点;已终止不算", () => {
+  const { db, raw } = freshDb();
+  seedCourse(raw, "c1");
+  raw.run("INSERT INTO exam_attempts (id, exam_node_id, started_at, terminated) VALUES ('a1', 'n3', '2026-09-14T20:00:00', 0)");
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.suspendedExamNodeTitle, "期末考");
+  assert.equal(st.targets.examNodeId, "n3");
+  raw.run("UPDATE exam_attempts SET terminated = 1 WHERE id = 'a1'");
+  const st2 = gatherBootState(db, NOW);
+  assert.equal(st2.suspendedExamNodeTitle, null);
+});
+
+test("T48 hasKey 与 agent:isReady 同源(glm_api_key 在 → ready)", () => {
+  const { db, raw } = freshDb();
+  raw.run("INSERT INTO settings (key, value) VALUES ('glm_api_key', 'sk-test')");
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.hasKey, true);
+});
+
+test("T49 key_prompt_count ≥2 → keyPromptDismissed", () => {
+  const { db, raw } = freshDb();
+  raw.run("INSERT INTO settings (key, value) VALUES ('key_prompt_count', '2')");
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.keyPromptDismissed, true);
+});
+
+test("T50 端到端:全信号库 → computeBootGuide(gather) 得 resume_last(优先于一切)", () => {
+  const { db, raw } = freshDb();
+  seedCourse(raw, "c1");
+  raw.run("INSERT INTO settings (key, value) VALUES ('glm_api_key', 'sk-test')");
+  raw.run("INSERT INTO settings (key, value) VALUES ('boot_done', '1')");
+  raw.run("INSERT INTO settings (key, value) VALUES ('last_session', '{\"courseId\":\"c1\",\"nodeId\":\"n1\"}')");
+  raw.run("INSERT INTO srs_items (id, node_id, due_at) VALUES ('s1', 'n1', '2026-09-01T00:00:00.000Z')");
+  raw.run("INSERT INTO exam_attempts (id, exam_node_id, started_at, terminated) VALUES ('a1', 'n3', '2026-09-14T20:00:00', 0)");
+  raw.run("UPDATE streaks SET current_streak = 2, last_active_date = '2026-09-14', freeze_count = 0 WHERE id = 'singleton'");
+  const st = gatherBootState(db, NOW);
+  const guide = computeBootGuide(st);
+  assert.equal(guide.scene, "resume_last");
+  assert.equal(guide.welcomeBack, true);
+});
+
+test("T51 boot_done='1' 与 learner_profile 解析(画像填充度/称呼)", () => {
+  const { db, raw } = freshDb();
+  raw.run("INSERT INTO settings (key, value) VALUES ('boot_done', '1')");
+  raw.run("INSERT INTO settings (key, value) VALUES ('learner_profile', '{\"name\":\"阿凯\",\"mbti\":\"ENTP\",\"style\":{\"start\":\"framework\",\"interaction\":\"dialogue\",\"feedback\":\"direct\",\"pacing\":\"exploratory\"},\"updatedAt\":\"2026-09-15T00:00:00.000Z\"}')");
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.bootDone, true);
+  assert.equal(st.profileFilled, true);
+  assert.equal(st.name, "阿凯");
+});
+
 console.log(`\n${passed} passed`);
 if (process.exitCode) console.error("FAILED");

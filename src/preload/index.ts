@@ -221,6 +221,8 @@ const api = {
     ipcRenderer.invoke("profile:get")) as ApiExpose["profileGet"],
   profileSet: ((profile: unknown) =>
     ipcRenderer.invoke("profile:set", profile)) as ApiExpose["profileSet"],
+  bootGetState: (() =>
+    ipcRenderer.invoke("boot:getState")) as ApiExpose["bootGetState"],
   companionPetSetClickThrough: ((passThrough: boolean) =>
     ipcRenderer.invoke("companionPet:setClickThrough", passThrough)) as ApiExpose["companionPetSetClickThrough"],
 

@@ -296,3 +296,18 @@ export function computeBootGuide(inputs: BootGuideInputs): BootGuideState {
 
 /** boot 向导总步数（渲染层进度条用）。 */
 export const BOOT_WIZARD_STEPS = 4;
+
+/* ---------- 主进程聚合结果(boot:getState 单往返) ---------- */
+
+/** 引导动作需要的目标 id(渲染层执行 resume/goto_node 用;与展示用标题分离)。 */
+export interface BootTargets {
+  resume: { courseId: string; nodeId: string | null } | null;
+  frictionNodeId: string | null;
+  nearMasteryNodeId: string | null;
+  examNodeId: string | null;
+}
+
+/** gatherBootState 的返回:状态机输入 + 执行目标。 */
+export interface BootStateResult extends BootGuideInputs {
+  targets: BootTargets;
+}

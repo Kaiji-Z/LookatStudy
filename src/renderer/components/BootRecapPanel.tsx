@@ -40,7 +40,7 @@ export function BootRecapPanel() {
             <div className="text-label font-bold text-ink">{t("boot.recap.title")}</div>
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid="boot-recap-xp">
-                <Zap size={18} className="text-gold self-center" />
+                <Zap size={18} className="text-brand self-center" />
                 <div className="text-title font-bold text-ink">{recap.totalXp}</div>
                 <div className="text-caption text-ink-faint">{t("boot.recap.total_xp")}</div>
               </div>
@@ -68,7 +68,7 @@ export function BootRecapPanel() {
         ) : (
           <section className="surface-card rounded-2xl p-5 shadow-card flex flex-col gap-3" data-testid="boot-tips-card">
             <div className="flex items-center gap-2">
-              <Lightbulb size={18} className="text-gold" />
+              <Lightbulb size={18} className="text-accent" />
               <div className="text-label font-bold text-ink">{t("boot.recap.tips_title")}</div>
             </div>
             <p className="text-body text-ink-muted leading-relaxed" data-testid="boot-tip-text">

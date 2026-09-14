@@ -64,7 +64,7 @@ const ACTION_ICON: Record<string, ReactNode> = {
 const SCENE_ICON: Record<string, ReactNode> = {
   welcome_intro: <Sparkles size={22} className="text-accent" />,
   key_setup: <KeyRound size={22} className="text-warning" />,
-  profile_quiz: <GraduationCap size={22} className="text-gold" />,
+  profile_quiz: <GraduationCap size={22} className="text-accent" />,
   course_pick: <BookOpen size={22} className="text-brand" />,
   resume_last: <Play size={22} className="text-brand" />,
   review_due: <ClipboardList size={22} className="text-accent" />,

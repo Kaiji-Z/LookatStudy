@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-09-14
+
 ### Added
 - 新版本检查提示:启动后首次选中课程时查询 GitHub 最新 Release(24h 缓存、离线/被墙静默零打扰、每个版本只提示一次),有新版弹 Toast 带「去下载」按钮直达发布页——只提示不自动下载安装。
 - Shimeji 导入弹窗的下载指引从纯文本站点名升级为可点击的外链按钮(shimeji.org / shimejis.xyz / Cachomon / DeviantArt 搜索页),点击经系统浏览器打开;链接排在拖放区下方,拖放按钮改用 ref 定位文件选择器(原 nextElementSibling 链路会被插入的链接排截断)。

@@ -81,8 +81,7 @@ let entp = await run(systemEntp, "ENTP 画像档");
 const isInteractive = (t) => /[？?]/.test(t) || t.includes("你猜") || t.includes("来，");
 // 风格是概率行为:首答无互动标记时重试一次(双采样仍无 → 判失败)
 if (!isInteractive(entp)) {
-  console.log("
-(首答无互动标记,重试一次)");
+  console.log("(首答无互动标记,重试一次)");
   const retry = await run(systemEntp, "ENTP 画像档(重试)");
   if (isInteractive(retry)) entp = retry + "
 [首答无互动标记,已用重试样本]";

@@ -6,6 +6,8 @@
  * 验收对象(v0.36 boot-guide 迭代, SPEC §5): verify 的文案断言只能锁"注入块存在",
  * 锁不住"注入后教学行为真的变了"——本测试用同一节课做 A/B:ENTP 画像档 vs 无画像档,
  * 断言 ENTP 档呈现互动式教学(至少一个问句/邀请),并记录双档全文供人工比对。
+ * 动机阶段卡追加(v0.36 motive-stage): 第三档 external+兴趣(做饭/篮球)断言
+ * 例子挂上兴趣域(搭桥条款生效),且所有档零动机临床术语泄漏(闭嘴纪律生效)。
  *
  * 设计:
  *   - system = 真源 buildBaseAgentPrompt + 手拼 nodeContext + 真源 buildProfileInjection
@@ -17,6 +19,8 @@
  *   - 硬: 两档都有非空回复(画像不破坏基本教学)
  *   - 硬: ENTP 档回复包含互动标记(问句 ？/? 或"你"直接称呼的邀请)——对话式教学的最低信号
  *   - 硬: 无画像档不含画像相关信息(没有把 ENTI/画像词泄漏进无画像档)
+ *   - 硬: 动机档例子挂上兴趣域词汇(做饭/篮球/厨房/炒/投篮/球场/锅,双采样)
+ *   - 硬: 所有档零动机临床术语(内化/内摄/自我决定/introjected/OIT…——闭嘴纪律)
  *   - 软: 记录两档长度/问句数对比(人工审查输出)
  */
 import { readApiKey } from "./_load-env.mjs";
@@ -42,8 +46,6 @@ const entpProfile = {
   name: "阿凯",
   mbti: "ENTP",
   style: expandMbtiToStyle("ENTP"),
-  goal: "interview",
-  goalNote: "两周后",
 };
 const profileBlock = buildProfileInjection(entpProfile, "zh-CN");
 if (!profileBlock) {
@@ -55,12 +57,31 @@ const systemEntp = `${buildBaseAgentPrompt("zh-CN")}\n\n${nodeContext}\n\n${prof
 const systemPlain = `${buildBaseAgentPrompt("zh-CN")}\n\n${nodeContext}`;
 const userMsg = { role: "user", content: "开始讲这节课吧。" };
 
-async function run(system, label) {
+/* —— 动机×兴趣行为组(动机阶段卡):external 教练 + 兴趣搭桥 + 零术语泄漏 —— */
+const motiveProfile = {
+  ...emptyProfile(),
+  name: "阿凯",
+  mbti: "ENTP",
+  style: expandMbtiToStyle("ENTP"),
+  motiveStage: "external",
+  interests: ["做饭", "篮球"],
+};
+const motiveBlock = buildProfileInjection(motiveProfile, "zh-CN");
+if (!motiveBlock || !motiveBlock.includes("【动机适配】")) {
+  console.error("❌ 动机注入块缺失(动机阶段卡真源回归!)");
+  process.exit(1);
+}
+const systemMotive = `${buildBaseAgentPrompt("zh-CN")}\n\n${nodeContext}\n\n${motiveBlock}`;
+const userMotive = { role: "user", content: "用一个例子给我讲清楚这节课的核心概念。" };
+/** 闭嘴纪律的泄漏词表:任何档的回复出现即违规(临床词汇只准活在提示词里) */
+const LEAK_RE = /内化|动机理论|自我决定|外部调节|内摄|认同调节|整合调节|内在动机|internalization|introjected|self-determination|OIT/;
+
+async function run(system, label, user = userMsg) {
   console.log(`\n=== ${label} (system ${system.length} 字符) ===`);
   const r = await fetch("https://api.z.ai/api/coding/paas/v4/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
-    body: JSON.stringify({ model: "glm-5.2", messages: [{ role: "system", content: system }, userMsg] }),
+    body: JSON.stringify({ model: "glm-5.2", messages: [{ role: "system", content: system }, user] }),
     signal: AbortSignal.timeout(180_000),
   });
   if (!r.ok) {
@@ -87,6 +108,15 @@ if (!isInteractive(entp)) {
 }
 const plain = await run(systemPlain, "无画像档(基线)");
 
+/* 动机×兴趣档:external 教练 + 兴趣搭桥(硬,双采样) */
+let motive = await run(systemMotive, "动机×兴趣档(external+做饭/篮球)", userMotive);
+const hitInterest = (t) => /做饭|篮球|厨房|炒|投篮|球场|锅/.test(t);
+if (!hitInterest(motive)) {
+  console.log("(首答未挂兴趣,重试一次)");
+  const retry = await run(systemMotive, "动机×兴趣档(重试)", userMotive);
+  if (hitInterest(retry)) motive = retry + " [retry sample: 首答未挂兴趣]";
+}
+
 /* —— 断言 —— */
 let failed = 0;
 
@@ -102,6 +132,18 @@ else console.log("✓ 硬2a: 基线档有实质回复");
 
 if (/ENTP|画像|辩论家/.test(plain)) { console.error("✗ 硬2b: 基线档泄漏画像词(无画像档不该有)"); failed++; }
 else console.log("✓ 硬2b: 基线档不含画像泄漏");
+
+if (motive.trim().length < 50) { console.error("✗ 硬3a: 动机档回复过短/为空"); failed++; }
+else console.log("✓ 硬3a: 动机档有实质回复");
+
+if (hitInterest(motive)) console.log("✓ 硬3b: 动机档例子挂上了兴趣(做饭/篮球域词汇)——搭桥条款生效");
+else { console.error("✗ 硬3b: 动机档(含重试)例子未挂兴趣(搭桥条款没生效?)"); failed++; }
+
+/* 闭嘴纪律:所有档零心理学术语泄漏 */
+for (const [label, text] of [["ENTP 档", entp], ["基线档", plain], ["动机档", motive]]) {
+  if (LEAK_RE.test(text)) { console.error(`✗ 硬4: ${label}泄漏动机临床术语(${text.match(LEAK_RE)[0]})——闭嘴纪律失效`); failed++; }
+  else console.log(`✓ 硬4: ${label}零动机术语泄漏(闭嘴纪律生效)`);
+}
 
 /* 软:对比统计(人工审查) */
 const countQ = (s) => (s.match(/[？?]/g) ?? []).length;

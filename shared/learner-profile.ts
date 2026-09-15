@@ -41,16 +41,20 @@ export interface LearnerStyle {
   pacing: StylePacing | null;
 }
 
-export type LearnerGoal = "interview" | "project" | "career" | "curiosity";
+/**
+ * 动机阶段（OIT 内化连续体 2-6 级；无动机级不设——打开 App 即排除）。
+ * 用户侧只见白话名（motiveDisplay），临床语义只活在注入与代码里。
+ */
+export const MOTIVE_STAGES = ["external", "introjected", "identified", "integrated", "intrinsic"] as const;
+export type MotiveStage = (typeof MOTIVE_STAGES)[number];
 
 export interface LearnerProfile {
   /** 称呼（可空） */
   name: string | null;
   mbti: MbtiType | null;
   style: LearnerStyle;
-  goal: LearnerGoal | null;
-  /** 目标补充（如面试时间线） */
-  goalNote: string | null;
+  /** 动机阶段（可空=未诊断；AI 不可提议修改，只有用户本人能改） */
+  motiveStage: MotiveStage | null;
   /** 兴趣点（兴趣个性化的挂钩素材；null=未填，空组归一为 null） */
   interests: string[] | null;
   /** 想对导师说的话（可空） */
@@ -62,7 +66,7 @@ export interface LearnerProfile {
 export const EMPTY_STYLE: LearnerStyle = { start: null, interaction: null, feedback: null, pacing: null };
 
 export function emptyProfile(): LearnerProfile {
-  return { name: null, mbti: null, style: { ...EMPTY_STYLE }, goal: null, goalNote: null, interests: null, freeNote: null, updatedAt: new Date(0).toISOString() };
+  return { name: null, mbti: null, style: { ...EMPTY_STYLE }, motiveStage: null, interests: null, freeNote: null, updatedAt: new Date(0).toISOString() };
 }
 
 /** MBTI 四字母 → style 四维（快捷入口展开为真源初值，用户可逐维手调）。 */
@@ -75,15 +79,18 @@ export function expandMbtiToStyle(mbti: MbtiType): LearnerStyle {
   };
 }
 
-/** AI 提议的画像 patch(update_learner_profile 工具输入;apply 侧走 applyProfilePatch)。 */
-export type LearnerProfilePatch = Partial<Omit<LearnerProfile, "style" | "updatedAt">> & {
+/**
+ * AI 提议的画像 patch(update_learner_profile 工具输入;apply 侧走 applyProfilePatch)。
+ * motiveStage 被 Omit 排除——动机阶段只有用户本人能改,AI 结构上无法提议(防泄漏第 1 层)。
+ */
+export type LearnerProfilePatch = Partial<Omit<LearnerProfile, "style" | "updatedAt" | "motiveStage">> & {
   style?: Partial<LearnerStyle>;
 };
 
 /** 画像是否有任何可用信息（全空 → 不注入/空态兜底）。 */
 export function hasProfileContent(p: LearnerProfile): boolean {
   return Boolean(
-    p.name || p.mbti || p.goal || p.goalNote || p.freeNote ||
+    p.name || p.mbti || p.motiveStage || p.freeNote ||
     (p.interests?.length ?? 0) > 0 ||
     p.style.start || p.style.interaction || p.style.feedback || p.style.pacing,
   );
@@ -132,7 +139,7 @@ export function parseProfileJson(json: string | null | undefined): LearnerProfil
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const s = (r.style && typeof r.style === "object" ? r.style : {}) as Record<string, unknown>;
-  const goal = dim(r.goal, ["interview", "project", "career", "curiosity"] as const);
+  const motiveStage = dim(r.motiveStage, MOTIVE_STAGES);
   return {
     name: str(r.name),
     mbti: isValidMbti(r.mbti) ? r.mbti : null,
@@ -142,8 +149,7 @@ export function parseProfileJson(json: string | null | undefined): LearnerProfil
       feedback: dim(s.feedback, ["direct", "encouraging"] as const),
       pacing: dim(s.pacing, ["sequential", "exploratory"] as const),
     },
-    goal,
-    goalNote: str(r.goalNote),
+    motiveStage,
     interests: strList(r.interests),
     freeNote: str(r.freeNote),
     updatedAt: str(r.updatedAt) ?? new Date(0).toISOString(),
@@ -160,8 +166,7 @@ export function serializeProfile(p: LearnerProfile): string {
       feedback: p.style.feedback,
       pacing: p.style.pacing,
     },
-    goal: p.goal ?? null,
-    goalNote: p.goalNote ?? null,
+    motiveStage: p.motiveStage ?? null,
     interests: p.interests ?? null,
     freeNote: p.freeNote ?? null,
     updatedAt: p.updatedAt,
@@ -169,7 +174,7 @@ export function serializeProfile(p: LearnerProfile): string {
 }
 
 /** AI 提议的 patch 合并（update_learner_profile 的 apply 侧；只合并给定字段）。 */
-export function applyProfilePatch(base: LearnerProfile, patch: Partial<Omit<LearnerProfile, "style">> & { style?: Partial<LearnerStyle> }): LearnerProfile {
+export function applyProfilePatch(base: LearnerProfile, patch: Partial<Omit<LearnerProfile, "style" | "motiveStage">> & { style?: Partial<LearnerStyle> }): LearnerProfile {
   return {
     name: patch.name !== undefined ? str(patch.name) : base.name,
     mbti: patch.mbti !== undefined ? (isValidMbti(patch.mbti) ? patch.mbti : null) : base.mbti,
@@ -179,8 +184,8 @@ export function applyProfilePatch(base: LearnerProfile, patch: Partial<Omit<Lear
       feedback: patch.style?.feedback !== undefined ? dim(patch.style.feedback, ["direct", "encouraging"] as const) : base.style.feedback,
       pacing: patch.style?.pacing !== undefined ? dim(patch.style.pacing, ["sequential", "exploratory"] as const) : base.style.pacing,
     },
-    goal: patch.goal !== undefined ? dim(patch.goal, ["interview", "project", "career", "curiosity"] as const) : base.goal,
-    goalNote: patch.goalNote !== undefined ? str(patch.goalNote) : base.goalNote,
+    /* motiveStage 恒保 base 值——动机只有用户本人能改,patch 通道结构上不存在该字段 */
+    motiveStage: base.motiveStage,
     interests: patch.interests !== undefined ? strList(patch.interests) : base.interests,
     freeNote: patch.freeNote !== undefined ? str(patch.freeNote) : base.freeNote,
     updatedAt: new Date().toISOString(),
@@ -273,11 +278,70 @@ export function styleLeaningLine(style: LearnerStyle, locale: string): string {
   return parts.join(locale === "en" ? "; " : "；");
 }
 
-export function goalLabel(goal: LearnerGoal, locale: string): string {
-  const zh: Record<LearnerGoal, string> = { interview: "面试备战", project: "手头项目要用", career: "系统进阶", curiosity: "纯好奇" };
-  const en: Record<LearnerGoal, string> = { interview: "interview prep", project: "a project at hand", career: "systematic upskilling", curiosity: "pure curiosity" };
-  return locale === "en" ? en[goal] : zh[goal];
+/* ---------- 动机阶段双语展示表(用户侧白话;临床语义只在注入) ---------- */
+
+export interface MotiveDisplay {
+  nameZh: string;
+  nameEn: string;
+  /** 翻卡第一人称 tagline(把选项钉在唯一阶段读法上,如"填满休息时间"→内摄) */
+  taglineZh: string;
+  taglineEn: string;
+  /** bot 回话=该级教练模式的预告片 */
+  botZh: string;
+  botEn: string;
 }
+
+export const MOTIVE_DISPLAY: Record<MotiveStage, MotiveDisplay> = {
+  external: {
+    nameZh: "为了考试/面试",
+    nameEn: "For an exam",
+    taglineZh: "这场考试/面试在前头等着，得过去。",
+    taglineEn: "The exam or interview is waiting — gotta get past it.",
+    botZh: "行，考点优先，咱们稳稳过。",
+    botEn: "Alright — exam points first, steady pace, we'll pass.",
+  },
+  introjected: {
+    nameZh: "为了填满休息时间",
+    nameEn: "To fill free time",
+    taglineZh: "闲着也是闲着，学点总没坏处。",
+    taglineEn: "Got spare time anyway — might as well learn something.",
+    botZh: "轻松学，不赶进度，学到哪算哪。",
+    botEn: "Easy pace, no rush — we go as far as we go.",
+  },
+  identified: {
+    nameZh: "未来能用得上",
+    nameEn: "It'll pay off",
+    taglineZh: "这本事存着，总有一天用得上。",
+    taglineEn: "Stash the skill — one day it pays off.",
+    botZh: "好，都往用得上讲。",
+    botEn: "Got it — everything aimed at real use.",
+  },
+  integrated: {
+    nameZh: "终身学习",
+    nameEn: "Lifelong learning",
+    taglineZh: "学习这事儿，我打算干一辈子。",
+    taglineEn: "Learning is a lifelong thing for me.",
+    botZh: "同路人，往深了讲。",
+    botEn: "Fellow traveler — let's go deep.",
+  },
+  intrinsic: {
+    nameZh: "享受学习过程",
+    nameEn: "For the fun of it",
+    taglineZh: "懂的那个瞬间，本身就挺爽。",
+    taglineEn: "That click when it finally makes sense — love it.",
+    botZh: "那就挑有意思的讲！",
+    botEn: "Then let's pick the fun stuff!",
+  },
+};
+
+export function motiveDisplay(stage: MotiveStage, locale: string): { name: string; tagline: string; bot: string } {
+  const d = MOTIVE_DISPLAY[stage];
+  return locale === "en"
+    ? { name: d.nameEn, tagline: d.taglineEn, bot: d.botEn }
+    : { name: d.nameZh, tagline: d.taglineZh, bot: d.botZh };
+}
+
+/* goal/goalNote 已随动机阶段卡退役(2026-09-15):deadline 是会过期的状态,不进画像。 */
 
 /* ---------- 16 型双语展示表 ---------- */
 
@@ -426,12 +490,13 @@ export function buildProfileInjection(profile: LearnerProfile, locale: string): 
     const d = mbtiDisplay(profile.mbti, locale);
     head.push(isEn ? `MBTI: ${d.code} — ${d.name}: ${d.tagline}` : `MBTI：${d.code}——${d.name}·${d.tagline}`);
   }
-  if (profile.goal) {
-    const g = goalLabel(profile.goal, locale);
-    const withNote = profile.goalNote ? `${g}${isEn ? ` (${profile.goalNote})` : `（${profile.goalNote}）`}` : g;
-    head.push(isEn ? `Learning goal: ${withNote}` : `学习目标：${withNote}`);
-  }
   if (head.length) lines.push(head.join(isEn ? "; " : "；") + (isEn ? "." : "。"));
+
+  /* 动机阶段:数据行(白话名+tagline)+【动机适配】教练块(命中才注入) */
+  if (profile.motiveStage) {
+    const md = motiveDisplay(profile.motiveStage, locale);
+    lines.push(isEn ? `Learning motive: ${md.name} — ${md.tagline}` : `学习动机：${md.name}——${md.tagline}`);
+  }
 
   if (profile.interests?.length) {
     lines.push(isEn ? `Interests: ${profile.interests.join(", ")}.` : `兴趣点：${profile.interests.join("、")}。`);
@@ -452,6 +517,30 @@ export function buildProfileInjection(profile: LearnerProfile, locale: string): 
       ? "[Style adaptation] These preferences are the default teaching style; when the material demands it (formal content must be precise, exam readiness must be verified), you may gently deviate from the default and briefly say why. For learners who prefer exploratory pacing, still insist on closing the verification loop (quizzing/review) — frame it as a challenge rather than a test. If these leanings conflict with the selected teaching persona (soul), the selected teaching persona (soul) takes precedence — the learner's explicit in-the-moment choice outranks their static profile. For interests the learner has named, anchor examples, quiz questions, and analogies to them preferentially; even for seemingly unrelated material, build a bridge from an interest back to the topic."
       : "【风格适配】以上偏好是默认教学风格；当内容性质需要时（形式化内容必须精确、考试前必须检验），可以温和偏离默认风格并简要说明原因。对偏好探索式节奏的学习者，仍要坚持完成检验闭环（出题/复习），把检验包装成挑战而非测验。若以上风格与学习者当前选定的导师人设（soul）冲突，以导师人设为准——学习者当场的显式选择压过静态画像。学习者点名的兴趣点，在选例子、出题、打类比时优先挂钩；表面上不相关的知识，也先搭一座桥把兴趣拉进来再回到正题。",
   );
+
+  /* 动机内化教练(OIT):护栏常驻 + 阶段姿态条件注入;临床语义只给 AI,绝不进对话。 */
+  if (profile.motiveStage) {
+    const coachZh: Record<MotiveStage, string> = {
+      external: "学习者此刻为外部要求而学（考试/面试/他人要求）。做自主支持：每个要求都配一句\"为什么值得会\"的理由；承认压力但不评判；把材料连到他最小的个人在意处；绝不加压、不催促、不拿进度说事；检验深度只增不减——考出来的知识要经得起追问。",
+      introjected: "学习者的动力来自自我要求（不学就心虚）。先卸压力：把\"必须学\"表述成\"选择学\"；肯定\"人已到场\"本身而非完成度；绝不提及连胜、断签、落后等施压话术；把检验包装成挑战而非测验。",
+      identified: "学习者认可学习的价值。强化价值连结：把每课挂到他在意的未来（项目/职业/目标）上，讲清\"这课过了你能做成什么\"。",
+      integrated: "学习已是学习者身份的一部分。给纵深：体系、来龙去脉、\"你这样的人会想知道为什么\"；多确认身份，少督促。",
+      intrinsic: "学习者享受学习过程本身。保护这份乐趣：新鲜感、有意思的角度、允许顺着好奇岔路再拉回；别过度结构化、别用题海消耗热情；检验保持轻量挑战感。",
+    };
+    const coachEn: Record<MotiveStage, string> = {
+      external: "The learner is here for external demands (exam/interview/others' requirements). Be autonomy-supportive: pair every requirement with a reason why it's worth knowing; acknowledge the pressure without judgment; tie material to the smallest thing they personally care about; never add pressure, nag, or reference falling behind; verification depth only increases — exam knowledge must survive follow-up questions.",
+      introjected: "The learner is driven by self-imposed pressure (feels guilty not studying). Relieve it first: phrase \"must learn\" as \"choosing to learn\"; affirm showing up itself rather than completion; never mention streaks, losing streaks, or falling behind; frame verification as a challenge, not a test.",
+      identified: "The learner values what learning brings. Strengthen the value link: tie each lesson to the future they care about (project/career/goal) and spell out what it unlocks.",
+      integrated: "Learning is part of who the learner is. Go deep: systems, context, \"someone like you will want to know why\"; affirm identity, skip the pushing.",
+      intrinsic: "The learner enjoys learning itself. Protect the fun: novelty, interesting angles, allow curiosity detours and reel back; don't over-structure or drown them in drills; keep verification feeling like a light challenge.",
+    };
+    const stage = profile.motiveStage;
+    lines.push(
+      isEn
+        ? `[Motive adaptation] The motive reflects why the learner is here, not a content boundary — never suggest skipping, skimming, or dismissing any lesson because of it; what to learn is always up to the learner. Never mention motivation theory, stages, or internalization to the learner, and never judge why they learn — these only shape how you teach, never what you say about them. Coaching stance for this motive: ${coachEn[stage]}`
+        : `【动机适配】学习动机反映学习者为什么来，不是内容边界——不据此建议跳过、略讲或贬低任何课程内容，内容取舍永远由学习者自己决定。绝不对学习者提及动机理论、阶段、内化等概念，不评价其\"为什么学\"——这些只决定你怎么教，不进入对话内容。当前动机的教学姿态：${coachZh[stage]}`,
+    );
+  }
 
   return lines.join("\n");
 }

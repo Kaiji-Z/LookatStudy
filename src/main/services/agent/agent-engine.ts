@@ -456,7 +456,7 @@ export async function runAgentTurn(
     }),
     update_learner_profile: tool({
       description:
-        "提议更新学习者画像（称呼/MBTI/教学风格偏好/学习目标/兴趣点）。生成 Proposal 等人确认（人可以拒绝）。" +
+        "提议更新学习者画像（称呼/MBTI/教学风格偏好/兴趣点）。生成 Proposal 等人确认（人可以拒绝）。" +
         "提议不会打断对话——它会出现在学习者的「个人资料」窗口里，由学习者在其中采纳或忽略；" +
         "只有当你观察到与现有画像不符的学习模式、且证据出现了至少 2 次时才调用，" +
         "并在学习者完成答题/节点收尾等自然停顿处发起，不要在讲解中途打断；" +
@@ -467,8 +467,6 @@ export async function runAgentTurn(
           .object({
             name: z.string().nullable().optional().describe("称呼"),
             mbti: z.enum(MBTI_TYPES).nullable().optional().describe("MBTI 四字母（如 ENTP）"),
-            goal: z.enum(["interview", "project", "career", "curiosity"]).nullable().optional().describe("学习目标"),
-            goalNote: z.string().nullable().optional().describe("目标补充（如面试时间线）"),
             interests: z.array(z.string()).nullable().optional().describe("兴趣点列表（整组替换；从对话里观察到稳定兴趣时提议补充，null=清空）"),
             freeNote: z.string().nullable().optional().describe("画像自述"),
             style: z

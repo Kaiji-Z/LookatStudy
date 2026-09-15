@@ -16,7 +16,6 @@ import { ProfileEditForm } from "./ProfileEditForm.js";
 import {
   mbtiDisplay,
   styleDimLabel,
-  goalLabel,
   emptyProfile,
   type LearnerProfile,
   type LearnerProfilePatch,
@@ -37,8 +36,6 @@ function describePatch(patch: LearnerProfilePatch, locale: string, t: (k: string
     return { field: t("boot.profile.field.mbti"), value: `${patch.mbti} · ${d.name}` };
   }
   if (patch.name) return { field: t("boot.profile.field.name"), value: patch.name };
-  if (patch.goal) return { field: t("boot.profile.field.goal"), value: goalLabel(patch.goal, locale) };
-  if (patch.goalNote) return { field: t("profile.field.goalNote"), value: patch.goalNote };
   if (patch.interests?.length) return { field: t("profile.field.interests"), value: patch.interests.join(locale === "en" ? ", " : "、") };
   if (patch.freeNote) return { field: t("boot.profile.field.free"), value: patch.freeNote };
   const st = patch.style;

@@ -14,6 +14,8 @@ import {
   STYLE_SCENE_QUESTIONS,
   expandMbtiToStyle,
   mbtiDisplay,
+  motiveDisplay,
+  MOTIVE_STAGES,
   parseInterestsInput,
   type LearnerProfile,
   type MbtiType,
@@ -91,27 +93,24 @@ export function ProfileEditForm({ t, locale, profile, onSave, onCancel, testIdPr
       </div>
 
       <div className="flex flex-col gap-1">
-        <span className="text-label text-ink">{t("boot.card.goal.label")}</span>
-        <div className="grid grid-cols-2 gap-2">
-          {(["interview", "project", "career", "curiosity"] as const).map((g) => (
+        <span className="text-label text-ink">{t("boot.card.motive.label")}</span>
+        <div className="grid grid-cols-1 gap-1.5">
+          {MOTIVE_STAGES.map((m) => (
             <button
-              key={g}
-              className={p.goal === g ? "btn-3d-brand" : "btn-3d-neutral"}
-              onClick={() => patch({ goal: g })}
-              data-testid={tid(`goal-${g}`)}
+              key={m}
+              className={p.motiveStage === m ? "btn-3d-brand text-left" : "btn-3d-neutral text-left"}
+              onClick={() => patch({ motiveStage: m })}
+              data-testid={tid(`motive-${m}`)}
             >
-              {t(`boot.card.goal.${g}`)}
+              {motiveDisplay(m, locale).name}
             </button>
           ))}
         </div>
-        {p.goal === "interview" && (
-          <input
-            className="bg-surface-0 rounded-lg px-3 py-2 text-body text-ink outline-none focus:ring-2 focus:ring-accent"
-            placeholder={t("boot.card.goal.timeline.placeholder")}
-            value={p.goalNote ?? ""}
-            onChange={(e) => patch({ goalNote: e.target.value || null })}
-            data-testid={tid("timeline")}
-          />
+        {p.motiveStage && (
+          <div className="rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid={tid("motive-flip")}>
+            <div className="text-label text-ink-muted">{motiveDisplay(p.motiveStage, locale).tagline}</div>
+            <div className="text-label text-accent">{motiveDisplay(p.motiveStage, locale).bot}</div>
+          </div>
         )}
       </div>
 

@@ -18,6 +18,7 @@ Entry conventions for contributors:
 
 ### Added
 
+- 动机阶段卡（motivation stage，向导卡 2 重设计）：四选一"学习目标"退役为五选一动机诊断——`为了考试/面试 / 为了填满休息时间 / 未来能用得上 / 终身学习 / 享受学习过程`（OIT 内化连续体 2-6 级，无动机级不设；白话外壳+翻卡 tagline/bot 回话，临床语义零暴露）；注入新增「学习动机」数据行 + 【动机适配】块——五级内化教练条件注入（external 给理由不加压/introjected 卸 guilt 不提断签/identified 价值连结/integrated 体系纵深/intrinsic 保护乐趣）+ 双护栏常驻（动机是连结器不是内容边界——不据此建议跳过略讲，取舍永远用户拍板；闭嘴纪律——绝不对学习者提及动机理论/阶段/内化）；**动机阶段 AI 不可提议**（Patch 类型与工具 schema 双层排除，只有用户本人能改）；deadline/时间线字段退役（会过期的状态不进画像，讨论定谳）
 - 兴趣一等字段（兴趣个性化）：画像新增 `interests`——向导卡 2「最近对什么特别感兴趣？」（可跳过）与个人资料编辑表单同步录入，共享解析 `parseInterestsInput`（中英标点/顿号/分号分隔、去重、上限 8）；注入数据行「兴趣点：A、B」+ 搭桥条款（选例子/出题/打类比优先挂钩兴趣，表面上不相关的知识先搭桥再回正题）；`update_learner_profile` 工具 schema 可提议补充兴趣（整组替换，null=清空），个人资料窗口建议卡可读展示
 - 个人资料窗口：标题栏新增头像入口（称呼首字母 + 稳定底色，无名回退图标）→ 弹窗三区——「我声明的」（画像全量、内联编辑，与开屏向导共用 ProfileEditForm）/「AI 建议的」（画像类提议的消费点：pending 建议卡"AI 通过与你的对话，建议把 X 切换为 Y，原因是…"，采纳/保留 + 历史可追溯）/「AI 记住的」（memory 三槽显式化：`memory_system` flag 默认关 + 一键开启说明 + 逐条删除）
 - IPC 三通道：`profile:listProposals`（画像提议全状态列表）、`memory:listAll`（记忆三槽全量）、`memory:deleteSlot`（删除指定记忆）

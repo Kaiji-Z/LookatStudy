@@ -28,7 +28,8 @@ import {
   expandMbtiToStyle,
   mbtiDisplay,
   styleLeaningLine,
-  goalLabel,
+  motiveDisplay,
+  MOTIVE_STAGES,
   emptyProfile,
   hasProfileContent,
   parseInterestsInput,
@@ -284,7 +285,7 @@ function ProfileSummary({ t, locale, profile, onEdit }: {
   onEdit: () => void;
 }) {
   const missing = [
-    !profile.name, !profile.mbti, !profile.goal,
+    !profile.name, !profile.mbti, !profile.motiveStage,
     !profile.style.start, !profile.style.interaction, !profile.style.feedback, !profile.style.pacing,
     !profile.freeNote,
   ].filter(Boolean).length;
@@ -307,9 +308,11 @@ function ProfileSummary({ t, locale, profile, onEdit }: {
             ? `${profile.mbti} · ${mbtiDisplay(profile.mbti, locale).name}`
             : t("boot.profile.field.unset")}
         </dd>
-        <dt className="text-ink-faint">{t("boot.profile.field.goal")}</dt>
+        <dt className="text-ink-faint">{t("boot.profile.field.motive")}</dt>
         <dd className="text-ink">
-          {profile.goal ? goalLabel(profile.goal, locale) + (profile.goalNote ? `（${profile.goalNote}）` : "") : t("boot.profile.field.unset")}
+          {profile.motiveStage
+            ? `${motiveDisplay(profile.motiveStage, locale).name}——${motiveDisplay(profile.motiveStage, locale).tagline}`
+            : t("boot.profile.field.unset")}
         </dd>
         <dt className="text-ink-faint">{t("boot.profile.field.style")}</dt>
         <dd className="text-ink">{leaning || t("boot.profile.field.unset")}</dd>
@@ -369,34 +372,30 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
     );
   }
 
-  /* 卡 2:为什么学(分支:面试追问时间线) */
+  /* 卡 2:动机阶段诊断(五选一单选+翻卡确认;兴趣) */
   if (card === 1) {
     return (
       <section className="surface-card rounded-2xl p-6 shadow-card flex flex-col gap-4" data-testid="boot-wizard-card2">
-        <div className="text-title font-bold text-ink">{t("boot.card.goal.label")}</div>
-        <div className="grid grid-cols-2 gap-2">
-          {(["interview", "project", "career", "curiosity"] as const).map((g) => (
+        <div className="text-title font-bold text-ink">
+          {profile.name ? t("boot.card.motive.named", { name: profile.name }) : t("boot.card.motive.label")}
+        </div>
+        <div className="grid grid-cols-1 gap-1.5" data-testid="boot-motive-grid">
+          {MOTIVE_STAGES.map((m) => (
             <button
-              key={g}
-              className={profile.goal === g ? "btn-3d-brand" : "btn-3d-neutral"}
-              onClick={() => onPatch({ goal: g })}
-              data-testid={`boot-wizard-goal-${g}`}
+              key={m}
+              className={profile.motiveStage === m ? "btn-3d-brand text-left" : "btn-3d-neutral text-left"}
+              onClick={() => { companionNodePoint(); onPatch({ motiveStage: m }); }}
+              data-testid={`boot-wizard-motive-${m}`}
             >
-              {t(`boot.card.goal.${g}`)}
+              {motiveDisplay(m, locale).name}
             </button>
           ))}
         </div>
-        {profile.goal === "interview" && (
-          <label className="flex flex-col gap-1">
-            <span className="text-label text-ink-faint">{t("boot.card.goal.timeline.label")}</span>
-            <input
-              className="bg-surface-0 rounded-lg px-3 py-2 text-body text-ink outline-none focus:ring-2 focus:ring-accent"
-              placeholder={t("boot.card.goal.timeline.placeholder")}
-              value={profile.goalNote ?? ""}
-              onChange={(e) => onPatch({ goalNote: e.target.value || null })}
-              data-testid="boot-wizard-timeline"
-            />
-          </label>
+        {profile.motiveStage && (
+          <div className="rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid="boot-motive-flip">
+            <div className="text-label text-ink-muted">{motiveDisplay(profile.motiveStage, locale).tagline}</div>
+            <div className="text-label text-accent">{motiveDisplay(profile.motiveStage, locale).bot}</div>
+          </div>
         )}
         <label className="flex flex-col gap-1">
           <span className="text-label text-ink-faint">{t("boot.card.interests.label")}</span>
@@ -409,7 +408,7 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
           />
         </label>
         <button className="btn-3d-brand self-start" onClick={() => setCard(2)} data-testid="boot-wizard-next2">
-          {t("boot.card.goal.next")}
+          {t("boot.card.motive.next")}
         </button>
       </section>
     );

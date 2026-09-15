@@ -14,7 +14,7 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [Unreleased]
+## [0.36.0] - 2026-09-15
 
 ### Added
 
@@ -23,6 +23,7 @@ Entry conventions for contributors:
 - 兴趣一等字段（兴趣个性化）：画像新增 `interests`——向导卡 2「最近对什么特别感兴趣？」（可跳过）与个人资料编辑表单同步录入，共享解析 `parseInterestsInput`（中英标点/顿号/分号分隔、去重、上限 8）；注入数据行「兴趣点：A、B」+ 搭桥条款（选例子/出题/打类比优先挂钩兴趣，表面上不相关的知识先搭桥再回正题）；`update_learner_profile` 工具 schema 可提议补充兴趣（整组替换，null=清空），个人资料窗口建议卡可读展示
 - 个人资料窗口：标题栏新增头像入口（称呼首字母 + 稳定底色，无名回退图标）→ 弹窗三区——「我声明的」（画像全量、内联编辑，与开屏向导共用 ProfileEditForm）/「AI 建议的」（画像类提议的消费点：pending 建议卡"AI 通过与你的对话，建议把 X 切换为 Y，原因是…"，采纳/保留 + 历史可追溯）/「AI 记住的」（memory 三槽显式化：`memory_system` flag 默认关 + 一键开启说明 + 逐条删除）
 - IPC 三通道：`profile:listProposals`（画像提议全状态列表）、`memory:listAll`（记忆三槽全量）、`memory:deleteSlot`（删除指定记忆）
+- 开屏末步卡重做：向导收束后主卡两动作=「开始导入」（左栏强制可见+伴学吹哨飞到左栏导入区指引）与「更换伴学伙伴」（打开设置抽屉并滚动定位伴学伙伴区）；「查看画像」=标题栏头像同款动作直接弹出个人资料窗口（面板内联编辑表单退役，就绪教室画像摘要卡一并移除）；MBTI 场景题兜底路径整链退役——不知道自己的类型直接跳过，不为一小段路径加全局认知负担；全项目用户可见语义统一：伴学bot→伴学伙伴、纸偶→自创伙伴、Shimeji 桌宠→Shimeji 伙伴
 
 ### Changed
 
@@ -42,6 +43,8 @@ Entry conventions for contributors:
 ### Fixed
 
 - 未选课态点开屏"复习"建议是空抽屉的根修：复习抽屉四象限依赖课程作用域的 tree/dashboard，无课时全被过滤成空——boot 状态新增 reviewCourseId（到期复习项最多的课程），点复习先切到该课再开抽屉
+- 回访用户的"查看画像"开出空白表单：开屏面板画像草稿只在面板内生长、挂载恒为空——挂载时从库播种持久画像（非空才填，不覆盖向导中已输入草稿）
+- 开屏问候语漏出字面量 `{name}`：称呼插值只在场景行自带 name 变量时才填，孤立渲染的"{name}欢迎回来！"对有名/匿名用户都漏字面量——改为无条件填槽（无名清空）
 
 ## [0.35.1] - 2026-09-14
 

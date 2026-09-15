@@ -108,6 +108,12 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
       /* 聚合失败 → 引导屏退化为占位(不阻塞左栏使用) */
       if (alive) setDraft((d) => d ?? emptyProfile());
     });
+    /* 持久画像播种:draft 只在面板内生长,回访用户的"查看画像"此前开出来永远是
+       空白表单(个人资料弹窗自拉库数据所以有内容)——库里已有画像则播种为初值 */
+    api.profileGet().then((saved) => {
+      if (!alive || !saved) return;
+      if (hasProfileContent(saved)) setDraft((d) => (d && hasProfileContent(d) ? d : saved));
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
 

@@ -226,6 +226,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "boot.recap.streak_days": "连续天数",
     "boot.recap.recent": "最近在学",
     "boot.recap.tips_title": "学习小贴士",
+    "chat.profile_sent": "画像建议已送入「个人资料」窗口，可随时查看与处理。",
 
     /* ===== 个人资料窗口(profile window,v0.36) ===== */
     "profile.title": "个人资料",
@@ -1103,6 +1104,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "boot.recap.streak_days": "Day streak",
     "boot.recap.recent": "Recently studying",
     "boot.recap.tips_title": "Study tip",
+    "chat.profile_sent": "Profile suggestion sent to your profile window — review it anytime.",
 
     /* ===== Profile window (v0.36) ===== */
     "profile.title": "Your profile",

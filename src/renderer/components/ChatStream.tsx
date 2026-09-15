@@ -18,7 +18,7 @@ import type { CanvasItem } from "@shared/types";
 import type { ChatMessageV2, ChatMessagePart } from "@shared/part-accumulator";
 import ReactMarkdown from "react-markdown";
 import { useMarkdownPipeline } from "../lib/math-plugins.js";
-import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square } from "lucide-react";
+import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square, UserRound } from "lucide-react";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, applyPersistentMarksHighlight, supportsHighlightMarks, getNoteRange, flashNoteRange, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, centerReadingRangeInView } from "../lib/highlightText.js";
@@ -813,6 +813,17 @@ function ToolCallBlock({
   // proposal 类工具(record_answer/mark_mastered):output 里有 proposalId + summary。
   // record_answer 已自动 apply(无 proposalId,不会进这里);实际只有 mark_mastered 会显示待决卡。
   const isProposal = toolName === "record_answer" || toolName === "mark_mastered";
+
+  // 画像提议(v0.36):不在聊天流渲染确认卡——消费点在「个人资料」窗口;
+  // 这里只留一行指路静行,学习过程零打断。
+  if (toolName === "update_learner_profile" && state === "output-available") {
+    return (
+      <div className="rounded-xl border border-ink/10 bg-ink/5 p-3 flex items-center gap-2" data-testid="part-profile-suggest">
+        <UserRound className="w-4 h-4 text-accent shrink-0" />
+        <span className="text-label text-ink-muted">{t("chat.profile_sent")}</span>
+      </div>
+    );
+  }
   const proposalData = isProposal && state === "output-available" && typeof output === "object" && output !== null
     ? (output as { proposalId?: string; message?: string; status?: string })
     : null;

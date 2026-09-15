@@ -18,6 +18,7 @@ Entry conventions for contributors:
 
 ### Added
 
+- 兴趣一等字段（兴趣个性化）：画像新增 `interests`——向导卡 2「最近对什么特别感兴趣？」（可跳过）与个人资料编辑表单同步录入，共享解析 `parseInterestsInput`（中英标点/顿号/分号分隔、去重、上限 8）；注入数据行「兴趣点：A、B」+ 搭桥条款（选例子/出题/打类比优先挂钩兴趣，表面上不相关的知识先搭桥再回正题）；`update_learner_profile` 工具 schema 可提议补充兴趣（整组替换，null=清空），个人资料窗口建议卡可读展示
 - 个人资料窗口：标题栏新增头像入口（称呼首字母 + 稳定底色，无名回退图标）→ 弹窗三区——「我声明的」（画像全量、内联编辑，与开屏向导共用 ProfileEditForm）/「AI 建议的」（画像类提议的消费点：pending 建议卡"AI 通过与你的对话，建议把 X 切换为 Y，原因是…"，采纳/保留 + 历史可追溯）/「AI 记住的」（memory 三槽显式化：`memory_system` flag 默认关 + 一键开启说明 + 逐条删除）
 - IPC 三通道：`profile:listProposals`（画像提议全状态列表）、`memory:listAll`（记忆三槽全量）、`memory:deleteSlot`（删除指定记忆）
 

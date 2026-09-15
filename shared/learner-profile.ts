@@ -51,6 +51,8 @@ export interface LearnerProfile {
   goal: LearnerGoal | null;
   /** 目标补充（如面试时间线） */
   goalNote: string | null;
+  /** 兴趣点（兴趣个性化的挂钩素材；null=未填，空组归一为 null） */
+  interests: string[] | null;
   /** 想对导师说的话（可空） */
   freeNote: string | null;
   /** 最后更新时间（ISO），用于"用户手改 > AI 提议"仲裁 */
@@ -60,7 +62,7 @@ export interface LearnerProfile {
 export const EMPTY_STYLE: LearnerStyle = { start: null, interaction: null, feedback: null, pacing: null };
 
 export function emptyProfile(): LearnerProfile {
-  return { name: null, mbti: null, style: { ...EMPTY_STYLE }, goal: null, goalNote: null, freeNote: null, updatedAt: new Date(0).toISOString() };
+  return { name: null, mbti: null, style: { ...EMPTY_STYLE }, goal: null, goalNote: null, interests: null, freeNote: null, updatedAt: new Date(0).toISOString() };
 }
 
 /** MBTI 四字母 → style 四维（快捷入口展开为真源初值，用户可逐维手调）。 */
@@ -82,6 +84,7 @@ export type LearnerProfilePatch = Partial<Omit<LearnerProfile, "style" | "update
 export function hasProfileContent(p: LearnerProfile): boolean {
   return Boolean(
     p.name || p.mbti || p.goal || p.goalNote || p.freeNote ||
+    (p.interests?.length ?? 0) > 0 ||
     p.style.start || p.style.interaction || p.style.feedback || p.style.pacing,
   );
 }
@@ -94,6 +97,27 @@ function str(v: unknown): string | null {
 
 function dim<T extends string>(v: unknown, allowed: readonly T[]): T | null {
   return typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : null;
+}
+
+/** 兴趣条目上限（注入体积有界）。 */
+export const INTERESTS_MAX = 8;
+
+/** 兴趣组净化：非数组→null；滤非字符串/空白；去重保序；空组归一 null（空=未填）。 */
+function strList(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: string[] = [];
+  for (const item of v) {
+    if (typeof item !== "string") continue;
+    const s = item.trim();
+    if (s && !out.includes(s)) out.push(s);
+    if (out.length >= INTERESTS_MAX) break;
+  }
+  return out.length ? out : null;
+}
+
+/** UI 输入 → 兴趣组（向导卡2 与编辑表单共用同一解析：中英标点/顿号/分号分隔）。 */
+export function parseInterestsInput(text: string | null | undefined): string[] | null {
+  return strList((text ?? "").split(/[,，、;；]+/));
 }
 
 /** 宽容解析：坏 JSON/坏字段 → null/字段丢弃，绝不抛（渲染层与主进程共用同一入口）。 */
@@ -120,6 +144,7 @@ export function parseProfileJson(json: string | null | undefined): LearnerProfil
     },
     goal,
     goalNote: str(r.goalNote),
+    interests: strList(r.interests),
     freeNote: str(r.freeNote),
     updatedAt: str(r.updatedAt) ?? new Date(0).toISOString(),
   };
@@ -137,6 +162,7 @@ export function serializeProfile(p: LearnerProfile): string {
     },
     goal: p.goal ?? null,
     goalNote: p.goalNote ?? null,
+    interests: p.interests ?? null,
     freeNote: p.freeNote ?? null,
     updatedAt: p.updatedAt,
   });
@@ -155,6 +181,7 @@ export function applyProfilePatch(base: LearnerProfile, patch: Partial<Omit<Lear
     },
     goal: patch.goal !== undefined ? dim(patch.goal, ["interview", "project", "career", "curiosity"] as const) : base.goal,
     goalNote: patch.goalNote !== undefined ? str(patch.goalNote) : base.goalNote,
+    interests: patch.interests !== undefined ? strList(patch.interests) : base.interests,
     freeNote: patch.freeNote !== undefined ? str(patch.freeNote) : base.freeNote,
     updatedAt: new Date().toISOString(),
   };
@@ -406,6 +433,10 @@ export function buildProfileInjection(profile: LearnerProfile, locale: string): 
   }
   if (head.length) lines.push(head.join(isEn ? "; " : "；") + (isEn ? "." : "。"));
 
+  if (profile.interests?.length) {
+    lines.push(isEn ? `Interests: ${profile.interests.join(", ")}.` : `兴趣点：${profile.interests.join("、")}。`);
+  }
+
   const leaning = styleLeaningLine(profile.style, locale);
   if (leaning) {
     lines.push(isEn ? `Style leanings: ${leaning}.` : `风格倾向：${leaning}。`);
@@ -418,8 +449,8 @@ export function buildProfileInjection(profile: LearnerProfile, locale: string): 
 
   lines.push(
     isEn
-      ? "[Style adaptation] These preferences are the default teaching style; when the material demands it (formal content must be precise, exam readiness must be verified), you may gently deviate from the default and briefly say why. For learners who prefer exploratory pacing, still insist on closing the verification loop (quizzing/review) — frame it as a challenge rather than a test. If these leanings conflict with the selected teaching persona (soul), the selected teaching persona (soul) takes precedence — the learner's explicit in-the-moment choice outranks their static profile."
-      : "【风格适配】以上偏好是默认教学风格；当内容性质需要时（形式化内容必须精确、考试前必须检验），可以温和偏离默认风格并简要说明原因。对偏好探索式节奏的学习者，仍要坚持完成检验闭环（出题/复习），把检验包装成挑战而非测验。若以上风格与学习者当前选定的导师人设（soul）冲突，以导师人设为准——学习者当场的显式选择压过静态画像。",
+      ? "[Style adaptation] These preferences are the default teaching style; when the material demands it (formal content must be precise, exam readiness must be verified), you may gently deviate from the default and briefly say why. For learners who prefer exploratory pacing, still insist on closing the verification loop (quizzing/review) — frame it as a challenge rather than a test. If these leanings conflict with the selected teaching persona (soul), the selected teaching persona (soul) takes precedence — the learner's explicit in-the-moment choice outranks their static profile. For interests the learner has named, anchor examples, quiz questions, and analogies to them preferentially; even for seemingly unrelated material, build a bridge from an interest back to the topic."
+      : "【风格适配】以上偏好是默认教学风格；当内容性质需要时（形式化内容必须精确、考试前必须检验），可以温和偏离默认风格并简要说明原因。对偏好探索式节奏的学习者，仍要坚持完成检验闭环（出题/复习），把检验包装成挑战而非测验。若以上风格与学习者当前选定的导师人设（soul）冲突，以导师人设为准——学习者当场的显式选择压过静态画像。学习者点名的兴趣点，在选例子、出题、打类比时优先挂钩；表面上不相关的知识，也先搭一座桥把兴趣拉进来再回到正题。",
   );
 
   return lines.join("\n");

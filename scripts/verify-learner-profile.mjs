@@ -21,6 +21,7 @@ import {
   mbtiDisplay,
   styleLeaningLine,
   goalLabel,
+  parseInterestsInput,
 } from "../shared/learner-profile.ts";
 
 let passed = 0;
@@ -77,6 +78,7 @@ test("T5 JSON 往返:serialize→parse 字段保真", () => {
     style: expandMbtiToStyle("ENTP"),
     goal: "interview",
     goalNote: "下个月面试",
+    interests: ["做饭", "航天"],
     freeNote: "喜欢跨领域类比",
     updatedAt: "2026-09-15T10:00:00.000Z",
   };
@@ -413,6 +415,62 @@ test("T26 源级:右栏回顾卡两态分支(recap 有数据 / tips 兜底)与�
   assert.ok(recap.includes('data-testid="boot-tip-text"'), "tips 态文案锚");
   assert.ok(recap.includes("recap.totalXp > 0 || recap.masteredCount > 0 || recap.streakDays > 0"), "hasData 边界=任一累积信号");
   assert.ok(recap.includes('data-testid="notebook-panel"'), "pane 身份锚(ui-test waitRender)");
+});
+
+/* ---------- 兴趣一等字段:解析/注入/patch/全链接线(兴趣个性化=Cordova&Lepper 证据杠杆) ---------- */
+
+test("T31 parseInterestsInput 纯函数:多分隔符/去空/去重/空→null/上限", () => {
+  assert.deepEqual(parseInterestsInput("做饭, 篮球、航天；编程"), ["做饭", "篮球", "航天", "编程"], "中英标点混合分隔");
+  assert.deepEqual(parseInterestsInput(",, 、；"), null, "全是分隔符→null");
+  assert.equal(parseInterestsInput(""), null, "空串→null");
+  assert.equal(parseInterestsInput(null), null, "null 容忍");
+  assert.deepEqual(parseInterestsInput("做饭, 做饭, 篮球"), ["做饭", "篮球"], "去重");
+  const many = parseInterestsInput(Array.from({ length: 12 }, (_, i) => `兴趣${i}`).join(","));
+  assert.equal(many.length, 8, "上限 8(注入体积有界)");
+});
+
+test("T32 interests 解析容忍与序列化往返(存量行零变化)", () => {
+  const legacy = parseProfileJson(JSON.stringify({ name: "K" }));
+  assert.equal(legacy.interests, null, "legacy 行无字段→null");
+  assert.equal(parseProfileJson('{"interests":"做饭"}').interests, null, "字符串非数组→null");
+  assert.deepEqual(parseProfileJson('{"interests":["做饭", 42, null, "  "]}').interests, ["做饭"], "非字符串/空串项被滤");
+  const rt = parseProfileJson(serializeProfile({ ...emptyProfile(), interests: ["做饭", "航天"] }));
+  assert.deepEqual(rt.interests, ["做饭", "航天"], "序列化往返保真");
+  assert.equal(hasProfileContent({ ...emptyProfile(), interests: ["做饭"] }), true, "只有兴趣也算有内容(注入生效)");
+});
+
+test("T33 注入:兴趣数据行+搭桥句 zh/en 同构;无兴趣不出现", () => {
+  const zh = buildProfileInjection({ ...emptyProfile(), name: "阿凯", interests: ["做饭", "篮球", "航天"] }, "zh-CN");
+  assert.ok(zh.includes("兴趣点：做饭、篮球、航天。"), "兴趣数据行(顿号连接)");
+  assert.ok(zh.includes("优先挂钩"), "搭桥句存在(选例子/出题/打类比)");
+  const en = buildProfileInjection({ ...emptyProfile(), name: "Kai", interests: ["cooking", "space"] }, "en");
+  assert.ok(en.includes("Interests: cooking, space"), "en 数据行(逗号连接)");
+  assert.ok(en.includes("anchor examples"), "en 搭桥句同构");
+  const none = buildProfileInjection({ ...emptyProfile(), name: "阿凯" }, "zh-CN");
+  assert.ok(!none.includes("兴趣点："), "无兴趣不出现数据行(带冒号锁定;搭桥句常驻不含冒号)");
+});
+
+test("T34 applyProfilePatch:interests 整组替换/不传保持/空组归 null/坏值归 null", () => {
+  const base = { ...emptyProfile(), interests: ["做饭"] };
+  assert.deepEqual(applyProfilePatch(base, { interests: ["篮球", "航天"] }).interests, ["篮球", "航天"], "整组替换");
+  assert.deepEqual(applyProfilePatch(base, { name: "x" }).interests, ["做饭"], "不传保持");
+  assert.equal(applyProfilePatch(base, { interests: [] }).interests, null, "空组=未填→null");
+  assert.equal(applyProfilePatch(base, { interests: "not-array" }).interests, null, "坏类型→null");
+});
+
+test("T35 源级:interests 全链接线(工具 schema/基座 zh-en/建议卡描述/双输入框)", () => {
+  const engine = rf(pj(PROOT, "src/main/services/agent/agent-engine.ts"), "utf8");
+  assert.ok(engine.includes("interests: z.array(z.string())"), "工具 schema 含 interests");
+  assert.ok(engine.includes("称呼/MBTI/教学风格偏好/学习目标/兴趣点"), "工具描述提及兴趣点");
+  const bp = rf(pj(PROOT, "src/main/services/agent/base-prompt.ts"), "utf8");
+  assert.ok(bp.includes("学习目标/兴趣点"), "zh 条目含兴趣点");
+  assert.ok(bp.includes("goal/interests"), "en 条目含 interests(同构)");
+  const modal = rf(pj(PROOT, "src/renderer/components/PersonalProfileModal.tsx"), "utf8");
+  assert.ok(modal.includes("patch.interests"), "建议卡 describePatch 有 interests 分支");
+  const form = rf(pj(PROOT, "src/renderer/components/ProfileEditForm.tsx"), "utf8");
+  assert.ok(form.includes('tid("interests")') && form.includes("parseInterestsInput"), "编辑表单输入框+共享解析");
+  const boot = rf(pj(PROOT, "src/renderer/components/BootGuidePanel.tsx"), "utf8");
+  assert.ok(boot.includes('data-testid="boot-wizard-interests"'), "向导卡2 兴趣追问输入");
 });
 
 console.log(`\n${passed} passed`);

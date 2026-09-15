@@ -14,6 +14,7 @@ import {
   STYLE_SCENE_QUESTIONS,
   expandMbtiToStyle,
   mbtiDisplay,
+  parseInterestsInput,
   type LearnerProfile,
   type MbtiType,
   type StyleDim,
@@ -113,6 +114,17 @@ export function ProfileEditForm({ t, locale, profile, onSave, onCancel, testIdPr
           />
         )}
       </div>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-label text-ink-faint">{t("boot.card.interests.label")}</span>
+        <input
+          className="bg-surface-0 rounded-lg px-3 py-2 text-body text-ink outline-none focus:ring-2 focus:ring-accent"
+          placeholder={t("boot.card.interests.placeholder")}
+          value={p.interests?.join(isEn ? ", " : "、") ?? ""}
+          onChange={(e) => patch({ interests: parseInterestsInput(e.target.value) })}
+          data-testid={tid("interests")}
+        />
+      </label>
 
       <label className="flex flex-col gap-1">
         <span className="text-label text-ink-faint">{t("boot.card.free.label")}</span>

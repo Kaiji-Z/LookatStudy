@@ -31,6 +31,7 @@ import {
   goalLabel,
   emptyProfile,
   hasProfileContent,
+  parseInterestsInput,
   type LearnerProfile,
 } from "@shared/learner-profile";
 import { pickBootQuiz } from "@shared/boot-quiz";
@@ -397,6 +398,16 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
             />
           </label>
         )}
+        <label className="flex flex-col gap-1">
+          <span className="text-label text-ink-faint">{t("boot.card.interests.label")}</span>
+          <input
+            className="bg-surface-0 rounded-lg px-3 py-2 text-body text-ink outline-none focus:ring-2 focus:ring-accent"
+            placeholder={t("boot.card.interests.placeholder")}
+            value={profile.interests?.join(locale === "en" ? ", " : "、") ?? ""}
+            onChange={(e) => onPatch({ interests: parseInterestsInput(e.target.value) })}
+            data-testid="boot-wizard-interests"
+          />
+        </label>
         <button className="btn-3d-brand self-start" onClick={() => setCard(2)} data-testid="boot-wizard-next2">
           {t("boot.card.goal.next")}
         </button>

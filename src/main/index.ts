@@ -4353,7 +4353,7 @@ async function runUiTest(screenshot = false): Promise<void> {
     ]),
     status: "pending",
     rationale: "ui-test 造数:观察到两次与画像不符的行为",
-    createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+    createdAt: new Date().toISOString(),
   }).onConflictDoNothing().run();
   void seedProfileProposal;
 

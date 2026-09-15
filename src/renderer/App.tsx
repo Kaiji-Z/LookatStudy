@@ -1075,7 +1075,15 @@ export default function App() {
                 <div className="flex-1 flex flex-col min-h-0" data-testid="chat-no-course">
                 <BootGuidePanel
                   onResume={(courseId, nodeId) => guardedNav(() => handleBootResume(courseId, nodeId))}
-                  onOpenReview={() => guardedNav(() => setShowReviewDrawer(true))}
+                  onOpenReview={(reviewCourseId) => guardedNav(() => {
+                    // 未选课态的复习:抽屉四象限依赖课程作用域 tree——先切到到期项最多的课再开
+                    if (!selectedCourseId && reviewCourseId) {
+                      setSelectedCourseId(reviewCourseId);
+                      refreshAll();
+                      void api.setSetting("boot_done", "1").catch(() => {});
+                    }
+                    setShowReviewDrawer(true);
+                  })}
                   onOpenSettings={() => setShowSettings(true)}
                   onGotoNode={(nodeId, target) => guardedNav(() => handleBootGotoNode(nodeId, target))}
                   onPickCourse={handleBootPickCourse}

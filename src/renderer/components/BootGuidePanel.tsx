@@ -40,7 +40,8 @@ import { pickBootQuiz } from "@shared/boot-quiz";
 export interface BootGuidePanelProps {
   /** 一键恢复上次课程(+节点) */
   onResume: (courseId: string, nodeId: string | null) => void;
-  onOpenReview: () => void;
+  /** 打开复习抽屉(带到期项最多的课程 id——未选课时宿主先切课再开,否则抽屉是空的) */
+  onOpenReview: (reviewCourseId: string | null) => void;
   onOpenSettings: () => void;
   /** 跳节点:卡点/快毕业/考试 */
   onGotoNode: (nodeId: string, target: "friction" | "near_mastery" | "exam") => void;
@@ -158,7 +159,7 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
         finishBoot();
         props.onResume(boot.targets.resume.courseId, boot.targets.resume.nodeId);
       } else if (kind === "review") {
-        props.onOpenReview();
+        props.onOpenReview(boot.targets.reviewCourseId);
       } else if (kind === "goto_node" && target) {
         finishBoot();
         const id =

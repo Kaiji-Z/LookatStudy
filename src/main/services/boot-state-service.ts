@@ -71,6 +71,7 @@ export function gatherBootState(db: Db, now: Date = new Date()): BootStateResult
     frictionNodeId: null,
     nearMasteryNodeId: null,
     examNodeId: null,
+    reviewCourseId: null,
   };
   let lastCourseId: string | null = null;
   try {
@@ -99,6 +100,23 @@ export function gatherBootState(db: Db, now: Date = new Date()): BootStateResult
     .where(lte(srsItems.dueAt, nowISO))
     .all();
   const dueCount = dueRows.length;
+
+  /* 复习目标课程(到期项归属课的众数;未选课态点"复习"先切到该课再开抽屉——
+     ReviewDrawer 的四象限依赖课程作用域的 tree,直接开在无课态只会是空抽屉) */
+  if (dueRows.length > 0) {
+    const courseCount = new Map<string, number>();
+    for (const row of dueRows) {
+      const node = db.select({ courseId: contentNodes.courseId }).from(contentNodes).where(eq(contentNodes.id, row.nodeId)).get();
+      if (node && courses.some((c) => c.id === node.courseId)) {
+        courseCount.set(node.courseId, (courseCount.get(node.courseId) ?? 0) + 1);
+      }
+    }
+    let best: { id: string; n: number } | null = null;
+    for (const [id, n] of courseCount) {
+      if (!best || n > best.n) best = { id, n };
+    }
+    if (best) targets.reviewCourseId = best.id;
+  }
 
   /* streak(streaks singleton;日期约定同 pure/streak-transition) */
   const streakRow = db.select().from(streaksTable).where(eq(streaksTable.id, "singleton")).get();

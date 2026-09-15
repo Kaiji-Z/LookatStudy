@@ -39,6 +39,10 @@ Entry conventions for contributors:
 - 伴学空态剧本：无课时坐镇开屏引导卡旁（chatAnchor 兜底锚），答题表情爆发；隔天回归星星眼复用既有情境反应
 - 验证：verify-learner-profile / verify-boot-guide / verify-boot-quiz 三套件（含 DB 级与源级守卫，均过破坏-恢复闭环）；live-test-profile-teaching（画像注入教学风格 A/B 行为验收）与 live-test-profile-update（真工具调用、无手写假标记）两场景；ui-test 新增五断言组（引导屏/向导入库/不重播/resume/右栏两态）
 
+### Fixed
+
+- 未选课态点开屏"复习"建议是空抽屉的根修：复习抽屉四象限依赖课程作用域的 tree/dashboard，无课时全被过滤成空——boot 状态新增 reviewCourseId（到期复习项最多的课程），点复习先切到该课再开抽屉
+
 ## [0.35.1] - 2026-09-14
 
 ### Fixed

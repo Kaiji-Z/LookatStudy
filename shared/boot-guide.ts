@@ -305,6 +305,8 @@ export interface BootTargets {
   frictionNodeId: string | null;
   nearMasteryNodeId: string | null;
   examNodeId: string | null;
+  /** 到期复习项最多的课程(未选课态点"复习"先切到该课——复习抽屉依赖课程作用域数据) */
+  reviewCourseId: string | null;
 }
 
 /** 未选课态右栏「学习回顾」卡的数据(知识增长的显化)。 */

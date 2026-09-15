@@ -275,6 +275,26 @@ test("T43 SRS 到期计数 + 快毕业探测(0.7≤mastery<0.9 未 mastered)", (
   assert.equal(st.dueCount, 1);
   assert.equal(st.nearMasteryNodeTitle, "反向传播");
   assert.equal(st.targets.nearMasteryNodeId, "n2");
+  assert.equal(st.targets.reviewCourseId, "c1", "到期项归属课=复习目标课(未选课态点复习先切课)");
+});
+
+test("T43b reviewCourseId:跨课到期取众数课(众数=抽屉该开的课)", () => {
+  const { db, raw } = freshDb();
+  seedCourse(raw, "c1");
+  raw.run("INSERT INTO courses (id, repo_url, repo_name, title, version) VALUES ('c2', '', 'r2', '第二课', 1)");
+  raw.run("INSERT INTO content_nodes (id, course_id, type, title, source_path, order_idx) VALUES ('m1', 'c2', 'lesson', '课二节点', 'd.md', 0)");
+  raw.run("INSERT INTO content_nodes (id, course_id, type, title, source_path, order_idx) VALUES ('m2', 'c2', 'lesson', '课二节点二', 'e.md', 1)");
+  // c1 一项到期,c2 两项到期 → 众数 c2
+  raw.run("INSERT INTO srs_items (id, node_id, due_at) VALUES ('s1', 'n1', '2026-09-14T00:00:00.000Z')");
+  raw.run("INSERT INTO srs_items (id, node_id, due_at) VALUES ('s2', 'm1', '2026-09-13T00:00:00.000Z')");
+  raw.run("INSERT INTO srs_items (id, node_id, due_at) VALUES ('s3', 'm2', '2026-09-12T00:00:00.000Z')");
+  const st = gatherBootState(db, NOW);
+  assert.equal(st.dueCount, 3);
+  assert.equal(st.targets.reviewCourseId, "c2", "到期项最多的课胜出");
+  // 空到期 → null
+  const { db: db2 } = freshDb();
+  const st2 = gatherBootState(db2, NOW);
+  assert.equal(st2.targets.reviewCourseId, null);
 });
 
 test("T44 快毕业边界:已 mastered 或 <0.7 不算", () => {

@@ -371,6 +371,33 @@ test("T29 记忆全量/删除:三槽分组 + deleteMemory 真删 + 不存在返�
   assert.equal(inv.patterns.length, 1, "其余槽不受影响");
 });
 
+/* ---------- v0.36 个人资料窗口:路由与接线源级守卫 ---------- */
+
+test("T30 源级:画像提议聊天流零打断 + 弹窗三区 + 标题栏入口接线", () => {
+  // 路由:ChatStream 对 profile 工具只渲染指路静行(不进 proposal 卡白名单)
+  const chat = rf(pj(PROOT, "src/renderer/components/ChatStream.tsx"), "utf8");
+  assert.ok(chat.includes('toolName === "update_learner_profile"'), "profile 工具特判存在");
+  assert.ok(chat.includes('data-testid="part-profile-suggest"'), "指路静行锚");
+  assert.ok(!chat.includes('update_learner_profile" || toolName === "mark_mastered"'), "不进提议卡白名单(消费点=个人资料窗口)");
+  // 引擎描述如实化:落点 + 自然停顿
+  const engine = rf(pj(PROOT, "src/main/services/agent/agent-engine.ts"), "utf8");
+  assert.ok(engine.includes("「个人资料」窗口"), "描述声明落点");
+  assert.ok(engine.includes("自然停顿"), "描述约束发起时机");
+  // 基座条目 zh/en 同步如实化
+  const bp = rf(pj(PROOT, "src/main/services/agent/base-prompt.ts"), "utf8");
+  assert.ok(bp.includes("「个人资料」窗口里由其采纳或忽略"), "zh 条目含落点");
+  assert.ok(bp.includes("the suggestion lands in the learner's profile window"), "en 条目含落点");
+  // 弹窗三区 + lazy + 标题栏入口
+  const modal = rf(pj(PROOT, "src/renderer/components/PersonalProfileModal.tsx"), "utf8");
+  assert.ok(modal.includes('data-testid="profile-section-declared"') && modal.includes('data-testid="profile-section-suggestions"') && modal.includes('data-testid="profile-section-memory"'), "三区锚");
+  assert.ok(modal.includes("memoryDeleteSlot") && modal.includes("profileListProposals"), "IPC 消费接线");
+  assert.ok(modal.includes('data-testid="profile-memory-enable"'), "记忆开启开关(默认关)");
+  const app = rf(pj(PROOT, "src/renderer/App.tsx"), "utf8");
+  assert.ok(app.includes('lazy(() => import("./components/PersonalProfileModal.js"))'), "弹窗 lazy(非首屏)");
+  assert.ok(app.includes('data-testid="header-profile"'), "标题栏头像入口");
+  assert.ok(app.includes("nameAvatar("), "头像稳定色纯函数接线");
+});
+
 test("T26 源级:右栏回顾卡两态分支(recap 有数据 / tips 兜底)与数据边界", () => {
   const recap = rf(pj(PROOT, "src/renderer/components/BootRecapPanel.tsx"), "utf8");
   assert.ok(recap.includes('data-mode={hasData ? "recap" : "tips"}'), "两态分支存在(recap/tips)");

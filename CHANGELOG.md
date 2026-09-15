@@ -18,6 +18,14 @@ Entry conventions for contributors:
 
 ### Added
 
+- 个人资料窗口：标题栏新增头像入口（称呼首字母 + 稳定底色，无名回退图标）→ 弹窗三区——「我声明的」（画像全量、内联编辑，与开屏向导共用 ProfileEditForm）/「AI 建议的」（画像类提议的消费点：pending 建议卡"AI 通过与你的对话，建议把 X 切换为 Y，原因是…"，采纳/保留 + 历史可追溯）/「AI 记住的」（memory 三槽显式化：`memory_system` flag 默认关 + 一键开启说明 + 逐条删除）
+- IPC 三通道：`profile:listProposals`（画像提议全状态列表）、`memory:listAll`（记忆三槽全量）、`memory:deleteSlot`（删除指定记忆）
+
+### Changed
+
+- 画像类提议不再出现在聊天流确认卡（消费点移至个人资料窗口，学习过程零打断）：`update_learner_profile` 工具在对话流中只渲染一行指路静行
+- `update_learner_profile` 工具描述与基座条目（zh/en 同构）如实化：声明提议落点为「个人资料」窗口、须在答题/收尾等自然停顿处发起，不在讲解中途打断
+
 - 开屏导师（boot guide）：未选课态中栏改为 bot 主持的冷启动/回访引导——初次四步向导（欢迎与换装提示 → API Key 指引 → 三问画像卡流 → 试玩题）+ 回访建议卡（继续上次/复习到期/火焰告急/卡点回访/快毕业/考试中断，`shared/boot-guide.ts` 纯函数状态机，台词全本地双语零 LLM），引导屏不是 gate，一键出口；boot 向导看完即置位永不重播
 - 学习者画像（声明侧）：MBTI 快捷入口展开为 style 四维真源（讲解起点/互动密度/反馈风格/节奏，16 型 × 双语展开表），settings 表 `learner_profile` JSON 存储（**未加新表**），经 `profile:get/set` 结构化通道读写；注入对话提示词第④层（独立于 node-bound 快照，空画像零变化，带防注入标注与合意困难条款）
 - AI 对话补画像：新 agent 工具 `update_learner_profile`（Propose→Apply 确认卡；证据≥2 次才提议），apply 合并入库 + 手改仲裁（提议发起后用户手编 → 判 stale 不覆盖）

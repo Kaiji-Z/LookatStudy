@@ -24,7 +24,7 @@ import { createProposal } from "./services/proposal-service.js";
 import { setStateEmitter } from "./lib/state-emitter.js";
 import { syncPetWindow } from "./pet-window.js";
 import { setExamStatusSender } from "./services/exam-generation-store.js";
-import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems, progress as progressTable, chatMessages, threads as threadsTable, exercises as exercisesTable, examAttempts } from "./db/schema.js";
+import { courses, contentNodes, streaks, settings as settingsTable, customProviders, srsItems, canvasItems, progress as progressTable, chatMessages, threads as threadsTable, exercises as exercisesTable, examAttempts, proposals } from "./db/schema.js";
 import { and, eq, like as like_ } from "drizzle-orm";
 
 // 主进程以 CJS 打包（见 vite.config.ts），__dirname 天然可用。
@@ -4343,6 +4343,72 @@ async function runUiTest(screenshot = false): Promise<void> {
       return { mode: null };
     })()
   `);
+  // ── v0.36 个人资料窗口(profile window)──────────────────────────
+  // 主进程直插 DB 造一条 pending 画像提议(mbti INTP),页面侧走完整 apply 链。
+  const seedProfileProposal = getDb().insert(proposals).values({
+    id: "uitest-profile-prop",
+    nodeId: null,
+    operationsJson: JSON.stringify([
+      { type: "update_learner_profile", nodeId: null, profilePatch: { mbti: "INTP" } },
+    ]),
+    status: "pending",
+    rationale: "ui-test 造数:观察到两次与画像不符的行为",
+    createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+  }).onConflictDoNothing().run();
+  void seedProfileProposal;
+
+  const profileUi = await jsTimeout(win.webContents, `
+    (async function() {
+      var waitFor = async function(sel, tries) {
+        for (var i = 0; i < (tries || 40); i++) {
+          var el = document.querySelector(sel);
+          if (el) return el;
+          await new Promise(function(r){ setTimeout(r, 150); });
+        }
+        return null;
+      };
+      try {
+        var btn = await waitFor('[data-testid="header-profile"]');
+        if (!btn) return { step: "header-btn", ok: false };
+        btn.click();
+        var modal = await waitFor('[data-testid="profile-modal"]');
+        if (!modal) return { step: "modal", ok: false };
+        var s1 = await waitFor('[data-testid="profile-section-declared"]');
+        var s2 = await waitFor('[data-testid="profile-section-suggestions"]');
+        var s3 = await waitFor('[data-testid="profile-section-memory"]');
+        var card = await waitFor('[data-testid="profile-suggest-card"]');
+        var cardText = card ? card.textContent : "";
+        var memOff = !!(await waitFor('[data-testid="profile-memory-off"]', 8));
+        var before = await window.api.profileGet();
+        if (card) {
+          var apply = card.querySelector('[data-testid="profile-suggest-apply"]');
+          if (apply) apply.click();
+        }
+        var after = null;
+        for (var i = 0; i < 40; i++) {
+          await new Promise(function(r){ setTimeout(r, 250); });
+          after = await window.api.profileGet();
+          if (after && after.mbti === "INTP") break;
+        }
+        return {
+          step: "done",
+          ok: !!s1 && !!s2 && !!s3 && !!card && memOff && after && after.mbti === "INTP",
+          sections: [!!s1, !!s2, !!s3],
+          cardHasINTP: cardText.indexOf("INTP") >= 0,
+          cardHasReason: cardText.indexOf("ui-test") >= 0 || cardText.indexOf("观察到") >= 0,
+          memOff: memOff,
+          mbtiBefore: before ? before.mbti : null,
+          mbtiAfter: after ? after.mbti : null,
+        };
+      } catch (e) { return { error: String(e) }; }
+    })()
+  `);
+  results.push({
+    name: "profile window: header avatar → modal 3 sections → suggestion card apply (INTP)",
+    ok: profileUi?.ok === true && profileUi?.cardHasINTP === true,
+    detail: profileUi,
+  });
+
   results.push({
     // 两态分层验证:recap 态在污染库(套件尾部 streak/掌握数非零)活断言;
     // tips 兜底态是"全新用户"边界,由 verify-learner-profile T26 源级锁分支,

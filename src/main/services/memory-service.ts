@@ -132,6 +132,44 @@ export function getLearnerMemory(
   return lines.length > 0 ? lines.join("\n") : null;
 }
 
+/* ---------- 个人资料窗口读/删(显式化, SPEC §2c) ---------- */
+
+/** 全量记忆(分组):个人资料窗口"AI 记住的"区数据源。 */
+export interface MemoryInventory {
+  global: MemoryEntry | null;
+  patterns: Array<MemoryEntry & { courseId: string | null }>;
+  nodes: Array<MemoryEntry & { courseId: string | null }>;
+}
+
+/** 列出全部记忆槽(global 一条 / friction_pattern 按课程 / node 逐节点)。 */
+export function listAllMemories(db: Db): MemoryInventory {
+  const rows = db.select().from(memoryTable).all();
+  let global: MemoryEntry | null = null;
+  const patterns: Array<MemoryEntry & { courseId: string | null }> = [];
+  const nodes: Array<MemoryEntry & { courseId: string | null }> = [];
+  for (const r of rows) {
+    const entry: MemoryEntry & { courseId: string | null } = {
+      id: r.id,
+      nodeId: r.nodeId ?? null,
+      summary: r.summary,
+      category: r.category as MemoryCategory,
+      courseId: r.courseId ?? null,
+    };
+    if (r.category === "global") global = entry;
+    else if (r.category === "friction_pattern") patterns.push(entry);
+    else if (r.category === "node") nodes.push(entry);
+  }
+  return { global, patterns, nodes };
+}
+
+/** 删除指定记忆槽(用户在个人资料窗口"纠正 AI 记忆"的写路径)。 */
+export function deleteMemory(db: Db, id: string): boolean {
+  const row = db.select({ id: memoryTable.id }).from(memoryTable).where(eq(memoryTable.id, id)).get();
+  if (!row) return false;
+  db.delete(memoryTable).where(eq(memoryTable.id, id)).run();
+  return true;
+}
+
 /* ---------- 写（注入式 merge） ---------- */
 
 /**

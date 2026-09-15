@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense, lazy } from "react";
-import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight, AlertTriangle, Map as MapIcon, MessageSquare, PenLine } from "lucide-react";
+import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight, AlertTriangle, Map as MapIcon, MessageSquare, PenLine, User } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -19,6 +19,8 @@ import { GlobalTooltip } from "./components/GlobalTooltip.js";
 import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
 import { BootGuidePanel } from "./components/BootGuidePanel.js";
 import { BootRecapPanel } from "./components/BootRecapPanel.js";
+const PersonalProfileModal = lazy(() => import("./components/PersonalProfileModal.js"));
+import { nameAvatar } from "./lib/avatar.js";
 import { useCanvas } from "./lib/useCanvas.js";
 import { hasNoteMark } from "./lib/highlightText.js";
 import { useFontSize } from "./lib/useFontSize.js";
@@ -121,6 +123,9 @@ export default function App() {
   const [forceArtifactTab, setForceArtifactTab] = useState<NotebookTab | null>(null);
   // 设置弹窗(M1:设置从 tab 改为 modal/抽屉)
   const [showSettings, setShowSettings] = useState(false);
+  // 个人资料窗口(v0.36):标题栏头像入口 + 称呼(头像首字母)状态
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileName, setProfileName] = useState<string | null>(null);
   // 布局切换:左栏/右栏显隐(Cursor 风格)
   const [leftPaneVisible, setLeftPaneVisible] = useState(true);
   const [rightPaneVisible, setRightPaneVisible] = useState(true);
@@ -588,6 +593,12 @@ export default function App() {
     [proceedLessonClick, selectedNodeId],
   );
 
+  /* 个人资料:称呼加载(头像首字母) + 可刷新(画像保存后) */
+  const refreshProfileName = useCallback(() => {
+    void api.profileGet().then((p) => setProfileName(p?.name ?? null)).catch(() => {});
+  }, []);
+  useEffect(() => { refreshProfileName(); }, [refreshProfileName]);
+
   /* ── 开屏导师(v0.36)──────────────────────────────────────────
      引导屏的一键出口:恢复上次会话/跳卡点节点/去左栏选课。
      选课即置 boot_done(向导被离场也算"看过仪式",永不重播)。 */
@@ -931,6 +942,8 @@ export default function App() {
         fontSize={font.size}
         onFontBump={font.bump}
         onOpenSettings={() => setShowSettings(true)}
+        profileName={profileName}
+        onOpenProfile={() => setShowProfileModal(true)}
         leftVisible={showLeft}
         rightVisible={showRight}
         onToggleLeft={toggleLeftPane}
@@ -1066,7 +1079,7 @@ export default function App() {
                   onOpenSettings={() => setShowSettings(true)}
                   onGotoNode={(nodeId, target) => guardedNav(() => handleBootGotoNode(nodeId, target))}
                   onPickCourse={handleBootPickCourse}
-                  onProfileChanged={() => { /* 画像变化:boot 态下次拉取即见 */ }}
+                  onProfileChanged={refreshProfileName}
                 />
                 </div>
               ) : selectedNode?.type === "exam" ? (
@@ -1256,6 +1269,16 @@ export default function App() {
 
       {/* 课程切换/导入已整合进左栏 tab */}
 
+      {/* 个人资料窗口(v0.36):标题栏头像入口唤起,lazy 按需加载 */}
+      {showProfileModal && (
+        <Suspense fallback={null}>
+          <PersonalProfileModal
+            onClose={() => setShowProfileModal(false)}
+            onProfileSaved={refreshProfileName}
+          />
+        </Suspense>
+      )}
+
       {/* 设置抽屉(从 tab 改为 overlay,M1) */}
       {showSettings && (
         <SettingsDrawer onClose={() => setShowSettings(false)} />
@@ -1364,6 +1387,8 @@ function Header({
   fontSize,
   onFontBump,
   onOpenSettings,
+  profileName,
+  onOpenProfile,
   leftVisible,
   rightVisible,
   onToggleLeft,
@@ -1376,6 +1401,9 @@ function Header({
   fontSize: "small" | "medium" | "large";
   onFontBump: (dir: "up" | "down") => void;
   onOpenSettings: () => void;
+  /** 个人资料窗口(v0.36):称呼(头像首字母) + 打开回调 */
+  profileName: string | null;
+  onOpenProfile: () => void;
   leftVisible: boolean;
   rightVisible: boolean;
   onToggleLeft: () => void;
@@ -1406,6 +1434,7 @@ function Header({
           </div>
           {bottomBar}
           <div className="flex-1 flex items-center justify-end">
+            <HeaderAvatar profileName={profileName} onOpenProfile={onOpenProfile} />
             <button
               onClick={onOpenSettings}
               data-testid="header-settings"
@@ -1515,7 +1544,8 @@ function Header({
         )}
         {streak && <StreakBadge streak={streak} />}
 
-        {/* 配置:设置(最右,惯例位置) */}
+        {/* 个人资料(头像入口,v0.36) + 配置:设置(最右,惯例位置) */}
+        <HeaderAvatar profileName={profileName} onOpenProfile={onOpenProfile} />
         <button
           onClick={onOpenSettings}
           data-testid="header-settings"
@@ -1527,6 +1557,28 @@ function Header({
       </div>
       </div>
     </header>
+  );
+}
+
+/* ---------- 个人资料头像入口(标题栏,v0.36):首字母+稳定底色,空名回退图标 ---------- */
+function HeaderAvatar({ profileName, onOpenProfile }: { profileName: string | null; onOpenProfile: () => void }) {
+  const t = useLang();
+  const av = nameAvatar(profileName);
+  return (
+    <button
+      onClick={onOpenProfile}
+      data-testid="header-profile"
+      aria-label={t("profile.header.open")}
+      title={profileName ?? t("profile.header.open")}
+      className="w-8 h-8 flex items-center justify-center rounded-full transition-transform hover:scale-105 shrink-0"
+      style={av ? { backgroundColor: av.bg, color: av.fg } : undefined}
+    >
+      {av ? (
+        <span className="text-label font-bold leading-none">{av.initial}</span>
+      ) : (
+        <User className="w-4 h-4 text-neutral-500 dark:text-neutral-400" aria-hidden="true" />
+      )}
+    </button>
   );
 }
 

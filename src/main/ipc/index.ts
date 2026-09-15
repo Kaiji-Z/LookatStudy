@@ -123,6 +123,8 @@ import {
 import type { CutPackManifest } from "@shared/companion-cut";
 import { parseProfileJson, serializeProfile, emptyProfile } from "@shared/learner-profile";
 import { gatherBootState } from "../services/boot-state-service.js";
+import { listProfileProposals } from "../services/proposal-service.js";
+import { listAllMemories, deleteMemory } from "../services/memory-service.js";
 // 业务逻辑抽出到 services，让无头测试能直接覆盖（不再只能在 UI 点）
 import {
   getProgress as getProgressService,
@@ -1199,6 +1201,26 @@ export function registerSettingsHandlers(deps: RuntimeDeps): void {
 
   // 开屏输入聚合(只读单往返):computeBootGuide 的全部输入 + 动作目标
   handle("boot:getState", async () => gatherBootState(getDb()));
+
+  // 个人资料窗口(v0.36):画像提议列表(全状态) + 记忆全量/删除
+  handle("profile:listProposals", async (): Promise<unknown> => {
+    return listProfileProposals(getDb());
+  });
+
+  handle("memory:listAll", async (): Promise<unknown> => {
+    const inv = listAllMemories(getDb());
+    return {
+      global: inv.global ? { id: inv.global.id, summary: inv.global.summary } : null,
+      patterns: inv.patterns.map((m) => ({ id: m.id, summary: m.summary, courseId: m.courseId })),
+      nodes: inv.nodes.map((m) => ({ id: m.id, summary: m.summary, nodeId: m.nodeId })),
+    };
+  });
+
+  handle("memory:deleteSlot", async (_e, id: string): Promise<boolean> => {
+    const ok = deleteMemory(getDb(), id);
+    if (ok) markDirty();
+    return ok;
+  });
 
   // v0.11 桌宠:渲染层热区检测 → 切换桌宠窗点击穿透(离开热区恢复穿透)
   handle("companionPet:setClickThrough", (_e, passThrough: boolean) => {

@@ -293,6 +293,111 @@ test("T25 源级:引擎工具定义 + 基座 zh/en 条目(PROMPT-LAYERS 契约1:
   assert.ok(bp.includes("- update_learner_profile: propose updating the learner profile"), "en 工具清单条目(同构)");
 });
 
+/* ---------- v0.36 个人资料窗口:头像/提议查询/记忆读写删 ---------- */
+import { nameAvatar } from "../src/renderer/lib/avatar.ts";
+import { listProfileProposals } from "../src/main/services/proposal-service.ts";
+import { listAllMemories, deleteMemory, remember } from "../src/main/services/memory-service.ts";
+
+test("T27 nameAvatar:同名同色/首字母取码点/空名兜底/分布覆盖", () => {
+  const a1 = nameAvatar("Kaiji");
+  const a2 = nameAvatar("  Kaiji ");
+  assert.ok(a1 && a2);
+  assert.equal(a1.bg, a2.bg, "trim 后同名同色");
+  assert.equal(a1.initial, "K", "Latin 首字母大写");
+  assert.equal(nameAvatar("阿凯").initial, "阿", "CJK 取首字符");
+  const emoji = nameAvatar("🔥-fire");
+  assert.ok(emoji && [...emoji.initial].length === 1, "emoji 序列取单码点");
+  assert.equal(nameAvatar(null), null);
+  assert.equal(nameAvatar("   "), null);
+  // 分布:一批不同名应命中多个色盘项(防 hash 退化到单色)
+  const bgs = new Set(Array.from({ length: 40 }, (_, i) => nameAvatar(`user-${i}`)?.bg));
+  assert.ok(bgs.size >= 4, `色盘分布 ${bgs.size}/8`);
+  // 确定性:跨调用稳定
+  assert.equal(nameAvatar("稳定").bg, nameAvatar("稳定").bg);
+});
+
+test("T28 listProfileProposals:只回画像类/全状态/最新在前/上限/坏 JSON 容忍", () => {
+  const { db, raw } = propDb();
+  const mk = (i, patch) => createProposal(db, {
+    nodeId: "pn",
+    operations: [{ type: "update_learner_profile", nodeId: "pn", profilePatch: patch }],
+    rationale: `r${i}`,
+  });
+  const p1 = mk(1, { name: "甲" });
+  const p2 = mk(2, { style: { pacing: "exploratory" } });
+  const p3 = mk(3, { mbti: "INTP" });
+  // 干扰项:非画像类提议不进列表
+  createProposal(db, { nodeId: "pn", operations: [{ type: "mark_mastered", nodeId: "pn" }], rationale: "m" });
+  // p1 立即 apply → 状态透出
+  applyProposal(db, p1.id);
+  let list = listProfileProposals(db);
+  assert.equal(list.length, 3, "只回画像类");
+  // 排序:createdAt 非增(同秒内次序无产品意义,不锁)
+  for (let i = 1; i < list.length; i++) {
+    assert.ok(list[i - 1].createdAt >= list[i].createdAt, `createdAt 非增: ${list[i - 1].createdAt} < ${list[i].createdAt}`);
+  }
+  assert.ok([p1.id, p2.id, p3.id].every((id) => list.some((x) => x.id === id)), "三条全含");
+  assert.ok(list.find((x) => x.id === p1.id)?.status === "applied", "历史状态透出");
+  assert.ok(list.find((x) => x.id === p2.id)?.status === "pending", "pending 透出");
+  assert.deepEqual(list.find((x) => x.id === p3.id)?.patch, { mbti: "INTP" }, "patch 保真");
+  // 上限
+  for (let i = 0; i < 12; i++) mk(100 + i, { goalNote: `n${i}` });
+  assert.equal(listProfileProposals(db).length, 10, "上限 10");
+  assert.equal(listProfileProposals(db, 3).length, 3, "limit 参数生效");
+  // 坏 operationsJson 容忍(直接 UPDATE 绕过服务)
+  raw.run("UPDATE proposals SET operations_json = '{oops' WHERE id = ?", [p2.id]);
+  list = listProfileProposals(db);
+  assert.ok(!list.find((x) => x.id === p2.id), "坏 JSON 行被跳过不炸");
+});
+
+test("T29 记忆全量/删除:三槽分组 + deleteMemory 真删 + 不存在返回 false", async () => {
+  const { db, raw } = propDb();
+  const stub = async (_e, inc) => `merged:${inc}`;
+  await remember(db, { category: "global", content: "整体印象" }, stub, undefined);
+  await remember(db, { category: "friction_pattern", content: "卡点模式" }, stub, "course-a");
+  await remember(db, { category: "node", content: "节点记忆", nodeId: "pn" }, stub, undefined);
+  let inv = listAllMemories(db);
+  assert.ok(inv.global?.summary.startsWith("merged:"));
+  assert.equal(inv.patterns.length, 1);
+  assert.equal(inv.patterns[0].courseId, "course-a");
+  assert.equal(inv.nodes.length, 1);
+  assert.equal(inv.nodes[0].nodeId, "pn");
+  // 删除:真删 + 不存在 false
+  const gid = inv.global.id;
+  assert.equal(deleteMemory(db, gid), true);
+  assert.equal(deleteMemory(db, gid), false, "再删同 id 返回 false");
+  inv = listAllMemories(db);
+  assert.equal(inv.global, null);
+  assert.equal(inv.patterns.length, 1, "其余槽不受影响");
+});
+
+/* ---------- v0.36 个人资料窗口:路由与接线源级守卫 ---------- */
+
+test("T30 源级:画像提议聊天流零打断 + 弹窗三区 + 标题栏入口接线", () => {
+  // 路由:ChatStream 对 profile 工具只渲染指路静行(不进 proposal 卡白名单)
+  const chat = rf(pj(PROOT, "src/renderer/components/ChatStream.tsx"), "utf8");
+  assert.ok(chat.includes('toolName === "update_learner_profile"'), "profile 工具特判存在");
+  assert.ok(chat.includes('data-testid="part-profile-suggest"'), "指路静行锚");
+  assert.ok(!chat.includes('update_learner_profile" || toolName === "mark_mastered"'), "不进提议卡白名单(消费点=个人资料窗口)");
+  // 引擎描述如实化:落点 + 自然停顿
+  const engine = rf(pj(PROOT, "src/main/services/agent/agent-engine.ts"), "utf8");
+  assert.ok(engine.includes("「个人资料」窗口"), "描述声明落点");
+  assert.ok(engine.includes("自然停顿"), "描述约束发起时机");
+  // 基座条目 zh/en 同步如实化
+  const bp = rf(pj(PROOT, "src/main/services/agent/base-prompt.ts"), "utf8");
+  assert.ok(bp.includes("「个人资料」窗口里由其采纳或忽略"), "zh 条目含落点");
+  assert.ok(bp.includes("the suggestion lands in the learner's profile window"), "en 条目含落点");
+  // 弹窗三区 + lazy + 标题栏入口
+  const modal = rf(pj(PROOT, "src/renderer/components/PersonalProfileModal.tsx"), "utf8");
+  assert.ok(modal.includes('data-testid="profile-section-declared"') && modal.includes('data-testid="profile-section-suggestions"') && modal.includes('data-testid="profile-section-memory"'), "三区锚");
+  assert.ok(modal.includes("memoryDeleteSlot") && modal.includes("profileListProposals"), "IPC 消费接线");
+  assert.ok(modal.includes('data-testid="profile-memory-enable"'), "记忆开启开关(默认关)");
+  const app = rf(pj(PROOT, "src/renderer/App.tsx"), "utf8");
+  assert.ok(app.includes('lazy(() => import("./components/PersonalProfileModal.js"))'), "弹窗 lazy(非首屏)");
+  assert.ok(app.includes('data-testid="header-profile"'), "标题栏头像入口");
+  assert.ok(app.includes("nameAvatar("), "头像稳定色纯函数接线");
+});
+
 test("T26 源级:右栏回顾卡两态分支(recap 有数据 / tips 兜底)与数据边界", () => {
   const recap = rf(pj(PROOT, "src/renderer/components/BootRecapPanel.tsx"), "utf8");
   assert.ok(recap.includes('data-mode={hasData ? "recap" : "tips"}'), "两态分支存在(recap/tips)");

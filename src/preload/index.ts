@@ -223,6 +223,12 @@ const api = {
     ipcRenderer.invoke("profile:set", profile)) as ApiExpose["profileSet"],
   bootGetState: (() =>
     ipcRenderer.invoke("boot:getState")) as ApiExpose["bootGetState"],
+  profileListProposals: (() =>
+    ipcRenderer.invoke("profile:listProposals")) as ApiExpose["profileListProposals"],
+  memoryListAll: (() =>
+    ipcRenderer.invoke("memory:listAll")) as ApiExpose["memoryListAll"],
+  memoryDeleteSlot: ((id: string) =>
+    ipcRenderer.invoke("memory:deleteSlot", id)) as ApiExpose["memoryDeleteSlot"],
   companionPetSetClickThrough: ((passThrough: boolean) =>
     ipcRenderer.invoke("companionPet:setClickThrough", passThrough)) as ApiExpose["companionPetSetClickThrough"],
 

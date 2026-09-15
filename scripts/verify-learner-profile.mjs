@@ -332,7 +332,11 @@ test("T28 listProfileProposals:只回画像类/全状态/最新在前/上限/坏
   applyProposal(db, p1.id);
   let list = listProfileProposals(db);
   assert.equal(list.length, 3, "只回画像类");
-  assert.equal(list[0].id, p3.id, "最新在前(createAt 同秒时按插入序,这里放宽:包含全部即可)");
+  // 排序:createdAt 非增(同秒内次序无产品意义,不锁)
+  for (let i = 1; i < list.length; i++) {
+    assert.ok(list[i - 1].createdAt >= list[i].createdAt, `createdAt 非增: ${list[i - 1].createdAt} < ${list[i].createdAt}`);
+  }
+  assert.ok([p1.id, p2.id, p3.id].every((id) => list.some((x) => x.id === id)), "三条全含");
   assert.ok(list.find((x) => x.id === p1.id)?.status === "applied", "历史状态透出");
   assert.ok(list.find((x) => x.id === p2.id)?.status === "pending", "pending 透出");
   assert.deepEqual(list.find((x) => x.id === p3.id)?.patch, { mbti: "INTP" }, "patch 保真");

@@ -192,52 +192,7 @@ export function applyProfilePatch(base: LearnerProfile, patch: Partial<Omit<Lear
   };
 }
 
-/* ---------- 场景题（不知道 MBTI 的替代路径：每维一题，可逐题跳过） ---------- */
-
-export interface StyleSceneOption {
-  value: string;
-  zh: string;
-  en: string;
-}
-
-export interface StyleSceneQuestion {
-  dim: StyleDim;
-  zh: string;
-  en: string;
-  a: StyleSceneOption;
-  b: StyleSceneOption;
-}
-
-export const STYLE_SCENE_QUESTIONS: StyleSceneQuestion[] = [
-  {
-    dim: "start",
-    zh: "新开一节课，你更想怎么开始？",
-    en: "Starting a new lesson, how do you prefer to begin?",
-    a: { value: "analogy", zh: "先听个比喻，找找感觉", en: "Start with an analogy to get a feel" },
-    b: { value: "framework", zh: "先看这章的知识地图", en: "See the knowledge map first" },
-  },
-  {
-    dim: "interaction",
-    zh: "听讲的时候，你更喜欢？",
-    en: "While being taught, you prefer…",
-    a: { value: "dialogue", zh: "边讲边问我，随时插话", en: "Ask me as you go — I'll chime in" },
-    b: { value: "lecture", zh: "讲完一节再答疑", en: "Finish a section, then take questions" },
-  },
-  {
-    dim: "feedback",
-    zh: "答错了的时候，你希望导师？",
-    en: "When you get something wrong, you want the tutor to…",
-    a: { value: "direct", zh: "直接指出错在哪", en: "Point out exactly what's wrong" },
-    b: { value: "encouraging", zh: "先肯定思路，再指正", en: "Acknowledge the reasoning first, then correct" },
-  },
-  {
-    dim: "pacing",
-    zh: "在课程地图上，你想？",
-    en: "On the course map, you'd rather…",
-    a: { value: "sequential", zh: "按顺序一格一格推进", en: "Advance step by step in order" },
-    b: { value: "exploratory", zh: "跳到最有趣的部分", en: "Jump to whatever looks most interesting" },
-  },
-];
+/* 场景题兜底路径已退役(2026-09-15 用户拍板):不知道 MBTI 直接跳过,风格四维由 expandMbtiToStyle 在选中时展开——不为一小撮路径加全局认知负担。 */
 
 /* ---------- 维度标签（风格卡/注入共用） ---------- */
 

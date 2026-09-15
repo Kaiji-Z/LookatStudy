@@ -153,16 +153,18 @@ export default function PersonalProfileModal({ onClose, onProfileSaved }: Person
         role="dialog"
         aria-modal="true"
         aria-label={t("profile.title")}
-        className="w-[min(560px,94vw)] max-h-[86vh] overflow-y-auto rounded-2xl bg-surface-0 shadow-elevated p-6 flex flex-col gap-6"
+        className="w-[min(560px,94vw)] max-h-[86vh] rounded-2xl bg-surface-0 shadow-elevated flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between">
+        {/* 固定头部:标题+关闭钮不随内容滚动(旧版整面板滚动,关闭钮会被长表卷走) */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
           <div className="text-hero font-bold text-ink">{t("profile.title")}</div>
           <button className="btn-3d-neutral inline-flex items-center gap-1 px-3 py-2" onClick={onClose} data-testid="profile-close">
             <X size={16} />
             {t("action.close")}
           </button>
         </div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-6">
 
         {/* ── 区1:我声明的(可编辑) ── */}
         <section className="flex flex-col gap-3" data-testid="profile-section-declared">
@@ -304,6 +306,7 @@ export default function PersonalProfileModal({ onClose, onProfileSaved }: Person
             </div>
           )}
         </section>
+        </div>
       </div>
     </div>
   );

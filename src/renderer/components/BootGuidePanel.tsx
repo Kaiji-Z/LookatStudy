@@ -397,12 +397,10 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
           t={t}
           locale={locale}
           value={profile.mbti}
-          style={profile.style}
           onPick={(mbti) => { companionNodePoint(); onPatch({ mbti, style: expandMbtiToStyle(mbti) }); }}
-          onSceneAnswer={(dim, value) => onPatch({ style: { [dim]: value } as Partial<LearnerProfile["style"]> })}
         />
         <button className="btn-3d-brand self-start px-4 py-2" onClick={() => setCard(1)} data-testid="boot-wizard-next1">
-          {profile.mbti || profile.style.start ? t("boot.card.mbti.next") : t("boot.card.mbti.skip")}
+          {profile.mbti ? t("boot.card.mbti.next") : t("boot.card.mbti.skip")}
         </button>
       </section>
     );

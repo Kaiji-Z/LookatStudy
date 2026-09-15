@@ -10,7 +10,6 @@
 import assert from "node:assert/strict";
 import {
   MBTI_TYPES,
-  STYLE_SCENE_QUESTIONS,
   expandMbtiToStyle,
   hasProfileContent,
   emptyProfile,
@@ -59,16 +58,7 @@ test("T3 ISFJ 展开 = 实例/讲完/先肯定/顺序", () => {
   assert.deepEqual(s, { start: "analogy", interaction: "lecture", feedback: "encouraging", pacing: "sequential" });
 });
 
-/* ---------- 场景题 ---------- */
-
-test("T4 场景题覆盖全部四维且选项值合法", () => {
-  const dims = STYLE_SCENE_QUESTIONS.map((q) => q.dim).sort();
-  assert.deepEqual(dims, ["feedback", "interaction", "pacing", "start"]);
-  for (const q of STYLE_SCENE_QUESTIONS) {
-    assert.ok(q.zh && q.en && q.a.zh && q.a.en && q.b.zh && q.b.en, `${q.dim} 双语完整`);
-    assert.notEqual(q.a.value, q.b.value, `${q.dim} 两选项值不同`);
-  }
-});
+/* 场景题兜底已退役(2026-09-15 用户拍板):不知道 MBTI 直接跳过,原 T4 场景题测试随之移除 */
 
 /* ---------- 序列化往返 ---------- */
 

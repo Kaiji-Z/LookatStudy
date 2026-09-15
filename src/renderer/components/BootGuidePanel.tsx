@@ -18,7 +18,7 @@ import { api } from "../lib/api.js";
 import { useLang, useLangValue } from "../lib/i18n.js";
 import { celebrate } from "../lib/celebration.js";
 import { companionZoneFocus, companionNodePoint } from "../lib/companion/bus.js";
-import { ProfileEditForm, MbtiPickerInline } from "./ProfileEditForm.js";
+import { MbtiPickerInline } from "./ProfileEditForm.js";
 import {
   computeBootGuide,
   BOOT_WIZARD_STEPS,
@@ -26,8 +26,6 @@ import {
 } from "@shared/boot-guide";
 import {
   expandMbtiToStyle,
-  mbtiDisplay,
-  styleLeaningLine,
   motiveDisplay,
   MOTIVE_STAGES,
   emptyProfile,
@@ -46,8 +44,10 @@ export interface BootGuidePanelProps {
   onOpenSettings: (section?: string) => void;
   /** 跳节点:卡点/快毕业/考试 */
   onGotoNode: (nodeId: string, target: "friction" | "near_mastery" | "exam") => void;
-  /** 去左栏选课/导入(含 T3 切栏) */
+  /** 去左栏选课/导入(T2/T1 强制左栏可见+伴学吹哨飞左栏;T3 切栏) */
   onPickCourse: () => void;
+  /** 打开个人资料弹窗("查看画像"=标题栏头像按钮的同款动作) */
+  onOpenProfile: () => void;
   /** 画像变化(向导答完/编辑保存)后通知宿主(注入/回顾卡刷新) */
   onProfileChanged?: () => void;
 }
@@ -88,7 +88,6 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
   /** 向导卡流的画像草稿(即答即存,草稿只是乐观 UI) */
   const [draft, setDraft] = useState<LearnerProfile | null>(null);
   /** 就绪教室的编辑模式(全字段一张表单) */
-  const [editing, setEditing] = useState(false);
   const keyPromptCounted = useRef(false);
 
   /* companion 空态剧本:挂载=召唤到中栏坐镇引导卡旁(锚点=chatAnchor 兜底),
@@ -156,16 +155,15 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
         setWizardStep((s) => Math.min(BOOT_WIZARD_STEPS - 1, s + 1));
       } else if (kind === "settings_llm") {
         props.onOpenSettings();
-      } else if (kind === "start_import") {
-        // 向导末步主动作:左栏开导入页,伴学解除中栏召唤飞回左栏老家指引
+      } else if (kind === "start_import" || kind === "pick_course") {
+        // 同一动作(用户拍板):左栏本就默认在导入页,不切 view——伴学解除中栏召唤,
+        // 由宿主强制左栏可见并吹哨召唤它飞到左栏导入区指引
         companionZoneFocus(false);
-        companionNodePoint();
         props.onPickCourse();
       } else if (kind === "companion_settings") {
         props.onOpenSettings("companion");
-      } else if (kind === "pick_course") {
-        finishBoot();
-        props.onPickCourse();
+      } else if (kind === "edit_profile") {
+        props.onOpenProfile();
       } else if (kind === "resume" && boot.targets.resume) {
         finishBoot();
         props.onResume(boot.targets.resume.courseId, boot.targets.resume.nodeId);
@@ -178,8 +176,6 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
           : target === "near_mastery" ? boot.targets.nearMasteryNodeId
           : boot.targets.examNodeId;
         if (id) props.onGotoNode(id, target as "friction" | "near_mastery" | "exam");
-      } else if (kind === "edit_profile") {
-        setEditing(true);
       }
     },
     [boot, guide, finishBoot, props],
@@ -209,7 +205,7 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
       data-boot-done={boot.bootDone ? "1" : "0"}
     >
       <div className="mx-auto max-w-md flex flex-col gap-4" data-companion-anchor="boot-guide">
-        {guide.welcomeBack && !editing && (
+        {guide.welcomeBack && (
           <div className="text-center text-body text-accent font-bold" data-testid="boot-welcome-back">
             {decorateVars("boot.welcome_back")}
           </div>
@@ -218,7 +214,7 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
         {/* ===== 场景主卡 ===== */}
         {/* 向导三问步(profile_quiz):场景卡只留题面,动作行与外层步进点让位给子卡流
             (此前双卡双主按钮,且上卡"继续"实为跳过整场问答——语义错位) */}
-        {!editing && (
+        {
           <section
             className="surface-card rounded-2xl p-6 shadow-card flex flex-col gap-4"
             data-testid={`boot-card-${guide.scene}`}
@@ -234,11 +230,6 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
                 {decorateVars(l.key, l.vars)}
               </p>
             ))}
-
-            {/* 就绪教室:画像摘要卡(编辑入口/补全邀请) */}
-            {guide.scene === "ready_room" && hasProfileContent(profile) && (
-              <ProfileSummary t={t} locale={locale} profile={profile} onEdit={() => setEditing(true)} />
-            )}
 
             {!(guide.scene === "profile_quiz" && wizardStep === 2) && (
               <div className="flex flex-wrap gap-2 mt-1">
@@ -270,20 +261,10 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
               </div>
             )}
           </section>
-        )}
+        }
 
-        {/* ===== 向导卡流(第二屏:三问)与编辑模式共用卡片 ===== */}
-        {editing ? (
-          <div className="surface-card rounded-2xl p-6 shadow-card">
-          <ProfileEditForm
-            t={t}
-            locale={locale}
-            profile={profile}
-            onSave={(p) => { saveProfile(p); setEditing(false); }}
-            onCancel={() => setEditing(false)}
-          />
-          </div>
-        ) : !boot.bootDone && wizardStep === 2 ? (
+        {/* ===== 向导卡流(第二屏:三问) ===== */}
+        {!boot.bootDone && wizardStep === 2 ? (
           <>
             <WizardQuizCards
               t={t}
@@ -303,64 +284,6 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
           </>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-/* ================= 就绪教室:画像摘要 ================= */
-
-function ProfileSummary({ t, locale, profile, onEdit }: {
-  t: (k: string, v?: Record<string, string | number>) => string;
-  locale: string;
-  profile: LearnerProfile;
-  onEdit: () => void;
-}) {
-  const missing = [
-    !profile.name, !profile.mbti, !profile.motiveStage, !(profile.interests?.length),
-    !profile.style.start, !profile.style.interaction, !profile.style.feedback, !profile.style.pacing,
-    !profile.freeNote,
-  ].filter(Boolean).length;
-  const leaning = styleLeaningLine(profile.style, locale);
-  return (
-    <div className="rounded-xl bg-surface-0 p-4 flex flex-col gap-2" data-testid="boot-profile-summary">
-      <div className="flex items-center justify-between">
-        <div className="text-label font-bold text-ink">{t("boot.profile.summary.title")}</div>
-        <button className="btn-3d-neutral inline-flex items-center gap-1" onClick={onEdit} data-testid="boot-profile-edit">
-          <PencilLine size={14} />
-          {t("boot.profile.edit")}
-        </button>
-      </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-label">
-        <dt className="text-ink-faint">{t("boot.profile.field.name")}</dt>
-        <dd className="text-ink">{profile.name ?? t("boot.profile.field.unset")}</dd>
-        <dt className="text-ink-faint">{t("boot.profile.field.mbti")}</dt>
-        <dd className="text-ink">
-          {profile.mbti
-            ? `${profile.mbti} · ${mbtiDisplay(profile.mbti, locale).name}`
-            : t("boot.profile.field.unset")}
-        </dd>
-        <dt className="text-ink-faint">{t("boot.profile.field.motive")}</dt>
-        <dd className="text-ink">
-          {profile.motiveStage
-            ? `${motiveDisplay(profile.motiveStage, locale).name}——${motiveDisplay(profile.motiveStage, locale).tagline}`
-            : t("boot.profile.field.unset")}
-        </dd>
-        <dt className="text-ink-faint">{t("profile.field.interests")}</dt>
-        <dd className="text-ink">
-          {profile.interests?.length ? profile.interests.join(locale === "en" ? ", " : "、") : t("boot.profile.field.unset")}
-        </dd>
-        <dt className="text-ink-faint">{t("boot.profile.field.style")}</dt>
-        <dd className="text-ink">{leaning || t("boot.profile.field.unset")}</dd>
-        {profile.freeNote && (
-          <>
-            <dt className="text-ink-faint">{t("boot.profile.field.free")}</dt>
-            <dd className="text-ink">{profile.freeNote}</dd>
-          </>
-        )}
-      </dl>
-      {missing > 0 && (
-        <div className="text-caption text-accent">{t("boot.profile.missing", { n: missing })}</div>
-      )}
     </div>
   );
 }

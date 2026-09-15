@@ -56,7 +56,7 @@ import { PaneResizeHandle } from "./components/PaneResizeHandle.js";
 import { useFocusTrap } from "./lib/useFocusTrap.js";
 import { CelebrationLayer } from "./components/CelebrationLayer.js";
 import { celebrate } from "./lib/celebration.js";
-import { companionReviewing, companionSetStreaming } from "./lib/companion/bus.ts";
+import { companionReviewing, companionSetStreaming, companionWhistle } from "./lib/companion/bus.ts";
 
 // 非首屏重组件按需加载(入口包瘦身):设置抽屉/考试视图/命令面板仅打开时才拉 chunk
 const SettingsView = lazy(() => import("./components/SettingsView.js").then((m) => ({ default: m.SettingsView })));
@@ -621,12 +621,18 @@ export default function App() {
   }, [tree, handleLessonClick]);
 
   const handleBootPickCourse = useCallback(() => {
-    setView("import");
-    // 左栏必须真在视口里:开屏卡在 T2 默认右栏侧(T2 默认 notebook)/T1 可被手动关——
-    // 只 setView 会是"点了没反映"(view 变了但栏不可见)
+    // 用户拍板:左栏默认就在导入页,不切 view——要的是"左栏真在视口里"+伴学飞过去指引
     setT2Side("rail");
     setLeftPaneVisible(true);
     if (tier === 3) setT3Pane("rail");
+    // 吹哨召唤伴学到左栏导入区(视口坐标;等左栏可见后再取矩形,T2/T3 切栏同拍完成)
+    window.setTimeout(() => {
+      const rail = document.querySelector('[data-testid="map-rail"]');
+      if (rail) {
+        const r = rail.getBoundingClientRect();
+        companionWhistle(r.left + r.width * 0.5, r.top + r.height * 0.3);
+      }
+    }, 60);
   }, [tier]);
 
   // resume 选课 → 树异步加载后落地到上次节点(一次即清)
@@ -1093,6 +1099,7 @@ export default function App() {
                   onOpenSettings={(section) => { setSettingsFocusSection(section ?? null); setShowSettings(true); }}
                   onGotoNode={(nodeId, target) => guardedNav(() => handleBootGotoNode(nodeId, target))}
                   onPickCourse={handleBootPickCourse}
+                  onOpenProfile={() => setShowProfileModal(true)}
                   onProfileChanged={refreshProfileName}
                 />
                 </div>

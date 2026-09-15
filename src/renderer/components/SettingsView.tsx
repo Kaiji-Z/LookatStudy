@@ -520,8 +520,8 @@ export function SettingsView() {
           </div>
         </section>
 
-        {/* ========== 伴学伙伴 ========== */}
-        <section>
+        {/* ========== 伴学伙伴(id 锚:开屏"更换伴学伙伴"定位滚动用) ========== */}
+        <section id="settings-section-companion">
           <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.companion")}</h3>
           <div className="surface-card overflow-hidden">
             <CompanionContent />

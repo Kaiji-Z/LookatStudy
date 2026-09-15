@@ -123,6 +123,8 @@ export default function App() {
   const [forceArtifactTab, setForceArtifactTab] = useState<NotebookTab | null>(null);
   // 设置弹窗(M1:设置从 tab 改为 modal/抽屉)
   const [showSettings, setShowSettings] = useState(false);
+  /** 开屏"更换伴学伙伴"等入口的定位区段:打开抽屉后滚动到对应设置组 */
+  const [settingsFocusSection, setSettingsFocusSection] = useState<string | null>(null);
   // 个人资料窗口(v0.36):标题栏头像入口 + 称呼(头像首字母)状态
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileName, setProfileName] = useState<string | null>(null);
@@ -620,6 +622,10 @@ export default function App() {
 
   const handleBootPickCourse = useCallback(() => {
     setView("import");
+    // 左栏必须真在视口里:开屏卡在 T2 默认右栏侧(T2 默认 notebook)/T1 可被手动关——
+    // 只 setView 会是"点了没反映"(view 变了但栏不可见)
+    setT2Side("rail");
+    setLeftPaneVisible(true);
     if (tier === 3) setT3Pane("rail");
   }, [tier]);
 
@@ -1084,7 +1090,7 @@ export default function App() {
                     }
                     setShowReviewDrawer(true);
                   })}
-                  onOpenSettings={() => setShowSettings(true)}
+                  onOpenSettings={(section) => { setSettingsFocusSection(section ?? null); setShowSettings(true); }}
                   onGotoNode={(nodeId, target) => guardedNav(() => handleBootGotoNode(nodeId, target))}
                   onPickCourse={handleBootPickCourse}
                   onProfileChanged={refreshProfileName}
@@ -1289,7 +1295,10 @@ export default function App() {
 
       {/* 设置抽屉(从 tab 改为 overlay,M1) */}
       {showSettings && (
-        <SettingsDrawer onClose={() => setShowSettings(false)} />
+        <SettingsDrawer
+          onClose={() => { setShowSettings(false); setSettingsFocusSection(null); }}
+          focusSection={settingsFocusSection}
+        />
       )}
 
       {/* v0.3: 复习抽屉(从地图徽章唤起) */}
@@ -1592,10 +1601,19 @@ function HeaderAvatar({ profileName, onOpenProfile }: { profileName: string | nu
 
 /* ---------- 设置抽屉 ---------- */
 
-function SettingsDrawer({ onClose }: { onClose: () => void }) {
+function SettingsDrawer({ onClose, focusSection }: { onClose: () => void; focusSection?: string | null }) {
   const t = useLang();
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, true);
+  /* 定位区段(如开屏"更换伴学伙伴"→companion):内容是 lazy chunk,分两次尝试滚动 */
+  useEffect(() => {
+    if (!focusSection) return;
+    const el = () => document.getElementById(`settings-section-${focusSection}`);
+    const timers = [250, 700].map((ms) => window.setTimeout(() => {
+      el()?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, ms));
+    return () => timers.forEach(clearTimeout);
+  }, [focusSection]);
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="settings-drawer">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />

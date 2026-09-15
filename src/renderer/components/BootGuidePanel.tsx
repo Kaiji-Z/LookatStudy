@@ -13,7 +13,7 @@
  * 首屏组件不 lazy(AGENTS.md 规则);主束增量来自 shared 展开表(~10KB,已接受)。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Sparkles, KeyRound, GraduationCap, Play, BookOpen, Flame, ClipboardList, Trophy, LifeBuoy, FileText, PencilLine, ArrowRight } from "lucide-react";
+import { Sparkles, KeyRound, GraduationCap, Play, BookOpen, Flame, ClipboardList, Trophy, LifeBuoy, FileText, PencilLine, ArrowRight, Import, Bot } from "lucide-react";
 import { api } from "../lib/api.js";
 import { useLang, useLangValue } from "../lib/i18n.js";
 import { celebrate } from "../lib/celebration.js";
@@ -42,7 +42,8 @@ export interface BootGuidePanelProps {
   onResume: (courseId: string, nodeId: string | null) => void;
   /** 打开复习抽屉(带到期项最多的课程 id——未选课时宿主先切课再开,否则抽屉是空的) */
   onOpenReview: (reviewCourseId: string | null) => void;
-  onOpenSettings: () => void;
+  /** 打开设置(带定位区段:如 "companion" → 滚动到伴学伙伴区) */
+  onOpenSettings: (section?: string) => void;
   /** 跳节点:卡点/快毕业/考试 */
   onGotoNode: (nodeId: string, target: "friction" | "near_mastery" | "exam") => void;
   /** 去左栏选课/导入(含 T3 切栏) */
@@ -55,6 +56,8 @@ const ACTION_ICON: Record<string, ReactNode> = {
   wizard_next: <ArrowRight size={16} />,
   settings_llm: <KeyRound size={16} />,
   pick_course: <BookOpen size={16} />,
+  start_import: <Import size={16} />,
+  companion_settings: <Bot size={16} />,
   resume: <Play size={16} />,
   review: <ClipboardList size={16} />,
   goto_node: <LifeBuoy size={16} />,
@@ -144,14 +147,16 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
     (kind: string, target?: string) => {
       if (!boot) return;
       if (kind === "wizard_next") {
-        /* course_pick 是向导末步:第二动作(完成)此前是 no-op 死按钮——收尾即置 boot_done 离场 */
-        if (guide?.scene === "course_pick") {
-          finishBoot();
-          return;
-        }
         setWizardStep((s) => Math.min(BOOT_WIZARD_STEPS - 1, s + 1));
       } else if (kind === "settings_llm") {
         props.onOpenSettings();
+      } else if (kind === "start_import") {
+        // 向导末步主动作:左栏开导入页,伴学解除中栏召唤飞回左栏老家指引
+        companionZoneFocus(false);
+        companionNodePoint();
+        props.onPickCourse();
+      } else if (kind === "companion_settings") {
+        props.onOpenSettings("companion");
       } else if (kind === "pick_course") {
         finishBoot();
         props.onPickCourse();

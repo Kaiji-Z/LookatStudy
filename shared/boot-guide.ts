@@ -22,13 +22,15 @@ export type BootScene =
   | "ready_room";
 
 export type BootActionKind =
-  | "wizard_next"    // 向导下一步
-  | "settings_llm"   // 直达设置页 LLM 配置区
-  | "pick_course"    // 去左栏选课/导入
-  | "resume"         // 一键恢复上次课程+节点
-  | "review"         // 打开复习
-  | "goto_node"      // 跳到指定节点（卡点/快毕业/考试各带 target）
-  | "edit_profile";  // 编辑/补全画像
+  | "wizard_next"        // 向导下一步
+  | "settings_llm"       // 直达设置页 LLM 配置区
+  | "pick_course"        // 去左栏选课(就绪教室/回访)
+  | "start_import"       // 开始导入(向导末步:左栏开导入页+伴学飞左栏指引)
+  | "companion_settings" // 打开设置并定位伴学伙伴区(向导末步第二动作)
+  | "resume"             // 一键恢复上次课程+节点
+  | "review"             // 打开复习
+  | "goto_node"          // 跳到指定节点（卡点/快毕业/考试各带 target）
+  | "edit_profile";      // 编辑/补全画像
 
 export interface BootAction {
   kind: BootActionKind;
@@ -145,8 +147,8 @@ function wizardScene(inputs: BootGuideInputs): BootGuideState {
       { key: "boot.pick.desc" },
     ],
     actions: [
-      { kind: "pick_course", labelKey: "boot.action.pick_course" },
-      { kind: "wizard_next", labelKey: "boot.action.finish" },
+      { kind: "start_import", labelKey: "boot.action.start_import" },
+      { kind: "companion_settings", labelKey: "boot.action.companion" },
     ],
     welcomeBack: false,
   };

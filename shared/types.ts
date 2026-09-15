@@ -495,6 +495,7 @@ import type {
 } from "./speech-types";
 import type { CutPackManifest as CompanionCutManifestT, CompanionVehicleId as CompanionVehicleIdT } from "./companion-cut";
 import type { LearnerProfile } from "./learner-profile";
+import type { LearnerProfilePatch } from "./learner-profile";
 import type { BootStateResult } from "./boot-guide";
 
 /** Shimeji 包 manifest(渲染层运行时:帧+动作+行为,SPEC-shimeji.md §4) */
@@ -783,6 +784,13 @@ export interface ApiExpose {
   profileSet(profile: LearnerProfile): Promise<void>;
   /** 开屏输入聚合(单往返):状态机输入 + 动作目标 id;只读。 */
   bootGetState(): Promise<BootStateResult>;
+  /* 个人资料窗口(v0.36 profile-window) */
+  /** 画像类提议列表(全状态,最新在前,上限 10)——"AI 建议的"区数据源。 */
+  profileListProposals(): Promise<ProfileProposalItem[]>;
+  /** 全量记忆分组("AI 记住的"区数据源;memory_system flag 门控由渲染层做)。 */
+  memoryListAll(): Promise<MemoryInventoryView>;
+  /** 删除指定记忆槽(用户纠正 AI 记忆);返回是否真删了。 */
+  memoryDeleteSlot(id: string): Promise<boolean>;
   /** v0.11 桌宠:切换桌宠窗点击穿透(true=穿透还原桌面操作,false=可交互生物)。
    *  渲染层指针热区检测调用;web 运行时无桌宠窗,no-op。 */
   companionPetSetClickThrough(passThrough: boolean): Promise<void>;
@@ -1084,6 +1092,24 @@ export type SettingKey =
   | "learner_profile" | "boot_done" | "key_prompt_count" | "last_session";
 
 /** 轻量更新检查结果(只提示,不自动下载安装)。 */
+/* ---------- 个人资料窗口(v0.36 profile-window) ---------- */
+
+/** 画像类提议视图(渲染层展示用)。 */
+export interface ProfileProposalItem {
+  id: string;
+  status: string;
+  rationale: string | null;
+  createdAt: string;
+  patch: LearnerProfilePatch;
+}
+
+/** 全量记忆分组视图。 */
+export interface MemoryInventoryView {
+  global: { id: string; summary: string } | null;
+  patterns: Array<{ id: string; summary: string; courseId: string | null }>;
+  nodes: Array<{ id: string; summary: string; nodeId: string | null }>;
+}
+
 export interface UpdateInfo {
   current: string;
   latest: string;

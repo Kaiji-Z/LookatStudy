@@ -16,7 +16,7 @@
  * DB 注入式，便于无头测试。
  */
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import * as schema from "../db/schema.js";
 import {
   proposals as proposalsTable,
@@ -176,6 +176,50 @@ export function applyProposal(db: Db, id: string): Proposal {
     ),
     applyError: firstError,
   };
+}
+
+/* ---------- 画像提议查询(个人资料窗口消费点, SPEC §2b) ---------- */
+
+/** 画像提议视图(渲染层展示用;patch 即 AI 建议的修改内容)。 */
+export interface ProfileProposalView {
+  id: string;
+  status: string;
+  rationale: string | null;
+  createdAt: string;
+  patch: LearnerProfilePatch;
+}
+
+/**
+ * 列出画像类提议(全状态,最新在前,上限 limit)。
+ * 个人资料窗口的"AI 建议的"区数据源:pending 展示建议卡,applied/rejected/stale
+ * 作历史(操作可追溯)。
+ */
+export function listProfileProposals(db: Db, limit = 10): ProfileProposalView[] {
+  const rows = db
+    .select()
+    .from(proposalsTable)
+    .orderBy(desc(proposalsTable.createdAt))
+    .all();
+  const out: ProfileProposalView[] = [];
+  for (const r of rows) {
+    let ops: LearningOperation[] = [];
+    try {
+      ops = JSON.parse(r.operationsJson);
+    } catch {
+      continue;
+    }
+    const profileOp = ops.find((op) => op.type === "update_learner_profile");
+    if (!profileOp?.profilePatch) continue;
+    out.push({
+      id: r.id,
+      status: r.status,
+      rationale: r.rationale ?? null,
+      createdAt: r.createdAt,
+      patch: profileOp.profilePatch,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 /** Reject：学习者拒绝整个提议。不改任何状态。 */

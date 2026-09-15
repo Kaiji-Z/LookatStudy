@@ -40,6 +40,9 @@ export function ProfileEditForm({ t, locale, profile, onSave, onCancel, testIdPr
   const [p, setP] = useState<LearnerProfile>({ ...profile, style: { ...profile.style } });
   const isEn = locale === "en";
   const patch = (next: Partial<LearnerProfile>) => setP((cur) => ({ ...cur, ...next }));
+  /* 兴趣输入的原始文本态:显示不再从 parse→join 重导出(旧实现每敲一个分隔符就被吞掉) */
+  const [interestsText, setInterestsText] = useState(() => profile.interests?.join(isEn ? ", " : "、") ?? "");
+  const interestsSep = isEn ? ", " : "、";
 
   const setSceneAnswer = (dim: StyleDim, value: string) =>
     setP((cur) => ({ ...cur, style: { ...cur.style, [dim]: value } }));
@@ -74,13 +77,15 @@ export function ProfileEditForm({ t, locale, profile, onSave, onCancel, testIdPr
 
       <div className="flex flex-col gap-2">
         {STYLE_SCENE_QUESTIONS.map((q) => (
-          <div key={q.dim} className="flex flex-col gap-1">
+          <div key={q.dim} className="flex flex-col gap-1" role="radiogroup" aria-label={isEn ? q.en : q.zh}>
             <div className="text-label text-ink">{isEn ? q.en : q.zh}</div>
             <div className="flex gap-2">
               {[q.a, q.b].map((opt) => (
                 <button
                   key={opt.value}
-                  className={p.style[q.dim] === opt.value ? "btn-3d-brand flex-1 text-left" : "btn-3d-neutral flex-1 text-left"}
+                  role="radio"
+                  aria-checked={p.style[q.dim] === opt.value}
+                  className={p.style[q.dim] === opt.value ? "btn-3d-brand flex-1 text-left px-3 py-2" : "btn-3d-neutral flex-1 text-left px-3 py-2"}
                   onClick={() => setSceneAnswer(q.dim, opt.value)}
                   data-testid={tid(`scene-${q.dim}`)}
                 >
@@ -94,11 +99,13 @@ export function ProfileEditForm({ t, locale, profile, onSave, onCancel, testIdPr
 
       <div className="flex flex-col gap-1">
         <span className="text-label text-ink">{t("boot.card.motive.label")}</span>
-        <div className="grid grid-cols-1 gap-1.5">
+        <div className="grid grid-cols-1 gap-1.5" role="radiogroup" aria-label={t("boot.card.motive.label")}>
           {MOTIVE_STAGES.map((m) => (
             <button
               key={m}
-              className={p.motiveStage === m ? "btn-3d-brand text-left" : "btn-3d-neutral text-left"}
+              role="radio"
+              aria-checked={p.motiveStage === m}
+              className={p.motiveStage === m ? "btn-3d-brand text-left px-3 py-2.5" : "btn-3d-neutral text-left px-3 py-2.5"}
               onClick={() => patch({ motiveStage: m })}
               data-testid={tid(`motive-${m}`)}
             >
@@ -107,7 +114,7 @@ export function ProfileEditForm({ t, locale, profile, onSave, onCancel, testIdPr
           ))}
         </div>
         {p.motiveStage && (
-          <div className="rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid={tid("motive-flip")}>
+          <div className="reveal-enter rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid={tid("motive-flip")}>
             <div className="text-label text-ink-muted">{motiveDisplay(p.motiveStage, locale).tagline}</div>
             <div className="text-label text-accent">{motiveDisplay(p.motiveStage, locale).bot}</div>
           </div>
@@ -119,8 +126,12 @@ export function ProfileEditForm({ t, locale, profile, onSave, onCancel, testIdPr
         <input
           className="bg-surface-0 rounded-lg px-3 py-2 text-body text-ink outline-none focus:ring-2 focus:ring-accent"
           placeholder={t("boot.card.interests.placeholder")}
-          value={p.interests?.join(isEn ? ", " : "、") ?? ""}
-          onChange={(e) => patch({ interests: parseInterestsInput(e.target.value) })}
+          value={interestsText}
+          onChange={(e) => {
+            setInterestsText(e.target.value);
+            patch({ interests: parseInterestsInput(e.target.value) });
+          }}
+          onBlur={() => setInterestsText(p.interests?.join(interestsSep) ?? "")}
           data-testid={tid("interests")}
         />
       </label>
@@ -139,15 +150,15 @@ export function ProfileEditForm({ t, locale, profile, onSave, onCancel, testIdPr
 
       <div className="flex gap-2">
         <button
-          className="btn-3d-brand inline-flex items-center gap-1.5"
-          onClick={() => onSave({ ...p, updatedAt: new Date().toISOString() })}
+          className="btn-3d-brand inline-flex items-center gap-1.5 px-4 py-2"
+          onClick={() => onSave({ ...p, interests: parseInterestsInput(interestsText), updatedAt: new Date().toISOString() })}
           data-testid={tid("save")}
         >
           <ArrowRight size={16} />
           {t("boot.profile.save")}
         </button>
         {onCancel && (
-          <button className="btn-3d-neutral inline-flex items-center gap-1.5" onClick={onCancel}>
+          <button className="btn-3d-neutral inline-flex items-center gap-1.5 px-4 py-2" onClick={onCancel}>
             <X size={16} />
             {t("boot.profile.cancel")}
           </button>
@@ -174,20 +185,15 @@ export function MbtiPickerInline({ t, locale, value, style, onPick, onSceneAnswe
   return (
     <div className="flex flex-col gap-2">
       <span className="text-label text-ink">{t("boot.card.mbti.label")}</span>
-      {value && (
-        <div className="rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid="boot-mbti-flip">
-          <div className="text-label font-bold text-ink">{value} · {mbtiDisplay(value, locale).name}</div>
-          <div className="text-label text-ink-muted">{mbtiDisplay(value, locale).tagline}</div>
-          <div className="text-label text-accent">{mbtiDisplay(value, locale).bot}</div>
-        </div>
-      )}
       {mode === "grid" || hideSceneToggle ? (
         <>
-          <div className="grid grid-cols-4 gap-1.5" data-testid="boot-mbti-grid">
+          <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label={t("boot.card.mbti.label")} data-testid="boot-mbti-grid">
             {MBTI_TYPES.map((m) => (
               <button
                 key={m}
-                className={value === m ? "btn-3d-brand text-label" : "btn-3d-neutral text-label"}
+                role="radio"
+                aria-checked={value === m}
+                className={value === m ? "btn-3d-brand text-label px-1 py-2.5" : "btn-3d-neutral text-label px-1 py-2.5"}
                 onClick={() => onPick(m)}
                 data-testid={`boot-mbti-${m}`}
               >
@@ -196,13 +202,27 @@ export function MbtiPickerInline({ t, locale, value, style, onPick, onSceneAnswe
             ))}
           </div>
           {!hideSceneToggle && (
-            <button className="text-label text-accent underline underline-offset-2 self-start" onClick={() => setMode("scene")} data-testid="boot-mbti-dontknow">
+            <button className="text-label text-accent underline underline-offset-2 self-start px-1 py-1" onClick={() => setMode("scene")} data-testid="boot-mbti-dontknow">
               {t("boot.card.mbti.dontknow")}
             </button>
           )}
+          {/* 翻卡在选项下方:确认反馈不把选项推走(旧版插在标签与网格之间,选择中 layout 跳动) */}
+          {value && (
+            <div className="reveal-enter rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid="boot-mbti-flip">
+              <div className="text-label font-bold text-ink">{value} · {mbtiDisplay(value, locale).name}</div>
+              <div className="text-label text-ink-muted">{mbtiDisplay(value, locale).tagline}</div>
+              <div className="text-label text-accent">{mbtiDisplay(value, locale).bot}</div>
+            </div>
+          )}
         </>
       ) : (
-        <SceneQuestions isEn={isEn} style={style} onAnswer={onSceneAnswer} />
+        <>
+          <SceneQuestions isEn={isEn} style={style} onAnswer={onSceneAnswer} />
+          {/* 反向出口:场景题答不顺可回到 16 宫格(旧版单向切换有去无回) */}
+          <button className="text-label text-accent underline underline-offset-2 self-start px-1 py-1" onClick={() => setMode("grid")} data-testid="boot-mbti-back">
+            {t("boot.card.mbti.back")}
+          </button>
+        </>
       )}
     </div>
   );
@@ -218,13 +238,15 @@ function SceneQuestions({ isEn, style, onAnswer }: {
   return (
     <div className="flex flex-col gap-2" data-testid="boot-scene-questions">
       {STYLE_SCENE_QUESTIONS.map((q) => (
-        <div key={q.dim} className="flex flex-col gap-1">
+        <div key={q.dim} className="flex flex-col gap-1" role="radiogroup" aria-label={isEn ? q.en : q.zh}>
           <div className="text-label text-ink">{isEn ? q.en : q.zh}</div>
           <div className="flex gap-2">
             {[q.a, q.b].map((opt) => (
               <button
                 key={opt.value}
-                className={style[q.dim] === opt.value ? "btn-3d-brand flex-1 text-left text-label" : "btn-3d-neutral flex-1 text-left text-label"}
+                role="radio"
+                aria-checked={style[q.dim] === opt.value}
+                className={style[q.dim] === opt.value ? "btn-3d-brand flex-1 text-left text-label px-3 py-2" : "btn-3d-neutral flex-1 text-left text-label px-3 py-2"}
                 onClick={() => onAnswer(q.dim, opt.value)}
               >
                 {isEn ? opt.en : opt.zh}

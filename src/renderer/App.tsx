@@ -1569,14 +1569,14 @@ function HeaderAvatar({ profileName, onOpenProfile }: { profileName: string | nu
       onClick={onOpenProfile}
       data-testid="header-profile"
       aria-label={t("profile.header.open")}
-      title={profileName ?? t("profile.header.open")}
-      className="w-8 h-8 flex items-center justify-center rounded-full transition-transform hover:scale-105 shrink-0"
+      data-tooltip={t("profile.header.open")}
+      className="w-9 h-9 flex items-center justify-center rounded-full transition-transform hover:scale-105 shrink-0"
       style={av ? { backgroundColor: av.bg, color: av.fg } : undefined}
     >
       {av ? (
         <span className="text-label font-bold leading-none">{av.initial}</span>
       ) : (
-        <User className="w-4 h-4 text-neutral-500 dark:text-neutral-400" aria-hidden="true" />
+        <User className="w-4 h-4 text-ink-muted" aria-hidden="true" />
       )}
     </button>
   );

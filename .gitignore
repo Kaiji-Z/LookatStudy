@@ -90,3 +90,4 @@ scripts/fixtures/pptx-corpus/
 .verify-shimeji-data/
 .shimeji-research/
 .highlight-test-result.json
+.impeccable/

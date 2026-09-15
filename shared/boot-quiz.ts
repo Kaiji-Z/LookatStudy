@@ -9,6 +9,8 @@
 
 export interface BootQuizItem {
   id: string;
+  /** 更站得住脚的一侧(reveal 的褒义方向)——庆祝粒子只在该侧触发,防"差一点!"配 correct 庆祝的动效矛盾 */
+  better: "a" | "b";
   zh: { q: string; a: string; b: string; revealA: string; revealB: string };
   en: { q: string; a: string; b: string; revealA: string; revealB: string };
 }
@@ -16,6 +18,7 @@ export interface BootQuizItem {
 export const BOOT_QUIZ_BANK: BootQuizItem[] = [
   {
     id: "cable-vs-wifi",
+    better: "a",
     zh: {
       q: "同样一段数据，走网线还是走 WiFi，哪个延迟更低？",
       a: "网线",
@@ -33,6 +36,7 @@ export const BOOT_QUIZ_BANK: BootQuizItem[] = [
   },
   {
     id: "http-vs-https",
+    better: "a",
     zh: {
       q: "浏览器地址栏的 https 里的 s，保护的是哪一段？",
       a: "你电脑到网站之间的传输",
@@ -50,6 +54,7 @@ export const BOOT_QUIZ_BANK: BootQuizItem[] = [
   },
   {
     id: "ram-vs-disk",
+    better: "b",
     zh: {
       q: "断电后数据还在的是？",
       a: "内存（RAM）",
@@ -67,6 +72,7 @@ export const BOOT_QUIZ_BANK: BootQuizItem[] = [
   },
   {
     id: "compile-vs-run",
+    better: "b",
     zh: {
       q: "你写的代码，CPU 直接执行的是？",
       a: "你敲的源代码",
@@ -84,6 +90,7 @@ export const BOOT_QUIZ_BANK: BootQuizItem[] = [
   },
   {
     id: "shortcut-ctrl-z",
+    better: "a",
     zh: {
       q: "Ctrl+Z 撤销的是？",
       a: "上一次操作",
@@ -101,6 +108,7 @@ export const BOOT_QUIZ_BANK: BootQuizItem[] = [
   },
   {
     id: "cache-purpose",
+    better: "a",
     zh: {
       q: "为什么删了缓存，下次打开 app 反而更慢？",
       a: "缓存是提前备好的常用数据",
@@ -119,11 +127,11 @@ export const BOOT_QUIZ_BANK: BootQuizItem[] = [
 ];
 
 /** 按日期确定性选题：同一天所有人同一题（seed=YYYY-MM-DD）。 */
-export function pickBootQuiz(dateISODate: string, locale: string): { id: string; q: string; a: string; b: string; revealA: string; revealB: string } {
+export function pickBootQuiz(dateISODate: string, locale: string): { id: string; q: string; a: string; b: string; revealA: string; revealB: string; better: "a" | "b" } {
   const item = BOOT_QUIZ_BANK[quizIndexForDate(dateISODate, BOOT_QUIZ_BANK.length)];
   return locale === "en"
-    ? { id: item.id, q: item.en.q, a: item.en.a, b: item.en.b, revealA: item.en.revealA, revealB: item.en.revealB }
-    : { id: item.id, q: item.zh.q, a: item.zh.a, b: item.zh.b, revealA: item.zh.revealA, revealB: item.zh.revealB };
+    ? { id: item.id, q: item.en.q, a: item.en.a, b: item.en.b, revealA: item.en.revealA, revealB: item.en.revealB, better: item.better }
+    : { id: item.id, q: item.zh.q, a: item.zh.a, b: item.zh.b, revealA: item.zh.revealA, revealB: item.zh.revealB, better: item.better };
 }
 
 /** 日期字符串 → 稳定桶下标（FNV-1a，对任意字符串确定）。 */

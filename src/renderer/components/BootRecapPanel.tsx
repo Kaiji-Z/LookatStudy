@@ -33,7 +33,7 @@ export function BootRecapPanel() {
     /* notebook-panel:未选课态右栏 pane 身份锚(ui-test waitRender/T3 断言依赖;
        与 NotebookPanel 互斥渲染,selectedCourseId 翻转时二者只有一个在场,无重复) */
     <div className="h-full overflow-y-auto px-5 py-8" data-testid="notebook-panel">
-    <div className="h-full overflow-y-auto" data-testid="boot-recap" data-mode={hasData ? "recap" : "tips"}>
+    <div className="h-full" data-testid="boot-recap" data-mode={hasData ? "recap" : "tips"}>
       <div className="mx-auto max-w-sm flex flex-col gap-4">
         {hasData && recap ? (
           <section className="surface-card rounded-2xl p-5 shadow-card flex flex-col gap-4" data-testid="boot-recap-card">
@@ -42,24 +42,25 @@ export function BootRecapPanel() {
               <div className="rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid="boot-recap-xp">
                 <Zap size={18} className="text-brand self-center" />
                 <div className="text-title font-bold text-ink">{recap.totalXp}</div>
-                <div className="text-caption text-ink-faint">{t("boot.recap.total_xp")}</div>
+                <div className="text-caption text-ink-muted">{t("boot.recap.total_xp")}</div>
               </div>
               <div className="rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid="boot-recap-mastered">
                 <Crown size={18} className="text-gold self-center" />
                 <div className="text-title font-bold text-ink">{recap.masteredCount}</div>
-                <div className="text-caption text-ink-faint">{t("boot.recap.mastered")}</div>
+                <div className="text-caption text-ink-muted">{t("boot.recap.mastered")}</div>
               </div>
               <div className="rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid="boot-recap-streak">
-                <Flame size={18} className="text-warning self-center" />
+                <Flame size={18} className="text-review self-center" />
                 <div className="text-title font-bold text-ink">{recap.streakDays}</div>
-                <div className="text-caption text-ink-faint">{t("boot.recap.streak_days")}</div>
+                <div className="text-caption text-ink-muted">{t("boot.recap.streak_days")}</div>
               </div>
             </div>
             {boot?.lastSession && (
               <div className="flex items-start gap-2 text-label text-ink-muted" data-testid="boot-recap-recent">
                 <BookOpen size={15} className="shrink-0 mt-0.5 text-accent" />
                 <span>
-                  {t("boot.recap.recent")}:「{boot.lastSession.courseTitle}」
+                  {t("boot.recap.recent")}
+                  {locale === "en" ? `: "${boot.lastSession.courseTitle}"` : `：「${boot.lastSession.courseTitle}」`}
                   {boot.lastSession.nodeTitle ? ` · ${boot.lastSession.nodeTitle}` : ""}
                 </span>
               </div>

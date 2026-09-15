@@ -67,7 +67,7 @@ const SCENE_ICON: Record<string, ReactNode> = {
   course_pick: <BookOpen size={22} className="text-brand" />,
   resume_last: <Play size={22} className="text-brand" />,
   review_due: <ClipboardList size={22} className="text-accent" />,
-  streak_danger: <Flame size={22} className="text-warning" />,
+  streak_danger: <Flame size={22} className="text-review" />,
   friction_revisit: <LifeBuoy size={22} className="text-accent" />,
   near_mastery: <Trophy size={22} className="text-gold" />,
   exam_suspended: <FileText size={22} className="text-warning" />,
@@ -143,6 +143,11 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
     (kind: string, target?: string) => {
       if (!boot) return;
       if (kind === "wizard_next") {
+        /* course_pick 是向导末步:第二动作(完成)此前是 no-op 死按钮——收尾即置 boot_done 离场 */
+        if (guide?.scene === "course_pick") {
+          finishBoot();
+          return;
+        }
         setWizardStep((s) => Math.min(BOOT_WIZARD_STEPS - 1, s + 1));
       } else if (kind === "settings_llm") {
         props.onOpenSettings();
@@ -165,7 +170,7 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
         setEditing(true);
       }
     },
-    [boot, finishBoot, props],
+    [boot, guide, finishBoot, props],
   );
 
   if (!boot || !guide) {
@@ -176,11 +181,11 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
     );
   }
 
-  /* 称呼插值:{name}今天… → name 为空时模板自然收干净(name 已含后缀逗号或空) */
+  /* 称呼插值:{name}今天… → name 为空时模板自然收干净(逗号随 locale,en 用半角) */
   const namePrefix = (boot.name ?? "").trim();
   const decorateVars = (key: string, vars?: Record<string, string | number>) => {
     const v = { ...vars };
-    if ("name" in v) v.name = namePrefix ? `${namePrefix}，` : "";
+    if ("name" in v) v.name = namePrefix ? (locale === "en" ? `${namePrefix}, ` : `${namePrefix}，`) : "";
     return t(key, v);
   };
 
@@ -191,7 +196,7 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
       data-scene={guide.scene}
       data-boot-done={boot.bootDone ? "1" : "0"}
     >
-      <div className="mx-auto max-w-md flex flex-col gap-4" data-testid="boot-guide" data-companion-anchor="boot-guide">
+      <div className="mx-auto max-w-md flex flex-col gap-4" data-companion-anchor="boot-guide">
         {guide.welcomeBack && !editing && (
           <div className="text-center text-body text-accent font-bold" data-testid="boot-welcome-back">
             {decorateVars("boot.welcome_back")}
@@ -199,6 +204,8 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
         )}
 
         {/* ===== 场景主卡 ===== */}
+        {/* 向导三问步(profile_quiz):场景卡只留题面,动作行与外层步进点让位给子卡流
+            (此前双卡双主按钮,且上卡"继续"实为跳过整场问答——语义错位) */}
         {!editing && (
           <section
             className="surface-card rounded-2xl p-6 shadow-card flex flex-col gap-4"
@@ -221,24 +228,26 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
               <ProfileSummary t={t} locale={locale} profile={profile} onEdit={() => setEditing(true)} />
             )}
 
-            <div className="flex flex-wrap gap-2 mt-1">
-              {guide.actions.map((a) => (
-                <button
-                  key={a.kind + (a.target ?? "")}
-                  className={a === guide.actions[0]
-                    ? "btn-3d-brand inline-flex items-center gap-1.5"
-                    : "btn-3d-neutral inline-flex items-center gap-1.5"}
-                  onClick={() => runAction(a.kind, a.target)}
-                  data-testid={`boot-action-${a.kind}`}
-                >
-                  {ACTION_ICON[a.kind]}
-                  {t(a.labelKey, a.kind === "review" && boot.dueCount > 0 ? { n: boot.dueCount } : undefined)}
-                </button>
-              ))}
-            </div>
+            {!(guide.scene === "profile_quiz" && wizardStep === 2) && (
+              <div className="flex flex-wrap gap-2 mt-1">
+                {guide.actions.map((a) => (
+                  <button
+                    key={a.kind + (a.target ?? "")}
+                    className={a === guide.actions[0]
+                      ? "btn-3d-brand inline-flex items-center gap-1.5 px-4 py-2"
+                      : "btn-3d-neutral inline-flex items-center gap-1.5 px-4 py-2"}
+                    onClick={() => runAction(a.kind, a.target)}
+                    data-testid={`boot-action-${a.kind}`}
+                  >
+                    {ACTION_ICON[a.kind]}
+                    {t(a.labelKey, a.kind === "review" && boot.dueCount > 0 ? { n: boot.dueCount } : undefined)}
+                  </button>
+                ))}
+              </div>
+            )}
 
-            {/* 向导步进指示 */}
-            {!boot.bootDone && (
+            {/* 向导步进指示(三问步隐藏:子卡有自己的 1/3→3/3 子步进,避免外层点冻结在原位) */}
+            {!boot.bootDone && !(guide.scene === "profile_quiz" && wizardStep === 2) && (
               <div className="flex gap-1.5" data-testid="boot-wizard-dots">
                 {Array.from({ length: BOOT_WIZARD_STEPS }).map((_, i) => (
                   <span
@@ -263,13 +272,23 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
           />
           </div>
         ) : !boot.bootDone && wizardStep === 2 ? (
-          <WizardQuizCards
-            t={t}
-            locale={locale}
-            profile={profile}
-            onPatch={(patch) => saveProfile({ ...profile, ...patch, style: { ...profile.style, ...patch.style }, updatedAt: new Date().toISOString() })}
-            onFinish={() => { finishBoot(); setWizardStep(3); }}
-          />
+          <>
+            <WizardQuizCards
+              t={t}
+              locale={locale}
+              profile={profile}
+              onPatch={(patch) => saveProfile({ ...profile, ...patch, style: { ...profile.style, ...patch.style }, updatedAt: new Date().toISOString() })}
+              onFinish={() => { finishBoot(); setWizardStep(3); }}
+            />
+            {/* 诚实出口:整场三问可整体跳过(此前藏在场景卡"继续"里,语义错位) */}
+            <button
+              className="self-start text-label text-ink-faint hover:text-ink transition-colors px-1 py-1.5"
+              onClick={() => runAction("wizard_next")}
+              data-testid="boot-wizard-skip-quiz"
+            >
+              {t("boot.action.skip_quiz")}
+            </button>
+          </>
         ) : null}
       </div>
     </div>
@@ -285,7 +304,7 @@ function ProfileSummary({ t, locale, profile, onEdit }: {
   onEdit: () => void;
 }) {
   const missing = [
-    !profile.name, !profile.mbti, !profile.motiveStage,
+    !profile.name, !profile.mbti, !profile.motiveStage, !(profile.interests?.length),
     !profile.style.start, !profile.style.interaction, !profile.style.feedback, !profile.style.pacing,
     !profile.freeNote,
   ].filter(Boolean).length;
@@ -313,6 +332,10 @@ function ProfileSummary({ t, locale, profile, onEdit }: {
           {profile.motiveStage
             ? `${motiveDisplay(profile.motiveStage, locale).name}——${motiveDisplay(profile.motiveStage, locale).tagline}`
             : t("boot.profile.field.unset")}
+        </dd>
+        <dt className="text-ink-faint">{t("profile.field.interests")}</dt>
+        <dd className="text-ink">
+          {profile.interests?.length ? profile.interests.join(locale === "en" ? ", " : "、") : t("boot.profile.field.unset")}
         </dd>
         <dt className="text-ink-faint">{t("boot.profile.field.style")}</dt>
         <dd className="text-ink">{leaning || t("boot.profile.field.unset")}</dd>
@@ -342,11 +365,24 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
   const [card, setCard] = useState(0);
   const quiz = useMemo(() => pickBootQuiz(new Date().toISOString().slice(0, 10), locale), [locale]);
   const [quizPicked, setQuizPicked] = useState<"a" | "b" | null>(null);
+  /* 兴趣输入的原始文本态:显示不再从 parse→join 重导出(旧实现每敲一个分隔符就被吞掉) */
+  const [interestsText, setInterestsText] = useState(() => profile.interests?.join(locale === "en" ? ", " : "、") ?? "");
+  const interestsSep = locale === "en" ? ", " : "、";
+
+  /* 子步进 1/3→3/3(三问步隐藏外层四步点,进度语义由子卡自己承载) */
+  const subDots = (
+    <div className="flex gap-1.5" data-testid="boot-wizard-subdots">
+      {[0, 1, 2].map((i) => (
+        <span key={i} className={`h-1.5 rounded-full transition-all ${i === card ? "w-6 bg-brand" : "w-2 bg-neutral-300 dark:bg-neutral-700"}`} />
+      ))}
+    </div>
+  );
 
   /* 卡 1:称呼 + MBTI(滚轮/场景题/跳过) */
   if (card === 0) {
     return (
       <section className="surface-card rounded-2xl p-6 shadow-card flex flex-col gap-4" data-testid="boot-wizard-card1">
+        {subDots}
         <label className="flex flex-col gap-1">
           <span className="text-label text-ink-faint">{t("boot.card.name.label")}</span>
           <input
@@ -365,7 +401,7 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
           onPick={(mbti) => { companionNodePoint(); onPatch({ mbti, style: expandMbtiToStyle(mbti) }); }}
           onSceneAnswer={(dim, value) => onPatch({ style: { [dim]: value } as Partial<LearnerProfile["style"]> })}
         />
-        <button className="btn-3d-brand self-start" onClick={() => setCard(1)} data-testid="boot-wizard-next1">
+        <button className="btn-3d-brand self-start px-4 py-2" onClick={() => setCard(1)} data-testid="boot-wizard-next1">
           {profile.mbti || profile.style.start ? t("boot.card.mbti.next") : t("boot.card.mbti.skip")}
         </button>
       </section>
@@ -376,14 +412,17 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
   if (card === 1) {
     return (
       <section className="surface-card rounded-2xl p-6 shadow-card flex flex-col gap-4" data-testid="boot-wizard-card2">
+        {subDots}
         <div className="text-title font-bold text-ink">
           {profile.name ? t("boot.card.motive.named", { name: profile.name }) : t("boot.card.motive.label")}
         </div>
-        <div className="grid grid-cols-1 gap-1.5" data-testid="boot-motive-grid">
+        <div className="grid grid-cols-1 gap-1.5" role="radiogroup" aria-label={t("boot.card.motive.label")} data-testid="boot-motive-grid">
           {MOTIVE_STAGES.map((m) => (
             <button
               key={m}
-              className={profile.motiveStage === m ? "btn-3d-brand text-left" : "btn-3d-neutral text-left"}
+              role="radio"
+              aria-checked={profile.motiveStage === m}
+              className={profile.motiveStage === m ? "btn-3d-brand text-left px-3 py-2.5" : "btn-3d-neutral text-left px-3 py-2.5"}
               onClick={() => { companionNodePoint(); onPatch({ motiveStage: m }); }}
               data-testid={`boot-wizard-motive-${m}`}
             >
@@ -392,7 +431,7 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
           ))}
         </div>
         {profile.motiveStage && (
-          <div className="rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid="boot-motive-flip">
+          <div className="reveal-enter rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid="boot-motive-flip">
             <div className="text-label text-ink-muted">{motiveDisplay(profile.motiveStage, locale).tagline}</div>
             <div className="text-label text-accent">{motiveDisplay(profile.motiveStage, locale).bot}</div>
           </div>
@@ -402,35 +441,45 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
           <input
             className="bg-surface-0 rounded-lg px-3 py-2 text-body text-ink outline-none focus:ring-2 focus:ring-accent"
             placeholder={t("boot.card.interests.placeholder")}
-            value={profile.interests?.join(locale === "en" ? ", " : "、") ?? ""}
-            onChange={(e) => onPatch({ interests: parseInterestsInput(e.target.value) })}
+            value={interestsText}
+            onChange={(e) => {
+              setInterestsText(e.target.value);
+              onPatch({ interests: parseInterestsInput(e.target.value) });
+            }}
+            onBlur={() => setInterestsText(profile.interests?.join(interestsSep) ?? "")}
             data-testid="boot-wizard-interests"
           />
         </label>
-        <button className="btn-3d-brand self-start" onClick={() => setCard(2)} data-testid="boot-wizard-next2">
+        <button className="btn-3d-brand self-start px-4 py-2" onClick={() => setCard(2)} data-testid="boot-wizard-next2">
           {t("boot.card.motive.next")}
         </button>
       </section>
     );
   }
 
-  /* 卡 3:来,过一招(试玩题,不计分;答完 celebrate) */
+  /* 卡 3:来,过一招(试玩题,不计分;庆祝粒子只在更站得住的一侧触发——
+     旧版两侧都放 correct,与 reveal 文案"差一点!"矛盾) */
   return (
     <section className="surface-card rounded-2xl p-6 shadow-card flex flex-col gap-4" data-testid="boot-wizard-card3">
+      {subDots}
       <div className="text-title font-bold text-ink">{t("boot.card.quiz.label")}</div>
       <div className="text-body text-ink">{quiz.q}</div>
       {quizPicked === null ? (
-        <div className="flex gap-2">
+        <div className="flex gap-2" role="radiogroup" aria-label={quiz.q}>
           <button
-            className="btn-3d-brand flex-1"
-            onClick={() => { setQuizPicked("a"); celebrate("correct"); }}
+            role="radio"
+            aria-checked={false}
+            className="btn-3d-neutral flex-1 px-3 py-2.5"
+            onClick={() => { setQuizPicked("a"); if (quiz.better === "a") celebrate("correct"); }}
             data-testid="boot-wizard-quiz-a"
           >
             {quiz.a}
           </button>
           <button
-            className="btn-3d-neutral flex-1"
-            onClick={() => { setQuizPicked("b"); celebrate("correct"); }}
+            role="radio"
+            aria-checked={false}
+            className="btn-3d-neutral flex-1 px-3 py-2.5"
+            onClick={() => { setQuizPicked("b"); if (quiz.better === "b") celebrate("correct"); }}
             data-testid="boot-wizard-quiz-b"
           >
             {quiz.b}
@@ -438,10 +487,10 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
         </div>
       ) : (
         <>
-          <div className="rounded-xl bg-surface-0 p-3 text-label text-ink leading-relaxed" data-testid="boot-wizard-quiz-reveal">
+          <div className="reveal-enter rounded-xl bg-surface-0 p-3 text-label text-ink leading-relaxed" data-testid="boot-wizard-quiz-reveal">
             {quizPicked === "a" ? quiz.revealA : quiz.revealB}
           </div>
-          <button className="btn-3d-brand self-start inline-flex items-center gap-1.5" onClick={onFinish} data-testid="boot-wizard-finish">
+          <button className="btn-3d-brand self-start inline-flex items-center gap-1.5 px-4 py-2" onClick={onFinish} data-testid="boot-wizard-finish">
             <ArrowRight size={16} />
             {t("boot.card.quiz.next")}
           </button>

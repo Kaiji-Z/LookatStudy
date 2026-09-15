@@ -8,10 +8,12 @@
  * lazy chunk(App 按需加载);Propose→Apply 红线不动——apply 走既有 proposal:apply。
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Sparkles, Lightbulb, Brain, Trash2, History, ArrowRight, X } from "lucide-react";
+import { Sparkles, Lightbulb, Brain, Trash2, History, ArrowRight, X, CheckCircle2, Circle, Ban } from "lucide-react";
 import { api } from "../lib/api.js";
 import { useLang, useLangValue } from "../lib/i18n.js";
 import { useFocusTrap } from "../lib/useFocusTrap.js";
+import { useToast } from "./Toast.js";
+import { ConfirmCard } from "./ConfirmCard.js";
 import { ProfileEditForm } from "./ProfileEditForm.js";
 import {
   mbtiDisplay,
@@ -55,12 +57,25 @@ export default function PersonalProfileModal({ onClose, onProfileSaved }: Person
   const locale = lang === "en" ? "en" : "zh-CN";
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, true);
+  const toast = useToast();
 
   const [profile, setProfile] = useState<LearnerProfile | null>(null);
   const [proposals, setProposals] = useState<ProfileProposalItem[] | null>(null);
   const [memoryOn, setMemoryOn] = useState<boolean | null>(null);
   const [memory, setMemory] = useState<MemoryInventoryView | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 待确认删除的记忆 id(ConfirmCard 锚定其触发行) */
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const deleteBtnRefs = useRef(new Map<string, HTMLButtonElement>());
+
+  /* Esc 关闭(useFocusTrap 只管 Tab 循环;Esc 是模态弹窗的标准出口) */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const refreshProposals = useCallback(() => {
     void api.profileListProposals().then(setProposals).catch(() => setProposals([]));
@@ -80,9 +95,11 @@ export default function PersonalProfileModal({ onClose, onProfileSaved }: Person
   const saveProfile = useCallback(
     (p: LearnerProfile) => {
       setProfile(p);
-      void api.profileSet(p).then(() => onProfileSaved?.()).catch(() => {});
+      void api.profileSet(p)
+        .then(() => { toast.show(t("profile.saved"), { duration: 2500 }); onProfileSaved?.(); })
+        .catch(() => toast.show(t("profile.save_failed"), { duration: 3500 }));
     },
-    [onProfileSaved],
+    [onProfileSaved, toast, t],
   );
 
   const actProposal = useCallback(
@@ -113,32 +130,35 @@ export default function PersonalProfileModal({ onClose, onProfileSaved }: Person
 
   const deleteMemory = useCallback(
     async (id: string) => {
+      setConfirmDeleteId(null);
       setBusy(true);
       try {
         await api.memoryDeleteSlot(id);
         void api.memoryListAll().then(setMemory).catch(() => {});
+        toast.show(t("profile.memory.deleted"), { duration: 2500 });
       } finally {
         setBusy(false);
       }
     },
-    [],
+    [toast, t],
   );
 
   const pending = (proposals ?? []).filter((x) => x.status === "pending");
   const history = (proposals ?? []).filter((x) => x.status !== "pending");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="profile-modal">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose} data-testid="profile-modal">
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={t("profile.title")}
         className="w-[min(560px,94vw)] max-h-[86vh] overflow-y-auto rounded-2xl bg-surface-0 shadow-elevated p-6 flex flex-col gap-6"
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <div className="text-hero font-bold text-ink">{t("profile.title")}</div>
-          <button className="btn-3d-neutral inline-flex items-center gap-1" onClick={onClose} data-testid="profile-close">
+          <button className="btn-3d-neutral inline-flex items-center gap-1 px-3 py-2" onClick={onClose} data-testid="profile-close">
             <X size={16} />
             {t("action.close")}
           </button>
@@ -178,7 +198,7 @@ export default function PersonalProfileModal({ onClose, onProfileSaved }: Person
                   )}
                   <div className="flex gap-2">
                     <button
-                      className="btn-3d-brand inline-flex items-center gap-1"
+                      className="btn-3d-brand inline-flex items-center gap-1 px-3 py-2"
                       disabled={busy}
                       onClick={() => void actProposal(item.id, "apply")}
                       data-testid="profile-suggest-apply"
@@ -187,7 +207,7 @@ export default function PersonalProfileModal({ onClose, onProfileSaved }: Person
                       {t("profile.suggest.apply", { value: d?.value ?? "" })}
                     </button>
                     <button
-                      className="btn-3d-neutral"
+                      className="btn-3d-neutral px-3 py-2"
                       disabled={busy}
                       onClick={() => void actProposal(item.id, "reject")}
                       data-testid="profile-suggest-keep"
@@ -203,14 +223,18 @@ export default function PersonalProfileModal({ onClose, onProfileSaved }: Person
             <details className="rounded-xl bg-surface-1 p-3" data-testid="profile-suggest-history">
               <summary className="text-label font-bold text-ink cursor-pointer inline-flex items-center gap-1.5">
                 <History size={14} />
-                {t("profile.suggest.history")}（{history.length}）
+                {t("profile.suggest.history", { n: history.length })}
               </summary>
               <div className="mt-2 flex flex-col gap-1.5">
                 {history.map((h) => {
                   const d = describePatch(h.patch, locale, t);
                   return (
                     <div key={h.id} className="text-caption text-ink-muted flex items-start gap-1.5">
-                      <span className="shrink-0">{h.status === "applied" ? "✅" : h.status === "rejected" ? "⚪" : "⊘"}</span>
+                      {h.status === "applied"
+                        ? <CheckCircle2 size={13} className="shrink-0 mt-0.5 text-brand" />
+                        : h.status === "rejected"
+                          ? <Ban size={13} className="shrink-0 mt-0.5 text-ink-faint" />
+                          : <Circle size={13} className="shrink-0 mt-0.5 text-ink-faint" />}
                       <span>
                         {t("profile.suggest.title", { field: d?.field ?? "", value: d?.value ?? "" })}
                         {h.rationale ? ` — ${h.rationale}` : ""}
@@ -234,25 +258,27 @@ export default function PersonalProfileModal({ onClose, onProfileSaved }: Person
                 <div className="text-label font-bold text-ink mb-1">{t("profile.memory.off.title")}</div>
                 <div className="text-label text-ink-muted leading-relaxed">{t("profile.memory.off.desc")}</div>
               </div>
-              <button className="btn-3d-brand self-start" disabled={busy} onClick={() => void enableMemory()} data-testid="profile-memory-enable">
+              <button className="btn-3d-brand self-start px-4 py-2" disabled={busy} onClick={() => void enableMemory()} data-testid="profile-memory-enable">
                 {t("profile.memory.enable")}
               </button>
             </div>
           ) : (
             <div className="flex flex-col gap-3" data-testid="profile-memory-on">
-              <div className="text-caption text-ink-faint">{t("profile.memory.disclaimer")}</div>
+              <div className="text-caption text-ink-muted">{t("profile.memory.disclaimer")}</div>
               <MemoryGroup
                 t={t}
                 label={t("profile.memory.global")}
                 items={memory?.global ? [{ id: memory.global.id, text: memory.global.summary }] : []}
-                onDelete={(id) => void deleteMemory(id)}
+                onAskDelete={(id) => setConfirmDeleteId(id)}
+                registerBtn={(id, el) => { if (el) deleteBtnRefs.current.set(id, el); else deleteBtnRefs.current.delete(id); }}
                 busy={busy}
               />
               <MemoryGroup
                 t={t}
                 label={t("profile.memory.pattern")}
                 items={(memory?.patterns ?? []).map((m) => ({ id: m.id, text: m.summary }))}
-                onDelete={(id) => void deleteMemory(id)}
+                onAskDelete={(id) => setConfirmDeleteId(id)}
+                registerBtn={(id, el) => { if (el) deleteBtnRefs.current.set(id, el); else deleteBtnRefs.current.delete(id); }}
                 busy={busy}
               />
               <MemoryGroup
@@ -260,9 +286,21 @@ export default function PersonalProfileModal({ onClose, onProfileSaved }: Person
                 label={t("profile.memory.nodes")}
                 items={(memory?.nodes ?? []).slice(0, 8).map((m) => ({ id: m.id, text: m.summary }))}
                 extra={(memory?.nodes?.length ?? 0) > 8 ? t("profile.memory.more", { n: (memory?.nodes.length ?? 0) - 8 }) : undefined}
-                onDelete={(id) => void deleteMemory(id)}
+                onAskDelete={(id) => setConfirmDeleteId(id)}
+                registerBtn={(id, el) => { if (el) deleteBtnRefs.current.set(id, el); else deleteBtnRefs.current.delete(id); }}
                 busy={busy}
               />
+              {/* 删除需确认(ConfirmCard 纪律:此前是 13px 小钮一击硬删) */}
+              {confirmDeleteId && deleteBtnRefs.current.get(confirmDeleteId) && (
+                <ConfirmCard
+                  anchorRect={deleteBtnRefs.current.get(confirmDeleteId)!.getBoundingClientRect()}
+                  message={t("profile.memory.confirm")}
+                  danger
+                  onConfirm={() => void deleteMemory(confirmDeleteId)}
+                  onCancel={() => setConfirmDeleteId(null)}
+                  testid="profile-memory-confirm"
+                />
+              )}
             </div>
           )}
         </section>
@@ -280,12 +318,14 @@ function SectionTitle({ icon, label }: { icon: ReactNode; label: string }) {
   );
 }
 
-function MemoryGroup({ t, label, items, extra, onDelete, busy }: {
+function MemoryGroup({ t, label, items, extra, onAskDelete, registerBtn, busy }: {
   t: (k: string, v?: Record<string, string | number>) => string;
   label: string;
   items: Array<{ id: string; text: string }>;
   extra?: string;
-  onDelete: (id: string) => void;
+  /** 点击删除 → 弹 ConfirmCard 确认(不直接删) */
+  onAskDelete: (id: string) => void;
+  registerBtn: (id: string, el: HTMLButtonElement | null) => void;
   busy: boolean;
 }) {
   return (
@@ -298,13 +338,14 @@ function MemoryGroup({ t, label, items, extra, onDelete, busy }: {
           <div key={m.id} className="flex items-start gap-2">
             <span className="flex-1 text-caption text-ink-muted leading-relaxed">{m.text}</span>
             <button
-              className="shrink-0 text-ink-faint hover:text-warning transition-colors"
+              className="shrink-0 p-1.5 rounded-lg text-ink-faint hover:text-warning transition-colors"
               disabled={busy}
-              onClick={() => onDelete(m.id)}
+              onClick={() => onAskDelete(m.id)}
               aria-label={t("profile.memory.delete")}
+              ref={(el) => registerBtn(m.id, el)}
               data-testid="profile-memory-delete"
             >
-              <Trash2 size={13} />
+              <Trash2 size={15} />
             </button>
           </div>
         ))

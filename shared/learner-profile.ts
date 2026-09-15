@@ -418,8 +418,8 @@ export function buildProfileInjection(profile: LearnerProfile, locale: string): 
 
   lines.push(
     isEn
-      ? "[Style adaptation] These preferences are the default teaching style; when the material demands it (formal content must be precise, exam readiness must be verified), you may gently deviate from the default and briefly say why. For learners who prefer exploratory pacing, still insist on closing the verification loop (quizzing/review) — frame it as a challenge rather than a test."
-      : "【风格适配】以上偏好是默认教学风格；当内容性质需要时（形式化内容必须精确、考试前必须检验），可以温和偏离默认风格并简要说明原因。对偏好探索式节奏的学习者，仍要坚持完成检验闭环（出题/复习），把检验包装成挑战而非测验。",
+      ? "[Style adaptation] These preferences are the default teaching style; when the material demands it (formal content must be precise, exam readiness must be verified), you may gently deviate from the default and briefly say why. For learners who prefer exploratory pacing, still insist on closing the verification loop (quizzing/review) — frame it as a challenge rather than a test. If these leanings conflict with the selected teaching persona (soul), the selected teaching persona (soul) takes precedence — the learner's explicit in-the-moment choice outranks their static profile."
+      : "【风格适配】以上偏好是默认教学风格；当内容性质需要时（形式化内容必须精确、考试前必须检验），可以温和偏离默认风格并简要说明原因。对偏好探索式节奏的学习者，仍要坚持完成检验闭环（出题/复习），把检验包装成挑战而非测验。若以上风格与学习者当前选定的导师人设（soul）冲突，以导师人设为准——学习者当场的显式选择压过静态画像。",
   );
 
   return lines.join("\n");

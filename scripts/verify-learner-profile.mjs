@@ -157,6 +157,10 @@ test("T12 zh 注入:画像头/防注入标注/风格适配条款/ENTP 内容齐�
   assert.ok(zh.includes("自由陈述：爱辩论"));
   assert.ok(zh.includes("【风格适配】"), "合意困难条款必须存在");
   assert.ok(zh.includes("探索式节奏"), "探索型闭环检验条款必须存在");
+  assert.ok(
+    zh.includes("若以上风格与学习者当前选定的导师人设（soul）冲突，以导师人设为准"),
+    "画像与 soul 的优先序必须明写:显式人设压过静态画像(引导×I 型摇摆的根修)",
+  );
 });
 
 test("T13 en 注入:同构且为英文本体", () => {
@@ -168,6 +172,10 @@ test("T13 en 注入:同构且为英文本体", () => {
   assert.ok(en.includes("pure curiosity"));
   assert.ok(en.includes("[Style adaptation]"));
   assert.ok(en.includes("exploratory pacing"));
+  assert.ok(
+    en.includes("the selected teaching persona (soul) takes precedence"),
+    "en 本体同款优先序条款",
+  );
   assert.ok(!en.includes("【学习者画像】"), "en 本体不应混入中文块头");
 });
 

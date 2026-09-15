@@ -181,12 +181,12 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
     );
   }
 
-  /* 称呼插值:{name}今天… → name 为空时模板自然收干净(逗号随 locale,en 用半角) */
+  /* 称呼插值:无条件喂 name 槽——有称呼填称呼(en 半角逗号),无名清空。
+     旧写法只在场景行自带 name 变量时才填,孤立渲染的 "{name}欢迎回来!" 对
+     有名用户漏字面量;而多余变量对不含 {name} 的模板无副作用,恒填最稳。 */
   const namePrefix = (boot.name ?? "").trim();
   const decorateVars = (key: string, vars?: Record<string, string | number>) => {
-    const v = { ...vars };
-    if ("name" in v) v.name = namePrefix ? (locale === "en" ? `${namePrefix}, ` : `${namePrefix}，`) : "";
-    return t(key, v);
+    return t(key, { name: namePrefix ? (locale === "en" ? `${namePrefix}, ` : `${namePrefix}，`) : "", ...vars });
   };
 
   return (

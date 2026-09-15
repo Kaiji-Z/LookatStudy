@@ -13,19 +13,18 @@
  * 首屏组件不 lazy(AGENTS.md 规则);主束增量来自 shared 展开表(~10KB,已接受)。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Sparkles, KeyRound, GraduationCap, Play, BookOpen, Flame, ClipboardList, Trophy, LifeBuoy, FileText, PencilLine, ArrowRight, X } from "lucide-react";
+import { Sparkles, KeyRound, GraduationCap, Play, BookOpen, Flame, ClipboardList, Trophy, LifeBuoy, FileText, PencilLine, ArrowRight } from "lucide-react";
 import { api } from "../lib/api.js";
 import { useLang, useLangValue } from "../lib/i18n.js";
 import { celebrate } from "../lib/celebration.js";
 import { companionZoneFocus, companionNodePoint } from "../lib/companion/bus.js";
+import { ProfileEditForm, MbtiPickerInline } from "./ProfileEditForm.js";
 import {
   computeBootGuide,
   BOOT_WIZARD_STEPS,
   type BootStateResult,
 } from "@shared/boot-guide";
 import {
-  MBTI_TYPES,
-  STYLE_SCENE_QUESTIONS,
   expandMbtiToStyle,
   mbtiDisplay,
   styleLeaningLine,
@@ -33,8 +32,6 @@ import {
   emptyProfile,
   hasProfileContent,
   type LearnerProfile,
-  type MbtiType,
-  type StyleDim,
 } from "@shared/learner-profile";
 import { pickBootQuiz } from "@shared/boot-quiz";
 
@@ -254,13 +251,15 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
 
         {/* ===== 向导卡流(第二屏:三问)与编辑模式共用卡片 ===== */}
         {editing ? (
-          <ProfileEditCard
+          <div className="surface-card rounded-2xl p-6 shadow-card">
+          <ProfileEditForm
             t={t}
             locale={locale}
             profile={profile}
             onSave={(p) => { saveProfile(p); setEditing(false); }}
             onCancel={() => setEditing(false)}
           />
+          </div>
         ) : !boot.bootDone && wizardStep === 2 ? (
           <WizardQuizCards
             t={t}
@@ -323,153 +322,6 @@ function ProfileSummary({ t, locale, profile, onEdit }: {
       {missing > 0 && (
         <div className="text-caption text-accent">{t("boot.profile.missing", { n: missing })}</div>
       )}
-    </div>
-  );
-}
-
-/* ================= 编辑模式:全字段一张表单 ================= */
-
-function ProfileEditCard({ t, locale, profile, onSave, onCancel }: {
-  t: (k: string, v?: Record<string, string | number>) => string;
-  locale: string;
-  profile: LearnerProfile;
-  onSave: (p: LearnerProfile) => void;
-  onCancel: () => void;
-}) {
-  const [p, setP] = useState<LearnerProfile>({ ...profile, style: { ...profile.style } });
-  const isEn = locale === "en";
-  const patch = (next: Partial<LearnerProfile>) => setP((cur) => ({ ...cur, ...next }));
-
-  const setSceneAnswer = (dim: StyleDim, value: string) =>
-    setP((cur) => ({ ...cur, style: { ...cur.style, [dim]: value } }));
-
-  return (
-    <section className="surface-card rounded-2xl p-6 shadow-card flex flex-col gap-4" data-testid="boot-profile-editcard">
-      <div>
-        <div className="text-title font-bold text-ink mb-1">{t("boot.profile_quiz.title")}</div>
-        <div className="text-label text-ink-muted">{t("boot.profile_quiz.desc")}</div>
-      </div>
-
-      <label className="flex flex-col gap-1">
-        <span className="text-label text-ink-faint">{t("boot.card.name.label")}</span>
-        <input
-          className="bg-surface-0 rounded-lg px-3 py-2 text-body text-ink outline-none focus:ring-2 focus:ring-accent"
-          placeholder={t("boot.card.name.placeholder")}
-          value={p.name ?? ""}
-          onChange={(e) => patch({ name: e.target.value || null })}
-          data-testid="boot-edit-name"
-        />
-      </label>
-
-      <MbtiPickerInline
-        t={t}
-        locale={locale}
-        value={p.mbti}
-        style={p.style}
-        onPick={(mbti) => { companionNodePoint(); patch({ mbti, style: expandMbtiToStyle(mbti) }); }}
-        onSceneAnswer={setSceneAnswer}
-      />
-
-      <div className="flex flex-col gap-2">
-        {STYLE_SCENE_QUESTIONS.map((q) => (
-          <div key={q.dim} className="flex flex-col gap-1">
-            <div className="text-label text-ink">{isEn ? q.en : q.zh}</div>
-            <div className="flex gap-2">
-              {[q.a, q.b].map((opt) => (
-                <button
-                  key={opt.value}
-                  className={p.style[q.dim] === opt.value ? "btn-3d-brand flex-1 text-left" : "btn-3d-neutral flex-1 text-left"}
-                  onClick={() => setSceneAnswer(q.dim, opt.value)}
-                  data-testid={`boot-edit-scene-${q.dim}`}
-                >
-                  {isEn ? opt.en : opt.zh}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <span className="text-label text-ink">{t("boot.card.goal.label")}</span>
-        <div className="grid grid-cols-2 gap-2">
-          {(["interview", "project", "career", "curiosity"] as const).map((g) => (
-            <button
-              key={g}
-              className={p.goal === g ? "btn-3d-brand" : "btn-3d-neutral"}
-              onClick={() => patch({ goal: g })}
-              data-testid={`boot-edit-goal-${g}`}
-            >
-              {t(`boot.card.goal.${g}`)}
-            </button>
-          ))}
-        </div>
-        {p.goal === "interview" && (
-          <input
-            className="bg-surface-0 rounded-lg px-3 py-2 text-body text-ink outline-none focus:ring-2 focus:ring-accent"
-            placeholder={t("boot.card.goal.timeline.placeholder")}
-            value={p.goalNote ?? ""}
-            onChange={(e) => patch({ goalNote: e.target.value || null })}
-            data-testid="boot-edit-timeline"
-          />
-        )}
-      </div>
-
-      <label className="flex flex-col gap-1">
-        <span className="text-label text-ink-faint">{t("boot.card.free.label")}</span>
-        <textarea
-          className="bg-surface-0 rounded-lg px-3 py-2 text-body text-ink outline-none focus:ring-2 focus:ring-accent resize-none"
-          rows={2}
-          placeholder={t("boot.card.free.placeholder")}
-          value={p.freeNote ?? ""}
-          onChange={(e) => patch({ freeNote: e.target.value || null })}
-          data-testid="boot-edit-free"
-        />
-      </label>
-
-      <div className="flex gap-2">
-        <button
-          className="btn-3d-brand inline-flex items-center gap-1.5"
-          onClick={() => onSave({ ...p, updatedAt: new Date().toISOString() })}
-          data-testid="boot-edit-save"
-        >
-          <ArrowRight size={16} />
-          {t("boot.profile.save")}
-        </button>
-        <button className="btn-3d-neutral inline-flex items-center gap-1.5" onClick={onCancel}>
-          <X size={16} />
-          {t("boot.profile.cancel")}
-        </button>
-      </div>
-    </section>
-  );
-}
-
-/* ================= 场景题(向导兜底路径内联渲染) ================= */
-
-function SceneQuestions({ isEn, style, onAnswer }: {
-  isEn: boolean;
-  style: { start: string | null; interaction: string | null; feedback: string | null; pacing: string | null };
-  onAnswer: (dim: StyleDim, value: string) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2" data-testid="boot-scene-questions">
-      {STYLE_SCENE_QUESTIONS.map((q) => (
-        <div key={q.dim} className="flex flex-col gap-1">
-          <div className="text-label text-ink">{isEn ? q.en : q.zh}</div>
-          <div className="flex gap-2">
-            {[q.a, q.b].map((opt) => (
-              <button
-                key={opt.value}
-                className={style[q.dim] === opt.value ? "btn-3d-brand flex-1 text-left text-label" : "btn-3d-neutral flex-1 text-left text-label"}
-                onClick={() => onAnswer(q.dim, opt.value)}
-              >
-                {isEn ? opt.en : opt.zh}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -586,51 +438,5 @@ function WizardQuizCards({ t, locale, profile, onPatch, onFinish }: {
         </>
       )}
     </section>
-  );
-}
-
-/* MBTI 内联选择(向导卡1 用:选完翻卡 + 场景题兜底同屏) */
-function MbtiPickerInline({ t, locale, value, style, onPick, onSceneAnswer }: {
-  t: (k: string, v?: Record<string, string | number>) => string;
-  locale: string;
-  value: MbtiType | null;
-  style: LearnerProfile["style"];
-  onPick: (mbti: MbtiType) => void;
-  onSceneAnswer: (dim: StyleDim, value: string) => void;
-}) {
-  const [mode, setMode] = useState<"grid" | "scene">("grid");
-  const isEn = locale === "en";
-  return (
-    <div className="flex flex-col gap-2">
-      <span className="text-label text-ink">{t("boot.card.mbti.label")}</span>
-      {value && (
-        <div className="rounded-xl bg-surface-0 p-3 flex flex-col gap-1" data-testid="boot-mbti-flip">
-          <div className="text-label font-bold text-ink">{value} · {mbtiDisplay(value, locale).name}</div>
-          <div className="text-label text-ink-muted">{mbtiDisplay(value, locale).tagline}</div>
-          <div className="text-label text-accent">{mbtiDisplay(value, locale).bot}</div>
-        </div>
-      )}
-      {mode === "grid" ? (
-        <>
-          <div className="grid grid-cols-4 gap-1.5" data-testid="boot-mbti-grid">
-            {MBTI_TYPES.map((m) => (
-              <button
-                key={m}
-                className={value === m ? "btn-3d-brand text-label" : "btn-3d-neutral text-label"}
-                onClick={() => onPick(m)}
-                data-testid={`boot-mbti-${m}`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-          <button className="text-label text-accent underline underline-offset-2 self-start" onClick={() => setMode("scene")} data-testid="boot-mbti-dontknow">
-            {t("boot.card.mbti.dontknow")}
-          </button>
-        </>
-      ) : (
-        <SceneQuestions isEn={isEn} style={style} onAnswer={onSceneAnswer} />
-      )}
-    </div>
   );
 }

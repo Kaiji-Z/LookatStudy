@@ -4222,8 +4222,9 @@ async function runUiTest(screenshot = false): Promise<void> {
         await type('[data-testid="boot-wizard-name"]', "ui测试员");
         await click('[data-testid="boot-mbti-ENTP"]');
         await new Promise(function(r){ setTimeout(r, 300); });       // MBTI 翻转反馈
-        await click('[data-testid="boot-wizard-next1"]');                  // → 目标卡
-        await click('[data-testid="boot-wizard-goal-curiosity"]');
+        await click('[data-testid="boot-wizard-next1"]');                  // → 动机卡
+        await click('[data-testid="boot-wizard-motive-intrinsic"]');
+        await new Promise(function(r){ setTimeout(r, 300); });       // 动机翻卡反馈
         await click('[data-testid="boot-wizard-next2"]');                  // → 试玩题
         await click('[data-testid="boot-wizard-quiz-a"]');
         await new Promise(function(r){ setTimeout(r, 300); });       // 揭晓
@@ -4232,14 +4233,14 @@ async function runUiTest(screenshot = false): Promise<void> {
         var el = q('[data-testid="boot-guide"]');
         var profile = await window.api.profileGet();
         var bootDone = await window.api.getSetting("boot_done");
-        return { scene: el ? el.getAttribute("data-scene") : null, name: profile && profile.name, mbti: profile && profile.mbti, goal: profile && profile.goal, pacing: profile && profile.style && profile.style.pacing, bootDone: bootDone };
+        return { scene: el ? el.getAttribute("data-scene") : null, name: profile && profile.name, mbti: profile && profile.mbti, motiveStage: profile && profile.motiveStage, pacing: profile && profile.style && profile.style.pacing, bootDone: bootDone };
       } catch (e) { return { error: String(e) }; }
     })()
   `);
   results.push({
     name: "boot: wizard walkthrough persists profile + boot_done (ENTP expanded)",
     ok: wizardRun?.scene === "course_pick" && wizardRun?.name === "ui测试员" &&
-        wizardRun?.mbti === "ENTP" && wizardRun?.goal === "curiosity" &&
+        wizardRun?.mbti === "ENTP" && wizardRun?.motiveStage === "intrinsic" &&
         wizardRun?.pacing === "exploratory" && wizardRun?.bootDone === "1",
     detail: wizardRun,
   });

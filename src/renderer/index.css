@@ -643,6 +643,25 @@ body.pane-dragging { cursor: col-resize; user-select: none; }
   }
 }
 
+/* v0.37.1 导入屏手机适配:Shimeji 导入弹窗 + 自制纸偶向导的触控地板。
+   带文字的钮/链接只抬 min-height(≥40px),不设 max-width——touch-lift 的
+   44px 方形钳会截断文字标签;图标钮(关闭/导入区)单独给足 44px。 */
+@media (pointer: coarse) {
+  [data-testid="shimeji-download-links"] a,
+  [data-testid="shimeji-character-picker"] .btn-3d-brand,
+  [data-testid="shimeji-character-picker"] .btn-3d-neutral,
+  [data-testid="companion-wizard"] button,
+  [data-testid="companion-wizard"] a,
+  [data-testid="companion-wizard-name"] {
+    min-height: 40px;
+  }
+  [data-testid="shimeji-dialog-close"],
+  [data-testid="shimeji-import"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 /* ============================================================
  * v0.5 选关地图节点美术(多邻国 2024+ 现代风)
  * 核心:radial-gradient 球体光照 + ::before 内高光 + ::after 发光环

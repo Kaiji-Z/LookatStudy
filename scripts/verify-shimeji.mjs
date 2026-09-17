@@ -544,5 +544,54 @@ await test("T14 rest 居中(实测反馈回归):躺/坐在远端时身体收回�
   assert.ok(sawEdge, "散步仍能走到边界");
 });
 
+await test("T15 池内随机选播(v0.37.1 修「动作很少」):idle/walk/rest 池里多条动作轮流上", () => {
+  // 旧 pickFirst 恒取池首:可达集恰好 {Stand,Walk,Sit}=3(Sprawl 在 rest 池第二位,永远够不到)。
+  // 池内随机后 Sprawl 可达 → ≥4 是新旧行为的判别线;同种子仍逐 tick 确定(T10 契约)。
+  let m = { ...initMotion(), actionName: "Walk" };
+  const rng = seeded(20260917);
+  const names = new Set();
+  for (let i = 0; i < 300; i++) {
+    m = tickShimeji(m, SLOT_MANIFEST, { t: "tick" }, "", rng);
+    if (m.actionName) names.add(m.actionName);
+  }
+  assert.ok(
+    names.size >= 4,
+    `池内随机应触达 ≥4 个动作(实际 ${[...names]})——若回到 3 个说明选播又坍缩成池首`,
+  );
+  assert.ok(names.has("Sprawl"), "rest 池第二位动作可达(旧恒池首够不到它)");
+  // 长序列内动作应多次切换(防"随机但连续重复"的退化)
+  let changes = 0;
+  let prev = null;
+  let m2 = { ...initMotion(), actionName: "Walk" };
+  const rng2 = seeded(777);
+  for (let i = 0; i < 200; i++) {
+    m2 = tickShimeji(m2, SLOT_MANIFEST, { t: "tick" }, "", rng2);
+    if (prev !== null && m2.actionName !== prev) changes++;
+    prev = m2.actionName;
+  }
+  assert.ok(changes >= 5, `长序列内动作应多次切换(实际 ${changes} 次)`);
+});
+
+await test("T16 导入屏手机适配(v0.37.1):滚动容纳 + 触控地板", async () => {
+  const { readFileSync } = await import("node:fs");
+  const here = import.meta.url.slice(0, import.meta.url.lastIndexOf("/"));
+  const read = (p) => readFileSync(new URL(p, here + "/"), "utf8");
+  const dialogSrc = read("../src/renderer/components/ShimejiImportDialog.tsx");
+  const wizardSrc = read("../src/renderer/components/companion/CompanionBotWizard.tsx");
+  const cssSrc = read("../src/renderer/index.css");
+  // Shimeji 弹窗:矮屏滚动容纳(标题/关闭钉住,角色清单滚)
+  assert.ok(dialogSrc.includes("max-h-[85dvh]"), "T16 弹窗卡片限高");
+  assert.ok(/flex flex-col/.test(dialogSrc), "T16 弹窗纵列布局(钉头+滚体)");
+  assert.ok(/min-h-0 overflow-y-auto/.test(dialogSrc), "T16 变量内容滚动容器");
+  // 向导:滚动容纳本就在场(锁住防回退)
+  assert.ok(wizardSrc.includes("max-h-[86vh]"), "T16 向导卡片限高");
+  assert.ok(wizardSrc.includes("overflow-y-auto"), "T16 向导内容滚动");
+  // 触控地板:两个屏的钮/链接在 coarse 指针下 ≥40px;图标钮 44px(带文字的不钳宽防截断)
+  assert.ok(cssSrc.includes('[data-testid="shimeji-download-links"] a'), "T16 下载链接触控地板");
+  assert.ok(cssSrc.includes('[data-testid="companion-wizard"] button'), "T16 向导按钮触控地板");
+  assert.ok(cssSrc.includes('[data-testid="shimeji-dialog-close"]'), "T16 关闭钮 44px");
+  assert.ok(cssSrc.includes("min-height: 40px"), "T16 地板值在");
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

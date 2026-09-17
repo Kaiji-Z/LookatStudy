@@ -165,11 +165,26 @@ function pickFirst(list: ShimejiActionT[]): ShimejiActionT | null {
   return list[0] ?? null;
 }
 
+/** 池内随机选播(v0.37.1),避开刚播过的动作(池只剩它则放行)。
+ *  修"动作很少":此前 nextGround 对 idle/walk/rest 恒取池首,40 动作的包
+ *  可见动作坍缩到 ~7 个;骰子(rng)本就注入,这里真正掷出去——表情偏好仍最高优。 */
+function pickVaried(
+  list: ShimejiActionT[],
+  rng: () => number,
+  prevName?: string | null,
+): ShimejiActionT | null {
+  if (list.length <= 1) return list[0] ?? null;
+  const pool = prevName ? list.filter((a) => a.name !== prevName) : list;
+  const use = pool.length ? pool : list;
+  return use[Math.floor(rng() * use.length)];
+}
+
 function byName(manifest: ShimejiPackManifestT, re: RegExp): ShimejiActionT | null {
   return manifest.actions.find((a) => re.test(a.name)) ?? null;
 }
 
-/** 地面策略:表情偏好 → 50% idle / 30% walk / 20% rest(坐/躺)。
+/** 地面策略:表情偏好 → 50% idle / 30% walk / 20% rest(坐/躺);池内随机+防连播
+    (v0.37.1 修"动作很少":同一池里多条动作轮流上,不再恒播池首)。
     climb 不在随机策略里(2026-09-12 实测反馈"原地抓空气"):舞台沙盒边缘没有
     可见墙面,随机贴墙=对着空气爬;起爬只由 tick 里"走到边界时"触发
     (至少有走过去的铺垫)。墙对齐可见容器边(输入卡/面板缘)是后续方向。 */
@@ -178,15 +193,16 @@ function nextGround(
   pools: ShimejiPools,
   expression: string,
   rng: () => number,
+  prevName?: string | null,
 ): ShimejiActionT | null {
   const pref = EXPRESSION_PREF[expression] ?? [];
   const prefHit = pref.map((n) => findAction(manifest, n)).find(Boolean);
   if (prefHit) return prefHit;
   const roll = rng();
-  if (roll < 0.5 && pools.idle.length) return pickFirst(pools.idle);
-  if (roll < 0.8 && pools.walk.length) return pickFirst(pools.walk);
-  if (pools.rest.length) return pickFirst(pools.rest);
-  if (pools.idle.length) return pickFirst(pools.idle);
+  if (roll < 0.5 && pools.idle.length) return pickVaried(pools.idle, rng, prevName);
+  if (roll < 0.8 && pools.walk.length) return pickVaried(pools.walk, rng, prevName);
+  if (pools.rest.length) return pickVaried(pools.rest, rng, prevName);
+  if (pools.idle.length) return pickVaried(pools.idle, rng, prevName);
   return manifest.actions[0] ?? null;
 }
 
@@ -309,7 +325,7 @@ export function tickShimeji(
       const p = advancePose(prev, action);
       const settleLeft = prev.settleLeft - 1;
       if (settleLeft <= 0) {
-        const next = nextGround(manifest, pools, expression, rng);
+        const next = nextGround(manifest, pools, expression, rng, prev.actionName);
         return { ...startMotion(prev, next, "ground"), x: prev.x, y: S.groundY, facing: prev.facing };
       }
       return { ...prev, ...p, settleLeft };
@@ -401,7 +417,7 @@ export function tickShimeji(
         // 爬墙/爬顶入口关闭(2026-09-12 用户拍板方案 B):壳层把 bot 悬浮在锚点上空,
         // 没有贴边物理支撑,攀爬帧=飘着爬空气墙(归档与 wall/ceiling 代码路径保留,
         // 待"爬墙锚点旁路"方案 A 立项后重开:沿容器边缘插值壳悬停目标点,PD 照常追)
-        const next = nextGround(manifest, pools, expression, rng);
+        const next = nextGround(manifest, pools, expression, rng, prev.actionName);
         const base = startMotion(prev, next, "ground");
         return { ...base, x, y: S.groundY, vx, facing };
       }

@@ -102,7 +102,7 @@ export function ShimejiImportDialog({ onClose, onImported }: { onClose: () => vo
       <div
         ref={panelRef}
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-md rounded-2xl bg-surface-0 border border-[var(--border)] shadow-elevated p-4"
+        className="relative w-full max-w-md max-h-[85dvh] flex flex-col rounded-2xl bg-surface-0 border border-[var(--border)] shadow-elevated p-4"
         data-testid="shimeji-dialog"
       >
         <button
@@ -114,6 +114,8 @@ export function ShimejiImportDialog({ onClose, onImported }: { onClose: () => vo
         >
           <X className="w-4 h-4" />
         </button>
+        {/* 手机矮屏:标题/关闭钉住,变量内容(角色清单可很长)滚 dynamically */}
+        <div className="min-h-0 overflow-y-auto">
         <div className="text-body font-medium text-ink-strong mb-1">{t("settings.shimeji.dialog.title")}</div>
         <p className="text-label text-ink-muted mb-3">{t("settings.shimeji.desc")}</p>
 
@@ -202,6 +204,7 @@ export function ShimejiImportDialog({ onClose, onImported }: { onClose: () => vo
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

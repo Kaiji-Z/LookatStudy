@@ -14,6 +14,13 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Fixed
+
+- Shimeji 动作选播坍缩（"动作很少"根因）：调度器 idle/walk/rest 池此前恒取池首——40 动作的包可见动作坍缩到 ~7 个；改池内随机选播+防连播（rng 已注入，同种子复现契约不变），表情偏好仍最高优——同一包不加新素材可见动作数直接乘上池子大小（verify-shimeji T15：旧策略可达集恰 3 个，新策略 Sprawl 等池内非首选动作可达）
+- 导入屏手机适配：Shimeji 导入弹窗卡片限高 85dvh + 标题/关闭钉住、角色清单滚动（矮屏不再顶出屏外）；Shimeji 弹窗与自制纸偶向导全按钮/链接补 coarse 指针触控地板（≥40px，图标钮 44px；带文字的钮不钳宽防截断标签）——走既有 `@media (pointer: coarse)` 家族，`pointer-coarse:` 前缀 utilities 实为死类（tailwind config 未注册该变体，顺手记录不扩散修）
+
 ## [0.37.0] - 2026-09-17
 
 ### Added

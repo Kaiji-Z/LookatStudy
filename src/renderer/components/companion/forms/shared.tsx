@@ -41,6 +41,9 @@ export interface FormArtProps {
   openScale: number;
   energyRatio: number;
   streakLit: boolean;
+  /** 壳层胸屏覆盖层(连对金环/击键字符/听写声纹条)——形态必须在 cp-bot 组**内**
+   *  渲染,才能跟随浮沉/姿势/压弹等身体变换(挂根坐标会脱锚,2026-09-17 修)。 */
+  chest?: ReactNode;
 }
 
 export function faceFlags(e: CompanionExpression) {

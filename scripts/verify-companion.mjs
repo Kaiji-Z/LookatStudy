@@ -1546,13 +1546,13 @@ console.log("T25 v0.18 键盘反馈包(信号面板/真实键位/节奏/仪式/I
   st = st0;
   for (let i = 0; i < 6; i++) st = press(st, "k", "char", 5000 + i * 300);
   assert.ok(st.burstN === 6 && st.expression === "thinking", "3s 内 6 键=专注(屏内思考眉)");
-  // 暂停相位:1.2~6s=listening,6~15s=thinking,之后回 0
+  // 暂停相位:1.2~6s=waiting(抬头等待),6~15s=thinking,之后回 0
   assert.equal(core.pausePhaseOf({ typing: true, lastPress: 10_000 }, 12_500), 1, "停 2.5s=抬头等待");
   assert.equal(core.pausePhaseOf({ typing: true, lastPress: 10_000 }, 18_000), 2, "停 8s=若有所思");
   assert.equal(core.pausePhaseOf({ typing: true, lastPress: 10_000 }, 40_000), 0, "停 30s=回常态");
   assert.equal(core.pausePhaseOf({ typing: true, lastPress: 10_000 }, 10_500), 0, "打字中=0");
   const stTick = core.companionReducer({ ...st, lastPress: 10_000, typing: true, pausePhase: 0 }, { type: "tick", now: 12_500 });
-  assert.ok(stTick.expression === "listening" && stTick.pausePhase === 1, "tick 相位转移=等待表情");
+  assert.ok(stTick.expression === "waiting" && stTick.pausePhase === 1, "tick 相位转移=waiting(听写视觉件只认真听写)");
   // ④ 接线:bus 真实键位/compositionend,Mascot 信号面板+闪发,Creature squash
   const bus = readFileSync(new URL("../src/renderer/lib/companion/bus.ts", import.meta.url), "utf8");
   const mascot = read("components/companion/Mascot.tsx");
@@ -1657,6 +1657,30 @@ console.log("T28 v0.19 考试静栖(伴学钉在计时区,庆祝动作静默)");
   assert.ok(creature.includes("keySeqPrevRef.current || snap.state.examActive"), "考试中击键 squash 静默");
   console.log("OK T28: 考试静栖(reducer 轻庆祝/接线/三道静默门)");
 }
+}
+
+// ---------------------------------------------------------------------------
+console.log("T29 胸屏锚定+等待表情拆分(2026-09-17:金环/字符跟随身体变换,听写件只认真听写)");
+{
+  const read = (p) => readFileSync(new URL(`../src/renderer/${p}`, import.meta.url), "utf8");
+  // ① waiting 是独立表情值:眼神=常态竖棒,不触发声纹条/声波弧(Mascot 的
+  //    listening 门与 FaceExtras 的 flags.listening 只认真听写)
+  const src = read("lib/companion/companion-core.ts");
+  assert.ok(src.includes('  | "waiting"'), "CompanionExpression 联合类型含 waiting");
+  assert.ok(src.includes('next.expression = "waiting"'), "暂停相位 1 写 waiting(不再借 listening)");
+  assert.ok(!/phase === 1[^;]*?next\.expression = "listening"/.test(src), "暂停相位不得再写 listening");
+  // ② 胸屏覆盖层经 chest 槽注入 cp-bot 组内(跟浮沉/姿势/压弹),七形态全接线
+  const mascot = read("components/companion/Mascot.tsx");
+  assert.ok(mascot.includes("chest={chest}"), "Mascot 把 chest 注入 Art");
+  assert.ok(mascot.includes("{listening && !screenKey"), "听写胸屏波形条件保持真听写门");
+  for (const f of ["ember", "frost", "moss", "astro", "ink", "custom-puppet", "shimeji-form"]) {
+    const formSrc = read(`components/companion/forms/${f}.tsx`);
+    assert.ok(formSrc.includes("{chest ?? null}"), `forms/${f}.tsx 渲染 chest 槽(cp-bot 组内)`);
+  }
+  // ③ 停听写清零麦克风平滑包络(防冻结音量驱动的幽灵声波弧)
+  const bus = read("lib/companion/bus.ts");
+  assert.ok(/export function companionSetListening[\s\S]{0,300}if \(!on\) micSmoothed = 0;/.test(bus), "停听写清零包络");
+  console.log("OK T29: 胸屏锚定+等待表情拆分");
 }
 
 console.log("\nverify-companion: ALL PASS");

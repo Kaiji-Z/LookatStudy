@@ -101,7 +101,7 @@ function frostMouth(v: Viseme, p: FormPalette) {
   }
 }
 
-export function FrostArt({ uid, refs, expression, viseme, openScale, energyRatio, streakLit }: FormArtProps) {
+export function FrostArt({ uid, refs, expression, viseme, openScale, energyRatio, streakLit, chest }: FormArtProps) {
   const flags = faceFlags(expression);
   return (
     <>
@@ -171,6 +171,8 @@ export function FrostArt({ uid, refs, expression, viseme, openScale, energyRatio
           {flags.proud && <CrownMark p={FROST} />}
         {/* v0.18 arms layer above head */}
         <Arms refs={refs} armFill={ICE_D} out={OUT} />
+        {/* 壳层胸屏覆盖层:必须留在 cp-bot 组内跟随身体变换(见 FormArtProps.chest) */}
+        {chest ?? null}
       </g>
     </>
   );

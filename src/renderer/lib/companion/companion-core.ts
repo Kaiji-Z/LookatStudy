@@ -28,6 +28,8 @@ export type CompanionExpression =
   | "flame"
   | "thinking"
   | "listening"
+  /** 打字暂停相位 1(抬头等待)专用:眼神=常态竖棒,不挂听写视觉件(声纹条/声波弧只认真听写) */
+  | "waiting"
   | "talking"
   | "surprised"
   | "huffy"
@@ -745,9 +747,11 @@ export function companionReducer(s: CompanionState, ev: CompanionEvent): Compani
           next.expression = baseExpressionOf(next);
           next.pose = basePoseOf(next);
           next.until = null;
-          // v0.18 打字暂停的呼吸感:刚停(1.2~6s)抬头等待,停久(6~15s)若有所思
+          // v0.18 打字暂停的呼吸感:刚停(1.2~6s)抬头等待,停久(6~15s)若有所思。
+          // 等待用独立 waiting 表情——listening 是真听写的脸,连着胸屏声纹条/头屏
+          // 声波弧,借用它会让"停手没打字"看起来像正在录音(实测用户困惑点)。
           if (phase === 1 && !sleeping && !next.talking && !next.listening) {
-            next.expression = "listening";
+            next.expression = "waiting";
           } else if (phase === 2 && !sleeping && !next.talking && !next.listening) {
             next.expression = "thinking";
           }

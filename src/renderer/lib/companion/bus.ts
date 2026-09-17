@@ -389,6 +389,10 @@ export function companionSetTalking(on: boolean): void {
 
 /** 听写模式(ChatComposer 的 voiceMode)。 */
 export function companionSetListening(on: boolean): void {
+  // 停听写时把平滑包络清零:micSmoothed 只在录音中更新(useAsrInput 的
+  // onaudioprocess),不清零会冻结在停录瞬间的音量——之后任何 listening 表情
+  // (含暂停相位)都会让声波弧以"幽灵音量"常亮(2026-09-17 实测)。
+  if (!on) micSmoothed = 0;
   fire("companion-listening", on);
 }
 

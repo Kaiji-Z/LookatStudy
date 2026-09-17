@@ -220,6 +220,50 @@ export function Mascot({
 
   const Art = FORM_ART[formId];
 
+  /* 胸屏覆盖层(连对金环/击键字符面板/听写声纹条)注入形态的 cp-bot 组内渲染——
+     旧版挂在 SVG 根坐标,而身体的浮沉(cp-bob)/姿势旋转/逐键压弹全发生在
+     cp-bot 上,覆盖层跟不上=金环和字符"浮"在屏幕外(2026-09-17 实测)。
+     注入后与胸屏同一坐标系,天然跟随一切身体变换。 */
+  const chest = (
+    <>
+      {/* v11 连对点燃:能量核金环脉动(3+ 连续答对的得意态) */}
+      {coreLit && <circle cx="100" cy="135" r="21" fill="none" stroke="#FFC800" strokeWidth="3" className="cp-core-lit" aria-hidden="true" />}
+      {/* v0.18 胸屏=信号面板:击键脉冲条(确定性伪随机,keySeq 重挂载=信号扫过)
+          + 字符读数(空格 ␣;Enter→/退格⌫ 走闪发样式;汉字来自 compositionend) */}
+      {screenKey && (
+        <g key={`k${keySeq}`} aria-hidden="true">
+          <g className="cp-key-scope" clipPath={`url(#${uid}-keyclip)`}>
+            {scopeBars(keySeq).map((bar, i) => (
+              <rect
+                key={i}
+                x={86.8 + i * 4.4}
+                y={140 - bar.h}
+                width="2.6"
+                height={bar.h}
+                rx="1.1"
+                className="cp-scope-bar"
+                style={{ animationDelay: `${bar.d}ms` }}
+              />
+            ))}
+          </g>
+          <text x="100" y="140" textAnchor="middle" className={`cp-screen-key${keyFlash ? " cp-screen-key-flash" : ""}`}>
+            {screenKey === " " ? "␣" : screenKey.toUpperCase()}
+          </text>
+        </g>
+      )}
+      {/* v11 听写胸屏波形:按住说话时圆屏跳动声纹条(壳层渲染,listening 期间) */}
+      {listening && !screenKey && (
+        <g className="cp-screen-wave" aria-hidden="true">
+          <rect x="88.6" y="130" width="3.2" height="10" rx="1.6" />
+          <rect x="93.6" y="127" width="3.2" height="16" rx="1.6" />
+          <rect x="98.6" y="125" width="3.2" height="20" rx="1.6" />
+          <rect x="103.6" y="127" width="3.2" height="16" rx="1.6" />
+          <rect x="108.6" y="130" width="3.2" height="10" rx="1.6" />
+        </g>
+      )}
+    </>
+  );
+
   return (
     <svg
       viewBox="0 0 200 200"
@@ -281,42 +325,8 @@ export function Mascot({
         openScale={openScale}
         energyRatio={energyRatio}
         streakLit={streakLit}
+        chest={chest}
       />
-      {/* v11 连对点燃:能量核金环脉动(3+ 连续答对的得意态) */}
-      {coreLit && <circle cx="100" cy="135" r="21" fill="none" stroke="#FFC800" strokeWidth="3" className="cp-core-lit" aria-hidden="true" />}
-      {/* v0.18 胸屏=信号面板:击键脉冲条(确定性伪随机,keySeq 重挂载=信号扫过)
-          + 字符读数(空格 ␣;Enter→/退格⌫ 走闪发样式;汉字来自 compositionend) */}
-      {screenKey && (
-        <g key={`k${keySeq}`} aria-hidden="true">
-          <g className="cp-key-scope" clipPath={`url(#${uid}-keyclip)`}>
-            {scopeBars(keySeq).map((bar, i) => (
-              <rect
-                key={i}
-                x={86.8 + i * 4.4}
-                y={140 - bar.h}
-                width="2.6"
-                height={bar.h}
-                rx="1.1"
-                className="cp-scope-bar"
-                style={{ animationDelay: `${bar.d}ms` }}
-              />
-            ))}
-          </g>
-          <text x="100" y="140" textAnchor="middle" className={`cp-screen-key${keyFlash ? " cp-screen-key-flash" : ""}`}>
-            {screenKey === " " ? "␣" : screenKey.toUpperCase()}
-          </text>
-        </g>
-      )}
-      {/* v11 听写胸屏波形:按住说话时圆屏跳动声纹条(壳层渲染,listening 期间) */}
-      {listening && !screenKey && (
-        <g className="cp-screen-wave" aria-hidden="true">
-          <rect x="88.6" y="130" width="3.2" height="10" rx="1.6" />
-          <rect x="93.6" y="127" width="3.2" height="16" rx="1.6" />
-          <rect x="98.6" y="125" width="3.2" height="20" rx="1.6" />
-          <rect x="103.6" y="127" width="3.2" height="16" rx="1.6" />
-          <rect x="108.6" y="130" width="3.2" height="10" rx="1.6" />
-        </g>
-      )}
       {/* v10 记笔记道具:掏出小本子和笔伏案记录(壳层渲染,pose=writing 期间) */}
       {pose === "writing" && (
         <g className="cp-writing" aria-hidden="true">

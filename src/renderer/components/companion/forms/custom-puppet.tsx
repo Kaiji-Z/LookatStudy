@@ -45,7 +45,7 @@ const FALLBACK_REST = 90;
  * 共享形状。CSS 只持动画/透明度(cp-veh-flame/glow/lamp/eq),不持颜色。
  * glow/lamp 在 CSS 有 opacity 规则,fill 走内联 style 压过(表现属性会被类规则盖)。
  */
-export function CustomPuppetArt({ uid, refs, energyRatio }: FormArtProps) {
+export function CustomPuppetArt({ uid, refs, energyRatio, chest }: FormArtProps) {
   const pack = useSyncExternalStore(subscribeActivePack, getActivePack);
   const leanRef = useRef<SVGGElement | null>(null);
   const lay = useMemo(() => {
@@ -170,6 +170,9 @@ export function CustomPuppetArt({ uid, refs, energyRatio }: FormArtProps) {
           </g>
         </>
       )}
+      {/* 壳层胸屏覆盖层:留在 cp-bot 组内跟随身体变换(见 FormArtProps.chest);
+          core-lit 对纸偶由 CSS 隐藏(.cp-form-custom .cp-core-lit) */}
+      {chest ?? null}
       {/* 壳的眨眼/麦克风弧/整眼平移写 transform 的挂点(五官暂缓:空 g,no-op) */}
       <g ref={refs.eyes} />
       <g ref={refs.waves} />

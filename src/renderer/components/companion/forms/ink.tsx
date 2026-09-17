@@ -102,7 +102,7 @@ function inkMouth(v: Viseme, p: FormPalette) {
   }
 }
 
-export function InkArt({ uid, refs, expression, viseme, openScale, energyRatio, streakLit }: FormArtProps) {
+export function InkArt({ uid, refs, expression, viseme, openScale, energyRatio, streakLit, chest }: FormArtProps) {
   const flags = faceFlags(expression);
   return (
     <>
@@ -172,6 +172,8 @@ export function InkArt({ uid, refs, expression, viseme, openScale, energyRatio, 
           {flags.proud && <CrownMark p={INK} />}
         {/* v0.18 arms layer above head */}
         <Arms refs={refs} armFill={PAPER_D} out={OUT} />
+        {/* 壳层胸屏覆盖层:必须留在 cp-bot 组内跟随身体变换(见 FormArtProps.chest) */}
+        {chest ?? null}
       </g>
     </>
   );

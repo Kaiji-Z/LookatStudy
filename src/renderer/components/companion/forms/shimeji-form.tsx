@@ -49,7 +49,7 @@ function VehArmsGate({ refs, theme, hide }: { refs: Pick<FormRefs, "armL" | "arm
 
 const TICK_MS = 50;
 
-export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps) {
+export function ShimejiArt({ uid, refs, expression, energyRatio, chest }: FormArtProps) {
   const active = useSyncExternalStore(subscribeActiveShimeji, getActiveShimeji);
   const manifest = active?.manifest ?? null;
   const [rt, setRt] = useState<ShimejiMotion>(initMotion);
@@ -168,6 +168,8 @@ export function ShimejiArt({ uid, refs, expression, energyRatio }: FormArtProps)
             <rect x={-32} y={-32} width={64} height={32} rx={6} opacity={0.25} fill="currentColor" />
           )}
         </g>
+        {/* 壳层胸屏覆盖层:留在 bot 组内(见 FormArtProps.chest);core-lit 由 CSS 隐藏 */}
+        {chest ?? null}
       </g>
       <VehArmsGate refs={refs} theme={vehTheme} hide={hideVeh} />
       <g ref={refs.head} />

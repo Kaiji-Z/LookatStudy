@@ -29,6 +29,14 @@ export interface ShimejiAction {
   kind: ShimejiActionKind;
   /** Embedded 类的 Java 类名(语义线索:Dragged/Regist/Fall...) */
   className?: string;
+  /** 归档表英文标准名(v0.37.2 P0):日文包的语义判定/表情偏好统一键。
+   *  解析时由 archiveOf(name) 反查烘焙;未收录动作(undefined=兜底 fx)。 */
+  archiveOf?: string;
+  /** 归档类别(v0.37.2):scene/fx/skip——调度器 fx 有帧进 idle、skip 永不进 */
+  archive?: ActionArchive;
+  /** Sequence(複合)子动作引用(v0.37.2 P2 摊平原料):引用名+可选时长。
+   *  duration 语义:纯数字=ee 的 tick 字面量;表达式(${...})不可静态求值=undefined(保留子动作原节奏)。 */
+  refs?: { name: string; duration?: number }[];
   poses: ShimejiPose[];
 }
 
@@ -116,9 +124,117 @@ export function parseShimejiActions(xml: string): ShimejiAction[] {
         duration: Number(pickAttr(attrs, ["長さ", "Duration"]) ?? 1) || 1,
       });
     }
-    actions.push({ name, kind, ...(className ? { className } : {}), poses });
+    // Sequence(複合)子动作引用:原版 <動作参照 名前 長さ> / ee <ActionReference Name Duration>
+    const refs: { name: string; duration?: number }[] = [];
+    if (kind === "Sequence") {
+      const refRe = /<(?:動作参照|ActionReference)(?=[\s/>])[^>]*>/g;
+      let rm: RegExpExecArray | null;
+      while ((rm = refRe.exec(block))) {
+        const attrs = rm[0].slice(1, -1);
+        const refName = pickAttr(attrs, ["名前", "Name"]);
+        if (!refName) continue;
+        // Duration:纯数字字面量=ee tick 语义,收;表达式(${...} 随机时长)不可静态求值,
+        // 置 undefined → 摊平时保留子动作原始帧节奏
+        const durRaw = pickAttr(attrs, ["長さ", "Duration"]);
+        const duration = durRaw && /^\d+$/.test(durRaw.trim()) ? Number(durRaw) : undefined;
+        refs.push({ name: refName, ...(duration !== undefined ? { duration } : {}) });
+      }
+    }
+    const archived = archiveOf(name);
+    actions.push({
+      name,
+      kind,
+      ...(className ? { className } : {}),
+      ...(archived.entry ? { archiveOf: archived.entry.en, archive: archived.archive } : {}),
+      ...(kind === "Sequence" ? { refs } : {}),
+      poses,
+    });
   }
   return actions;
+}
+
+/**
+ * Sequence(複合)静态摊平(v0.37.2 P2):把组合动作的子动作 pose 链按引用顺序
+ * 拼成单个可播动作,调度器随机池即可触达(此前 Sequence 不进任何池=永不演大头)。
+ *
+ * 规则:
+ *   - 子动作仍为 Sequence → 递归展开(深度上限 8;环/超深/引用缺失 → 该动作保留原样,
+ *     名字进 unexpanded 白名单,不炸导入);
+ *   - 引用 duration 为纯数字(ee tick 字面量)→ 按比例缩放该子动作各 pose duration,
+ *     使总时长≈duration;表达式/缺省 → 保留子动作原始节奏;
+ *   - 摊平后 kind 重写:首叶子为 Move → Move,否则 Stay(自然进 walk/idle 池);
+ *   - archiveOf 保留原动作自己的(名字没变,语义判定不受摊平影响)。
+ */
+export function expandShimejiSequences(
+  actions: ShimejiAction[],
+  maxDepth = 8,
+): { actions: ShimejiAction[]; unexpanded: string[] } {
+  const byName = new Map(actions.map((a) => [a.name, a]));
+  const unexpanded: string[] = [];
+
+  function flatten(name: string, stack: Set<string>, depth: number): ShimejiPose[] | null {
+    if (depth > maxDepth || stack.has(name)) return null;
+    const action = byName.get(name);
+    if (!action) return null;
+    if (action.kind !== "Sequence" || !action.refs?.length) return action.poses.map((p) => ({ ...p }));
+    const inner = new Set(stack);
+    inner.add(name);
+    const out: ShimejiPose[] = [];
+    for (const ref of action.refs) {
+      const child = byName.get(ref.name);
+      if (!child) return null;
+      const childPoses = flatten(ref.name, inner, depth + 1);
+      // 空 poses 叶子(无 body 的 Embedded 内置类,本应用无内置动画)→ 跳过该引用,
+      // 不让整链失败(实测 Eren 包 64 複合里大量链含此类节点)
+      if (!childPoses || childPoses.length === 0) continue;
+      if (ref.duration !== undefined && ref.duration > 0) {
+        // 按比例缩放该子动作帧时长,总时长≈引用 duration(tick)
+        const total = childPoses.reduce((n, p) => n + p.duration, 0);
+        if (total > 0) {
+          const scale = ref.duration / total;
+          for (const p of childPoses) p.duration = Math.max(1, Math.round(p.duration * scale));
+        }
+      }
+      out.push(...childPoses);
+    }
+    return out.length ? out : null;
+  }
+
+  const result = actions.map((a) => {
+    if (a.kind !== "Sequence") return a;
+    const flattened = flatten(a.name, new Set(), 0);
+    if (!flattened) {
+      unexpanded.push(a.name);
+      return a;
+    }
+    const firstLeafKind = findFirstLeafKind(a, byName, new Set(), 0, maxDepth);
+    return {
+      ...a,
+      kind: firstLeafKind === "Move" ? ("Move" as const) : ("Stay" as const),
+      poses: flattened,
+      refs: undefined,
+    };
+  });
+  return { actions: result, unexpanded };
+}
+
+/** 摊平后 kind 重写的依据:首叶子子动作的 kind(随机池按 Stay/Move 分流) */
+function findFirstLeafKind(
+  action: ShimejiAction,
+  byName: Map<string, ShimejiAction>,
+  stack: Set<string>,
+  depth: number,
+  maxDepth: number,
+): ShimejiActionKind {
+  const firstRef = action.refs?.[0];
+  if (!firstRef) return "Stay";
+  if (stack.has(firstRef.name) || depth > maxDepth) return "Stay";
+  const child = byName.get(firstRef.name);
+  if (!child) return "Stay";
+  if (child.kind === "Sequence") {
+    return findFirstLeafKind(child, byName, new Set(stack).add(action.name), depth + 1, maxDepth);
+  }
+  return child.kind;
 }
 
 /** 解析 Behavior.xml(behaviors.xml):行为触发频率表(0=禁用)。 */

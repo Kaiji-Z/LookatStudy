@@ -18,6 +18,7 @@ Entry conventions for contributors:
 
 ### Fixed
 
+- Shimeji 动作可达性修满（goal 2026-09-17，P0+P1+P2）：91 归档动作此前巨人包（日文原版）永不演 53 个（58%）、哆啦A梦 44 个——修后可达 60 / 设计排除 29 / 真残留 2（全部 11 包，`npm run audit:shimeji` 固化）。**P0 归档映射**：解析烘焙 `archiveOf`（en 标准名）+`archive` 类别，调度器休息/坠落/挣扎正则与表情偏好全部改走语义键——日文包（座って/落ちる/ドラッグされる）此前判定全盲：不坐下、抓无挣扎、扔无坠落、表情动作全失灵；旧包 getActive 懒补回写。**P1 池内扩池**：wall/ceiling/air/drag 四触发链 pickVaried（原恒取池首）；Animate 进 idle；panel（IE 特技无表面）移出随机池、skip 归档永不进；空 poses 动作过滤（防选中演空）。**P2 Sequence 摊平**：複合/组合动作按子引用静态展开（duration 按比例缩放、kind 按首叶子重写；环/缺引用/超深白名单不炸导入），地面场景系（沿边走/坐下/拔萝卜/分身）全部解锁——旧包 XML 已弃置需重导一次吃到 P2（本机 11 包已重烘焙）。verify-shimeji T18/T19/T20（闭环破坏验证）+ verify:core 全链 + ui-test 全绿
 - Shimeji 帧加载空方框（随机选播引出的时序洞，2026-09-17 实机定谳；帧图磁盘对账零缺失，问题在渲染链路）：`getFrameSrc` 缓存未命中发 IPC 的窗口期渲染半透明空 rect——旧版恒播池首常用帧早缓存看不见，随机化让长尾动作轮上场后每张首播帧必闪。修两层：包激活时**预取全部 pose 帧**（`prefetchFrames`，在途去重防 50ms 循环重复发射）；渲染层**沿用上一帧**兜底（原地多停一帧远好于空洞，首帧未到位才占位）。verify-shimeji T17 守（含闭环）
 
 ## [0.37.1] - 2026-09-17

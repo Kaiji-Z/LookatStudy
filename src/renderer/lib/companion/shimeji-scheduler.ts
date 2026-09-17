@@ -123,16 +123,23 @@ const REST_RE = /sit|sprawl|lie|lay|sleep|nap|dangle|lookup/i;
 const AIR_RE = /fall|throw|trip/i;
 const DRAG_RE = /drag|resist|pinch/i;
 
-function poolsFor(manifest: ShimejiPackManifestT): ShimejiPools {
-  const A = manifest.actions;
+/** 语义判定键(v0.37.2 P0):归档表英文标准名优先,动作名退兜底。
+ *  日文原版包(座って/落ちる/ドラッグされる)靠名字正则全部失灵——一律先看 archiveOf。 */
+function semanticName(a: ShimejiActionT): string {
+  return a.archiveOf ?? a.name;
+}
+
+export function poolsFor(manifest: ShimejiPackManifestT): ShimejiPools {
+  // 空 poses 动作(旧包未摊平的 Sequence 等)不可演——进池会被 pickVaried 选中演空
+  const A = manifest.actions.filter((a) => (a.poses?.length ?? 0) > 0);
   if (!A.some((a) => a.slot)) {
-    // 一期旧包:无 slot → 按 kind 退化(一期行为)
-    const stay = A.filter((a) => a.kind === "Stay");
+    // 一期旧包:无 slot → 按 kind 退化(一期行为;语义正则吃 archiveOf/名字)
+    const stay = A.filter((a) => a.kind === "Stay" || a.kind === "Animate");
     const move = A.filter((a) => a.kind === "Move");
     return {
       idle: [...stay, ...move],
       walk: move,
-      rest: [...stay, ...move].filter((a) => REST_RE.test(a.name)),
+      rest: [...stay, ...move].filter((a) => REST_RE.test(semanticName(a))),
       climb: [],
       ceiling: [],
       air: [],
@@ -141,15 +148,23 @@ function poolsFor(manifest: ShimejiPackManifestT): ShimejiPools {
   }
   const bySlot = (slot: string) => A.filter((a) => a.slot === slot);
   const ground = bySlot("ground");
-  // panel/mouse/tired 都是"原地演"的场景系,进 idle 池(可达≠仅归档)
+  // idle:ground 停留系(Stay)+原地循环演(Animate)+fx 花活(有帧,播动画无位移)+鼠标/疲惫槽。
+  // panel 槽(IE 窗口攀爬特技)移出——本应用无窗口表面,随机播=对空气演(三期再启用);
+  // skip 归档(IE 专属内置/扔窗口)永不进池。
+  const fxIdle = A.filter((a) => a.archive === "fx");
   return {
-    idle: [...ground.filter((a) => a.kind === "Stay"), ...bySlot("panel"), ...bySlot("mouse"), ...bySlot("tired")],
+    idle: [
+      ...ground.filter((a) => a.kind === "Stay" || a.kind === "Animate"),
+      ...fxIdle,
+      ...bySlot("mouse"),
+      ...bySlot("tired"),
+    ],
     walk: ground.filter((a) => a.kind === "Move"),
-    rest: ground.filter((a) => REST_RE.test(a.name)),
+    rest: ground.filter((a) => REST_RE.test(semanticName(a))),
     climb: bySlot("wall"),
     ceiling: bySlot("ceiling"),
-    air: bySlot("interact").filter((a) => AIR_RE.test(a.name)),
-    drag: bySlot("interact").filter((a) => DRAG_RE.test(a.name)),
+    air: bySlot("interact").filter((a) => AIR_RE.test(semanticName(a))),
+    drag: bySlot("interact").filter((a) => DRAG_RE.test(semanticName(a))),
   };
 }
 
@@ -157,13 +172,12 @@ function poseTicks(action: ShimejiActionT | null | undefined, idx: number): numb
   return Math.min(MAX_POSE_TICKS, action?.poses[idx]?.duration ?? 4) || 1;
 }
 
+/** 表情偏好/按名查找(v0.37.2 P0):archiveOf 命中优先,动作名退兜底。 */
 function findAction(manifest: ShimejiPackManifestT, name: string | null): ShimejiActionT | null {
-  return manifest.actions.find((a) => a.name === name) ?? null;
+  if (!name) return null;
+  return manifest.actions.find((a) => a.archiveOf === name) ?? manifest.actions.find((a) => a.name === name) ?? null;
 }
 
-function pickFirst(list: ShimejiActionT[]): ShimejiActionT | null {
-  return list[0] ?? null;
-}
 
 /** 池内随机选播(v0.37.1),避开刚播过的动作(池只剩它则放行)。
  *  修"动作很少":此前 nextGround 对 idle/walk/rest 恒取池首,40 动作的包
@@ -180,7 +194,7 @@ function pickVaried(
 }
 
 function byName(manifest: ShimejiPackManifestT, re: RegExp): ShimejiActionT | null {
-  return manifest.actions.find((a) => re.test(a.name)) ?? null;
+  return manifest.actions.find((a) => re.test(semanticName(a))) ?? null;
 }
 
 /** 地面策略:表情偏好 → 50% idle / 30% walk / 20% rest(坐/躺);池内随机+防连播
@@ -258,7 +272,7 @@ export function tickShimeji(
 
   // ── 交互信号(最高优先;仅 dragged 中响应 release,避免误伤其它模式)──
   if (signal.t === "grab") {
-    const action = pickFirst(pools.drag) ?? byName(manifest, DRAG_RE);
+    const action = pickVaried(pools.drag, rng, prev.actionName) ?? byName(manifest, DRAG_RE);
     return {
       ...prev,
       mode: "dragged",
@@ -270,7 +284,7 @@ export function tickShimeji(
   }
   if (signal.t === "release" && prev.mode === "dragged") {
     if (signal.speed >= THROW_MIN_SPEED) {
-      const action = pickFirst(pools.air) ?? byName(manifest, AIR_RE);
+      const action = pickVaried(pools.air, rng, prev.actionName) ?? byName(manifest, AIR_RE);
       return {
         ...prev,
         mode: "air",
@@ -283,7 +297,7 @@ export function tickShimeji(
       };
     }
     // 轻放:原地缓冲后回地面
-    const action = pickFirst(pools.idle);
+    const action = pickVaried(pools.idle, rng, prev.actionName);
     return {
       ...startMotion(prev, action, "settle"),
       settleLeft: 10,
@@ -311,7 +325,7 @@ export function tickShimeji(
       else if (vx < -0.1) facing = -1;
       if (y >= S.groundY) {
         // 落地:缓冲若干 tick(优先 Tripping 翻倒帧)回地面
-        const land = byName(manifest, /trip/i) ?? pickFirst(pools.idle);
+        const land = byName(manifest, /trip/i) ?? pickVaried(pools.idle, rng, prev.actionName);
         return {
           ...startMotion({ ...prev, ...p, x, y: S.groundY, vx, vy: 0, facing }, land, "settle"),
           settleLeft: 12,
@@ -339,7 +353,7 @@ export function tickShimeji(
       const y = Math.max(S.ceilY, prev.y - CLIMB_SPEED);
       if (y <= S.ceilY) {
         // 登顶 → 爬顶(朝远离来墙的方向)
-        const ceil = pickFirst(pools.ceiling) ?? byName(manifest, /ceil/i);
+        const ceil = pickVaried(pools.ceiling, rng, prev.actionName) ?? byName(manifest, /ceil/i);
         const vx = (prev.wallSide === 0 ? 1 : -1) * CEIL_SPEED;
         return {
           ...prev,
@@ -366,7 +380,7 @@ export function tickShimeji(
       const x = clamp(prev.x + prev.vx, S.minX, S.maxX);
       if (x <= S.minX || x >= S.maxX) {
         // 到对角 → 松手坠落
-        const fall = pickFirst(pools.air) ?? byName(manifest, AIR_RE);
+        const fall = pickVaried(pools.air, rng, prev.actionName) ?? byName(manifest, AIR_RE);
         return {
           ...prev,
           ...p,

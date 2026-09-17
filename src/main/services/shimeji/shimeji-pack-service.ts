@@ -22,6 +22,7 @@ import {
   parseShimejiActions,
   parseShimejiBehaviors,
   archiveOf,
+  expandShimejiSequences,
   type SceneSlot,
   type ShimejiAction,
 } from "./pure/shimeji-parse.js";
@@ -225,7 +226,10 @@ export async function confirmShimejiImport(
       .find((p) => existsSync(p))!;
     const xml = await readFile(actionsPath, "utf8");
     const format = detectFormat(actionsPath, xml);
-    const actions = parseShimejiActions(xml).map((a) => ({ ...a, slot: archiveOf(a.name).slot }));
+    // v0.37.2:P0 archiveOf 烘焙(en 标准名,日文包语义判定统一键)+ P2 Sequence 静态摊平
+    // (展开失败=环/缺引用/超深,原样保留进"永不演"白名单,不炸导入)
+    const parsed = expandShimejiSequences(parseShimejiActions(xml));
+    const actions = parsed.actions.map((a) => ({ ...a, slot: archiveOf(a.name).slot, archive: archiveOf(a.name).archive }));
     const behPath = ["Behavior.xml", "behaviors.xml"].map((f) => join(stagingDir, confDir, "conf", f)).find((p) => existsSync(p));
     const behaviors = behPath ? parseShimejiBehaviors(await readFile(behPath, "utf8")) : [];
 
@@ -263,10 +267,26 @@ export async function confirmShimejiImport(
   return created;
 }
 
-/** 包清单读取(渲染层运行时用:帧图+动作+行为) */
+/** 包清单读取(渲染层运行时用:帧图+动作+行为)。
+ *  v0.37.2 P0 懒补:旧包 manifest 无 archiveOf → 反查归档表补烘焙并回写(幂等;
+ *  只需动作名,不需要原 zip)。调度器的日文包语义判定/表情偏好自此生效。 */
 export async function getShimejiPack(_db: Db, dataDir: string, packId: string): Promise<ShimejiPackManifest | null> {
   if (!/^shimeji-[0-9a-f]{8}$/.test(packId)) return null; // id 形状守卫(防路径穿越)
-  return readJson<ShimejiPackManifest>(join(packsRoot(dataDir), packId, "manifest.json"));
+  const manifest = await readJson<ShimejiPackManifest>(join(packsRoot(dataDir), packId, "manifest.json"));
+  if (!manifest) return null;
+  if (manifest.actions.some((a) => !a.archiveOf || !a.archive)) {
+    manifest.actions = manifest.actions.map((a) => ({
+      ...a,
+      ...(a.archiveOf ? {} : archiveOf(a.name).entry ? { archiveOf: archiveOf(a.name).entry!.en } : {}),
+      ...(a.archive ? {} : { archive: archiveOf(a.name).archive }),
+    }));
+    try {
+      await writeFile(join(packsRoot(dataDir), packId, "manifest.json"), JSON.stringify(manifest));
+    } catch {
+      // 回写失败不阻塞读取(下次再补);内存中的 manifest 已带 archiveOf
+    }
+  }
+  return manifest;
 }
 
 /** 包清单列表(设置页包卡) */

@@ -510,6 +510,10 @@ export interface ShimejiPackManifestT {
     className?: string;
     /** 88 归档表的窗口环境槽位(导入时烘焙;旧包无此字段 → 调度器按 kind 退化) */
     slot?: "ground" | "wall" | "ceiling" | "mouse" | "panel" | "interact" | "celebrate" | "tired";
+    /** 归档表英文标准名(v0.37.2 P0 烘焙;日文包语义判定/表情偏好的统一键,旧包 getActive 懒补) */
+    archiveOf?: string;
+    /** 归档类别(v0.37.2):调度器 fx 有帧进 idle、skip 永不进;旧包懒补 */
+    archive?: "scene" | "fx" | "skip";
     poses: Array<{ image: string; anchor: [number, number]; velocity: [number, number]; duration: number }>;
   }>;
   behaviors: Array<{ name: string; frequency: number; next: Array<{ name: string; frequency: number }> }>;

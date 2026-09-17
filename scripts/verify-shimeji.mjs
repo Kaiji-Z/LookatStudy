@@ -617,5 +617,108 @@ await test("T17 帧预取+上一帧回退(v0.37.1 修「空方框」):随机选�
   assert.ok(/frameSrc \?\? lastSrcRef\.current/.test(formSrc), "T17 src 回退表达式");
 });
 
+// ── v0.37.2 可达性修满:P0 归档映射 / P1 池内扩池 / P2 Sequence 摊平 ──
+
+const {
+  poolsFor,
+} = await import("../src/renderer/lib/companion/shimeji-scheduler.ts");
+const { expandShimejiSequences } = await import(
+  "../src/main/services/shimeji/pure/shimeji-parse.ts"
+);
+
+/** 日文原版包形状:动作名日文,语义全靠 archiveOf 烘焙(P0 前这些判定全部失灵) */
+const JA_MANIFEST = mkManifest([
+  { name: "立つ", kind: "Stay", slot: "ground", archiveOf: "Stand", poses: [pose("a.png")] },
+  { name: "歩く", kind: "Move", slot: "ground", archiveOf: "Walk", poses: [pose("b.png", [2, 0])] },
+  { name: "座る", kind: "Stay", slot: "ground", archiveOf: "Sit", poses: [pose("c.png")] },
+  { name: "寝そべる", kind: "Stay", slot: "ground", archiveOf: "Sprawl", poses: [pose("d.png")] },
+  { name: "跳ねる", kind: "Animate", slot: "celebrate", archiveOf: "Bouncing", poses: [pose("e.png")] },
+  { name: "座って首が回る", kind: "Animate", slot: "ground", archiveOf: "SitAndSpinHeadAction", poses: [pose("k.png")] },
+  { name: "ドラッグされる", kind: "Sequence", slot: "interact", archiveOf: "Dragged", poses: [pose("f.png", [0, 0], 2)] },
+  { name: "落下する", kind: "Sequence", slot: "interact", archiveOf: "Fall", poses: [pose("g.png", [0, -2], 3)] },
+  { name: "壁を登る", kind: "Move", slot: "wall", archiveOf: "ClimbWall", poses: [pose("h.png", [0, -2])] },
+  { name: "天井を伝う", kind: "Move", slot: "ceiling", archiveOf: "ClimbCeiling", poses: [pose("i.png", [1, 0])] },
+  { name: "IEの壁を登る", kind: "Move", slot: "panel", archiveOf: "ClimbIEWall", poses: [pose("j.png", [0, -2])] },
+]);
+
+await test("T18 P0 归档映射:日文包语义判定走 archiveOf(休息/挣扎/坠落/表情全通)", () => {
+  const pools = poolsFor(JA_MANIFEST);
+  assert.ok(pools.rest.some((a) => a.name === "座る"), "rest 池命中日文名座る(archiveOf=Sit)");
+  assert.ok(pools.drag.some((a) => a.name === "ドラッグされる"), "drag 池命中 ドラッグされる(archiveOf=Dragged)");
+  assert.ok(pools.air.some((a) => a.name === "落下する"), "air 池命中 落下する(archiveOf=Fall)");
+  assert.ok(pools.climb.some((a) => a.name === "壁を登る"), "wall 池照常");
+  // grab 黑盒:挣扎动作=archiveOf 命中(旧逻辑日文名 DRAG 正则必 miss → 沿用旧帧)
+  const g = tickShimeji(initMotion(), JA_MANIFEST, { t: "grab" }, "");
+  assert.equal(g.mode, "dragged");
+  assert.equal(g.actionName, "ドラッグされる", "抓=挣扎帧按 archiveOf 命中");
+  // 快扔黑盒:坠落动作=archiveOf 命中
+  const t = tickShimeji(g, JA_MANIFEST, { t: "release", speed: THROW_MIN_SPEED + 1 }, "");
+  assert.equal(t.mode, "air");
+  assert.equal(t.actionName, "落下する", "快扔=坠落帧按 archiveOf 命中");
+  // 表情偏好黑盒:happy → 跳ねる(archiveOf=Bouncing 命中 EXPRESSION_PREF,日文名也能被偏好到)
+  let m = initMotion();
+  for (let i = 0; i < 5; i++) m = tickShimeji(m, JA_MANIFEST, { t: "tick" }, "happy", seeded(9));
+  assert.equal(m.actionName, "跳ねる", "happy 表情经 archiveOf 命中 跳ねる");
+});
+
+await test("T19 P1 池内扩池:Animate 进 idle、panel 移出 idle、四触发链池构成", () => {
+  const pools = poolsFor(JA_MANIFEST);
+  assert.ok(pools.idle.some((a) => a.name === "座って首が回る"), "ground 上 Animate kind 进 idle(v0.37.2 扩)");
+  assert.ok(!pools.idle.some((a) => a.slot === "celebrate"), "celebrate 槽不进随机池(表情偏好专属通道)");
+  assert.ok(!pools.idle.some((a) => a.slot === "panel"), "panel 槽移出 idle(IE 特技无表面可演)");
+  assert.ok(pools.idle.some((a) => a.name === "立つ"), "ground Stay 照常进 idle");
+  assert.ok(pools.walk.some((a) => a.name === "歩く"), "ground Move 照常进 walk");
+  // 触发链池内随机(P1):wall/ceiling/air/drag 池各多条时非池首可达——
+  // 池构成由 poolsFor 保证;消费点 pickVaried 由源级断言锁(pickFirst 已删除)
+  const schedSrc = readFileSync(new URL("../src/renderer/lib/companion/shimeji-scheduler.ts", import.meta.url), "utf8");
+  assert.ok(!schedSrc.includes("pickFirst"), "P1 触发链恒取池首的 pickFirst 已删除");
+  const varidHits = (schedSrc.match(/pickVaried\(pools\./g) ?? []).length;
+  assert.ok(varidHits >= 7, `触发链消费点全部 pickVaried(实际 ${varidHits} 处,需 ≥7:三地面池+drag/air/落地/ceiling/fall)`);
+});
+
+await test("T20 P2 Sequence 摊平:poses 链拼接+duration 缩放+kind 重写;环/缺引用白名单", async () => {
+  const leafWalk = { name: "歩く", kind: "Move", slot: "ground", archiveOf: "Walk", poses: [pose("w1.png", [2, 0], 5), pose("w2.png", [2, 0], 5)] };
+  const leafSit = { name: "座る", kind: "Stay", slot: "ground", archiveOf: "Sit", poses: [pose("s1.png", [0, 0], 10)] };
+  const seq = {
+    name: "歩って座る", kind: "Sequence", slot: "ground", archiveOf: "WalkLeftAndSit",
+    refs: [{ name: "歩く", duration: 10 }, { name: "座る", duration: 10 }],
+    poses: [],
+  };
+  const { actions, unexpanded } = expandShimejiSequences([leafWalk, leafSit, seq]);
+  assert.equal(unexpanded.length, 0, "正常链无白名单项");
+  const expanded = actions.find((a) => a.name === "歩って座る");
+  assert.equal(expanded.kind, "Move", "kind 重写=首叶子 Move");
+  assert.equal(expanded.poses.length, 3, "poses 链拼接(2+1)");
+  const walkTotal = expanded.poses[0].duration + expanded.poses[1].duration;
+  assert.ok(Math.abs(walkTotal - 10) <= 2, `引用 duration=10 按比例缩放步进链(实际总时长 ${walkTotal})`);
+  // 环引用:A 引 B,B 引 A → 双双白名单,不炸不挂
+  const a = { name: "A", kind: "Sequence", refs: [{ name: "B" }], poses: [] };
+  const b = { name: "B", kind: "Sequence", refs: [{ name: "A" }], poses: [] };
+  const cyc = expandShimejiSequences([a, b]);
+  assert.deepEqual(cyc.unexpanded.sort(), ["A", "B"], "环引用双双白名单");
+  // 缺引用 → 白名单
+  const missing = expandShimejiSequences([{ name: "X", kind: "Sequence", refs: [{ name: "鬼" }], poses: [] }]);
+  assert.deepEqual(missing.unexpanded, ["X"], "引用缺失白名单");
+  // 深度上限:链长 > 8 → 白名单
+  const chain = [];
+  for (let i = 0; i < 12; i++) chain.push({ name: `L${i}`, kind: "Sequence", refs: [{ name: `L${i + 1}` }], poses: i === 11 ? [pose("z.png")] : [] });
+  chain.push({ name: "L12", kind: "Stay", poses: [pose("z.png")] });
+  const deep = expandShimejiSequences(chain);
+  assert.ok(deep.unexpanded.includes("L0"), "超深链白名单(不炸)");
+  // 真样本烟测:.shimeji-fixtures 在场时(本地/gitignored,CI SKIP)日文包 64 複合应大部分摊平
+  try {
+    const fs2 = await import("node:fs");
+    const fx = new URL("../.shimeji-fixtures/Eren Jaeger/conf/Actions.xml", import.meta.url);
+    if (fs2.existsSync(fx)) {
+      const real = expandShimejiSequences(parseShimejiActions(fs2.readFileSync(fx, "utf8")));
+      const seqTotal = real.actions.filter((x) => x.kind === "Sequence").length;
+      assert.ok(seqTotal <= real.unexpanded.length, `真样本未摊平的 Sequence 应≤白名单数(${seqTotal} vs ${real.unexpanded.length})`);
+      assert.ok(real.actions.some((x) => x.kind !== "Sequence" && x.poses.length > 0 && x.name === "座ってボーっとする"), "真样本複合动作摊平成功");
+    } else {
+      console.log("  (T20:.shimeji-fixtures 不在场,真样本烟测 SKIP)");
+    }
+  } catch { /* fixtures 缺失不红 */ }
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

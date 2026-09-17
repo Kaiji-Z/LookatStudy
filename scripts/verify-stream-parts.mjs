@@ -14,7 +14,7 @@
  *   4. 新事件 chat:part 与 chat:token 可并存
  */
 import assert from "node:assert";
-import { accumulatePart } from "../shared/part-accumulator.ts";
+import { accumulatePart, toolErrorVisibility } from "../shared/part-accumulator.ts";
 
 const TESTS = [];
 const test = (name, fn) => TESTS.push({ name, fn });
@@ -275,6 +275,46 @@ test("T9 shared accumulatePart 一致+纯函数+JSON往返", () => {
   // 往返后继续 fold 一个 part 仍正常(模拟重载后继续累积)
   const afterReload = accumulatePart(persisted, { type: "text", text: "续" });
   assert.strictEqual(afterReload[afterReload.length - 1].text, "你好世界续", "重载后可继续累积");
+});
+
+// ---------- T-toolerr: 被重试接替的工具错误隐藏(v0.37.1) ----------
+test("toolErrorVisibility: 同工具 error→重试成功,错误块隐藏;真失败(无接替)保持可见", () => {
+  // 场景还原(2026-09-17 手机实测):模型 generate_quiz 首试 zod 失败,重试成功——
+  // 消息里留下 error 块 + quiz 成功块,用户先看到一个错误再看到题目。
+  const parts = [
+    { type: "text", text: "好,出几题:" },
+    { type: "tool-call", toolName: "generate_quiz", state: "output-error", error: "入参校验失败" },
+    { type: "tool-call", toolName: "generate_quiz", state: "input-available" },
+    { type: "tool-call", toolName: "generate_quiz", state: "output-available", output: { quiz: 1 } },
+  ];
+  const vis = toolErrorVisibility(parts);
+  assert.strictEqual(vis.length, 4, "掩码与 parts 等长");
+  assert.strictEqual(vis[0], true, "文本块不受影响");
+  assert.strictEqual(vis[1], false, "被重试接替的错误块隐藏");
+  assert.strictEqual(vis[2], true, "重试进行中可见");
+  assert.strictEqual(vis[3], true, "成功块可见");
+  // 纯函数:不改入参
+  assert.strictEqual(parts[1].state, "output-error", "入参数组不被修改");
+  // 真失败:错误块之后没有同工具的成功/进行中 → 保持可见
+  const realFail = [
+    { type: "tool-call", toolName: "generate_quiz", state: "output-error", error: "boom" },
+    { type: "text", text: "抱歉,出题失败了" },
+  ];
+  assert.strictEqual(toolErrorVisibility(realFail)[0], true, "无接替者的错误必须可见(不静默吞)");
+  // 不同工具的错误不受别的工具成功影响
+  const crossTool = [
+    { type: "tool-call", toolName: "generate_quiz", state: "output-error", error: "boom" },
+    { type: "tool-call", toolName: "draw_diagram", state: "output-available", output: {} },
+  ];
+  assert.strictEqual(toolErrorVisibility(crossTool)[0], true, "跨工具成功不接替错误");
+  // 接替者必须在其后(此前出现的成功不算)
+  const order = [
+    { type: "tool-call", toolName: "X", state: "output-available", output: {} },
+    { type: "tool-call", toolName: "X", state: "output-error", error: "boom" },
+  ];
+  assert.strictEqual(toolErrorVisibility(order)[1], true, "错误块之后的成功才叫接替;之前的成功不算");
+  // 空数组安全
+  assert.deepStrictEqual(toolErrorVisibility([]), []);
 });
 
 // ---------- 跑测 ----------

@@ -106,3 +106,25 @@ export function accumulatePart(
   }
   return currentParts;
 }
+
+/**
+ * 工具错误可见性掩码(v0.37.1)——与 parts 等长的 boolean[],false=该块不应渲染。
+ *
+ * 规则:同一条消息内,output-error 的 tool-call 若被**其后**同 toolName 的
+ * input-available / output-available 接替(=模型当场重试并成功),则错误块隐藏——
+ * 弱模型出题/画图首次入参过不了 zod 校验、重试即对是常态(实测:出题先闪一个
+ * 错误块再正常显示题目),重试已成功的瞬时失败展示出来纯属噪音。
+ * 没有接替者的错误保持可见(真失败必须浮出,绝不静默吞)。
+ */
+export function toolErrorVisibility(parts: ChatMessagePart[]): boolean[] {
+  return parts.map((p, i) => {
+    if (p.type !== "tool-call" || p.state !== "output-error") return true;
+    return !parts.some(
+      (q, j) =>
+        j > i &&
+        q.type === "tool-call" &&
+        q.toolName === p.toolName &&
+        (q.state === "input-available" || q.state === "output-available"),
+    );
+  });
+}

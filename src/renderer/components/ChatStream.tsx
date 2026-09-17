@@ -16,6 +16,7 @@
 import { useState, useRef, useEffect, useCallback, Suspense, lazy } from "react";
 import type { CanvasItem } from "@shared/types";
 import type { ChatMessageV2, ChatMessagePart } from "@shared/part-accumulator";
+import { toolErrorVisibility } from "@shared/part-accumulator";
 import ReactMarkdown from "react-markdown";
 import { useMarkdownPipeline } from "../lib/math-plugins.js";
 import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square, UserRound } from "lucide-react";
@@ -650,20 +651,27 @@ function MessageRowV2({
   return (
     <div className="msg-enter" ref={msgRef} data-testid="msg-assistant" data-msg-id={msg.id}>
       <div className="min-w-0 space-y-2.5">
-        {msg.parts.map((part, idx) => (
-          <PartRenderer
-            key={idx}
-            part={part}
-            msgId={msg.id}
-            toolCallIdx={idx}
-            onApplyProposal={onApplyProposal}
-            onRejectProposal={onRejectProposal}
-            onQuizAnswered={onQuizAnswered}
-            quizMastery={quizMastery}
-            onPickAction={onPickAction}
-            onQuizCompleted={onQuizCompleted}
-          />
-        ))}
+        {(() => {
+          // v0.37.1:被同工具重试成功接替的错误块不渲染(出题首试 zod 失败→重试成功
+          // 的瞬时错误不再闪现;无接替者的真失败照常显示)。掩码等长,index/key 不动。
+          const visible = toolErrorVisibility(msg.parts);
+          return msg.parts.map((part, idx) =>
+            visible[idx] ? (
+              <PartRenderer
+                key={idx}
+                part={part}
+                msgId={msg.id}
+                toolCallIdx={idx}
+                onApplyProposal={onApplyProposal}
+                onRejectProposal={onRejectProposal}
+                onQuizAnswered={onQuizAnswered}
+                quizMastery={quizMastery}
+                onPickAction={onPickAction}
+                onQuizCompleted={onQuizCompleted}
+              />
+            ) : null,
+          );
+        })()}
       </div>
       {onSpeak && speakableText && (
         <div className="mt-1.5 flex items-center gap-1.5">

@@ -1284,11 +1284,12 @@ function CompanionContent() {
               onClick={() => setCustomPickOpen(false)}
             >
               <div
-                className="relative w-full max-w-md rounded-2xl bg-surface-0 border border-[var(--border)] shadow-elevated p-4"
+                className="relative w-full max-w-md max-h-[85dvh] flex flex-col rounded-2xl bg-surface-0 border border-[var(--border)] shadow-elevated p-4"
                 data-testid="custom-pack-list"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="text-body font-medium text-ink-strong mb-3">{t("companion.pick.custom.title")}</div>
+                <div className="min-h-0 overflow-y-auto">
                 {packs.length === 0 ? (
                   <p className="text-label text-ink-muted py-4 text-center">{t("companion.pick.empty.custom")}</p>
                 ) : (
@@ -1342,7 +1343,7 @@ function CompanionContent() {
                 {vehPickerPack && (
                   <div className="mt-2.5 rounded-xl border border-[var(--border-faint)] bg-surface-0 p-2.5" data-testid="companion-veh-picker">
                     <div className="text-caption text-ink-muted mb-1.5">{t("companion.wizard.vehicle")}</div>
-                    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("companion.wizard.vehicle")}>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5" role="radiogroup" aria-label={t("companion.wizard.vehicle")}>
                       {(["silver", ...VEH_PICKABLE] as CompanionVehicleId[]).map((vid) => {
                         const sel = (packs.find((q) => q.id === vehPickerPack)?.vehicle ?? "silver") === vid;
                         return (
@@ -1366,6 +1367,7 @@ function CompanionContent() {
                     </div>
                   </div>
                 )}
+                </div>
               </div>
             </div>
           )}
@@ -1380,11 +1382,12 @@ function CompanionContent() {
               onClick={() => setShimejiPickOpen(false)}
             >
               <div
-                className="relative w-full max-w-md rounded-2xl bg-surface-0 border border-[var(--border)] shadow-elevated p-4"
+                className="relative w-full max-w-md max-h-[85dvh] flex flex-col rounded-2xl bg-surface-0 border border-[var(--border)] shadow-elevated p-4"
                 data-testid="shimeji-pack-list"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="text-body font-medium text-ink-strong mb-3">{t("companion.pick.shimeji.title")}</div>
+                <div className="min-h-0 overflow-y-auto">
                 {shimejiPacks.length === 0 ? (
                   <p className="text-label text-ink-muted py-4 text-center">{t("companion.pick.empty.shimeji")}</p>
                 ) : (
@@ -1441,7 +1444,7 @@ function CompanionContent() {
                 {shimejiVehPicker && (
                   <div className="mt-2.5 rounded-xl border border-[var(--border-faint)] bg-surface-0 p-2.5" data-testid="shimeji-veh-picker">
                     <div className="text-caption text-ink-muted mb-1.5">{t("companion.wizard.vehicle")}</div>
-                    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("companion.wizard.vehicle")}>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5" role="radiogroup" aria-label={t("companion.wizard.vehicle")}>
                       {(["silver", ...VEH_PICKABLE] as CompanionVehicleId[]).map((vid) => {
                         const sel = (shimejiPacks.find((q) => q.id === shimejiVehPicker)?.vehicle ?? "silver") === vid;
                         return (
@@ -1465,6 +1468,7 @@ function CompanionContent() {
                     </div>
                   </div>
                 )}
+                </div>
               </div>
             </div>
           )}

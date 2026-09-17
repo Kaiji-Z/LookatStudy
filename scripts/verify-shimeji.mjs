@@ -591,6 +591,13 @@ await test("T16 导入屏手机适配(v0.37.1):滚动容纳 + 触控地板", asy
   assert.ok(cssSrc.includes('[data-testid="companion-wizard"] button'), "T16 向导按钮触控地板");
   assert.ok(cssSrc.includes('[data-testid="shimeji-dialog-close"]'), "T16 关闭钮 44px");
   assert.ok(cssSrc.includes("min-height: 40px"), "T16 地板值在");
+  // 包列表选择弹窗(2026-09-17 手机截图定谳):滚动容纳 + 换载具药丸两列栅格 + 卡角钮 36px
+  const settingsSrc = read("../src/renderer/components/SettingsView.tsx");
+  assert.ok(settingsSrc.includes('data-testid="shimeji-pack-list"'), "T16 shimeji 包列表弹窗在");
+  assert.ok(/max-h-\[85dvh\][^>]*data-testid="shimeji-pack-list"/.test(settingsSrc.replace(/\n/g, " ")), "T16 包列表弹窗限高");
+  assert.ok(cssSrc.includes('[data-testid="shimeji-veh-picker"] button'), "T16 换载具药丸触控地板");
+  assert.ok(cssSrc.includes('button[class*="absolute"]'), "T16 卡角色点/删除钮 36px 抬升");
+  assert.ok((settingsSrc.match(/grid grid-cols-2 sm:grid-cols-3/g) ?? []).length >= 2, "T16 换载具药丸窄屏两列栅格(两处 picker)");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

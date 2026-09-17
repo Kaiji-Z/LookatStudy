@@ -652,13 +652,22 @@ body.pane-dragging { cursor: col-resize; user-select: none; }
   [data-testid="shimeji-character-picker"] .btn-3d-neutral,
   [data-testid="companion-wizard"] button,
   [data-testid="companion-wizard"] a,
-  [data-testid="companion-wizard-name"] {
+  [data-testid="companion-wizard-name"],
+  [data-testid="shimeji-veh-picker"] button,
+  [data-testid="companion-veh-picker"] button {
     min-height: 40px;
   }
   [data-testid="shimeji-dialog-close"],
   [data-testid="shimeji-import"] {
     min-width: 44px;
     min-height: 44px;
+  }
+  /* 包列表卡角的换载具色点/删除钮:视觉 20px 太小,抬到 36px
+     (不到 44——绝对定位在卡缘,44 会大面积盖住卡片文字;卡行本体 ≥56px 是主点目标) */
+  [data-testid="shimeji-pack-list"] button[class*="absolute"],
+  [data-testid="custom-pack-list"] button[class*="absolute"] {
+    min-width: 36px;
+    min-height: 36px;
   }
 }
 

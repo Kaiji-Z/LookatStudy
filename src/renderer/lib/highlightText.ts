@@ -42,6 +42,11 @@ export function getTextModel(
       // 源的 $..$/$$..$$ 公式天然对齐(karaoke/画线对公式课不断裂的关键)。
       if (parent.closest(".katex-html")) return NodeFilter.FILTER_REJECT;
       if (parent.closest(".katex-mathml") && !parent.closest("annotation")) return NodeFilter.FILTER_REJECT;
+      // v0.37 mermaid 围栏图卡:chrome 文字(标题/缩放百分比/mermaid.live 链接)与
+      // SVG 节点标签是渲染产物,不在 markdown 源文本里;收进 model 会给画线/跟句
+      // 匹配添重复噪声(短标签如"水"极易撞正文)。朗读侧 normalizeSpeechText 本就
+      // 整体剥围栏源码,跳过图卡后两侧文本空间对称(与 .katex-html 同款拒绝)。
+      if (parent.closest("[data-md-diagram]")) return NodeFilter.FILTER_REJECT;
       // 跳过已画的持久画线 mark 内的所有文本(用 closest 检查祖先链,防止嵌套结构漏过)。
       // 这是 save 时 modelTextLen 随笔记数增长的根因:mark 内文本被重复计算。
       // includeMarks(朗读 karaoke 用):句子来自原文,必须收全文本——划线恰好落在

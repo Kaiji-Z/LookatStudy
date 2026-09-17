@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense, lazy } from "react";
-import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight, AlertTriangle, Map as MapIcon, MessageSquare, PenLine, User } from "lucide-react";
+import { Settings, Flame, Zap, PanelLeft, PanelRight, BookOpen, Shield, Shuffle, ChevronDown, ChevronRight, AlertTriangle, Map as MapIcon, MessageSquare, PenLine, User, Crown, X } from "lucide-react";
 import { api } from "./lib/api.js";
 import type {
   Course,
@@ -56,7 +56,8 @@ import { PaneResizeHandle } from "./components/PaneResizeHandle.js";
 import { useFocusTrap } from "./lib/useFocusTrap.js";
 import { CelebrationLayer } from "./components/CelebrationLayer.js";
 import { celebrate } from "./lib/celebration.js";
-import { companionReviewing, companionSetStreaming, companionWhistle } from "./lib/companion/bus.ts";
+import { companionNodePoint, companionReviewing, companionSetStreaming, companionWhistle } from "./lib/companion/bus.ts";
+import { nextLessonAfter } from "@shared/next-lesson";
 
 // 非首屏重组件按需加载(入口包瘦身):设置抽屉/考试视图/命令面板仅打开时才拉 chunk
 const SettingsView = lazy(() => import("./components/SettingsView.js").then((m) => ({ default: m.SettingsView })));
@@ -586,6 +587,7 @@ export default function App() {
   // 点 lesson:套考试离开守卫后执行
   const handleLessonClick = useCallback(
     (node: ContentNode) => {
+      setNextCueNodeId(null); // 用户亲自点球 = 指路完成,撤环(任何点球都清)
       if (examSessionRef.current.active && node.id !== selectedNodeId) {
         setExamLeave({ open: true, pendingAction: () => void proceedLessonClick(node) });
         return;
@@ -634,6 +636,50 @@ export default function App() {
       }
     }, 60);
   }, [tier]);
+
+  /* ── 课程推进边界卡(v0.37)──────────────────────────────────────
+     一课首次毕业(主进程双路 !wasMastered 过渡发 lesson:mastered)→ 对话区出卡。
+     点「开始下一课」:bot 指路、用户开车——切到左栏,伴学飞到下一球旁指向,
+     球挂虚线环常驻到点球,**不自动切节点**(节奏权/仪式感在学习者手里)。
+     下一课是谁 = 系统真源 nextLessonAfter(同段顺延→下段首课),agent 不参与排序。
+     最后一课毕业 → 终点态卡(无按钮,10s 谢幕)。 */
+  const [nextCueCard, setNextCueCard] = useState<{ completedId: string; next: ContentNode | null } | null>(null);
+  const [nextCueNodeId, setNextCueNodeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    return api.on("lesson:mastered", ({ nodeId }) => {
+      // 只认当前课程树里的节点(切课竞态/异课程事件不出卡)
+      if (!tree.some((n) => n.id === nodeId)) return;
+      setNextCueCard({ completedId: nodeId, next: nextLessonAfter(tree, nodeId) });
+    });
+  }, [tree]);
+
+  // 终点态(最后一课毕业):卡无指路按钮,10s 自动谢幕
+  useEffect(() => {
+    if (!nextCueCard || nextCueCard.next) return;
+    const id = window.setTimeout(() => setNextCueCard(null), 10_000);
+    return () => window.clearTimeout(id);
+  }, [nextCueCard]);
+
+  const beginNextLesson = useCallback(() => {
+    const next = nextCueCard?.next;
+    if (!next) return;
+    // 切栏三连与 handleBootPickCourse 同款活路(MapRail panel 内部态,不走 setView 死线)
+    setT2Side("rail");
+    setLeftPaneVisible(true);
+    if (tier === 3) setT3Pane("rail");
+    setNextCueNodeId(next.id); // 虚线环常驻到点球
+    setNextCueCard(null);
+    // 等左栏进视口后取球矩形吹哨(v0.36 同款 60ms 节拍;球不在视口不召唤,环仍指路)
+    window.setTimeout(() => {
+      const el = document.querySelector(`[data-node-id="${CSS.escape(next.id)}"]`);
+      const r = el?.getBoundingClientRect();
+      if (r && r.width > 0 && r.top >= 0 && r.bottom <= window.innerHeight) {
+        companionWhistle(r.right + 28, r.top + r.height / 2);
+        companionNodePoint();
+      }
+    }, 60);
+  }, [nextCueCard, tier]);
 
   // resume 选课 → 树异步加载后落地到上次节点(一次即清)
   useEffect(() => {
@@ -1011,6 +1057,7 @@ export default function App() {
           width={tier === 3 ? null : solvedPaneW.rail}
           view={view}
           onViewChange={setView}
+          nextCueNodeId={nextCueNodeId}
           courseTitle={currentCourse?.title ?? null}
           courseId={selectedCourseId}
           courses={courses}
@@ -1377,6 +1424,40 @@ export default function App() {
             hasNode={!!selectedNodeId}
           />
         </Suspense>
+      )}
+
+      {/* v0.37 课程推进边界卡:一课首次毕业 → 指路(伴学飞下一球+虚线环,用户自己点球) */}
+      {nextCueCard && (
+        <div
+          data-testid="next-lesson-card"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 surface-card px-4 py-3 flex items-center gap-3 shadow-elevated max-w-[92vw] toast-enter"
+          role="status"
+        >
+          <Crown className="w-5 h-5 text-gold shrink-0" aria-hidden="true" />
+          <div className="min-w-0">
+            <div className="text-body font-bold text-ink">{t("lesson.next.title")}</div>
+            {nextCueCard.next ? (
+              <div className="text-label text-ink-muted truncate">
+                {t("lesson.next.guide")} · {nextCueCard.next.title}
+              </div>
+            ) : (
+              <div className="text-label text-ink-muted">{t("lesson.next.terminal")}</div>
+            )}
+          </div>
+          {nextCueCard.next && (
+            <button className="btn-3d-brand text-label px-3 py-1.5 shrink-0" onClick={beginNextLesson} data-testid="next-lesson-go">
+              {t("lesson.next.button")}
+            </button>
+          )}
+          <button
+            className="text-ink-faint hover:text-ink shrink-0"
+            onClick={() => setNextCueCard(null)}
+            aria-label={t("common.close")}
+            data-testid="next-lesson-close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
 
       {/* 全局悬浮提示(Portal 到 body,脱离所有 stacking context,永远最上层) */}

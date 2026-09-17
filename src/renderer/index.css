@@ -705,6 +705,33 @@ body.pane-dragging { cursor: col-resize; user-select: none; }
     0 2px 6px rgb(var(--shadow-rgb) / 0.2);
 }
 
+/* ── v0.37 下一课指路环(边界卡点「开始下一课」后,伴学飞去指 + 此环常驻到点球)──
+   环挂在球按钮自身(::after),物理模式按钮位置由岛引擎逐帧直写——环自动跟球走,
+   解锁重建岛也不丢(render 时挂类)。虚线+呼吸=「这是下一课」的路标语汇。 */
+.lesson-bubble.next-cue {
+  position: relative;
+}
+.lesson-bubble.next-cue::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border: 2.5px dashed var(--gold, #ffc800);
+  border-radius: 9999px;
+  pointer-events: none;
+  animation: next-cue-pulse 1.6s ease-in-out infinite;
+}
+@keyframes next-cue-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+/* reduced-motion:环保留(路标语义不能丢),只停呼吸 */
+@media (prefers-reduced-motion: reduce) {
+  .lesson-bubble.next-cue::after {
+    animation: none;
+    opacity: 0.9;
+  }
+}
+
 /* ── 🔵 in_progress:蓝色动感,进行中 ── */
 .lesson-bubble-in-progress {
   background: radial-gradient(circle at 32% 28%, var(--accent-light) 0%, var(--accent) 45%, var(--accent-dark) 100%);

@@ -144,6 +144,26 @@ await test("base-prompt: 三级分层结构(红线→行为→偏好,顺序+优�
   assert.ok(got.includes("1. 防幻觉:") && got.includes("2. 工具调用真实性:"), "红线块应为编号双条");
 });
 
+await test("base-prompt: 课程推进边界条款(2026-09-17 模型空口承诺'说继续就开讲下一课'事故)", () => {
+  // 事故:LLM 在对话里向学习者承诺"你只管说继续,我就会顺着下一课开讲",但它
+  // 无法切换节点——承诺兑现不了。条款归行为层:明示能力边界+把人指向地图。
+  const zh = buildBaseAgentPrompt("zh-CN");
+  assert.ok(zh.includes("【课程推进边界】"), "zh 条款存在");
+  assert.ok(zh.includes("无法替学习者切换课程节点"), "zh 明示能力边界");
+  assert.ok(zh.includes("绝不要承诺"), "zh 禁止空头承诺");
+  const iVague = zh.indexOf("【模糊提问处理】");
+  const iBoundary = zh.indexOf("【课程推进边界】");
+  const iTools = zh.indexOf("【教学工具使用】");
+  assert.ok(iVague > 0 && iBoundary > iVague && iTools > iBoundary, "zh 条款归行为层(模糊提问与教学工具之间)");
+  const en = buildBaseAgentPrompt("en");
+  assert.ok(en.includes("[Lesson progression boundary]"), "en 条款存在(逐段同构)");
+  assert.ok(en.includes("cannot switch course nodes"), "en 明示能力边界");
+  const iVagueEn = en.indexOf("[Handling vague questions]");
+  const iBoundaryEn = en.indexOf("[Lesson progression boundary]");
+  const iToolsEn = en.indexOf("[Teaching tools]");
+  assert.ok(iVagueEn > 0 && iBoundaryEn > iVagueEn && iToolsEn > iBoundaryEn, "en 条款归行为层");
+});
+
 await test("base-prompt: 工具清单含 mark_mastered/record_answer(手写标记事故锁)", () => {
   // 真实事故(2026-08-31,用户报告):默认思考档下模型没真正调用 mark_mastered,
   // 而是在正文里手写「[工具调用已执行] mark_mastered → …」假标记冒充已发起提议——

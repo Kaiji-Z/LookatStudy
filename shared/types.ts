@@ -1195,6 +1195,9 @@ export interface IpcEvents {
   "exam:status": (status: ExamStatus) => void;
   /** main→renderer 状态变化推送(xp/streak/mastery 变化)。renderer 重拉 + 触发庆祝。 */
   "state:changed": (kind: "xp" | "streak" | "mastery") => void;
+  /** v0.37 课程推进边界卡:节点首次掌握毕业(!wasMastered 过渡,proposal:apply 与
+   *  quiz:recordAnswer 双路)→ renderer 出边界卡(下一课指路,由学习者自己点球)。 */
+  "lesson:mastered": (payload: { nodeId: string }) => void;
   /** v0.12 语音:逐句朗读音频(16-bit PCM WAV;serve 模式 wavBytes 为 base64 还原产物) */
   "speech:ttsAudio": (e: SpeechTtsAudioEventT) => void;
   /** 朗读结束(播完/被停/换场) */

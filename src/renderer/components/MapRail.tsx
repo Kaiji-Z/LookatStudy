@@ -54,6 +54,8 @@ interface MapRailProps {
   tree: ContentNode[];
   progressMap: Record<string, Progress>;
   selectedNodeId: string | null;
+  /** v0.37 课程推进边界卡:下一课指路环的目标球(常驻到点球;null=无指路)。 */
+  nextCueNodeId?: string | null;
   dueCount: number;
   dueNodeIds: Set<string>;
   overallMastery: number;
@@ -390,7 +392,7 @@ export function MapRail(props: MapRailProps & { fullWidth?: boolean; width?: num
                 ) : (
                   <div className="space-y-6 pt-2">
                     {visibleSections.map((section, sIdx) => (
-                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} streamingNodeIds={props.streamingNodeIds} onJumpNode={props.onJumpNode} physics={physicsOn} physicsWeather={skyPreset?.weather ?? "clear"} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} onFlakes={pushFlakes} orbSnowRef={orbSnowRef} />
+                      <MapSection key={section.id} section={section} sectionIndex={sIdx} tree={props.tree} progressMap={props.progressMap} selectedNodeId={props.selectedNodeId} dueNodeIds={props.dueNodeIds} streamingNodeIds={props.streamingNodeIds} onJumpNode={props.onJumpNode} nextCueNodeId={props.nextCueNodeId} physics={physicsOn} physicsWeather={skyPreset?.weather ?? "clear"} scrollRef={mapPathRef} navRef={navRef} onImpacts={pushImpacts} onFlakes={pushFlakes} orbSnowRef={orbSnowRef} />
                     ))}
                   </div>
                 )}
@@ -976,6 +978,7 @@ function MapSection({
   tree,
   progressMap,
   selectedNodeId,
+  nextCueNodeId,
   dueNodeIds,
   streamingNodeIds,
   onJumpNode,
@@ -992,6 +995,8 @@ function MapSection({
   tree: ContentNode[];
   progressMap: Record<string, Progress>;
   selectedNodeId: string | null;
+  /** v0.37 边界卡指路:该球加虚线环(render 时挂类,物理解锁重建岛也不丢)。 */
+  nextCueNodeId?: string | null;
   dueNodeIds: Set<string>;
   /** v0.23 异步会话:流式中的节点 id(球上转圈指示)。 */
   streamingNodeIds: string[];
@@ -1473,6 +1478,7 @@ function MapSection({
                 lesson={lesson}
                 progress={progressMap[lesson.id]}
                 isSelected={lesson.id === selectedNodeId}
+                isNextCue={lesson.id === nextCueNodeId}
                 isDue={dueNodeIds.has(lesson.id)}
                 isStreaming={streamingNodeIds.includes(lesson.id)}
                 chapterLessonsMastered={chapterLessonsMastered}
@@ -1505,6 +1511,7 @@ function MapNode({
   lesson,
   progress,
   isSelected,
+  isNextCue,
   isDue,
   isStreaming,
   chapterLessonsMastered,
@@ -1513,6 +1520,8 @@ function MapNode({
   lesson: ContentNode;
   progress?: Progress;
   isSelected: boolean;
+  /** v0.37 边界卡指路:下一课虚线环(常驻到点球)。 */
+  isNextCue: boolean;
   isDue: boolean;
   /** v0.23 异步会话:该节点有 thread 正在流式(含后台)——球上转圈指示 */
   isStreaming: boolean;
@@ -1552,7 +1561,7 @@ function MapNode({
             : bubbleClass(status)
         } ${isLocked ? "cursor-not-allowed" : "cursor-pointer hover:scale-105"} ${
           isSelected ? "ring-4 ring-accent ring-offset-2 ring-offset-neutral-50 dark:ring-offset-neutral-950" : ""
-        }`}
+        } ${isNextCue ? "next-cue" : ""}`}
         title={undefined}
         data-tooltip={
           examLocked

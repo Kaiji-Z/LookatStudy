@@ -14,6 +14,17 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Added
+
+- 课程推进边界卡：一课首次毕业（`lesson:mastered` 事件，`proposal:apply` 的 mark_mastered 与 `quiz:recordAnswer` 双路 `!wasMastered` 过渡同口径）→ 对话区出卡「本课完成,皇冠到手!」；点「开始下一课」伴学飞到左栏下一颗球旁指向、球挂金色虚线呼吸环（常驻到点球，物理模式 render 时挂类不因解锁重建丢失），T2/T3 强制左栏可见/T3 切屏（复用开屏尾卡切栏活路）——**bot 指路、用户开车**，不自动切节点；最后一课毕业出终点态卡（无按钮，10s 谢幕）；下一课排序=系统真源 `shared/next-lesson.ts` 纯函数（同段顺延→下段首课，跳空段），agent 不参与排序；新增 verify-next-lesson 套件（排序矩阵/双过渡点/指路编排/环样式/i18n 六组）
+- mermaid 围栏渲染兜底：模型未调 `draw_diagram` 工具、把 mermaid 围栏直接写进正文时，对话流与讲解区的共享 CodeBlock 不再按普通代码块高亮成源码，而是直接渲染成图卡（`mermaid-fence.ts` 纯函数判定→React.lazy 懒加载 MermaidArtifact，继承 strict 安全/LLM 修复回路/缩放适屏，主束零污染）；`getTextModel` 跳过 `[data-md-diagram]` 图卡子树，画线与朗读跟句文本不被图卡 chrome/SVG 标签污染；新增 verify-mermaid-fence 套件（判定矩阵/类型推断/接线与懒加载纪律等七组）
+
+### Fixed
+
+- base-prompt 新增【课程推进边界】条款（中英双语，行为层）：明示 agent 无法切换课程节点、一课收尾后引导学习者去地图点下一颗球、禁止承诺"你说继续我就会顺着开讲下一课"——修 2026-09-17 实测中 LLM 向用户空头承诺"说继续即可自动开讲下一课"但实际无法切节点的话术事故（verify-agent-locale 新增守卫）
+
 ## [0.36.0] - 2026-09-15
 
 ### Added

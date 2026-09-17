@@ -1439,7 +1439,11 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
       } else if (op.type === "mark_mastered" && result.nodeId) {
         recordReview(result.nodeId, 5 as const);
         // 里程碑(拿皇冠):仅首次掌握(!wasMastered)触发固化——一个节点只拿一次皇冠
-        if (!wasMastered) triggerConsolidationOnMilestone(result.nodeId);
+        if (!wasMastered) {
+          triggerConsolidationOnMilestone(result.nodeId);
+          // v0.37 边界卡:首次毕业告知渲染层出卡(下一课指路)
+          deps.emitter?.send("lesson:mastered", { nodeId: result.nodeId });
+        }
       }
     }
     markDirty();
@@ -1482,7 +1486,11 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
     const row = getDb().select().from(progressTable).where(eq(progressTable.nodeId, nodeId)).get();
     const mastered = !wasMastered && row?.status === "mastered";
     // 里程碑(拿皇冠):首次 mastered → 触发记忆固化该课程
-    if (mastered) triggerConsolidationOnMilestone(nodeId);
+    if (mastered) {
+      triggerConsolidationOnMilestone(nodeId);
+      // v0.37 边界卡:首次毕业告知渲染层出卡(与 proposal:apply 的 mark_mastered 同一过渡口径)
+      deps.emitter?.send("lesson:mastered", { nodeId });
+    }
     return { applied: true, newMastery: row?.mastery ?? undefined, mastered };
   });
 }

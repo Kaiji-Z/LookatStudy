@@ -600,5 +600,22 @@ await test("T16 导入屏手机适配(v0.37.1):滚动容纳 + 触控地板", asy
   assert.ok((settingsSrc.match(/grid grid-cols-2 sm:grid-cols-3/g) ?? []).length >= 2, "T16 换载具药丸窄屏两列栅格(两处 picker)");
 });
 
+await test("T17 帧预取+上一帧回退(v0.37.1 修「空方框」):随机选播首播新帧不再闪空洞", async () => {
+  const { readFileSync } = await import("node:fs");
+  const here = import.meta.url.slice(0, import.meta.url.lastIndexOf("/"));
+  const read = (p) => readFileSync(new URL(p, here + "/"), "utf8");
+  const storeSrc = read("../src/renderer/lib/companion/shimeji-pack-store.ts");
+  const formSrc = read("../src/renderer/components/companion/forms/shimeji-form.tsx");
+  // 预取:激活即拉全部 pose 帧(refreshActiveShimeji → prefetchFrames)
+  assert.ok(storeSrc.includes("export async function prefetchFrames"), "T17 prefetchFrames 导出");
+  assert.ok(/refreshActiveShimeji[\s\S]{0,400}prefetchFrames/.test(storeSrc), "T17 激活后接线预取");
+  assert.ok(/for \(const pose of a\.poses \?\? \[\]\)/.test(storeSrc), "T17 遍历全部 pose 帧");
+  // 在途去重:同帧并发只发一次 IPC(50ms 循环连渲同帧防重复发射)
+  assert.ok(storeSrc.includes("pendingFrames"), "T17 在途帧去重");
+  // 回退:src 未到位沿用上一帧(lastSrcRef),不得直接画空 rect
+  assert.ok(/if \(frameSrc\) lastSrcRef\.current = frameSrc;/.test(formSrc), "T17 上一帧回退接线");
+  assert.ok(/frameSrc \?\? lastSrcRef\.current/.test(formSrc), "T17 src 回退表达式");
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

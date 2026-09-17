@@ -53,6 +53,8 @@ export function ShimejiArt({ uid, refs, expression, energyRatio, chest }: FormAr
   const active = useSyncExternalStore(subscribeActiveShimeji, getActiveShimeji);
   const manifest = active?.manifest ?? null;
   const [rt, setRt] = useState<ShimejiMotion>(initMotion);
+  // 帧回退:当前帧 src 未到位时沿用上一帧(防随机选播首播新帧时闪空框)
+  const lastSrcRef = useRef<string | null>(null);
   const exprRef = useRef(expression);
   exprRef.current = expression;
   const manifestRef = useRef(manifest);
@@ -136,7 +138,11 @@ export function ShimejiArt({ uid, refs, expression, energyRatio, chest }: FormAr
 
   const action = manifest.actions.find((a) => a.name === rt.actionName) ?? null;
   const pose = action?.poses[rt.poseIdx] ?? null;
-  const src = pose ? getFrameSrc(active.id, pose.image) : null;
+  const frameSrc = pose ? getFrameSrc(active.id, pose.image) : null;
+  // 帧未到位(预取在途/IPC 慢)沿用上一帧——动画"原地多停一帧"远好于闪空框;
+  // 首帧即未到位才退占位框(激活即预取,实际几乎不可见)
+  if (frameSrc) lastSrcRef.current = frameSrc;
+  const src = frameSrc ?? lastSrcRef.current;
   // anchor=帧内脚底点 → 平移到脚底位置;scale(-1 1) 绕锚点镜像(锚点局部原点)
   const ax = pose?.anchor[0] ?? 64;
   const ay = pose?.anchor[1] ?? 128;

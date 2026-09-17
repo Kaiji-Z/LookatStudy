@@ -14,10 +14,15 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
-## [0.37.1] - 2026-09-17
+## [Unreleased]
 
 ### Fixed
 
+- Shimeji 帧加载空方框（随机选播引出的时序洞，2026-09-17 实机定谳；帧图磁盘对账零缺失，问题在渲染链路）：`getFrameSrc` 缓存未命中发 IPC 的窗口期渲染半透明空 rect——旧版恒播池首常用帧早缓存看不见，随机化让长尾动作轮上场后每张首播帧必闪。修两层：包激活时**预取全部 pose 帧**（`prefetchFrames`，在途去重防 50ms 循环重复发射）；渲染层**沿用上一帧**兜底（原地多停一帧远好于空洞，首帧未到位才占位）。verify-shimeji T17 守（含闭环）
+
+## [0.37.1] - 2026-09-17
+
+### Fixed
 - 流式出题的瞬时错误块（2026-09-17 手机实测）：模型 `generate_quiz` 首次入参过不了 zod 校验报 tool-error、同回合重试成功时，消息里会同时留下错误块与题目卡——先看到一个错误再看到题目。渲染层新纯函数 `toolErrorVisibility`（shared/part-accumulator，verify-stream-parts 锁）把"被其后同工具成功/进行中调用接替"的错误块隐藏；无接替者的真失败照常显示，绝不静默吞
 - 包选择弹窗手机适配（上轮导入屏适配的漏网，同日截图定谳）：Shimeji 包列表/自制包列表弹窗限高 85dvh+滚动容纳（包条目+展开的换载具面板此前顶出屏幕）；换载具药丸从 `flex-wrap`（窄屏挤成三行）改 2/3 列栅格；卡角 20px 换载具色点/删除钮 coarse 下抬到 36px（不到 44——绝对定位在卡缘，44 会盖住卡片文字）
 - Shimeji 动作选播坍缩（"动作很少"根因）：调度器 idle/walk/rest 池此前恒取池首——40 动作的包可见动作坍缩到 ~7 个；改池内随机选播+防连播（rng 已注入，同种子复现契约不变），表情偏好仍最高优——同一包不加新素材可见动作数直接乘上池子大小（verify-shimeji T15：旧策略可达集恰 3 个，新策略 Sprawl 等池内非首选动作可达）

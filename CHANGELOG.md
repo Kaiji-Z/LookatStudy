@@ -27,6 +27,7 @@ Entry conventions for contributors:
 
 ### Fixed
 
+- 章节考试考点超纲（用户实测"把其他章节的考点拉进来"）三修 + 配额改覆盖优先：诊断确认无 KC 集合泄露（收集链自 v1 起按 section 隔离），真因是双层——①KP 懒生成导致直接考试时覆盖率极低（实测 2.9%），大量课时只能拿标题做伪 KC，出题依据太薄；②出题上下文仅正文前 800 字，LLM 拿对整门课的全局知识补洞，问出后续章节概念。修复：出题前先按批（3 路并发，fast 档）补齐本章无 KP 课时的摘要+知识点（失败不阻塞，伪 KC 兜底仍在）；出题上下文加厚为摘要前置+正文前 1500 字；出题 prompt 加章节围栏（只考察提供内容中出现过的概念，禁止引入其他章节知识）。配额同步按"题不在多而在精准"重设计：`clamp(KC,3,15)` 每考点恰好一题（>15 等距采样首尾必选，<3 凑下限），不再追求题量。verify-exam T2 钉新配额 + T18 三修源级守卫
 - 看图覆盖模型恒为 provider 默认模型：覆盖在身且 models 列表>1 时出模型下拉（vision 能力 ✅ 标注），换选即写 `vision_model_override`
 - PDF 公式转写开关初始态读错键（存量 bug）：`MultimodalContent` 初始 `setMathVision(mv === "true")` 读的是 `vision_model_override`（`flag_math_vision` 从未解构）——配过看图覆盖模型的库会被误判为开着公式转写
 - 清理死契约：`testCustomProvider` 返回类型里从未实现过的 `models?` 回填字段移除（发现通道替代）

@@ -5,7 +5,7 @@
  *
  * 不变量:
  *   - accuracyToStars: ≥95%→3, ≥80%→2, ≥60%→1, <60%→0
- *   - planExamQuota: clamp(ceil(KC×1.5), 5, 15) round-robin
+ *   - planExamQuota: 覆盖优先 clamp(KC,3,15)——每 KC 恰一题,>15 等距采样,不足下限 round-robin
  *   - questionTimeLimitSec: 60 默认 / 90 长题干或含代码
  *   - buildAttemptShuffle: 种子确定 + 排列合法 + 显示位→原始下标映射判分正确(闭环目标)
  *   - attempt 流:判分 + 星数 + crownLevel 取最高 + 未答=错 + terminated + 防重复提交
@@ -78,19 +78,25 @@ assert.strictEqual(accuracyToStars(0.59), 0, "59% → 0 星");
 assert.strictEqual(accuracyToStars(0.0), 0, "0% → 0 星");
 console.log("✓ T1 accuracyToStars 分档(95/80/60 阈值)正确");
 
-// === T2: planExamQuota 题量规则 ===
+// === T2: planExamQuota 题量规则(2026-09-19 覆盖优先:题不在多而在精准) ===
 {
   const q4 = planExamQuota(["a", "b", "c", "d"]);
-  assert.strictEqual(q4.reduce((a, b) => a + b, 0), 6, "T2: 4 KC → 6 题");
+  assert.strictEqual(q4.reduce((a, b) => a + b, 0), 4, "T2: 4 KC → 4 题(一 KC 一题)");
+  assert.ok(q4.every((q) => q === 1), "T2: 4 KC 每考点恰好一题");
   const q8 = planExamQuota(Array.from({ length: 8 }, (_, i) => `k${i}`));
-  assert.strictEqual(q8.reduce((a, b) => a + b, 0), 12, "T2: 8 KC → 12 题");
+  assert.strictEqual(q8.reduce((a, b) => a + b, 0), 8, "T2: 8 KC → 8 题");
+  const q2 = planExamQuota(["a", "b"]);
+  assert.strictEqual(q2.reduce((a, b) => a + b, 0), EXAM_MIN_QUESTIONS, "T2: 2 KC → 下限 3 题");
+  assert.deepStrictEqual(q2, [2, 1], "T2: 2 KC → [2,1](凑下限 round-robin)");
   const q1 = planExamQuota(["only"]);
-  assert.strictEqual(q1.reduce((a, b) => a + b, 0), EXAM_MIN_QUESTIONS, "T2: 1 KC → 下限 5 题");
+  assert.strictEqual(q1.reduce((a, b) => a + b, 0), EXAM_MIN_QUESTIONS, "T2: 1 KC → 下限 3 题");
   const q20 = planExamQuota(Array.from({ length: 20 }, (_, i) => `k${i}`));
   assert.strictEqual(q20.reduce((a, b) => a + b, 0), EXAM_MAX_QUESTIONS, "T2: 20 KC → 上限 15 题");
-  assert.ok(q20.every((q) => q <= 2), "T2: round-robin 无 KC 超过 2 题(均匀)");
+  assert.ok(q20.every((q) => q <= 1), "T2: 采样分支每 KC 至多 1 题");
+  assert.strictEqual(q20[0], 1, "T2: 首 KC 必入选");
+  assert.strictEqual(q20[19], 1, "T2: 末 KC 必入选(全跨度采样)");
   assert.deepStrictEqual(planExamQuota([]), [], "T2: 0 KC → 空配额");
-  console.log("✓ T2 planExamQuota clamp(ceil(KC×1.5),5,15) + round-robin");
+  console.log("✓ T2 planExamQuota clamp(KC,3,15) 覆盖优先 + 等距采样");
 }
 
 // === T3: questionTimeLimitSec 动态限时(v0.19 宽松:45+cjk/5+words/3+opts×8+code25+math25,clamp(60,300)) ===
@@ -394,5 +400,21 @@ console.log("✓ T3 questionTimeLimitSec 动态宽松限时");
   assert.deepStrictEqual(la.perQuestion[0].options, ["正确", "错1", "错2", "错3"], "T17: 删题后回顾仍有选项(答案文本可显示)");
   console.log("✓ T17 判分快照自包含");
 }
+
+// === T18: 考试范围三修(2026-09-19,源级)——补 KP / 章节围栏 / 上下文加厚 ===
+{
+  const src = readFileSync(join(ROOT, "src/main/services/exam-service.ts"), "utf8");
+  assert.ok(src.includes("from \"./course-structure-service.js\""), "T18: 出题前补 KP 复用 generateLessonSummary");
+  assert.ok(src.includes("ensureSectionKcs"), "T18: ensureSectionKcs 在场");
+  assert.ok(src.includes("kpTodo"), "T18: 按 KP 缺失筛选补齐课时");
+  assert.ok(src.includes("禁止引入本课程其他章节"), "T18: prompt 章节围栏条款");
+  assert.ok(src.includes("覆盖优先:本批的每个知识点至少被一题考察"), "T18: 覆盖优先条款");
+  assert.ok(src.includes("slice(0, 1500)"), "T18: 出题上下文 800→1500 字");
+  assert.ok(src.includes("l.summary ? `${l.summary}"), "T18: 课时摘要前置(密度高于正文开头)");
+  // 同步前缀不变量:补 KP 的 setGenerating 先于首个 await(否则 setPromise 挂不上)
+  const kpPhase = src.slice(src.indexOf("kpTodo = lessons.filter"), src.indexOf("ensureSectionKcs(db, kpTodo"));
+  assert.ok(kpPhase.indexOf("setGenerating") < kpPhase.indexOf("await "), "T18: setGenerating 先于补 KP 的 await(同步前缀不变量)");
+}
+console.log("✓ T18 考试范围三修(补 KP/围栏/加厚)源级守卫");
 
 console.log("\n=== ALL EXAM SERVICE TESTS PASSED ✅ ===");

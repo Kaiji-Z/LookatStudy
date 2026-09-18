@@ -5,25 +5,33 @@
  * 从 shared 导入时注意:本文件是运行时代码(非 type-only),保持纯函数。
  */
 
-/** 每场考试的题量上限/下限。 */
-export const EXAM_MIN_QUESTIONS = 5;
+/** 每场考试的题量上限/下限。下限 3:小章节(考点少)也保底成卷。 */
+export const EXAM_MIN_QUESTIONS = 3;
 export const EXAM_MAX_QUESTIONS = 15;
 
 /**
- * 题量规划:目标题数 = clamp(ceil(KC数 × 1.5), 5, 15),round-robin 分配到各 KC。
- * 返回与 kcTitles 等长的数组,每项 = 该 KC 出几题。
- * 例:4 KC → 6 题 [2,2,1,1];8 KC → 12 题 [2,2,2,2,1,1,1,1];12 KC → 15 题。
+ * 题量规划(2026-09-19 拍板"题不在多而在精准,覆盖本章知识点即可"):
+ * 目标题数 = clamp(KC 数, 3, 15) —— **每个考点恰好一题**,覆盖优先。
+ *   - KC 数在 [3,15] → 全覆盖,一 KC 一题;
+ *   - KC > 15 → 等距采样到上限(round(q·(n-1)/(target-1)),首尾 KC 必入选,按课时序均匀覆盖整章跨度);
+ *   - KC < 3 → 凑足下限 3 题,round-robin 加给靠前的考点。
+ * 例:4 KC → [1,1,1,1];8 KC → [1×8];17 KC → 15 题(采样跳过 2 个,跨度均匀);
+ * 2 KC → [2,1];1 KC → [3]。
  */
 export function planExamQuota(kcTitles: string[]): number[] {
   const n = kcTitles.length;
   if (n === 0) return [];
-  const target = Math.min(
-    EXAM_MAX_QUESTIONS,
-    Math.max(EXAM_MIN_QUESTIONS, Math.ceil((n * 3) / 2)),
-  );
+  const target = Math.min(EXAM_MAX_QUESTIONS, Math.max(EXAM_MIN_QUESTIONS, n));
   const quotas = Array.from({ length: n }, () => 0);
-  for (let i = 0; i < target; i++) {
-    quotas[i % n]++;
+  if (n >= target) {
+    // 等距采样:round(q·(n-1)/(target-1)) 从 0 到 n-1 全跨度,步长>1 时严格递增无重复
+    for (let q = 0; q < target; q++) {
+      quotas[Math.round((q * (n - 1)) / (target - 1))] = 1;
+    }
+  } else {
+    for (let i = 0; i < target; i++) {
+      quotas[i % n]++;
+    }
   }
   return quotas;
 }

@@ -13,6 +13,13 @@
  *   - exam-service:整章按知识点出题,正确率分档给 1-3 星(progress.crownLevel),
  *     不走 BKT、不解锁下一章(考试完全独立,可选支线;KC 分解纯展示不回写)
  *
+ * 考试范围三修(2026-09-19,用户实测"考试把其他章节的考点拉进来"):
+ *   1. 出题前补齐本章无 KP 课时(ensureSectionKcs,3 路并发 fast 档)——KP 懒生成
+ *      导致直接考试时覆盖率极低,大量课时只能拿标题做伪 KC;
+ *   2. 出题上下文加厚:摘要前置 + 正文 800→1500 字,减少 LLM 拿全局知识补洞;
+ *   3. prompt 章节围栏:只考察提供内容中出现过的概念,禁止引入其他章节知识。
+ *   配额同步改覆盖优先(题不在多而在精准):每考点恰好一题,KC>15 等距采样。
+ *
  * attempt 档案(exam_attempts 表,第 20 张表):
  *   - 点"开始考试"建行;每答一题增量持久化 answers_json(崩溃安全)
  *   - 提交(正常/超时/中途离开 terminated)判分落库,切回节点可见历史结果
@@ -50,6 +57,7 @@ import { gradeAnswer } from "./exercise-service.js";
 import { addXp } from "./xp-service.js";
 import { emitStateChange } from "../lib/state-emitter.js";
 import { getKnowledgePoints } from "./kc-service.js";
+import { generateLessonSummary } from "./course-structure-service.js";
 import {
   setGenerating,
   setProgress,
@@ -214,14 +222,11 @@ interface ChapterKc {
   lessonTitle: string;
 }
 
-/**
- * 收集章节 KC:同 section 所有 lesson 的 knowledge_points 按课时序去重合并。
- * 无 KC 的课时(老课程/提取失败)用课时标题做伪 KC 兜底——考试照常能出。
- */
-function collectChapterKcs(db: Db, examNodeId: string): ChapterKc[] {
+/** 章节课时列表(按课时序;补 KP 与收集共用一口径)。 */
+function sectionLessons(db: Db, examNodeId: string) {
   const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
   const sectionId = node?.parentId;
-  const lessons = sectionId
+  return sectionId
     ? db
         .select()
         .from(contentNodes)
@@ -229,6 +234,38 @@ function collectChapterKcs(db: Db, examNodeId: string): ChapterKc[] {
         .filter((n) => n.parentId === sectionId && n.type === "lesson")
         .sort((a, b) => a.orderIdx - b.orderIdx)
     : [];
+}
+
+/**
+ * 出题前补齐本章无 KP 课时的知识点(2026-09-19 考试范围三修之三):
+ * KP 懒生成(点课时才出)导致直接考试时覆盖率极低(实测 2.9%),大量课时
+ * 只能拿"课时标题做伪 KC"——出题依据薄,LLM 容易超纲发挥。这里先按批
+ * (3 路并发,fast 档)补齐摘要+KP,失败/内容太短不阻塞(伪 KC 兜底仍在)。
+ */
+async function ensureSectionKcs(
+  db: Db,
+  lessons: Array<{ id: string; content: string | null }>,
+  markDirty: (() => void) | undefined,
+  onOne: () => void,
+): Promise<void> {
+  const CONC = 3;
+  for (let i = 0; i < lessons.length; i += CONC) {
+    const chunk = lessons.slice(i, i + CONC);
+    await Promise.all(
+      chunk.map(async (l) => {
+        await generateLessonSummary(db, l.id, markDirty).catch(() => null);
+        onOne();
+      }),
+    );
+  }
+}
+
+/**
+ * 收集章节 KC:同 section 所有 lesson 的 knowledge_points 按课时序去重合并。
+ * 无 KC 的课时(补 KP 失败/内容太短)用课时标题做伪 KC 兜底——考试照常能出。
+ */
+function collectChapterKcs(db: Db, examNodeId: string): ChapterKc[] {
+  const lessons = sectionLessons(db, examNodeId);
   if (lessons.length === 0) return [];
 
   const seen = new Set<string>();
@@ -276,13 +313,33 @@ async function generateExamBank(db: Db, examNodeId: string, locale?: string | nu
     const node = db.select().from(contentNodes).where(eq(contentNodes.id, examNodeId)).get();
     if (!node) throw new Error(`考试节点不存在: ${examNodeId}`);
 
+    const lessons = sectionLessons(db, examNodeId);
+    if (lessons.length === 0) throw new Error("本章没有课时,无法生成考试题");
+
+    // 出题前补 KP(阶段一):无 KP 且内容够长的课时先补摘要+知识点。
+    // 同步前缀不变量:setPromise 依赖 store 条目在场 —— 本阶段的 setGenerating
+    // 必须先于第一个 await 执行(见 prepareExam 注释)。
+    const kpTodo = lessons.filter((l) => {
+      const hasKp = getKnowledgePoints(db, l.id).length > 0;
+      return !hasKp && (l.content ?? "").trim().length >= 20;
+    });
+    if (kpTodo.length > 0) {
+      setGenerating(examNodeId, kpTodo.length);
+      let kpDone = 0;
+      await ensureSectionKcs(db, kpTodo, markDirty, () => {
+        kpDone++;
+        setProgress(examNodeId, kpDone);
+      });
+    }
+
     const kcs = collectChapterKcs(db, examNodeId);
     if (kcs.length === 0) throw new Error("本章没有课时,无法生成考试题");
 
     const quotas = planExamQuota(kcs.map((k) => k.title));
     const batches = batchKcs(kcs, quotas);
     // 进度以"知识点覆盖"计(用户可懂),不以 LLM 批次计:total = 本章 KC 总数,
-    // 每完成一批(含跳过的失败批)累加该批覆盖的 KC 数。
+    // 每完成一批(含跳过的失败批)累加该批覆盖的 KC 数。补 KP 阶段完成后
+    // 重新 setGenerating 切换到 KC 覆盖口径(done 归零)。
     setGenerating(examNodeId, kcs.length);
 
     const llm = resolveLlm(db);
@@ -299,12 +356,16 @@ async function generateExamBank(db: Db, examNodeId: string, locale?: string | nu
 
     for (const batch of batches) {
       const allowedKcs = batch.kcs.map((k) => k.title);
-      // 批内 KC 涉及的课时内容(去重,每课截 800 字)
+      // 批内 KC 涉及的课时内容(去重;摘要前置+正文前 1500 字——2026-09-19 加厚:
+      // 旧 800 字太薄,LLM 会拿自己对整门课的全局知识补洞,问出后续章节的概念)
       const lessonIds = [...new Set(batch.kcs.map((k) => k.lessonId))];
       const lessonContents = lessonIds
         .map((id) => db.select().from(contentNodes).where(eq(contentNodes.id, id)).get())
         .filter((l): l is NonNullable<typeof l> => !!l)
-        .map((l) => ({ title: l.title, content: (l.content ?? "").slice(0, 800) }));
+        .map((l) => ({
+          title: l.title,
+          content: ((l.summary ? `${l.summary}\n\n` : "") + (l.content ?? "")).slice(0, 1500),
+        }));
       for (let attempt = 0; attempt <= BATCH_RETRY; attempt++) {
         try {
           const prompt = buildKcBatchPrompt(node.title, batch, lessonContents, outLang, languageTarget);
@@ -630,7 +691,9 @@ function buildKcBatchPrompt(
     ``,
     `出题要求:`,
     `- 每题明确考察上面列出的某一个知识点,kc 字段填写该知识点标题(必须与列表完全一致)`,
-    `- 题干考"理解"和"应用",不要出死记硬背的定义题`,
+    `- 覆盖优先:本批的每个知识点至少被一题考察,不要集中在某一个`,
+    `- 只考察"课程内容"部分出现过/可由其直接推出的概念;禁止引入本课程其他章节或未在内容中出现的知识(即使你了解它们)——超纲题等于废题`,
+    `- 题干考"理解和应用",不要出死记硬背的定义题`,
     `- 干扰项 plausible 但 definitely wrong(基于学习者常犯的真实误解)`,
     `- 答案必须在提供的课程内容中有依据`,
     `- 数学表达式用行内 $..$ 或行间 $$..$$ 的 LaTeX 记法书写,不要用纯文本近似(界面会渲染成公式)`,

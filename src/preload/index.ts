@@ -175,10 +175,22 @@ const api = {
     ipcRenderer.invoke("agent:testConnection")) as ApiExpose["testLlmConnection"],
   testCustomProvider: ((input: CustomProviderInput) =>
     ipcRenderer.invoke("agent:testCustomProvider", input)) as ApiExpose["testCustomProvider"],
+  testProvider: ((providerId: string, modelId?: string) =>
+    ipcRenderer.invoke("agent:testProvider", providerId, modelId)) as ApiExpose["testProvider"],
   discoverModels: (() =>
     ipcRenderer.invoke("agent:discoverModels")) as ApiExpose["discoverModels"],
   discoverProviderModels: ((baseUrl: string, apiKey: string) =>
     ipcRenderer.invoke("agent:discoverProviderModels", baseUrl, apiKey)) as ApiExpose["discoverProviderModels"],
+  discoverModelsFor: ((providerId: string) =>
+    ipcRenderer.invoke("agent:discoverModelsFor", providerId)) as ApiExpose["discoverModelsFor"],
+  getModelMeta: ((providerId: string, modelId: string) =>
+    ipcRenderer.invoke("agent:getModelMeta", providerId, modelId)) as ApiExpose["getModelMeta"],
+  getModelOverlay: (() =>
+    ipcRenderer.invoke("agent:getModelOverlay")) as ApiExpose["getModelOverlay"],
+  setModelOverlay: ((overlay: unknown) =>
+    ipcRenderer.invoke("agent:setModelOverlay", overlay)) as ApiExpose["setModelOverlay"],
+  refreshModelCatalog: (() =>
+    ipcRenderer.invoke("agent:refreshModelCatalog")) as ApiExpose["refreshModelCatalog"],
   listCustomProviders: (() =>
     ipcRenderer.invoke("customProvider:list")) as ApiExpose["listCustomProviders"],
   createCustomProvider: ((input: CustomProviderInput) =>

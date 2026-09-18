@@ -155,6 +155,17 @@ export function ContextMeter({ info, historyTokens, draftTokens }: ContextMeterP
               </div>
             ))}
           </dl>
+          {info.pricing && (info.pricing.input !== null || info.pricing.output !== null) && (
+            <div
+              className="mt-2 pt-2 border-t border-[var(--border-faint)] text-caption text-ink-faint tabular-nums"
+              data-testid="context-price"
+            >
+              {t("context.price", {
+                i: info.pricing.input === null ? "?" : String(Number(info.pricing.input.toFixed(2))),
+                o: info.pricing.output === null ? "?" : String(Number(info.pricing.output.toFixed(2))),
+              })}
+            </div>
+          )}
         </div>
       )}
     </span>

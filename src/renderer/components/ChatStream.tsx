@@ -49,7 +49,7 @@ interface ChatStreamProps {
   /** AI 模型是否就绪(未就绪时空状态显示"去配置"卡而非🚀,消除冷启动死胡同) */
   agentReady?: boolean;
   /** 跳转设置(未配置 key 的空状态 CTA) */
-  onGotoSettings?: () => void;
+  onOpenModelManager?: () => void;
   /** 是否已选中节点(false 时空状态显示"选节点"引导) */
   hasNode?: boolean;
   /** 当前节点 id(用于内联 quiz 产物的答题 → mastery 更新) */
@@ -69,7 +69,7 @@ interface ChatStreamProps {
   cardMode?: boolean;
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onGotoSettings, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction, onQuizCompleted, cardMode = false }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onOpenModelManager, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction, onQuizCompleted, cardMode = false }: ChatStreamProps) {
   const t = useLang();
   const toast = useToast();
   const speech = useSpeech();
@@ -436,7 +436,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                     <div className="text-body font-bold text-ink-muted mb-1">{t("chat.empty.keyless.title")}</div>
                     <div className="text-label text-ink-muted mb-3">{t("chat.empty.keyless.desc")}</div>
                     <button
-                      onClick={onGotoSettings}
+                      onClick={onOpenModelManager}
                       className="btn-3d-brand w-full py-2 text-body font-bold flex items-center justify-center gap-2"
                     >
                       <Settings className="w-4 h-4" />

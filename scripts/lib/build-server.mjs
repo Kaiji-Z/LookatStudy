@@ -47,8 +47,10 @@ export async function buildServerBundle(outfile, opts = {}) {
     logLevel: opts.quiet ? "silent" : "info",
   });
   // 便携束运行时伴生文件:sql.js WASM(db 初始化读)+ 种子课程(seed.ts 读取)
+  // + 模型目录快照(model-catalog.ts 读取;缺失时运行时空目录降级,不致命)
   const { copyFileSync } = await import("node:fs");
   const beside = (src) => copyFileSync(join(ROOT, src), join(dirname(outfile), src.split("/").pop()));
   beside("node_modules/sql.js/dist/sql-wasm.wasm");
   beside("src/main/assets/seed-course.json");
+  beside("src/main/assets/model-catalog.json");
 }

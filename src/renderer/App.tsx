@@ -20,6 +20,7 @@ import { NotebookPanel, type NotebookTab } from "./components/NotebookPanel.js";
 import { BootGuidePanel } from "./components/BootGuidePanel.js";
 import { BootRecapPanel } from "./components/BootRecapPanel.js";
 const PersonalProfileModal = lazy(() => import("./components/PersonalProfileModal.js"));
+const ModelManagerModal = lazy(() => import("./components/ModelManagerModal.js"));
 import { nameAvatar } from "./lib/avatar.js";
 import { useCanvas } from "./lib/useCanvas.js";
 import { hasNoteMark } from "./lib/highlightText.js";
@@ -124,6 +125,13 @@ export default function App() {
   const [forceArtifactTab, setForceArtifactTab] = useState<NotebookTab | null>(null);
   // 设置弹窗(M1:设置从 tab 改为 modal/抽屉)
   const [showSettings, setShowSettings] = useState(false);
+  // 模型管理弹窗(v0.38):五入口(抽屉模型卡/ModelPicker 底部/无 key CTA/keyless 卡/开屏 settings_llm)
+  const [showModelManager, setShowModelManager] = useState(false);
+  const [modelManagerTab, setModelManagerTab] = useState<"main" | "vision">("main");
+  const openModelManager = useCallback((tab: "main" | "vision" = "main") => {
+    setModelManagerTab(tab);
+    setShowModelManager(true);
+  }, []);
   /** 开屏"更换伴学伙伴"等入口的定位区段:打开抽屉后滚动到对应设置组 */
   const [settingsFocusSection, setSettingsFocusSection] = useState<string | null>(null);
   // 个人资料窗口(v0.36):标题栏头像入口 + 称呼(头像首字母)状态
@@ -1144,6 +1152,7 @@ export default function App() {
                     setShowReviewDrawer(true);
                   })}
                   onOpenSettings={(section) => { setSettingsFocusSection(section ?? null); setShowSettings(true); }}
+                  onOpenModelManager={() => openModelManager("main")}
                   onGotoNode={(nodeId, target) => guardedNav(() => handleBootGotoNode(nodeId, target))}
                   onPickCourse={handleBootPickCourse}
                   onOpenProfile={() => setShowProfileModal(true)}
@@ -1221,7 +1230,7 @@ export default function App() {
                 summary={nodeSummary}
                 onStartLearning={agentReady?.ready ? handleStartLearning : undefined}
                 agentReady={agentReady?.ready ?? false}
-                onGotoSettings={() => setShowSettings(true)}
+                onOpenModelManager={() => openModelManager("main")}
                 hasNode={!!selectedNode}
                 selectedNodeId={selectedNodeId}
                 threadId={thread.activeId}
@@ -1262,7 +1271,7 @@ export default function App() {
                       }
                     : undefined
                 }
-                onGotoSettings={() => setShowSettings(true)}
+                onOpenModelManager={() => openModelManager("main")}
                 insertText={quoteText}
                 historyTokens={historyTokens}
               />
@@ -1347,11 +1356,22 @@ export default function App() {
         </Suspense>
       )}
 
+      {/* 模型管理弹窗(v0.38):五入口唤起,lazy 按需加载 */}
+      {showModelManager && (
+        <Suspense fallback={null}>
+          <ModelManagerModal
+            tab={modelManagerTab}
+            onClose={() => setShowModelManager(false)}
+          />
+        </Suspense>
+      )}
+
       {/* 设置抽屉(从 tab 改为 overlay,M1) */}
       {showSettings && (
         <SettingsDrawer
           onClose={() => { setShowSettings(false); setSettingsFocusSection(null); }}
           focusSection={settingsFocusSection}
+          onOpenModelManager={openModelManager}
         />
       )}
 
@@ -1689,7 +1709,7 @@ function HeaderAvatar({ profileName, onOpenProfile }: { profileName: string | nu
 
 /* ---------- 设置抽屉 ---------- */
 
-function SettingsDrawer({ onClose, focusSection }: { onClose: () => void; focusSection?: string | null }) {
+function SettingsDrawer({ onClose, focusSection, onOpenModelManager }: { onClose: () => void; focusSection?: string | null; onOpenModelManager: (tab?: "main" | "vision") => void }) {
   const t = useLang();
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, true);
@@ -1725,7 +1745,7 @@ function SettingsDrawer({ onClose, focusSection }: { onClose: () => void; focusS
         </div>
         <div className="flex-1 overflow-y-auto">
           <Suspense fallback={null}>
-            <SettingsView />
+            <SettingsView onOpenModelManager={onOpenModelManager} />
           </Suspense>
         </div>
       </div>

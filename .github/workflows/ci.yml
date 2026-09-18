@@ -30,7 +30,7 @@ jobs:
       - name: Typecheck main + preload
         run: npx tsc -p tsconfig.electron.json --noEmit
 
-      - name: Logic test suites (105 suites)
+      - name: Logic test suites (130 suites)
         run: npm run verify:core
 
       - name: Build renderer

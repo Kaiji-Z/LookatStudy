@@ -9,8 +9,9 @@ import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import type { ContextUsageInfo } from "@shared/types";
 import { estimateTokens } from "@shared/token-estimate";
 import * as schema from "../../db/schema.js";
-import { readSettingsMap, supportsVision, resolveActiveContextWindow } from "./llm-client.js";
+import { readSettingsMap, supportsVision } from "./llm-client.js";
 import { getProviderPreset } from "./llm-presets.js";
+import { presetWithOverlay, resolveModelMeta } from "./model-catalog.js";
 import { getCustomProvider } from "../custom-provider-service.js";
 import { getVisionOverride } from "./vision-bridge.js";
 import { assembleContextBlocks } from "./agent-engine.js";
@@ -27,11 +28,14 @@ export function getContextUsage(db: Db, nodeId: string, locale?: string | null):
   const preset = getProviderPreset(providerId);
   const model = settings.active_model ?? preset?.defaultModel ?? "";
 
-  // 窗口解析走 llm-client 统一出口(与 agent-engine 历史预算裁剪同源,防漂移)
-  const contextWindow = resolveActiveContextWindow(db);
+  // 窗口/价格解析走 model-catalog 三层合并(llm-client.resolveActiveContextWindow
+  // 同一真源;这里多要 pricing,故直接取完整 meta)
+  const meta = resolveModelMeta(db, providerId, model);
+  const contextWindow = meta?.contextWindow ?? null;
   let visionCapable = false;
   if (preset) {
-    visionCapable = supportsVision(preset, model);
+    // 策展 ∪ overlay:overlay 添加的模型条目也要进 supportsVision 查表口径
+    visionCapable = supportsVision(presetWithOverlay(db, preset), model);
   } else if (providerId.startsWith("custom-")) {
     const cp = getCustomProvider(db, providerId);
     if (cp) {
@@ -49,6 +53,7 @@ export function getContextUsage(db: Db, nodeId: string, locale?: string | null):
     nodeTokens: estimateTokens(blocks.nodeContext),
     learnerTokens: estimateTokens(blocks.learnerSnapshot ?? ""),
     contextWindow,
+    pricing: meta?.pricing ?? null,
     provider: providerId,
     model,
     visionCapable: visionCapable || override !== null,

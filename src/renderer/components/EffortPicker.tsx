@@ -26,6 +26,8 @@ export function EffortPicker() {
   const [open, setOpen] = useState(false);
   const [effort, setEffort] = useState<ReasoningEffortSetting>("");
   const [supported, setSupported] = useState(true);
+  /** 目录判定当前模型不支持思考(≠家族不支持控制):深度档禁用,自动/快速仍可用 */
+  const [modelNoReasoning, setModelNoReasoning] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   /** 窄屏适配:菜单默认右对齐(right-0),溢出屏幕左缘则翻转为左对齐 */
@@ -91,6 +93,11 @@ export function EffortPicker() {
         baseUrl: custom?.baseUrl,
         model: activeModel ?? custom?.defaultModel,
       }));
+      // 目录诚实态:模型本身不支持思考 → 深度档禁用(未知/支持 → 不禁,方言表照旧管参数)
+      const meta = await api
+        .getModelMeta(id, activeModel ?? custom?.defaultModel ?? "")
+        .catch(() => null);
+      setModelNoReasoning(meta?.reasoning === false);
       const v = saved ?? "";
       setEffort(v === "fast" || v === "deep" ? v : "");
     } catch {
@@ -124,6 +131,7 @@ export function EffortPicker() {
   const pick = async (v: ReasoningEffortSetting) => {
     setOpen(false);
     if (v === effort) return;
+    if (v === "deep" && modelNoReasoning) return; // 目录判定不支持思考:深度档不可选
     setEffort(v);
     try {
       await api.setSetting("reasoning_effort" as SettingKey, v);
@@ -164,21 +172,25 @@ export function EffortPicker() {
         >
           {LEVELS.map((l) => {
             const active = l.value === effort;
+            const deepBlocked = l.value === "deep" && modelNoReasoning;
             return (
               <button
                 key={l.value || "auto"}
                 type="button"
                 role="menuitemradio"
                 aria-checked={active}
+                disabled={deepBlocked}
                 onClick={() => void pick(l.value)}
                 className={`w-full flex items-start gap-1.5 px-3 py-1.5 text-left transition-colors ${
                   active ? "text-brand" : "text-ink-strong hover:bg-ink/[0.06]"
-                }`}
+                } ${deepBlocked ? "opacity-40 cursor-not-allowed" : ""}`}
               >
                 <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${active ? "opacity-100" : "opacity-0"}`} />
                 <span className="flex-1">
                   <span className="block text-label font-bold">{t(l.labelKey)}</span>
-                  <span className="block text-caption text-ink-faint">{t(l.descKey)}</span>
+                  <span className="block text-caption text-ink-faint">
+                    {deepBlocked ? t("effort.not_reasoning") : t(l.descKey)}
+                  </span>
                 </span>
               </button>
             );

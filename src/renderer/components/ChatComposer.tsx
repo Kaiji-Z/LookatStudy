@@ -87,7 +87,7 @@ interface ChatComposerProps {
   onStop: () => void;
   /** "我没太懂"等带 frictionCategory 的选择会额外记一条 friction(原 ? 卡点的归宿)。 */
   onLogFriction?: (category: HumanFrictionCategory, summary: string | null) => void;
-  onGotoSettings: () => void;
+  onOpenModelManager: () => void;
   /** 外部注入文字(哪里不会点哪里:右栏选中→追加到输入框)。每次变化触发追加。 */
   insertText?: string;
   /** 当前 thread 全部消息的估算 token(上下文表的历史段;App useMemo 算好传入)。 */
@@ -105,7 +105,7 @@ export function ChatComposer({
   onSend,
   onStop,
   onLogFriction,
-  onGotoSettings,
+  onOpenModelManager,
   insertText,
   historyTokens,
 }: ChatComposerProps) {
@@ -412,7 +412,7 @@ export function ChatComposer({
       <div className="px-5 pb-4 shrink-0" data-testid="composer-nokey">
         <div className="flex items-center justify-center gap-3 py-3 text-body text-ink-muted">
           <span>{t("chat.no_key.short")}</span>
-          <button onClick={onGotoSettings} className="text-brand hover:underline font-bold">{t("chat.no_key.cta")}</button>
+          <button onClick={onOpenModelManager} className="text-brand hover:underline font-bold">{t("chat.no_key.cta")}</button>
         </div>
       </div>
     );
@@ -688,7 +688,7 @@ export function ChatComposer({
           <div className="flex flex-wrap items-center justify-end gap-0.5">
             <EffortPicker />
             <ContextMeter info={ctxInfo} historyTokens={historyTokens} draftTokens={draftTokens} />
-            <ModelPicker onGotoSettings={onGotoSettings} />
+            <ModelPicker onOpenModelManager={onOpenModelManager} />
           </div>
         </div>
           </>

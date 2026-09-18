@@ -56,7 +56,12 @@ async function makeDb() {
   const preload = read("src/preload/index.ts");
   check("T1 preload 暴露 hasSetting", preload.includes('invoke("settings:has", key)'));
   const settingsView = read("src/renderer/components/SettingsView.tsx");
-  check("T1 SettingsView 已配置态走 hasSetting(不再从 DB 读 key 明文)", settingsView.includes("api.hasSetting(") && !settingsView.includes("getSetting(preset.apiKeySetting"));
+  const managerModal = read("src/renderer/components/ModelManagerModal.tsx");
+  check(
+    "T1 设置页+模型管理弹窗 已配置态走 hasSetting(不再从 DB 读 key 明文)",
+    settingsView.includes("api.hasSetting(") && !settingsView.includes("getSetting(preset.apiKeySetting") &&
+    managerModal.includes("api.hasSetting(") && !managerModal.includes("getSetting(preset.apiKeySetting"),
+  );
   const modelPicker = read("src/renderer/components/ModelPicker.tsx");
   check("T1 ModelPicker 密钥探测走 hasSetting", modelPicker.includes("api.hasSetting(") && !modelPicker.includes("getSetting(p.apiKeySetting"));
 }

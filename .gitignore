@@ -91,3 +91,6 @@ scripts/fixtures/pptx-corpus/
 .shimeji-research/
 .highlight-test-result.json
 .impeccable/
+
+# models.dev api.json 下载缓存(build-model-catalog.mjs;--keep 离线重跑用)
+scripts/fixtures/models-dev/

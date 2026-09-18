@@ -44,6 +44,7 @@ import type {
   RepoAnalysis,
   ImportJobHandle,
   ChatAttachmentInput,
+  ModelOverlay,
 } from "@shared/types";
 import {
   getDueReviewNodeIds,
@@ -149,9 +150,19 @@ import { handleAgentChat, abortAgentChat, getChatHistory, clearChatHistory, hand
 import { getContextUsage } from "../services/agent/context-usage.js";
 import { repairMermaidDiagram } from "../services/agent/diagram-repair-service.js";
 import { readAttachmentDataUrl } from "../services/attachment-store.js";
-import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels, resolveLlm, readSettingsMap } from "../services/agent/llm-client.js";
+import { isLlmReady, testLlmConnection, testCustomProvider, fetchOpenRouterModels, fetchProviderModels, resolveLlm, readSettingsMap, testProviderById } from "../services/agent/llm-client.js";
+import {
+  effectivePresetModels,
+  resolveModelMeta,
+  getActiveCatalog,
+  catalogEntryFor,
+  catalogEntryGlobal,
+  MODEL_CATALOG_CACHE_KEY,
+} from "../services/agent/model-catalog.js";
+import { getOverlay, setOverlay } from "../services/agent/model-overlay.js";
+import { fetchModelCatalog, CATALOG_CACHE_TTL_MS } from "../lib/model-catalog-refresh.js";
 import { gatherConsolidationWindow, consolidate, defaultLlmConsolidate, getConsolidationWatermark, setConsolidationWatermark } from "../services/memory-service.js";
-import { PROVIDER_PRESETS } from "../services/agent/llm-presets.js";
+import { PROVIDER_PRESETS, getProviderPreset } from "../services/agent/llm-presets.js";
 // 自定义 Provider
 import {
   listCustomProviders as listCustomProvidersService,
@@ -1366,7 +1377,10 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
   handle("agent:isReady", async () => isLlmReady(getDb()));
 
   // 返回所有 provider 预设元数据（给 Settings 页做 provider/model 选择器，不含 key）
+  // 模型清单 = 策展 ∪ 用户 overlay,元数据经目录三层合并回填 —— 服务端统一视图,
+  // ModelPicker/设置页/resolveProviderConfig 吃同一份,渲染层零合并逻辑。
   handle("agent:getProviderPresets", async () => {
+    const db = getDb();
     // 剥成 ApiExpose 契约里的 ProviderPresetInfo（不含 key 字段）
     return PROVIDER_PRESETS.map((p) => ({
       id: p.id,
@@ -1374,7 +1388,7 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
       protocol: p.protocol,
       baseUrl: p.baseUrl,
       defaultModel: p.defaultModel,
-      models: p.models,
+      models: effectivePresetModels(db, p),
       apiKeySetting: p.apiKeySetting,
       keyUrl: p.keyUrl,
       note: p.note,
@@ -1391,6 +1405,11 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
     return testCustomProvider(input);
   });
 
+  // 按已保存 provider id 测试连接(key 主进程侧解析;模型管理弹窗浏览非激活 provider 用)
+  handle("agent:testProvider", async (_e, providerId: string, modelId?: string) => {
+    return testProviderById(getDb(), providerId, modelId);
+  });
+
   // OpenRouter 模型自动发现（公开 API，无需 key）
   handle("agent:discoverModels", async () => {
     return fetchOpenRouterModels();
@@ -1399,6 +1418,100 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
   // Provider 直连模型发现（用用户已配的 key 拉取 /v1/models）
   handle("agent:discoverProviderModels", async (_e, baseUrl: string, apiKey: string) => {
     return fetchProviderModels(baseUrl, apiKey);
+  });
+
+  // 按已保存 provider 的模型发现:key 在主进程侧解析(渲染层永远拿不到明文 key)。
+  // 返回条目已做目录元数据回填(contextWindow/pricing/capabilities/reasoning)。
+  handle("agent:discoverModelsFor", async (_e, providerId: string) => {
+    const db = getDb();
+    let baseUrl: string | undefined;
+    let apiKey: string | null = null;
+    if (providerId.startsWith("custom-")) {
+      const raw = getCustomProviderRaw(db, providerId);
+      if (!raw) return { ok: false, error: `自定义 provider 不存在: ${providerId}` };
+      if (raw.protocol !== "openai-compatible") {
+        return { ok: false, error: "该通道只支持 OpenAI 兼容协议(anthropic/google 协议无统一 /models 形状);请手工添加模型" };
+      }
+      baseUrl = raw.baseUrl;
+      apiKey = raw.apiKey || "no-key-needed"; // 本地模型(Ollama 等)可无 key
+    } else {
+      const preset = getProviderPreset(providerId);
+      if (!preset) return { ok: false, error: `未知 provider: ${providerId}` };
+      if (preset.protocol !== "openai-compatible") {
+        return { ok: false, error: "该预设不支持拉取(anthropic/google 协议无统一 /models 形状);请从下拉选择或手工添加" };
+      }
+      baseUrl = preset.baseUrl;
+      apiKey = readSettingsMap(db)[preset.apiKeySetting] ?? null;
+      if (!apiKey) return { ok: false, error: "未配置 API key —— 拉取模型列表需要 key" };
+    }
+    if (!baseUrl) return { ok: false, error: "缺少 baseUrl" };
+    const r = await fetchProviderModels(baseUrl, apiKey);
+    if (!r.ok || !r.models) return { ok: false, error: r.error ?? "拉取失败" };
+    // 目录回填(预设按作用域查;custom 全局精确查),上限防御(OpenRouter 级量)
+    const catalog = getActiveCatalog(db);
+    const models = r.models.slice(0, 500).map((m) => {
+      const cat = providerId.startsWith("custom-")
+        ? catalogEntryGlobal(catalog, m.id)
+        : catalogEntryFor(catalog, providerId, m.id);
+      if (!cat) {
+        return { id: m.id, label: m.label, contextWindow: null };
+      }
+      const caps = ["chat"];
+      if (cat.tools) caps.push("tools");
+      if (cat.reasoning) caps.push("reasoning");
+      if (cat.vision) caps.push("vision");
+      return {
+        id: m.id,
+        label: cat.label ?? m.label,
+        contextWindow: cat.contextWindow,
+        ...(cat.pricing ? { pricing: cat.pricing } : {}),
+        ...(cat.reasoning !== undefined ? { reasoning: cat.reasoning } : {}),
+        ...(cat.status ? { status: cat.status } : {}),
+        capabilities: caps,
+      };
+    });
+    return { ok: true, models };
+  });
+
+  // 三层合并的模型元数据(user>策展>目录);全未知 → null
+  handle("agent:getModelMeta", async (_e, providerId: string, modelId: string) => {
+    return resolveModelMeta(getDb(), providerId, modelId);
+  });
+
+  // 预设用户 overlay(发现勾选添加/手工直填/移除);set 走归一化闸门
+  handle("agent:getModelOverlay", async () => getOverlay(getDb()));
+  handle("agent:setModelOverlay", async (_e, overlay: ModelOverlay) => {
+    setOverlay(getDb(), overlay);
+    markDirty();
+  });
+
+  // 目录尽力刷新(models.dev;24h 缓存,失败静默用快照)。返回当前生效目录的时间。
+  handle("agent:refreshModelCatalog", async (): Promise<{ fetchedAt: string }> => {
+    const db = getDb();
+    const now = Date.now();
+    let fresh = false;
+    const cacheRow = db.select().from(settingsTable).where(eq(settingsTable.key, MODEL_CATALOG_CACHE_KEY)).get();
+    if (cacheRow?.value) {
+      try {
+        const o = JSON.parse(cacheRow.value) as { fetchedAt?: number };
+        if (typeof o.fetchedAt === "number" && now - o.fetchedAt < CATALOG_CACHE_TTL_MS) fresh = true;
+      } catch {
+        /* 坏缓存当无 */
+      }
+    }
+    if (!fresh) {
+      const catalog = await fetchModelCatalog();
+      if (catalog) {
+        const value = JSON.stringify({ payload: catalog, fetchedAt: now });
+        db.insert(settingsTable)
+          .values({ key: MODEL_CATALOG_CACHE_KEY, value, isSecret: false })
+          .onConflictDoUpdate({ target: settingsTable.key, set: { value, isSecret: false } })
+          .run();
+        markDirty();
+      }
+    }
+    const active = getActiveCatalog(db);
+    return { fetchedAt: active.fetchedAt };
   });
 
   // 自定义 provider CRUD

@@ -23,11 +23,11 @@ import { settings as settingsTable } from "../../db/schema.js";
 import {
   resolveProviderConfig,
   getProviderPreset,
-  resolveModelContextWindow,
   type ProviderPreset,
   type ProviderProtocol,
 } from "./llm-presets.js";
-import { getCustomProviderRaw, getCustomProvider } from "../custom-provider-service.js";
+import { getCustomProviderRaw } from "../custom-provider-service.js";
+import { resolveModelMeta, presetWithOverlay } from "./model-catalog.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -49,22 +49,18 @@ export function readSettingsMap(db: Db): Record<string, string | null> {
 }
 
 /**
- * 解析当前活动模型的上下文窗口（预设表 → custom provider modelsJson → null 未知）。
+ * 解析当前活动模型的上下文窗口（三层合并:user>策展>目录 > null 未知）。
  * 统一出口（2026-08-31）：context-usage（输入框用量表）与 agent-engine（历史预算
  * 裁剪）共用同一解析，防"装配用的窗口"与"展示用的窗口"漂移。
- * null = 诚实未知，调用方自定保守默认（engine 按 32k）。
+ * v0.38 起经 model-catalog.resolveModelMeta:预设 overlay 添加的模型与目录回填
+ * (null→已知)自动受益;null = 诚实未知，调用方自定保守默认（engine 按 32k）。
  */
 export function resolveActiveContextWindow(db: Db): number | null {
   const settings = readSettingsMap(db);
   const providerId = settings.active_provider ?? "glm";
   const preset = getProviderPreset(providerId);
   const model = settings.active_model ?? preset?.defaultModel ?? "";
-  if (preset) return resolveModelContextWindow(preset.models, model);
-  if (providerId.startsWith("custom-")) {
-    const cp = getCustomProvider(db, providerId);
-    if (cp) return resolveModelContextWindow(cp.models, model);
-  }
-  return null;
+  return resolveModelMeta(db, providerId, model)?.contextWindow ?? null;
 }
 
 export interface ResolvedLlm {
@@ -170,18 +166,20 @@ export function resolveLlm(db: Db): ResolvedLlm {
     };
   }
 
-  // 预设 provider 分支
+  // 预设 provider 分支(模型清单 = 策展 ∪ 用户 overlay —— supportsVision 查表
+  // 能看到 overlay 添加的模型条目,不因"不在策展清单"而误判不支持看图)
   const cfg = resolveProviderConfig(settings);
   if (!cfg.ready || !cfg.provider || !cfg.apiKey || !cfg.model) {
     throw new Error(cfg.missing ?? "LLM provider 未就绪");
   }
+  const provider = presetWithOverlay(db, cfg.provider);
   return {
-    provider: cfg.provider,
+    provider,
     model: cfg.model,
     apiKey: cfg.apiKey,
     languageModel: buildLanguageModel(
-      cfg.provider.protocol,
-      cfg.provider.baseUrl,
+      provider.protocol,
+      provider.baseUrl,
       cfg.apiKey,
       cfg.model,
     ),
@@ -310,14 +308,14 @@ export function isLlmReady(db: Db): {
  * 测试连接 —— 发一条最小请求验证 key + model + 网络是否通。
  *
  * 用户在 Settings 页保存 key 后可点"测试连接"，避免"配了 key 但直到发消息才发现是坏的"。
- * 用 generateText 发 "ping" 一字请求。
+ * 用 generateText 发 "ping" 一字请求。成功附实测延迟(往返耗时,毫秒)。
  *
- * @returns ok=true 时附 model 回声；ok=false 时附可读的中文错误分类
+ * @returns ok=true 时附 model 回声 + latencyMs;ok=false 时附可读的中文错误分类
  */
 export async function testLlmConnection(
   db: Db,
   opts?: { vision?: boolean },
-): Promise<{ ok: boolean; detail: string; errorKind?: LlmErrorKind }> {
+): Promise<{ ok: boolean; detail: string; latencyMs?: number; errorKind?: LlmErrorKind }> {
   let llm: ResolvedLlm;
   try {
     // vision=true:测的是"识图生效链路"(视觉覆盖优先,缺省回落主模型)——
@@ -348,7 +346,7 @@ export async function testCustomProvider(input: {
 }): Promise<{
   ok: boolean;
   detail: string;
-  models?: { id: string; label: string; contextWindow: null }[];
+  latencyMs?: number;
   errorKind?: LlmErrorKind;
 }> {
   const apiKey = input.apiKey || "no-key-needed";
@@ -362,6 +360,40 @@ export async function testCustomProvider(input: {
   return result;
 }
 
+/**
+ * 按 provider id 测试连接(v0.38 模型管理弹窗:浏览/配置非激活 provider 时,
+ * 渲染层拿不到明文 key —— 测试必须由主进程侧解析后代发)。
+ * modelId 可选:传弹窗里正选中的模型;缺省用 provider 默认模型。
+ */
+export async function testProviderById(
+  db: Db,
+  providerId: string,
+  modelId?: string,
+): Promise<{ ok: boolean; detail: string; latencyMs?: number; errorKind?: LlmErrorKind }> {
+  if (providerId.startsWith("custom-")) {
+    const raw = getCustomProviderRaw(db, providerId);
+    if (!raw) {
+      return { ok: false, detail: `自定义 provider 不存在: ${providerId}`, errorKind: "not-configured" };
+    }
+    return testLlmDirect(
+      raw.protocol as ProviderProtocol,
+      raw.baseUrl,
+      raw.apiKey || "no-key-needed",
+      modelId || raw.defaultModel,
+      raw.id,
+    );
+  }
+  const preset = getProviderPreset(providerId);
+  if (!preset) {
+    return { ok: false, detail: `未知 provider: ${providerId}`, errorKind: "not-configured" };
+  }
+  const apiKey = readSettingsMap(db)[preset.apiKeySetting] ?? null;
+  if (!apiKey) {
+    return { ok: false, detail: `未配置 API key（${preset.label}）`, errorKind: "not-configured" };
+  }
+  return testLlmDirect(preset.protocol, preset.baseUrl, apiKey, modelId || preset.defaultModel, preset.label);
+}
+
 /** 内部：直接用 protocol/baseUrl/key/model 发 ping 请求 */
 async function testLlmDirect(
   protocol: ProviderProtocol,
@@ -369,7 +401,8 @@ async function testLlmDirect(
   apiKey: string,
   model: string,
   label: string,
-): Promise<{ ok: boolean; detail: string; errorKind?: LlmErrorKind }> {
+): Promise<{ ok: boolean; detail: string; latencyMs?: number; errorKind?: LlmErrorKind }> {
+  const startedAt = Date.now();
   try {
     const languageModel = buildLanguageModel(protocol, baseUrl, apiKey, model);
     const result = await generateText({
@@ -377,9 +410,11 @@ async function testLlmDirect(
       prompt: "ping",
     });
     const text = (result.text ?? "").trim().slice(0, 50);
+    const latencyMs = Date.now() - startedAt;
     return {
       ok: true,
-      detail: `连接成功（${label} · ${model}${text ? ` · 回声: ${text}` : ""}）`,
+      latencyMs,
+      detail: `连接成功（${label} · ${model}${text ? ` · 回声: ${text}` : ""} · ${latencyMs}ms）`,
     };
   } catch (e) {
     const classified = classifyLlmError(e);

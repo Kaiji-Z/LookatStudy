@@ -2309,6 +2309,53 @@ async function runUiTest(screenshot = false): Promise<void> {
     `);
   } catch { /* 非关键 */ }
 
+  // T18b (v0.38): 模型管理弹窗 —— 抽屉模型卡开窗 → 双栏渲染 → 看图 tab → Esc 关窗
+  let modelManager: { opened?: boolean; listCount?: number; detail?: boolean; visionTab?: boolean; closed?: boolean; error?: string } = {};
+  try {
+    modelManager = await jsTimeout(win.webContents, `
+      (async function() {
+        try {
+          // 设置抽屉应仍开着(T16 打开);点抽屉里的模型卡
+          var card = document.querySelector('[data-testid="model-card-manage"]');
+          if (!card) return { error: "model-card-manage not found (drawer closed?)" };
+          card.click();
+          // 弹窗是 lazy chunk,轮询等挂载
+          var modal = null;
+          for (var i = 0; i < 20; i++) {
+            modal = document.querySelector('[data-testid="model-manager-modal"]');
+            if (modal) break;
+            await new Promise(function(r){ setTimeout(r, 150); });
+          }
+          if (!modal) return { error: "model-manager-modal did not mount" };
+          await new Promise(function(r){ setTimeout(r, 400); }); // 数据自取(presets/key 状态)
+          var listRows = document.querySelectorAll('[data-testid="model-manager-list"] button');
+          var detail = document.querySelector('[data-testid="model-manager-detail"]');
+          // 切看图 tab
+          var vtab = document.querySelector('[data-testid="model-manager-tab-vision"]');
+          if (vtab) vtab.click();
+          await new Promise(function(r){ setTimeout(r, 300); });
+          var visionToggle = document.querySelector('[data-testid="multimodal-toggle"]');
+          // Esc 关窗
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+          await new Promise(function(r){ setTimeout(r, 300); });
+          return {
+            opened: true,
+            listCount: listRows.length,
+            detail: detail !== null,
+            visionTab: visionToggle !== null,
+            closed: document.querySelector('[data-testid="model-manager-modal"]') === null,
+          };
+        } catch (e) { return { error: String(e) }; }
+      })()
+    `);
+  } catch (e) { modelManager = { error: String(e) }; }
+  results.push({
+    name: "model manager modal: drawer card opens → two-pane renders → vision tab → Esc closes",
+    ok: modelManager?.opened === true && (modelManager?.listCount ?? 0) >= 5 &&
+        modelManager?.detail === true && modelManager?.visionTab === true && modelManager?.closed === true,
+    detail: modelManager,
+  });
+
   // T19 (v0.8 a11y): zone toggle 具备 aria-expanded(屏幕阅读器可读折叠状态)
   let zoneAria: { found?: number; withAriaExpanded?: number; error?: string } = {};
   try {

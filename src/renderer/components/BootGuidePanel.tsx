@@ -42,6 +42,8 @@ export interface BootGuidePanelProps {
   onOpenReview: (reviewCourseId: string | null) => void;
   /** 打开设置(带定位区段:如 "companion" → 滚动到伴学伙伴区) */
   onOpenSettings: (section?: string) => void;
+  /** 打开模型管理弹窗(settings_llm 动作:配 key 的第一站,直进专属空间) */
+  onOpenModelManager: () => void;
   /** 跳节点:卡点/快毕业/考试 */
   onGotoNode: (nodeId: string, target: "friction" | "near_mastery" | "exam") => void;
   /** 去左栏选课/导入(T2/T1 强制左栏可见+伴学吹哨飞左栏;T3 切栏) */
@@ -154,7 +156,7 @@ export function BootGuidePanel(props: BootGuidePanelProps) {
       if (kind === "wizard_next") {
         setWizardStep((s) => Math.min(BOOT_WIZARD_STEPS - 1, s + 1));
       } else if (kind === "settings_llm") {
-        props.onOpenSettings();
+        props.onOpenModelManager();
       } else if (kind === "start_import" || kind === "pick_course") {
         // 同一动作(用户拍板):左栏本就默认在导入页,不切 view——伴学解除中栏召唤,
         // 由宿主强制左栏可见并吹哨召唤它飞到左栏导入区指引

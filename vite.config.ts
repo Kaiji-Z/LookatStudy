@@ -54,9 +54,10 @@ export default defineConfig({
               output: {
                 format: "cjs", // CJS 让 __dirname 天然可用，避免 ESM 路径坑
               },
-              // 把内置种子课程 JSON 作为静态资源 emit 到 dist-electron/main/assets/,
+              // 把内置静态 JSON 作为静态资源 emit 到 dist-electron/main/assets/,
               // 让运行时 readFileSync(join(__dirname, "assets", ...)) 能定位。
-              // seed.ts 的 loadSeedData() 会在多个候选路径里找到它。
+              // seed.ts 的 loadSeedData()/model-catalog.ts 的 loadSnapshotCatalog()
+              // 会在多个候选路径里找到它。
               plugins: [
                 {
                   name: "emit-seed-course-json",
@@ -67,6 +68,22 @@ export default defineConfig({
                       this.emitFile({
                         type: "asset",
                         fileName: "assets/seed-course.json",
+                        source: fs.readFileSync(jsonPath, "utf8"),
+                      });
+                    }
+                  },
+                },
+                {
+                  // 模型目录快照(models.dev 生成,scripts/build-model-catalog.mjs 产出);
+                  // 缺失不阻塞构建(目录是增强层,运行时空目录降级)。
+                  name: "emit-model-catalog-json",
+                  generateBundle() {
+                    const jsonPath = resolve(__dirname, "src/main/assets/model-catalog.json");
+                    const fs = require("node:fs");
+                    if (fs.existsSync(jsonPath)) {
+                      this.emitFile({
+                        type: "asset",
+                        fileName: "assets/model-catalog.json",
                         source: fs.readFileSync(jsonPath, "utf8"),
                       });
                     }

@@ -207,7 +207,34 @@ export interface ProviderModelInfo {
   contextWindow: number | null;
   /** 模型能力:chat / tools / reasoning / vision(用于 vision 覆盖选择器显示 ✅) */
   capabilities?: string[];
+  /** 每百万 token 价格(USD);目录/发现回填,展示用(成本估算是后续独立立项) */
+  pricing?: { input: number | null; output: number | null };
+  /** 目录判定:推理模型(EffortPicker 思考档诚实态) */
+  reasoning?: boolean;
+  /** 免费模型标记(目录/策展) */
+  free?: boolean;
+  /** 目录状态:active / beta / alpha / deprecated(选择器淡化提示用) */
+  status?: string;
 }
+
+/** agent:getModelMeta 的返回:三层合并(user>策展>目录)后的模型元数据。 */
+export interface ModelMetaView {
+  contextWindow: number | null;
+  pricing: { input: number | null; output: number | null } | null;
+  capabilities: string[] | null;
+  /** 推理模型判定(null=未知);思考档诚实态用 */
+  reasoning: boolean | null;
+  free: boolean | null;
+  status: string | null;
+  source: "user" | "preset" | "catalog" | "none";
+}
+
+/** 预设 provider 的用户模型 overlay(settings model_overlay_json 键的结构化载荷)。 */
+export interface ModelOverlayEntry {
+  added: ProviderModelInfo[];
+  fetchedAt?: string;
+}
+export type ModelOverlay = Record<string, ModelOverlayEntry>;
 
 export interface ProviderPresetInfo {
   id: string;
@@ -292,6 +319,8 @@ export interface ContextUsageInfo {
   learnerTokens: number;
   /** 活动模型的上下文窗口(未知 → null,只显示用量不显示占比) */
   contextWindow: number | null;
+  /** 模型单价(每百万 token USD,目录/策展回填;未知 → null)。展示用,不做成本估算 */
+  pricing?: { input: number | null; output: number | null } | null;
   provider: string;
   model: string;
   /** 当前模型是否支持看图(附件门控;未收录模型宽松为 true;配了 vision 覆盖也视为 true——走转译桥) */
@@ -708,12 +737,19 @@ export interface ApiExpose {
   /** 返回所有 provider 预设元数据（给 Settings 页做 provider/model 选择器，不含 key） */
   getProviderPresets(): Promise<ProviderPresetInfo[]>;
   /** 测试当前 provider 的 key + model + 网络是否通（Settings 页"测试连接"按钮） */
-  testLlmConnection(opts?: { vision?: boolean }): Promise<{ ok: boolean; detail: string; errorKind?: string }>;
+  testLlmConnection(opts?: { vision?: boolean }): Promise<{ ok: boolean; detail: string; latencyMs?: number; errorKind?: string }>;
   /** 测试指定自定义 provider 配置（不保存，临时验证） */
   testCustomProvider(input: CustomProviderInput): Promise<{
     ok: boolean;
     detail: string;
-    models?: ProviderModelInfo[];
+    latencyMs?: number;
+    errorKind?: "auth" | "rate-limit" | "network" | "not-configured" | "unknown";
+  }>;
+  /** 按已保存 provider id 测试连接(key 主进程侧解析,渲染层不见明文;modelId 可选) */
+  testProvider(providerId: string, modelId?: string): Promise<{
+    ok: boolean;
+    detail: string;
+    latencyMs?: number;
     errorKind?: "auth" | "rate-limit" | "network" | "not-configured" | "unknown";
   }>;
   /** OpenRouter 模型自动发现（公开 API，无需 key） */
@@ -735,6 +771,23 @@ export interface ApiExpose {
     models?: { id: string; label: string }[];
     error?: string;
   }>;
+  /**
+   * 按已保存 provider 的模型发现（key 主进程侧解析,渲染层不见明文）:
+   * 预设 id 传 preset.apiKeySetting 对应 key;custom-<id> 传行内 key(本地模型可无)。
+   * 返回条目已做目录元数据回填(contextWindow/pricing/capabilities)。
+   */
+  discoverModelsFor(providerId: string): Promise<{
+    ok: boolean;
+    models?: ProviderModelInfo[];
+    error?: string;
+  }>;
+  /** 三层合并的模型元数据(user>策展>目录);全未知 → null */
+  getModelMeta(providerId: string, modelId: string): Promise<ModelMetaView | null>;
+  /** 预设用户 overlay 读写(发现勾选添加/手工直填/移除;坏 JSON→空) */
+  getModelOverlay(): Promise<ModelOverlay>;
+  setModelOverlay(overlay: ModelOverlay): Promise<void>;
+  /** 目录尽力刷新(models.dev,24h 缓存,失败静默用快照);返回当前生效目录时间 */
+  refreshModelCatalog(): Promise<{ fetchedAt: string }>;
   /** 自定义 provider CRUD */
   listCustomProviders(): Promise<CustomProvider[]>;
   createCustomProvider(input: CustomProviderInput): Promise<CustomProvider>;
@@ -1092,6 +1145,8 @@ export type SettingKey =
   | "pane_width_left" | "pane_width_mid"
   // v0.35 更新检查:24h 结果缓存 + 每版本只提示一次的已见标记(主进程读写)
   | "update_check_cache" | "update_prompt_seen"
+  // 模型管理升级:预设用户 overlay(发现勾选/手工直填的追加模型) + models.dev 目录刷新缓存
+  | "model_overlay_json" | "model_catalog_cache"
   // 开屏导师(v0.36):画像 JSON / boot 向导一次性 / key 提示节流 / 上次会话
   | "learner_profile" | "boot_done" | "key_prompt_count" | "last_session";
 

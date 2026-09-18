@@ -14,6 +14,23 @@ Entry conventions for contributors:
   build glue or refactor internals can be folded into a single "internal" line.
 - Reference the issue or design doc when relevant: `(see dev-docs/DESIGN-PLAN-v0.2.md)`.
 
+## [Unreleased]
+
+### Added
+
+- 模型目录供给链（v0.38 模型管理升级，P0+P1）：模型元数据从"19 个预设手工硬编码快照"升级为**三层合并**——用户 overlay（预设 `model_overlay_json` / custom modelsJson）> 预设策展 > 目录（models.dev 社区库）。两条铁律锁进 verify-model-catalog T2：**目录只补元数据不改可见性**（永不自动往预设列表塞模型）、**填充不覆盖**（只填 null，窗口/价格/能力永不翻案手工核证过的策展值——supportsVision 口径与钉死的窗口值零回归）。目录来源=构建期快照 `src/main/assets/model-catalog.json`（`scripts/build-model-catalog.mjs` 生成，16 家映射 757 条，`--keep`/`--in` 离线重跑；资产三触点 vite emit + build-server beside 随 Electron/手机/serve 三端走）+ 运行时尽力刷新（照 update-check 模式：8s 超时、24h 缓存、失败静默用快照，CN 网络不通零打扰）；映射表单源 `modelsdev-map.ts` 生成脚本与运行时共用。快照缺失=空目录优雅降级（增强层永不阻塞启动）
+- 设置页「拉取模型」：openai-compatible 预设与自定义 provider 一键拉取 `/models`（新通道 `agent:discoverModelsFor`——key 在主进程侧解析，渲染层永远拿不到明文），勾选清单（搜索过滤/目录元数据随行显示）添加、手工直填 model id、已添加条目 ✕ 移除；预设落 overlay、custom 合并进 modelsJson（保留用户手改的 contextWindow，按 id 去重——兑现 schema 注释承诺多年的"测试连接回填"）；`getProviderPresets` 服务端合并策展∪overlay，ModelPicker/设置页/resolveProviderConfig 吃同一视图
+- 模型元数据可见：ModelPicker 每行显示单价（$/百万，hover 明细）、推理 🧠、免费、deprecated 淡化删除线；ContextMeter 明细面板底部显示模型单价；EffortPicker 目录诚实态（模型目录判定 reasoning=false 时深度档禁用并说明——方言表"能不能发参数"逻辑不动）
+- 测试连接回显延迟毫秒数
+- **模型管理弹窗**（`ModelManagerModal`，App 根层 lazy 挂载）：设置抽屉「AI 模型」整段（2396 行巨石的元凶）与「看图模型」区迁入专属双栏空间，抽屉换两张紧凑卡（模型卡=当前 provider/模型+窗口/价格/能力徽标+看图状态行，整卡可点开窗；看图状态卡深链弹窗看图 tab）。窗口顶部分段 [主模型][看图]：主模型 tab=左列表（搜索/19 预设+custom/激活·key 两态点，**点选=浏览不切激活**）+ 右详情（key 失焦即存且永不回显、模型下拉**选定即激活**、拉取面板、测试连接）；看图 tab=原 MultimodalContent 整体迁入（全部 testid 不变）。五入口换向：抽屉两卡/ModelPicker 底部「管理模型与密钥…」（不再绕抽屉）/Composer 无 key CTA/keyless 卡/开屏导师 settings_llm。浏览非激活 provider 也要能测 → 新通道 `agent:testProvider`（key 主进程侧解析）。旧显式「保存 AI 配置」页脚退役（弹窗内即时生效）；openrouter 旧会话态发现路径退役统一走发现面板。SettingsView 净删 ~600 行
+- ui-test 新增模型管理弹窗断言（抽屉卡开窗→双栏渲染→看图 tab→Esc 关窗）；verify-pdf-math-vision/verify-secret-handling/verify-pane-tiers 断言随迁移重定向到新文件
+
+### Fixed
+
+- 看图覆盖模型恒为 provider 默认模型：覆盖在身且 models 列表>1 时出模型下拉（vision 能力 ✅ 标注），换选即写 `vision_model_override`
+- PDF 公式转写开关初始态读错键（存量 bug）：`MultimodalContent` 初始 `setMathVision(mv === "true")` 读的是 `vision_model_override`（`flag_math_vision` 从未解构）——配过看图覆盖模型的库会被误判为开着公式转写
+- 清理死契约：`testCustomProvider` 返回类型里从未实现过的 `models?` 回填字段移除（发现通道替代）
+
 ## [0.37.2] - 2026-09-18
 
 ### Fixed

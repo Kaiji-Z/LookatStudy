@@ -76,9 +76,9 @@ console.log("T2 管线接线(flag 默认 off / 两入口注入 / 渲染胶水 / 
   assert.ok(read("vite.config.ts").includes('"@napi-rs/canvas"'), "T2: Electron 主束外部化 napi canvas");
   assert.ok(read("scripts/lib/build-server.mjs").includes('"@napi-rs/canvas"'), "T2: 移动束外部化(Android 无预编译)");
 
-  const settings = read("src/renderer/components/SettingsView.tsx");
-  assert.ok(settings.includes('setSetting("flag_math_vision"'), "T2: 设置页写 flag");
-  assert.ok(settings.includes('testid="math-vision-toggle"'), "T2: 设置页开关行");
+  const visionTab = read("src/renderer/components/ModelVisionTab.tsx");
+  assert.ok(visionTab.includes('setSetting("flag_math_vision"'), "T2: 看图 tab 写 flag(v0.38 迁入模型管理弹窗)");
+  assert.ok(visionTab.includes('testid="math-vision-toggle"'), "T2: 看图 tab 开关行");
   const i18n = read("src/renderer/lib/i18n.ts");
   assert.equal(i18n.split('"settings.mathvision.toggle"').length - 1, 2, "T2: i18n 双语键");
 }

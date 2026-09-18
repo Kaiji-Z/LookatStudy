@@ -1,21 +1,15 @@
 /**
- * 设置页 —— v0.8 重构为分组设置(iOS / Linear 式);v0.15 重组为三模型区。
+ * 设置页 —— v0.8 重构为分组设置(iOS / Linear 式);v0.38 模型配置整体迁入
+ * 模型管理弹窗(ModelManagerModal),抽屉只留两张紧凑卡(模型卡/看图状态卡)。
  *
  * 设计语汇:
  *   - 单标题:抽屉头已有"设置 + 关闭",本组件不再重复标题。
- *   - 分组:主模型 / 看图模型 / 语音模型 / 学习者记忆 / 外观与语言。
- *     三个模型区共用同一套选择范式:内置选项 + 自定义 provider 逃生舱
- *     (CustomProviderForm,与主模型区的自定义配置同方法)。
+ *   - 分组:模型 / 看图状态 / 语音模型 / 学习者记忆 / 伴学伙伴 / 外观与语言 / 数据 / 关于。
  *   - 卡内用发丝线(border-t border-faint)分行。
- *   - 粘性页脚:保存按钮(仅作用于主模型区)+ hint 说明即时/显式语义。
+ *   - 无页脚:模型/看图配置在弹窗内即时生效;其余设置本来就是改动即存。
  *
- * 功能边界:
- *   - 主模型区(provider/model/key/test)显式保存 —— 改完点"保存 AI 配置"。
- *   - 看图覆盖/语音设置/主题/语言/导入偏好 即时存。
- *   - 图片下载:永久开启(无 UI 开关,后端 flag 默认 true)。
- *   - 每日目标:已移除(改由顶栏"今日能量"展示 todayXp,无配置项)。
- *
- * 密钥边界:key 输入框 password 类型;保存只走 setSetting,渲染层永不留全量 key。
+ * 密钥边界:key 输入框只在弹窗内出现,password 类型;保存只走 setSetting,
+ * 渲染层永不留全量 key(抽屉两卡只见 hasSetting 布尔)。
  */
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useSyncExternalStore } from "react";
@@ -28,11 +22,12 @@ import { refreshActivePack } from "../lib/companion/custom-pack-store.js";
 import { VEH_PICKABLE, VEH_THEMES } from "../lib/companion/veh-themes.ts";
 import type { CompanionVehicleId } from "@shared/companion-cut.ts";
 import { Mascot } from "./companion/Mascot.js";
-import { Plus, RotateCw, CheckCircle2, XCircle, Wrench, Check, X } from "lucide-react";
+import { Plus, CheckCircle2, XCircle, Wrench, X } from "lucide-react";
 import { api } from "../lib/api.js";
 import type { ProviderPresetInfo, CustomProvider, DshImportSummary } from "@shared/types";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { CustomProviderForm } from "./CustomProviderForm.js";
+import { Toggle } from "./Toggle.js";
 import { useTheme, type ThemeMode } from "../lib/useTheme.js";
 import { useLang, setLang, getLang } from "../lib/i18n.js";
 import { sortVoicesZhFirst, systemVoiceLabel, TTS_SETTINGS_CHANGED_EVENT } from "../lib/system-tts.ts";
@@ -82,429 +77,141 @@ function rowCls(divider: boolean): string {
     : "px-4 py-3.5";
 }
 
-export function SettingsView() {
+export function SettingsView({ onOpenModelManager }: { onOpenModelManager?: (tab?: "main" | "vision") => void }) {
   const t = useLang();
   const [presets, setPresets] = useState<ProviderPresetInfo[]>([]);
   const [customProviders, setCustomProviders] = useState<CustomProvider[]>([]);
   const [activeProvider, setActiveProvider] = useState<string>("glm");
   const [activeModel, setActiveModel] = useState<string>("");
-  const [keyInput, setKeyInput] = useState("");
-  const [keyMasked, setKeyMasked] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; detail: string; errorKind?: string } | null>(null);
-  const [saved, setSaved] = useState(false);
-
-  // 自定义 provider 表单显隐(字段态在 CustomProviderForm 内部)
-  const [showCustomForm, setShowCustomForm] = useState(false);
-  const [discoveredModels, setDiscoveredModels] = useState<{ id: string; label: string; contextWindow: number | null }[]>([]);
-  const [discovering, setDiscovering] = useState(false);
-  const [discoverError, setDiscoverError] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; label: string; rect: DOMRect } | null>(null);
-  // 当前模型上下文窗口编辑(自定义 provider):从 models 列表条目同步,保存时写回
-  const [customWindow, setCustomWindow] = useState("");
-  const [customWindowSaving, setCustomWindowSaving] = useState(false);
+  const [keyConfigured, setKeyConfigured] = useState(false);
+  const [visionOverride, setVisionOverride] = useState<{ providerId: string; modelId: string }>({ providerId: "", modelId: "" });
   const theme = useTheme();
-
-  const handleToggleVision = async (vision: boolean) => {
-    if (!activeCustomProvider) return;
-    try {
-      await api.updateCustomProvider(activeCustomProvider.id, { vision });
-      await load();
-    } catch {
-      /* 保存失败静默(下次打开仍显示旧值) */
-    }
-  };
-
-  const handleDiscoverModels = async () => {
-    setDiscovering(true);
-    setDiscoverError(null);
-    try {
-      const r = await api.discoverModels();
-      if (r.ok && r.models) {
-        setDiscoveredModels(r.models);
-      } else {
-        setDiscoverError(r.error || t("settings.discover_failed"));
-      }
-    } catch (e) {
-      setDiscoverError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setDiscovering(false);
-    }
-  };
 
   const load = useCallback(async () => {
     try {
-      const [ps, cps, provider, model] = await Promise.all([
+      const [ps, cps, provider, model, vProv, vModel] = await Promise.all([
         api.getProviderPresets(),
         api.listCustomProviders(),
         api.getSetting("active_provider"),
         api.getSetting("active_model"),
+        api.getSetting("vision_provider_override"),
+        api.getSetting("vision_model_override"),
       ]);
       setPresets(ps);
       setCustomProviders(cps);
       const p = provider ?? "glm";
       setActiveProvider(p);
-      if (!p.startsWith("custom-")) {
-        const preset = ps.find((x) => x.id === p);
-        if (preset) {
-          const hasKey = await api.hasSetting(preset.apiKeySetting as Parameters<typeof api.hasSetting>[0]);
-          setKeyMasked(hasKey ? t("settings.key.configured") : null);
-        }
-      } else {
-        const cp = cps.find((c) => c.id === p);
-        setKeyMasked(cp?.hasApiKey ? t("settings.key.configured") : null);
-      }
       if (p.startsWith("custom-")) {
         const cp = cps.find((c) => c.id === p);
         setActiveModel(model ?? cp?.defaultModel ?? "");
+        setKeyConfigured(cp?.hasApiKey ?? false);
       } else {
         const preset = ps.find((x) => x.id === p);
         setActiveModel(model ?? preset?.defaultModel ?? "");
+        setKeyConfigured(preset ? await api.hasSetting(preset.apiKeySetting as Parameters<typeof api.hasSetting>[0]) : false);
       }
+      setVisionOverride({ providerId: vProv ?? "", modelId: vModel ?? "" });
     } catch (e) {
       console.error("[SettingsView] load() failed:", e);
     }
-  }, [t]);
+  }, []);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const handleProviderChange = async (newProvider: string) => {
-    setActiveProvider(newProvider);
-    setTestResult(null);
-    setKeyInput("");
-    const preset = presets.find((p) => p.id === newProvider);
-    if (preset) {
-      const hasKey = await api.hasSetting(preset.apiKeySetting as Parameters<typeof api.hasSetting>[0]);
-      setKeyMasked(hasKey ? t("settings.key.configured") : null);
-      setActiveModel(activeModel || preset.defaultModel);
-    }
-  };
+  useEffect(
+    () => {
+      // 弹窗里改了配置(key/模型/覆盖) → 两张卡跟着刷新
+      const onCfg = () => void load();
+      window.addEventListener("llm-config-changed", onCfg);
+      return () => window.removeEventListener("llm-config-changed", onCfg);
+    },
+    [load],
+  );
 
-  const handleSave = async () => {
-    setSaved(false);
-    try {
-      await api.setSetting("active_provider", activeProvider);
-      await api.setSetting("active_model", activeModel);
-      if (keyInput.trim()) {
-        const preset = presets.find((p) => p.id === activeProvider);
-        if (preset) {
-          await api.setSetting(preset.apiKeySetting as Parameters<typeof api.setSetting>[0], keyInput.trim());
-          setKeyMasked(`${keyInput.trim().slice(0, 4)}…${keyInput.trim().slice(-4)}`);
-          setKeyInput("");
-        }
-      }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-      window.dispatchEvent(new Event("llm-config-changed"));
-    } catch {
-      /* 忽略 */
-    }
-  };
+  /* ---------- 两张卡的数据派生 ---------- */
 
-  const handleTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const r = await api.testLlmConnection();
-      setTestResult(r);
-    } catch (e) {
-      setTestResult({ ok: false, detail: e instanceof Error ? e.message : String(e), errorKind: "unknown" });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  /** 主模型区:新建自定义 provider 保存 → 设为当前主模型并刷新(与旧内联表单同语义) */
-  const handleCustomSaved = async (created: CustomProvider) => {
-    await api.setSetting("active_provider", created.id);
-    await api.setSetting("active_model", created.defaultModel);
-    setActiveProvider(created.id);
-    setActiveModel(created.defaultModel);
-    setShowCustomForm(false);
-    await load();
-    window.dispatchEvent(new Event("llm-config-changed"));
-  };
-
-  const handleDeleteCustom = async (id: string) => {
-    try {
-      await api.deleteCustomProvider(id);
-      if (activeProvider === id) {
-        await api.setSetting("active_provider", "glm");
-        setActiveProvider("glm");
-      }
-      await load();
-    } catch {
-      /* 忽略 */
-    }
-  };
-
-  const activeCustomProvider = activeProvider.startsWith("custom-")
-    ? customProviders.find((c) => c.id === activeProvider)
+  const activePreset = !activeProvider.startsWith("custom-")
+    ? presets.find((p) => p.id === activeProvider) ?? null
     : null;
-
-  // 活跃 provider/模型变化 → 窗口输入框跟随该模型条目的现值(空 = 未知)
-  useEffect(() => {
-    if (!activeCustomProvider) return;
-    const entry = activeCustomProvider.models.find((m) => m.id === activeModel);
-    setCustomWindow(entry?.contextWindow ? String(entry.contextWindow) : "");
-  }, [activeCustomProvider, activeModel]);
-
-  const handleSaveCustomWindow = async () => {
-    if (!activeCustomProvider) return;
-    const raw = customWindow.trim().replace(/[,\s_]/g, "");
-    // 支持 128k / 1m 风格
-    const m = /^(\d+)([km]?)$/i.exec(raw);
-    if (raw !== "" && !m) return; // 非法输入不保存
-    const mult = m?.[2]?.toLowerCase() === "k" ? 1000 : m?.[2]?.toLowerCase() === "m" ? 1_000_000 : 1;
-    const parsed = raw === "" || !m ? null : Math.max(1, Math.round(parseInt(m[1]!, 10) * mult));
-    setCustomWindowSaving(true);
-    try {
-      const models = activeCustomProvider.models.map((en) =>
-        en.id === activeModel ? { ...en, contextWindow: parsed } : en,
-      );
-      await api.updateCustomProvider(activeCustomProvider.id, { models });
-      await load();
-      window.dispatchEvent(new Event("llm-config-changed"));
-    } catch {
-      /* 保存失败静默(下次打开仍显示旧值) */
-    } finally {
-      setCustomWindowSaving(false);
-    }
-  };
-
-  const currentPreset = !activeProvider.startsWith("custom-")
-    ? presets.find((p) => p.id === activeProvider)
+  const activeCustom = activeProvider.startsWith("custom-")
+    ? customProviders.find((c) => c.id === activeProvider) ?? null
     : null;
+  const providerLabel = activePreset?.label ?? activeCustom?.label ?? activeProvider;
+  const modelEntry = activePreset
+    ? activePreset.models.find((m) => m.id === activeModel || m.id.toLowerCase() === activeModel.toLowerCase()) ?? null
+    : activeCustom?.models.find((m) => m.id === activeModel || m.id.toLowerCase() === activeModel.toLowerCase()) ?? null;
+
+  // 模型元数据小注(窗口/价格/能力;与 ModelPicker 徽标同口径)
+  const modelNote = (() => {
+    if (!modelEntry) return null;
+    const parts: string[] = [];
+    if (modelEntry.contextWindow) parts.push(`${Math.round(modelEntry.contextWindow / 1000)}k`);
+    if (modelEntry.free) parts.push(t("model.picker.free"));
+    else if (modelEntry.pricing && modelEntry.pricing.input !== null) {
+      parts.push(`$${String(Number(modelEntry.pricing.input.toFixed(2)))}`);
+    }
+    if ((modelEntry.capabilities ?? []).includes("vision")) parts.push("👁");
+    if ((modelEntry.capabilities ?? []).includes("reasoning")) parts.push("🧠");
+    return parts.length > 0 ? parts.join(" · ") : null;
+  })();
+
+  // 看图状态:覆盖在身 → 转译 by X;主模型带 vision 能力 → 直看;否则提示可配转译
+  const bridgeCustom = visionOverride.providerId.startsWith("custom-")
+    ? customProviders.find((c) => c.id === visionOverride.providerId) ?? null
+    : null;
+  const visionStatusLine = bridgeCustom
+    ? t("settings.modelcard.vision_bridge", { model: visionOverride.modelId || bridgeCustom.defaultModel })
+    : (modelEntry?.capabilities ?? []).includes("vision")
+      ? t("settings.modelcard.vision_direct")
+      : t("settings.modelcard.vision_none");
 
   return (
     <>
       <div className="px-5 pt-5 space-y-6">
-        {/* ========== 组 1:AI 模型 ========== */}
+        {/* ========== 模型卡(AI 模型区已迁模型管理弹窗,v0.38;整卡可点开窗) ========== */}
         <section>
           <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.ai")}</h3>
           <div className="surface-card overflow-hidden">
-            {/* 服务商 */}
-            <div className={rowCls(false)}>
-              <div className="text-label font-medium text-ink-strong mb-2">{t("settings.row.provider")}</div>
-              <div className="flex flex-wrap gap-1.5" data-testid="provider-grid">
-                {presets.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => handleProviderChange(p.id)}
-                    data-testid={`provider-card-${p.id}`}
-                    aria-pressed={activeProvider === p.id}
-                    className={`px-3 py-1.5 rounded-lg text-label font-medium whitespace-nowrap transition-colors ${
-                      activeProvider === p.id ? pillActiveCls : pillInactiveCls
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-                {customProviders.filter((c) => c.kind === "llm").map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => handleProviderChange(c.id)}
-                    data-testid={`provider-card-${c.id}`}
-                    aria-pressed={activeProvider === c.id}
-                    className={`px-3 py-1.5 rounded-lg text-label font-medium whitespace-nowrap transition-colors inline-flex items-center gap-1 ${
-                      activeProvider === c.id ? pillActiveCls : pillInactiveCls
-                    }`}
-                  >
-                    <Wrench className="w-3.5 h-3.5" aria-hidden="true" />
-                    {c.label}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setShowCustomForm((s) => !s)}
-                  data-testid="add-custom-provider"
-                  className="px-3 py-1.5 rounded-lg text-label whitespace-nowrap inline-flex items-center gap-1 border border-dashed border-[var(--border)] text-ink-muted hover:border-ink-muted hover:text-ink-strong transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                  {t("settings.add_custom")}
-                </button>
+            <button
+              type="button"
+              onClick={() => onOpenModelManager?.("main")}
+              data-testid="model-card-manage"
+              className="w-full text-left px-4 py-3.5 hover:bg-ink/[0.03] transition-colors"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${keyConfigured ? "bg-brand" : "bg-ink/15"}`} aria-hidden />
+                <span className="text-body font-medium text-ink-strong truncate">{providerLabel}</span>
+                <span className="text-label text-ink-muted font-mono truncate">{activeModel}</span>
+                <span className="flex-1" />
+                <span className="text-label text-accent shrink-0">{t("settings.modelcard.manage")}</span>
               </div>
-            </div>
-
-            {/* 自定义 provider 表单(v0.15 抽共享组件,三模型区同方法) */}
-            {showCustomForm && (
-              <div className="px-4 py-3.5 bg-surface-1 border-t border-[var(--border-faint)]">
-                <CustomProviderForm
-                  kind="llm"
-                  testPrefix="custom"
-                  onSaved={(p) => void handleCustomSaved(p)}
-                  onCancel={() => setShowCustomForm(false)}
-                />
-              </div>
-            )}
-
-            {/* 删除自定义 provider */}
-            {customProviders.length > 0 && activeProvider.startsWith("custom-") && (
-              <div className={rowCls(true)}>
-                <button
-                  onClick={(e) => { const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); const c = customProviders.find((x) => x.id === activeProvider); if (c) setConfirmDelete({ id: c.id, label: c.label, rect }); }}
-                  className="text-label text-warning hover:underline"
-                >{t("settings.delete_custom")}</button>
-              </div>
-            )}
-
-            {/* 预设 provider 配置行 */}
-            {currentPreset && (
-              <>
-                {currentPreset.baseUrl && (
-                  <div className={rowCls(true)}>
-                    <div className="text-label font-medium text-ink-strong mb-1.5">Base URL</div>
-                    <code className="text-label text-ink-faint font-mono break-all">{currentPreset.baseUrl}</code>
-                  </div>
-                )}
-                <div className={rowCls(true)}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.model")}</span>
-                    <div className="flex-1 flex items-center gap-2">
-                      <select
-                        value={activeModel}
-                        onChange={(e) => setActiveModel(e.target.value)}
-                        data-testid="model-select"
-                        className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-                      >
-                        {currentPreset.models.map((m) => (
-                          <option key={m.id} value={m.id}>{m.id}</option>
-                        ))}
-                        {activeProvider === "openrouter" && discoveredModels.map((m) => (
-                          <option key={m.id} value={m.id}>{m.id}</option>
-                        ))}
-                      </select>
-                      {activeProvider === "openrouter" && (
-                        <button onClick={handleDiscoverModels} disabled={discovering} data-testid="discover-models-btn" className="text-label text-accent hover:underline disabled:opacity-40 whitespace-nowrap inline-flex items-center gap-1">
-                          <RotateCw className={`w-3.5 h-3.5 ${discovering ? "animate-spin" : ""}`} aria-hidden="true" />
-                          {discovering ? t("settings.discovering") : t("settings.refresh")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {discoverError && <div className="text-label text-warning mt-1.5 ml-[68px]">{discoverError}</div>}
-                </div>
-                <div className={rowCls(true)}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.apikey")}</span>
-                    <div className="flex-1 flex items-center gap-2">
-                      {keyMasked && (
-                        <span className="text-label text-brand shrink-0 inline-flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          {keyMasked}
-                        </span>
-                      )}
-                      <input
-                        type="password"
-                        value={keyInput}
-                        onChange={(e) => setKeyInput(e.target.value)}
-                        placeholder={keyMasked ? t("settings.key.overwrite_ph") : t("settings.key.paste_ph")}
-                        data-testid="settings-key-input"
-                        className={`${fieldCls} flex-1 px-2.5 py-1.5`}
-                      />
-                      <a href={currentPreset.keyUrl} target="_blank" rel="noopener noreferrer" className="text-label text-brand hover:underline whitespace-nowrap">{t("settings.key.get")}</a>
-                    </div>
-                  </div>
-                </div>
-                <div className={rowCls(true)}>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
-                    <button onClick={handleTest} disabled={testing} data-testid="test-connection-btn" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">
-                      {testing ? t("settings.testing") : t("settings.test")}
-                    </button>
-                    {testResult && (
-                      <span className={`text-label inline-flex items-center gap-1 min-w-0 break-words ${testResult.ok ? "text-brand" : "text-warning"}`}>
-                        {testResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> : <XCircle className="w-4 h-4 shrink-0" aria-hidden="true" />}
-                        {testResult.detail}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* 自定义 provider 配置行 */}
-            {activeCustomProvider && !currentPreset && (
-              <>
-                <div className={rowCls(true)}>
-                  <div className="text-label font-medium text-ink-strong mb-1.5">Base URL</div>
-                  <code className="text-label text-ink-faint font-mono break-all">{activeCustomProvider.baseUrl}</code>
-                </div>
-                <div className={rowCls(true)}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-label font-medium text-ink-strong shrink-0 w-14">{t("settings.model")}</span>
-                    {activeCustomProvider.models.length > 1 ? (
-                      <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)} data-testid="model-select-custom" className={`${fieldCls} flex-1 px-2.5 py-1.5`}>
-                        {activeCustomProvider.models.map((m) => (<option key={m.id} value={m.id}>{m.id}</option>))}
-                      </select>
-                    ) : (
-                      <input type="text" value={activeModel} onChange={(e) => setActiveModel(e.target.value)} placeholder={t("settings.custom.model_ph")} data-testid="model-input-custom" className={`${fieldCls} flex-1 px-2.5 py-1.5 font-mono`} />
-                    )}
-                  </div>
-                </div>
-                <div className={rowCls(true)}>
-                  <div className="text-label font-medium text-ink-strong mb-1.5">{t("settings.custom.windowLabel")}</div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={customWindow}
-                      onChange={(e) => setCustomWindow(e.target.value)}
-                      placeholder={t("settings.custom.windowPh")}
-                      data-testid="context-window-input"
-                      className={`${fieldCls} flex-1 px-2.5 py-1.5 font-mono tabular-nums`}
-                    />
-                    <button onClick={handleSaveCustomWindow} disabled={customWindowSaving} data-testid="context-window-save" className="btn-3d-neutral px-3 py-1.5 text-label shrink-0 disabled:opacity-40">
-                      {t("settings.custom.save")}
-                    </button>
-                  </div>
-                  <div className="text-caption text-ink-faint mt-1">{t("settings.custom.windowHint")}</div>
-                </div>
-                <div className={rowCls(true)}>
-                  <label className="inline-flex items-center gap-2 text-label cursor-pointer select-none" data-testid="custom-vision-toggle">
-                    <input
-                      type="checkbox"
-                      checked={activeCustomProvider.vision}
-                      onChange={(e) => void handleToggleVision(e.target.checked)}
-                      className="w-4 h-4 rounded accent-brand"
-                    />
-                    <span className="text-ink-strong">{t("settings.custom.vision")}</span>
-                    <span className="text-ink-faint">{t("settings.custom.visionHint")}</span>
-                  </label>
-                </div>
-                <div className={rowCls(true)}>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
-                    <button onClick={handleTest} disabled={testing} data-testid="test-connection-btn" className="btn-3d-neutral px-3 py-1.5 text-label disabled:opacity-40">
-                      {testing ? t("settings.testing") : t("settings.test")}
-                    </button>
-                    {testResult && (
-                      <span className={`text-label inline-flex items-center gap-1 min-w-0 break-words ${testResult.ok ? "text-brand" : "text-warning"}`}>
-                        {testResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> : <XCircle className="w-4 h-4 shrink-0" aria-hidden="true" />}
-                        {testResult.detail}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
+              {modelNote && <div className="text-caption text-ink-faint mt-1 tabular-nums">{modelNote}</div>}
+              <div className="text-caption text-ink-faint mt-0.5">{visionStatusLine}</div>
+            </button>
           </div>
         </section>
 
-        {/* ========== 模型区 2:看图模型 ========== */}
+        {/* ========== 看图状态卡(配置在模型管理弹窗·看图 tab) ========== */}
         <section>
           <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.vision")}</h3>
-          <div className="surface-card overflow-hidden">
-            <MultimodalContent
-              activeProvider={activeProvider}
-              activeModel={activeModel}
-              presets={presets}
-              customProviders={customProviders}
-              onProvidersChanged={() => void load()}
-            />
+          <div className="surface-card px-4 py-3.5 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-label font-medium text-ink-strong">{visionStatusLine}</div>
+              <div className="text-caption text-ink-faint">{t("settings.modelcard.vision_hint")}</div>
+            </div>
+            <button
+              onClick={() => onOpenModelManager?.("vision")}
+              data-testid="model-card-vision"
+              className="btn-3d-neutral px-3 py-1.5 text-label shrink-0"
+            >
+              {t("settings.modelcard.configure")}
+            </button>
           </div>
         </section>
 
-        {/* ========== 模型区 3:语音模型 ========== */}
+                {/* ========== 模型区 3:语音模型 ========== */}
         <section>
           <h3 className="text-label font-bold text-ink-muted mb-2 px-1">{t("settings.group.speech")}</h3>
           <div className="surface-card overflow-hidden">
@@ -612,31 +319,6 @@ export function SettingsView() {
         </section>
       </div>
 
-      {/* ========== 粘性页脚 ========== */}
-      <div className="sticky bottom-0 px-5 py-3 bg-surface-0 border-t border-[var(--border)] flex items-center justify-between gap-3">
-        <span className="text-label text-ink-muted">{t("settings.footer.hint")}</span>
-        <button
-          onClick={handleSave}
-          data-testid="settings-save"
-          className="btn-3d-brand px-5 py-2 text-body inline-flex items-center gap-1.5"
-        >
-          {saved && <Check className="w-4 h-4" aria-hidden="true" />}
-          {saved ? t("settings.saved_text") : t("settings.footer.save")}
-        </button>
-      </div>
-
-      {/* 删除自定义 provider 内联确认 */}
-      {confirmDelete && (
-        <ConfirmCard
-          anchorRect={confirmDelete.rect}
-          message={t("settings.delete_custom_confirm", { name: confirmDelete.label })}
-          danger
-          confirmLabel={t("action.delete")}
-          testid="custom-provider-delete-confirm"
-          onConfirm={() => { handleDeleteCustom(confirmDelete.id); setConfirmDelete(null); }}
-          onCancel={() => setConfirmDelete(null)}
-        />
-      )}
     </>
   );
 }
@@ -683,281 +365,6 @@ function ImportPrefButtons() {
         </button>
       ))}
     </div>
-  );
-}
-
-/**
- * AI 看图内容(v0.15 两选项:复用主模型 / 自定义)。
- * 自定义 = CustomProviderForm(kind=vision),保存即写 vision 覆盖设置;
- * 旧库的预设覆盖(如 glm)仍生效,展示为"旧配置"并可停止覆盖。
- * 图片下载已改为永久开启(无开关);此处只管 vision。
- */
-function MultimodalContent({
-  activeProvider,
-  activeModel,
-  presets,
-  customProviders,
-  onProvidersChanged,
-}: {
-  activeProvider: string;
-  activeModel: string;
-  presets: ProviderPresetInfo[];
-  customProviders: CustomProvider[];
-  /** 增删 provider 后刷新父级列表(看图区删除按钮用) */
-  onProvidersChanged?: () => void;
-}) {
-  const t = useLang();
-  const [enabled, setEnabled] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const [overrideProvider, setOverrideProvider] = useState<string>("");
-  const [showForm, setShowForm] = useState(false);
-  const [visionTesting, setVisionTesting] = useState(false);
-  const [visionTestResult, setVisionTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
-  const [mathVision, setMathVision] = useState(false);
-
-  useEffect(() => {
-    Promise.all([
-      api.getSetting("flag_multimodal_import"),
-      api.getSetting("vision_provider_override"),
-      api.getSetting("vision_model_override"),
-      api.getSetting("flag_math_vision"),
-    ]).then(([flag, prov, mv]) => {
-      setEnabled(flag === "true");
-      setOverrideProvider(prov ?? "");
-      setMathVision(mv === "true");
-      setLoaded(true);
-    });
-  }, []);
-
-  const handleToggle = async () => {
-    const next = !enabled;
-    setEnabled(next);
-    await api.setSetting("flag_multimodal_import", String(next));
-  };
-
-  /** v0.20 PDF 公式视觉转写开关:开=公式密集页整页渲染交给上面配的看图模型转 LaTeX */
-  const handleMathVisionToggle = async () => {
-    const next = !mathVision;
-    setMathVision(next);
-    await api.setSetting("flag_math_vision", String(next));
-  };
-
-  /** 覆盖自定义保存:provider 行 + 模型一起写入(vision 模型=provider 的 defaultModel) */
-  const handleCustomSaved = async (created: CustomProvider) => {
-    await api.setSetting("vision_provider_override", created.id);
-    await api.setSetting("vision_model_override", created.defaultModel);
-    setOverrideProvider(created.id);
-    setShowForm(false);
-  };
-
-  const handleStopOverride = async () => {
-    await api.setSetting("vision_provider_override", "");
-    await api.setSetting("vision_model_override", "");
-    setOverrideProvider("");
-    setShowForm(false);
-  };
-
-  /** 删除看图区自定义 provider(2026-09-12,手机真机反馈"没有删除按钮"):
-      在身覆盖一并清掉再删行;父级列表经 onProvidersChanged 刷新。 */
-  const [confirmVisionDelete, setConfirmVisionDelete] = useState<{ id: string; label: string; rect: DOMRect } | null>(null);
-  const handleDeleteVisionCustom = async (id: string) => {
-    try {
-      if (overrideProvider === id) {
-        await api.setSetting("vision_provider_override", "");
-        await api.setSetting("vision_model_override", "");
-        setOverrideProvider("");
-      }
-      await api.deleteCustomProvider(id);
-    } catch {
-      /* 删除失败保持现状 */
-    } finally {
-      onProvidersChanged?.();
-    }
-  };
-
-  /** 测识图覆盖:测的就是生效链路(覆盖优先,缺省回落主模型) */
-  const handleTestOverride = async () => {
-    if (visionTesting) return;
-    setVisionTesting(true);
-    setVisionTestResult(null);
-    try {
-      const res = await api.testLlmConnection({ vision: true });
-      setVisionTestResult({ ok: res.ok, detail: res.detail });
-    } catch (e) {
-      setVisionTestResult({ ok: false, detail: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setVisionTesting(false);
-    }
-  };
-
-  const visionCustoms = customProviders.filter((c) => c.kind === "vision");
-  // 全表查(不限 kind):v0.15 前建的覆盖指向 kind=llm 的行,不能因分区丢了摘要
-  const overrideCustom = overrideProvider.startsWith("custom-")
-    ? customProviders.find((c) => c.id === overrideProvider)
-    : null;
-  // 旧库:覆盖指向预设 provider(v0.15 前的 UI 可选预设)—— 仍生效,展示为旧配置
-  const overrideLegacyPreset = overrideProvider && !overrideProvider.startsWith("custom-")
-    ? presets.find((p) => p.id === overrideProvider)
-    : null;
-  if (!loaded) return null;
-
-  return (
-    <>
-      <div className="px-4 py-3.5 flex items-center gap-3">
-        <Toggle checked={enabled} onChange={handleToggle} label={t("settings.multimodal.toggle")} testid="multimodal-toggle" />
-        <div className="flex-1 min-w-0">
-          <div className="text-body font-medium text-ink-strong">{t("settings.multimodal.toggle")}</div>
-          <div className="text-label text-ink-muted">{t("settings.multimodal.toggle.desc")}</div>
-        </div>
-      </div>
-      {/* v0.11:视觉覆盖常显(不再被 flag_multimodal_import 门控)——它同时驱动聊天图像转译桥:
-          主模型纯文本时,上传的图片由该模型转译成文字再交给主模型。 */}
-      <div className="px-4 py-3.5 border-t border-[var(--border-faint)] space-y-3">
-          {/* 当前主模型 vision 能力提示 */}
-          <div className="text-label text-ink-muted bg-ink/5 rounded-lg p-3">
-            <div className="font-medium mb-1">{t("settings.multimodal.current_model", { model: activeModel || t("settings.multimodal.not_selected") })}</div>
-            <div>
-              {activeProvider.startsWith("custom-")
-                ? t("settings.multimodal.hint_custom")
-                : t("settings.multimodal.hint_preset")}
-            </div>
-          </div>
-          {/* 看图模型来源:不配置 = 复用主模型(留空语义),配置窗口直接常显,无切换按钮 */}
-          <div className="bg-ink/5 rounded-lg p-3">
-            <div className="text-label font-medium text-ink-muted mb-2">
-              {t("settings.multimodal.override_title")}
-            </div>
-            <div className="text-caption text-ink-muted mb-2">
-              {t("settings.multimodal.override_bridge_hint")}
-            </div>
-            <div className="space-y-3 mt-1">
-                {overrideCustom && (
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2 text-label">
-                      <Wrench className="w-3.5 h-3.5 text-ink-faint shrink-0" aria-hidden="true" />
-                      <span className="font-medium text-ink-strong">{overrideCustom.label}</span>
-                      <code className="text-ink-faint font-mono break-all">{overrideCustom.defaultModel}</code>
-                      <span className="text-ink-faint break-all min-w-0">{overrideCustom.baseUrl}</span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => void handleTestOverride()}
-                        disabled={visionTesting}
-                        data-testid="vision-override-test"
-                        className="btn-3d-neutral px-4 py-1.5 text-label disabled:opacity-50"
-                      >
-                        {visionTesting ? t("settings.testing") : t("settings.multimodal.test_override")}
-                      </button>
-                      <button onClick={() => setShowForm((s) => !s)} className="text-label text-accent hover:underline">
-                        {t("settings.multimodal.replace_custom")}
-                      </button>
-                      <button onClick={() => void handleStopOverride()} className="text-label text-ink-muted hover:text-ink-strong">
-                        {t("settings.multimodal.stop_override")}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmVisionDelete({ id: overrideCustom.id, label: overrideCustom.label, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
-                        }}
-                        data-testid={`vision-delete-${overrideCustom.id}`}
-                        className="text-label text-ink-muted hover:text-warning"
-                      >
-                        {t("action.delete")}
-                      </button>
-                      {visionTestResult && (
-                        <span className={`text-label inline-flex items-center gap-1 ${visionTestResult.ok ? "text-brand" : "text-warning"}`}>
-                          {visionTestResult.ok ? <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> : <XCircle className="w-4 h-4" aria-hidden="true" />}
-                          {visionTestResult.detail}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {overrideLegacyPreset && (
-                  <div className="flex flex-wrap items-center gap-2 text-label">
-                    <span className="text-ink-muted">{t("settings.multimodal.legacy_preset", { label: overrideLegacyPreset.label })}</span>
-                    <button onClick={() => void handleStopOverride()} className="text-label text-ink-muted hover:text-ink-strong underline">
-                      {t("settings.multimodal.stop_override")}
-                    </button>
-                  </div>
-                )}
-
-                {/* 无覆盖在身:已有 vision 自定义可一键选用;没有则直接出新建表单 */}
-                {!overrideCustom && !overrideLegacyPreset && (
-                  <>
-                    {visionCustoms.map((c) => (
-                      <span key={c.id} className="relative block">
-                        <button
-                          onClick={() => void handleCustomSaved(c)}
-                          className="w-full text-left px-3 py-2 rounded-lg bg-surface-1 hover:bg-surface-3 transition-colors"
-                          data-testid={`vision-pick-${c.id}`}
-                        >
-                          <span className="text-label font-medium text-ink-strong">{c.label}</span>
-                          <span className="text-label text-ink-faint font-mono break-all ml-2">{c.defaultModel}</span>
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={t("action.delete")}
-                          data-tooltip={t("action.delete")}
-                          data-testid={`vision-delete-${c.id}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmVisionDelete({ id: c.id, label: c.label, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
-                          }}
-                          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full text-ink-muted hover:text-warning flex items-center justify-center hover:bg-surface-2"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </span>
-                    ))}
-                    {(showForm || visionCustoms.length === 0) && (
-                      <CustomProviderForm
-                        kind="vision"
-                        testPrefix="vision-custom"
-                        titleKey="settings.custom.form_title_vision"
-                        modelPhKey="settings.custom.model_ph_vision"
-                        onSaved={(p) => void handleCustomSaved(p)}
-                        onCancel={() => setShowForm(false)}
-                      />
-                    )}
-                    {visionCustoms.length > 0 && (
-                      <button onClick={() => setShowForm((s) => !s)} className="text-label text-accent hover:underline">
-                        {showForm ? t("action.cancel") : t("settings.custom.new")}
-                      </button>
-                    )}
-                  </>
-                )}
-          </div>
-          </div>
-          {/* v0.20:PDF 公式视觉转写 —— 导入 PDF 时公式密集页整页渲染成图,交给上面配置的
-              看图模型转成 LaTeX Markdown(实验性,按页消耗视觉模型额度;需先配好看图模型)。 */}
-          <div className="bg-ink/5 rounded-lg p-3 flex items-center gap-3">
-            <Toggle
-              checked={mathVision}
-              onChange={handleMathVisionToggle}
-              label={t("settings.mathvision.toggle")}
-              testid="math-vision-toggle"
-            />
-            <div className="flex-1 min-w-0">
-              <div className="text-label font-medium text-ink-strong">{t("settings.mathvision.toggle")}</div>
-              <div className="text-caption text-ink-muted">{t("settings.mathvision.desc")}</div>
-            </div>
-          </div>
-      </div>
-          {/* 删除看图自定义 provider 内联确认(与主模型区同款) */}
-      {confirmVisionDelete && (
-        <ConfirmCard
-          anchorRect={confirmVisionDelete.rect}
-          message={t("settings.delete_custom_confirm", { name: confirmVisionDelete.label })}
-          danger
-          confirmLabel={t("action.delete")}
-          testid="vision-provider-delete-confirm"
-          onConfirm={() => { void handleDeleteVisionCustom(confirmVisionDelete.id); setConfirmVisionDelete(null); }}
-          onCancel={() => setConfirmVisionDelete(null)}
-        />
-      )}
-    </>
   );
 }
 
@@ -1548,41 +955,6 @@ function CompanionContent() {
     </div>
   );
 }
-
-/**
- * Toggle —— 项目内唯一的开关控件(canonical form-control vocabulary)。
- * ON = bg-brand(绿);OFF = bg-ink/20(主题感知半透明灰)。role=switch + aria。
- */
-function Toggle({
-  checked,
-  onChange,
-  label,
-  testid,
-}: {
-  checked: boolean;
-  onChange: () => void;
-  label: string;
-  testid: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={onChange}
-      data-testid={testid}
-      className={`relative w-12 h-6 rounded-full transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-2)] ${
-        checked ? "bg-brand" : "bg-ink/20 hover:bg-ink/25"
-      }`}
-    >
-      <span
-        className={`absolute left-0.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-6" : ""}`}
-      />
-    </button>
-  );
-}
-
 
 /* ---------- v0.15 语音模型:朗读(Edge/本地/自定义) + 听写(本地/自定义) ----------
  * 与主模型区同范式:内置选项 + 自定义 provider 逃生舱(CustomProviderForm)。

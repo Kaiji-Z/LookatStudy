@@ -83,8 +83,9 @@ test("抽屉宽度视口相对(w-full+max-w 帽,无固定 px 宽);手机端全�
   const settings = read("../src/renderer/components/SettingsView.tsx");
   assert.ok(!settings.includes("grid-cols-5"), "T: 设置页无固定五列网格(改 flex-wrap)");
   assert.ok(settings.includes("flex flex-wrap gap-2\" role=\"radiogroup\""), "T: companion 形态选择 flex-wrap(窄屏换行)");
-  // 测试结果行允许换行(长错误文案不撑破)
-  assert.ok(settings.includes("flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0"), "T: 测试结果行可换行");
+  // 测试结果行允许换行(长错误文案不撑破;v0.38 测试行迁入模型管理弹窗)
+  const managerModal = read("../src/renderer/components/ModelManagerModal.tsx");
+  assert.ok(managerModal.includes("flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0"), "T: 测试结果行可换行(模型管理弹窗)");
 });
 
 test("ui-test 抽屉窄屏守卫在(420px 零水平溢出断言)", () => {

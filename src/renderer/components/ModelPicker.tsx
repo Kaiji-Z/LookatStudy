@@ -10,13 +10,13 @@
  * 数据自取(getProviderPresets + listCustomProviders + settings),不依赖父组件喂。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Boxes, Check, ChevronUp, Eye, Settings2 } from "lucide-react";
+import { Boxes, Brain, Check, ChevronUp, Eye, Settings2 } from "lucide-react";
 import type { CustomProvider, ProviderPresetInfo, SettingKey } from "@shared/types";
 import { api } from "../lib/api.js";
 import { useLang } from "../lib/i18n.js";
 
 interface ModelPickerProps {
-  onGotoSettings: () => void;
+  onOpenModelManager: () => void;
 }
 
 /** 一个可选模型的行数据。 */
@@ -27,9 +27,20 @@ interface ModelRow {
   modelLabel: string;
   vision: boolean;
   contextWindow: number | null;
+  /** 目录/策展回填的元数据(无则 undefined,不显徽标) */
+  reasoning?: boolean;
+  free?: boolean;
+  pricing?: { input: number | null; output: number | null };
+  status?: string;
 }
 
-export function ModelPicker({ onGotoSettings }: ModelPickerProps) {
+/** 价格徽标文本:输入价去尾零(0.15→"$0.15";2→"$2");null 不显 */
+function priceBadgeText(p: { input: number | null; output: number | null } | undefined): string | null {
+  if (!p || p.input === null || p.input === undefined) return null;
+  return `$${String(Number(p.input.toFixed(2)))}`;
+}
+
+export function ModelPicker({ onOpenModelManager }: ModelPickerProps) {
   const t = useLang();
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<ModelRow[] | null>(null);
@@ -64,6 +75,10 @@ export function ModelPicker({ onGotoSettings }: ModelPickerProps) {
             modelLabel: m.label,
             vision: (m.capabilities ?? []).includes("vision"),
             contextWindow: m.contextWindow,
+            ...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
+            ...(m.free !== undefined ? { free: m.free } : {}),
+            ...(m.pricing !== undefined ? { pricing: m.pricing } : {}),
+            ...(m.status !== undefined ? { status: m.status } : {}),
           });
         }
       };
@@ -180,6 +195,15 @@ export function ModelPicker({ onGotoSettings }: ModelPickerProps) {
               <div className="px-3 pt-1.5 pb-0.5 text-caption font-bold text-ink-faint">{g.label}</div>
               {g.rows.map((r) => {
                 const active = r.providerId === activeProvider && r.modelId === activeModel;
+                const price = r.free ? t("model.picker.free") : priceBadgeText(r.pricing);
+                const priceTooltip =
+                  r.pricing && (r.pricing.input !== null || r.pricing.output !== null)
+                    ? t("model.picker.price", {
+                        i: r.pricing.input === null ? "?" : String(Number(r.pricing.input.toFixed(2))),
+                        o: r.pricing.output === null ? "?" : String(Number(r.pricing.output.toFixed(2))),
+                      })
+                    : null;
+                const deprecated = r.status === "deprecated";
                 return (
                   <button
                     key={`${r.providerId}:${r.modelId}`}
@@ -189,15 +213,31 @@ export function ModelPicker({ onGotoSettings }: ModelPickerProps) {
                     onClick={() => void pick(r)}
                     className={`w-full flex items-center gap-1.5 px-3 py-1.5 text-left transition-colors ${
                       active ? "text-brand" : "text-ink-strong hover:bg-ink/[0.06]"
-                    }`}
+                    } ${deprecated ? "opacity-55" : ""}`}
                   >
                     <Check className={`w-3.5 h-3.5 shrink-0 ${active ? "opacity-100" : "opacity-0"}`} />
-                    <span className="flex-1 truncate text-label">{r.modelLabel}</span>
+                    <span className={`flex-1 truncate text-label ${deprecated ? "line-through decoration-ink-faint" : ""}`}>
+                      {r.modelLabel}
+                    </span>
+                    {r.reasoning && (
+                      <Brain
+                        className="w-3 h-3 shrink-0 text-ink-faint"
+                        aria-label={t("model.picker.reasoning")}
+                      />
+                    )}
                     {r.vision && (
                       <Eye
                         className="w-3 h-3 shrink-0 text-ink-faint"
                         aria-label={t("model.picker.vision")}
                       />
+                    )}
+                    {price && priceTooltip && (
+                      <span
+                        className="shrink-0 text-caption text-ink-faint tabular-nums"
+                        data-tooltip={priceTooltip}
+                      >
+                        {price}
+                      </span>
                     )}
                   </button>
                 );
@@ -210,7 +250,7 @@ export function ModelPicker({ onGotoSettings }: ModelPickerProps) {
               role="menuitem"
               onClick={() => {
                 setOpen(false);
-                onGotoSettings();
+                onOpenModelManager();
               }}
               className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-label text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06] transition-colors"
             >

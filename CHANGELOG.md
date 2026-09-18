@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-09-18
+
 ### Added
 
 - 模型目录供给链（v0.38 模型管理升级，P0+P1）：模型元数据从"19 个预设手工硬编码快照"升级为**三层合并**——用户 overlay（预设 `model_overlay_json` / custom modelsJson）> 预设策展 > 目录（models.dev 社区库）。两条铁律锁进 verify-model-catalog T2：**目录只补元数据不改可见性**（永不自动往预设列表塞模型）、**填充不覆盖**（只填 null，窗口/价格/能力永不翻案手工核证过的策展值——supportsVision 口径与钉死的窗口值零回归）。目录来源=构建期快照 `src/main/assets/model-catalog.json`（`scripts/build-model-catalog.mjs` 生成，16 家映射 757 条，`--keep`/`--in` 离线重跑；资产三触点 vite emit + build-server beside 随 Electron/手机/serve 三端走）+ 运行时尽力刷新（照 update-check 模式：8s 超时、24h 缓存、失败静默用快照，CN 网络不通零打扰）；映射表单源 `modelsdev-map.ts` 生成脚本与运行时共用。快照缺失=空目录优雅降级（增强层永不阻塞启动）

@@ -67,7 +67,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
     needs: [build]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # ~1GB 安装器在慢通道上传可能超 10 分钟(v0.37.2 实测:500 重试+慢速上传撞上限被砍)
+    timeout-minutes: 30
     steps:
       - name: Download all installer artifacts
         uses: actions/download-artifact@v4

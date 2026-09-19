@@ -16,6 +16,10 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Fixed
+
+- 手机端模型管理弹窗被设置抽屉盖住（2026-09-19 实测）：弹窗与抽屉同为 `z-50`，同层级按 DOM 序绘制——抽屉挂在 App 尾部反而压住先挂的弹窗，表现为"要关掉设置页才能看到弹窗"。弹窗提层 `z-[60]`（ConfirmCard 同为 z-60 但 portal 到 body 末尾，DOM 序仍在弹窗之上不受影响）；ui-test 弹窗断言加 stacking 守卫（实测 z-index 60>50，防 DOM 存在性断言看不见绘制顺序的同类漏网）
+
 ## [0.38.1] - 2026-09-18
 
 ### Fixed

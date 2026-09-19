@@ -172,16 +172,19 @@ export default function ModelManagerModal({ tab = "main", onClose }: ModelManage
     }
   };
 
+  // z-[60]:须盖住设置抽屉(z-50)——弹窗从抽屉卡片唤起,同为 z-50 时 DOM 序在后的
+  // 抽屉会反过来盖住弹窗(2026-09-19 手机端实测);ConfirmCard(z-60 portal 到 body
+  // 末尾)同层级靠 DOM 序仍在其上
   if (!loaded) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="model-manager-modal">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" data-testid="model-manager-modal">
         <div ref={panelRef} role="dialog" aria-modal="true" aria-label={t("model.manager.title")} className="w-[min(880px,94vw)] h-[60dvh] rounded-2xl bg-surface-0 shadow-elevated" onClick={(e) => e.stopPropagation()} />
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose} data-testid="model-manager-modal">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose} data-testid="model-manager-modal">
       <div
         ref={panelRef}
         role="dialog"

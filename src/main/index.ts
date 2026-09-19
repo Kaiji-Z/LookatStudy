@@ -2310,7 +2310,9 @@ async function runUiTest(screenshot = false): Promise<void> {
   } catch { /* 非关键 */ }
 
   // T18b (v0.38): 模型管理弹窗 —— 抽屉模型卡开窗 → 双栏渲染 → 看图 tab → Esc 关窗
-  let modelManager: { opened?: boolean; listCount?: number; detail?: boolean; visionTab?: boolean; closed?: boolean; error?: string } = {};
+  // 2026-09-19 加 stacking 守卫:弹窗必须盖住抽屉(手机端实测曾被抽屉整层盖住——
+  // 同为 z-50 时 DOM 序在后的抽屉反超,DOM 存在性断言看不见绘制顺序)
+  let modelManager: { opened?: boolean; listCount?: number; detail?: boolean; visionTab?: boolean; stackZ?: string; closed?: boolean; error?: string } = {};
   try {
     modelManager = await jsTimeout(win.webContents, `
       (async function() {
@@ -2327,6 +2329,9 @@ async function runUiTest(screenshot = false): Promise<void> {
             await new Promise(function(r){ setTimeout(r, 150); });
           }
           if (!modal) return { error: "model-manager-modal did not mount" };
+          var drawer = document.querySelector('[data-testid="settings-drawer"]');
+          var zModal = parseInt(getComputedStyle(modal).zIndex, 10);
+          var zDrawer = drawer ? parseInt(getComputedStyle(drawer).zIndex, 10) : -1;
           await new Promise(function(r){ setTimeout(r, 400); }); // 数据自取(presets/key 状态)
           var listRows = document.querySelectorAll('[data-testid="model-manager-list"] button');
           var detail = document.querySelector('[data-testid="model-manager-detail"]');
@@ -2343,6 +2348,7 @@ async function runUiTest(screenshot = false): Promise<void> {
             listCount: listRows.length,
             detail: detail !== null,
             visionTab: visionToggle !== null,
+            stackZ: zModal + ">" + zDrawer,
             closed: document.querySelector('[data-testid="model-manager-modal"]') === null,
           };
         } catch (e) { return { error: String(e) }; }
@@ -2352,7 +2358,9 @@ async function runUiTest(screenshot = false): Promise<void> {
   results.push({
     name: "model manager modal: drawer card opens → two-pane renders → vision tab → Esc closes",
     ok: modelManager?.opened === true && (modelManager?.listCount ?? 0) >= 5 &&
-        modelManager?.detail === true && modelManager?.visionTab === true && modelManager?.closed === true,
+        modelManager?.detail === true && modelManager?.visionTab === true &&
+        modelManager?.stackZ !== undefined && parseInt(String(modelManager.stackZ).split(">")[0], 10) > parseInt(String(modelManager.stackZ).split(">")[1] || "-1", 10) &&
+        modelManager?.closed === true,
     detail: modelManager,
   });
 

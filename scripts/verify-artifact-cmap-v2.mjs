@@ -143,8 +143,12 @@ console.log("T2 分组解析(LLM 净化/兜底聚类/确定性/孤立防御)✓"
   const want = cmNodeBox("梯度下降", true);
   assert.equal(gdChild.width, Math.ceil(want.width), "T3 节点宽=cmNodeBox 取整");
   assert.equal(gdChild.height, Math.ceil(want.height), "T3 节点高=cmNodeBox 取整");
-  // 组盒 padding 为标题栏留白
-  assert.equal(groupChildren[0]?.layoutOptions?.["elk.padding"], `[top=${GROUP_TITLE_PX},left=14,bottom=12,right=14]`, "T3 组盒标题栏 padding");
+  // 组盒 padding 为标题栏留白(2026-09-18 间距放宽:左右 14→24、下 12→20)
+  assert.equal(groupChildren[0]?.layoutOptions?.["elk.padding"], `[top=${GROUP_TITLE_PX},left=24,bottom=20,right=24]`, "T3 组盒标题栏 padding");
+  // 2026-09-18 定谳:elkjs layoutOptions 不向复合子图级联——组节点不重复挂
+  // spacing 时组内行距跌回默认 20px(实测截图"组内挤成一团"的根因)
+  assert.equal(groupChildren[0]?.layoutOptions?.["elk.layered.spacing.nodeNodeBetweenLayers"], "80", "T3 组节点自带层间距(不级联陷阱)");
+  assert.equal(groupChildren[0]?.layoutOptions?.["elk.spacing.nodeNode"], "46", "T3 组节点自带同层间距");
   // 防御:悬空/自环/重复边
   const g2 = buildElkGraph(
     NODES,

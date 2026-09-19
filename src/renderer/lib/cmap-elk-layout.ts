@@ -228,6 +228,20 @@ export interface ElkGraphJSON {
 /** 组容器标题栏高度:ELK 组盒顶部 padding 要为标题留白。 */
 export const GROUP_TITLE_PX = 34;
 
+/**
+ * 间距选项(2026-09-18 用户实测反馈"太紧凑,标签把箭头连线都遮住"后整体放宽:
+ * 层间 56→80 / 同层 34→46 / 边-节点 26→36;标签仍贴线白晕,靠更宽的
+ * 通道让胶囊不挤节点、少压箭头)。
+ * ⚠️ elkjs 的 layoutOptions 不向复合子图级联(INCLUDE_CHILDREN 也不)——组节点
+ * 必须重复挂同一份,否则组内行距跌回默认(实测 20px,实验四定谳)。
+ */
+const SPACING_OPTIONS: Record<string, string> = {
+  "elk.spacing.nodeNode": "46",
+  "elk.spacing.edgeNode": "36",
+  "elk.spacing.componentComponent": "60",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "80",
+};
+
 export function buildElkGraph(nodes: CmNode[], edges: CmEdge[], groups: CmGroup[]): ElkGraphJSON {
   const ids = new Set(nodes.map((n) => n.id));
   const degree = new Map<string, number>();
@@ -260,7 +274,7 @@ export function buildElkGraph(nodes: CmNode[], edges: CmEdge[], groups: CmGroup[
     if (members.length === 0) continue;
     children.push({
       id: `g:${g.id}`,
-      layoutOptions: { "elk.padding": `[top=${GROUP_TITLE_PX},left=14,bottom=12,right=14]` },
+      layoutOptions: { "elk.padding": `[top=${GROUP_TITLE_PX},left=24,bottom=20,right=24]`, ...SPACING_OPTIONS },
       children: members.map((nid) => nodeChild(nodes.find((n) => n.id === nid)!)),
     });
   }
@@ -277,10 +291,7 @@ export function buildElkGraph(nodes: CmNode[], edges: CmEdge[], groups: CmGroup[
       // 复合图关键开关:layered 默认不处理嵌套(跨组边不路由、无 sections),
       // INCLUDE_CHILDREN 让整个复合图一次分层,跨组边才有正交折线
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-      "elk.spacing.nodeNode": "34",
-      "elk.spacing.edgeNode": "26",
-      "elk.spacing.componentComponent": "48",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "56",
+      ...SPACING_OPTIONS,
     },
     children,
     edges: drawEdges.map((e, i) => ({ id: `e${i}`, sources: [e.from], targets: [e.to] })),

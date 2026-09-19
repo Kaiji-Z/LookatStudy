@@ -2937,6 +2937,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   ];
   const examSetup: { examId?: string; injectedLessonProgress: string[] } = { injectedLessonProgress: [] };
   let examIntegrity: { ok?: boolean; scoreOk?: boolean; reason?: string; error?: string; overflow?: unknown; botPerch?: { near?: boolean; botTop?: number; timerBottom?: number; botLeft?: number; timerRight?: number } } = {};
+  let perchNarrow: { onBar?: boolean; coverPrompt?: boolean; error?: string; [k: string]: unknown } = {};
   try {
     const examNode = getDb().select().from(contentNodes).all().find((n) => n.type === "exam");
     if (!examNode) {
@@ -3185,6 +3186,90 @@ async function runUiTest(screenshot = false): Promise<void> {
         })()
       `, 150_000); // 脚本内部就有 20s+10s 轮询+逐题作答循环,默认 30s 不够
     }
+
+    // 2026-09-19 手机端骑条守卫:窄窗(420)下伴学改骑总进度条陪考,永不压题干
+    // (宽窗原"计时条右侧"行为不变,上面 botPerch 已守)。主流程已交卷并切去课时;
+    // 窄窗 → T3 切课程栏 → 重进考试球 → 结算页再来一场 → 量伴学 vs 进度条 vs 题干。
+    try {
+      const prevW = Number(await jsTimeout(win.webContents, "window.innerWidth")) || 1300;
+      if (await resizeViewport(win, 420, 800)) {
+        perchNarrow = await jsTimeout(win.webContents, `
+          (async function() {
+            try {
+              var q = function(s) { return document.querySelector(s); };
+              var sleep = function(ms) { return new Promise(function(r){ setTimeout(r, ms); }); };
+              // T3 默认对话栏,先切课程栏才能点考试球
+              var sw = q('[data-testid="t3-btn-rail"]');
+              if (sw) sw.click();
+              var ball = null;
+              for (var t = 0; t < 10000 && !ball; t += 300) {
+                ball = q('button[data-testid^="exam-node-"]:enabled');
+                if (!ball) await sleep(300);
+              }
+              if (!ball) return { error: "exam ball not found at 420px" };
+              ball.click();
+              await sleep(700);
+              var retry = q('[data-testid="exam-retry-btn"]');
+              if (!retry) return { error: "no retry btn (result page not shown?)" };
+              retry.click();
+              for (var t2 = 0; t2 < 10000 && !q('[data-testid="exam-answering"]'); t2 += 300) await sleep(300);
+              if (!q('[data-testid="exam-answering"]')) return { error: "answering not shown at 420px" };
+              // 等伴学滑到骑条位(从宽窗位置滑翔过来,轮询 10s;到位即收)
+              var snap = null;
+              for (var p = 0; p < 20 && !snap; p++) {
+                await sleep(500);
+                var bar = q('[data-testid="exam-progress-bar"]');
+                var bot = q(".cp-creature");
+                var prompt = q('[data-testid="exam-answering"] .whitespace-pre-wrap');
+                if (!bar || !bot) continue;
+                var br = bar.getBoundingClientRect();
+                var cr = bot.getBoundingClientRect();
+                var pr = prompt ? prompt.getBoundingClientRect() : null;
+                var onBar = cr.top < br.bottom + 40 && cr.bottom > br.top - 70; // 垂直带与进度条行重叠(骑条)
+                var coverPrompt = pr
+                  ? !(cr.right < pr.left || cr.left > pr.right || cr.bottom < pr.top || cr.top > pr.bottom)
+                  : false;
+                if (onBar || p === 19) {
+                  snap = {
+                    onBar: onBar,
+                    coverPrompt: coverPrompt,
+                    botTop: Math.round(cr.top), botLeft: Math.round(cr.left), botW: Math.round(cr.width),
+                    barTop: Math.round(br.top), barH: Math.round(br.height),
+                    promptTop: pr ? Math.round(pr.top) : null,
+                    vw: window.innerWidth,
+                  };
+                }
+              }
+              // 离开考试(确认终止),不把答题态留给后续步骤。T3 对话栏下地图未挂载,
+              // 必须先切回课程栏才有课时球可点;否则 attempt 悬挂 + 停在考试节点,
+              // 后续清库 reload 会触发空题库自动后台生成,包重跑将卡 generating 态
+              // (实测 "exam view did not mount")。终止是异步的:轮询确认真离开,
+              // 确认键没吃下就重点(实测偶发一击不中 → 间歇红)。
+              var swRail = q('[data-testid="t3-btn-rail"]');
+              if (swRail) { swRail.click(); await sleep(600); }
+              var leftExam = null;
+              for (var lv = 0; lv < 16 && !leftExam; lv++) {
+                if (!q('[data-testid="exam-answering"]') && !q('[data-testid="exam-leave-modal"]')) {
+                  leftExam = true;
+                  break;
+                }
+                var c2 = q('[data-testid="exam-leave-confirm"]');
+                if (c2) c2.click();
+                var b2 = q('button[data-testid^="map-node-"]:enabled');
+                if (!c2 && b2 && q('[data-testid="exam-answering"]')) b2.click();
+                await sleep(500);
+              }
+              if (snap) snap.leftExam = !!leftExam;
+              return snap || { error: "probe never captured" };
+            } catch (e) { return { error: String(e) }; }
+          })()
+        `, 60_000);
+      }
+      await resizeViewport(win, prevW, 800); // 还原窗宽(后续测试按默认布局跑)
+    } catch (e) {
+      perchNarrow = { error: String(e) };
+      try { await resizeViewport(win, 1300, 800); } catch { /* 尽力还原 */ }
+    }
   } catch (e) {
     examIntegrity = { error: String(e) };
   } finally {
@@ -3215,6 +3300,11 @@ async function runUiTest(screenshot = false): Promise<void> {
     name: "companion v0.19: exam quiet perch — bot parked beside timer during answering",
     ok: examIntegrity?.botPerch?.near === true,
     detail: examIntegrity?.botPerch ?? { note: "capture missed" },
+  });
+  results.push({
+    name: "companion exam perch @420px: bot rides progress bar, never covers prompt",
+    ok: perchNarrow?.onBar === true && perchNarrow?.coverPrompt === false,
+    detail: perchNarrow,
   });
 
   // T21 (课程删除闭环): 地图头"删除当前课程"按钮 → ConfirmCard 确认 → 课程删除,
@@ -3729,7 +3819,7 @@ async function runUiTest(screenshot = false): Promise<void> {
               if (q('[data-testid="exam-result"]')) { entered = "result"; break; }
               await sleep(300);
             }
-            if (!entered) return { reason: "exam view did not mount" };
+            if (!entered) return { reason: "exam view did not mount @" + window.innerWidth + "px" };
             if (entered === "result") {
               var retry = q('[data-testid="exam-retry-btn"]');
               if (!retry) return { reason: "result page without retry btn" };

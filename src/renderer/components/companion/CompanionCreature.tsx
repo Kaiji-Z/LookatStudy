@@ -518,17 +518,44 @@ export function CompanionCreature({ courseId }: { courseId: string | null }) {
         : undefined;
 
       if (examTimerRect) {
-        // ── v0.19 考试静栖:钉在考试计时条右下陪考(在场但安静,不漫游不物理)。
+        // ── v0.19 考试静栖:开考钉住计时区陪考(在场但安静,不漫游不物理)。
         //    计时条只在答题阶段挂载;生成中/就绪页探测不到 → 继续常规链,绝不隐匿。
         //    优先级高于抓取:考试中拖伴学无意义,也防 ui-test/真实指针遗留的
         //    stale grab 把陪考位钉死在旧指针坐标 ──
         flightRef.current = null;
         grabRef.current = null; // 陪考期接管,交卷后自然恢复
         pane = "chat";
-        const anchor = {
-          x: Math.min(examTimerRect.right + 64, window.innerWidth - 70),
-          y: Math.min(examTimerRect.bottom + 56, window.innerHeight - 90),
-        };
+        // 宽屏:计时条右侧空边距陪考(原行为)。窄屏没有这块边距——x 被钳到屏幕
+        // 右缘、y 落进题干区,实测压住题目(2026-09-19 手机端反馈)。改骑总进度条:
+        // 考试顶栏是固定条不随题干滚动,锚点钉在进度条填充前沿(答完一题滑一截),
+        // 横向钳进"进度文字…计时"之间的空带,永不进题干区。
+        let anchor: { x: number; y: number };
+        const sideX = examTimerRect.right + 64;
+        const barRect =
+          sideX <= window.innerWidth - 70
+            ? undefined
+            : document.querySelector<HTMLElement>('[data-testid="exam-progress-bar"]')?.getBoundingClientRect();
+        if (barRect && barRect.width > 0) {
+          const fillRight =
+            document.querySelector<HTMLElement>('[data-testid="exam-progress-fill"]')?.getBoundingClientRect().right ??
+            barRect.left + barRect.width / 2;
+          // 行内两元素:左"第N/M题"文字、右计时——骑条横向钳进两者之间的空带
+          const timerEl = document.querySelector<HTMLElement>('[data-testid="exam-timer"]');
+          const labelEl = timerEl?.previousElementSibling as HTMLElement | null;
+          const labelRight = labelEl ? labelEl.getBoundingClientRect().right : barRect.left + 90;
+          const minX = labelRight + 46; // 生物半宽 ~38 + 余量
+          const maxX = examTimerRect.left - 46;
+          const cx = Math.max(minX, Math.min(maxX, fillRight));
+          anchor = {
+            x: minX <= maxX ? cx : barRect.left + barRect.width / 2, // 极窄兜底:条中央
+            y: Math.max(60, barRect.top - 16),
+          };
+        } else {
+          anchor = {
+            x: Math.min(sideX, window.innerWidth - 70),
+            y: Math.min(examTimerRect.bottom + 56, window.innerHeight - 90),
+          };
+        }
         const cur = posRef.current ?? anchor;
         target = glideTo(cur, anchor, dt, CRUISE_OP);
         angle = Math.max(-0.15, Math.min(0.15, (target.x - cur.x) * 0.008));

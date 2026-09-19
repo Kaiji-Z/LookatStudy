@@ -464,11 +464,15 @@ export function ExamView({ examNode, locale, onExamCompleted, onSessionChange, p
               {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
             </div>
           </div>
-          {/* 总进度条 */}
-          <div className="w-full h-1.5 rounded-full bg-ink/10 overflow-hidden mb-6">
+          {/* 总进度条(testid 供伴学"骑条"陪考锚点消费,CompanionCreature) */}
+          <div
+            className="w-full h-1.5 rounded-full bg-ink/10 overflow-hidden mb-6"
+            data-testid="exam-progress-bar"
+          >
             <div
               className="h-full bg-accent transition-all duration-300"
               style={{ width: `${(currentIdx / exercises.length) * 100}%` }}
+              data-testid="exam-progress-fill"
             />
           </div>
         </div>

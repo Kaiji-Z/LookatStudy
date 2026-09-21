@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.38.3] - 2026-09-21
+
 ### Fixed
 
 - DeepSeek 思考档 400（issue #17：切 fast/deep 档报 `thinking: invalid type: string "max", expected struct ThinkingOptions`）：方言表 deepseek 条目 2026-09-12 进表时把 `thinking` 写成了字符串（fast `"none"`/deep `"max"`），DeepSeek 端点要求对象（官方文档示例 `{"type":"enabled"}`，effort 级别是另一个参数 `reasoning_effort`）。改为对象形状 fast `{type:"disabled"}`/deep `{type:"enabled"}`（与 GLM/Kimi/豆包同款）；「自动」档零干预不受影响，受影响版本临时规避=切回自动档。verify T4b-a 三断言锁对象形状（含序列化视角），破坏源码闭环验证过 fast/deep 两档

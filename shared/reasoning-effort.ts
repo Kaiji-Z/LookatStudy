@@ -53,13 +53,16 @@ const BODY_PATCH_FAMILIES: Record<
   },
 
   // 以下五家 2026-09-12 进表(官方文档核对;除 GLM 外无 key 未实测端点,行为以文档为准):
-  // DeepSeek V4 世代:thinking 字符串参数 none/low/high/max,默认开且默认 high。
+  // DeepSeek V4 世代:thinking 对象参数 {"type":"enabled"|"disabled"}(与 GLM 同款方言)。
+  // 2026-09-21 修 issue #17:初版误发字符串 "none"/"max",端点 serde 反序列化 400
+  // ("expected struct ThinkingOptions")——官方文档示例即 {"type":"enabled"},effort
+  // 级别是另一个参数 reasoning_effort(字符串),不叠发(无 key 仍未实测端点)。
   deepseek: {
     fast: (b) => {
-      b.thinking = "none";
+      b.thinking = { type: "disabled" };
     },
     deep: (b) => {
-      b.thinking = "max";
+      b.thinking = { type: "enabled" };
     },
   },
   // Moonshot Kimi:k2.5/k2.6 混合思考默认开,thinking 对象参数可关(平台文档)。

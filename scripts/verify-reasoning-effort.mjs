@@ -113,9 +113,16 @@ check("T2d minimax deep → none(官方无思考开关)", reasoningPlanFor("mini
 
 /* ---- T4b 2026-09-12 新进表家族的 bodyPatch 形状 ---- */
 {
+  // issue #17 回归锁:deepseek thinking 必须是对象(ThinkingOptions struct)。
+  // 初版发字符串 "none"/"max" → 端点 serde 400 "expected struct ThinkingOptions"。
   const p = reasoningPlanFor("deepseek", "openai-compatible", "fast");
   const b = {}; p.kind === "bodyPatch" && p.patch(b);
-  check("T4b-a deepseek fast → thinking none", b.thinking === "none");
+  check("T4b-a deepseek fast → thinking 对象 disabled(非字符串!)", (b.thinking || {}).type === "disabled");
+  const pd = reasoningPlanFor("deepseek", "openai-compatible", "deep");
+  const bd = {}; pd.kind === "bodyPatch" && pd.patch(bd);
+  check("T4b-a2 deepseek deep → thinking 对象 enabled(issue #17 报错原文即 string \"max\")", (bd.thinking || {}).type === "enabled");
+  check("T4b-a3 串成 JSON 后仍是对象形状(端点反序列化视角)",
+    JSON.stringify(bd.thinking) === '{"type":"enabled"}');
 }
 {
   const p = reasoningPlanFor("kimi", "openai-compatible", "fast");

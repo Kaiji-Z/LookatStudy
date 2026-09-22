@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { trackTempDir } from "./lib/temp-clean.mjs";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
@@ -35,7 +36,7 @@ const test = async (name, fn) => {
 
 const mkDeps = () => ({
   db: freshDb(),
-  store: createPlanStore(mkdtempSync(join(tmpdir(), "ls-src-store-"))),
+  store: createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-src-store-")))),
   markDirty: () => {},
   onProgress: () => {},
   shouldAbort: () => false,
@@ -182,6 +183,6 @@ await test("T10 fixture 形状卫生:fixtures 存在且非空(防误删)", async
   }
 });
 
-// 清理临时 plan 目录留给系统 tmp 回收;不主动 rm(Windows 上偶发 EBUSY)
+// 临时 plan 目录经 trackTempDir 登记,进程退出统一删(EBUSY 重试在 temp-clean)
 
 console.log(`\n${passed} passed`);

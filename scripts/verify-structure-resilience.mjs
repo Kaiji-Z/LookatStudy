@@ -17,9 +17,10 @@
  * 跑法: npx tsx scripts/verify-structure-resilience.mjs (也被 verify:core 调用)
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { trackTempDir } from "./lib/temp-clean.mjs";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
@@ -131,8 +132,8 @@ await test("T6 practice 角色单文件兜底进 practice world", async () => {
 
 /* ══════════════ Part B: runSmartImport planId 全步骤标注(注入桩) ══════════════ */
 
-const courseDir = mkdtempSync(join(tmpdir(), "ls-resilience-course-"));
-const plansDir = mkdtempSync(join(tmpdir(), "ls-resilience-store-"));
+const courseDir = trackTempDir(mkdtempSync(join(tmpdir(), "ls-resilience-course-")));
+const plansDir = trackTempDir(mkdtempSync(join(tmpdir(), "ls-resilience-store-")));
 mkdirSync(join(courseDir, "docs"), { recursive: true });
 writeFileSync(join(courseDir, "README.md"), "# 韧性测试课程\n\n- [a](docs/a.md)\n- [b](docs/b.md)\n", "utf8");
 writeFileSync(join(courseDir, "docs", "a.md"), "# A 课\n\n正文写长一点让扫描器认出这是文档内容。\n\n## 小节\n\n内容。\n", "utf8");
@@ -147,7 +148,7 @@ const db = drizzle(sqljs, { schema });
 const mkDeps = (extra) => ({
   db,
   // 每次独立 store 目录:前一个测试留下的快照会命中身份复用,跳过要测的那一步
-  store: createPlanStore(mkdtempSync(join(tmpdir(), "ls-resilience-store-"))),
+  store: createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-resilience-store-")))),
   markDirty: () => {},
   onProgress: () => {},
   shouldAbort: () => false,
@@ -274,9 +275,5 @@ await test("T14 extractJsonBlockAny: 数组泛化(对象/数组起始都认,前�
   assert.equal(extractJsonBlockAny("没有任何 JSON"), "没有任何 JSON", "T14: 无 JSON 返回原文(让 JSON.parse 报原错)");
 });
 
-
-// 清理
-rmSync(courseDir, { recursive: true, force: true });
-rmSync(plansDir, { recursive: true, force: true });
 
 console.log(`\n${passed} passed`);

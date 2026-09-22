@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { trackTempDir } from "./lib/temp-clean.mjs";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
@@ -69,7 +70,7 @@ await test("T6 音频导入管线(转写桩):多文件=多集,虚拟目录分组
   const sqljs = new SQL.Database();
   sqljs.run(schemaSql);
   const db = drizzle(sqljs, { schema });
-  const store = createPlanStore(mkdtempSync(join(tmpdir(), "ls-audio-store-")));
+  const store = createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-audio-store-"))));
   let calls = 0;
   const fakeWav = new Uint8Array(encodeWavPcm16(new Float32Array(1600), 16000));
   const deps = {
@@ -98,7 +99,7 @@ await test("T7 同批音频再导 → 复用(字节哈希身份,与顺序无关)
     sqljs.run(schemaSql);
     return {
       db: drizzle(sqljs, { schema }),
-      store: createPlanStore(mkdtempSync(join(tmpdir(), "ls-audio-store-"))),
+      store: createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-audio-store-")))),
       markDirty: () => {}, onProgress: () => {}, shouldAbort: () => false,
       dataDir: "x",
       transcribeAudioFile: async (_b, f) => `${f} 的转写内容。`.repeat(200),

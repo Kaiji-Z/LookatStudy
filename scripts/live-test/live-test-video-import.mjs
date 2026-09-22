@@ -17,6 +17,7 @@ import { createPlanStore } from "../../src/main/services/import-plan-store.ts";
 import { fetchBilibiliAudio } from "../../src/main/services/video-import-service.ts";
 import { decodeAudioTo16kMono } from "../../src/main/services/speech/audio-file-decode.ts";
 import { readApiKey } from "./_load-env.mjs";
+import { trackTempDir } from "../lib/temp-clean.mjs";
 
 const apiKey = readApiKey();
 const log = (...a) => console.log("[live-video]", ...a);
@@ -36,7 +37,7 @@ const db = drizzle(sqljs, { schema });
 
 const r = await runSmartImport({ kind: "video", url: "https://www.bilibili.com/video/BV1GJ411x7h7" }, {
   db,
-  store: createPlanStore(mkdtempSync(join(tmpdir(), "ls-live-video-"))),
+  store: createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-live-video-")))),
   markDirty: () => {},
   onProgress: (m) => log(m),
   shouldAbort: () => false,

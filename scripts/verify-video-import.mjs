@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { trackTempDir } from "./lib/temp-clean.mjs";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
@@ -129,7 +130,7 @@ const schemaSql = readFileSync(new URL("../src/main/db/schema.sql", import.meta.
 
 await test("T5 视频管线(字幕路径):零转写零模型,直接分段成课 + docCache 复用", async () => {
   const sqljs = new SQL.Database(); sqljs.run(schemaSql);
-  const store = createPlanStore(mkdtempSync(join(tmpdir(), "ls-video-")));
+  const store = createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-video-"))));
   const sub = Array.from({ length: 400 }, (_, i) => `字幕第${i}句,内容完整。`).join("");
   const deps = {
     db: drizzle(sqljs, { schema }), store, markDirty: () => {}, onProgress: () => {}, shouldAbort: () => false,
@@ -153,7 +154,7 @@ await test("T6 视频管线(音频路径):走转写桩(生产=Whisper),标题成
   let transcribed = 0;
   const deps = {
     db: drizzle(sqljs, { schema }),
-    store: createPlanStore(mkdtempSync(join(tmpdir(), "ls-video2-"))),
+    store: createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-video2-")))),
     markDirty: () => {}, onProgress: () => {}, shouldAbort: () => false,
     fetchVideo: async () => ({ source: "audio", title: "深度学习公开课", bytes: new Uint8Array(10), ext: "m4a" }),
     transcribeAudioFile: async (_b, fileName) => { transcribed++; return `${fileName} 的转写文本。`.repeat(300); },
@@ -171,7 +172,7 @@ await test("T8 多分P整季:audio-multi 逐段转写,每P独立虚拟文档,doc
   const seenFiles = [];
   const deps = {
     db: drizzle(sqljs, { schema }),
-    store: createPlanStore(mkdtempSync(join(tmpdir(), "ls-video3-"))),
+    store: createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-video3-")))),
     markDirty: () => {}, onProgress: () => {}, shouldAbort: () => false,
     fetchVideo: async () => ({ source: "audio-multi", title: "机器学习课程", parts: [
       { title: "P1 梯度下降", bytes: new Uint8Array(10), ext: "m4a" },

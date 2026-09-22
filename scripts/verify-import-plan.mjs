@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { trackTempDir } from "./lib/temp-clean.mjs";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
@@ -129,9 +130,9 @@ await test("T6 parseGithubUrl", () => {
 
 /* ══════════════ Part 2: 集成(folder spec,无 LLM key → 规则 fallback) ══════════════ */
 
-// 建临时课程文件夹:README + 3 课
-const courseDir = mkdtempSync(join(tmpdir(), "ls-plan-course-"));
-const plansDir = mkdtempSync(join(tmpdir(), "ls-plan-store-"));
+// 建临时课程文件夹:README + 3 课(trackTempDir 登记,退出统一删)
+const courseDir = trackTempDir(mkdtempSync(join(tmpdir(), "ls-plan-course-")));
+const plansDir = trackTempDir(mkdtempSync(join(tmpdir(), "ls-plan-store-")));
 mkdirSync(join(courseDir, "docs"), { recursive: true });
 writeFileSync(join(courseDir, "README.md"), "# 测试课程\n\n这是集成测试用课程。\n\n- [第一课](docs/a.md)\n- [第二课](docs/b.md)\n", "utf8");
 writeFileSync(join(courseDir, "docs", "a.md"), "# 第一课\n\n正文内容足够长以便被识别为课程文件,这里写满一些文字确保不是噪声。\n\n## 小节\n\n内容。\n", "utf8");
@@ -228,7 +229,7 @@ await test("T12 github 导入在 Step1 网络层被取消:立即抛'已取消'(s
     await runSmartImport(
       { kind: "github", url: "https://github.com/octocat/hello-world" },
       {
-        db, store: createPlanStore(mkdtempSync(join(tmpdir(), "ls-plan-cancel-"))),
+        db, store: createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-plan-cancel-")))),
         markDirty: () => {}, onProgress: () => {},
         shouldAbort: () => cancelAt,
         fetchFn: hangingFetch,
@@ -242,9 +243,5 @@ await test("T12 github 导入在 Step1 网络层被取消:立即抛'已取消'(s
   assert.ok(calls >= 1, "T12: 应至少发起过一次 fetch(证明 signal 是穿透进真实调用路径的)");
   console.log(`✓ T12 取消穿透: ${calls} 次 fetch 后 ${ms.toFixed(0)}ms 内干净取消`);
 });
-
-// 清理
-rmSync(courseDir, { recursive: true, force: true });
-rmSync(plansDir, { recursive: true, force: true });
 
 console.log(`\n${passed} passed`);

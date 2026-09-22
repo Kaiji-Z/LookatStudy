@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { trackTempDir } from "./lib/temp-clean.mjs";
 import initSqlJs from "sql.js";
 import { drizzle } from "drizzle-orm/sql-js";
 import * as schema from "../src/main/db/schema.ts";
@@ -32,7 +33,7 @@ const test = async (name, fn) => {
 };
 
 await test("T1 text 源课程包 round-trip:serialize→parse→零网络重建(reused)", async () => {
-  const storeA = createPlanStore(mkdtempSync(join(tmpdir(), "ls-pack-a-")));
+  const storeA = createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-pack-a-"))));
   const text = Array.from({ length: 500 }, (_, i) => `第${i}条学习心得,内容完整有标点。`).join("\n\n");
   const r1 = await runSmartImport({ kind: "text", name: "心得合集", text }, {
     db: freshDb(), store: storeA, markDirty: () => {}, onProgress: () => {}, shouldAbort: () => false,
@@ -46,7 +47,7 @@ await test("T1 text 源课程包 round-trip:serialize→parse→零网络重建(
   assert.ok(parsed, "包可解析");
   assert.equal(parsed.kind, "text");
   const db2 = freshDb();
-  const storeB = createPlanStore(mkdtempSync(join(tmpdir(), "ls-pack-b-")));
+  const storeB = createPlanStore(trackTempDir(mkdtempSync(join(tmpdir(), "ls-pack-b-"))));
   storeB.save(parsed);
   const r2 = await runSmartImport({ kind: "plan", plan: parsed }, {
     db: db2, store: storeB, markDirty: () => {}, onProgress: () => {}, shouldAbort: () => false,

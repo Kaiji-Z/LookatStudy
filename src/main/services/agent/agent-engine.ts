@@ -58,12 +58,15 @@ import {
 import { buildSystemPrompt } from "../souls/prompt-builder.js";
 import { resolveOutputLang } from "@shared/locales";
 import { buildProfileInjection, parseProfileJson, emptyProfile, MBTI_TYPES } from "@shared/learner-profile";
-import { buildBaseAgentPrompt, buildSoulLangReminder } from "./base-prompt.js";
+import { buildBaseAgentPrompt, buildSoulLangReminder, buildReviewTutorBlock } from "./base-prompt.js";
+import { REVIEW_END_TOOL_NAME, reviewXpKindForQuality, reviewRoundState } from "@shared/review-session";
+import { touchStreakToday } from "../streak.js";
 import {
   createProposal,
   applyProposal,
 } from "../proposal-service.js";
 import { addXpCorrect, addXpWrong } from "../xp-service.js";
+import { emitStateChange } from "../../lib/state-emitter.js";
 import { getKnowledgePoints, getKcMastery } from "../kc-service.js";
 import { recordReview } from "../srs.js";
 import type { ReviewQuality } from "@shared/types";
@@ -142,6 +145,8 @@ export function assembleContextBlocks(
   db: Db,
   nodeId: string,
   locale?: string | null,
+  /** v0.39 复习会话模式:注入【复习导师姿态】块(kind=review 线程;context-usage 同源透传) */
+  opts?: { reviewMode?: boolean },
 ): {
   system: string;
   nodeContext: string;
@@ -172,10 +177,12 @@ export function assembleContextBlocks(
   // AI 输出语言 = 界面语言(用户偏好什么界面就偏好什么输出);未传 → zh-CN。
   // v0.33 双轴:语言学习课程(course.language_target 非空)额外注入目标语言
   // carve-out + 语言教学姿态块 —— 教学语言=界面语言,被考语言=课程目标语言。
+  // v0.39 复习会话:基座后追加【复习导师姿态】(soul 之前——模式指令先于人设)。
   const outLang = resolveOutputLang(locale);
   const system = buildSystemPrompt(
     db,
-    buildBaseAgentPrompt(outLang, course?.languageTarget ?? null),
+    buildBaseAgentPrompt(outLang, course?.languageTarget ?? null) +
+      (opts?.reviewMode ? "\n\n" + buildReviewTutorBlock(outLang) : ""),
     buildSoulLangReminder(outLang),
   );
 
@@ -262,9 +269,22 @@ export async function runAgentTurn(
   abortSignal?: AbortSignal,
   locale?: string | null,
   attachments?: Array<{ mediaType: string; base64: string }>,
+  /** v0.39 复习会话:reviewMode=注入复习导师姿态+注册收束工具;alreadyEnded=历史里已收束过(再调用会被拒) */
+  opts?: { reviewMode?: boolean; reviewAlreadyEnded?: boolean },
 ): Promise<{ text: string; parts: ChatMessagePart[] }> {
   const llm = resolveLlm(db);
-  const { system, nodeContext, learnerSnapshot, profileBlock, node, nodeProgress } = assembleContextBlocks(db, nodeId, locale);
+  const reviewMode = opts?.reviewMode === true;
+  const { system, nodeContext, learnerSnapshot, profileBlock, node, nodeProgress } = assembleContextBlocks(
+    db,
+    nodeId,
+    locale,
+    { reviewMode },
+  );
+  // 已收束过的复习会话续聊:正常答疑,但明确告知不要再收束(防模型看到姿态块里的
+  // "适时收束"又调一次——工具侧也有硬闸,这里是提示层的友好拦截)。
+  const systemPrompt = reviewMode && opts?.reviewAlreadyEnded
+    ? system + "\n\n(系统提示:本复习会话已经收束过,现在正常答疑即可,不要再调用 end_review_session。)"
+    : system;
 
   // v0.11 看图通道路由(拍在工具注册之前,工具注册要看它):
   //   native = 主模型直看;bridge = 纯文本主模型 + vision 覆盖 → 视觉模型转译;reject = 看不了。
@@ -278,6 +298,8 @@ export async function runAgentTurn(
   // 狂刷观测冲掌握度/毕业/解锁。单回合硬闸 8 次——正常教学远够,批量刷必被截断。
   let recordAnswerCalls = 0;
   const RECORD_ANSWER_TURN_LIMIT = 8;
+  // 复习收束:同回合硬闸 1 次(跨回合的防重复由 handleAgentChatThread 的历史扫描把关)
+  let endReviewCalls = 0;
   const tools: ToolSet = {
     get_node_info: tool({
       description: "读取当前学习节点的详细信息（标题、内容、掌握度）。只读。",
@@ -454,6 +476,52 @@ export async function runAgentTurn(
         return { proposalId: proposal.id, status: "pending", message: rationale };
       },
     }),
+    // v0.39 复习会话收束工具(仅 kind=review 线程注册):AI 评定 quality 1~5 喂 SM-2 排期。
+    // 纪律(srs:record Phase D 同口径):只写 SRS 排期 + XP + streak,不写 BKT 掌握度;
+    // 掌握度只由客观答题观测(quiz/exercise/record_answer)驱动。
+    ...(reviewMode
+      ? {
+          [REVIEW_END_TOOL_NAME]: tool({
+            description:
+              "收束本次复习会话:按标尺评定本次复习质量,系统会据此安排下次复习时间(SM-2)。每场会话只能调用一次,收束后正常道别即可。",
+            inputSchema: z.object({
+              quality: z
+                .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+                .describe("本次复习质量标尺:1=几乎不记得/2=多数忘了/3=勉强想起/4=记得/5=很熟"),
+              summary: z.string().describe("一两句概括本次复习表现(会展示给学习者)"),
+              weakPoints: z.array(z.string()).optional().describe("下次复习要重点考察的薄弱点(概念名列表)"),
+            }),
+            execute: async (input) => {
+              const { quality, summary, weakPoints } = input;
+              if (++endReviewCalls > 1) {
+                return { status: "rejected", message: "本回合已收束过,不要重复调用 end_review_session。" };
+              }
+              if (opts?.reviewAlreadyEnded) {
+                return { status: "rejected", message: "本会话已收束过,不能再调用 end_review_session。" };
+              }
+              events.onToolCall?.(REVIEW_END_TOOL_NAME, { quality });
+              const result = recordReview(nodeId, quality);
+              const xpKind = reviewXpKindForQuality(quality);
+              if (xpKind === "correct") addXpCorrect(db);
+              else if (xpKind === "wrong") addXpWrong(db);
+              // quality=3 不计 XP(功过相抵)→ 没有 XP 写入就没有 state:changed,
+              // 渲染层 refreshDue 不触发,复习红点挂着不清。补一枚轻量事件(重拉幂等)。
+              else emitStateChange("xp");
+              // 复习也算当日活跃——纯复习日不断连胜(与 srs:record 同款)
+              touchStreakToday();
+              return {
+                status: "ended",
+                quality,
+                summary,
+                weakPoints: weakPoints ?? [],
+                intervalDays: result.intervalDays,
+                nextDueAt: result.dueAt,
+                message: `复习已收束:质量 ${quality}/5,下次复习约 ${result.intervalDays} 天后。`,
+              };
+            },
+          }),
+        }
+      : {}),
     update_learner_profile: tool({
       description:
         "提议更新学习者画像（称呼/MBTI/教学风格偏好/兴趣点）。生成 Proposal 等人确认（人可以拒绝）。" +
@@ -943,7 +1011,7 @@ export async function runAgentTurn(
     const result = streamText({
       model: chatModel,
       ...(providerOptions ? { providerOptions } : {}),
-      system: `${system}\n\n${nodeContext}${
+      system: `${systemPrompt}\n\n${nodeContext}${
         learnerSnapshot ? `\n\n${learnerSnapshot}` : ""
       }${profileBlock ? `\n\n${profileBlock}` : ""}`,
       messages: attemptMessages,
@@ -1269,6 +1337,10 @@ export async function handleAgentChatThread(
     .where(eq(threads.id, threadId))
     .get();
   const focusNodeId = threadRow?.focusNodeId ?? threadId; // fallback:无焦点就用 threadId(不理想,但防崩)
+  // v0.39 复习会话:kind=review → 注入复习导师姿态 + 注册收束工具;
+  // 本轮(最后一次 kickoff 之后)已收束过 → 再调用会被工具硬闸拒绝。
+  const reviewMode = threadRow?.kind === "review";
+  const reviewAlreadyEnded = reviewMode && reviewRoundState(rawMsgs) === "ended";
 
   // AbortController 按 threadId 登记。
   // 引擎级并发闸(2026-09-13 审计 P1):渲染层 bucket 只防单客户端——serve 模式
@@ -1301,6 +1373,7 @@ export async function handleAgentChatThread(
     controller.signal,
     locale,
     imageAtts.map((a) => ({ mediaType: a.mime, base64: a.data })),
+    { reviewMode, reviewAlreadyEnded },
   );
   } finally {
     abortControllers.delete(ctrlKey);

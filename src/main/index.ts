@@ -1172,6 +1172,66 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: interleave,
   });
 
+  // T4d (v0.39 复习会话): 抽屉点逾期课 → 开 kind=review 会话线程。
+  // LLM 回复不进断言——只守脚手架:抽屉关/复习线程 tab 就位(流式中=spinner,静止=复习徽标)/
+  // 开场消息按 key 在场门控(ready→发,short label;keyless→不发,线程仍在)/输入卡在场。
+  // 结束后清掉 review 线程,把「选中节点→空会话」的前置还给后面的空态测试。
+  const reviewSession = await jsTimeout(win.webContents, `
+    (async function() {
+      var badge = document.querySelector('[data-testid="map-review-badge"]');
+      if (!badge) return { ok: false, reason: "no badge" };
+      badge.click();
+      await new Promise(function(r){ setTimeout(r, 400); });
+      var chip = document.querySelector('[data-testid^="review-overdue-"]') ||
+                 document.querySelector('[data-testid^="review-lesson-"]');
+      if (!chip) return { ok: false, reason: "no overdue chip / lesson button" };
+      chip.click();
+      await new Promise(function(r){ setTimeout(r, 1200); });
+      var drawerGone = !document.querySelector('[data-testid="review-drawer"]');
+      var tab = document.querySelector('[data-testid^="thread-review-"]') ||
+                document.querySelector('[data-testid^="thread-streaming-"]');
+      var kickoffMsgs = Array.prototype.filter.call(
+        document.querySelectorAll('[data-testid="msg-user"]'),
+        function(m){ return (m.textContent || "").indexOf("复习") >= 0; }
+      );
+      var composer = !!document.querySelector('[data-testid="composer-card"], [data-testid="composer"]');
+      var ready = false;
+      try { ready = !!(await window.api.isAgentReady()).ready; } catch (e) {}
+      var kickoffOk = ready ? kickoffMsgs.length > 0 : kickoffMsgs.length === 0;
+      // 清理:删掉全部 review 线程(不污染后续空态测试的前置),再点另一颗可用球
+      // 驱动 useThreads 重载——列表/activeId 从 DB 重建,删除即时生效。
+      var cleaned = 0;
+      try {
+        var courses = await window.api.listCourses();
+        for (var i = 0; i < courses.length; i++) {
+          var ths = await window.api.threadList(courses[i].id, "active");
+          for (var j = 0; j < ths.length; j++) {
+            if (ths[j].kind === "review") { await window.api.threadDelete(ths[j].id); cleaned++; }
+          }
+        }
+      } catch (e) {}
+      try {
+        // 点「另一颗」可用球(当前选中的就是刚复习的课,同值不触发 reload):
+        // 从尾往前找第一颗 enabled 的球。
+        var nodes = document.querySelectorAll('[data-testid^="map-node-"]');
+        for (var k = nodes.length - 1; k >= 0; k--) {
+          if (!nodes[k].disabled) { nodes[k].click(); break; }
+        }
+        await new Promise(function(r){ setTimeout(r, 400); });
+      } catch (e) {}
+      return {
+        ok: drawerGone && !!tab && kickoffOk && composer,
+        drawerGone: drawerGone, tab: !!tab, ready: ready,
+        kickoffCount: kickoffMsgs.length, composer: composer, cleaned: cleaned,
+      };
+    })()
+  `);
+  results.push({
+    name: "review session: drawer pick → kind=review thread (badge/spinner) + gated kickoff + composer (v0.39)",
+    ok: reviewSession?.ok === true,
+    detail: reviewSession,
+  });
+
   // T_nextlabel: 节点名牌仅选中态显示(干净地图原则);首可学不再常显 label,
   // 节点名靠 hover GlobalTooltip(data-tooltip)。验证 map-next-label 不存在。
   const nextLabel = await jsTimeout(win.webContents, 

@@ -42,7 +42,7 @@ export function useThreads(courseId: string | null, nodeId: string | null) {
   }, [reload]);
 
   const create = useCallback(
-    async (input: { title?: string | null }) => {
+    async (input: { title?: string | null; kind?: "chat" | "review" }) => {
       if (!courseId || !nodeId) return null;
       try {
         const t = await api.threadCreate({ ...input, courseId, focusNodeId: nodeId });
@@ -142,6 +142,39 @@ export function useThreads(courseId: string | null, nodeId: string | null) {
     [courseId, nodeId, activeId, create],
   );
 
+  /**
+   * v0.39 复习会话:打开(或创建)某节点的 kind=review 会话线程并让它成为激活线程。
+   * 每课单 review 线程——续用旧线程,保留上轮收束记录(AI 看得到上次的 weakPoints,复习有连续性)。
+   * - 目标就是当前节点:直接更新本地列表 + 激活;
+   * - 目标是别的节点:调用方随后 setSelectedNodeId 触发 reload;本函数 bump 目标线程的
+   *   updatedAt(reload 排序=updatedAt 倒序),activeId 会自动落在它身上。
+   * 返回 threadId(失败 null)。
+   */
+  const openOrCreateReview = useCallback(
+    async (targetNodeId: string, title: string): Promise<string | null> => {
+      if (!courseId) return null;
+      try {
+        const all = await api.threadList(courseId, "active");
+        let target = all.find((t) => t.kind === "review" && t.focusNodeId === targetNodeId) ?? null;
+        if (!target) {
+          target = await api.threadCreate({ courseId, focusNodeId: targetNodeId, title, kind: "review" });
+        } else {
+          // 空 patch 只 bump updatedAt(updateThread 的既有语义),让 reload 后排最前
+          target = (await api.threadUpdate(target.id, {})) ?? target;
+        }
+        const finalTarget: Thread = target;
+        if (targetNodeId === nodeId) {
+          setThreads((prev) => [finalTarget, ...prev.filter((t) => t.id !== finalTarget.id)]);
+          setActiveId(finalTarget.id);
+        }
+        return finalTarget.id;
+      } catch {
+        return null;
+      }
+    },
+    [courseId, nodeId],
+  );
+
   const activeThread = threads.find((t) => t.id === activeId) ?? null;
 
   return {
@@ -156,5 +189,6 @@ export function useThreads(courseId: string | null, nodeId: string | null) {
     removeWithUndo,
     restore,
     ensureThreadForSend,
+    openOrCreateReview,
   };
 }

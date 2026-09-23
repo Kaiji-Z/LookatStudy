@@ -342,6 +342,9 @@ export const canvasItems = sqliteTable("canvas_items", {
 
 export type ThreadStatus = "active" | "archived";
 
+/** 复习会话:chat=普通会话;review=复习导师会话(引擎注入【复习导师姿态】) */
+export type ThreadKind = "chat" | "review";
+
 /** v0.4: 会话线程。课程(项目)→ 多 thread(会话)→ 节点是素材。 */
 export const threads = sqliteTable("threads", {
   id: text("id").primaryKey(),
@@ -353,6 +356,9 @@ export const threads = sqliteTable("threads", {
   status: text("status", { enum: ["active", "archived"] as const })
     .notNull()
     .default("active"),
+  kind: text("kind", { enum: ["chat", "review"] as const })
+    .notNull()
+    .default("chat"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

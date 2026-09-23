@@ -19,20 +19,24 @@ import { srsItems } from "../db/schema.js";
 import { lte } from "drizzle-orm";
 import type { ReviewQuality } from "@shared/types";
 // 纯算法抽出到 ./pure/sm2.ts，让测试可直接 import 真实源码（不走 DB/electron）
-import { computeSm2 } from "./pure/sm2.js";
+import { computeSm2, type Sm2Result } from "./pure/sm2.js";
 // P2: recordReviewDb 抽到 pure/(不触 electron),verify 脚本可直接 import 测 BKT↔SRS 闭环
 import { recordReviewDb } from "./pure/srs-db.js";
 
 // re-export：业务代码（ipc）从 srs.ts 取 computeSm2，测试从 pure/sm2.ts 取——同一个函数
 export { computeSm2 };
+// v0.39:收束回执形状(dueAt/intervalDays)与 pure 层同源
+export type { Sm2Result };
 
 /**
  * 记录一次复习，更新 SM-2 状态（进程级包装：用全局 db + markDirty）。
  * 真实逻辑在 ./pure/srs-db.ts 的 recordReviewDb（db 注入，headless 可测）。
+ * v0.39 返回 Sm2Result——复习会话收束卡/自评卡要显示下次复习时间。
  */
-export function recordReview(nodeId: string, quality: ReviewQuality): void {
-  recordReviewDb(getDb(), nodeId, quality);
+export function recordReview(nodeId: string, quality: ReviewQuality): Sm2Result {
+  const result = recordReviewDb(getDb(), nodeId, quality);
   markDirty();
+  return result;
 }
 
 /**

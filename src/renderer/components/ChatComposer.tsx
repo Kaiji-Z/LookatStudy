@@ -92,6 +92,8 @@ interface ChatComposerProps {
   insertText?: string;
   /** 当前 thread 全部消息的估算 token(上下文表的历史段;App useMemo 算好传入)。 */
   historyTokens: number;
+  /** v0.39 复习会话线程:上下文表的 system 段含复习姿态块(与实发同源,不能少算)。 */
+  reviewMode?: boolean;
 }
 
 export function ChatComposer({
@@ -108,6 +110,7 @@ export function ChatComposer({
   onOpenModelManager,
   insertText,
   historyTokens,
+  reviewMode = false,
 }: ChatComposerProps) {
   const t = useLang();
   const uiLang = useLangValue();
@@ -214,6 +217,7 @@ export function ChatComposer({
 
   // 上下文固定开销(system/课文/学习者):节点/语言/模型配置变化时重拉。
   // 与 runAgentTurn 实发同源(assembleContextBlocks),表显=实发。
+  // v0.39:复习会话线程传 reviewMode——姿态块计入表显。
   useEffect(() => {
     if (!nodeId) {
       setCtxInfo(null);
@@ -222,14 +226,14 @@ export function ChatComposer({
     let cancelled = false;
     (async () => {
       try {
-        const info = await api.getContextUsage(nodeId, uiLang);
+        const info = await api.getContextUsage(nodeId, uiLang, reviewMode);
         if (!cancelled) setCtxInfo(info);
       } catch {
         if (!cancelled) setCtxInfo(null);
       }
     })();
     const onCfg = () => {
-      api.getContextUsage(nodeId, uiLang).then((info) => {
+      api.getContextUsage(nodeId, uiLang, reviewMode).then((info) => {
         if (!cancelled) setCtxInfo(info);
       }).catch(() => undefined);
     };
@@ -238,7 +242,7 @@ export function ChatComposer({
       cancelled = true;
       window.removeEventListener("llm-config-changed", onCfg);
     };
-  }, [nodeId, uiLang]);
+  }, [nodeId, uiLang, reviewMode]);
 
   // 瞬态错误行(附件拒收等):3s 自动消失
   useEffect(() => {

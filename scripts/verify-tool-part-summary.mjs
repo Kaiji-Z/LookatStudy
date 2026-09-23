@@ -49,6 +49,24 @@ test("未知工具 → 兜底一句'已执行',绝不让模型以为没发", () 
   assert.ok(s.includes("已执行工具 attach_node_images"));
 });
 
+test("end_review_session(v0.39 复习收束)→ 摘要带 quality + 薄弱点(多轮复习连续性的数据源)", () => {
+  const s = summarizeToolParts([
+    {
+      type: "tool-call",
+      toolName: "end_review_session",
+      state: "output-available",
+      output: { status: "ended", quality: 3, summary: "护栏机制说不清", weakPoints: ["护栏机制", "温度参数"], intervalDays: 1, nextDueAt: "2026-09-24T00:00:00.000Z" },
+    },
+  ]);
+  assert.ok(s.includes("质量 3/5"), "含质量档");
+  assert.ok(s.includes("下次重点:护栏机制、温度参数"), "薄弱点进摘要(下一轮开场提问的依据)");
+  // 无薄弱点时不拖尾巴
+  const s2 = summarizeToolParts([
+    { type: "tool-call", toolName: "end_review_session", state: "output-available", output: { status: "ended", quality: 5, summary: "全记得", weakPoints: [], intervalDays: 6, nextDueAt: "x" } },
+  ]);
+  assert.ok(s2.includes("质量 5/5") && !s2.includes("下次重点"), "空弱点干净收尾");
+});
+
 test("output-error → [工具调用失败] 可见(失败 ≠ 忘了发)", () => {
   const s = summarizeToolParts([{ type: "tool-call", toolName: "generate_quiz", state: "output-error", error: "boomed" }]);
   assert.ok(s.includes("[工具调用失败] generate_quiz"));

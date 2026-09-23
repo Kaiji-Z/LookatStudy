@@ -18,7 +18,7 @@
  */
 import { useState, useRef, useEffect } from "react";
 import type { Thread } from "@shared/types";
-import { Plus, Settings, Edit, Archive, Trash, Loader2 } from "lucide-react";
+import { Plus, Settings, Edit, Archive, Trash, Loader2, Repeat } from "lucide-react";
 import { ConfirmCard } from "./ConfirmCard.js";
 import { useLang } from "../lib/i18n.js";
 
@@ -107,6 +107,8 @@ export function ThreadSwitcher({
           const isActive = th.id === activeThread?.id;
           const isRenaming = renamingId === th.id;
           const isStreaming = streamingThreadIds.includes(th.id);
+          // v0.39 复习会话线程:Repeat 徽标(提示词/纪律与普通会话不同)
+          const isReview = th.kind === "review";
           return (
             <div
               key={th.id}
@@ -120,6 +122,8 @@ export function ThreadSwitcher({
             >
               {isStreaming ? (
                 <Loader2 className="w-3 h-3 shrink-0 text-accent animate-spin" aria-label={t("thread.streamingBadge")} data-testid={`thread-streaming-${th.id.slice(0, 8)}`} />
+              ) : isReview ? (
+                <Repeat className="w-3 h-3 shrink-0 text-gold" aria-label={t("thread.reviewBadge")} data-testid={`thread-review-${th.id.slice(0, 8)}`} />
               ) : (
                 <span className={`w-1 h-1 rounded-full shrink-0 transition-opacity ${isActive ? "bg-brand opacity-100" : "bg-[var(--border)] opacity-0 group-hover:opacity-60"}`} />
               )}

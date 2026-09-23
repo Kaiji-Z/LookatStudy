@@ -16,6 +16,19 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+
+- 复习会话（对话式复习导师，用户设计拍板 2026-09-23）：点「复习」不再只是回讲解页自评——开一个 `kind=review` 的专属会话线程，AI 以【复习导师姿态】主持（`base-prompt.ts` 双语姿态块：先忆后问不先贴课文 / 对准 KC 弱项与历史卡点 / 错了才讲 / 嵌 generate_quiz 计分检验 / 3~6 轮后 `end_review_session` 收束）。收束时 AI 按标尺（1~5）评定质量喂给 SM-2 排期 + XP + streak，**不写 BKT 掌握度**（主观信号不动客观掌握，Phase D 同口径）；每课单会话线程续用，上一轮收束的 weakPoints 进下一轮开场提问；工具双重防重复（回合内硬闸 + `[[review-kickoff]]` 标记按轮次判定）；AI 没收束/流失败时对话流下方保留三键自评兜底卡。收束卡（`review-outcome-card`）显示质量档 / 下次复习天数 / 弱点 / 「复习下一课」直通下一个到期课。手机端（serve/Web）全链可用（零新 IPC 通道）。verify-review-session 八组断言（轮次状态纯函数 / 收束写入 / 引擎接线 / 同源纪律 / 渲染接线 / i18n 标记 / 姿态本体锁 / schema 迁移）+ ui-test 脚手架断言，破坏源码闭环验证过
+- threads 表加 `kind` 列（chat / review，`addColumnIfMissing` 幂等迁移）；`thread:create` 透传 kind，ThreadSwitcher 复习线程加 Repeat 徽标
+
+### Fixed
+
+- 手机 T3 档从复习抽屉选课停在地图（2026-09-23 用户实测反馈的断点）：抽屉选课只切了节点没切 `t3Pane`，讲解与自评藏在第三栏找不到——复习会话入口统一 `setT3Pane("chat")`（与地图选球同款手机习惯）
+- 纯复习日断连胜：streak 原本只在 `markNodeAttempted`（点课）打卡，`srs:record` 自评与新收束工具都不碰它——复习也是当日活跃，两条路径都补 `touchStreakToday()`
+- `srs:record` 现在返回 SM-2 回执（intervalDays / nextDueAt），自评与收束卡都能显示「下次复习 N 天后」
+- 复习收束的历史标记不带薄弱点（live-test 编写时发现）：`tool-part-summary` 对 `end_review_session` 走兜底分支只写「已执行工具」，下一轮复习的模型看不到上轮 weakPoints——「先考上轮薄弱点」的连续性落空。补专属摘要（质量 N/5 + 下次重点列表），verify-tool-part-summary 加两组断言；`live-test-review-session.mjs` 五轮真实会话行为验收（开场先忆后问且对准上轮薄弱点 / 测验真调 generate_quiz（schema 合法）/ 收束真调 end_review_session（quality 合法）/ 全程不调 mark_mastered），首跑全绿
+- 收束评 3 分（勉强想起）后复习红点不清（2026-09-23 用户追问「清掉红点」发现）：3 档不计 XP（功过相抵）→ 没有 XP 写入就没有 `state:changed` 事件 → 渲染层 `refreshDue` 不触发，地图徽章的到期数挂到下一次事件才刷。数据其实已清（SM-2 已把 dueAt 推到未来），纯属事件链漏发——收束工具与 `srs:record` 两处都补 `else emitStateChange("xp")`（重拉幂等）；verify T3/T8 补断言锁住，破坏源码闭环验证过
+
 ## [0.38.3] - 2026-09-21
 
 ### Fixed

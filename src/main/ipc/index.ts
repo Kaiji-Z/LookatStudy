@@ -38,6 +38,7 @@ import type {
   Progress,
   Streak,
   ReviewQuality,
+  ReviewRecordResult,
   SettingKey,
   ExerciseType,
   CustomProviderInput,
@@ -161,6 +162,7 @@ import {
 } from "../services/agent/model-catalog.js";
 import { getOverlay, setOverlay } from "../services/agent/model-overlay.js";
 import { fetchModelCatalog, CATALOG_CACHE_TTL_MS } from "../lib/model-catalog-refresh.js";
+import { emitStateChange } from "../lib/state-emitter.js";
 import { gatherConsolidationWindow, consolidate, defaultLlmConsolidate, getConsolidationWatermark, setConsolidationWatermark } from "../services/memory-service.js";
 import { PROVIDER_PRESETS, getProviderPreset } from "../services/agent/llm-presets.js";
 // 自定义 Provider
@@ -1115,13 +1117,25 @@ export function registerSrsHandlers(): void {
 
   handle(
     "srs:record",
-    async (_e, nodeId: string, quality: ReviewQuality) => {
-      recordReview(nodeId, quality);
+    async (_e, nodeId: string, quality: ReviewQuality): Promise<ReviewRecordResult> => {
+      const result = recordReview(nodeId, quality);
       // Phase A: 复习自评也给 XP（复习也是学习，应该有能量反馈）
       if (quality >= 4) addXpCorrect(getDb());
       else if (quality <= 2) addXpWrong(getDb());
+      // quality=3 不计 XP → 没有 XP 写入就没有 state:changed,渲染层 refreshDue
+      // 不触发,复习红点挂着不清(收束工具同款补丁)。UI 三键只有 1/4/5,这是防
+      // 越过 UI 直调通道(serve 多端)的对称防御。
+      else emitStateChange("xp");
+      // v0.39: 复习也算当日活跃——纯复习日不再断连胜(streak 原本只在 markNodeAttempted 打卡)
+      touchStreakToday();
       // Phase D: 自评只影响 SRS 排期，不影响 BKT mastery。
       // 自评是主观的，不应直接影响 BKT 概率。mastery 只由客观答题驱动（quiz/exercise/record_answer）。
+      return {
+        ok: true,
+        quality,
+        intervalDays: result.intervalDays,
+        nextDueAt: result.dueAt,
+      };
     },
   );
 }
@@ -1355,8 +1369,9 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
   });
 
   // v0.10: 输入框上下文表的"固定开销"(system/课文/学习者) + 模型窗口/看图能力
-  handle("agent:getContextUsage", async (_e, nodeId: string, locale?: string | null) => {
-    return getContextUsage(getDb(), nodeId, locale);
+  // v0.39: 第四参 reviewMode(复习会话线程的姿态块进表显,与实发同源)
+  handle("agent:getContextUsage", async (_e, nodeId: string, locale?: string | null, reviewMode?: boolean) => {
+    return getContextUsage(getDb(), nodeId, locale, reviewMode);
   });
   // v0.10: 聊天图片附件的 data-url(渲染层历史缩略图;文件名守卫在 store 内)
   handle("attachment:getDataUrl", async (_e, file: string) => {

@@ -16,7 +16,7 @@
  * 不读写旧 chat_sessions 表(向后兼容)。
  */
 import { getDb, markDirty } from "../db/index.js";
-import { threads, chatMessages, proposals, type ThreadStatus } from "../db/schema.js";
+import { threads, chatMessages, proposals, type ThreadStatus, type ThreadKind } from "../db/schema.js";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { collectAttachmentFilesFromParts } from "./pure/attachment-files.js";
@@ -28,6 +28,8 @@ export interface Thread {
   title: string | null;
   focusNodeId: string | null;
   status: ThreadStatus;
+  /** chat=普通会话;review=复习导师会话(引擎按此注入【复习导师姿态】,渲染层 tab 加徽标) */
+  kind: ThreadKind;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -61,6 +63,8 @@ export function createThread(input: {
   courseId: string;
   focusNodeId?: string | null;
   title?: string | null;
+  /** chat(默认)= 普通会话;review = 复习导师会话 */
+  kind?: ThreadKind;
 }): Thread {
   const db = getDb();
   const id = randomUUID();
@@ -71,6 +75,7 @@ export function createThread(input: {
     title: input.title ?? null,
     focusNodeId: input.focusNodeId ?? null,
     status: "active" as ThreadStatus,
+    kind: input.kind ?? "chat",
     createdAt: now,
     updatedAt: now,
     messageCount: 0,

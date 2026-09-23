@@ -329,6 +329,19 @@ const translations: Record<Lang, Record<string, string>> = {
     "review.selfrate.remembered.hint": "推迟几天",
     "review.selfrate.mastered": "很熟",
     "review.selfrate.mastered.hint": "很久后再看",
+    "review.thread.title": "复习·{title}",
+    "review.kickoff.label": "复习「{title}」",
+    "review.kickoff.prompt": "[[review-kickoff]]\n我想复习「{title}」。请按【复习导师姿态】开始这一轮复习:先忆后问,不要先贴课文或大段重讲。开场给我 1 个回忆性问题(如果之前复习留过薄弱点,先考那个),然后等我的回答。",
+    "review.outcome.title": "本轮复习完成",
+    "review.outcome.quality.1": "几乎不记得",
+    "review.outcome.quality.2": "多数忘了",
+    "review.outcome.quality.3": "勉强想起",
+    "review.outcome.quality.4": "记得",
+    "review.outcome.quality.5": "很熟",
+    "review.outcome.tomorrow": "下次复习:明天",
+    "review.outcome.next": "下次复习:{n} 天后",
+    "review.outcome.weak": "下次重点:",
+    "review.outcome.nextLesson": "复习下一课",
 
     // —— 语言切换器 ——
     "lang.original": "原文",
@@ -754,6 +767,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "chat.tool.compare_table": "生成对比表",
     "chat.tool.draw_diagram": "画流程图",
     "chat.tool.show_code_walkthrough": "代码讲解",
+    "chat.tool.end_review_session": "复习收束",
 
     // —— Thread(会话标签)——
     "thread.empty.no_node": "未选节点",
@@ -761,6 +775,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "thread.actions.label": "操作",
     "thread.new.label": "新建会话",
     "thread.streamingBadge": "AI 正在输出",
+    "thread.reviewBadge": "复习会话",
     "thread.menu.rename": "重命名",
     "thread.menu.archive": "归档",
     "thread.delete.confirm": "删除会话「{name}」?消息也会一并删除。",
@@ -1248,6 +1263,19 @@ const translations: Record<Lang, Record<string, string>> = {
     "review.selfrate.remembered.hint": "In a few days",
     "review.selfrate.mastered": "Easy",
     "review.selfrate.mastered.hint": "Much later",
+    "review.thread.title": "Review · {title}",
+    "review.kickoff.label": "Review \"{title}\"",
+    "review.kickoff.prompt": "[[review-kickoff]]\nI want to review \"{title}\". Start this review round per the [Review-tutor posture]: recall first — do not paste the lesson text or re-teach at length. Open with one recall question (if a previous round left weak points, target those first), then wait for my answer.",
+    "review.outcome.title": "Review round complete",
+    "review.outcome.quality.1": "Almost gone",
+    "review.outcome.quality.2": "Mostly forgotten",
+    "review.outcome.quality.3": "Barely recalled",
+    "review.outcome.quality.4": "Remembered",
+    "review.outcome.quality.5": "Solid",
+    "review.outcome.tomorrow": "Next review: tomorrow",
+    "review.outcome.next": "Next review: in {n} days",
+    "review.outcome.weak": "Focus next time:",
+    "review.outcome.nextLesson": "Review next lesson",
 
     // —— Language switcher ——
     "lang.original": "Original",
@@ -1673,6 +1701,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "chat.tool.compare_table": "Generate comparison table",
     "chat.tool.draw_diagram": "Draw diagram",
     "chat.tool.show_code_walkthrough": "Code walkthrough",
+    "chat.tool.end_review_session": "Review closing",
 
     // —— Thread ——
     "thread.empty.no_node": "No node selected",
@@ -1680,6 +1709,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "thread.actions.label": "Actions",
     "thread.new.label": "New thread",
     "thread.streamingBadge": "AI is responding",
+    "thread.reviewBadge": "Review session",
     "thread.menu.rename": "Rename",
     "thread.menu.archive": "Archive",
     "thread.delete.confirm": "Delete thread \"{name}\"? Messages will also be deleted.",

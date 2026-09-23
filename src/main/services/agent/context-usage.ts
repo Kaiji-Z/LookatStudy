@@ -18,9 +18,15 @@ import { assembleContextBlocks } from "./agent-engine.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
-/** nodeId 不存在 → null(渲染层隐藏表);否则返回三块开销 + 模型窗口/能力。 */
-export function getContextUsage(db: Db, nodeId: string, locale?: string | null): ContextUsageInfo | null {
-  const blocks = assembleContextBlocks(db, nodeId, locale);
+/** nodeId 不存在 → null(渲染层隐藏表);否则返回三块开销 + 模型窗口/能力。
+ *  v0.39:reviewMode 与 runAgentTurn 实发同源透传(复习会话线程的 system 含姿态块,表显不能少算)。 */
+export function getContextUsage(
+  db: Db,
+  nodeId: string,
+  locale?: string | null,
+  reviewMode?: boolean,
+): ContextUsageInfo | null {
+  const blocks = assembleContextBlocks(db, nodeId, locale, { reviewMode });
   if (!blocks.node) return null;
 
   const settings = readSettingsMap(db);

@@ -12,7 +12,7 @@ import type { SQLJsDatabase } from "drizzle-orm/sql-js";
 import { randomUUID } from "node:crypto";
 import * as schema from "../../db/schema.js";
 import type { ReviewQuality } from "@shared/types";
-import { computeSm2 } from "./sm2.js";
+import { computeSm2, type Sm2Result } from "./sm2.js";
 
 type Db = SQLJsDatabase<typeof schema>;
 
@@ -20,8 +20,9 @@ type Db = SQLJsDatabase<typeof schema>;
  * 记录一次复习,更新 SM-2 状态(db 注入)。
  * 与 srs.ts 的 recordReview(进程级,用全局 db + markDirty)同逻辑;本函数供 verify 脚本与
  * 任何持有 db 实例的调用方使用。
+ * v0.39 返回 Sm2Result(dueAt/intervalDays)——复习会话收束卡要显示「下次复习 N 天后」。
  */
-export function recordReviewDb(db: Db, nodeId: string, quality: ReviewQuality): void {
+export function recordReviewDb(db: Db, nodeId: string, quality: ReviewQuality): Sm2Result {
   const existing = db
     .select()
     .from(schema.srsItems)
@@ -63,4 +64,5 @@ export function recordReviewDb(db: Db, nodeId: string, quality: ReviewQuality): 
       })
       .run();
   }
+  return result;
 }

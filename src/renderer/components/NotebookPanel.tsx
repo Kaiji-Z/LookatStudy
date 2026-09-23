@@ -30,7 +30,6 @@ import { companionNote } from "../lib/companion/bus.ts";
 // 产物渲染器/画布舞台/复习自评卡同批按需加载:黑板 tab、产物卡、复习模式打开时才拉 chunk
 const ArtifactRenderer = lazy(() => import("./artifacts/index.js").then((m) => ({ default: m.ArtifactRenderer })));
 const CanvasStage = lazy(() => import("./CanvasStage.js").then((m) => ({ default: m.CanvasStage })));
-const SelfRatingCard = lazy(() => import("./ReviewPanel.js").then((m) => ({ default: m.SelfRatingCard })));
 
 export type NotebookTab = "content" | "notes" | "board";
 
@@ -68,10 +67,6 @@ interface NotebookPanelProps {
   /** 黑板(canvas):当前对话里最新一件重产物(概念图/流程图/对比表/代码讲解),
    *  大画布实时渲染;App 在流式中出现新重产物时 forceTab 切到 board。 */
   canvasArtifact?: { id: string; toolName: string; output: unknown } | null;
-  /** 用户从复习抽屉选了课 → 讲解底部显示自评卡 */
-  isReviewing?: boolean;
-  /** 自评完成或退出复习模式 */
-  onReviewDone?: () => void;
   onUserTabChange: () => void;
   onRemove: (id: string) => void;
   onTogglePin: (id: string) => void;
@@ -95,8 +90,6 @@ export function NotebookPanel({
   loading,
   forceTab,
   canvasArtifact,
-  isReviewing,
-  onReviewDone,
   onUserTabChange,
   onRemove,
   onTogglePin,
@@ -211,8 +204,6 @@ export function NotebookPanel({
                   onQuoteToChat={onQuoteToChat}
                   onSaveContentNote={onSaveContentNote}
                   locale={locale}
-                  isReviewing={isReviewing}
-                  onReviewDone={onReviewDone}
                 />
               ) : (
                 <NotesTab
@@ -243,8 +234,6 @@ function ContentTab({
   onQuoteToChat,
   onSaveContentNote,
   locale,
-  isReviewing,
-  onReviewDone,
 }: {
   selectedNode: ContentNode | null;
   /** 该节点的 user_note(用于持久画线渲染) */
@@ -252,9 +241,6 @@ function ContentTab({
   onQuoteToChat?: (text: string) => void;
   onSaveContentNote: (text: string, anchor: NoteSourceAnchor) => void;
   locale?: string | null;
-  /** 从复习抽屉进入 → 底部显示自评卡 */
-  isReviewing?: boolean;
-  onReviewDone?: () => void;
 }) {
   const t = useLang();
   const toast = useToast();
@@ -749,12 +735,6 @@ function ContentTab({
         <Lightbulb className="w-3.5 h-3.5 shrink-0 mt-0.5 text-accent" />
         <span>{t("notebook.quote.hint")}</span>
       </div>
-      {/* 复习自评卡:仅从复习抽屉选课时显示。自评完 → SRS 重排 + BKT 更新 + 退出复习模式 */}
-      {isReviewing && selectedNode && (
-        <Suspense fallback={null}>
-          <SelfRatingCard nodeId={selectedNode.id} onRated={onReviewDone} />
-        </Suspense>
-      )}
     </div>
   );
 }

@@ -209,6 +209,8 @@ function runMigrations(db: Database): void {
   addColumnIfMissing("canvas_items", "result_at", "TEXT");
   // 按钮触发的消息:气泡只显示短动作标签,完整提示词留在 content(发给 LLM)
   addColumnIfMissing("chat_messages", "display_text", "TEXT");
+  // 复习会话线程:kind 区分普通会话与复习导师会话(引擎按 kind 注入复习姿态)
+  addColumnIfMissing("threads", "kind", "TEXT NOT NULL DEFAULT 'chat'");
 
   // 考试节点(type='exam'):老库的 content_nodes CHECK 约束不含 'exam',
   // 需重建表加约束(SQLite 不能 ALTER CHECK)。幂等:检测现有 CHECK 是否已含 'exam'。

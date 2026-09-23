@@ -9,6 +9,7 @@
  * 纯函数;损坏 JSON 返回空串(历史装配静默降级)。
  */
 import type { ChatMessagePart } from "@shared/part-accumulator";
+import { REVIEW_END_TOOL_NAME } from "@shared/review-session";
 
 interface ArtifactLike {
   artifactType?: string;
@@ -18,12 +19,21 @@ interface ArtifactLike {
   edges?: unknown[];
   headers?: unknown[];
   rows?: unknown[];
+  /** end_review_session 的收束回执字段 */
+  quality?: number;
+  weakPoints?: unknown[];
 }
 
 function describeOne(toolName: string, output: unknown): string {
   const o = (output ?? {}) as ArtifactLike;
   const title = typeof o.title === "string" && o.title ? `《${o.title}》` : "";
   switch (o.artifactType ?? toolName) {
+    case REVIEW_END_TOOL_NAME: {
+      // v0.39 复习收束:摘要必须带 quality + weakPoints——下一轮复习的开场提问
+      // 就靠这行标记找上轮薄弱点(default 分支只写「已执行」会让多轮连续性落空)。
+      const wp = Array.isArray(o.weakPoints) ? o.weakPoints.filter((w) => typeof w === "string") : [];
+      return `已收束本轮复习(质量 ${o.quality ?? "?"}/5${wp.length > 0 ? `,下次重点:${wp.join("、")}` : ""})`;
+    }
     case "quiz":
       return `已向学习者发出交互答题卡${title}(共 ${o.questions?.length ?? "?"} 题),学习者可直接作答`;
     case "concept_map":

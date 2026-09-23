@@ -269,6 +269,7 @@ CREATE TABLE IF NOT EXISTS threads (
   title TEXT,                        -- 用户起的名,如"注意力机制深挖"
   focus_node_id TEXT,                -- 主焦点节点(可空,影响 AI 注入的节点上下文)
   status TEXT NOT NULL DEFAULT 'active',  -- active / archived
+  kind TEXT NOT NULL DEFAULT 'chat',      -- chat / review(复习会话线程:引擎注入复习导师姿态,tab 加徽标)
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
   updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
   message_count INTEGER NOT NULL DEFAULT 0

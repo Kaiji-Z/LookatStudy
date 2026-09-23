@@ -683,7 +683,7 @@ export interface ApiExpose {
   getDueReviews(): Promise<string[]>;
   /** v0.2: 所有 SRS 项详情(供四象限复习面板)。返回 intervalDays/repetitions/dueAt/overdue。 */
   getAllSrsItems(): Promise<Array<{ nodeId: string; intervalDays: number; repetitions: number; dueAt: string; overdue: boolean }>>;
-  recordReview(nodeId: string, quality: ReviewQuality): Promise<void>;
+  recordReview(nodeId: string, quality: ReviewQuality): Promise<ReviewRecordResult>;
 
   /* 打卡 */
   getStreak(): Promise<Streak>;
@@ -710,8 +710,9 @@ export interface ApiExpose {
   /** v0.4: 中断某 thread 的 agent 回复 */
   abortAgentChatThread(threadId: string): Promise<void>;
   /** v0.10: 当前节点+模型的一次性上下文开销(系统提示/课文/学习者快照的估算 token + 模型窗口)。
-   * 给输入框上下文表;渲染层再本地叠加对话历史与草稿的估算。nodeId 不存在 → null。 */
-  getContextUsage(nodeId: string, locale?: string | null): Promise<ContextUsageInfo | null>;
+   * 给输入框上下文表;渲染层再本地叠加对话历史与草稿的估算。nodeId 不存在 → null。
+   * v0.39: reviewMode=复习会话线程(姿态块计入表显,与实发同源)。 */
+  getContextUsage(nodeId: string, locale?: string | null, reviewMode?: boolean): Promise<ContextUsageInfo | null>;
   /** v0.10: 取聊天图片附件的 data-url(渲染层恢复历史消息缩略图;file 须是 attachments 目录内的安全文件名) */
   getAttachmentDataUrl(file: string): Promise<string | null>;
 
@@ -999,7 +1000,7 @@ export interface ApiExpose {
 
   /* v0.4: Thread 会话(类 Cursor 项目-会话) */
   threadList(courseId: string, status?: "active" | "archived"): Promise<Thread[]>;
-  threadCreate(input: { courseId: string; focusNodeId?: string | null; title?: string | null }): Promise<Thread>;
+  threadCreate(input: { courseId: string; focusNodeId?: string | null; title?: string | null; kind?: "chat" | "review" }): Promise<Thread>;
   threadUpdate(id: string, patch: { title?: string; status?: "active" | "archived"; focusNodeId?: string | null }): Promise<Thread | null>;
   threadDelete(id: string): Promise<void>;
   threadGetMessages(threadId: string): Promise<ChatMessageRow[]>;
@@ -1013,6 +1014,8 @@ export interface Thread {
   title: string | null;
   focusNodeId: string | null;
   status: "active" | "archived";
+  /** chat=普通会话;review=复习导师会话(引擎注入【复习导师姿态】,tab 加徽标) */
+  kind: "chat" | "review";
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -1060,6 +1063,16 @@ export type NoteSourceAnchor =
   | { type: "chat"; threadId: string; msgId: string; startOffset?: number; endOffset?: number }; // 对话流:thread + 消息 id + 消息内字符偏移
 
 export type ReviewQuality = 0 | 1 | 2 | 3 | 4 | 5;
+
+/** 复习自评/会话收束的 SM-2 写入回执(渲染层显示「下次复习 N 天后」)。 */
+export interface ReviewRecordResult {
+  ok: true;
+  quality: ReviewQuality;
+  /** SM-2 计算出的新间隔(天) */
+  intervalDays: number;
+  /** 下次到期时间(ISO) */
+  nextDueAt: string;
+}
 
 /** XP 状态(今日能量 + P4 累计/等级持久成长线)。 */
 export interface XpStatus {

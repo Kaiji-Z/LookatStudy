@@ -145,8 +145,8 @@ const api = {
     ipcRenderer.invoke("agent:chatThread", threadId, msg, displayText ?? null, locale ?? null, attachments ?? undefined)) as ApiExpose["agentChatThread"],
   abortAgentChatThread: ((threadId: string) =>
     ipcRenderer.invoke("agent:abortThread", threadId)) as ApiExpose["abortAgentChatThread"],
-  getContextUsage: ((nodeId: string, locale?: string | null) =>
-    ipcRenderer.invoke("agent:getContextUsage", nodeId, locale ?? null)) as ApiExpose["getContextUsage"],
+  getContextUsage: ((nodeId: string, locale?: string | null, reviewMode?: boolean) =>
+    ipcRenderer.invoke("agent:getContextUsage", nodeId, locale ?? null, reviewMode ?? false)) as ApiExpose["getContextUsage"],
 
   // ---------- v0.12 语音(TTS/ASR/模型管理) ----------
   getSpeechModelStatus: (() =>

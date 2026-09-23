@@ -21,6 +21,8 @@ import { BootGuidePanel } from "./components/BootGuidePanel.js";
 import { BootRecapPanel } from "./components/BootRecapPanel.js";
 const PersonalProfileModal = lazy(() => import("./components/PersonalProfileModal.js"));
 const ModelManagerModal = lazy(() => import("./components/ModelManagerModal.js"));
+/** v0.39 复习会话兜底自评卡(非首屏,按需拉 chunk) */
+const SelfRatingCard = lazy(() => import("./components/ReviewPanel.js").then((m) => ({ default: m.SelfRatingCard })));
 import { nameAvatar } from "./lib/avatar.js";
 import { useCanvas } from "./lib/useCanvas.js";
 import { hasNoteMark } from "./lib/highlightText.js";
@@ -34,6 +36,7 @@ import { buildQuizHookLabel, buildQuizHookMessage } from "./lib/quiz-hook.js";
 import { useThreads } from "./lib/useThreads.js";
 import { useToast } from "./components/Toast.js";
 import { ThreadSwitcher } from "./components/ThreadSwitcher.js";
+import { reviewRoundStateFromParts, REVIEW_KICKOFF_MARKER } from "@shared/review-session";
 import { useLang, useLangValue } from "./lib/i18n.js";
 import { useWindowTier } from "./lib/useWindowTier.js";
 import { t2SideFromT3, swipeTarget, type T2Side, type T3Pane } from "./lib/paneTiers.js";
@@ -576,7 +579,6 @@ export default function App() {
       setStreak(newStreak);
       setSelectedNodeId(node.id);
       setForceArtifactTab("content");
-      setIsReviewing(false); // 正常切节点 → 退出复习自评模式
       // v0.5: 点节点 → selectedNodeId 变化 → useThreads(selectedCourseId, selectedNodeId) 自动 reload 该节点的 thread
     } catch (e) {
       setErrorFromThrow(e);
@@ -865,9 +867,9 @@ export default function App() {
         toast.show(t("toast.threadCreateFailed"));
         return;
       }
-      // 当前 thread 标题为空(如"+ 新建会话"建的空 thread)→ 用首条消息截断自动命名,
-      // 与 ensureThreadForSend 的命名逻辑一致:标题=首条完整输入(不截断)。
-      // 按钮触发的消息标题用短动作标签——tab 里不该出现整段提示词。
+    // 当前 thread 标题为空(如"+ 新建会话"建的空 thread)→ 用首条消息截断自动命名,
+    // 与 ensureThreadForSend 的命名逻辑一致:标题=首条完整输入(不截断)。
+    // 按钮触发的消息标题用短动作标签——tab 里不该出现整段提示词。
       const cur = thread.activeThread;
       if (cur && !cur.title) {
         thread.update(cur.id, { title: (displayText ?? text).trim() });
@@ -875,6 +877,41 @@ export default function App() {
       chat.send(text, undefined, displayText, attachments);
     },
     [chat, thread, toast, t],
+  );
+
+  // v0.39 复习会话入口:点「复习」→ 开/续该课的 kind=review 会话线程 + 自动发开场提示词
+  // (display 短标签,「开始学习」同款先例)。开场正文以 [[review-kickoff]] 标记开头——
+  // 主进程按它划分复习轮次(每轮可收束一次,多轮复用同一线程)。
+  const startReviewSession = useCallback(
+    async (nodeId: string) => {
+      if (!selectedCourseId) return;
+      const node = tree.find((n) => n.id === nodeId);
+      if (!node) return;
+      // T3 单栏:复习会话在对话栏,从地图栏点进来必须切过去(与 onJumpNode 同款手机习惯)。
+      // 这是 v0.39 顺带修复的断点:旧流程选完课停在地图,讲解/自评藏在第三栏找不到。
+      if (tier === 3) setT3Pane("chat");
+      // 先解析/创建目标线程(openOrCreateReview 会 bump updatedAt),再切节点——
+      // useThreads 的 reload 按 updatedAt 倒序,activeId 自动落在 review 线程上。
+      const tid = await thread.openOrCreateReview(nodeId, t("review.thread.title", { title: node.title }));
+      if (!tid) {
+        toast.show(t("toast.threadCreateFailed"));
+        return;
+      }
+      if (selectedNodeId !== nodeId) {
+        setSelectedNodeId(nodeId);
+        setForceArtifactTab("content");
+      }
+      // 开场:发给目标线程(overrideThreadId 直达,不等 activeId 的 prop 更新)。
+      // 流式中拒发(useChatStream 的桶守卫)——连点复习只发一条开场。
+      if (agentReady?.ready && !chat.streamingThreadIds.includes(tid)) {
+        chat.send(
+          t("review.kickoff.prompt", { title: node.title }),
+          tid,
+          t("review.kickoff.label", { title: node.title }),
+        );
+      }
+    },
+    [selectedCourseId, tree, tier, thread, t, toast, agentReady, chat, selectedNodeId],
   );
   // 答题完成自动 hook:最后一题提交后点「完成」即把成绩单发给 AI(气泡只显示短标签,完整判定只给 LLM),
   // 由 AI 决定下一步(讲错题/放行/换角度)—— 用户不再手动点"下一步动作"。
@@ -989,16 +1026,36 @@ export default function App() {
 
   // 复习抽屉(v0.3:复习作为 overlay,不占右栏标签)
   const [showReviewDrawer, setShowReviewDrawer] = useState(false);
-  /** 用户从复习抽屉选了课 → true,讲解底部显示自评卡。正常切节点 → false */
-  const [isReviewing, setIsReviewing] = useState(false);
-  // 伴学情境:进考试节点=加油打气(只反应一次,答题中零干扰);复习抽屉开=待命
+  // v0.39 复习会话:点复习 = 开/续该课的 kind=review 会话线程,AI 以复习导师姿态主持。
+  // 旧流程(isReviewing → 讲解底部自评卡)退役;自评卡保留为会话兜底,挂在对话流下方。
+  const reviewSessionActive = thread.activeThread?.kind === "review";
+  // 收束卡「复习下一课」:当前课程的下一个到期课时(非当前课)
+  const reviewNextNodeId = useMemo(() => {
+    if (!reviewSessionActive) return null;
+    for (const id of dueInCourseIds) {
+      if (id === selectedNodeId) continue;
+      const n = tree.find((x) => x.id === id);
+      if (n && n.type === "lesson") return id;
+    }
+    return null;
+  }, [reviewSessionActive, dueInCourseIds, selectedNodeId, tree]);
+  // 本轮复习轮次:最后一次 kickoff 的消息下标(兜底自评卡的 remount key)与收束状态
+  const reviewKickoffIdx = useMemo(() => {
+    let idx = -1;
+    chat.messages.forEach((m, i) => {
+      if (m.role === "user" && m.parts.some((p) => p.type === "text" && p.text.includes(REVIEW_KICKOFF_MARKER))) idx = i;
+    });
+    return idx;
+  }, [chat.messages]);
+  const reviewRoundOpen = reviewSessionActive && reviewRoundStateFromParts(chat.messages) === "open";
+  // 伴学情境:进考试节点=加油打气(只反应一次,答题中零干扰);复习会话在场=待命
   const isExamNode = selectedNode?.type === "exam";
   useEffect(() => {
     if (isExamNode) window.dispatchEvent(new CustomEvent("companion-exam-enter"));
   }, [isExamNode]);
   useEffect(() => {
-    companionReviewing(isReviewing);
-  }, [isReviewing]);
+    companionReviewing(reviewSessionActive);
+  }, [reviewSessionActive]);
 
   return (
     <div className="h-[var(--app-height,100vh)] flex flex-col bg-surface-1 text-neutral-900 dark:text-neutral-100 overflow-hidden">
@@ -1239,6 +1296,8 @@ export default function App() {
                 }}
                 onQuizCompleted={handleQuizCompleted}
                 cardMode={tier === 3}
+                reviewNextNodeId={reviewNextNodeId}
+                onStartReviewSession={(id) => void startReviewSession(id)}
                 chatNotes={canvas.items.filter(
                   (i) => i.artifactType === "user_note" && i.sourceAnchor,
                 )}
@@ -1253,8 +1312,16 @@ export default function App() {
                   toast.show(t("toast.noteSaved"), { duration: 2000 });
                 }}
               />
+              {/* v0.39 复习会话兜底自评卡:AI 没收束(流失败/没收场)且本轮开着时,用户手动三键收束。
+                  key=本轮 kickoff 下标——新一轮复习重新挂载,上一轮的"已记录"状态不延续。 */}
+              {reviewSessionActive && reviewRoundOpen && !chat.streaming && chat.messages.length > 0 && selectedNodeId && (
+                <Suspense fallback={null}>
+                  <SelfRatingCard key={reviewKickoffIdx} nodeId={selectedNodeId} />
+                </Suspense>
+              )}
               <ChatComposer
                 nodeId={selectedNodeId}
+                reviewMode={reviewSessionActive}
                 agentReady={agentReady?.ready ?? false}
                 streaming={chat.streaming}
                 souls={orderedSouls}
@@ -1335,8 +1402,6 @@ export default function App() {
                 onJumpToSource={handleJumpToSource}
                 onQuoteToChat={handleQuoteToChat}
                 locale={currentLocale}
-                isReviewing={isReviewing}
-                onReviewDone={() => setIsReviewing(false)}
               />
               )}
             </main>
@@ -1384,10 +1449,8 @@ export default function App() {
           progressMap={progressMap}
           onPickNode={(id) => {
             guardedNav(() => {
-              setSelectedNodeId(id);
-              setForceArtifactTab("content");
               setShowReviewDrawer(false);
-              setIsReviewing(true);
+              void startReviewSession(id);
             });
           }}
         />

@@ -19,7 +19,8 @@ import type { ChatMessageV2, ChatMessagePart } from "@shared/part-accumulator";
 import { toolErrorVisibility } from "@shared/part-accumulator";
 import ReactMarkdown from "react-markdown";
 import { useMarkdownPipeline } from "../lib/math-plugins.js";
-import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square, UserRound } from "lucide-react";
+import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square, UserRound, CalendarClock, BookOpenCheck } from "lucide-react";
+import { REVIEW_END_TOOL_NAME, type ReviewSessionOutcome } from "@shared/review-session";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
 import { applyPersistentMarksByText, applyPersistentMarksHighlight, supportsHighlightMarks, getNoteRange, flashNoteRange, flashMark, getTextModel, rangeToOffsets, markReadingSentence, clearReadingMark, resetReadingCursor, centerReadingRangeInView } from "../lib/highlightText.js";
@@ -67,9 +68,13 @@ interface ChatStreamProps {
   /** T3 卡片模式(一幕一屏):窄屏下每个 AI 回合装进一张占屏卡片,自由滚动(不做 snap 吸附);
    *  用户消息保持小气泡。宽屏不传=false,行为不变。 */
   cardMode?: boolean;
+  /** v0.39 复习会话:收束卡「复习下一课」——下一个当前课程到期节点(无则不显示按钮) */
+  reviewNextNodeId?: string | null;
+  /** v0.39 复习会话:收束卡发起下一课复习 */
+  onStartReviewSession?: (nodeId: string) => void;
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onOpenModelManager, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction, onQuizCompleted, cardMode = false }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onOpenModelManager, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction, onQuizCompleted, cardMode = false, reviewNextNodeId, onStartReviewSession }: ChatStreamProps) {
   const t = useLang();
   const toast = useToast();
   const speech = useSpeech();
@@ -476,6 +481,8 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                 quizMastery={quizMastery}
                 onPickAction={onPickQuizAction}
                 onQuizCompleted={onQuizCompleted}
+                reviewNextNodeId={reviewNextNodeId}
+                onStartReviewSession={onStartReviewSession}
                 speakingMessageId={speech.speakingMessageId}
                 speakingSentence={speech.speakingSentence}
                 playingSentence={speech.playingSentence}
@@ -557,6 +564,8 @@ function MessageRowV2({
   quizMastery,
   onPickAction,
   onQuizCompleted,
+  reviewNextNodeId,
+  onStartReviewSession,
   speakingMessageId,
   speakingSentence,
   playingSentence,
@@ -570,6 +579,9 @@ function MessageRowV2({
   quizMastery?: number | null;
   onPickAction?: (message: string) => void;
   onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
+  /** v0.39 复习会话:收束卡「复习下一课」透传 */
+  reviewNextNodeId?: string | null;
+  onStartReviewSession?: (nodeId: string) => void;
   speakingMessageId?: string | null;
   speakingSentence?: { index: number; total: number } | null;
   /** v6 播放序(正在念的句,非合成到达序)——karaoke 高亮用它 */
@@ -668,6 +680,8 @@ function MessageRowV2({
                 quizMastery={quizMastery}
                 onPickAction={onPickAction}
                 onQuizCompleted={onQuizCompleted}
+                reviewNextNodeId={reviewNextNodeId}
+                onStartReviewSession={onStartReviewSession}
               />
             ) : null,
           );
@@ -709,6 +723,8 @@ function PartRenderer({
   quizMastery,
   onPickAction,
   onQuizCompleted,
+  reviewNextNodeId,
+  onStartReviewSession,
 }: {
   part: ChatMessagePart;
   msgId: string;
@@ -719,6 +735,9 @@ function PartRenderer({
   quizMastery?: number | null;
   onPickAction?: (message: string) => void;
   onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
+  /** v0.39 复习会话:收束卡「复习下一课」透传 */
+  reviewNextNodeId?: string | null;
+  onStartReviewSession?: (nodeId: string) => void;
 }) {
   // 数学插件集按需加载:含公式文本才拉 katex(入口包瘦身,见 lib/math-plugins.ts)
   const mdPipeline = useMarkdownPipeline(part.type === "text" ? part.text : "");
@@ -760,6 +779,8 @@ function PartRenderer({
       quizMastery={quizMastery}
       onPickAction={onPickAction}
       onQuizCompleted={onQuizCompleted}
+      reviewNextNodeId={reviewNextNodeId}
+      onStartReviewSession={onStartReviewSession}
     />
   );
 }
@@ -803,6 +824,8 @@ function ToolCallBlock({
   quizMastery,
   onPickAction,
   onQuizCompleted,
+  reviewNextNodeId,
+  onStartReviewSession,
 }: {
   toolName: string;
   state: "input-available" | "output-available" | "output-error";
@@ -816,6 +839,9 @@ function ToolCallBlock({
   quizMastery?: number | null;
   onPickAction?: (message: string) => void;
   onQuizCompleted?: (result: { title: string; correct: number; total: number; detail: { prompt: string; chosen: string; answerText: string; correct: boolean }[] }) => void;
+  /** v0.39 复习会话:收束卡「复习下一课」 */
+  reviewNextNodeId?: string | null;
+  onStartReviewSession?: (nodeId: string) => void;
 }) {
   const t = useLang();
   // proposal 类工具(record_answer/mark_mastered):output 里有 proposalId + summary。
@@ -829,6 +855,62 @@ function ToolCallBlock({
       <div className="rounded-xl border border-ink/10 bg-ink/5 p-3 flex items-center gap-2" data-testid="part-profile-suggest">
         <UserRound className="w-4 h-4 text-accent shrink-0" />
         <span className="text-label text-ink-muted">{t("chat.profile_sent")}</span>
+      </div>
+    );
+  }
+
+  // v0.39 复习会话收束卡:end_review_session 成功 → 结构化结果卡(质量/下次复习/弱点/下一课)。
+  // 拒绝(重复收束)走通用 tool 块,不进这里。
+  if (toolName === REVIEW_END_TOOL_NAME && state === "output-available" &&
+      output && typeof output === "object" && (output as { status?: string }).status === "ended") {
+    const o = output as ReviewSessionOutcome;
+    const qualityKey = (String(o.quality) as "1" | "2" | "3" | "4" | "5");
+    return (
+      <div
+        className="rounded-xl border border-gold/30 bg-gold/5 overflow-hidden"
+        data-testid="review-outcome-card"
+      >
+        <div className="px-4 py-3 flex items-center gap-2 border-b border-[var(--border-faint)]">
+          <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-gold/15 text-gold shrink-0">
+            <BookOpenCheck className="w-4 h-4" />
+          </span>
+          <span className="text-lead font-bold text-ink">{t("review.outcome.title")}</span>
+          <span
+            className={`ml-auto px-2 py-0.5 rounded-full text-label font-bold ${
+              o.quality >= 4 ? "bg-brand/15 text-brand" : o.quality >= 3 ? "bg-accent/15 text-accent" : "bg-review/15 text-review"
+            }`}
+            data-testid="review-outcome-quality"
+          >
+            {t(`review.outcome.quality.${qualityKey}`)}
+          </span>
+        </div>
+        <div className="px-4 py-3 space-y-2">
+          {o.summary && <div className="text-body text-ink leading-relaxed">{o.summary}</div>}
+          {o.weakPoints && o.weakPoints.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-caption font-bold text-ink-muted">{t("review.outcome.weak")}</span>
+              {o.weakPoints.map((w, i) => (
+                <span key={i} className="px-2 py-0.5 rounded-full bg-surface-3 text-label text-ink-muted">{w}</span>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 text-label text-ink-muted" data-testid="review-outcome-next">
+            <CalendarClock className="w-3.5 h-3.5 shrink-0" />
+            {o.intervalDays === 1
+              ? t("review.outcome.tomorrow")
+              : t("review.outcome.next", { n: String(o.intervalDays) })}
+          </div>
+          {reviewNextNodeId && onStartReviewSession && (
+            <button
+              onClick={() => onStartReviewSession(reviewNextNodeId)}
+              data-testid="review-outcome-next-lesson"
+              className="btn-3d-neutral px-3 py-1.5 text-body"
+            >
+              <BookOpenCheck className="w-3.5 h-3.5 inline" />
+              {t("review.outcome.nextLesson")}
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -992,6 +1074,7 @@ function toolLabel(name: string, t: ReturnType<typeof useLang>): string {
     compare_table: t("chat.tool.compare_table"),
     draw_diagram: t("chat.tool.draw_diagram"),
     show_code_walkthrough: t("chat.tool.show_code_walkthrough"),
+    end_review_session: t("chat.tool.end_review_session"),
   };
   return labels[name] ?? name;
 }

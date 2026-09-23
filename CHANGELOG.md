@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-09-23
+
 ### Added
 
 - 复习会话（对话式复习导师，用户设计拍板 2026-09-23）：点「复习」不再只是回讲解页自评——开一个 `kind=review` 的专属会话线程，AI 以【复习导师姿态】主持（`base-prompt.ts` 双语姿态块：先忆后问不先贴课文 / 对准 KC 弱项与历史卡点 / 错了才讲 / 嵌 generate_quiz 计分检验 / 3~6 轮后 `end_review_session` 收束）。收束时 AI 按标尺（1~5）评定质量喂给 SM-2 排期 + XP + streak，**不写 BKT 掌握度**（主观信号不动客观掌握，Phase D 同口径）；每课单会话线程续用，上一轮收束的 weakPoints 进下一轮开场提问；工具双重防重复（回合内硬闸 + `[[review-kickoff]]` 标记按轮次判定）；AI 没收束/流失败时对话流下方保留三键自评兜底卡。收束卡（`review-outcome-card`）显示质量档 / 下次复习天数 / 弱点 / 「复习下一课」直通下一个到期课。手机端（serve/Web）全链可用（零新 IPC 通道）。verify-review-session 八组断言（轮次状态纯函数 / 收束写入 / 引擎接线 / 同源纪律 / 渲染接线 / i18n 标记 / 姿态本体锁 / schema 迁移）+ ui-test 脚手架断言，破坏源码闭环验证过

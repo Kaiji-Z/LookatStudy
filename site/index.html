@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LookatStudy — Turn almost anything into a course you actually finish</title>
+  <meta name="description" content="A local-first, open-source desktop app: a GitHub repo, a folder, an article, a video or an e-book goes in — a Duolingo-style course with a gated skill map, an AI tutor and spaced review comes out. Everything runs on your machine, with your own API key.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="LookatStudy — Turn almost anything into a course you actually finish">
+  <meta property="og:description" content="Local-first AI learning platform: gated skill map, per-concept mastery tracking, boss-fight exams, SM-2 review. Bring your own LLM key. Windows · macOS · Linux · Android.">
+  <meta property="og:image" content="https://kaiji-z.github.io/LookatStudy/docs/screenshots/en/01-overview.png">
+  <meta property="og:url" content="https://kaiji-z.github.io/LookatStudy/">
+  <link rel="icon" type="image/svg+xml" href="ember.svg">
+  <script>document.documentElement.classList.add('js');</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap">
+  <link rel="stylesheet" href="companion.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!--
+  DIRECTION CONTRACT (impeccable, established world · Persuade)
+  THESIS: The app's night-sky skill map is the landing page — the first viewport is a live,
+  looping gated-path demo (a node studies, masters, unlocks the next), not a screenshot plus
+  three feature cards. Proof over claims: every mechanism below is a working in-page demo.
+  OWN-WORLD: deep-night panels (#0b0f1a family) carrying the app's six semantic roles
+  (brand green / interact blue / gold / exam purple / review orange), heavy system sans,
+  3D push-down buttons, one stroked-line bot. No kickers, no icon-card grids, no gradient text.
+  STORY: within seconds a visitor gets "anything → a gated course", believes "the tutor knows
+  my weak spot" from the demos, and clicks Download.
+  FIRST VIEWPORT: left 55% — claim, sub, two CTAs, platform pills; right 45% — the live map
+  panel: stars, winding path, five nodes mid-unlock-loop, bot hovering at the current node.
+  FORM: whole surface inside the established app world, shaped directly per the pinned brief
+  (modern dark demo-led AI-site pattern); no direction roll.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review,
+  the verdict, DESIGN.md, and every shipping raster carrying its provenance.
+  -->
+
+    <canvas id="railSky" aria-hidden="true"></canvas>
+  <canvas id="railOrbs" aria-hidden="true"></canvas>
+  <div id="appScroll">
+  <a class="skip" href="#main" data-i18n="a11y.skip">Skip to content</a>
+
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="logo" href="#top" aria-label="LookatStudy home">
+        <img class="bot" src="ember.svg" alt="" aria-hidden="true">
+        <span>LookatStudy</span>
+      </a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#demos" data-i18n="nav.demos">Demos</a>
+        <a href="#shots" data-i18n="nav.shots">Screenshots</a>
+        <a href="#start" data-i18n="nav.start">Get started</a>
+      </nav>
+      <div class="nav-actions">
+        <button id="langToggle" class="lang-toggle" type="button" aria-label="Switch language">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg>
+          <span id="langLabel">中文</span>
+        </button>
+        <a class="btn btn-ghost btn-sm nav-github" href="https://github.com/Kaiji-Z/LookatStudy" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-2.85 17.54c.45.08.62-.2.62-.44v-1.54c-2.5.54-3.03-1.2-3.03-1.2-.41-1.04-1-1.32-1-1.32-.82-.56.06-.55.06-.55.9.06 1.38.93 1.38.93.8 1.38 2.11.98 2.63.75.08-.58.31-.98.57-1.2-2-.23-4.1-1-4.1-4.45 0-.98.35-1.79.93-2.42-.1-.23-.4-1.15.08-2.4 0 0 .76-.24 2.48.92a8.6 8.6 0 0 1 4.51 0c1.72-1.16 2.47-.92 2.47-.92.5 1.25.19 2.17.1 2.4.58.63.92 1.44.92 2.42 0 3.47-2.1 4.22-4.11 4.44.32.28.61.83.61 1.68v2.49c0 .24.16.53.62.44A9 9 0 0 0 12 3z"/></svg>
+          <span>Star</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ================= HERO WORLD: the full course route ================= -->
+    <!-- ================= SCREEN 1 · the course-route world (scroll-driven demo) ================= -->
+    <!-- ================= SCREEN 1 · import: anything becomes a course ================= -->
+    <section class="screen screen-demo" id="top" data-screen="import">
+      <div class="stage">
+        <div class="side-copy hero-side">
+            <div class="card-bot" aria-hidden="true"><img src="ember.svg" alt=""></div>
+          <h1 data-i18n-html="hero.h1">Turn almost anything into a course you <em>actually finish</em></h1>
+          <p class="hero-sub" data-i18n-html="import.lede">A repo, an article, a video, a book &mdash; one pipeline, one gated course.</p>
+          <div class="hero-cta">
+            <a class="btn btn-brand btn-lg" href="https://github.com/Kaiji-Z/LookatStudy/releases" target="_blank" rel="noopener" data-i18n="cta.download">Download for desktop</a>
+            <a class="btn btn-ghost btn-lg" href="https://github.com/Kaiji-Z/LookatStudy#readme" target="_blank" rel="noopener" data-i18n="cta.github">Star on GitHub</a>
+          </div>
+          <ul class="hero-pills" role="list">
+            <li data-i18n="pill.local">Local-first</li>
+            <li data-i18n="pill.key">Bring your own key</li>
+            <li data-i18n="pill.account">No account</li>
+          </ul>
+          <p class="platform-line" data-i18n="pill.platform">Windows &middot; macOS &middot; Linux &middot; Android</p>
+        </div>
+        <div class="demo-area">
+          <div class="pipe-big">
+            <div class="pipe-sources" id="pipeIn">
+              <span class="src" data-src="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6"/><path d="M18 9a9 9 0 0 1-9 9"/><circle cx="18" cy="6" r="3"/></svg><b data-i18n="src.github">GitHub repo</b></span>
+              <span class="src" data-src="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><b data-i18n="src.article">Web article</b></span>
+              <span class="src" data-src="2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg><b data-i18n="src.bili">Bilibili video</b></span>
+              <span class="src" data-src="3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg><b data-i18n="src.epub">EPUB book</b></span>
+            </div>
+            <div class="pipe-hub" id="pipeHub" aria-hidden="true"><img class="bot" src="ember.svg" alt=""></div>
+            <div class="charge-card" id="pipeOut">
+              <div class="charge-label"><span class="charge-dot"></span><span id="chargeText" data-i18n="import.parsing">Parsing source</span></div>
+              <div class="charge-bar"><i id="chargeFill"></i></div>
+              <div class="cc-meta"><span class="cc-pct" id="ccPct">0%</span><span data-i18n="import.done">course generated</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SCREEN 2 · skill map: the playable course route ================= -->
+    <section class="screen screen-world" id="map">
+      <div class="stage">
+        <div class="world-copy">
+            <div class="card-bot" aria-hidden="true"><img src="ember.svg" alt=""></div>
+          <h2 data-i18n-html="map.head">Answer to light the next balloon</h2>
+          <p class="side-sub" data-i18n-html="map.sub">Exams guard each gate &mdash; master a lesson and the next one unlocks.</p>
+        </div>
+        <div class="world-map" id="worldMap" aria-label="The course route — playable">
+          <!-- balls generated by main.js; one physics island -->
+        </div>
+        <div class="map-facts" id="mapFacts" aria-live="polite">
+          <div class="fact-card" data-fact="0" data-i18n-html="fact.1">Complex courses become Duolingo-style micro-lessons.</div>
+          <div class="fact-card" data-fact="1" data-i18n-html="fact.2">AI tracks mastery at every node — checking in feels easy.</div>
+          <div class="fact-card" data-fact="2" data-i18n-html="fact.3">These balloons double as pinballs. Throw one.</div>
+          <div class="fact-card fact-exam" data-fact="3" data-i18n-html="fact.4">Every chapter ends with a mini boss fight.</div>
+        </div>
+        <p class="world-hint" data-i18n="world.hint">Drag the balloons. Throw the bot. Scroll — the sky turns.</p>
+      </div>
+    </section>
+
+    <section class="screen screen-demo" id="demos" data-screen="chat">
+      <div class="stage">
+        <div class="side-copy">
+            <div class="card-bot" aria-hidden="true"><img src="ember.svg" alt=""></div>
+          <h2 data-i18n-html="tutor.head">A real tutor, from first question to mastery</h2>
+          <p class="side-sub" data-i18n-html="tutor.sub">It answers, quizzes you, proposes mastery and schedules the exam.</p>
+        </div>
+        <div class="demo-area">
+        <div class="panel demo-tutor" data-demo="chat">
+          <div class="chat-mini">
+            <div class="bubble user" id="chatUser" data-i18n="demo.chat.user">Start learning: Neural Network Basics</div>
+            <div class="bubble ai" id="chatAi"></div>
+            <div class="quiz-mini" id="tutorQuiz">
+              <p class="quiz-q" data-i18n="tutor.quiz.q">Quick check — what does an activation function do?</p>
+              <div class="quiz-opts">
+                <span data-i18n="tutor.quiz.o1">It compresses inputs to save memory</span>
+                <span class="ok" data-i18n="tutor.quiz.o2">It adds non-linearity, so nets fit complex boundaries</span>
+                <span data-i18n="tutor.quiz.o3">It is a regularizer that prevents overfitting</span>
+              </div>
+              <div class="quiz-ok" data-i18n="tutor.quiz.ok">Correct — mastery updated</div>
+            </div>
+            <div class="proposal" id="chatProposal">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>
+              <div class="proposal-text">
+                <strong data-i18n="demo.chat.proposal">Proposal · Mark “Neural Network Basics” mastered + schedule a quiz</strong>
+                <span class="proposal-note" data-i18n="demo.chat.proposalNote">SRS will schedule it right before you’d forget</span>
+              </div>
+              <button class="btn btn-brand btn-sm" type="button" id="chatApply" data-i18n="demo.chat.apply">Apply</button>
+            </div>
+            <div class="toast-mini" id="chatToast" data-i18n="demo.chat.toast">Applied — scheduled in SRS ✓</div>
+          </div>
+          <div class="mastery">
+            <div class="mastery-row">
+              <span class="mastery-kc" data-i18n="kc.nn">Neural nets</span>
+              <span class="mastery-bar"><span class="mastery-fill" id="barClosures" style="transform: scaleX(0.41)"></span></span>
+              <span class="mastery-val" id="valClosures">41%</span>
+            </div>
+            <div class="mastery-row">
+              <span class="mastery-kc" data-i18n="kc.bp">Backprop</span>
+              <span class="mastery-bar"><span class="mastery-fill hi" style="width:91%"></span></span>
+              <span class="mastery-val">91%</span>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen screen-demo" id="screen-read" data-screen="read">
+      <div class="stage">
+        <div class="side-copy">
+            <div class="card-bot" aria-hidden="true"><img src="ember.svg" alt=""></div>
+          <h2 data-i18n-html="nb.head">Read it aloud, note it, see the map</h2>
+          <p class="side-sub" data-i18n-html="nb.sub">Highlights become notes; the blackboard grows a concept map.</p>
+        </div>
+        <div class="demo-area">
+        <div class="panel demo-nb" data-demo="read">
+          <div class="nb-grid">
+            <div class="read-stage">
+              <div class="read-bot" aria-hidden="true"><img class="bot" src="ember.svg" alt="LookatStudy bot"><span class="read-bars"><i></i><i></i><i></i><i></i></span></div>
+              <p class="read-text" id="readText">
+                <span data-i18n-html="demo.read.s1">A neuron first takes a weighted sum: z = w<sub>1</sub>x<sub>1</sub> + w<sub>2</sub>x<sub>2</sub> + b.</span>
+                <span data-i18n-html="demo.read.s2">Then an activation adds non-linearity: &sigma;(z) = 1 / (1 + e<sup>&minus;z</sup>).</span>
+                <span data-i18n-html="demo.read.s3">So even a single layer can learn a curved decision boundary.</span>
+              </p>
+              <div class="note-chip" id="nbNote" data-i18n="nb.note">Note · re-read the activation formula before the quiz</div>
+            </div>
+            <div class="concept-mini">
+              <div class="cm-title" data-i18n="cm.t">Blackboard · concept map</div>
+              <div class="cm-formula" data-i18n-html="cm.formula">&sigma;(z) = 1 / (1 + e<sup>&minus;z</sup>)</div>
+              <svg class="concept-map" viewBox="0 0 320 230" aria-hidden="true">
+                <path class="cm-edge" data-cm="e0" d="M80 62 C 130 80, 150 100, 160 118"/>
+                <path class="cm-edge" data-cm="e1" d="M80 62 C 60 110, 66 140, 88 168"/>
+                <path class="cm-edge" data-cm="e2" d="M160 118 C 200 108, 228 98, 256 88"/>
+                <g class="cm-node" data-cm="n0"><circle cx="80" cy="62" r="30"/><text x="80" y="67" data-i18n="cm.n0">Neuron</text></g>
+                <g class="cm-node" data-cm="n1"><circle cx="160" cy="118" r="30"/><text x="160" y="123" data-i18n="cm.n1">Sum</text></g>
+                <g class="cm-node" data-cm="n2"><circle cx="88" cy="168" r="30"/><text x="88" y="173" data-i18n="cm.n2">Activate</text></g>
+                <g class="cm-node" data-cm="n3"><circle cx="256" cy="88" r="30"/><text x="256" y="93" data-i18n="cm.n3">Boundary</text></g>
+              </svg>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen screen-demo" id="screen-companion" data-screen="companion">
+      <div class="stage">
+        <div class="side-copy">
+            <div class="card-bot" aria-hidden="true"><img src="ember.svg" alt=""></div>
+          <h2 data-i18n-html="s4.head">A study buddy that is yours</h2>
+          <p class="side-sub" data-i18n-html="s4.sub">Five preset forms, your own artwork, or classic Shimeji.</p>
+        </div>
+        <div class="demo-area">
+        <div class="companion-stage">
+          <div class="companion-hero">
+            <div class="comp-live" id="compLive">
+              <div class="comp-bubble" id="compBubble" aria-live="polite"></div>
+              <div id="compMount" class="comp-mount"></div>
+            </div>
+          </div>
+          <div class="companion-cards">
+            <div class="panel comp-card" data-comp="1"><h4 data-i18n="s4.c1t">Five preset forms</h4><p data-i18n="s4.c1s">Ember / Frost / Moss / Astro / Ink, one tap away.</p></div>
+            <div class="panel comp-card" data-comp="2"><h4 data-i18n="s4.c2t">Bring your own puppet</h4><p data-i18n="s4.c2s">Import a PNG; it is cut into a rig with all the same physics.</p></div>
+            <div class="panel comp-card" data-comp="3"><h4 data-i18n="s4.c3t">Classic Shimeji</h4><p data-i18n="s4.c3s">Load Shimeji packs — they walk, climb and get thrown.</p></div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+
+
+    <section class="formats" aria-label="Supported formats">
+      <div class="marquee" aria-hidden="true">
+        <div class="marquee-track" id="marqueeTrack">
+          <span>.md</span><span>.ipynb</span><span>.rst</span><span>.Rmd</span><span>.org</span><span>.adoc</span><span>.pdf</span><span>.pptx</span><span>.docx</span><span>.epub</span><span>.html</span><span>.txt</span><span>.py</span><span>.ts</span><span>.js</span><span>.go</span><span>.rs</span><span>.java</span><span>.c</span><span>.cpp</span><span>.rb</span><span>.sh</span><span>.mp3</span><span>.m4a</span><span>.flac</span><span>.srt</span><span>GitHub</span><span>arXiv</span><span>Bilibili</span><span>YouTube</span><span>yt-dlp</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= REAL SCREENSHOTS ================= -->
+    <section class="shots" id="shots">
+      <div class="container">
+        <h2 data-i18n-html="shots.title">The real thing</h2>
+        <p class="section-sub" data-i18n-html="shots.sub">Three panes, one screen: the map on the left, the tutor in the middle, your notebook on the right.</p>
+        <figure class="shot shot-main">
+          <img src="docs/screenshots/en/01-overview.png"
+               data-src-en="docs/screenshots/en/01-overview.png"
+               data-src-zh="docs/screenshots/01-overview.png"
+               alt="LookatStudy with the skill map on the left, tutor chat in the middle, notebook on the right" width="1568" height="950" loading="lazy">
+        </figure>
+        <div class="shot-duo">
+          <figure class="shot">
+            <img src="docs/screenshots/en/02-ai-tutor.png"
+                 data-src-en="docs/screenshots/en/02-ai-tutor.png"
+                 data-src-zh="docs/screenshots/02-ai-tutor.png"
+                 alt="The tutor explaining the Propose → Apply protocol in chat" width="1568" height="950" loading="lazy">
+            <figcaption data-i18n="shots.cap2">Propose → Apply: the AI drafts, you decide</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="docs/screenshots/en/03-exam-boss.png"
+                 data-src-en="docs/screenshots/en/03-exam-boss.png"
+                 data-src-zh="docs/screenshots/03-exam-boss.png"
+                 alt="A timed chapter exam question with one option selected" width="1568" height="950" loading="lazy">
+            <figcaption data-i18n="shots.cap3">Timed questions: walk away and it counts</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= WHY (quiet editorial) ================= -->
+    <section class="why">
+      <div class="container why-inner">
+        <h2 data-i18n-html="why.title">Why a course, not another tab</h2>
+        <p class="why-pull" data-i18n-html="why.pull">“I star a lot of tutorials and finish almost none of them.”</p>
+        <p class="why-body" data-i18n-html="why.body">A pile of docs is missing the three things every course has. <strong data-i18n-html="why.b1">A path</strong>: the map decides what you study today, and locks the rest until you’ve earned it. <strong data-i18n-html="why.b2">Feedback</strong>: lessons break into knowledge points and your mastery is the weakest one, so nothing slips through. <strong data-i18n-html="why.b3">A reason to return</strong>: SM-2 brings material back right before you’d forget, and XP, streaks and crowns give tomorrow-you a reason to open it again.</p>
+      </div>
+    </section>
+
+    <!-- ================= GET STARTED ================= -->
+    <section class="start" id="start">
+      <div class="container">
+        <h2 data-i18n-html="gs.title">Start finishing things</h2>
+        <p class="section-sub" data-i18n-html="gs.sub">A six-chapter guide course ships built in — you can click through the whole loop without an API key.</p>
+        <div class="start-grid">
+          <div class="panel start-card">
+            <h3 data-i18n="gs.dl.t">Grab an installer</h3>
+            <p data-i18n-html="gs.dl.b">Windows NSIS · macOS Apple-silicon dmg (unsigned: right-click → Open) · Linux AppImage + deb.</p>
+            <div class="dl-buttons">
+              <a class="btn btn-brand" href="https://github.com/Kaiji-Z/LookatStudy/releases" target="_blank" rel="noopener">Windows</a>
+              <a class="btn btn-brand" href="https://github.com/Kaiji-Z/LookatStudy/releases" target="_blank" rel="noopener">macOS</a>
+              <a class="btn btn-brand" href="https://github.com/Kaiji-Z/LookatStudy/releases" target="_blank" rel="noopener">Linux</a>
+            </div>
+            <p class="start-note" data-i18n-html="gs.phone">Android path: a launcher APK installs Termux and runs the same app in Chrome — your data stays on the phone.</p>
+          </div>
+          <div class="panel start-card">
+            <h3 data-i18n="gs.src.t">Or run from source</h3>
+            <p data-i18n-html="gs.src.b">Any platform, Node 22 or newer:</p>
+            <div class="code-row">
+              <pre class="code"><code id="srcCode">git clone https://github.com/Kaiji-Z/LookatStudy.git
+cd LookatStudy
+npm install
+npm run dev:electron</code></pre>
+              <button class="btn btn-ghost btn-sm" type="button" id="copyBtn" data-i18n="gs.copy">Copy</button>
+            </div>
+            <p class="start-note" data-i18n-html="gs.key">To bring the AI in: Settings → pick one of nineteen providers → paste your key → Test Connection.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img class="bot" src="ember.svg" alt="" aria-hidden="true">
+        <p data-i18n-html="footer.line">Built for myself, shared with you. If it helps you finish something you’ve been putting off, a star would make my day.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="https://github.com/Kaiji-Z/LookatStudy" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/Kaiji-Z/LookatStudy/releases" target="_blank" rel="noopener" data-i18n="footer.releases">Releases</a>
+        <a href="https://github.com/Kaiji-Z/LookatStudy/blob/main/README.md" target="_blank" rel="noopener">README</a>
+        <a href="https://github.com/Kaiji-Z/LookatStudy/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+        <a href="https://github.com/Kaiji-Z/LookatStudy/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+      </nav>
+    </div>
+  </footer>
+
+    </div><!-- /#appScroll -->
+
+  <div class="rail-bot" id="railBot" aria-hidden="false"><img src="ember.svg" alt="LookatStudy companion bot" draggable="false"></div>
+
+  <div class="weather-dock" id="weatherDock" role="group" aria-label="Weather">
+      <button type="button" data-weather="clear" class="on" title="Clear"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2.1 2.1M16.9 16.9 19 19M19 5l-2.1 2.1M7.1 16.9 5 19"/></svg></button>
+      <button type="button" data-weather="cloudy" title="Cloudy"><svg viewBox="0 0 24 24"><path d="M6.5 18a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 17.7 10 4 4 0 0 1 17 18z"/></svg></button>
+      <button type="button" data-weather="rain" title="Rain"><svg viewBox="0 0 24 24"><path d="M6.5 14a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 17.7 6 4 4 0 0 1 17 14z"/><path d="M8 17l-1.5 3M13 17l-1.5 3M18 17l-1.5 3"/></svg></button>
+      <button type="button" data-weather="snow" title="Snow"><svg viewBox="0 0 24 24"><path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/></svg></button>
+      <button type="button" data-weather="storm" title="Storm"><svg viewBox="0 0 24 24"><path d="M6.5 14a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 17.7 6 4 4 0 0 1 17 14z"/><path d="M13 12l-4 5h4l-3.5 5"/></svg></button>
+    </div>
+    <script src="rail-demo.js"></script>
+    <script src="comp-demo.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

@@ -13,6 +13,7 @@
     "dev": "vite",
     "dev:electron": "node -e \"require('fs').rmSync('dist-electron',{recursive:true,force:true})\" && concurrently -k \"npm:dev:vite\" \"npm:dev:electron:wait\"",
     "serve": "node scripts/serve-dev.mjs",
+    "pages:preview": "node scripts/preview-pages.mjs",
     "build:mobile": "node scripts/build-mobile.mjs",
     "dev:vite": "vite",
     "dev:electron:wait": "wait-on http://localhost:5173/ && wait-on file:dist-electron/main/index.js && cross-env NODE_ENV=development electron .",

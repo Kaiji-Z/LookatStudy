@@ -5,7 +5,9 @@
  *   - 不引入 i18next 等重型库（过度工程）
  *   - key 用点号命名: "header.streak_days" / "settings.title"
  *   - localStorage 存语言偏好 (lookatstudy-lang)
- *   - 默认 zh-CN（当前 UI 主体是中文）
+ *   - 首启跟随系统 locale:zh 变体→zh-CN,其余→en(AppImage 目录收录前提,
+ *     appimage.github.io PR #9039);显式选择过的合法值永不被覆盖
+ *   - 无 localStorage(纯 Node 侧 import)→ zh-CN 旧默认零变化
  *   - v0.8 响应式:useSyncExternalStore 让组件跟随语言切换重渲染,无需 reload
  *     (原 SettingsView 切语言 window.location.reload() 的 hack 已移除)
  *
@@ -17,6 +19,7 @@
  */
 
 import { useSyncExternalStore, useCallback } from "react";
+import { localeToUiLang } from "@shared/locales";
 
 export type Lang = "zh-CN" | "en";
 
@@ -24,8 +27,15 @@ const STORAGE_KEY = "lookatstudy-lang";
 
 // —— 响应式 store(setLang 通知所有 useLang 订阅者重渲染)——
 let currentLang: Lang = (() => {
+  // 无 localStorage(Node/SSR 侧 import translate()):无 DOM 即无 locale 信息,
+  // 保持旧默认 zh-CN 零变化
   if (typeof localStorage === "undefined") return "zh-CN";
-  return (localStorage.getItem(STORAGE_KEY) as Lang | null) || "zh-CN";
+  // 用户显式选择过的合法值优先,locale 不改写;垃圾值视为未选择走推导
+  // (旧实现 || 兜底会把垃圾字符串原样当 Lang 透传)
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored === "zh-CN" || stored === "en") return stored;
+  // 首启:跟随系统语言(zh 变体→zh-CN,其余→en;纯函数在 shared/locales)
+  return localeToUiLang(typeof navigator !== "undefined" ? navigator.language : null);
 })();
 
 const listeners = new Set<() => void>();

@@ -44,6 +44,21 @@ export function isZhLocale(locale: string): boolean {
 }
 
 /**
+ * 系统 locale → 界面首启语言(zh 变体 → zh-CN,其余 → en)。
+ *
+ * AppImage 官方目录收录前提(appimage.github.io PR #9039,2026-09-30):非中文
+ * 环境默认英文界面(跟随系统 LANG / LC_*),中文环境仍默认中文。UI 只有简体
+ * 中文一个中文变体,zh-TW/zh-HK 等也落 zh-CN。
+ *
+ * null/undefined/空白(拿不到 locale 信息,如纯 Node 侧 import)→ zh-CN,
+ * 与旧默认零变化。用户显式选择不经过本函数(localStorage 合法值优先,见 i18n.ts)。
+ */
+export function localeToUiLang(locale: string | null | undefined): "zh-CN" | "en" {
+  if (!locale || !locale.trim()) return "zh-CN";
+  return isZhLocale(locale) ? "zh-CN" : "en";
+}
+
+/**
  * AI 输出语言指令(注入 agent 基座系统提示词开头)。
  *
  * zh 路径逐字节等同旧硬编码句("用清晰、鼓励的中文回答。...")——默认行为零变化;

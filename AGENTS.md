@@ -103,7 +103,7 @@ npx tsx scripts/live-test/live-test-subtitle-corpus.mjs # 字幕成文核查(fre
 npx tsx scripts/live-test/live-test-pptx-corpus.mjs    # PPTX 解析核查(PyPI python-pptx 真 PowerPoint fixtures 12 件含病理;表格找回/备注/图片/诚实空)
 node scripts/build-termux-voice.mjs  # Termux 语音引擎包(NDK 交叉编译,~12MB;CI termux-voice.yml 同源)
 
-npm run verify:core       # 131 pure-Node/tsx logic test suites (v0.39 +verify-review-session:复习会话轮次状态/收束写入/引擎接线/同源纪律;i18n kickoff 标记纪律) (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑;六个安全加固套件 ipc-input-guards/xss-hardening/db-migration/secret-handling/engine-hardening/p23-hardening 守 2026-09-13 审计修复面)
+npm run verify:core       # 132 pure-Node/tsx logic test suites (v0.39 +verify-review-session:复习会话轮次状态/收束写入/引擎接线/同源纪律;i18n kickoff 标记纪律;+verify-ui-lang-boot:界面语言首启跟随系统 locale 纯函数/子进程真实模块初始化/显式选择优先/源级接线守卫——AppImage 目录收录前提,PR #9039) (incl. verify-serve: real bundle child process;verify-build-manifest 无 dist 时 SKIP,CI 在 vite build 后另跑;六个安全加固套件 ipc-input-guards/xss-hardening/db-migration/secret-handling/engine-hardening/p23-hardening 守 2026-09-13 审计修复面)
 
 
 npm run self-test         # electron main DB-layer self-check → .self-test-result.json (headless)
@@ -237,7 +237,7 @@ Config already wired into the workflows (don't undo these): `electron-builder --
 | AsciiDoc parser | `services/pure/adoc-parser.ts` | AsciiDoc → markdown:标题/source 块/image/link/粗体斜体 |
 | Translation | `services/translation-service.ts` | `content_node_translations` CRUD — persist/read per-locale title/content; `getCourseLanguages`; `getCourseTitleTranslations` |
 | Language pref | `services/lang-pref.ts` | `pref_lang` setting read/write + system locale detection + `resolveImportLang` (pref + sourceLang → import language) |
-| i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + reactive `useLang()` (useSyncExternalStore, no reload on switch) + `translate()` for non-component contexts |
+| i18n | `src/renderer/lib/i18n.ts` | zh-CN / en dictionary + reactive `useLang()` (useSyncExternalStore, no reload on switch) + `translate()` for non-component contexts. **首启跟随系统 locale**(`localeToUiLang` in `shared/locales.ts`:zh 变体→zh-CN,其余→en——AppImage 目录收录前提 PR #9039;显式选择存 localStorage 永不覆盖,垃圾值回落推导,无 DOM 的 Node import 路径保持 zh-CN) |
 | Celebration bus | `src/renderer/lib/celebration.ts` + `components/CelebrationLayer.tsx` | `celebrate(kind)` event bus + 根级 canvas 粒子层;7 高光时刻统一渲染(correct/wrong/unlock/mastery/streak/energy-full/exam-pass);reduced-motion a11y 双轨(默认粒子爆发,reduced 静态图标淡入) |
 | State emitter | `src/main/lib/state-emitter.ts` | main→renderer `state:changed` 推送(xp/streak/mastery 变化);修能量条运行时不动 bug;service 内 fire-and-forget,测试时 noop(同 markDirty 模式) |
 | Code highlight | `src/renderer/lib/lazy-shiki.ts` + `components/CodeBlock.tsx` | shiki 语法高亮懒加载单例(v0.21):纯 JS 正则引擎(零 WASM 不碰 CSP)+ GitHub 亮/暗双主题;**双主题零闪烁**=HTML 内联暗色 + `--shiki-light` 变量,`html.light` 时 CSS 翻转(index.css `.md-shiki` 块)不重跑高亮;精选 35 门语言独立 chunk,别名归一(js/py/sh/yml…),未知语言回退 null→纯文本。**陷阱:`loadLanguage` 是 async,必须 await**——注册走微任务链,不等待则紧随的 codeToHtml 抢在注册前查询(实测静默 null)。三出口:讲解区+对话流(共享 CodeBlock,`md-shiki` dangerouslySetInnerHTML)+ 代码逐段讲解(`highlightLines` 逐行 token,固定深底面板单主题)。信任模型同 KaTeX:渲染层生成、输入永远是已净化文本、输出自带转义,**不经 rehype-sanitize**(schema 零改动)。verify-shiki 守转义红线/别名/确定性/接线。CodeBlock 双职:普通围栏 shiki 高亮,```mermaid 围栏=模型跳过 draw_diagram 时的渲染兜底(`mermaid-fence.ts` 判定→懒加载 MermaidArtifact,主束零污染,verify-mermaid-fence 守) |

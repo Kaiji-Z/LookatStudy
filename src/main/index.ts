@@ -175,6 +175,14 @@ if (process.argv.includes("--ui-test")) {
   app.commandLine.appendSwitch("use-fake-device-for-media-stream");
   app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
 }
+// 界面语言首启跟随系统 locale(i18n.ts localeToUiLang)后,测试/截图模式必须钉死
+// locale:ui-test 的 72 条中文 DOM 断言与 shots 中文遍都默认"首启即中文",在
+// en-US 机器上会整体假红。强制 Chromium locale=zh-CN(navigator.language 跟随),
+// 走真实首启推导路径而非种 localStorage——推导链每轮 ui-test 都在真渲染层被覆盖。
+// shots 英文遍不受影响(localStorage 显式写 en 优先于推导)。
+if (process.argv.includes("--ui-test") || isShotsRun) {
+  app.commandLine.appendSwitch("lang", "zh-CN");
+}
 if (!isTestMode && !isDev) {
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {

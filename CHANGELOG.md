@@ -16,6 +16,11 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Changed
+
+- 界面语言首启跟随系统 locale（AppImage 目录收录前提，appimage.github.io PR #9039）：首次启动无显式选择时按 `navigator.language` 推导——zh 各变体（zh-CN/zh-TW/zh-HK 等）→ 简体中文界面，其余一律英文（旧版硬编码 zh-CN，英文机器首启也是中文）；用户在设置里选过的语言存 localStorage 永不被覆盖，垃圾存储值回落推导（旧版会把非法字符串原样当语言透传）；纯 Node 侧 import `translate()` 无 DOM 的路径保持 zh-CN 零变化。桌面 Electron 与 serve/网页模式同一推导（后者跟随浏览器语言）。verify-ui-lang-boot 十四组断言（纯函数矩阵 / 子进程真实模块初始化 / 显式选择优先 / 源级接线守卫 / 测试模式 locale 钉死），三种破坏形态闭环验证过
+- ui-test / shots 测试模式强制 Chromium `--lang=zh-CN`（`src/main/index.ts`）：首启改跟随 locale 后，en-US 机器上 72 条中文 DOM 断言与中文截图遍会整体假红——测试走真实首启推导路径而非种 localStorage，推导链每轮 ui-test 都在真渲染层被覆盖；shots 英文遍不受影响（localStorage 显式写 en 优先）
+
 ## [0.39.0] - 2026-09-23
 
 ### Added

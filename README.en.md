@@ -13,7 +13,11 @@ I star a lot of tutorials and finish almost none of them, so I built this for my
 [![CI](https://github.com/Kaiji-Z/LookatStudy/actions/workflows/ci.yml/badge.svg)](https://github.com/Kaiji-Z/LookatStudy/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-ffc800)](#getting-started)
 
-![LookatStudy 60-second tour: import a repo into a course, unlock the skill map, answer the AI tutor, survive chapter exam boss fights](docs/promo/lookatstudy-promo.mp4)
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/d24c6bb7-f3b4-4123-89b7-3f44b4a9cc97" controls playsinline>
+    Your browser does not support the video tag; the file lives <a href="docs/promo/lookatstudy-promo.mp4">here</a>.
+  </video>
+</p>
 
 **English** | [简体中文](README.md)
 

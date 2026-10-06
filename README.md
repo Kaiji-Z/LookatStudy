@@ -13,7 +13,11 @@
 [![CI](https://github.com/Kaiji-Z/LookatStudy/actions/workflows/ci.yml/badge.svg)](https://github.com/Kaiji-Z/LookatStudy/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-ffc800)](#快速开始)
 
-![LookatStudy 60 秒演示:仓库导入成课、技能地图解锁、AI 导师答题、章节考试 Boss 战](docs/promo/lookatstudy-promo.mp4)
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/d24c6bb7-f3b4-4123-89b7-3f44b4a9cc97" controls playsinline>
+    你的浏览器不支持 video 标签,视频文件在 <a href="docs/promo/lookatstudy-promo.mp4">这里</a>。
+  </video>
+</p>
 
 [English](README.en.md) | **简体中文**
 

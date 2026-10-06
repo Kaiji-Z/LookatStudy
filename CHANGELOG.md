@@ -16,6 +16,21 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-10-06
+
+### Added
+
+- README 品牌页改版：首页（README.md）换中文版（英文版迁 README.en.md，顶部互链切换）；60 秒宣传视频入库（`docs/promo/lookatstudy-promo.mp4`，仓库相对路径即 GitHub 内联播放器）放 hero 位；标题上方新 L 图标 + CI 徽章；过期事实校准（Electron 44 / 132 测试套件 / 12 种文档格式含 .docx / 七种伴学身体 / 状态 v0.39.x）
+- README 截图从 3 张扩到 7 张×中英（`npm run shots`）：新增 导入面板（含折叠的「+ 导入」两步展开）、复习抽屉、整课朗读 karaoke（`tts_engine` 预置 system 离线稳；朗读中不走 hide/show——Chromium 隐藏页暂停 speechSynthesis，直拍）、考试结算页（逐题选答到交卷，低分正好演示按知识点拆弱项）
+
+### Changed
+
+- 品牌图标全端换新（用户大构图高清源 2048px，L 占画布 ~45%→~59%）：桌面 exe/dmg/AppImage/deb（`build/icon.png`）+ Android 自适应图标五密度 + PWA icon-192/512/favicon 同步刷新；新构图形体外沿半径 46% 会探出 Android 圆形蒙版（33.3%）与 PWA maskable 安全区（40%），前景层由 `scripts/generate-brand-icons.mjs` 自动缩进安全区（Android 0.70 → 32.5%、maskable 0.82）并对缩画图像边缘羽化（源图渐晕与均色填充的接缝 39→7 色阶，不可见）；manifest maskable 条目指向新增 icon-512-maskable.png。以后换图：改源文件跑一条命令重刷全端
+
+### Fixed
+
+- shots 截图脚本考试场景 latent bug：v0.37 出题改为先补齐本章知识点再分批生成（GLM 实测分钟级）后，原 240s 等待循环塞在单次 `executeJavaScript` 里被 `jsTimeout` 30s 上限静默掐死——考试图从那时起截的一直是「生成中」画面（旧图是 v0.34 产物，无人重跑故未暴露）。等待改 Node 侧轮询（≤10 分钟）+ `exam-error` 早退 + 离开确认卡兜底
+
 ## [0.39.1] - 2026-09-30
 
 ### Changed

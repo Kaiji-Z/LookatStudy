@@ -1,87 +1,101 @@
 <div align="center">
 
+<img src="src/renderer/public/icon-192.png" alt="LookatStudy 图标" width="80">
+
 # LookatStudy
 
-Turn almost anything into a course you actually finish
+把几乎任何东西变成一门你能学完的课程
 
-I star a lot of tutorials and finish almost none of them, so I built this for myself. A repo, a folder, a link, or a recording comes in, a gated course comes out, and an AI tutor keeps track of what you've really learned. Everything runs on your machine, with your own API key.
+我 star 过很多教程,真正学完的没几个,这个工具是我给自己写的解法。仓库、链接、文件夹或者一段录音进来,都变成一节节解锁的课,AI 导师盯着你到底懂没懂。全部跑在你自己电脑上,大模型 key 也用你自己的。
 
 [![License MIT](https://img.shields.io/badge/license-MIT-58cc02.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Kaiji-Z/LookatStudy?color=1cb0f6&label=release)](https://github.com/Kaiji-Z/LookatStudy/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-ffc800)](#getting-started)
+[![CI](https://github.com/Kaiji-Z/LookatStudy/actions/workflows/ci.yml/badge.svg)](https://github.com/Kaiji-Z/LookatStudy/actions/workflows/ci.yml)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-ffc800)](#快速开始)
 
-<img src="docs/screenshots/en/01-overview.png" alt="LookatStudy with the skill map on the left, tutor chat in the middle, notebook on the right" width="880">
+![LookatStudy 60 秒演示:仓库导入成课、技能地图解锁、AI 导师答题、章节考试 Boss 战](docs/promo/lookatstudy-promo.mp4)
 
-**English** | [简体中文](README.zh-CN.md)
+[English](README.en.md) | **简体中文**
 
 </div>
 
 ---
 
-## Why I built this
+## 我为什么写这个
 
-Every few weeks I'd star another roadmap, clone a tutorial repo, read the intro, and quietly never come back. This kept happening, and blaming willpower never fixed it. A pile of docs is missing things every course has.
+我隔几周就会 star 一个新的 roadmap,克隆一个教程仓库,读完开头,然后就没有然后了。这事反复发生,自责解决不了。文档本来就缺几样课程才有的东西。
 
-Pick up a course and you know what to study today. Three hundred files in a repo give you no such answer. Finish a lesson and a quiz tells you whether it landed. Finish a doc and you're left guessing. A course brings material back before you forget it, and it gives you a reason to open it again tomorrow. A browser tab does neither.
+拿起一门课,你知道今天该学哪一节。三百个文件躺在仓库里,这个问题没有答案。读完一节,课后题会告诉你到底懂没懂。读完一篇文档,只能自己猜。课程会赶在你忘掉之前把旧内容塞回来,文档读一遍就翻篇了。第二天为什么还要再打开它,课程有理由,标签页没有。
 
-Duolingo solved these problems thoroughly, but only for its own content. I wanted the same mechanics on material I chose. Give LookatStudy a repo, a folder, a link, or a recording, and it builds a gated course with exams and a review schedule.
+多邻国把这四件事解决得很彻底,可惜只对它自己的内容有效。我就想把同样的机制装到自己选的材料上。给 LookatStudy 一个仓库、一个文件夹、一条链接、一段录音,或者直接贴一段文本,它生成一门有门控、有考试、有复习计划的课。
 
-## The repo becomes a skill map
+## 仓库会变成一张技能地图
 
-Sections and lessons turn into nodes on a path. Finish one and the next unlocks. Finishing a lesson takes more than reading it. Each lesson breaks into knowledge points, and your mastery of the lesson is the lowest of them. Leave one point vague and the crown stays locked. Imports get big, one repo I test with lands at 124 lessons, and the search pill in the left rail doubles as a clickable outline for exactly that case, searching titles and full text, keeping locked lessons unspoiled.
+<img src="docs/screenshots/01-overview.png" alt="三栏书房:左栏技能地图,中栏导师对话,右栏康奈尔笔记" width="880">
 
-## The AI tutor knows which concept you're weak on
+章节和课时变成路上的节点,学完一个,下一个解锁。一节课要算学完,标准比读过一遍高不少。每节课拆成若干知识点,课的掌握度取其中最低的那个,有一项含糊,皇冠就拿不到。课可以很大,我测试用的一个仓库导出来 124 节课,这时左栏的搜索药丸兼作全课大纲,标题全文都搜,没解锁的课照样锁着,不剧透。
 
-<img src="docs/screenshots/en/02-ai-tutor.png" alt="The tutor opening a lesson with a guess-first question" width="880">
+## AI 导师知道你具体哪里弱
 
-This is the part I care most about. Every answer you give updates a BKT mastery model on the specific knowledge point behind the question. The tutor sees far more than "chapter 3, 70 percent". You're solid on recursion and shaky on closures, so it keeps asking about closures. When you click "I don't get this" in a chat, the stumble gets logged, and later explanations spend more time where you actually fell and less where you're already bored.
+<img src="docs/screenshots/02-ai-tutor.png" alt="AI 导师用一道猜测题开场" width="880">
 
-Two design decisions I made on day one and haven't regretted.
+这是我最在意的一块。每答一道题,答案都会更新对应知识点的 BKT 掌握模型。导师能看到比第三章 70% 细得多的东西。递归你很稳,闭包还发虚,它就专挑闭包问。你在聊天里点过"我没太懂",这些卡点会被记下来,后面的讲解会绕开你已经烦的地方,多讲你实际摔跟头的地方。
 
-The AI cannot touch your learning record on its own. It drafts a proposal card, and nothing changes until you approve it.
+有两个设计是我一开始就定下的,到现在也没后悔。
 
-Teaching style is a pill next to the input box, switchable anytime. Explain it to me straight, ask me guiding questions, or make me do it myself.
+AI 想改你的学习档案,唯一的途径是发一张提议卡,你点批准才生效,它自己动不了。
 
-Chats run async. Mid-answer you can jump to another lesson and ask something new there. The first reply keeps building in the background, its thread tab and its node on the map wear a small spinner, and the whole thing is waiting when you come back. Two threads can stream at once.
-## Chapter exams are boss fights
+教学风格随时换。输入框旁边有个人设药丸,精讲、引导、实战三种,今天想被直接告知就选精讲,想被追问就选引导。
 
-<img src="docs/screenshots/en/03-exam-boss.png" alt="A timed chapter exam question with one option selected" width="880">
+对话是异步的。回答写到一半也能跳去别的课时另起一段提问。原来那段回答在后台继续写,它的会话标签和地图球上转着小圈,回来时整段都在。两个会话可以同时流式。
 
-Each chapter ends with an exam guarding the gate. The questions are generated in the background from that chapter's knowledge points, in batches, while you keep studying elsewhere, and a toast tells you when the boss is ready. Every question runs on a countdown sized to the question itself, so a short one doesn't drag and a wall of text or code gets room to breathe. Walk away mid-exam and the attempt terminates, with unanswered questions counted wrong, so the star score stays honest. The result page breaks your score down by knowledge point, which tells you what to review next. One rule I hold to, exams never write back into the mastery model. They measure. The tutor teaches.
+## 章节考试是 Boss 战
 
-## What you can import
+<img src="docs/screenshots/03-exam-boss.png" alt="章节考试进行中,倒计时在走,一个选项已选中" width="880">
 
-- Five ways in. A GitHub URL, a local folder, any web article, arXiv paper, or video link, text you paste, an EPUB book.
-- Eleven document formats. `.md` `.ipynb` `.rst` `.Rmd` `.org` `.adoc` `.pdf` `.pptx` `.html` `.txt` `.epub`.
-- Thirty-odd code file types. `.py` `.ts` `.go` `.rs` `.java` `.c` `.cpp` `.sh` all count as teaching material, and docstrings become the prose.
-- Audio becomes lessons. Local recordings in `.mp3` `.m4a` `.flac` and other common formats get transcribed on your machine by Whisper and split into lessons, so a folder of lecture recordings lands as a multi-episode course.
-- Video too. Bilibili links pull the audio track directly, YouTube and a thousand other sites go through yt-dlp with subtitles preferred over transcription, and local `.mp4` `.m4v` `.mov` files have their audio extracted here. A multi-part Bilibili course imports as a whole season, one part per lesson. yt-dlp is a local install with in-app instructions, and mkv or webm want a quick rewrap to mp4 first.
-- Images ride along with the content, notebook outputs and PDF embeds included. With a vision model, the tutor actually looks at the figure when you ask about it.
-- Bilingual sources pair up automatically. A `translations/{lang}/` folder, parallel folders, or `file.zh.md` suffixes all get recognized.
+每章末尾有一场考试守门。题目按这一章的知识点在后台分批生成,你在别处接着学,生成完会弹提示告诉你 Boss 就绪。每道题都踩着倒计时,时长按题目本身算,短题不拖沓,长题干带代码公式的给足。中途走开,这次考试就算被终止,没答的题按答错计分,星数不作假。结算页把得分按知识点拆开,该复习什么一目了然。有一条规矩我守得很死,考试不回写掌握度模型,它只管测,教是导师的事。
 
-Math formulas work end to end. LaTeX in any lesson, chat reply, or quiz question renders as typeset math, read-aloud says formulas in spoken words instead of backslash commands, and the exercise generator is told it may use LaTeX freely. Importing a formula-heavy PDF has a new experimental path: math-dense pages get rendered to images and your vision model transcribes them to LaTeX, behind a switch in settings.
+<img src="docs/screenshots/04-exam-result.png" alt="考试结算页:星数与按知识点拆解的得分明细" width="880">
 
-## It reads out loud and takes dictation
+## 能导入什么
 
-A lesson can be read to you end to end, sentence by sentence, with the sentence being spoken highlighted in the text. The default voice is a free online one, an offline neural voice can be downloaded for no-network use, and the voices already installed on your device are selectable too. Dictation runs the other way. Hold the mic button, speak, release, and local Whisper writes it down, with a chance to fix the transcript before it goes out. Everything works offline once the models are down, on the phone as well.
+- 五种入口。GitHub 链接、本地文件夹、网页文章或 arXiv 论文或视频链接、直接粘贴的文本、EPUB 电子书。
+- 十二种文档格式。`.md` `.ipynb` `.rst` `.Rmd` `.org` `.adoc` `.pdf` `.pptx` `.html` `.txt` `.epub` `.docx`。
+- 三十多种代码文件。`.py` `.ts` `.go` `.rs` `.java` `.c` `.cpp` `.sh` 都算教材,docstring 会被抽出来当正文讲。
+- 音频也能成课。本地的录音,`.mp3` `.m4a` `.flac` 这些常见格式,在本机用 Whisper 转写成文字再按内容拆课,一整个文件夹的讲次录音进来,就是一门多集课。
+- 视频也行。B站链接直接拉音轨,YouTube 等上千个站点走 yt-dlp,有现成字幕就用字幕,没有才下载音轨转写;本地 `.mp4` `.m4v` `.mov` 取音轨转写。B站多分P的课程链接一导入就是整季,每P一集。yt-dlp 要自己装,应用里给了各平台的指引,mkv 和 webm 先转成 mp4 再进来。
+- 图片跟着内容一起进来,notebook 的输出图、PDF 的内嵌图都在。如果你的模型带视觉,你问图表的时候它真的在看图。
+- 双语来源自动配对。`translations/{lang}/` 目录、平行文件夹、`file.zh.md` 后缀这三种常见摆法都能认出来。
 
-## A small bot lives in the app
+数学公式从显示到朗读到做题都顺了。课文、AI 回答、题目里的 LaTeX 都渲染成排版公式,朗读时把公式念成人话而不是反斜杠命令,出题也放开了 LaTeX。导入公式密集的 PDF 也有了新的实验路径,把数学页整页渲染成图,由你的视觉模型转写成 LaTeX,开关在设置里,默认不开。
 
-A tiny robot shares the study with you. It hovers around the skill map on real physics, a thrown ball can knock it into a spin, and it leans into the wind when the weather turns. It reacts to what you do. The keys you type light up on its chest screen, during read-aloud it points at the sentence being spoken, and a click on empty map space whistles it over to wave at you. Five bodies to pick from, and when you're heads-down working it retreats behind a curtain and leaves you alone.
+<img src="docs/screenshots/07-import.png" alt="导入面板:GitHub 链接、粘贴文本、本地文件夹、EPUB 等入口一屏" width="880">
 
-## The part that makes you come back
+## 它会念给你听,也能听你说
 
-Answer a quiz and SM-2 schedules a review right before you'd forget it. Daily XP fills a bar in the header. Streaks can be frozen, so one broken day doesn't zero you out. The review drawer mixes chapters instead of drilling one. I know how this sounds on a project page. I was skeptical too, but it genuinely works, and the difference is that here it hangs on content you picked yourself.
+<img src="docs/screenshots/06-readaloud.png" alt="整课朗读:读到哪句高亮哪句,伴学机器人跟着指读" width="880">
 
-## Your data stays on your machine
+课文可以整篇朗读,读到哪句就高亮哪句。默认走免费在线音色,也可以下载一个完全离线的神经音色,断网照读,设备上已经装好的语音同样能选。反过来的方向是听写,按住说话,松手出全文,认出的字先给你改一遍再发出去。模型下载好之后推理全程离线,手机上同样能用。
 
-The whole app is one SQLite file on your disk. No account, no cloud sync, and nothing you do here ever leaves that drive. The LLM key is your own, with nineteen preset providers (GLM, DeepSeek, Kimi, Qwen, OpenAI, Anthropic, Google, and more) plus any OpenAI-compatible endpoint. The key lives in the main process. The renderer can't read it even if it wanted to.
+## 有个小机器人陪你学
 
-## Getting started
+一只小机器人跟你共用这间书房。它悬在左栏的技能地图上,底下是真物理,扔个球过去能把它拍晕,刮风下雨它也跟着晃。你打字,敲下的字母就亮在它胸前的屏幕上,整篇朗读时它跟指着正在读的那一句,点一下地图空白处,它会飞过来朝你挥挥爪。七个身体随便换,原生五形态之外,还能导入你自己画的立绘做成纸偶,或者装一套 Shimeji 桌宠包。你埋头学的时候它自己躲进纱帘,不来抢戏。
 
-Installers for all three platforms are on the [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) page. Windows gets an NSIS installer, macOS an arm64 dmg, Linux an AppImage plus a deb.
+## 让人回来的那套东西
 
-From source, any platform, Node 22 or newer.
+答对一道题,SM-2 会赶在你快忘的时候把它排进复习。每天的经验值在顶栏攒成一根能量条,连续学习可以冻结,断一天不至于清零。复习抽屉把不同章节的旧内容混着出,比按章刷更抗忘。我知道这套东西在一个正经项目页里听起来像哄小孩。我自己一开始也怀疑,真用起来发现确实管用,差别在于这里挂的是你自己选的内容。
+
+<img src="docs/screenshots/05-review-drawer.png" alt="复习抽屉:到期卡片、交错复习和每章进度" width="880">
+
+## 数据都在你自己机器上
+
+整个应用就是磁盘上的一个 SQLite 文件。不用注册账号,也没有云同步,你产生的数据没有一份会离开这块硬盘。大模型 key 用你自己的,预置了十九家服务商,GLM、DeepSeek、Kimi、Qwen、OpenAI、Anthropic、Google 都在,也可以填任何 OpenAI 兼容的端点。key 只存在主进程里,渲染进程想读也读不到。
+
+## 快速开始
+
+三个平台的安装包都在 [Releases](https://github.com/Kaiji-Z/LookatStudy/releases) 页。Windows 是 NSIS 安装器,macOS 是 arm64 的 dmg,Linux 有 AppImage 和 deb 两种。
+
+源码跑,任何平台,Node 22 以上。
 
 ```bash
 git clone https://github.com/Kaiji-Z/LookatStudy.git
@@ -90,48 +104,48 @@ npm install
 npm run dev:electron
 ```
 
-A guide course ships built in, six chapters, eighteen lessons, six exams, so you can click through the whole loop without a key. It is bilingual too, Chinese original with a full English translation, so the globe switch on the map title card works from minute one. To bring the AI in, open Settings, pick a provider, paste your key, hit Test Connection, save.
+应用内置了一门引导课程,六章十八课带六场考试,不配 key 也能把整个流程点一遍。这门课本身就是双语的,中文原文配全套英文翻译,地图标题卡上的 🌐 切换器从第一分钟就能玩。想用上 AI,打开设置,选服务商,粘贴 key,点测试连接,保存。
 
-## Running it on a phone
+## 手机上也能跑
 
-The desktop app is the main form. There is also a phone path, and it reuses everything, same interface, same data file, same AI.
+桌面版是主形态,手机也有一条路径,复用全部东西,同一个界面,同一份数据。
 
-Grab `LookatStudy-launcher.apk` from the latest [Release](https://github.com/Kaiji-Z/LookatStudy/releases) and install it. Its first button installs Termux, which it carries inside, so no store needed. The second button copies one command. Paste it into Termux and it downloads the portable bundle together with the speech engine, installs Node, and starts the server. The Open button then drops you into the app in Chrome. The first startup prints an access token in Termux; type it into the page once and it sticks.
+从最新 [Release](https://github.com/Kaiji-Z/LookatStudy/releases) 下载 `LookatStudy-launcher.apk` 装到手机。引导器第一个按钮装 Termux,APK 里自带,不用找应用商店。第二个按钮复制一行安装命令,粘贴进 Termux 执行,它会下载便携包和语音引擎、装好 Node、启动服务。第三个按钮直接把应用打开。首次启动 Termux 里会打印一个访问令牌,在页面输一次,之后长期记住。
 
-The phone runs the server itself and Chrome talks to it over localhost, so your data stays on the phone the way it stays on your PC. No npm runs on the phone. The bundle download prefers a China friendly npm mirror and falls back to GitHub when the mirror lags. The server is one self-contained file plus the web assets. Skip the launcher if you like, the same one line works in any Termux.
+手机自己跑服务,浏览器经 localhost 与它通信,数据像在电脑上一样留在本机。安装不会在手机上执行 npm,便携包的下载优先走国内 npm 镜像,镜像同步滞后或失败时自动回退 GitHub。服务是一个自包含文件加网页资源。不想用引导器也行,任何 Termux 里跑同一行命令即可。
 
-## Inside DeepSeek Harness (dsh)
+## 在 DeepSeek Harness 里也能用
 
-The same idea also lives as a plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), the open-source agent framework: a study tab with course map, tutor, and blackboard columns, the skill-tree gating, BKT mastery tracking, and SM-2 review carried over, and imported courses are designed by the tutor itself. One command installs it:
+同一套想法还做成了 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(dsh,DeepSeek 的开源 Agent 框架)的插件:一个「学习」页签,课程、导师、黑板三栏,技能树解锁、BKT 掌握度、SM-2 复习都搬了过去,导入的课程由导师自己设计。一条命令安装:
 
 ```sh
 dsh plugin add dsh-plugin-lookatstudy
 ```
 
-Plugin repo: [Kaiji-Z/dsh-plugin-lookatstudy](https://github.com/Kaiji-Z/dsh-plugin-lookatstudy) (npm: [dsh-plugin-lookatstudy](https://www.npmjs.com/package/dsh-plugin-lookatstudy)).
+插件仓库:[Kaiji-Z/dsh-plugin-lookatstudy](https://github.com/Kaiji-Z/dsh-plugin-lookatstudy)(npm:[dsh-plugin-lookatstudy](https://www.npmjs.com/package/dsh-plugin-lookatstudy))。
 
-## What it can't do yet
+## 目前做不到的事
 
-- The macOS build is unsigned and Apple Silicon only. First launch needs a right-click and Open, and there's no Intel package yet. The Windows exe is unsigned too, so SmartScreen will grumble the first time.
-- PDF math formulas don't survive the text layer, and that limit stays. The experimental switch described above is the way around it, and it needs a vision model configured plus its quota, page by page. Off by default, and when it's off or fails, the PDF imports through the plain text layer as before.
-- The smart part of importing, classifying files and designing the course tree, calls the LLM. Without a key, local imports fall back to pure rules. It works, just blunter.
+- macOS 的包没有签名,只出 Apple Silicon 架构。首次打开要右键选打开,Intel Mac 的包还没出。Windows 的 exe 同样没签名,第一次运行 SmartScreen 会拦一下。
+- PDF 的数学公式过不了纯文本层,这个局限一直都在。上面说的实验开关是绕开的路子,前提是配好视觉模型,并按页消耗它的额度。开关默认关,不开或者中途失败时,PDF 照旧按文本层导入。
+- 智能导入,判文件角色、设计课程结构那部分,要调 LLM。没有 key 时本地导入退回纯规则,能用,结构会糙一些。
 
-## Under the hood
+## 技术上
 
-Electron 33, React 19. The database is sql.js, SQLite compiled to WASM, so there's nothing native to build and `npm install` doesn't blow up on Windows. The renderer can't reach the database, the filesystem, or your key. Every cross-process call goes through one typed IPC bridge. A hundred and nine deterministic test suites and a headless real-GUI test watch the whole thing, all runnable with `npm run verify:core`.
+Electron 44,React 19。数据库用 sql.js,就是把 SQLite 编译成 WASM,没有任何要编译的原生模块,Windows 上装依赖不会翻车。渲染进程碰不到数据库、文件系统和 key,所有跨进程调用走一套类型化的 IPC 桥。132 个确定性测试套件加一个无头真 GUI 测试看着它,`npm run verify:core` 一条命令全跑。
 
-## Status
+## 状态
 
-v0.27.0. The main loop, importing almost anything, learning with the tutor, reviewing, taking exams, reading aloud, is complete, and I use it daily. Full history in [CHANGELOG.md](CHANGELOG.md).
+v0.39.1。导入、跟导师学、复习、考试、朗读、伴学这条主干完整,复习已经换成和导师真对话,我自己每天在用。完整历史看 [CHANGELOG.md](CHANGELOG.md)(英文)。
 
-## License
+## 许可证
 
-MIT. See [LICENSE](LICENSE).
+MIT,全文见 [LICENSE](LICENSE)。
 
 ---
 
 <div align="center">
 
-If LookatStudy helps you finish something you've been putting off, a star would make my day.
+如果它帮你学完了一件一直拖着的事,给我一个 star,我会很开心。
 
 </div>

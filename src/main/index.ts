@@ -380,11 +380,16 @@ async function runSelfTest(): Promise<void> {
  * 独立临时 DB + .env 真 provider（LLM 开场是真实对话）;进度/待复习/XP/streak
  * seed 出"学过一阵"的地图观感(皇冠/进度环/锁/复习角标/能量条)。
  * 两套图各跑一遍(独立临时 DB,考试题库/对话按当次界面语言产生,互不污染):
- *   --shots    → docs/screenshots/(中文,README.zh-CN 用)
- *   --shots-en → docs/screenshots/en/(英文,README 用;启动即英文:界面语言
+ *   --shots    → docs/screenshots/(中文,README.md 首页用)
+ *   --shots-en → docs/screenshots/en/(英文,README.en.md 用;启动即英文:界面语言
  *                localStorage + 课程 🌐 en 翻译)
- * 每遍序列:选课 → 点首课球 → 01-overview;开始学习 → 猜一轮等揭晓 → 02-ai-tutor;
- * 第一章 Boss 考试(后台分批生成 → 开考计时答一题)→ 03-exam-boss。
+ * 每遍序列(7 张):选课 → 点首课球 → 01-overview;🔊 整课朗读等句级高亮+伴学跟句
+ * (tts_engine 预置 system,离线稳;朗读中不能 hide/show——Chromium 隐藏页暂停
+ * speechSynthesis,高亮会被清,直拍)→ 06-readaloud,拍完停朗读;开始学习 → 猜一轮
+ * 等揭晓 → 02-ai-tutor;第一章 Boss 考试(后台分批生成 → 开考计时答一题)→
+ * 03-exam-boss;答完剩余题到结算页(按知识点拆解)→ 04-exam-result;回地图开复习
+ * 抽屉(种子到期项+考试答错新增)→ 05-review-drawer;左栏切导入面板(五入口)→
+ * 07-import。
  * GPU 合成保持开启(whenReady 前的 disable 对 --shots 跳过),capturePage 才有真实帧。
  */
 async function runShots(mode: "zh" | "en"): Promise<void> {
@@ -438,6 +443,12 @@ async function runShots(mode: "zh" | "en"): Promise<void> {
     for (const kv of [{ key: `daily_xp_${today}`, value: "40" }, { key: "total_xp", value: "1240" }]) {
       const ex = getDb().select().from(settingsTable).where(eq(settingsTable.key, kv.key)).get();
       if (!ex) getDb().insert(settingsTable).values(kv).run();
+    }
+    // 朗读场景离线稳:钉在系统音色(Windows 自带 SAPI,不依赖网络/模型下载)
+    for (const kv of [{ key: "tts_engine", value: "system" }]) {
+      const ex = getDb().select().from(settingsTable).where(eq(settingsTable.key, kv.key)).get();
+      if (!ex) getDb().insert(settingsTable).values(kv).run();
+      else getDb().update(settingsTable).set({ value: kv.value }).where(eq(settingsTable.key, kv.key)).run();
     }
     markDirty();
   } catch (e) {
@@ -588,6 +599,68 @@ async function runShots(mode: "zh" | "en"): Promise<void> {
 
   await shot("01-overview.png");
 
+  // 🔊 整课朗读:句级高亮 karaoke + 伴学飞到跟句位。高亮走 CSS Custom Highlight API
+  // (无 DOM 元素可查),门控用按钮 active 态;朗读中不走 shot() 的 hide/show
+  // (Chromium 隐藏页会暂停/取消 speechSynthesis,高亮被清),直拍。
+  const speakOn = await js(`(function(){
+    var b = document.querySelector('[data-testid="node-content-speak"]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  if (speakOn === true) {
+    let active = false;
+    let markSeen = false;
+    let botSeen = false;
+    for (let i = 0; i < 10; i++) { // ≤30s:等合成起播(system 档 utterance 起 karaoke)
+      await new Promise((r) => setTimeout(r, 3000));
+      const st = (await js(`(function(){
+        return JSON.stringify({
+          active: !!document.querySelector('[data-testid="node-content-speak-active"]'),
+          mark: !!document.querySelector('.cp-reading-mark'),
+          bot: !!document.querySelector('[data-zone="notebook"]')
+        });
+      })()`)) as string | null;
+      try {
+        const s = JSON.parse(String(st)) as { active: boolean; mark: boolean; bot: boolean };
+        active = s.active;
+        markSeen = markSeen || s.mark;
+        botSeen = botSeen || s.bot;
+      } catch {}
+      if (active && i >= 2) break; // 至少 6s:给伴学滑到跟句位、当前句读出一段
+    }
+    console.error(`[lookatstudy] speech-probe: active=${active} mark=${markSeen} bot=${botSeen}`);
+    if (active) {
+      await new Promise((r) => setTimeout(r, 2500));
+      // 直拍(不走 hide/show);空字节重试与 shot() 同款
+      let png = await capture();
+      for (let i = 0; i < 5 && png.length === 0; i++) {
+        try { win.show(); win.focus(); } catch {}
+        await new Promise((r) => setTimeout(r, 2500));
+        png = await capture();
+      }
+      if (png.length > 0) {
+        writeFileSync(join(outDir, "06-readaloud.png"), png);
+        saved.push("06-readaloud.png");
+        sizes["06-readaloud.png"] = png.length;
+        console.error(`[lookatstudy] shot saved: 06-readaloud.png (${png.length} bytes)`);
+      } else {
+        failed.push("06-readaloud.png");
+        console.error("[lookatstudy] shot FAILED (0 bytes): 06-readaloud.png");
+      }
+    } else {
+      failed.push("06-readaloud.png");
+      console.error("[lookatstudy] shot SKIPPED (speech never started): 06-readaloud.png");
+    }
+    // 停朗读恢复干净状态(不然后台一直读,干扰后续 tutor 场景)
+    await js(`(function(){
+      var b = document.querySelector('[data-testid="node-content-speak-active"]') || document.querySelector('[data-testid="node-content-speak"]');
+      if (b) b.click();
+      return true;
+    })()`);
+    await new Promise((r) => setTimeout(r, 800));
+  }
+
   // 开始学习 → 等 LLM 第一轮(hook + 二选一卡) → 点一个选项 → 等第二轮揭晓
   const WAIT_REPLY = `(async function(){
     // 等 assistant 出现且流式结束(chat-stop 消失),文本长度 1.2s 不再增长才算稳
@@ -628,41 +701,151 @@ async function runShots(mode: "zh" | "en"): Promise<void> {
   }
   await shot("02-ai-tutor.png");
 
-  // 第一章 Boss 考试:点考试球(map testid 用 id 前 8 位,六个考试球同为 guide-ex,取第一个可点的)
-  // → 后台按知识点分批生成(种子课无 KC,走课时标题伪 KC)→ 就绪 → 开考 → 截答题界面。
-  await js(`(async function(){
+  // 第一章 Boss 考试:点考试球 → 后台按知识点分批生成(v0.37 起先补齐本章 KP 再分批
+  // 出题,GLM 下要几分钟——js() 有 30s 上限,等就绪必须在 Node 侧轮询,每次短 js)。
+  await js(`(function(){
     var nodes = document.querySelectorAll('[data-testid="exam-node-guide-ex"]');
     for (const n of nodes) { if (!n.disabled) { n.click(); break; } }
-    for (var i = 0; i < 960; i++) { // 最多 240s 等生成分批出题
-      await new Promise(function(r){ setTimeout(r, 250); });
-      var ready = document.querySelector('[data-testid="exam-start-btn"]');
-      var err = document.querySelector('[data-testid="exam-error"]');
-      if (ready || err) return true;
-    }
-    return false;
-  })()`);
-  await js(`(async function(){
-    var btn = document.querySelector('[data-testid="exam-start-btn"]');
-    if (!btn) return false;
-    btn.click();
-    for (var i = 0; i < 80; i++) {
-      await new Promise(function(r){ setTimeout(r, 250); });
-      if (document.querySelector('[data-testid="exam-answering"]') && document.querySelector('[data-testid="exam-timer"]')) return true;
-    }
-    return false;
-  })()`);
-  await js(`(async function(){
-    var opt = document.querySelector('[data-testid="exam-option-0"]');
-    if (opt) opt.click();
-    // 选完停 8 秒:倒计时环走掉一段(看得出是限时),选中态也稳了
-    await new Promise(function(r){ setTimeout(r, 8000); });
     return true;
   })()`);
-  await shot("03-exam-boss.png");
+  let examReady = false;
+  for (let i = 0; i < 200 && !examReady; i++) { // ≤10 分钟:KP 补齐 + 分批出题
+    await new Promise((r) => setTimeout(r, 3000));
+    examReady =
+      (await js(`(function(){ return !!document.querySelector('[data-testid="exam-start-btn"]'); })()`)) ===
+      true;
+    if (!examReady && i % 10 === 9) {
+      console.error(`[lookatstudy] exam still generating (${(i + 1) * 3}s)`);
+    }
+    if (!examReady) {
+      const err = await js(
+        `(function(){ return !!document.querySelector('[data-testid="exam-error"]'); })()`,
+      );
+      if (err === true) break;
+    }
+  }
+  if (!examReady) {
+    failed.push("03-exam-boss.png", "04-exam-result.png");
+    console.error("[lookatstudy] shot SKIPPED (exam generation not ready/error): 03/04");
+  }
+  if (examReady) {
+    await js(`(async function(){
+      var btn = document.querySelector('[data-testid="exam-start-btn"]');
+      if (!btn) return false;
+      btn.click();
+      for (var i = 0; i < 80; i++) {
+        await new Promise(function(r){ setTimeout(r, 250); });
+        if (document.querySelector('[data-testid="exam-answering"]') && document.querySelector('[data-testid="exam-timer"]')) return true;
+      }
+      return false;
+    })()`);
+    await js(`(async function(){
+      var opt = document.querySelector('[data-testid="exam-option-0"]');
+      if (opt) opt.click();
+      // 选完停 8 秒:倒计时环走掉一段(看得出是限时),选中态也稳了
+      await new Promise(function(r){ setTimeout(r, 8000); });
+      return true;
+    })()`);
+    await shot("03-exam-boss.png");
+
+    // 答完剩余题到结算页:逐题"选首项→下一题"(每步一次短 js,React 状态先落再点下一个),
+    // 选择题判分是确定性直比,提交后秒出 exam-result;循环上限 150 轮只是兜底。
+    // 全选首项大概率低分——结算页按知识点拆弱项,恰恰是它的卖点。
+    let resultSeen = false;
+    for (let i = 0; i < 150 && !resultSeen; i++) {
+      const st = await js(`(function(){
+        if (document.querySelector('[data-testid="exam-result"]')) return 'result';
+        var next = document.querySelector('[data-testid="exam-next-btn"]');
+        if (next && !next.disabled) { next.click(); return 'next'; }
+        var opt = document.querySelector('[data-testid^="exam-option-"]');
+        if (opt) { opt.click(); return 'pick'; }
+        return 'wait';
+      })()`);
+      if (st === "result") resultSeen = true;
+      else await new Promise((r) => setTimeout(r, 1000));
+    }
+    if (resultSeen) {
+      await new Promise((r) => setTimeout(r, 1500)); // 入场动画
+      await shot("04-exam-result.png");
+    } else {
+      failed.push("04-exam-result.png");
+      console.error("[lookatstudy] shot SKIPPED (result page never reached): 04-exam-result.png");
+    }
+  }
+
+  // 复习抽屉:点任意可点球退出考试视图(答题会话中会有离开确认卡,顺手确认)
+  // → 地图复习角标(种子到期 + 考试答错新增)开抽屉
+  await js(`(async function(){
+    var btns = document.querySelectorAll('[data-testid^="map-node-"]');
+    for (const b of btns) { if (!b.disabled) { b.click(); break; } }
+    for (var i = 0; i < 40; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      var lc = document.querySelector('[data-testid="exam-leave-confirm"]');
+      if (lc) { lc.click(); continue; }
+      if (document.querySelector('[data-testid="node-content"]')) return true;
+    }
+    return false;
+  })()`);
+  const drawerOn = await js(`(async function(){
+    var b = document.querySelector('[data-testid="map-review-badge"]');
+    if (!b) return false;
+    b.click();
+    for (var i = 0; i < 20; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      if (document.querySelector('[data-testid="review-panel"]')) return true;
+    }
+    return false;
+  })()`);
+  if (drawerOn === true) {
+    await new Promise((r) => setTimeout(r, 1200)); // 抽屉滑入 + 卡片渲染
+    await shot("05-review-drawer.png");
+    await js(`(function(){
+      var b = document.querySelector('[data-testid="review-close"]');
+      if (b) b.click();
+      return true;
+    })()`);
+    await new Promise((r) => setTimeout(r, 600));
+  } else {
+    failed.push("05-review-drawer.png");
+    console.error("[lookatstudy] shot SKIPPED (review drawer did not open): 05-review-drawer.png");
+  }
+
+  // 导入面板:左栏 地图/导入 分段切换后是课程列表,五入口表单还折在「+ 导入」虚线
+  // 按钮里(无 testid,按 border-dashed + 文案匹配点击),展开后一屏
+  const importOn = await js(`(async function(){
+    var tab = document.querySelector('[data-testid="map-tab-import"]');
+    if (!tab) return false;
+    tab.click();
+    var toggled = false;
+    for (var i = 0; i < 20; i++) {
+      await new Promise(function(r){ setTimeout(r, 250); });
+      if (!toggled) {
+        var btns = document.querySelectorAll('button.border-dashed');
+        for (var k = 0; k < btns.length; k++) {
+          var label = btns[k].textContent || "";
+          if (/导入|Import/.test(label)) { btns[k].click(); toggled = true; break; }
+        }
+      }
+      if (document.querySelector('[data-testid="import-url-section"]')) return true;
+    }
+    return false;
+  })()`);
+  if (importOn === true) {
+    await new Promise((r) => setTimeout(r, 800));
+    await shot("07-import.png");
+    await js(`(function(){
+      var b = document.querySelector('[data-testid="map-tab-map"]');
+      if (b) b.click();
+      return true;
+    })()`);
+  } else {
+    failed.push("07-import.png");
+    console.error("[lookatstudy] shot SKIPPED (import panel did not open): 07-import.png");
+  }
 
   if (mode === "en") await restoreLang();
 
-  const ok = saved.length === 3 && failed.length === 0 && saved.every((s) => (sizes[s] ?? 0) > 0);
+  const ok = saved.length === 7 && failed.length === 0 && saved.every((s) => (sizes[s] ?? 0) > 0);
   console.error("SHOTS_RESULT=" + JSON.stringify({ ok, mode, saved, failed, sizes }));
 }
 

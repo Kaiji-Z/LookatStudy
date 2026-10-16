@@ -16,6 +16,8 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-10-17
+
 ### Added
 
 - 提议撤销（issue #19 附问，git revert 式）：已应用的提议卡上出现「撤销」按钮（两步确认防误触），点击即把学习状态恢复到应用前——apply 时自动抓受管表（progress / KC 掌握度 / SRS / 画像 / XP 计数）的行级 diff 快照，撤销时状态行还原、XP 记账逆补偿（apply 后又挣的经验不被误伤）；功能上线前应用的旧提议无快照不显示按钮。诚实边界：连胜触摸、记忆固化、人工判分标记不回滚。agent 永不自行回滚——base-prompt 红线第 3 条：学习者说"点错了"时指路撤销按钮，自己不改学习状态。撤销后地图经 `lesson:reverted` 静默刷新（不放毕业礼花）。verify-proposals T11-T19 + ui-test IPC 往返

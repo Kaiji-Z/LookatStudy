@@ -140,8 +140,36 @@ await test("base-prompt: 三级分层结构(红线→行为→偏好,顺序+优�
     `分层顺序应为 红线(${iRedline}) < 模糊提问(${iBehavior1}) < 教学工具(${iBehavior2}) < 排版(${iPref})`);
   assert.ok(got.indexOf("以本段为准") > 0, "红线块应声明冲突时优先级");
   assert.ok(got.indexOf("在不违反上面红线与行为规则的前提下") > 0, "偏好块应自声明次级地位");
-  // 红线块两条编号(防幻觉/工具调用真实性)——手写标记事故的条款归红线级
-  assert.ok(got.includes("1. 防幻觉:") && got.includes("2. 工具调用真实性:"), "红线块应为编号双条");
+  // 红线块编号条款(防幻觉/工具调用真实性/撤销不归你管)——手写标记事故与
+  // issue #19 幻觉引图事故的条款都归红线级
+  assert.ok(
+    got.includes("1. 防幻觉:") && got.includes("2. 工具调用真实性:") && got.includes("3. 撤销不归你管:"),
+    "红线块应为编号三条",
+  );
+});
+
+await test("base-prompt: 引用即调用红线(issue #19 幻觉引图事故,2026-10-17)", () => {
+  // 事故:模型没调 draw_diagram,却在正文里写"↑ 这张图请重点看那个菱形"口头引用
+  // 一张不存在的图。与手写假标记同族(叙述工具产物代替真调),红线第 2 条加
+  // "引用即调用"子句堵这个变体。
+  const zh = buildBaseAgentPrompt("zh-CN");
+  assert.ok(zh.includes("引用即调用"), "zh 子句存在");
+  assert.ok(zh.includes("凭空引用一张不存在的图是最严重的幻觉"), "zh 禁止凭空引用图");
+  assert.ok(zh.includes("就必须在本轮真实调用 draw_diagram"), "zh 指明真实调用途径");
+  const en = buildBaseAgentPrompt("en");
+  assert.ok(en.includes("Reference requires a real call"), "en 子句存在");
+  assert.ok(en.includes("referencing a diagram that does not exist"), "en 禁止凭空引用图");
+  assert.ok(en.includes("you must actually call draw_diagram in this turn"), "en 指明真实调用途径");
+});
+
+await test("base-prompt: 撤销指引条款(v0.41,agent 不自改状态)", () => {
+  const zh = buildBaseAgentPrompt("zh-CN");
+  assert.ok(zh.includes("3. 撤销不归你管:"), "zh 条款存在");
+  assert.ok(zh.includes("指引他去聊天里那张提议卡上点「撤销」按钮"), "zh 指路提议卡按钮");
+  assert.ok(zh.includes("你自己永远不要试图改学习状态"), "zh 禁止 agent 自行补救");
+  const en = buildBaseAgentPrompt("en");
+  assert.ok(en.includes("3. Undo is not yours:"), "en 条款存在");
+  assert.ok(en.includes("never try to \"fix\" learning state yourself"), "en 禁止 agent 自行补救");
 });
 
 await test("base-prompt: 课程推进边界条款(2026-09-17 模型空口承诺'说继续就开讲下一课'事故)", () => {

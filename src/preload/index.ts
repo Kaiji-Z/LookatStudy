@@ -205,6 +205,8 @@ const api = {
     ipcRenderer.invoke("proposal:apply", id)) as ApiExpose["applyProposal"],
   rejectProposal: ((id: string) =>
     ipcRenderer.invoke("proposal:reject", id)) as ApiExpose["rejectProposal"],
+  undoProposal: ((id: string) =>
+    ipcRenderer.invoke("proposal:undo", id)) as ApiExpose["undoProposal"],
   recordQuizAnswer: ((nodeId: string, correct: boolean, kc?: string) =>
     ipcRenderer.invoke("quiz:recordAnswer", nodeId, correct, kc)) as ApiExpose["recordQuizAnswer"],
   logFriction: ((nodeId: string | null, category: HumanFrictionCategory, summary: string | null) =>

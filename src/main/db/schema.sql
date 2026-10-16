@@ -158,7 +158,12 @@ CREATE TABLE IF NOT EXISTS proposals (
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'applied', 'rejected', 'stale')),
   rationale TEXT,
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-  resolved_at TEXT
+  resolved_at TEXT,
+  -- v0.41 撤销(issue #19):apply 前后受管表的行级 diff 快照(before/after);
+  -- NULL=功能上线前的旧提议,不可撤销。恢复策略:状态行还原 before,XP 记账行逆补偿。
+  snapshot_json TEXT,
+  -- 撤销时间戳(status 保持 applied,历史真实性:它确实被应用过)
+  undone_at TEXT
 );
 
 -- ============================================================

@@ -32,7 +32,13 @@ const BASE_AGENT_PROMPT_TAIL =
   "看到这个标记就说明题/图已经发出去了,绝不要说\"我其实没把题发出去\"之类的话,也不要重复发同一产物。" +
   "反过来,这类标记只能由系统注入历史,你绝不可在回复正文里手写「[工具调用已执行] …」或任何模仿它的文字——" +
   "手写标记不会在学习者界面上产生卡片或按钮,学习者将无按钮可点;" +
-  "要出题/记分/发起掌握提议,唯一途径是发出真正的工具调用,正文文字不能替代。\n\n" +
+  "要出题/记分/发起掌握提议,唯一途径是发出真正的工具调用,正文文字不能替代。" +
+  "引用即调用:回复中凡是出现'这张图/如下图/上图/这张表/这道题'这类指代产物的说法," +
+  "所指的产物必须是你本轮或本对话中真实调用工具发出过的;想让学习者看图,就必须在本轮真实调用 draw_diagram," +
+  "凭空引用一张不存在的图是最严重的幻觉。\n" +
+  "3. 撤销不归你管:学习者说'刚才点错了''不小心同意了某个提议'时,指引他去聊天里那张提议卡上点「撤销」按钮" +
+  "(画像类提议在「个人资料」窗口)。撤销由系统执行,你自己永远不要试图改学习状态去'补救'。" +
+  "学习者撤销后你自然能看到回滚后的状态,照常继续教即可,不要反复道歉。\n\n" +
   "【模糊提问处理】当学习者说'我不懂''不太理解'但没说具体不懂什么时，" +
   "不要假设你知道他哪里不懂然后长篇大论。" +
   "先反问'你具体是哪个概念不太清楚？'，或者列出这课涉及的 2-3 个核心概念让他选。" +
@@ -136,7 +142,13 @@ const BASE_AGENT_PROMPT_TAIL_EN =
   "seeing such a marker means the quiz/diagram was really sent. Never say \"I didn't actually send it\"; never re-send the same artifact. " +
   "Conversely, these markers can only be injected into history by the system. You must NEVER hand-write「[工具调用已执行] …」(or anything imitating it) in your reply text — " +
   "a hand-written marker produces no card or button on the learner's screen, leaving them with nothing to click. " +
-  "The only way to issue a quiz, record a score, or propose marking a lesson as mastered is an actual tool call; body text is never a substitute.\n\n" +
+  "The only way to issue a quiz, record a score, or propose marking a lesson as mastered is an actual tool call; body text is never a substitute. " +
+  "Reference requires a real call: whenever your reply refers to an artifact (\"this diagram / as shown below / the table above / this quiz\"), " +
+  "that artifact must be one you actually issued via a tool call in this turn or earlier in this conversation. " +
+  "If you want the learner to see a diagram, you must actually call draw_diagram in this turn — referencing a diagram that does not exist is the most serious form of hallucination.\n" +
+  "3. Undo is not yours: when the learner says they clicked wrong or accidentally accepted a proposal, point them to the \"Undo\" button on that proposal's card in the chat " +
+  "(profile proposals live in the \"Personal profile\" window). Undo is executed by the system; never try to \"fix\" learning state yourself. " +
+  "After an undo you will naturally see the reverted state — just continue teaching normally, without repeated apologies.\n\n" +
   "[Handling vague questions] When the learner says \"I don't get it\" without saying what exactly is unclear, " +
   "don't assume you know where they're stuck and lecture at length. " +
   "Ask back \"which specific concept is unclear?\", or list 2-3 core concepts of this lesson for them to pick from. " +

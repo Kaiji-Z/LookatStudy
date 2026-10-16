@@ -664,6 +664,14 @@ export default function App() {
     });
   }, [tree]);
 
+  // v0.41 提议撤销(issue #19):该节点状态恢复到提议应用前 → 静默重拉进度图
+  // (球重锁/金环消失)。不 celebrate——撤销不放礼花;XP/到期由 state:changed "xp" 刷新。
+  useEffect(() => {
+    return api.on("lesson:reverted", () => {
+      void reloadCourseProgress();
+    });
+  }, [reloadCourseProgress]);
+
   // 终点态(最后一课毕业):卡无指路按钮,10s 自动谢幕
   useEffect(() => {
     if (!nextCueCard || nextCueCard.next) return;
@@ -803,6 +811,27 @@ export default function App() {
   const canvas = useCanvas(selectedCourseId);
   const font = useFontSize();
   const toast = useToast();
+
+  // v0.41 提议撤销(issue #19):学习者点已应用提议卡的「撤销」→ 系统按快照恢复
+  // (agent 永不自己回滚)。回执 toast 告知恢复面;冲突(apply 后又有学习记录被一并
+  // 回退)附提示。地图刷新走 lesson:reverted(主进程发,不触发毕业庆祝)。
+  const handleUndoProposal = useCallback(
+    async (proposalId: string, msgId: string, toolCallIdx: number) => {
+      try {
+        const result = await api.undoProposal(proposalId);
+        chat.markProposalUndone(msgId, toolCallIdx);
+        toast.show(
+          result.conflicts.length > 0
+            ? `${t("chat.proposal.undo_done")}（${t("chat.proposal.undo_conflict")}）`
+            : t("chat.proposal.undo_done"),
+          { duration: 4000 },
+        );
+      } catch (e) {
+        setErrorFromThrow(e);
+      }
+    },
+    [chat, setErrorFromThrow, t, toast],
+  );
 
   // 章节考试:后台生成完成 → 人在别的节点时 toast 通知(在考试节点上 ExamView 自己会切就绪态)
   useEffect(() => {
@@ -1284,6 +1313,7 @@ export default function App() {
                 streaming={chat.streaming}
                 onApplyProposal={handleApplyProposal}
                 onRejectProposal={handleRejectProposal}
+                onUndoProposal={handleUndoProposal}
                 summary={nodeSummary}
                 onStartLearning={agentReady?.ready ? handleStartLearning : undefined}
                 agentReady={agentReady?.ready ?? false}

@@ -219,6 +219,10 @@ export const proposals = sqliteTable("proposals", {
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),
   resolvedAt: text("resolved_at"),
+  /** v0.41 撤销:apply 前后受管表行级 diff({entries:[{table,key,before,after}]});NULL=旧提议不可撤 */
+  snapshotJson: text("snapshot_json"),
+  /** 撤销时间戳(status 保持 applied——历史真实性:它确实被应用过) */
+  undoneAt: text("undone_at"),
 });
 
 /* ---------- Friction 日志（v2 新增） ---------- */

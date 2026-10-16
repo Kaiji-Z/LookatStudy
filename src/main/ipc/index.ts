@@ -177,6 +177,7 @@ import {
   applyProposal as applyProposalService,
   rejectProposal as rejectProposalService,
   createProposal as createProposalService,
+  undoProposal as undoProposalService,
 } from "../services/proposal-service.js";
 // Per-KC BKT: KC 标题 → 下标解析
 import { getKnowledgePoints } from "../services/kc-service.js";
@@ -1580,6 +1581,17 @@ export function registerAgentHandlers(deps: RuntimeDeps): void {
   handle("proposal:reject", async (_e, id: string) => {
     const result = rejectProposalService(getDb(), id);
     markDirty();
+    return result;
+  });
+  // v0.41 撤销(issue #19):学习者点提议卡「撤销」按钮的唯一入口——agent 永不经此。
+  // 快照恢复由 service 完成;这里补渲染层联动:地图刷新走 lesson:reverted(不 emit
+  // state:changed "mastery",那会触发毕业庆祝)。
+  handle("proposal:undo", async (_e, id: string) => {
+    const result = undoProposalService(getDb(), id);
+    markDirty();
+    if (result.proposal.nodeId) {
+      deps.emitter?.send("lesson:reverted", { nodeId: result.proposal.nodeId });
+    }
     return result;
   });
   // quiz 产物本地评分 → 自动建+应用 update_mastery 提案。

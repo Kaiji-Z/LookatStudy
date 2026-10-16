@@ -16,6 +16,15 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+
+- 提议撤销（issue #19 附问，git revert 式）：已应用的提议卡上出现「撤销」按钮（两步确认防误触），点击即把学习状态恢复到应用前——apply 时自动抓受管表（progress / KC 掌握度 / SRS / 画像 / XP 计数）的行级 diff 快照，撤销时状态行还原、XP 记账逆补偿（apply 后又挣的经验不被误伤）；功能上线前应用的旧提议无快照不显示按钮。诚实边界：连胜触摸、记忆固化、人工判分标记不回滚。agent 永不自行回滚——base-prompt 红线第 3 条：学习者说"点错了"时指路撤销按钮，自己不改学习状态。撤销后地图经 `lesson:reverted` 静默刷新（不放毕业礼花）。verify-proposals T11-T19 + ui-test IPC 往返
+- 语音输入续录（issue #20，飞书式续说）：复查浮层新增「继续说」按钮——按住追录下一段，松开转录后 CJK 感知追加到已有文本后面（`shared/voice-append.ts` 纯函数 + `verify-voice-append` 8 测），不再只能"取消重录/发送"二选一；错误浮层「重试」改为关错误保留已积累文本（有积累回复查浮层，空则回大按钮）。ui-test T-ASR 扩续录闭环（追加不截断 + 错误路径文本存活）
+
+### Fixed
+
+- 幻觉引图（issue #19）：模型未调用 draw_diagram 却在正文口头引用"这张图"。base-prompt 中英双体红线第 2 条补「引用即调用」子句——凡指代产物（这张图/如下图/这张表/这道题），所指必须是本轮或本对话中真实调用工具发出过的；想让学习者看图必须本轮真调 draw_diagram。verify-agent-locale 守卫锁定
+
 ## [0.40.0] - 2026-10-06
 
 ### Added

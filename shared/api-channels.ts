@@ -93,6 +93,7 @@ export const API_CHANNELS: Record<string, string> = {
   listPendingProposals: "proposal:listPending",
   applyProposal: "proposal:apply",
   rejectProposal: "proposal:reject",
+  undoProposal: "proposal:undo",
   recordQuizAnswer: "quiz:recordAnswer",
   logFriction: "friction:log",
   getDashboard: "dashboard:get",

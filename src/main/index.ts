@@ -20,7 +20,7 @@ import { ensureSeedCourse } from "./services/seed.js";
 import { ensureExamNodesForExistingCourses } from "./services/course-generator.js";
 import { loadEnv, getZaiConfig } from "./services/env.js";
 import { seedBuiltinSouls } from "./services/souls/soul-service.js";
-import { createProposal } from "./services/proposal-service.js";
+import { createProposal, applyProposal as applyProposalForSeed } from "./services/proposal-service.js";
 import { setStateEmitter } from "./lib/state-emitter.js";
 import { syncPetWindow } from "./pet-window.js";
 import { setExamStatusSender } from "./services/exam-generation-store.js";
@@ -950,6 +950,8 @@ async function runUiTest(screenshot = false): Promise<void> {
   } catch (e) {
     console.error("[lookatstudy] ui-test proposal seed failed:", e);
   }
+  // v0.41 撤销测试造数:见 T8u 段(seed 必须在早期 map-click 测试之后做,
+  // 否则 markNodeAttempted 会把 mastered 状态写回 in_progress)。
   // 造一个 custom provider + active 设置(让 agentReady=true,ChatComposer 渲染 soul-picker)。
   // 优先用 .env 里的真实 ZAI key(让 ui-test 能真实出题/答题);没有则用占位假 key(只验证渲染)。
   try {
@@ -1516,6 +1518,65 @@ async function runUiTest(screenshot = false): Promise<void> {
     detail: proposalRoundtrip,
   });
 
+  // T8u (v0.41 撤销): proposal:undo IPC 完整回路 —— 已应用的 mark_mastered 提议
+  //   → undo → undoneAt 落地 + canUndo=false + progress 恢复到应用前 + 双重 undo 被拒。
+  // seed 放这里紧前:早期的 map-click 测试会 markNodeAttempted 把节点写回
+  // in_progress,seed 若在启动期做, mastered 状态活不到本断言。
+  let undoSeed: { id: string; beforeStatus: string | null } | null = null;
+  try {
+    const beforeRow = getDb().select().from(progressTable).where(eq(progressTable.nodeId, "guide-les-1-1")).get();
+    const pu = createProposal(getDb(), {
+      nodeId: "guide-les-1-1",
+      operations: [{ type: "mark_mastered", nodeId: "guide-les-1-1" }],
+      rationale: "UI test undo seed",
+    });
+    applyProposalForSeed(getDb(), pu.id);
+    undoSeed = { id: pu.id, beforeStatus: beforeRow?.status ?? null };
+  } catch (e) {
+    console.error("[lookatstudy] ui-test undo seed failed:", e);
+  }
+  let undoRoundtrip: { ok?: boolean; error?: string; [k: string]: unknown } = {};
+  if (undoSeed) {
+    undoRoundtrip = (await jsTimeout(win.webContents, `
+      (async function() {
+        try {
+          const mastered = await window.api.getProgress("guide-les-1-1");
+          if (!mastered || mastered.status !== "mastered") {
+            return { ok: false, error: "seed not mastered", status: mastered && mastered.status };
+          }
+          const r = await window.api.undoProposal(${JSON.stringify(undoSeed.id)});
+          const restored = await window.api.getProgress("guide-les-1-1");
+          const beforeStatus = ${JSON.stringify(undoSeed.beforeStatus)};
+          const restoredOk = beforeStatus === null
+            ? restored === null || restored === undefined
+            : !!restored && restored.status === beforeStatus;
+          let doubleRejected = false;
+          try { await window.api.undoProposal(${JSON.stringify(undoSeed.id)}); }
+          catch (e) { doubleRejected = true; }
+          return {
+            ok: !!r.proposal.undoneAt && r.proposal.canUndo === false && restoredOk && doubleRejected,
+            undoneAt: !!r.proposal.undoneAt,
+            canUndo: r.proposal.canUndo,
+            restoredStatus: restored ? restored.status : null,
+            beforeStatus: beforeStatus,
+            restoredCount: r.restoredCount,
+            conflicts: r.conflicts,
+            doubleRejected: doubleRejected,
+          };
+        } catch (e) {
+          return { ok: false, error: String(e) };
+        }
+      })()
+    `)) ?? {};
+  } else {
+    undoRoundtrip = { ok: false, error: "undo seed missing" };
+  }
+  results.push({
+    name: "proposal undo: applied → IPC undo → state restored + double-undo rejected (v0.41)",
+    ok: undoRoundtrip?.ok === true,
+    detail: undoRoundtrip,
+  });
+
   // T8a (v0.2 三栏): chat-stream + composer 都在(中栏完整)
   const midPane = await jsTimeout(win.webContents, `
     (function() {
@@ -1876,6 +1937,7 @@ async function runUiTest(screenshot = false): Promise<void> {
   // → model-missing → 错误浮层出现(降级断言)。收尾:切回键盘并断言输入框复位。
   let asrInput: { branch?: string; ok?: boolean; error?: string; [k: string]: unknown } = {};
   try {
+    // v0.20 加续录环节(issue #20)后单次 JS 要跑两轮"录音→转录",30s 默认帽会误杀——放宽到 120s
     asrInput = await jsTimeout(win.webContents, `
       (async function() {
         var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
@@ -1926,7 +1988,49 @@ async function runUiTest(screenshot = false): Promise<void> {
             var panel = q('[data-testid="voice-panel-review"]');
             if (panel) {
               var ta = q('[data-testid="voice-result-text"]');
-              return { ok: true, branch: "ready", len: ta && ta.value ? ta.value.length : 0, back: await backToKeyboard() };
+              // v0.20 续录(issue #20):复查浮层「继续说」按住 → recording 浮层 →
+              // window 释放(按钮随视图切换卸载,释放监听在 ChatComposer 挂 window)→
+              // 复查文本只增不减(追加不截断);续录段失败 → 错误浮层「重试」保留旧文本
+              var firstText = ta && ta.value ? ta.value : "";
+              var cont = q('[data-testid="voice-continue-btn"]');
+              if (!cont) return { ok: false, error: "no continue button", branch: "ready" };
+              dispatch(cont, "pointerdown");
+              var rec2 = null;
+              for (var c1 = 0; c1 < 24; c1++) { await sleep(250); rec2 = q('[data-testid="voice-panel-recording"]'); if (rec2) break; }
+              if (!rec2) {
+                window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+                return { ok: false, error: "continue recording never appeared", branch: "ready+continue" };
+              }
+              await sleep(700); // 假设备再攒一小段(与首段同节奏,再释放)
+              window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
+              for (var c2 = 0; c2 < 120; c2++) {
+                await sleep(500);
+                var panel2 = q('[data-testid="voice-panel-review"]');
+                if (panel2) {
+                  var ta2 = q('[data-testid="voice-result-text"]');
+                  var txt2 = ta2 && ta2.value ? ta2.value : "";
+                  if (!txt2.startsWith(firstText)) {
+                    return { ok: false, error: "continue clobbered text", first: firstText.length, after: txt2.length, branch: "ready+continue" };
+                  }
+                  return { ok: true, branch: "ready+continue", len: txt2.length, back: await backToKeyboard() };
+                }
+                var errp = q('[data-testid="voice-panel-error"]');
+                if (errp) {
+                  var retryBtn = q('[data-testid="voice-error-retry"]');
+                  if (retryBtn) retryBtn.click();
+                  await sleep(400);
+                  var panel3 = q('[data-testid="voice-panel-review"]');
+                  var ta3 = q('[data-testid="voice-result-text"]');
+                  var txt3 = ta3 && ta3.value ? ta3.value : "";
+                  return {
+                    ok: !!panel3 && txt3.startsWith(firstText),
+                    branch: "ready+continue-error",
+                    len: txt3.length,
+                    back: await backToKeyboard(),
+                  };
+                }
+              }
+              return { ok: false, error: "continue review never settled", branch: "ready+continue" };
             }
             if (q('[data-testid="voice-panel-error"]')) {
               return { ok: true, branch: "ready-error", back: await backToKeyboard() };
@@ -1935,12 +2039,12 @@ async function runUiTest(screenshot = false): Promise<void> {
           return { ok: false, error: "review panel never settled", branch: "ready" };
         } catch (e) { return { ok: false, error: String(e) }; }
       })()
-    `);
+    `, 120_000);
   } catch (e) {
     asrInput = { error: String(e) };
   }
   results.push({
-    name: "asr dictation: voice mode → hold → release → review/error panel → back to keyboard (fake device)",
+    name: "asr dictation: voice mode → hold → release → review/error panel → continue-say append → back to keyboard (fake device)",
     ok: asrInput?.ok === true,
     detail: asrInput,
   });

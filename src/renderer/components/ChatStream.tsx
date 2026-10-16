@@ -19,7 +19,7 @@ import type { ChatMessageV2, ChatMessagePart } from "@shared/part-accumulator";
 import { toolErrorVisibility } from "@shared/part-accumulator";
 import ReactMarkdown from "react-markdown";
 import { useMarkdownPipeline } from "../lib/math-plugins.js";
-import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square, UserRound, CalendarClock, BookOpenCheck } from "lucide-react";
+import { Check, ChevronDown, Pencil, XCircle, Wrench, Rocket, Settings, GraduationCap, CheckCircle2, CircleSlash, Volume2, Square, UserRound, CalendarClock, BookOpenCheck, Undo2 } from "lucide-react";
 import { REVIEW_END_TOOL_NAME, type ReviewSessionOutcome } from "@shared/review-session";
 import { UserAttachments } from "./AttachmentView.js";
 import { api } from "../lib/api.js";
@@ -43,6 +43,8 @@ interface ChatStreamProps {
   /** 对 proposal 消息内的 tool-call(record_answer/mark_mastered)应用提议 */
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
+  /** v0.41 撤销(issue #19):已应用提议卡上的「撤销」按钮回调 */
+  onUndoProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   /** 当前节点摘要(空会话时显示,帮用户快速了解这课) */
   summary?: string | null;
   /** 点"开始学习"→ 直接进入学习(核心概念+检索题),建立会话 */
@@ -74,7 +76,7 @@ interface ChatStreamProps {
   onStartReviewSession?: (nodeId: string) => void;
 }
 
-export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, summary, onStartLearning, agentReady = true, onOpenModelManager, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction, onQuizCompleted, cardMode = false, reviewNextNodeId, onStartReviewSession }: ChatStreamProps) {
+export function ChatStream({ messages, streaming, onApplyProposal, onRejectProposal, onUndoProposal, summary, onStartLearning, agentReady = true, onOpenModelManager, hasNode = true, selectedNodeId, threadId, onSaveChatNote, chatNotes, onPickQuizAction, onQuizCompleted, cardMode = false, reviewNextNodeId, onStartReviewSession }: ChatStreamProps) {
   const t = useLang();
   const toast = useToast();
   const speech = useSpeech();
@@ -477,6 +479,7 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
                 msg={msg}
                 onApplyProposal={onApplyProposal}
                 onRejectProposal={onRejectProposal}
+                onUndoProposal={onUndoProposal}
                 onQuizAnswered={handleQuizAnswered}
                 quizMastery={quizMastery}
                 onPickAction={onPickQuizAction}
@@ -560,6 +563,7 @@ function MessageRowV2({
   msg,
   onApplyProposal,
   onRejectProposal,
+  onUndoProposal,
   onQuizAnswered,
   quizMastery,
   onPickAction,
@@ -575,6 +579,7 @@ function MessageRowV2({
   msg: ChatMessageV2;
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
+  onUndoProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
   quizMastery?: number | null;
   onPickAction?: (message: string) => void;
@@ -676,6 +681,7 @@ function MessageRowV2({
                 toolCallIdx={idx}
                 onApplyProposal={onApplyProposal}
                 onRejectProposal={onRejectProposal}
+                onUndoProposal={onUndoProposal}
                 onQuizAnswered={onQuizAnswered}
                 quizMastery={quizMastery}
                 onPickAction={onPickAction}
@@ -719,6 +725,7 @@ function PartRenderer({
   toolCallIdx,
   onApplyProposal,
   onRejectProposal,
+  onUndoProposal,
   onQuizAnswered,
   quizMastery,
   onPickAction,
@@ -731,6 +738,7 @@ function PartRenderer({
   toolCallIdx: number;
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
+  onUndoProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
   quizMastery?: number | null;
   onPickAction?: (message: string) => void;
@@ -775,6 +783,7 @@ function PartRenderer({
       toolCallIdx={toolCallIdx}
       onApplyProposal={onApplyProposal}
       onRejectProposal={onRejectProposal}
+      onUndoProposal={onUndoProposal}
       onQuizAnswered={onQuizAnswered}
       quizMastery={quizMastery}
       onPickAction={onPickAction}
@@ -820,6 +829,7 @@ function ToolCallBlock({
   toolCallIdx,
   onApplyProposal,
   onRejectProposal,
+  onUndoProposal,
   onQuizAnswered,
   quizMastery,
   onPickAction,
@@ -835,6 +845,8 @@ function ToolCallBlock({
   toolCallIdx: number;
   onApplyProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onRejectProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
+  /** v0.41 撤销(issue #19):已应用提议卡上的「撤销」按钮回调 */
+  onUndoProposal?: (proposalId: string, msgId: string, toolCallIdx: number) => void;
   onQuizAnswered?: (q: { prompt: string }, idx: number, correct: boolean) => void;
   quizMastery?: number | null;
   onPickAction?: (message: string) => void;
@@ -844,6 +856,13 @@ function ToolCallBlock({
   onStartReviewSession?: (nodeId: string) => void;
 }) {
   const t = useLang();
+  // 撤销二次确认:第一次点「撤销」→ 按钮变「确认撤销」(3s 不点自动弹回),防误触。
+  const [undoArmed, setUndoArmed] = useState(false);
+  useEffect(() => {
+    if (!undoArmed) return;
+    const id = window.setTimeout(() => setUndoArmed(false), 3000);
+    return () => window.clearTimeout(id);
+  }, [undoArmed]);
   // proposal 类工具(record_answer/mark_mastered):output 里有 proposalId + summary。
   // record_answer 已自动 apply(无 proposalId,不会进这里);实际只有 mark_mastered 会显示待决卡。
   const isProposal = toolName === "record_answer" || toolName === "mark_mastered";
@@ -920,12 +939,45 @@ function ToolCallBlock({
 
   if (proposalData?.proposalId) {
     const status = proposalData.status;
-    // —— 已采纳:金色对勾徽章(gold=mastery),无按钮 ——
+    const undone = !!(proposalData as { undone?: unknown }).undone;
+    const canUndo = !!(proposalData as { canUndo?: unknown }).canUndo;
+    // —— 已撤销(v0.41):muted 徽章 + 撤销时间线,无按钮 ——
+    if (status === "applied" && undone) {
+      return (
+        <div className="proposal-card rounded-xl border border-ink/10 bg-ink/5 p-3 flex items-center gap-2" data-testid="part-proposal-undone">
+          <Undo2 className="w-4 h-4 text-ink-muted shrink-0" />
+          <span className="text-body text-ink-muted">{t("chat.proposal.undone")}</span>
+        </div>
+      );
+    }
+    // —— 已采纳:金色对勾徽章(gold=mastery)+ 撤销按钮(v0.41,有快照才出) ——
     if (status === "applied") {
       return (
         <div className="proposal-card rounded-xl border border-gold/30 bg-gold/5 p-3 flex items-center gap-2" data-testid="part-proposal">
           <CheckCircle2 className="w-4 h-4 text-gold shrink-0" />
           <span className="text-body font-bold text-ink">{t("chat.proposal.applied")}</span>
+          {canUndo && onUndoProposal && (
+            <button
+              type="button"
+              onClick={() => {
+                if (undoArmed) {
+                  setUndoArmed(false);
+                  onUndoProposal(proposalData.proposalId!, msgId, toolCallIdx);
+                } else {
+                  setUndoArmed(true);
+                }
+              }}
+              data-testid={undoArmed ? "proposal-undo-confirm" : "proposal-undo"}
+              className={`ml-auto px-3 py-1 rounded-full text-caption font-medium flex items-center gap-1 transition-colors ${
+                undoArmed
+                  ? "bg-warning/20 text-warning"
+                  : "text-ink-muted hover:text-ink-strong hover:bg-ink/[0.06]"
+              }`}
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+              {undoArmed ? t("chat.proposal.undo_confirm") : t("chat.proposal.undo")}
+            </button>
+          )}
         </div>
       );
     }

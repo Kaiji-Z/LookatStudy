@@ -17,6 +17,7 @@ import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanTe
 import type { Soul, StarterPrompt, HumanFrictionCategory, ChatAttachmentInput, ContextUsageInfo } from "@shared/types";
 import { checkAttachmentFile, ATTACHMENT_LIMITS } from "@shared/attachment-intake";
 import { estimateTokens } from "@shared/token-estimate";
+import { appendTranscript } from "@shared/voice-append";
 import { api } from "../lib/api.js";
 import { useLang, useLangValue, translate } from "../lib/i18n.js";
 import { useAsrInput } from "../lib/useAsrInput.js";
@@ -141,9 +142,13 @@ export function ChatComposer({
   const [voiceReview, setVoiceReview] = useState(false);
   /** 浮层错误文案(已翻译;no-speech 守卫/密钥缺失等引导) */
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  /** 续录中(issue #20):下一段转录追加而非替换。「继续说」按下置位,onFinal 消费;
+   *  转录失败/取消重录时复位,不残留(否则下一段全新听写会误拼进旧文本)。 */
+  const appendNextRef = useRef(false);
   const asr = useAsrInput(
     (text) => {
-      setVoiceText(text);
+      setVoiceText((prev) => (appendNextRef.current ? appendTranscript(prev, text) : text));
+      appendNextRef.current = false;
       setVoiceReview(true);
     },
     { locale: uiLang, autoStop: asrAutoStop },
@@ -151,6 +156,7 @@ export function ChatComposer({
   const asrError = asr.startError ?? asr.transcribeError;
   useEffect(() => {
     if (!asrError) return;
+    appendNextRef.current = false;
     const key =
       asrError === "no-speech"
         ? "chat.speech.no_speech"
@@ -192,6 +198,7 @@ export function ChatComposer({
   };
 
   const resetVoiceState = useCallback(() => {
+    appendNextRef.current = false;
     setVoiceText("");
     setVoiceReview(false);
     setVoiceError(null);
@@ -200,6 +207,26 @@ export function ChatComposer({
     setVoiceMode(false);
     resetVoiceState();
   }, [resetVoiceState]);
+  /** 复查浮层「继续说」按下:按住追录,松开转录追加。释放监听挂 window——按下后
+   *  浮层立即切 recording 视图,「继续说」按钮本体随之卸载,元素级 pointerup 收不到
+   *  (与大按钮"按住期间不卸载"的注释同源问题,这里必须窗口级收尾)。 */
+  const handleContinueHoldStart = useCallback(() => {
+    appendNextRef.current = true;
+    asr.beginHold();
+    const end = () => {
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      asr.endHold();
+    };
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  }, [asr.beginHold, asr.endHold]);
+  /** 错误浮层「重试」:只关错误不吞文本——续录积累的内容回复查浮层可继续说/手改,
+   *  空文本回大按钮(与旧行为一致)。 */
+  const dismissVoiceError = useCallback(() => {
+    appendNextRef.current = false;
+    setVoiceError(null);
+  }, []);
   /** 复查浮层「发送」:语音文本自成一条消息(不并输入框草稿),发完回键盘模式 */
   const handleVoiceSend = () => {
     const trimmed = voiceText.trim();
@@ -472,6 +499,8 @@ export function ChatComposer({
                   onTextChange={setVoiceText}
                   onSend={handleVoiceSend}
                   onRerecord={resetVoiceState}
+                  onContinueHoldStart={handleContinueHoldStart}
+                  onDismissError={dismissVoiceError}
                   errorMessage={voiceError}
                   sendDisabled={streaming || !nodeId || !voiceText.trim()}
                 />

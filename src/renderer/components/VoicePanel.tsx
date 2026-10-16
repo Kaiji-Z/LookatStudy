@@ -4,8 +4,10 @@
  * 一个面板四个视图,锚在 composer 上方:
  *   recording    按住说话中:脉冲 mic + 音量条 + 计时 + 「松开结束」
  *   transcribing 松开后等转录:spinner
- *   review       待发送:识别全文进可编辑 textarea,改完点发送(飞书「语音+文字」)
- *   error        引导文案(模型缺失/密钥缺失/没听到声音…),重试=取消重录
+ *   review       待发送:识别全文进可编辑 textarea,改完点发送(飞书「语音+文字」);
+ *                v0.20(issue #20)加「继续说」:按住追录,转录追加到已有文本后
+ *   error        引导文案(模型缺失/密钥缺失/没听到声音…),重试=关错误保留已
+ *                有文本(有积累回复查浮层,空则回大按钮)
  *
  * 纯展示组件:状态与文本归 ChatComposer,计时器自持(录音视图挂载起算)。
  */
@@ -23,8 +25,13 @@ interface VoicePanelProps {
   text: string;
   onTextChange: (v: string) => void;
   onSend: () => void;
-  /** 取消/重试:丢弃本段,回「按住说话」大按钮 */
+  /** 复查「取消重录」:丢弃全部识别文本,回「按住说话」大按钮 */
   onRerecord: () => void;
+  /** review「继续说」按下(按住追录):释放监听在 ChatComposer 挂 window——
+   *  按下后浮层立即切 recording 视图,本按钮随之卸载,元素级 pointerup 收不到 */
+  onContinueHoldStart?: () => void;
+  /** error「重试」:关错误不吞文本——有积累文本则回复查浮层,空则回大按钮 */
+  onDismissError?: () => void;
   /** error 视图的引导文案(调用方已翻译) */
   errorMessage: string | null;
   sendDisabled: boolean;
@@ -43,6 +50,8 @@ export function VoicePanel({
   onTextChange,
   onSend,
   onRerecord,
+  onContinueHoldStart,
+  onDismissError,
   errorMessage,
   sendDisabled,
 }: VoicePanelProps) {
@@ -115,7 +124,21 @@ export function VoicePanel({
             data-testid="voice-result-text"
             className="w-full bg-ink/[0.05] text-body text-ink-strong rounded-xl px-3 py-2 resize-none focus:outline-none focus:bg-ink/[0.08]"
           />
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 flex-wrap">
+            {/* 继续说(飞书式续说,issue #20):按住追录,松开转录追加到已有文本后面 */}
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                onContinueHoldStart?.();
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              data-testid="voice-continue-btn"
+              className="btn-3d-neutral px-4 py-1.5 text-body flex items-center gap-1.5 touch-none select-none"
+            >
+              <Mic className="w-3.5 h-3.5" />
+              {t("chat.speech.continue_say")}
+            </button>
             <button type="button" onClick={onRerecord} data-testid="voice-rerecord" className="btn-3d-neutral px-4 py-1.5 text-body">
               {t("chat.speech.rerecord")}
             </button>
@@ -139,8 +162,8 @@ export function VoicePanel({
           <div className="flex items-center justify-end">
             <button
               type="button"
-              onClick={onRerecord}
-              data-testid="voice-rerecord"
+              onClick={onDismissError ?? onRerecord}
+              data-testid="voice-error-retry"
               className="btn-3d-neutral px-4 py-1.5 text-body flex items-center gap-1.5"
             >
               <RotateCcw className="w-3.5 h-3.5" />

@@ -13,14 +13,19 @@
  * apply 时按 operations 顺序原子回放；任一失败回滚（status=stale，记录失败原因）。
  * 这样 AI 即使生成离谱提议，也不会污染学习者数据。
  *
+ * v0.41 撤销（issue #19）：apply=commit（前后抓受管表 diff 快照），学习者点提议卡
+ * 上的「撤销」按钮 → undoProposal=revert（状态行还原 before + XP 逆补偿）。
+ * agent 永不自己回滚——撤销的唯一入口是学习者的点击（IPC proposal:undo）。
+ *
  * DB 注入式，便于无头测试。
  */
 import type { SQLJsDatabase } from "drizzle-orm/sql-js";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, or, like } from "drizzle-orm";
 import * as schema from "../db/schema.js";
 import {
   proposals as proposalsTable,
   progress as progressTable,
+  knowledgeComponentMastery as kcMasteryTable,
   srsItems,
   settings as settingsTable,
 } from "../db/schema.js";
@@ -79,6 +84,109 @@ export interface Proposal {
   resolvedAt: string | null;
   /** apply 失败时的原因（status=stale 时有值） */
   applyError?: string;
+  /** v0.41 撤销:撤销时间戳(status 保持 applied——历史真实性:它确实被应用过) */
+  undoneAt?: string | null;
+  /** v0.41 撤销:可撤销 = applied + 未撤销 + 有快照(功能上线前的旧提议无快照) */
+  canUndo?: boolean;
+}
+
+/* ---------- v0.41 撤销:受管表快照(issue #19) ----------
+ *
+ * 语义(git 式,用户拍板):apply=commit(抓 before/after 行级 diff),撤销=revert
+ * (学习者点提议卡上的按钮,系统执行恢复;agent 永不自己回滚)。
+ *
+ * 受管表 = apply 可能触碰的全部状态:progress / knowledge_component_mastery /
+ * srs_items / settings(learner_profile + XP 计数行)。全表序列化做 diff,不逐
+ * operation 枚举副作用——unlockNextLessonIfEligible 会改"其他节点"的 progress
+ * 行,逐个枚举必漏。sql.js 内存库,几百行序列化毫秒级。
+ *
+ * 恢复策略:状态行还原 before(含删除 apply 新建的行);XP 计数行(total_xp /
+ * daily_xp_*)做逆补偿(after-before 的差从当前值扣)——加减法天然顺序无关,
+ * apply 之后又挣的 XP 不被误伤。
+ *
+ * 诚实边界(不回滚,文档明示):streak 触摸(共享单例)、记忆固化(异步 LLM 已
+ * 消费、水位已推进)、human_obs 人工判分标记、已播出的庆祝/边界卡(纯 UI 瞬态)。
+ */
+
+export interface ProposalSnapshotEntry {
+  table: "progress" | "kc_mastery" | "srs_items" | "settings";
+  /** progress:nodeId;kc/srs:行 id;settings:key */
+  key: string;
+  /** 行对象(列名 camelCase);null=apply 前不存在 */
+  before: unknown;
+  /** apply 后的行对象;null=apply 后不存在(理论上状态行不会删,防御性支持) */
+  after: unknown;
+}
+
+export interface ProposalSnapshot {
+  entries: ProposalSnapshotEntry[];
+}
+
+/** XP 计数行(settings 键):恢复策略是逆补偿而非还原 before。 */
+function isXpCounterKey(key: string): boolean {
+  return key === "total_xp" || key.startsWith("daily_xp_");
+}
+
+type SnapshotBlob = Record<string, unknown>;
+
+function serializeRow<T extends SnapshotBlob>(row: T | undefined): unknown {
+  return row === undefined ? null : { ...row };
+}
+
+/** 序列化受管表(键→行对象)。db 注入式,verify 直测。 */
+export function captureManagedState(db: Db): {
+  progress: Record<string, unknown>;
+  kcMastery: Record<string, unknown>;
+  srsItems: Record<string, unknown>;
+  settings: Record<string, unknown>;
+} {
+  // 注意局部名不与导入的表对象同名(srsItems 表曾在同名局部下被遮蔽 → 生成非法 SQL)
+  const progressRows: Record<string, unknown> = {};
+  for (const r of db.select().from(progressTable).all()) progressRows[r.nodeId] = serializeRow(r);
+  const kcRows: Record<string, unknown> = {};
+  for (const r of db.select().from(kcMasteryTable).all()) kcRows[r.id] = serializeRow(r);
+  const srsRows: Record<string, unknown> = {};
+  for (const r of db.select().from(srsItems).all()) srsRows[r.id] = serializeRow(r);
+  const settingRows: Record<string, unknown> = {};
+  // 受管键 = learner_profile + XP 计数行(like 前缀是常量,无注入面)
+  for (const r of
+    db.select().from(settingsTable)
+      .where(or(
+        eq(settingsTable.key, "learner_profile"),
+        eq(settingsTable.key, "total_xp"),
+        like(settingsTable.key, "daily_xp_%"),
+      ))
+      .all()) settingRows[r.key] = serializeRow(r);
+  return { progress: progressRows, kcMastery: kcRows, srsItems: srsRows, settings: settingRows };
+}
+
+function captureFlat(map: Record<string, unknown>): [string, unknown][] {
+  return Object.entries(map);
+}
+
+/** before/after 两份受管快照 → 行级 diff(只有变了的行进快照,体积小)。 */
+export function diffManagedState(
+  before: ReturnType<typeof captureManagedState>,
+  after: ReturnType<typeof captureManagedState>,
+): ProposalSnapshot {
+  const entries: ProposalSnapshotEntry[] = [];
+  const pushTable = (
+    table: ProposalSnapshotEntry["table"],
+    beforeMap: Record<string, unknown>,
+    afterMap: Record<string, unknown>,
+  ) => {
+    const keys = new Set([...captureFlat(beforeMap).map(([k]) => k), ...captureFlat(afterMap).map(([k]) => k)]);
+    for (const key of keys) {
+      const b = beforeMap[key] ?? null;
+      const a = afterMap[key] ?? null;
+      if (JSON.stringify(b) !== JSON.stringify(a)) entries.push({ table, key, before: b, after: a });
+    }
+  };
+  pushTable("progress", before.progress, after.progress);
+  pushTable("kc_mastery", before.kcMastery, after.kcMastery);
+  pushTable("srs_items", before.srsItems, after.srsItems);
+  pushTable("settings", before.settings, after.settings);
+  return { entries };
 }
 
 /* ---------- 创建 ---------- */
@@ -154,6 +262,10 @@ export function applyProposal(db: Db, id: string): Proposal {
   const operations: LearningOperation[] = JSON.parse(row.operationsJson);
   let firstError: string | undefined;
 
+  // v0.41 撤销:apply 前抓受管表快照(commit 的 before-image)。只有全成功才存
+  // diff——stale 的部分应用不挂快照(不可撤销,卡上也不出按钮)。
+  const before = captureManagedState(db);
+
   for (const op of operations) {
     try {
       executeOperation(db, op, row.createdAt);
@@ -165,8 +277,11 @@ export function applyProposal(db: Db, id: string): Proposal {
 
   const now = new Date().toISOString();
   const finalStatus = firstError ? "stale" : "applied";
+  const snapshotJson = finalStatus === "applied"
+    ? JSON.stringify(diffManagedState(before, captureManagedState(db)))
+    : null;
   db.update(proposalsTable)
-    .set({ status: finalStatus, resolvedAt: now })
+    .set({ status: finalStatus, resolvedAt: now, snapshotJson, undoneAt: null })
     .where(eq(proposalsTable.id, id))
     .run();
 
@@ -176,6 +291,210 @@ export function applyProposal(db: Db, id: string): Proposal {
     ),
     applyError: firstError,
   };
+}
+
+/* ---------- v0.41 撤销(issue #19) ---------- */
+
+/** undoProposal 回执:恢复了多少行 + 冲突提示(apply 后又有学习记录的字段)。 */
+export interface UndoProposalResult {
+  proposal: Proposal;
+  /** 恢复(含删除)的状态行数;XP 逆补偿不计入 */
+  restoredCount: number;
+  /** apply 之后又被写过的受管行(已按 before 恢复,新记录被覆盖——git revert 任意顺序语义) */
+  conflicts: string[];
+}
+
+/**
+ * 撤销一次已应用的提议:状态行还原 before,XP 计数行逆补偿。
+ * 守卫:applied / 未撤销过 / 有快照(旧提议无快照 → 抛错,UI 不出按钮)。
+ * agent 永不调用本函数——只有学习者点卡片上的撤销按钮(IPC 层唯一入口)。
+ */
+export function undoProposal(db: Db, id: string): UndoProposalResult {
+  const row = db
+    .select()
+    .from(proposalsTable)
+    .where(eq(proposalsTable.id, id))
+    .get();
+  if (!row) throw new Error(`Proposal ${id} not found`);
+  if (row.status !== "applied") {
+    throw new Error(`Proposal ${id} not applied (status=${row.status})`);
+  }
+  if (row.undoneAt) throw new Error(`Proposal ${id} already undone`);
+  if (!row.snapshotJson) {
+    throw new Error(`Proposal ${id} has no undo snapshot (applied before v0.41)`);
+  }
+
+  const snapshot = JSON.parse(row.snapshotJson) as ProposalSnapshot;
+  const conflicts: string[] = [];
+  let restoredCount = 0;
+
+  for (const entry of snapshot.entries) {
+    if (entry.table === "settings" && isXpCounterKey(entry.key)) {
+      // XP 计数行:逆补偿 delta = after - before,从当前值扣(顺序无关,不误伤后挣的 XP)
+      const delta =
+        (typeof entry.after === "object" && entry.after !== null
+          ? parseInt(String((entry.after as { value?: unknown }).value ?? "0"), 10) || 0
+          : 0) -
+        (typeof entry.before === "object" && entry.before !== null
+          ? parseInt(String((entry.before as { value?: unknown }).value ?? "0"), 10) || 0
+          : 0);
+      if (delta > 0) adjustXpCounter(db, entry.key, -delta);
+      continue;
+    }
+
+    const current = readManagedRow(db, entry.table, entry.key);
+    if (JSON.stringify(current ?? null) !== JSON.stringify(entry.after ?? null)) {
+      conflicts.push(`${entry.table}:${entry.key}`);
+    }
+    restoreManagedRow(db, entry.table, entry.key, entry.before);
+    restoredCount++;
+  }
+
+  const now = new Date().toISOString();
+  db.update(proposalsTable)
+    .set({ undoneAt: now })
+    .where(eq(proposalsTable.id, id))
+    .run();
+
+  // 静默刷新能量条/到期队列。不 emit "mastery"——那会触发渲染层的毕业庆祝,
+  // 撤销不该放礼花;地图刷新走 IPC 层的 lesson:reverted 事件。
+  emitStateChange("xp");
+
+  return {
+    proposal: mapRow(
+      db.select().from(proposalsTable).where(eq(proposalsTable.id, id)).get()!,
+    ),
+    restoredCount,
+    conflicts,
+  };
+}
+
+/** 读一行受管表(渲染层不感知,快照恢复内部用)。 */
+function readManagedRow(
+  db: Db,
+  table: ProposalSnapshotEntry["table"],
+  key: string,
+): unknown {
+  switch (table) {
+    case "progress":
+      return db.select().from(progressTable).where(eq(progressTable.nodeId, key)).get() ?? null;
+    case "kc_mastery":
+      return db.select().from(kcMasteryTable).where(eq(kcMasteryTable.id, key)).get() ?? null;
+    case "srs_items":
+      return db.select().from(srsItems).where(eq(srsItems.id, key)).get() ?? null;
+    case "settings":
+      return db.select().from(settingsTable).where(eq(settingsTable.key, key)).get() ?? null;
+  }
+}
+
+/** 把一行状态还原成 before(before=null → 删掉 apply 新建的行)。 */
+function restoreManagedRow(
+  db: Db,
+  table: ProposalSnapshotEntry["table"],
+  key: string,
+  before: unknown,
+): void {
+  const row = (before ?? null) as Record<string, unknown> | null;
+  switch (table) {
+    case "progress": {
+      type ProgressRow = typeof progressTable.$inferSelect;
+      if (!row) {
+        db.delete(progressTable).where(eq(progressTable.nodeId, key)).run();
+      } else {
+        const restore: ProgressRow = {
+          nodeId: key,
+          status: row.status as ProgressRow["status"],
+          crownLevel: row.crownLevel as number,
+          lastAttemptAt: (row.lastAttemptAt as string | null) ?? null,
+          mastery: (row.mastery as number | null) ?? null,
+        };
+        db.insert(progressTable)
+          .values(restore)
+          .onConflictDoUpdate({
+            target: progressTable.nodeId,
+            set: {
+              status: restore.status,
+              crownLevel: restore.crownLevel,
+              lastAttemptAt: restore.lastAttemptAt,
+              mastery: restore.mastery,
+            },
+          })
+          .run();
+      }
+      break;
+    }
+    case "kc_mastery":
+      if (!row) {
+        db.delete(kcMasteryTable).where(eq(kcMasteryTable.id, key)).run();
+      } else {
+        db.insert(kcMasteryTable)
+          .values({
+            id: key,
+            nodeId: row.nodeId as string,
+            kcIndex: row.kcIndex as number,
+            mastery: row.mastery as number,
+            testedCount: row.testedCount as number,
+          })
+          .onConflictDoUpdate({
+            target: kcMasteryTable.id,
+            set: {
+              mastery: row.mastery as number,
+              testedCount: row.testedCount as number,
+            },
+          })
+          .run();
+      }
+      break;
+    case "srs_items":
+      if (!row) {
+        db.delete(srsItems).where(eq(srsItems.id, key)).run();
+      } else {
+        db.insert(srsItems)
+          .values({
+            id: key,
+            nodeId: row.nodeId as string,
+            easeFactor: row.easeFactor as number,
+            intervalDays: row.intervalDays as number,
+            repetitions: row.repetitions as number,
+            dueAt: row.dueAt as string,
+            lastReviewedAt: (row.lastReviewedAt as string | null) ?? null,
+          })
+          .onConflictDoUpdate({
+            target: srsItems.id,
+            set: {
+              easeFactor: row.easeFactor as number,
+              intervalDays: row.intervalDays as number,
+              repetitions: row.repetitions as number,
+              dueAt: row.dueAt as string,
+              lastReviewedAt: (row.lastReviewedAt as string | null) ?? null,
+            },
+          })
+          .run();
+      }
+      break;
+    case "settings":
+      if (!row) {
+        db.delete(settingsTable).where(eq(settingsTable.key, key)).run();
+      } else {
+        db.insert(settingsTable)
+          .values({ key, value: row.value as string, isSecret: false })
+          .onConflictDoUpdate({
+            target: settingsTable.key,
+            set: { value: row.value as string },
+          })
+          .run();
+      }
+      break;
+  }
+}
+
+/** XP 计数行调整(可负,撤销专用;addXp 防篡改禁负数所以独立)。值钳 ≥0。 */
+function adjustXpCounter(db: Db, key: string, delta: number): void {
+  const row = db.select().from(settingsTable).where(eq(settingsTable.key, key)).get();
+  if (!row) return; // 行没了(理论上不会)→ 无从补偿,跳过
+  const current = parseInt(row.value ?? "0", 10) || 0;
+  const next = Math.max(0, current + delta);
+  db.update(settingsTable).set({ value: String(next) }).where(eq(settingsTable.key, key)).run();
 }
 
 /* ---------- 画像提议查询(个人资料窗口消费点, SPEC §2b) ---------- */
@@ -418,6 +737,8 @@ function mapRow(row: {
   rationale: string | null;
   createdAt: string;
   resolvedAt: string | null;
+  snapshotJson?: string | null;
+  undoneAt?: string | null;
 }): Proposal {
   return {
     id: row.id,
@@ -427,5 +748,7 @@ function mapRow(row: {
     rationale: row.rationale,
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
+    undoneAt: row.undoneAt ?? null,
+    canUndo: row.status === "applied" && !row.undoneAt && !!row.snapshotJson,
   };
 }

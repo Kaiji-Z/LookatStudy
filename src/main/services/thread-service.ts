@@ -162,15 +162,25 @@ export function getThreadMessagesForDisplay(threadId: string): ChatMessageRow[] 
   }
   if (proposalIds.size === 0) return rows; // 无提议 → 原样返回,跳过序列化开销
 
-  // 2) 批量查真值 status
-  const statusMap = new Map<string, string>();
+  // 2) 批量查真值 status(+ v0.41 撤销态:undone/canUndo)
+  const statusMap = new Map<string, { status: string; undone: boolean; canUndo: boolean }>();
   for (const pid of proposalIds) {
-    const r = db.select({ status: proposals.status }).from(proposals).where(eq(proposals.id, pid)).get();
-    if (r) statusMap.set(pid, r.status);
+    const r = db.select({
+      status: proposals.status,
+      snapshotJson: proposals.snapshotJson,
+      undoneAt: proposals.undoneAt,
+    }).from(proposals).where(eq(proposals.id, pid)).get();
+    if (r) {
+      statusMap.set(pid, {
+        status: r.status,
+        undone: !!r.undoneAt,
+        canUndo: r.status === "applied" && !r.undoneAt && !!r.snapshotJson,
+      });
+    }
   }
   if (statusMap.size === 0) return rows;
 
-  // 3) patch 每个 row 的 parts_json(output.status ← 真值),重新序列化
+  // 3) patch 每个 row 的 parts_json(output.status ← 真值,撤销态一并),重新序列化
   return rows.map((row) => {
     if (!row.partsJson) return row;
     let parts: unknown;
@@ -191,8 +201,13 @@ export function getThreadMessagesForDisplay(threadId: string): ChatMessageRow[] 
         const pid = out?.proposalId;
         if (typeof pid === "string" && statusMap.has(pid)) {
           const live = statusMap.get(pid)!;
-          if (out?.status !== live) {
-            (p as { output: Record<string, unknown> }).output = { ...out, status: live };
+          const nextOut = { ...out, status: live.status, undone: live.undone, canUndo: live.canUndo };
+          if (
+            (out as { undone?: unknown }).undone !== live.undone ||
+            (out as { canUndo?: unknown }).canUndo !== live.canUndo ||
+            out?.status !== live.status
+          ) {
+            (p as { output: Record<string, unknown> }).output = nextOut;
             changed = true;
           }
         }

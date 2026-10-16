@@ -161,6 +161,17 @@ export interface Proposal {
   createdAt: string;
   resolvedAt: string | null;
   applyError?: string;
+  /** v0.41 撤销:撤销时间戳(status 保持 applied——历史真实性) */
+  undoneAt?: string | null;
+  /** v0.41 撤销:可撤销 = applied + 未撤销 + 有快照(旧提议无快照) */
+  canUndo?: boolean;
+}
+
+/** proposal:undo 回执:恢复了多少行 + 冲突提示(apply 后又有学习记录的字段)。 */
+export interface UndoProposalResult {
+  proposal: Proposal;
+  restoredCount: number;
+  conflicts: string[];
 }
 
 /* ---------- 仪表盘 + 检索（M3） ---------- */
@@ -799,6 +810,8 @@ export interface ApiExpose {
   listPendingProposals(): Promise<Proposal[]>;
   applyProposal(id: string): Promise<Proposal>;
   rejectProposal(id: string): Promise<Proposal>;
+  /** v0.41 撤销(issue #19):学习者点提议卡「撤销」按钮的唯一入口;agent 永不调用。 */
+  undoProposal(id: string): Promise<UndoProposalResult>;
   /** 本地评分的 quiz 产物答题观测 → 自动建+应用 update_mastery 提案(无需 LLM/人审)。 */
   recordQuizAnswer(nodeId: string, correct: boolean, kc?: string): Promise<{ applied: boolean; newMastery?: number; mastered?: boolean }>;
   /** 学习者主动报"卡点" → 写 friction_log(供 agent 上下文自适应)。nodeId 可空(课程级)。 */
@@ -1270,6 +1283,9 @@ export interface IpcEvents {
   /** v0.37 课程推进边界卡:节点首次掌握毕业(!wasMastered 过渡,proposal:apply 与
    *  quiz:recordAnswer 双路)→ renderer 出边界卡(下一课指路,由学习者自己点球)。 */
   "lesson:mastered": (payload: { nodeId: string }) => void;
+  /** v0.41 提议撤销(issue #19):该节点的学习状态被恢复到提议应用前——renderer
+   *  重拉 progress(地图球重锁/金环消失),不出庆祝(与 lesson:mastered 对称的反向事件)。 */
+  "lesson:reverted": (payload: { nodeId: string }) => void;
   /** v0.12 语音:逐句朗读音频(16-bit PCM WAV;serve 模式 wavBytes 为 base64 还原产物) */
   "speech:ttsAudio": (e: SpeechTtsAudioEventT) => void;
   /** 朗读结束(播完/被停/换场) */

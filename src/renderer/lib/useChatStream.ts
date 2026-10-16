@@ -68,6 +68,8 @@ interface UseChatStreamResult {
   clear: () => void;
   /** 把 proposal 消息内的 tool-call 标记为已应用/拒绝 */
   markProposalStatus: (msgId: string, toolCallIdx: number, applied: boolean) => void;
+  /** v0.41 提议撤销:output.undone=true(status 保持 applied,卡片切「已撤销」态) */
+  markProposalUndone: (msgId: string, toolCallIdx: number) => void;
   setMessagesForNode: (messages: ChatMessageV2[]) => void;
 }
 
@@ -273,6 +275,38 @@ export function useChatStream(threadId: string | null, locale?: string | null): 
     [threadId],
   );
 
+  const markProposalUndone = useCallback(
+    (msgId: string, toolCallIdx: number) => {
+      if (!threadId) return;
+      setBuckets((prev) => {
+        const b = prev.get(threadId);
+        if (!b) return prev;
+        const next = new Map(prev);
+        next.set(threadId, {
+          ...b,
+          messages: b.messages.map((m) => {
+            if (m.id !== msgId) return m;
+            const parts = [...m.parts];
+            const part = parts[toolCallIdx];
+            if (part && part.type === "tool-call") {
+              parts[toolCallIdx] = {
+                ...part,
+                output: {
+                  ...(typeof part.output === "object" && part.output ? part.output : {}),
+                  undone: true,
+                  canUndo: false,
+                },
+              };
+            }
+            return { ...m, parts };
+          }),
+        });
+        return next;
+      });
+    },
+    [threadId],
+  );
+
   const setMessagesForNode = useCallback(
     (messages: ChatMessageV2[]) => {
       if (!threadId) return;
@@ -312,6 +346,7 @@ export function useChatStream(threadId: string | null, locale?: string | null): 
     stop,
     clear,
     markProposalStatus,
+    markProposalUndone,
     setMessagesForNode,
   };
 }

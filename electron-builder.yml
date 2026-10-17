@@ -24,12 +24,21 @@ asarUnpack:
   - "node_modules/sherpa-onnx-*/**/*"
 mac:
   category: public.app-category.education
+  # dmg 默认名含 arch(arm64/x64 各一张);CI 矩阵用 --arch 指定,universal 体积翻倍不取
   target: dmg
   # CI 与本地都没有 Apple 开发者证书,跳过签名(未签名 dmg 首次打开需右键→打开)
   identity: null
 win:
-  target: nsis
+  # nsis=安装版;zip=免安装便携版(U 盘/机房场景)。arch 由 CI 矩阵的 --x64/--arm64 指定
+  # (arm64 任务另传 --config.artifactName 防 nsis 默认名与 x64 同名——gh 上传时空格转点,
+  # "LookatStudy Setup 0.42.0.exe" 两种 arch 会互踩)。
+  target:
+    - nsis
+    - zip
 linux:
+  # x64 全四格式;arm64(arm runner)用 CLI 只挑 AppImage+deb(rpm/tar.gz 用户面太窄)
   target:
     - AppImage
     - deb
+    - rpm
+    - tar.gz

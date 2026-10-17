@@ -1,5 +1,17 @@
 # 多平台打包:手动触发(workflow_dispatch,可在任意分支试跑)或推 v* 标签自动触发。
-# 产物先传 workflow artifacts;若是标签构建,末尾的 attach 任务把安装包挂到对应 GitHub Release。
+# 产物先传 workflow artifacts;若是标签构建,末尾的 attach 任务把安装包挂到对应 GitHub Release,
+# checksums 任务等齐三个 tag 工作流(android-build/termux-voice)的资产后写合并 SHA256SUMS.txt。
+#
+# 覆盖矩阵(v0.42 起,对标 craft-launcher 式全平台——Electron 可达范围内):
+#   Windows  x64   nsis 安装版 + zip 便携版
+#   Windows  arm64 同上(交叉构建;canvas 有预编译,sherpa/pdf-inspector 无 win-arm64
+#                  → 本地语音/PDF 布局提取降级,在线功能不受影响;Win11 ARM 也可模拟 x64 跑完整版)
+#   macOS    arm64 dmg(原生,历史命名 LookatStudy-x.y.z-arm64.dmg)
+#   macOS    x64   dmg(交叉构建;sherpa/canvas 有 x64 预编译,pdf-inspector 无 → 回退 pdf-parse,架构内建)
+#   Linux    x64   AppImage + deb + rpm + tar.gz
+#   Linux    arm64 AppImage + deb(ubuntu-24.04-arm 原生 runner,三件原生依赖预编译全齐)
+#   Web            lookatstudy-web-vX.Y.Z.zip 自托管束(server.cjs + web/,零依赖 node 直跑)
+# 追不上的格子(Electron 无官方发行,非配置问题):freebsd / riscv64。
 name: Package
 
 on:
@@ -12,7 +24,7 @@ on:
   push:
     tags: ["v*"]
 
-# attach-to-release 用 GITHUB_TOKEN 调 gh release upload,需要 release(=contents)写权限。
+# attach-to-release/checksums 用 GITHUB_TOKEN 调 gh,需要 release(=contents)写权限。
 # 仓库默认 token 只读,不声明这行会 403 Resource not accessible by integration。
 permissions:
   contents: write
@@ -23,12 +35,41 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # extra_natives: 交叉构建时补装目标 arch 的原生预编译(版本取自父包
+          # optionalDependencies,运行时按 process.arch 自选,宿主 arch 的那份照常保留)。
+          # artifact_name: 仅在默认名会跨 arch 撞名时覆盖(windows nsis 与 linux
+          # AppImage 的默认名都不含 arch;gh release upload 还会把空格规范成点号,
+          # "LookatStudy Setup x.y.z.exe" 两 arch 上传后互踩)。
           - os: windows-latest
-            artifact: windows-installer
+            artifact: windows-x64
+            eb_args: "--win --x64"
+            artifact_name: ""
+            extra_natives: ""
+          - os: windows-latest
+            artifact: windows-arm64
+            eb_args: "--win --arm64"
+            artifact_name: "LookatStudy Setup ${version}-arm64.${ext}"
+            extra_natives: "@napi-rs/canvas=@napi-rs/canvas-win32-arm64-msvc"
           - os: macos-latest
-            artifact: macos-installer
+            artifact: macos-arm64
+            eb_args: "--mac --arm64"
+            artifact_name: ""
+            extra_natives: ""
+          - os: macos-latest
+            artifact: macos-x64
+            eb_args: "--mac --x64"
+            artifact_name: ""
+            extra_natives: "sherpa-onnx-node=sherpa-onnx-darwin-x64 @napi-rs/canvas=@napi-rs/canvas-darwin-x64"
           - os: ubuntu-latest
-            artifact: linux-installer
+            artifact: linux-x64
+            eb_args: "--linux --x64"
+            artifact_name: ""
+            extra_natives: ""
+          - os: ubuntu-24.04-arm
+            artifact: linux-arm64
+            eb_args: "--linux AppImage deb"
+            artifact_name: "LookatStudy-${version}-arm64.${ext}"
+            extra_natives: ""
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -42,14 +83,35 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build renderer + package (electron-builder, current OS target)
+      - name: Install extra-arch native prebuilds (cross builds only)
+        if: matrix.extra_natives != ''
+        shell: bash
+        run: |
+          set -e
+          for pair in ${{ matrix.extra_natives }}; do
+            parent="${pair%%=*}"
+            variant="${pair#*=}"
+            ver=$(node -p "require('./node_modules/${parent}/package.json').optionalDependencies['${variant}']")
+            npm install --no-save "${variant}@${ver}"
+            echo "[extra-natives] installed ${variant}@${ver}"
+          done
+
+      - name: Build renderer + package (electron-builder)
         # --publish never: electron-builder 在 GH Actions 检测到 CI 会默认自动 publish(找 GH_TOKEN),
         # 上传交给本文件末尾的 attach-to-release 任务用 gh 控制。
         # 堆上限:v0.21 产物依赖(elkjs/shiki/markmap)把 vite 构建内存推高,
         # macOS arm64 runner 的 Node 默认 ~2GB 堆顶被撞穿(2026-08-22 v0.21.0 首包实测 OOM)。
+        # artifact_name 用单引号包住透传给 electron-builder 的 ${version}/${ext} 宏,防 shell 展开。
+        shell: bash
         env:
           NODE_OPTIONS: --max-old-space-size=6144
-        run: npm run build && npx electron-builder --publish never
+        run: |
+          npm run build
+          if [ -n '${{ matrix.artifact_name }}' ]; then
+            npx electron-builder --publish never ${{ matrix.eb_args }} --config.artifactName='${{ matrix.artifact_name }}'
+          else
+            npx electron-builder --publish never ${{ matrix.eb_args }}
+          fi
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
@@ -60,12 +122,45 @@ jobs:
             release/*.dmg
             release/*.AppImage
             release/*.deb
+            release/*.rpm
+            release/*.zip
+            release/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  web-bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build self-host web bundle (server.cjs + web/)
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          npm run build:mobile
+          VER=$(node -p "require('./package.json').version")
+          cd dist/mobile && zip -r "../../lookatstudy-web-v${VER}.zip" .
+
+      - name: Upload web bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: lookatstudy-web-*.zip
           if-no-files-found: error
           retention-days: 14
 
   attach-to-release:
     if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
-    needs: [build]
+    needs: [build, web-bundle]
     runs-on: ubuntu-latest
     # ~1GB 安装器在慢通道上传可能超 10 分钟(v0.37.2 实测:500 重试+慢速上传撞上限被砍)
     timeout-minutes: 30
@@ -80,7 +175,45 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ inputs.release_tag || github.ref_name }}"
-          # 三个 tag 工作流并发跑,谁先到谁建壳(此前全靠本地手工 create,漏了就 attach 失败)
+          # 多个 tag 工作流并发跑,谁先到谁建壳(此前全靠本地手工 create,漏了就 attach 失败)
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "LookatStudy $TAG" --notes ""
           gh release upload "$TAG" installers/*/* --repo "$GITHUB_REPOSITORY" --clobber
+
+  checksums:
+    # 等三个 tag 工作流(android-build/termux-voice 与本工作流并行)的资产都挂上,
+    # 再下载全部资产(排除逐文件 .sha256 sidecar 与本文件自身)写合并校验清单。
+    # dispatch 补挂(release_tag 指向既有 release)时兄弟资产已在,等待即刻通过。
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+    needs: [attach-to-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Wait for sibling workflows' assets (apk / mobile.zip / termux-voice)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.release_tag || github.ref_name }}"
+          for i in $(seq 1 60); do
+            NAMES=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name] | join(" ")')
+            echo "[checksums] round $i assets: $NAMES"
+            for want in LookatStudy-launcher.apk lookatstudy-mobile.zip lookatstudy-termux-voice.tar.gz; do
+              echo "$NAMES" | grep -q "$want" || { sleep 20; continue 2; }
+            done
+            echo "[checksums] sibling assets all present"
+            exit 0
+          done
+          echo "[checksums] sibling assets never appeared within 20min" >&2
+          exit 1
+
+      - name: Compute and upload SHA256SUMS.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.release_tag || github.ref_name }}"
+          rm -rf sums && mkdir sums
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir sums \
+            --pattern '!*.sha256' --pattern '!SHA256SUMS.txt' --pattern '!*.blockmap'
+          (cd sums && sha256sum -- * > ../SHA256SUMS.txt)
+          echo "── SHA256SUMS.txt ──"; cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber

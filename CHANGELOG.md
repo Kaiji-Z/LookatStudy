@@ -16,6 +16,10 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+
+- 发版资产全平台补齐（P1+P2，Electron 可达范围内）：Windows x64/arm64 各出安装版+便携 zip；macOS 补 Intel x64 dmg（交叉构建，PDF 布局提取自动回退 pdf-parse）；Linux x64 补 rpm+tar.gz，arm64 原生 runner 出 AppImage+deb；新增 `lookatstudy-web-vX.Y.Z.zip` 自托管束（server.cjs+web/，零依赖 node 直跑）与合并 `SHA256SUMS.txt`（等齐三个 tag 工作流资产后生成）。Windows arm64 交叉构建：canvas 有预编译，sherpa/pdf-inspector 无 → 本地语音/PDF 布局降级（在线功能不受影响）。freebsd/riscv64 无官方 Electron 发行，不追
+
 ## [0.41.0] - 2026-10-17
 
 ### Added

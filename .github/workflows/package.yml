@@ -66,12 +66,13 @@ jobs:
             artifact_name: ""
             extra_natives: ""
           # arm64 在 x64 runner 交叉构建而非 arm 原生 runner:electron-builder 的
-          # fpm(deb 打包器)只发 x86 预编译,arm host 上 Exec format error(上游已知限制);
-          # deb 是纯打包无编译,交叉可行。三件 arm64 原生预编译 force 补装(sherpa/canvas/
-          # pdf-inspector 都有 linux-arm64-gnu)。
+          # fpm(deb/rpm 打包器)只发 x86 预编译,arm host 上 Exec format error(上游已知限制);
+          # fpm 在 x86 host 交叉打包任意 arch 均可。CLI 不挑目标(挑目标的写法与 --arm64
+          # 顺序不合会报 Unknown arguments)——直接全四格式,arm64 的 rpm/tar.gz 顺带白送。
+          # 三件 arm64 原生预编译 force 补装(sherpa/canvas/pdf-inspector 都有 linux-arm64-gnu)。
           - os: ubuntu-latest
             artifact: linux-arm64
-            eb_args: "--linux --arm64 AppImage deb"
+            eb_args: "--linux --arm64"
             artifact_name: "LookatStudy-${version}-arm64.${ext}"
             extra_natives: "sherpa-onnx-node=sherpa-onnx-linux-arm64 @napi-rs/canvas=@napi-rs/canvas-linux-arm64-gnu @firecrawl/pdf-inspector=@firecrawl/pdf-inspector-linux-arm64-gnu"
     runs-on: ${{ matrix.os }}

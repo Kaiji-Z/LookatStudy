@@ -218,8 +218,9 @@ jobs:
         run: |
           TAG="${{ inputs.release_tag || github.ref_name }}"
           rm -rf sums && mkdir sums
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir sums \
-            --pattern '!*.sha256' --pattern '!SHA256SUMS.txt' --pattern '!*.blockmap'
+          # gh 的 --pattern 是正向 glob,全否定列表会"no assets match"——全下再删排除项
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir sums
+          rm -f sums/*.sha256 sums/SHA256SUMS.txt sums/*.blockmap
           (cd sums && sha256sum -- * > ../SHA256SUMS.txt)
           echo "── SHA256SUMS.txt ──"; cat SHA256SUMS.txt
           gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber

@@ -65,11 +65,15 @@ jobs:
             eb_args: "--linux --x64"
             artifact_name: ""
             extra_natives: ""
-          - os: ubuntu-24.04-arm
+          # arm64 在 x64 runner 交叉构建而非 arm 原生 runner:electron-builder 的
+          # fpm(deb 打包器)只发 x86 预编译,arm host 上 Exec format error(上游已知限制);
+          # deb 是纯打包无编译,交叉可行。三件 arm64 原生预编译 force 补装(sherpa/canvas/
+          # pdf-inspector 都有 linux-arm64-gnu)。
+          - os: ubuntu-latest
             artifact: linux-arm64
-            eb_args: "--linux AppImage deb"
+            eb_args: "--linux --arm64 AppImage deb"
             artifact_name: "LookatStudy-${version}-arm64.${ext}"
-            extra_natives: ""
+            extra_natives: "sherpa-onnx-node=sherpa-onnx-linux-arm64 @napi-rs/canvas=@napi-rs/canvas-linux-arm64-gnu @firecrawl/pdf-inspector=@firecrawl/pdf-inspector-linux-arm64-gnu"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -92,7 +96,8 @@ jobs:
             parent="${pair%%=*}"
             variant="${pair#*=}"
             ver=$(node -p "require('./node_modules/${parent}/package.json').optionalDependencies['${variant}']")
-            npm install --no-save "${variant}@${ver}"
+            # --force:平台包带 os/cpu 字段,npm 对"宿主 arch 不符"默认 EBADPLATFORM 拒装
+            npm install --no-save --force "${variant}@${ver}"
             echo "[extra-natives] installed ${variant}@${ver}"
           done
 

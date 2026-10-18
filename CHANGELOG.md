@@ -35,7 +35,7 @@ Entry conventions for contributors:
 
 ### Added
 
-- README 品牌页改版：首页（README.md）换中文版（英文版迁 README.en.md，顶部互链切换）；60 秒宣传视频入库（`docs/promo/lookatstudy-promo.mp4`，仓库相对路径即 GitHub 内联播放器）放 hero 位；标题上方新 L 图标 + CI 徽章；过期事实校准（Electron 44 / 132 测试套件 / 12 种文档格式含 .docx / 七种伴学身体 / 状态 v0.39.x）
+- README 品牌页改版：首页（README.md）换中文版（英文版迁 README.en.md，顶部互链切换）；60 秒宣传视频入库（`docs/promo/lookatstudy-promo.mp4` 母带；README 以 user-attachments 裸链接引用，GitHub 首页管线自动渲染为原生播放器）放 hero 位；标题上方新 L 图标 + CI 徽章；过期事实校准（Electron 44 / 132 测试套件 / 12 种文档格式含 .docx / 七种伴学身体 / 状态 v0.39.x）
 - README 截图从 3 张扩到 7 张×中英（`npm run shots`）：新增 导入面板（含折叠的「+ 导入」两步展开）、复习抽屉、整课朗读 karaoke（`tts_engine` 预置 system 离线稳；朗读中不走 hide/show——Chromium 隐藏页暂停 speechSynthesis，直拍）、考试结算页（逐题选答到交卷，低分正好演示按知识点拆弱项）
 
 ### Changed

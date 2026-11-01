@@ -114,6 +114,8 @@ Grab `LookatStudy-launcher.apk` from the latest [Release](https://github.com/Kai
 
 The phone runs the server itself and Chrome talks to it over localhost, so your data stays on the phone the way it stays on your PC. No npm runs on the phone. The bundle download prefers a China friendly npm mirror and falls back to GitHub when the mirror lags. The server is one self-contained file plus the web assets. Skip the launcher if you like, the same one line works in any Termux.
 
+The one-liner self-checks curl before anything else: the preinstalled curl ships self-consistent with its libraries, so normally nothing gets upgraded. If an early version of the command already broke your Termux (`curl: CANNOT LINK ...`), the line switches to the TUNA mirror and pulls a full upgrade before continuing. If `apt` itself also fails with `CANNOT LINK`, no mirror can help — back up `~/lookatstudy` and `~/.lookatstudy` first if you have data, then wipe/reinstall Termux and run the command again (the new command never upgrades the preinstalled curl, so it cannot recur). Advanced path: `wget` and `dpkg` do not link libcurl and still work, so you can hand-download the libssl/libcurl/curl `.deb` files from a mirror and `dpkg -i` them back into consistency.
+
 ## Inside DeepSeek Harness (dsh)
 
 The same idea also lives as a plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), the open-source agent framework: a study tab with course map, tutor, and blackboard columns, the skill-tree gating, BKT mastery tracking, and SM-2 review carried over, and imported courses are designed by the tutor itself. One command installs it:

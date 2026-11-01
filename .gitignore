@@ -95,3 +95,7 @@ scripts/fixtures/pptx-corpus/
 
 # models.dev api.json 下载缓存(build-model-catalog.mjs;--keep 离线重跑用)
 scripts/fixtures/models-dev/
+
+# 本地工具会话产物(ZCode 会话目录 / video-agent-kit 工作目录)
+.v2c/
+.video_agent/

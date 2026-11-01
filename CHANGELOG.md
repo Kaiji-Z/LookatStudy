@@ -18,7 +18,12 @@ Entry conventions for contributors:
 
 ### Added
 
-- 发版资产全平台补齐（P1+P2，Electron 可达范围内）：Windows x64/arm64 各出安装版+便携 zip；macOS 补 Intel x64 dmg（交叉构建，PDF 布局提取自动回退 pdf-parse）；Linux x64 补 rpm+tar.gz，arm64 原生 runner 出 AppImage+deb；新增 `lookatstudy-web-vX.Y.Z.zip` 自托管束（server.cjs+web/，零依赖 node 直跑）与合并 `SHA256SUMS.txt`（等齐三个 tag 工作流资产后生成）。Windows arm64 交叉构建：canvas 有预编译，sherpa/pdf-inspector 无 → 本地语音/PDF 布局降级（在线功能不受影响）。freebsd/riscv64 无官方 Electron 发行，不追
+- 发版资产全平台补齐（P1+P2，Electron 可达范围内）：Windows x64/arm64 各出安装版+便携 zip；macOS 补 Intel x64 dmg（交叉构建，PDF 布局提取自动回退 pdf-parse）；Linux x64 补 rpm+tar.gz，arm64 在 x64 runner 交叉构建同出全四格式（electron-builder 的 fpm 只发 x86 预编译，arm 原生 runner 打不了 deb/rpm）；新增 `lookatstudy-web-vX.Y.Z.zip` 自托管束（server.cjs+web/，零依赖 node 直跑）与合并 `SHA256SUMS.txt`（等齐三个 tag 工作流资产后生成）。Windows arm64 交叉构建：canvas 有预编译，sherpa/pdf-inspector 无 → 本地语音/PDF 布局降级（在线功能不受影响）。freebsd/riscv64 无官方 Electron 发行，不追
+
+### Fixed
+
+- Termux 一行安装去掉 `pkg install curl`：预装 curl+libssl 是出厂自洽快照，主动升级在不稳网络下半升级出符号断裂（CANNOT LINK SSL_set_quic_tls_early_data_enabled 实测）——改为毫秒自检，预装 curl 直接用，已断裂才走修复分支（TUNA 源 + full-upgrade 拉齐），安装器内 upgrade 同步升为 full；断裂深入 libcurl 层连 apt 也起不来时，安装器守门诚实报错给出口（重装 Termux / wget + .deb + dpkg -i），不再让 `|| true` 吞成「node 装不上」的远端谜语；一行命令改先落临时文件再执行，两跳下载全败时收尾 echo 指引（旧 `(A || B) | bash` 形态双败 = 静默退出 0）
+- checksums 生成加资产数对账：等待名单只锚定兄弟工作流末位资产，upload 参数重排/增删资产时会漏进 SHA256SUMS.txt——改为「下载文件数 == Release 非排除资产数」硬对账，不齐重拉（上限 5 轮）
 
 ## [0.41.0] - 2026-10-17
 

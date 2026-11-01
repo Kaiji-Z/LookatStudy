@@ -294,9 +294,35 @@ fi
 # 符号断裂(CANNOT LINK SSL_set_quic_tls_early_data_enabled)只有 full 拉得齐
 export DEBIAN_FRONTEND=noninteractive
 APT_OPTS="-y -o Dpkg::Options::=--force-confold"
+
+# 活性守门(2026-11-01 对抗审查):断裂若深入 libcurl 共享库层,链接 libcurl 的 apt
+# 自己也会 CANNOT LINK——镜像切换/升级命令全是死路。此时不让下面两行 || true 把死讯
+# 吞成稍后「node 装不上」的远端谜语,当场诚实报错给出口(检查放行 stderr,断裂原文可见)。
+if ! apt-get --version >/dev/null 2>&1; then
+  warn "apt 自身已断裂(libcurl/libssl 半升级,CANNOT LINK EXECUTABLE \"apt\")——镜像与升级命令此刻都跑不动,自动修复无门。"
+  warn "  出口 A(无重要数据,最快):Android 设置 → 应用 → Termux → 清除数据/卸载重装,再跑新安装命令(新版不再升级预装 curl,不会复发)"
+  warn "  出口 B(保数据,进阶):wget/dpkg 不链接 libcurl 仍可用,从镜像 pool 手动下载 libssl/libcurl/curl 的 .deb 后 dpkg -i 拉齐"
+  exit 1
+fi
+# curl 断而 apt 活:强制 TUNA 源(不看时区,与一行命令的修复分支同款——默认源在不稳
+# 网络下正是半升级的温床),让下面的 full-upgrade 把断裂拉齐
+if ! curl --version >/dev/null 2>&1; then
+  warn "curl 已断裂(CANNOT LINK),强制 TUNA 源走 full-upgrade 修复..."
+  mkdir -p "$PREFIX/etc/apt"
+  echo "deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main/ stable main" \
+    > "$PREFIX/etc/apt/sources.list"
+fi
+
 info "升级 Termux 基础包(首次可能需要几分钟)..."
 apt-get update $APT_OPTS || true
 apt-get full-upgrade $APT_OPTS || true
+# 修复后续验:curl 起不来就别往下走(下载链全依赖 curl)。直接重跑安装命令可让
+# full-upgrade 续拉中断的升级;仍不行 = 断裂比 apt 更深,走上面守门给过的出口。
+if ! curl --version >/dev/null 2>&1; then
+  warn "修复尝试后 curl 仍断裂——先直接重跑一次安装命令让 full-upgrade 续拉;"
+  warn "  仍失败按 README「手机上也能跑」节的终端出口处理(重装 Termux 或 wget + .deb + dpkg -i)"
+  exit 1
+fi
 
 info "安装 Node.js 与工具(已装的跳过)..."
 have node || apt-get install $APT_OPTS nodejs-lts

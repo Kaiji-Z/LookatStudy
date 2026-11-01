@@ -8,6 +8,9 @@
  *    双脚本 bash -n 语法门;解析函数恒 exit 0 契约(miss 返回 1 会杀 set -e 脚本)
  *  - 工作流:tag/dispatch 触发、NDK 版本与构建脚本探测路径一致、attach 步骤存在
  *  - 构建脚本:node 语法可解析、关键配方在场(-z undefs / $ORIGIN / 软链还原 / ELF 验证)
+ *  - 安装器活性守门(T9,stub 四分支):断裂深入 libcurl 层会连带 apt(CANNOT LINK),
+ *    守门必须当场拦下诚实报错——apt死拦下 / curl死可修(强制TUNA+full-upgrade)放行 /
+ *    双健康零干预 / 修不好被修复后续验拦下;不让 || true 吞成"node 装不上"的远端谜语
  *
  * 运行:tsx scripts/verify-termux-voice.mjs
  */
@@ -280,6 +283,96 @@ exit $?
 
   fs.rmSync(sandbox, { recursive: true, force: true });
   ok("工作流 sidecar + 校验行为(匹配放行/篡改拒/不可达拒/逃逸口) + npm integrity 四态");
+}
+
+// ---------------------------------------------------------------------------
+console.log("T9 安装器活性守门(apt/curl 四分支行为)");
+{
+  // stub 环境跑改写守卫行的安装器副本(逐字节同源,仅 Termux 环境守卫换 true)。
+  // node 桩恒 v18:让放行分支确定性停在「Node >= 20」检查 = 守门已放行的证据。
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "ls-t9-"));
+  const bin = path.join(sandbox, "bin");
+  const prefix = path.join(sandbox, "prefix");
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(path.join(prefix, "etc", "apt"), { recursive: true });
+  fs.mkdirSync(path.join(prefix, "tmp"), { recursive: true });
+
+  const orig = read("scripts/install-termux.sh");
+  // 只把测试段换成 true,保留同行的 || { echo …; exit 1; } 不动(true 使其永不触发)
+  const patched = orig.replace(
+    /^\[ -d \/data\/data\/com\.termux \]/m,
+    "true # guard patched by verify T9",
+  );
+  assert.notEqual(patched, orig, "Termux 环境守卫行没匹配上——安装器结构变了,T9 需同步更新");
+  const script = path.join(sandbox, "install-test.sh");
+  fs.writeFileSync(script, patched);
+
+  const posix = (p) => p.replace(/\\/g, "/");
+  const mkStub = (name, body) => {
+    fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`);
+    fs.chmodSync(path.join(bin, name), 0o755);
+  };
+  mkStub("node", "echo v18.0.0");
+
+  const run = (aptDead, curlDead, heal) => {
+    const healLine = heal
+      ? `printf "#!/bin/sh\\nexit 0\\n" > "${posix(path.join(bin, "curl"))}"; exit 0`
+      : "exit 0";
+    mkStub(
+      "apt-get",
+      `case "$1" in
+  --version) ${aptDead ? 'echo "CANNOT LINK EXECUTABLE apt" >&2; exit 1' : "exit 0"} ;;
+  full-upgrade) ${healLine} ;;
+esac
+exit 0`,
+    );
+    mkStub(
+      "curl",
+      curlDead
+        ? `echo "CANNOT LINK EXECUTABLE curl" >&2
+exit 1`
+        : "exit 0",
+    );
+    const r = spawnSync("bash", [posix(script)], {
+      env: { ...process.env, PATH: `${posix(bin)}:${process.env.PATH}`, PREFIX: posix(prefix) },
+      encoding: "utf8",
+    });
+    return { code: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+  };
+  const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
+  const srcList = path.join(prefix, "etc", "apt", "sources.list");
+
+  // A:apt 死——守门当场拦下,不得出现升级尝试
+  const a = run(true, false, false);
+  assert.equal(a.code, 1, "A 应 exit 1");
+  assert.ok(strip(a.out).includes("apt 自身已断裂"), "A 应报 apt 断裂+出口");
+  assert.ok(!a.out.includes("升级 Termux 基础包"), "A 不应尝试升级");
+  assert.ok(!fs.existsSync(srcList), "A 不应写 sources.list");
+
+  // B:curl 死 + full-upgrade 治愈——强制 TUNA 写源、修复后续验放行、进到 Node 检查
+  const b = run(false, true, true);
+  assert.equal(b.code, 1, "B 停在 Node>=20(桩恒 v18)=守门已放行");
+  assert.ok(strip(b.out).includes("强制 TUNA"), "B 应强制 TUNA 源");
+  assert.ok(fs.readFileSync(srcList, "utf8").includes("tuna"), "B 应写入 TUNA sources.list");
+  assert.ok(b.out.includes("Node >= 20 安装失败"), "B 应放行到 Node 检查");
+  assert.ok(!strip(b.out).includes("仍断裂"), "B 修复后不应再报断裂");
+  fs.rmSync(srcList, { force: true });
+
+  // C:双健康——零干预直进(无断裂字样/无强制 TUNA)
+  const c = run(false, false, false);
+  assert.equal(c.code, 1, "C 停在 Node>=20");
+  assert.ok(!c.out.includes("断裂") && !c.out.includes("TUNA"), "C 应零干预");
+  assert.ok(c.out.includes("Node >= 20 安装失败"), "C 应直进 Node 检查");
+
+  // D:curl 死且修不好——修复后续验当场拦下
+  const d = run(false, true, false);
+  assert.equal(d.code, 1, "D 应 exit 1");
+  assert.ok(strip(d.out).includes("强制 TUNA"), "D 应先走修复分支");
+  assert.ok(strip(d.out).includes("仍断裂"), "D 应被修复后续验拦下");
+  assert.ok(!d.out.includes("Node >= 20"), "D 不应进到 Node 检查");
+
+  fs.rmSync(sandbox, { recursive: true, force: true });
+  ok("apt死拦下 / curl死可修放行 / 双健康零干预 / 修不好拦下");
 }
 
 console.log(`\nverify-termux-voice: ${passed} 组全绿 ✓`);

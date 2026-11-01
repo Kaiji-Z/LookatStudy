@@ -217,10 +217,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ inputs.release_tag || github.ref_name }}"
-          rm -rf sums && mkdir sums
-          # gh 的 --pattern 是正向 glob,全否定列表会"no assets match"——全下再删排除项
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir sums
-          rm -f sums/*.sha256 sums/SHA256SUMS.txt sums/*.blockmap
+          # 下载后对账(2026-11-01 对抗审查):上一步的等待名单只锚定兄弟工作流的
+          # 末位资产,兄弟 upload 参数一旦重排/增删资产,快速通道就不再完备——以
+          # 「已下载文件数 == Release 非排除资产数」为准,不齐说明资产集合还在长,
+          # 重拉重对(上限 5 轮,每轮间隔 15s)。
+          for attempt in 1 2 3 4 5; do
+            rm -rf sums && mkdir sums
+            # gh 的 --pattern 是正向 glob,全否定列表会"no assets match"——全下再删排除项
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir sums
+            rm -f sums/*.sha256 sums/SHA256SUMS.txt sums/*.blockmap
+            got=$(find sums -maxdepth 1 -type f | wc -l)
+            want=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '[.assets[].name | select(((endswith(".sha256") or endswith(".blockmap")) or . == "SHA256SUMS.txt") | not)] | length')
+            echo "[checksums] attempt $attempt: downloaded=$got release-assets=$want"
+            if [ "$got" = "$want" ] && [ "$got" -gt 0 ]; then break; fi
+            sleep 15
+          done
+          if [ "$got" != "$want" ]; then
+            echo "[checksums] asset set still changing after 5 attempts" >&2
+            exit 1
+          fi
           (cd sums && sha256sum -- * > ../SHA256SUMS.txt)
           echo "── SHA256SUMS.txt ──"; cat SHA256SUMS.txt
           gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber

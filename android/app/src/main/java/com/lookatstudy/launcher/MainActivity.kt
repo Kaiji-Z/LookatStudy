@@ -45,13 +45,18 @@ class MainActivity : AppCompatActivity() {
          * 半升级出新 libcurl+旧 libssl 的断裂(v0.118.3 bootstrap 实测 CANNOT LINK
          * SSL_set_quic_tls_early_data_enabled)。仅当预装 curl 已断时才走修复分支
          * (TUNA 源 + full-upgrade 拉齐)。
+         *
+         * 脚本先落 $PREFIX/tmp 再 bash 执行,两跳下载全败时收尾 echo 指引——旧
+         * (A || B) | bash 形态双败 = bash 吃空 stdin 静默退出 0,用户只见 curl 报错无去向。
          */
         private const val INSTALL_CMD =
             "curl --version >/dev/null 2>&1 || { echo \"deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main/ stable main\" > \$PREFIX/etc/apt/sources.list; " +
                 "export DEBIAN_FRONTEND=noninteractive; apt-get update -y; " +
                 "apt-get full-upgrade -y -o Dpkg::Options::=--force-confold; }; " +
-                "(curl -fsSL --connect-timeout 10 $INSTALLER_URL || " +
-                "curl -fsSL --connect-timeout 10 https://gh-proxy.com/$INSTALLER_URL) | bash"
+                "S=\$PREFIX/tmp/lookatstudy-install.sh; " +
+                "(curl -fsSL --connect-timeout 10 $INSTALLER_URL -o \$S || " +
+                "curl -fsSL --connect-timeout 10 https://gh-proxy.com/$INSTALLER_URL -o \$S) " +
+                "&& bash \$S || echo '下载/执行失败:网络问题直接重试本命令;若上方有 CANNOT LINK,按 README「手机上也能跑」节处理'"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

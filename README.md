@@ -121,6 +121,8 @@ echo "deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main/ stable ma
 apt update && apt full-upgrade -y
 ```
 
+上面两步只救得动「apt 还活着」的环境。万一 `apt` 自己也报 `CANNOT LINK`(断裂深入共享库层,升级命令本身都起不来),就别再折腾镜像了:没有重要数据,Android 设置 → 应用 → Termux → 清除数据(或卸载重装),再执行新安装命令——新命令不再升级预装 curl,不会复发。有数据要保,先把 `~/lookatstudy` 和 `~/.lookatstudy` 备份出去再清除;或用仍然可用的 wget 从镜像手动下载 libssl/libcurl/curl 的 `.deb` 用 `dpkg -i` 拉齐(wget 和 dpkg 都不链接 libcurl)。
+
 ## 在 DeepSeek Harness 里也能用
 
 同一套想法还做成了 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(dsh,DeepSeek 的开源 Agent 框架)的插件:一个「学习」页签,课程、导师、黑板三栏,技能树解锁、BKT 掌握度、SM-2 复习都搬了过去,导入的课程由导师自己设计。一条命令安装:

@@ -38,11 +38,19 @@ class MainActivity : AppCompatActivity() {
             "https://github.com/Kaiji-Z/LookatStudy/releases/latest/download/install-termux.sh"
 
         /**
-         * 一行安装(KaijiBot 式):装 curl → 拉安装脚本执行。直连失败走 ghproxy 回退
+         * 一行安装(KaijiBot 式):预装 curl 直接拉脚本执行,直连失败走 ghproxy 回退
          * (脚本内部还会再做镜像/依赖/下载回退/保活配置)。
+         *
+         * 不碰 pkg/apt 装新 curl——预装 curl+libssl 是自洽快照,主动升级在不稳网络下会
+         * 半升级出新 libcurl+旧 libssl 的断裂(v0.118.3 bootstrap 实测 CANNOT LINK
+         * SSL_set_quic_tls_early_data_enabled)。仅当预装 curl 已断时才走修复分支
+         * (TUNA 源 + full-upgrade 拉齐)。
          */
         private const val INSTALL_CMD =
-            "pkg install curl -y && (curl -fsSL --connect-timeout 10 $INSTALLER_URL || " +
+            "curl --version >/dev/null 2>&1 || { echo \"deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main/ stable main\" > \$PREFIX/etc/apt/sources.list; " +
+                "export DEBIAN_FRONTEND=noninteractive; apt-get update -y; " +
+                "apt-get full-upgrade -y -o Dpkg::Options::=--force-confold; }; " +
+                "(curl -fsSL --connect-timeout 10 $INSTALLER_URL || " +
                 "curl -fsSL --connect-timeout 10 https://gh-proxy.com/$INSTALLER_URL) | bash"
     }
 

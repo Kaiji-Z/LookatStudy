@@ -114,6 +114,13 @@ npm run dev:electron
 
 手机自己跑服务,浏览器经 localhost 与它通信,数据像在电脑上一样留在本机。安装不会在手机上执行 npm,便携包的下载优先走国内 npm 镜像,镜像同步滞后或失败时自动回退 GitHub。服务是一个自包含文件加网页资源。不想用引导器也行,任何 Termux 里跑同一行命令即可。
 
+安装命令开头会先自检 curl:预装 curl 与系统库是出厂自洽的,一般直接通过;万一你的 Termux 已经被早期版本的命令弄坏(curl 报 CANNOT LINK),它会自动切清华镜像源并把全部基础包升级拉齐再继续,不用手动干预。要是修复分支也失败了,手动跑一遍同样的两步再重试安装命令:
+
+```sh
+echo "deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main/ stable main" > $PREFIX/etc/apt/sources.list
+apt update && apt full-upgrade -y
+```
+
 ## 在 DeepSeek Harness 里也能用
 
 同一套想法还做成了 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(dsh,DeepSeek 的开源 Agent 框架)的插件:一个「学习」页签,课程、导师、黑板三栏,技能树解锁、BKT 掌握度、SM-2 复习都搬了过去,导入的课程由导师自己设计。一条命令安装:

@@ -290,11 +290,13 @@ fi
 
 # ── 2. 升级 + 依赖 ───────────────────────────────────────────
 # 全新 Termux 不先 upgrade 直接装 Node 会 OpenSSL 链接错误(KaijiBot 实测 CRITICAL 坑)
+# full-upgrade 而非 upgrade:依赖剧变时 upgrade 保守跳过,半升级的 libcurl/libssl
+# 符号断裂(CANNOT LINK SSL_set_quic_tls_early_data_enabled)只有 full 拉得齐
 export DEBIAN_FRONTEND=noninteractive
 APT_OPTS="-y -o Dpkg::Options::=--force-confold"
 info "升级 Termux 基础包(首次可能需要几分钟)..."
 apt-get update $APT_OPTS || true
-apt-get upgrade $APT_OPTS || true
+apt-get full-upgrade $APT_OPTS || true
 
 info "安装 Node.js 与工具(已装的跳过)..."
 have node || apt-get install $APT_OPTS nodejs-lts

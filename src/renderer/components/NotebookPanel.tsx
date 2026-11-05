@@ -192,6 +192,9 @@ export function NotebookPanel({
         ) : (
           <>
             {/* v0.11:内容居中封顶 960 —— 宽屏/单栏档笔记本不空旷,栏宽仍弹性。
+                (正文自身的阅读度量在内层:prose 80ch ≈ 40 汉字/行 + pre 内滚,见下方
+                ContentTab;v0.43 曾试把外层帽换成 ch 阶梯,实测阶梯对正文惰性、只把
+                无自带帽的卡片面从 960px 收窄到 ~560px,无论证,已回滚。)
                 flex-col 让空态可用 flex-1 垂直居中(min-h-full 父级下 h-full 百分比
                 会塌缩,空态曾贴顶;黑板分支不受影响,它有自己的 h-full 结构)。 */}
             <div className="mx-auto w-full max-w-[960px] min-h-full flex flex-col">
@@ -577,7 +580,22 @@ function ContentTab({
           用户翻到后面也能一键停。吸顶行 pointer-events-none,只有按钮本身可点,
           不挡吸顶行底下的正文选区/点击。 */}
       {!loading && !loadError && content && (
-        <div className="sticky top-0 z-20 flex justify-end gap-2 -mt-2 pointer-events-none">
+        <div className="sticky top-0 z-20 flex justify-end gap-2 items-center -mt-2 pointer-events-none">
+          {/* 终点档披露(v0.43):双灭自动改系统语音 / 三路全灭——常驻吸顶行,不弹 toast 打断 */}
+          {speech.engineNotice && (
+            <span
+              data-testid="node-content-engine-notice"
+              className={`pointer-events-none max-w-[60%] truncate rounded-full px-3 py-1 text-caption shadow-elevated ${
+                speech.engineNotice === "total-fail"
+                  ? "bg-surface-2 text-warning"
+                  : "bg-surface-2 text-ink-muted"
+              }`}
+            >
+              {speech.engineNotice === "total-fail"
+                ? t("chat.speech.engine_total_fail")
+                : t("chat.speech.engine_auto_system")}
+            </span>
+          )}
           <button
             onClick={() => speech.speak(nodeSpeechId ?? "content", content)}
             data-tooltip={

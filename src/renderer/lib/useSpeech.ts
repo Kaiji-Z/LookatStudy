@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { companionSetTalking } from "./companion/bus.ts";
-import { pickSystemVoice } from "./system-tts.ts";
+import { pickSystemVoice, planSystemFallback } from "./system-tts.ts";
 
 import { speechSentencesOf } from "@shared/speech-text";
 import { speakMathInSentence } from "@shared/math-speech";
@@ -46,6 +46,10 @@ export function useSpeech(): {
   /** 最近一次朗读失败原因("model-missing"|"engine-unavailable"|…;渲染层按类型引导) */
   failReason: string | null;
   clearFailReason: () => void;
+  /** 终点档披露(v0.43):auto-system=双灭后本轮自动改走系统语音;total-fail=三路全灭。
+   *  与 failReason 互斥使用(终点档不再走 toast 引导);下一次 speak 起播时清零。 */
+  engineNotice: "auto-system" | "total-fail" | null;
+  clearEngineNotice: () => void;
   /** 首次用 edge 在线档(main 回执 firstUse;渲染层一次性披露后 clear) */
   onlineNotice: boolean;
   clearOnlineNotice: () => void;
@@ -59,6 +63,7 @@ export function useSpeech(): {
   const [streamTexts, setStreamTexts] = useState<string[]>([]);
   const streamTextsRef = useRef<string[]>([]);
   const [failReason, setFailReason] = useState<string | null>(null);
+  const [engineNotice, setEngineNotice] = useState<"auto-system" | "total-fail" | null>(null);
   const [onlineNotice, setOnlineNotice] = useState(false);
 
   const ctxRef = useRef<AudioContext | null>(null);
@@ -262,6 +267,7 @@ export function useSpeech(): {
       // window 事件广播(与 companion 总线同款模式),别的实例听见就自行 stopLocal。
       window.dispatchEvent(new CustomEvent("lookatstudy-speech-start", { detail: messageId }));
       setFailReason(null);
+      setEngineNotice(null);
       activeIdRef.current = messageId;
       receivedRef.current = 0;
       playedRef.current = 0;
@@ -284,7 +290,21 @@ export function useSpeech(): {
             return;
           }
           stopLocal();
-          if (r.reason !== "empty-text") setFailReason(r.reason);
+          if (r.reason !== "empty-text") {
+            // 终点档判定(纯函数):在线熔断+本地未就绪时,有系统语音就本轮披露式接管,
+            // 没有就诚实报三路全灭——都不再走 failReason 的 toast 引导
+            const plan = planSystemFallback(r.reason, hasSpeechSynthesis());
+            if (plan === "auto-system") {
+              setEngineNotice("auto-system");
+              speakSystem(messageId, text);
+              return;
+            }
+            if (plan === "total-fail") {
+              setEngineNotice("total-fail");
+              return;
+            }
+            setFailReason(r.reason);
+          }
         })
         .catch(() => stopLocal());
     },
@@ -404,6 +424,8 @@ export function useSpeech(): {
     streamTexts,
     failReason,
     clearFailReason: () => setFailReason(null),
+    engineNotice,
+    clearEngineNotice: () => setEngineNotice(null),
     onlineNotice,
     clearOnlineNotice: () => setOnlineNotice(false),
     speak,
@@ -419,6 +441,11 @@ function mixdownMono(buf: AudioBuffer): Float32Array {
   const out = new Float32Array(a.length);
   for (let i = 0; i < a.length; i++) out[i] = (a[i]! + b[i]!) / 2;
   return out;
+}
+
+/** 环境里有没有 speechSynthesis(终点档判定的环境输入;hook 文件可触 window) */
+function hasSpeechSynthesis(): boolean {
+  return typeof window !== "undefined" && "speechSynthesis" in window;
 }
 
 /** utterance.rate 的多倍率钳制(与 main tts-tiers clampSpeed 同语义,渲染层本地实现;

@@ -260,24 +260,51 @@ console.log("T6 speakMessage 降级链:edge 失败 → local 接管(stub 注入)
     assert.equal(audioEvents[0].p.mime, "audio/wav", "首句 edge 失败后重合成 → local wav");
     ok("edge→local 降级链");
 
-    // local 未就绪 → 整体失败(抛错 + ttsError 事件)
+    // local 未就绪 → 结构化失败(v0.43:不再裸抛——裸抛=IPC reject=渲染层静默停,
+    // failReason 永远到不了 UI;typed reason 让渲染层可判终点档)
     const events2 = [];
-    let threw = false;
-    try {
-      await speakMessage(
-        (ch, p) => events2.push({ ch, p }),
+    const r2 = await speakMessage(
+      (ch, p) => events2.push({ ch, p }),
+      tmp,
+      { tts_engine: "edge" },
+      "m2",
+      "第一句。第二句。",
+      { synth: mkSynth(), localReady: () => false },
+    );
+    assert.ok(!r2.ok, "无兜底时失败");
+    assert.equal(r2.reason, "edge-failed-local-missing", "typed reason(渲染层终点档判定依据)");
+    assert.ok(events2.some((e) => e.ch === "speech:ttsError"), "ttsError 事件已发(撕掉可能已在播的音频)");
+    ok("无兜底即结构化失败(edge-failed-local-missing)");
+
+    // 连续双灭累计熔断计数(上面 1 场 + 这里 4 场 = 5 连败开门)
+    for (let i = 0; i < 4; i++) {
+      const r = await speakMessage(
+        () => {},
         tmp,
         { tts_engine: "edge" },
-        "m2",
-        "第一句。第二句。",
+        `m-c${i}`,
+        "第一句。",
         { synth: mkSynth(), localReady: () => false },
       );
-    } catch {
-      threw = true;
+      assert.ok(!r.ok && r.reason === "edge-failed-local-missing", `连败 ${i + 1} 场同因`);
     }
-    assert.ok(threw, "无兜底时抛错");
-    assert.ok(events2.some((e) => e.ch === "speech:ttsError"), "ttsError 事件已发");
-    ok("无兜底即报错");
+    // 熔断开门 + local 未就绪 → upfront 结构化回执,零合成调用(不再发注定失败的请求)
+    const calls3 = [];
+    const synth3 = async (_d, _c, engine) => {
+      calls3.push(engine);
+      return { bytes: wavStub, mime: "audio/mpeg", sampleRate: 24000 };
+    };
+    const r3 = await speakMessage(
+      () => {},
+      tmp,
+      { tts_engine: "edge" },
+      "m-c5",
+      "第一句。",
+      { synth: synth3, localReady: () => false },
+    );
+    assert.ok(!r3.ok && r3.reason === "edge-failed-local-missing", "开门+无兜底=upfront 回执");
+    assert.equal(calls3.length, 0, "零合成调用(快路不再撞注定失败的 edge)");
+    ok("熔断快路(开门+无兜底零请求)");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

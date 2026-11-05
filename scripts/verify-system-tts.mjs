@@ -2,7 +2,8 @@
  * verify-system-tts —— v0.18 TTS 第四档「system」(浏览器/系统 speechSynthesis)。
  *
  * 档位定位:显式自选(音色是设备抽签:国产安卓厂商引擎常优于 kokoro,
- * Windows Chrome 本地 SAPI 可能更机械),不进 edge→local 自动降级链;
+ * Windows Chrome 本地 SAPI 可能更机械);v0.43 起兼任自动链**终点档**——仅当
+ * edge 熔断且 local 未就绪(此前=静默无声)才披露式接管(planSystemFallback);
  * 播放管线在渲染层(逐句 utterance → playingSentence,karaoke/伴学共用)。
  *
  * 纯函数:音色挑选(偏好名→中文优先→default 标记→空表 null)与排序;
@@ -15,7 +16,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { pickSystemVoice, sortVoicesZhFirst, systemVoiceLabel } from "../src/renderer/lib/system-tts";
+import { pickSystemVoice, sortVoicesZhFirst, systemVoiceLabel, planSystemFallback } from "../src/renderer/lib/system-tts";
 import { resolveTtsTier } from "../src/main/services/speech/tts-tiers";
 import { speakMessage } from "../src/main/services/speech/tts-service";
 
@@ -139,6 +140,40 @@ console.log("T7 纯度与 i18n:system-tts 不触 window;双语键齐");
     assert.ok(hits >= 2, `i18n 双语键缺: ${key}(zh+en 各一)`);
   }
   ok("纯度 + 双语 4 键");
+}
+
+// ---------------------------------------------------------------------------
+console.log("T8 终点档(v0.43):planSystemFallback 真值表 + useSpeech/UI 接线");
+{
+  // 真值表:仅 edge-failed-local-missing 触发;有 system→auto-system,无→total-fail;
+  // 其余 reason 一律 null(显式选择的引擎失败不静默换声)
+  assert.equal(planSystemFallback("edge-failed-local-missing", true), "auto-system");
+  assert.equal(planSystemFallback("edge-failed-local-missing", false), "total-fail");
+  assert.equal(planSystemFallback("edge-failed", true), null, "裸 edge-failed 不触发(留既有引导)");
+  assert.equal(planSystemFallback("model-missing", true), null, "显式 local 档缺模型仍走下载引导");
+  assert.equal(planSystemFallback("engine-unavailable", true), null);
+  assert.equal(planSystemFallback("empty-text", true), null);
+  ok("planSystemFallback 真值表(6 例)");
+
+  // useSpeech 接线:非 ok 回执 → 终点档判定 → auto-system 走 speakSystem / total-fail 停
+  const hook = read("lib/useSpeech.ts");
+  assert.ok(hook.includes("planSystemFallback(r.reason, hasSpeechSynthesis())"), "失败回执进终点档判定");
+  assert.ok(hook.includes('setEngineNotice("auto-system")') && hook.includes("speakSystem(messageId, text)"), "auto-system 本轮改走 system 管线");
+  assert.ok(hook.includes('setEngineNotice("total-fail")'), "三路全灭置披露态");
+  assert.ok(hook.includes("engineNotice,") && hook.includes("clearEngineNotice:"), "hook 暴露 engineNotice/clearEngineNotice");
+  assert.ok(hook.includes("setEngineNotice(null)"), "新朗读起播清零披露态");
+
+  // UI:讲解区常驻吸顶行 / 对话流 toast;i18n 双语
+  const nb = read("components/NotebookPanel.tsx");
+  assert.ok(nb.includes('data-testid="node-content-engine-notice"'), "讲解区吸顶状态行");
+  assert.ok(nb.includes("chat.speech.engine_total_fail") && nb.includes("chat.speech.engine_auto_system"), "状态行双态文案");
+  const cs = read("components/ChatStream.tsx");
+  assert.ok(cs.includes("speech.engineNotice") && cs.includes("chat.speech.engine_total_fail"), "对话流 engineNotice toast");
+  const i18n = readFileSync(new URL("../src/renderer/lib/i18n.ts", import.meta.url), "utf8");
+  for (const key of ["chat.speech.engine_auto_system\"", "chat.speech.engine_total_fail\""]) {
+    assert.ok(i18n.split(key).length - 1 >= 2, `i18n 双语键缺: ${key}`);
+  }
+  ok("useSpeech/UI/i18n 接线(源级守卫)");
 }
 
 console.log(`\nverify-system-tts: ${passed} 组全绿 ✓`);

@@ -17,6 +17,7 @@ import {
   t2SideFromT3,
   swipeTarget,
 } from "../src/renderer/lib/paneTiers.ts";
+import { composerCapPx, nextComposerHeight } from "../src/renderer/lib/composer-height.ts";
 
 let passed = 0;
 const test = (name, fn) => {
@@ -91,6 +92,36 @@ test("抽屉宽度视口相对(w-full+max-w 帽,无固定 px 宽);手机端全�
 test("ui-test 抽屉窄屏守卫在(420px 零水平溢出断言)", () => {
   const idx = readFileSync(new URL("../src/main/index.ts", import.meta.url), "utf8");
   assert.ok(idx.includes("no horizontal overflow at 420px"), "T: ui-test 420px 抽屉零溢出断言在场");
+});
+
+test("composer 自增长高度(v0.43,回流自 dsh 插件):40vh 封顶/基线地板/双向钳制", () => {
+  // 封顶:正常视口 40vh;极小视口走 120px 地板;非有限值同地板
+  assert.equal(composerCapPx(1000), 400);
+  assert.equal(composerCapPx(200), 120, "200px 视口不至于 80px 框");
+  assert.equal(composerCapPx(0), 120);
+  assert.equal(composerCapPx(Number.NaN), 120);
+  assert.equal(composerCapPx(1000, 0.5), 500, "比率可调");
+  // 目标高:内容高在 [base, cap] 内直通;越上界钳 cap;短于基线回 base(删行即缩);
+  // 非有限 scrollHeight 回 base 保底
+  assert.equal(nextComposerHeight(300, 400, 48), 300, "未越界直通");
+  assert.equal(nextComposerHeight(999, 400, 48), 400, "越上界钳到封顶");
+  assert.equal(nextComposerHeight(30, 400, 48), 48, "短于 rows=2 基线回基线");
+  assert.equal(nextComposerHeight(Number.NaN, 400, 48), 48);
+  // 接线(源级):ChatComposer 挂 ref + layoutEffect 按 [input] 重排 + 封顶内滚
+  const c = readFileSync(new URL("../src/renderer/components/ChatComposer.tsx", import.meta.url), "utf8");
+  assert.ok(c.includes("ref={taRef}") && c.includes("useLayoutEffect"), "textarea ref + layoutEffect");
+  assert.ok(c.includes("nextComposerHeight(el.scrollHeight, composerCapPx(window.innerHeight)"), "纯函数决策接线");
+  assert.ok(c.includes("overflow-y-auto"), "封顶后内滚");
+});
+
+test("讲解栏阅读度量守卫(v0.43 判例):正文 80ch 帽必须在场,外层 960px 帽不换 ch 阶梯", () => {
+  const nb = readFileSync(new URL("../src/renderer/components/NotebookPanel.tsx", import.meta.url), "utf8");
+  // 正文自身的度量(≈40 汉字/行,CJK 舒适默认)——这是真正起作用的那层帽
+  assert.ok(nb.includes('className="prose prose-sm max-w-[80ch] leading-relaxed break-words'), "讲解正文 80ch 帽(ReactMarkdown 容器)");
+  // v0.43 曾把外层 960px 帽换成 ch 阶梯:对正文惰性(内层 80ch 恒更小),只把
+  // 无自带帽的卡片面收窄到 ~560px——判例:外层帽保持像素制
+  assert.ok(nb.includes("mx-auto w-full max-w-[960px]"), "外层 960px 像素帽保持");
+  assert.ok(!nb.includes("reading-measure") && !nb.includes("reading-pane"), "阶梯残留清零");
 });
 
 console.log(`\n${passed} passed`);

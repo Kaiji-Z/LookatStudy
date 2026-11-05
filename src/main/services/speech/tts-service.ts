@@ -4,7 +4,9 @@
  * 档位:edge(默认,在线)/ azure(BYO key,在线)/ local(kokoro 离线)。
  * edge 句级预取(播第 i 句时已在合成第 i+1 句,抵消每句 RTT);
  * edge 合成失败且 local 模型就绪 → 剩余句子自动落 local(fellBackTo 标记),
- * local 未就绪 → 结构化失败(edge-failed)。azure 是用户的显式选择,失败即报错不静默降级。
+ * local 未就绪 → 结构化失败 edge-failed-local-missing(渲染层据此自动改走 system
+ * 终点档或报全灭;2026-11-05 前是裸抛=IPC reject=渲染层静默停)。azure 是用户的
+ * 显式选择,失败即报错不静默降级。
  *
  * 并发语义:同一时刻只有一场朗读;新开朗读先停旧的。取消语义:ttsStop 置停标志,
  * 句间检查;local 档合成中的句子靠 onChunk 返回 false 让原生侧提前终止
@@ -71,7 +73,19 @@ export type SpeakFailReason =
   | "azure-key-missing"
   | "azure-region-missing"
   | "edge-failed"
+  | "edge-failed-local-missing"
   | "custom-provider-missing";
+
+/**
+ * 结构化失败(edge 无兜底可落):外层 catch 据此返回 {ok:false, reason} 而非裸抛——
+ * 裸抛会变 IPC reject,渲染层只能 .catch 静默停,failReason 永远到不了 UI
+ * (2026-11-05 修:此前"edge 死+local 未就绪"正是这条裸抛暗路)。
+ */
+export class TtsFailError extends Error {
+  constructor(readonly reason: SpeakFailReason) {
+    super(reason);
+  }
+}
 
 export type SpeakResult =
   | { ok: true; sentences: number; engine: TtsEngineTier; fellBackTo?: "local" }
@@ -232,9 +246,15 @@ export async function speakMessage(
 
   let engine: TtsEngineTier = cfg.engine;
   let fellBackTo: "local" | undefined;
-  if (engine === "edge" && edgeCircuitOpen() && isLocalReady(dataDir)) {
-    engine = "local";
-    fellBackTo = "local"; // 熔断开门:本进程内 edge 连续失败已证明环境不可达
+  if (engine === "edge" && edgeCircuitOpen()) {
+    if (isLocalReady(dataDir)) {
+      engine = "local";
+      fellBackTo = "local"; // 熔断开门:本进程内 edge 连续失败已证明环境不可达
+    } else {
+      // 熔断开门且 local 未就绪:不再发注定失败的 edge 请求——结构化回执让渲染层
+      // 自动改走 system 终点档(speechSynthesis)或诚实报全灭
+      return { ok: false, reason: "edge-failed-local-missing" };
+    }
   }
 
   // 句级预取(深度 2):合成是缓存优先的 Promise,不预热的句子是 sync 命中
@@ -270,6 +290,10 @@ export async function speakMessage(
           fellBackTo = "local";
           inflight.clear();
           out = await ensure(i);
+        } else if (engine === "edge") {
+          noteEdgeFailure(); // 熔断计数(无兜底路径此前漏记,5 次后熔断开门走 upfront 快路)
+          // 无兜底可落:结构化失败(渲染层自动切 system 档或报全灭),不再裸抛
+          throw new TtsFailError("edge-failed-local-missing");
         } else {
           throw e;
         }
@@ -300,6 +324,7 @@ export async function speakMessage(
       message: e instanceof Error ? e.message : String(e),
     };
     emit("speech:ttsError", errPayload);
+    if (e instanceof TtsFailError) return { ok: false, reason: e.reason };
     throw e;
   }
 }

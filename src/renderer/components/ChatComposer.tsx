@@ -11,8 +11,9 @@
  *
  * 未配 key 时显示引导(去设置)。
  */
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from "react";
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo, Suspense, lazy } from "react";
 import { companionSend, companionSetListening, companionZoneFocus } from "../lib/companion/bus.ts";
+import { composerCapPx, nextComposerHeight } from "../lib/composer-height.js";
 import { ArrowUp, Square, BookOpen, Compass, Hammer, Paperclip, FileText, ScanText, X, Mic, Keyboard } from "lucide-react";
 import type { Soul, StarterPrompt, HumanFrictionCategory, ChatAttachmentInput, ContextUsageInfo } from "@shared/types";
 import { checkAttachmentFile, ATTACHMENT_LIMITS } from "@shared/attachment-intake";
@@ -122,6 +123,16 @@ export function ChatComposer({
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepthRef = useRef(0);
+  // v0.43 输入框自增长:rows=2 基线挂载时量得一次(输入为空),此后 [input] 驱动重排
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const taBaseRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    if (taBaseRef.current == null) taBaseRef.current = el.scrollHeight; // rows=2 固有高
+    el.style.height = `${nextComposerHeight(el.scrollHeight, composerCapPx(window.innerHeight), taBaseRef.current)}px`;
+  }, [input]);
 
   // v0.14 语音输入(飞书式):工具栏 🎤 点击切换语音模式 —— 输入卡片整体换成
   // 「按住说话」大按钮;按住录音(浮层:音量+计时),松开转录,识别全文进可编辑
@@ -639,6 +650,7 @@ export function ChatComposer({
         {/* textarea + 发送钮:发送钮内嵌右下,圆形。 */}
         <div className="flex gap-2 items-end">
           <textarea
+            ref={taRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onFocus={() => companionZoneFocus(true)}
@@ -654,7 +666,7 @@ export function ChatComposer({
             disabled={streaming || !nodeId}
             rows={2}
             data-testid="chat-input"
-            className="flex-1 bg-transparent text-ink-strong text-body rounded-lg px-1 py-1 resize-none focus:outline-none disabled:opacity-40 placeholder:text-ink-faint"
+            className="flex-1 bg-transparent text-ink-strong text-body rounded-lg px-1 py-1 resize-none overflow-y-auto focus:outline-none disabled:opacity-40 placeholder:text-ink-faint"
           />
           {streaming ? (
             <button

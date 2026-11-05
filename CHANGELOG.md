@@ -16,6 +16,14 @@ Entry conventions for contributors:
 
 ## [Unreleased]
 
+### Added
+
+- dsh 插件两轮回流（2026-11-05 对照核查出的真增量；第三项「讲解栏 ch 度量阶梯」核查后不跟进——正文 80ch≈40 汉字/行的度量早已在内层 prose 落地，外层换 ch 阶梯对正文惰性、只把无自带帽的卡片面从 960px 无论证地收窄到 ~560px，已回滚并留判例守卫）：①朗读自动链加**终点档**——edge 熔断且本地模型未就绪时（此前=静默无声）自动改走系统语音（speechSynthesis）并常驻披露状态行，三路全灭时诚实报「朗读引擎全部失败」（讲解区吸顶行/对话流 toast，中英双语）；system 档仍不替换任何能用的引擎，显式选择语义不变（verify-system-tts T8 + verify-speech-tiers T6 熔断快路）。②输入框随内容自增长：双向自适应 + 40vh 封顶（封顶后内滚）+ 发送归位（纯函数 `composer-height`，verify-pane-tiers）
+
+### Fixed
+
+- 朗读「edge 死 + local 未就绪」此前是裸抛 → IPC reject → 渲染层静默停，UI 映射的 `edge-failed` 是从不生产的死枚举（failReason 永远到不了界面）；改为 typed 结构化回执 `edge-failed-local-missing`，熔断开门后不再发注定失败的 edge 请求（快路零合成调用）
+
 ## [0.42.0] - 2026-11-01
 
 ### Added

@@ -99,6 +99,21 @@ export function ChatStream({ messages, streaming, onApplyProposal, onRejectPropo
       speech.clearFailReason();
     }
   }, [speech.failReason, toast, t, speech]);
+  // 终点档披露(v0.43):对话流没有吸顶行,双灭接管/三路全灭以 toast 呈现
+  // (讲解区的 NotebookPanel 才有常驻状态行)
+  useEffect(() => {
+    if (speech.engineNotice) {
+      toast.show(
+        t(
+          speech.engineNotice === "total-fail"
+            ? "chat.speech.engine_total_fail"
+            : "chat.speech.engine_auto_system",
+        ),
+        { severity: speech.engineNotice === "total-fail" ? "warning" : "info" },
+      );
+      speech.clearEngineNotice();
+    }
+  }, [speech.engineNotice, toast, t, speech]);
   // edge 档首次使用:一次性披露"朗读经微软在线服务"(local-first 知情)
   useEffect(() => {
     if (speech.onlineNotice) {
